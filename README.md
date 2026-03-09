@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/c__Users_User_Documents_GitHub_Kalkulationsprogramm_src_main_resources_static_firmenlogo.png" alt="Logo" width="120" />
-</p>
-
 <h1 align="center">Handwerkerprogramm</h1>
 
 <p align="center">
@@ -95,7 +91,7 @@ graph TB
     subgraph Backend["Spring Boot Backend"]
         API["REST API<br/>(56 Controller)"]
         Services["Business Logic<br/>(84 Services)"]
-        Domain["Domain Model<br/>(109 Entities)"]
+        Domain["Domain Model<br/>(90 Entities)"]
     end
 
     subgraph Extern["Externe Dienste"]
@@ -151,8 +147,8 @@ graph TB
 ### 1. Repository klonen
 
 ```bash
-git clone https://github.com/Winfo2024Kuhn/Handwerkerprogramm.git
-cd Handwerkerprogramm
+git clone https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe.git
+cd ERP-System-fuer-Handwerksbetriebe
 ```
 
 ### 2. Datenbank konfigurieren
@@ -197,7 +193,7 @@ Handwerkerprogramm/
 │   ├── controller/          # 56 REST-Controller
 │   ├── service/             # 84 Business-Services
 │   ├── repository/          # Spring Data Repositories
-│   ├── domain/              # 109 JPA-Entities
+│   ├── domain/              # 90 JPA-Entities
 │   ├── dto/                 # API-Datenmodelle
 │   ├── config/              # Spring-Konfiguration
 │   └── mapper/              # DTO ↔ Entity Mapper
@@ -207,8 +203,6 @@ Handwerkerprogramm/
 │
 ├── react-zeiterfassung/     # 📱 Mobile PWA (18 Seiten)
 │   └── src/pages/           # Stempeluhr, Urlaub, Salden
-│
-├── react-textbausteine/     # 📝 Textbaustein-Editor
 │
 ├── docs/                    # 📚 Dokumentation
 │   ├── GOBD_COMPLIANCE.md   # GoBD-Konformität
@@ -298,7 +292,7 @@ Beiträge sind willkommen! Dieses Projekt lebt davon, dass Handwerksbetriebe und
 
 ## 📜 Lizenz
 
-Dieses Projekt ist Open Source. Details folgen.
+Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 
 ---
 

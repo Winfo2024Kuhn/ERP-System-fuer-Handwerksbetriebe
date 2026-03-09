@@ -12,6 +12,7 @@ Dieses Verzeichnis enthält alle Scripts und Dokumentation für das Deployment d
 | `start-kalkulationsprogramm.ps1` | Startet den Server mit Health-Check |
 | `restart-kalkulationsprogramm.ps1` | Führt sauberen Server-Neustart durch |
 | `install-scheduled-tasks.ps1` | Installiert alle Windows Scheduled Tasks |
+| `start-server.bat` | Windows Batch-Skript zum schnellen Start des Servers (Kurzform) |
 
 ### Dokumentation
 

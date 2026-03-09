@@ -134,7 +134,7 @@ Handwerksbetriebe kämpfen mit dezentralen Papierprozessen, fehlender Projektkos
 
 - **84 Services**
 - **56 Controller**
-- **109 Domain-Entities**
+- **90 Domain-Entities**
 - **31 Desktop-Seiten** (PC-Frontend)
 - **18 Mobile-Seiten** (PWA)
 
