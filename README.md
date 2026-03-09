@@ -247,7 +247,7 @@ Architektur-Diagramme (draw.io) liegen in [`docs/Dokumentation/`](docs/Dokumenta
 |--------|------|
 | REST-Controller | 56 |
 | Business-Services | 84 |
-| Domain-Entities | 109 |
+| Domain-Entities | 90 |
 | Desktop-Seiten (PC) | 31 |
 | Mobile-Seiten (PWA) | 18 |
 | Dokumentationen | 7 |
