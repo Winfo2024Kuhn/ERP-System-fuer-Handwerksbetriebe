@@ -16,18 +16,16 @@ Willkommen in der Dokumentation des Handwerkerprogramms. Hier findest du alle te
 | [DOKUMENTEN_LIFECYCLE.md](DOKUMENTEN_LIFECYCLE.md) | Lebenszyklus aller Geschäftsdokumente (Eingang & Ausgang) |
 | [ZEITERFASSUNG_WORKFLOWS.md](ZEITERFASSUNG_WORKFLOWS.md) | Zeiterfassung-Workflows: Online, Offline, Sync |
 | [email-system-refactoring.md](email-system-refactoring.md) | E-Mail-System Refactoring-Dokumentation |
+| [ZAHLUNGSVERKEHR.md](ZAHLUNGSVERKEHR.md) | Zahlungsverfolgung, Offene Posten, Mahnwesen |
+| [LIEFERANTEN_DOKUMENTEN.md](LIEFERANTEN_DOKUMENTEN.md) | Eingangsrechnungen, KI-Erkennung, Freigabeprozess |
+| [ZUGFERD_E_INVOICING.md](ZUGFERD_E_INVOICING.md) | Elektronische Rechnungsstellung nach EU-Norm (ZUGFeRD) |
+| [BESTELLWESEN.md](BESTELLWESEN.md) | Einkauf, Bestellungen, PDF-Generierung |
+| [ANGEBOTSWESEN.md](ANGEBOTSWESEN.md) | Angebotserstellung, Kundenmanagement, Konversionsrate |
+| [MONATS_SALDO_CACHING.md](MONATS_SALDO_CACHING.md) | Performance-Optimierung für monatliche Zeitkonto-Salden |
+| [API_REFERENZ.md](API_REFERENZ.md) | REST-Endpoint-Übersicht für alle Module (53 Controller) |
+| [ARCHITEKTUR_UEBERSICHT.md](ARCHITEKTUR_UEBERSICHT.md) | Technische Architektur und Designentscheidungen |
 
-### ⬜ Geplant
-
-| Dokument | Inhalt | Priorität |
-|----------|--------|-----------|
-| ZAHLUNGSVERKEHR.md | Zahlungsverfolgung, Offene Posten, Mahnwesen | 🔴 Prio 2 |
-| LIEFERANTEN_DOKUMENTEN.md | Eingangsrechnungen, KI-Erkennung, Freigabe | 🟡 Prio 2 |
-| ZUGFERD_E_INVOICING.md | Elektronische Rechnungsstellung nach EU-Norm | 🟡 Prio 2 |
-| BESTELLWESEN.md | Einkauf, Bestellungen, PDF-Generierung | 🟡 Prio 3 |
-| ANGEBOTSWESEN.md | Angebotserstellung, Kundenmanagement | 🟡 Prio 3 |
-| API_REFERENZ.md | REST-Endpoint-Übersicht für alle Module | 🟢 Prio 3 |
-| ARCHITEKTUR_UEBERSICHT.md | Technische Architektur und Designentscheidungen | 🟢 Prio 4 |
+### ✅ Alle geplanten Dokumente fertiggestellt
 
 ---
 
@@ -52,11 +50,18 @@ Im Verzeichnis [`Dokumentation/`](Dokumentation/) befinden sich draw.io-Diagramm
 ## Empfohlene Lesereihenfolge
 
 1. **[BUSINESS_CASES.md](BUSINESS_CASES.md)** – Überblick über alle Module
-2. **[GOBD_COMPLIANCE.md](GOBD_COMPLIANCE.md)** – Rechtliche Grundlagen
-3. **[RECHNUNGSWESEN.md](RECHNUNGSWESEN.md)** – Kernprozess
-4. **[DOKUMENTEN_LIFECYCLE.md](DOKUMENTEN_LIFECYCLE.md)** – Dokumentenflüsse
-5. **[ZEITERFASSUNG_WORKFLOWS.md](ZEITERFASSUNG_WORKFLOWS.md)** – Mobile App
-6. **[DOKUMENTATIONSPLAN.md](DOKUMENTATIONSPLAN.md)** – Was noch kommt
+2. **[ARCHITEKTUR_UEBERSICHT.md](ARCHITEKTUR_UEBERSICHT.md)** – Technische Architektur
+3. **[GOBD_COMPLIANCE.md](GOBD_COMPLIANCE.md)** – Rechtliche Grundlagen
+4. **[RECHNUNGSWESEN.md](RECHNUNGSWESEN.md)** – Kernprozess
+5. **[DOKUMENTEN_LIFECYCLE.md](DOKUMENTEN_LIFECYCLE.md)** – Dokumentenflüsse
+6. **[ZAHLUNGSVERKEHR.md](ZAHLUNGSVERKEHR.md)** – Zahlungen & Offene Posten
+7. **[LIEFERANTEN_DOKUMENTEN.md](LIEFERANTEN_DOKUMENTEN.md)** – Eingangsrechnungen
+8. **[ZUGFERD_E_INVOICING.md](ZUGFERD_E_INVOICING.md)** – E-Rechnungen
+9. **[BESTELLWESEN.md](BESTELLWESEN.md)** – Einkauf & Bestellungen
+10. **[ANGEBOTSWESEN.md](ANGEBOTSWESEN.md)** – Angebotserstellung
+11. **[ZEITERFASSUNG_WORKFLOWS.md](ZEITERFASSUNG_WORKFLOWS.md)** – Mobile App
+12. **[MONATS_SALDO_CACHING.md](MONATS_SALDO_CACHING.md)** – Performance-Caching
+13. **[API_REFERENZ.md](API_REFERENZ.md)** – REST-Endpoints
 
 ---
 
