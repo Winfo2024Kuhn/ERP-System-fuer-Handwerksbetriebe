@@ -1,0 +1,1423 @@
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
+import {
+    Mail,
+    RefreshCw,
+    Trash2,
+    Inbox,
+    Send,
+    AlertCircle,
+    Paperclip,
+    Clock,
+    Download,
+    FolderPlus,
+    Search,
+    Briefcase,
+    FileText,
+    ChevronDown,
+    ChevronRight,
+    File,
+    Eye,
+    PenSquare,
+    HelpCircle,
+    ShieldAlert,
+    Settings
+} from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { cn } from '../lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { EmailComposeForm } from '../components/EmailComposeForm';
+import { EmailContentFrame } from '../components/EmailContentFrame';
+import EmailSettings from '../components/EmailSettings';
+import { ImageViewer } from '../components/ui/image-viewer';
+import { useToast } from '../components/ui/toast';
+import { useConfirm } from '../components/ui/confirm-dialog';
+
+// Statische Icon-Pfade für spezielle Dateitypen
+const BASE_URL = '/react-textbausteine/';
+const ICON_TENADO = `${BASE_URL}tenado_logo.jpg`;
+const ICON_EXCEL = `${BASE_URL}excel_image.jpg`;
+const ICON_HICAD = `${BASE_URL}hicad_logo.png`;
+
+const getAttachmentIcon = (filename: string): string | null => {
+    const lower = filename?.toLowerCase() || '';
+    if (lower.endsWith('.pdf')) return 'pdf';
+    if (lower.endsWith('.tcd')) return ICON_TENADO;
+    if (lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.xlsm')) return ICON_EXCEL;
+    if (lower.endsWith('.sza')) return ICON_HICAD;
+    return null;
+};
+
+const isImageAttachment = (filename: string): boolean => {
+    const lower = filename?.toLowerCase() || '';
+    return /\.(jpg|jpeg|png|gif|webp|bmp)$/.test(lower);
+};
+
+interface EmailAttachment {
+    id?: number;
+    filename?: string;
+    originalFilename?: string;
+    storedFilename?: string;
+    url?: string;
+    type?: string;
+    contentId?: string;
+}
+
+interface EmailItem {
+    id: number;
+    type: string;
+    containerId?: number;
+    direction: 'IN' | 'OUT';
+    subject?: string;
+    sender?: string;
+    fromAddress?: string;
+    body?: string;
+    htmlBody?: string;
+    sentAt?: string;
+    attachments?: EmailAttachment[];
+    replies?: EmailItem[];
+    zuordnungTyp?: string;
+    projektName?: string;
+    angebotName?: string;
+    lieferantName?: string;
+    isRead?: boolean;
+    recipient?: string;
+    // Assignment IDs
+    projektId?: number;
+    angebotId?: number;
+    lieferantId?: number;
+}
+
+// Folder Types
+// Folder Types
+type FolderType = 'inbox' | 'sent' | 'trash' | 'spam' | 'newsletter' | 'projects' | 'offers' | 'suppliers' | 'unassigned' | 'inquiries';
+
+
+
+
+const getSenderName = (email: EmailItem) => {
+    if (email.lieferantName) return email.lieferantName;
+    if (email.projektName) return email.projektName;
+    if (email.angebotName) return email.angebotName;
+    if (email.fromAddress) {
+        const match = email.fromAddress.match(/^"?(.*?)"? <.*>$/);
+        if (match && match[1]) return match[1];
+        return email.fromAddress;
+    }
+    return email.sender || 'Unbekannt';
+};
+
+const getRecipientName = (email: EmailItem) => {
+    if (email.recipient) {
+        const match = email.recipient.match(/^"?(.*?)"? <.*>$/);
+        if (match && match[1]) return match[1];
+        return email.recipient;
+    }
+    return 'Unbekannt';
+};
+
+const getDisplayName = (email: EmailItem) => {
+    if (email.direction === 'OUT') {
+        return getRecipientName(email);
+    }
+    return getSenderName(email);
+};
+
+// Email Attachment Card Component
+function EmailAttachmentCard({ attachment, email, onPreview }: {
+    attachment: EmailAttachment,
+    email: EmailItem,
+    onPreview: (url: string, type: 'image' | 'pdf', name: string) => void
+}) {
+    const filename = attachment.originalFilename || attachment.filename || attachment.storedFilename || 'Datei';
+    const iconSrc = getAttachmentIcon(filename);
+    const isImage = isImageAttachment(filename);
+    const downloadUrl = `/api/emails/${email.id}/attachments/${attachment.id}`;
+
+    const handleDownload = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        a.click();
+    };
+
+    const handlePreview = () => {
+        if (isImage) {
+            onPreview(downloadUrl, 'image', filename);
+        } else if (iconSrc === 'pdf') {
+            onPreview(downloadUrl, 'pdf', filename);
+        } else {
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = filename;
+            a.click();
+        }
+    };
+
+    return (
+        <div
+            onClick={handlePreview}
+            className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors group cursor-pointer"
+        >
+            {isImage ? (
+                <img
+                    src={downloadUrl}
+                    alt={filename}
+                    className="w-10 h-10 object-cover rounded"
+                />
+            ) : iconSrc === 'pdf' ? (
+                <File className="w-10 h-10 text-red-500" />
+            ) : iconSrc ? (
+                <img src={iconSrc} alt={filename} className="w-10 h-10 object-contain" />
+            ) : (
+                <File className="w-10 h-10 text-slate-400" />
+            )}
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-700 truncate">{filename}</p>
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {(isImage || iconSrc === 'pdf') && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); handlePreview(); }}
+                        className="h-8 w-8 p-0 text-slate-500 hover:text-rose-600"
+                        title="Vorschau"
+                    >
+                        <Eye className="w-4 h-4" />
+                    </Button>
+                )}
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleDownload}
+                    className="h-8 w-8 p-0 text-slate-500 hover:text-rose-600"
+                    title="Download"
+                >
+                    <Download className="w-4 h-4" />
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+// Assignment Modal Component
+interface AssignModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onAssign: (type: 'projekt' | 'angebot', targetId: number) => Promise<void>;
+    emailSubject: string;
+    emailId?: number;
+}
+
+interface EntityOption {
+    id: number;
+    name: string;
+    type: string;
+    projektNummer?: string;
+    angebotNummer?: string;
+}
+
+function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: AssignModalProps) {
+    const toast = useToast();
+    const [searchType, setSearchType] = useState<'projekt' | 'angebot'>('projekt');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [results, setResults] = useState<any[]>([]);
+    const [suggestions, setSuggestions] = useState<{ projekte: EntityOption[], angebote: EntityOption[] }>({ projekte: [], angebote: [] });
+    const [loading, setLoading] = useState(false);
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const [assigning, setAssigning] = useState(false);
+
+    // Load suggestions when modal opens
+    useEffect(() => {
+        if (isOpen && emailId) {
+            setLoadingSuggestions(true);
+            fetch(`/api/emails/${emailId}/possible-assignments`)
+                .then(res => res.json())
+                .then(data => {
+                    setSuggestions({
+                        projekte: data.projekte || [],
+                        angebote: data.angebote || []
+                    });
+                })
+                .catch(err => console.error('Failed to load suggestions:', err))
+                .finally(() => setLoadingSuggestions(false));
+        }
+    }, [isOpen, emailId]);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setSearchQuery('');
+            setResults([]);
+        }
+    }, [isOpen]);
+
+    const fetchResults = useCallback(async () => {
+        if (!searchQuery.trim()) {
+            setResults([]);
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
+        try {
+            const endpoint = searchType === 'projekt'
+                ? `/api/projekte/search?q=${encodeURIComponent(searchQuery)}`
+                : `/api/angebote/search?q=${encodeURIComponent(searchQuery)}`;
+            const res = await fetch(endpoint);
+            if (res.ok) {
+                setResults(await res.json());
+            }
+        } catch (err) {
+            console.error('Search failed:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, [searchQuery, searchType]);
+
+    useEffect(() => {
+        const timeout = setTimeout(fetchResults, 300);
+        return () => clearTimeout(timeout);
+    }, [fetchResults]);
+
+    const handleSelect = async (type: 'projekt' | 'angebot', id: number) => {
+        setAssigning(true);
+        try {
+            await onAssign(type, id);
+            onClose();
+        } catch (err) {
+            toast.error('Zuordnung fehlgeschlagen');
+        } finally {
+            setAssigning(false);
+        }
+    };
+
+    const currentSuggestions = searchType === 'projekt' ? suggestions.projekte : suggestions.angebote;
+    const hasSuggestions = currentSuggestions.length > 0;
+
+    return (
+        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+            <DialogContent className="max-w-lg">
+                <DialogHeader>
+                    <DialogTitle>E-Mail zuordnen</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                    <p className="text-sm text-slate-600 truncate">"{emailSubject}"</p>
+
+                    <div className="flex gap-2">
+                        <Button
+                            variant={searchType === 'projekt' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setSearchType('projekt')}
+                            className={searchType === 'projekt' ? 'bg-rose-600 hover:bg-rose-700' : ''}
+                        >
+                            <Briefcase className="w-4 h-4 mr-1" />
+                            Projekt
+                            {suggestions.projekte.length > 0 && (
+                                <span className="ml-1 bg-white/20 px-1.5 rounded text-xs">{suggestions.projekte.length}</span>
+                            )}
+                        </Button>
+                        <Button
+                            variant={searchType === 'angebot' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setSearchType('angebot')}
+                            className={searchType === 'angebot' ? 'bg-rose-600 hover:bg-rose-700' : ''}
+                        >
+                            <FileText className="w-4 h-4 mr-1" />
+                            Angebot
+                            {suggestions.angebote.length > 0 && (
+                                <span className="ml-1 bg-white/20 px-1.5 rounded text-xs">{suggestions.angebote.length}</span>
+                            )}
+                        </Button>
+                    </div>
+
+                    {/* Suggestions Section */}
+                    {loadingSuggestions ? (
+                        <div className="text-center text-slate-500 py-2">
+                            <RefreshCw className="w-4 h-4 animate-spin mx-auto" />
+                            <p className="text-xs mt-1">Lade Vorschläge...</p>
+                        </div>
+                    ) : hasSuggestions && (
+                        <div className="space-y-1">
+                            <p className="text-xs font-medium text-rose-600">Vorschläge (passende E-Mail-Adresse):</p>
+                            {currentSuggestions.map((item) => (
+                                <button
+                                    key={`suggestion-${item.id}`}
+                                    onClick={() => handleSelect(searchType, item.id)}
+                                    disabled={assigning}
+                                    className="w-full text-left p-3 rounded-lg bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200"
+                                >
+                                    <p className="font-medium text-slate-900">
+                                        {item.projektNummer && <span className="text-rose-600 mr-2">{item.projektNummer}</span>}
+                                        {item.angebotNummer && <span className="text-rose-600 mr-2">{item.angebotNummer}</span>}
+                                        {item.name}
+                                    </p>
+                                    <p className="text-xs text-rose-600">⭐ Empfohlen</p>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Manual Search Section */}
+                    <div className="pt-2 border-t border-slate-200">
+                        <p className="text-xs text-slate-500 mb-2">Oder manuell suchen:</p>
+                        <Input
+                            placeholder={`${searchType === 'projekt' ? 'Projekt' : 'Angebot'} suchen...`}
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="border-slate-200"
+                        />
+                    </div>
+
+                    <div className="max-h-40 overflow-auto space-y-1">
+                        {loading ? (
+                            <p className="text-center text-slate-500 py-4">Suche...</p>
+                        ) : results.length === 0 && searchQuery ? (
+                            <p className="text-center text-slate-500 py-4">Keine Ergebnisse</p>
+                        ) : (
+                            results.map((item) => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => handleSelect(searchType, item.id)}
+                                    disabled={assigning}
+                                    className="w-full text-left p-3 rounded-lg hover:bg-rose-50 transition-colors border border-slate-200"
+                                >
+                                    <p className="font-medium text-slate-900">{item.bauvorhaben || item.name}</p>
+                                    {item.kunde && <p className="text-sm text-slate-500">{item.kunde}</p>}
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// Main EmailCenter Component
+export default function EmailCenter() {
+    const toast = useToast();
+    const confirmDialog = useConfirm();
+    const [searchParams, setSearchParams] = useSearchParams();
+    // State
+    const [activeFolder, setActiveFolder] = useState<FolderType>('inbox');
+    // activeFilter removed
+    const [emails, setEmails] = useState<EmailItem[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [selectedEmail, setSelectedEmail] = useState<EmailItem | null>(null);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const lastSelectedIdRef = useRef<number | null>(null);
+
+    // Composition State
+    const [isComposing, setIsComposing] = useState(false);
+    const [replyToEmail, setReplyToEmail] = useState<EmailItem | null>(null);
+
+    const [showAssignModal, setShowAssignModal] = useState(false);
+    const [folderCounts, setFolderCounts] = useState({
+        inbox: 0, sent: 0, trash: 0, spam: 0, newsletter: 0,
+        projects: 0, offers: 0, suppliers: 0, unassigned: 0, inquiries: 0
+    });
+    const [expandedFilters, setExpandedFilters] = useState(true);
+    const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
+    const [showSettings, setShowSettings] = useState(false);
+
+    // Initial load
+    useEffect(() => {
+        loadEmails();
+        loadStats();
+    }, [activeFolder]);
+
+    // Action Hanlders
+    const handleComposeNew = () => {
+        setSelectedEmail(null);
+        setReplyToEmail(null);
+        setIsComposing(true);
+    };
+
+    const handleReply = (email: EmailItem) => {
+        setReplyToEmail(email);
+        setIsComposing(true);
+    };
+
+    const handleComposeClose = () => {
+        setIsComposing(false);
+        setReplyToEmail(null);
+    };
+
+    const handleComposeSuccess = () => {
+        setIsComposing(false);
+        setReplyToEmail(null);
+        loadEmails();
+        loadStats();
+    };
+
+    // Load emails based on folder and filter
+    const loadEmails = useCallback(async () => {
+        setLoading(true);
+        try {
+            const endpointMap: Record<string, string> = {
+                'inbox': '/api/emails/inbox',
+                'sent': '/api/emails/sent',
+                'trash': '/api/emails/trash',
+                'spam': '/api/emails/spam',
+                'newsletter': '/api/emails/newsletter',
+                'projects': '/api/emails/projects',
+                'offers': '/api/emails/offers',
+                'suppliers': '/api/emails/suppliers',
+                'unassigned': '/api/emails/unassigned',
+                'inquiries': '/api/emails/inquiries'
+            };
+            const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
+
+            const res = await fetch(endpoint);
+            if (res.ok) {
+                let data = await res.json();
+                if (!Array.isArray(data)) data = [];
+
+                // Fix: Zugeordnete Emails dürfen niemals in Spam oder Newsletter landen
+                if (activeFolder === 'spam' || activeFolder === 'newsletter') {
+                    data = data.filter((email: EmailItem) => {
+                        const hasAssignment =
+                            (email.zuordnungTyp && email.zuordnungTyp !== 'KEINE') ||
+                            email.projektId ||
+                            email.angebotId ||
+                            email.lieferantId;
+                        return !hasAssignment;
+                    });
+                }
+
+                setEmails(data);
+            } else {
+                setEmails([]);
+            }
+        } catch (err) {
+            console.error('Failed to load emails', err);
+            setEmails([]);
+        } finally {
+            setLoading(false);
+        }
+    }, [activeFolder]);
+
+    // Load stats for folder counts
+    const loadStats = useCallback(async () => {
+        try {
+            const res = await fetch('/api/emails/stats');
+            if (res.ok) {
+                const stats = await res.json();
+                setFolderCounts({
+                    inbox: stats.inboxCount || 0,
+                    sent: stats.sentCount || 0,
+                    trash: stats.trashCount || 0,
+                    spam: stats.spamCount || 0,
+                    newsletter: stats.newsletterCount || 0,
+                    unassigned: stats.unassignedCount || 0,
+                    inquiries: stats.inquiriesCount || 0,
+                    projects: stats.projectCount || 0,
+                    offers: stats.offerCount || 0,
+                    suppliers: stats.supplierCount || 0
+                });
+            }
+        } catch (err) {
+            console.error('Failed to load stats', err);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadEmails();
+        loadStats();
+    }, [loadEmails, loadStats]);
+
+    // Deep-link: auto-select email from URL param ?emailId=123
+    useEffect(() => {
+        const emailIdParam = searchParams.get('emailId');
+        if (!emailIdParam || emails.length === 0) return;
+        const emailId = Number(emailIdParam);
+        if (isNaN(emailId)) return;
+        const found = emails.find(e => e.id === emailId);
+        if (found) {
+            setSelectedEmail(found);
+            setSelectedIds(new Set([found.id]));
+            // Mark as read
+            if (!found.isRead) {
+                fetch(`/api/emails/${found.id}/mark-read`, { method: 'POST' })
+                    .then(() => {
+                        setEmails(prev => prev.map(e => e.id === found.id ? { ...e, isRead: true } : e));
+                        loadStats();
+                    })
+                    .catch(err => console.error('Failed to mark as read:', err));
+            }
+            // Clear URL param after selecting
+            setSearchParams({}, { replace: true });
+        } else {
+            // Email not in current folder - try fetching it directly
+            fetch(`/api/emails/${emailId}`)
+                .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
+                .then((email: EmailItem) => {
+                    setSelectedEmail(email);
+                    setSelectedIds(new Set([email.id]));
+                    if (!email.isRead) {
+                        fetch(`/api/emails/${email.id}/mark-read`, { method: 'POST' })
+                            .then(() => loadStats())
+                            .catch(err => console.error('Failed to mark as read:', err));
+                    }
+                    setSearchParams({}, { replace: true });
+                })
+                .catch(() => { /* email not found, ignore */ });
+        }
+    }, [emails, searchParams]);
+
+    useEffect(() => {
+        if (!isComposing) {
+            setSelectedEmail(null);
+            setSelectedIds(new Set());
+        }
+    }, [activeFolder]);
+
+    // Handlers
+    const handleEmailClick = async (e: React.MouseEvent, email: EmailItem) => {
+        if (isComposing) {
+            if (await confirmDialog({ title: 'Entwurf verwerfen', message: 'Möchten Sie den Entwurf verwerfen?', variant: 'warning', confirmLabel: 'Verwerfen' })) {
+                setIsComposing(false);
+                setReplyToEmail(null);
+            } else {
+                return;
+            }
+        }
+
+        if (e.ctrlKey || e.metaKey || e.shiftKey) {
+            e.preventDefault();
+            window.getSelection()?.removeAllRanges();
+        }
+
+        const id = email.id;
+        let newSelected = new Set(selectedIds);
+
+        if (e.ctrlKey || e.metaKey) {
+            if (newSelected.has(id)) {
+                newSelected.delete(id);
+            } else {
+                newSelected.add(id);
+                lastSelectedIdRef.current = id;
+            }
+        } else if (e.shiftKey && lastSelectedIdRef.current) {
+            const startId = lastSelectedIdRef.current;
+            const currentList = filteredEmails;
+            const startIndex = currentList.findIndex(x => x.id === startId);
+            const endIndex = currentList.findIndex(x => x.id === id);
+
+            if (startIndex !== -1 && endIndex !== -1) {
+                const min = Math.min(startIndex, endIndex);
+                const max = Math.max(startIndex, endIndex);
+                newSelected = new Set();
+                for (let i = min; i <= max; i++) {
+                    newSelected.add(currentList[i].id);
+                }
+            } else {
+                newSelected.add(id);
+            }
+        } else {
+            newSelected = new Set([id]);
+            lastSelectedIdRef.current = id;
+        }
+
+        setSelectedIds(newSelected);
+
+        if (newSelected.has(id)) {
+            setSelectedEmail(email);
+            // Mark as read if not already read
+            if (!email.isRead) {
+                fetch(`/api/emails/${id}/mark-read`, { method: 'POST' })
+                    .then(() => {
+                        // Update local state
+                        setEmails(prev => prev.map(e => e.id === id ? { ...e, isRead: true } : e));
+                        // Refresh stats to update counters
+                        loadStats();
+                    })
+                    .catch(err => console.error('Failed to mark as read:', err));
+            }
+        } else {
+            if (selectedEmail?.id === id) setSelectedEmail(null);
+        }
+    };
+
+    const handleDelete = async (e: React.MouseEvent | null, email?: EmailItem) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        const idsToDelete = new Set<number>();
+        if (email) {
+            idsToDelete.add(email.id);
+        } else {
+            selectedIds.forEach(id => idsToDelete.add(id));
+        }
+
+        if (idsToDelete.size === 0) return;
+
+        // Im Papierkorb: Bestätigung für endgültiges Löschen
+        const isPermanentDelete = activeFolder === 'trash';
+        if (isPermanentDelete) {
+            const count = idsToDelete.size;
+            const message = count === 1
+                ? 'Möchten Sie diese E-Mail endgültig löschen? Sie wird auch vom Mailserver entfernt.'
+                : `Möchten Sie ${count} E-Mails endgültig löschen? Sie werden auch vom Mailserver entfernt.`;
+            if (!await confirmDialog({ title: 'Bestätigung', message: message, variant: 'danger', confirmLabel: 'Bestätigen' })) return;
+        }
+
+        const currentIds = Array.from(idsToDelete);
+        setEmails(prev => prev.filter(item => !idsToDelete.has(item.id)));
+
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            currentIds.forEach(id => next.delete(id));
+            return next;
+        });
+
+        if (selectedEmail && idsToDelete.has(selectedEmail.id)) {
+            setSelectedEmail(null);
+        }
+
+        for (const id of currentIds) {
+            try {
+                // Im Papierkorb: Permanent löschen (DB + Mailserver)
+                // Ansonsten: Soft delete (in Papierkorb verschieben)
+                const endpoint = isPermanentDelete
+                    ? `/api/emails/${id}/permanent`
+                    : `/api/emails/${id}`;
+                await fetch(endpoint, { method: 'DELETE' });
+            } catch (err) {
+                console.error('Delete failed for', id);
+            }
+        }
+
+        // Stats aktualisieren nach Löschung
+        loadStats();
+    };
+
+    const handleAssign = async (type: 'projekt' | 'angebot', targetId: number) => {
+        if (!selectedEmail) return;
+
+        const url = type === 'projekt'
+            ? `/api/emails/${selectedEmail.id}/assign/${targetId}`
+            : `/api/emails/${selectedEmail.id}/assign/angebot/${targetId}`;
+
+        const res = await fetch(url, { method: 'POST' });
+        if (!res.ok) throw new Error('Failed to assign');
+
+        setEmails(prev => prev.filter(e => e.id !== selectedEmail.id));
+        setSelectedEmail(null);
+    };
+
+    const handleBlockSender = async () => {
+        if (!selectedEmail) return;
+        if (!await confirmDialog({ title: "Absender sperren", message: `Möchten Sie den Absender "${selectedEmail.fromAddress}" wirklich sperren?\nAlle E-Mails dieses Absenders werden in Spam verschoben.`, variant: "danger", confirmLabel: "Sperren" })) return;
+
+        try {
+            const res = await fetch(`/api/emails/${selectedEmail.id}/block-sender`, { method: 'POST' });
+            if (res.ok) {
+                const msg = await res.text();
+                toast.info(msg);
+                loadEmails();
+                loadStats();
+                setSelectedEmail(null);
+            } else {
+                toast.error("Fehler beim Sperren des Absenders");
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error("Fehler beim Sperren des Absenders");
+        }
+    };
+
+    const handleScanAssignments = async () => {
+        if (!await confirmDialog({ title: "E-Mails erneut prüfen", message: "Alle unzugeordneten E-Mails im Posteingang erneut prüfen?\nDies kann einen Moment dauern.", variant: "info", confirmLabel: "Prüfen" })) return;
+
+        setLoading(true);
+        try {
+            const res = await fetch('/api/emails/scan-assignments', { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                toast.info(data.message);
+                loadEmails();
+                loadStats();
+            } else {
+                toast.error("Fehler beim Scan");
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error("Fehler beim Scan");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const formatDate = (dateStr?: string) => {
+        if (!dateStr) return '-';
+        try {
+            const date = new Date(dateStr);
+            const today = new Date();
+            const isToday = date.toDateString() === today.toDateString();
+
+            if (isToday) {
+                return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+            }
+            return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+        } catch {
+            return dateStr;
+        }
+    };
+
+    // Process HTML for preview
+    const processedHtml = useMemo(() => {
+        if (!selectedEmail) return '';
+        let html = selectedEmail.htmlBody || selectedEmail.body || '<p class="text-slate-400 italic">Kein Inhalt</p>';
+
+        // CID-Bilder durch echte URLs ersetzen
+        if (selectedEmail.attachments) {
+            selectedEmail.attachments.forEach(att => {
+                const filename = att.originalFilename || att.filename || att.storedFilename;
+                const url = `/api/emails/${selectedEmail.id}/attachments/${att.id}`;
+
+                // 1. ContentId matching (mit und ohne < >)
+                if (att.contentId) {
+                    const cleanCid = att.contentId.replace(/[<>]/g, '');
+                    html = html.replace(new RegExp(`src=["']cid:${escapeRegex(cleanCid)}["']`, 'gi'), `src="${url}"`);
+                    html = html.replace(new RegExp(`src=["']cid:${escapeRegex(att.contentId)}["']`, 'gi'), `src="${url}"`);
+                }
+
+                // 2. Fallback: Filename im CID (z.B. cid:image003.jpg@01DC2C56.D1072BF0)
+                if (filename) {
+                    const baseName = filename.replace(/\.[^.]+$/, ''); // ohne Extension
+                    html = html.replace(new RegExp(`src=["']cid:${escapeRegex(baseName)}[^"']*["']`, 'gi'), `src="${url}"`);
+                }
+            });
+        }
+
+        // 3. Verbleibende CID-Referenzen durch Platzhalter ersetzen (verhindert broken images)
+        html = html.replace(/src=["']cid:[^"']+["']/gi, 'src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none"');
+
+        return html;
+    }, [selectedEmail]);
+
+    // Helper: Regex-Zeichen escapen
+    function escapeRegex(str: string): string {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    const visibleAttachments = useMemo(() => {
+        if (!selectedEmail) return [];
+        return (selectedEmail.attachments || []).filter(att => !att.contentId);
+    }, [selectedEmail]);
+
+    // Filter emails by search
+    const filteredEmails = useMemo(() => {
+        if (!searchQuery.trim()) return emails;
+        const q = searchQuery.toLowerCase();
+        return emails.filter(e =>
+            e.subject?.toLowerCase().includes(q) ||
+            e.fromAddress?.toLowerCase().includes(q) ||
+            getSenderName(e).toLowerCase().includes(q)
+        );
+    }, [emails, searchQuery]);
+
+    // Right Pane Content Logic
+    const renderRightPane = () => {
+        // Settings View
+        if (showSettings) {
+            return (
+                <div className="flex-1 overflow-auto p-6 bg-white">
+                    <div className="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-900">E-Mail-Einstellungen</h2>
+                            <p className="text-sm text-slate-500">Signaturen und Abwesenheitsnotizen verwalten</p>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowSettings(false)}
+                            className="text-slate-600"
+                        >
+                            Schließen
+                        </Button>
+                    </div>
+                    <EmailSettings />
+                </div>
+            );
+        }
+
+        if (isComposing) {
+            // Determine initial props for reply
+            let initialRecipient = '';
+            let initialSubject = '';
+            let initialBody = '';
+
+            if (replyToEmail) {
+                const senderName = getSenderName(replyToEmail);
+                const senderEmailPattern = /<(.+)>/;
+                const match = replyToEmail.fromAddress?.match(senderEmailPattern);
+                const senderEmail = match ? match[1] : (replyToEmail.fromAddress || '');
+
+                initialRecipient = senderEmail ? `"${senderName}" <${senderEmail}>` : senderName;
+                initialSubject = replyToEmail.subject?.startsWith('Re:') ? replyToEmail.subject : `Re: ${replyToEmail.subject || ''}`;
+
+                // Quote body
+                const date = new Date(replyToEmail.sentAt || '').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + new Date(replyToEmail.sentAt || '').toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                // Sanitize content to avoid breaking the editor/page
+                let cleanBody = replyToEmail.htmlBody || replyToEmail.body || '';
+                try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(cleanBody, 'text/html');
+                    doc.querySelectorAll('script, style, link').forEach(el => el.remove());
+                    cleanBody = doc.body.innerHTML;
+                } catch (e) {
+                    console.error('Failed to sanitize email body', e);
+                }
+
+                initialBody = `<p><br></p><div class="email-quote" style="border-left: 1px solid #ccc; padding-left: 1rem; color: #666;">
+                    <p>Am ${date} schrieb ${senderName}:</p>
+                    ${cleanBody}
+                </div>`;
+            }
+
+            return (
+                <EmailComposeForm
+                    onClose={handleComposeClose}
+                    onSuccess={handleComposeSuccess}
+                    initialRecipient={initialRecipient}
+                    initialSubject={initialSubject}
+                    initialBody={initialBody}
+                    projektId={replyToEmail?.projektId}
+                    angebotId={replyToEmail?.angebotId}
+                />
+            );
+        }
+
+        if (selectedEmail) {
+            return (
+                <>
+                    {/* Header */}
+                    <div className="p-6 border-b border-slate-200">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                                <h2 className="text-xl font-bold text-slate-900 mb-2">
+                                    {selectedEmail.subject || '(Kein Betreff)'}
+                                </h2>
+                                <div className="flex items-center gap-3 text-sm text-slate-600">
+                                    <div className={cn(
+                                        "w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm",
+                                        selectedEmail.direction === 'IN' ? "bg-blue-500" : "bg-emerald-500"
+                                    )}>
+                                        {getDisplayName(selectedEmail).charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-slate-900 flex items-center gap-2">
+                                            {getSenderName(selectedEmail)}
+                                            <span className="text-slate-500 font-normal text-xs text-muted-foreground hidden sm:inline-block">
+                                                &lt;{selectedEmail.fromAddress}&gt;
+                                            </span>
+                                        </p>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            An: <span className="text-slate-700">{getRecipientName(selectedEmail)}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    {selectedEmail.sentAt ? (
+                                        <>
+                                            {new Date(selectedEmail.sentAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} {new Date(selectedEmail.sentAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                                        </>
+                                    ) : ''}
+                                </p>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handleBlockSender}
+                                    className="text-slate-500 hover:text-red-600"
+                                    title="Absender sperren"
+                                >
+                                    <ShieldAlert className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleReply(selectedEmail)}
+                                    className="gap-1 text-slate-600"
+                                >
+                                    <Send className="w-4 h-4 rotate-180" /> Antworten
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setShowAssignModal(true)}
+                                    className="border-slate-300"
+                                >
+                                    <FolderPlus className="w-4 h-4 mr-1" />
+                                    Zuordnen
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => handleDelete(e, selectedEmail)}
+                                    className="text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Body */}
+                    <div className="flex-1 overflow-auto p-6">
+                        <EmailContentFrame
+                            html={processedHtml}
+                            className="bg-white"
+                        />
+
+                        {/* Attachments */}
+                        {visibleAttachments.length > 0 && (
+                            <div className="mt-6 pt-6 border-t border-slate-200">
+                                <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                                    <Paperclip className="w-4 h-4" />
+                                    Anhänge ({visibleAttachments.length})
+                                </h3>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {visibleAttachments.map((att, idx) => (
+                                        <EmailAttachmentCard
+                                            key={att.id || idx}
+                                            attachment={att}
+                                            email={selectedEmail}
+                                            onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </>
+            );
+        }
+
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+                <Mail className="w-16 h-16 mb-4" />
+                <p className="text-lg">Wählen Sie eine E-Mail aus</p>
+                <p className="text-sm">um die Vorschau zu sehen</p>
+            </div>
+        );
+    };
+
+    return (
+        <div className="flex bg-slate-100 overflow-hidden -m-8 h-[calc(100%+4rem)] w-[calc(100%+4rem)]">
+            {/* Left Sidebar - Folders */}
+            <div className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+                {/* Header */}
+                <div className="p-4 border-b border-slate-200 space-y-2">
+                    <Button
+                        onClick={handleComposeNew}
+                        className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm gap-2"
+                    >
+                        <PenSquare className="w-4 h-4" />
+                        Neue E-Mail
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={handleScanAssignments}
+                        className="w-full gap-2 text-slate-600 border-slate-300 hover:bg-slate-50"
+                        title="Erneute Prüfung der Zuordnung aller Mails im Posteingang"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        Auto-Zuordnung
+                    </Button>
+                </div>
+
+                {/* Folders */}
+                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {/* Main Folders */}
+                    <button
+                        onClick={() => setActiveFolder('inbox')}
+                        className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            activeFolder === 'inbox'
+                                ? "bg-rose-50 text-rose-700"
+                                : "text-slate-700 hover:bg-slate-100"
+                        )}
+                    >
+                        <Inbox className="w-4 h-4" />
+                        <span className="flex-1 text-left">Posteingang</span>
+                        {folderCounts.inbox > 0 && (
+                            <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">
+                                {folderCounts.inbox}
+                            </span>
+                        )}
+                    </button>
+
+                    <button
+                        onClick={() => setActiveFolder('sent')}
+                        className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            activeFolder === 'sent'
+                                ? "bg-rose-50 text-rose-700"
+                                : "text-slate-700 hover:bg-slate-100"
+                        )}
+                    >
+                        <Send className="w-4 h-4" />
+                        <span className="flex-1 text-left">Gesendet</span>
+                        {folderCounts.sent > 0 && (
+                            <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">
+                                {folderCounts.sent}
+                            </span>
+                        )}
+                    </button>
+
+                    <div className="h-px bg-slate-100 my-2" />
+
+                    {/* Filter Folders */}
+                    <div className="px-3 py-1 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ordner</span>
+                        <button onClick={() => setExpandedFilters(!expandedFilters)}>
+                            {expandedFilters ? <ChevronDown className="w-3 h-3 text-slate-400" /> : <ChevronRight className="w-3 h-3 text-slate-400" />}
+                        </button>
+                    </div>
+
+                    {expandedFilters && (
+                        <>
+                            <button
+                                onClick={() => setActiveFolder('unassigned')}
+                                className={cn(
+                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    activeFolder === 'unassigned'
+                                        ? "bg-rose-50 text-rose-700"
+                                        : "text-slate-700 hover:bg-slate-100"
+                                )}
+                            >
+                                <AlertCircle className="w-4 h-4" />
+                                <span className="flex-1 text-left">Nicht zugeordnet</span>
+                                {folderCounts.unassigned > 0 && (
+                                    <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">
+                                        {folderCounts.unassigned}
+                                    </span>
+                                )}
+                            </button>
+
+                            <button
+                                onClick={() => setActiveFolder('inquiries')}
+                                className={cn(
+                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    activeFolder === 'inquiries'
+                                        ? "bg-rose-50 text-rose-700"
+                                        : "text-slate-700 hover:bg-slate-100"
+                                )}
+                            >
+                                <HelpCircle className="w-4 h-4" />
+                                <span className="flex-1 text-left">Anfragen</span>
+                                {folderCounts.inquiries > 0 && (
+                                    <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
+                                        {folderCounts.inquiries}
+                                    </span>
+                                )}
+                            </button>
+
+                            <div className="h-px bg-slate-200 my-2" />
+
+                            <button
+                                onClick={() => setActiveFolder('projects')}
+                                className={cn(
+                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    activeFolder === 'projects'
+                                        ? "bg-rose-50 text-rose-700"
+                                        : "text-slate-700 hover:bg-slate-100"
+                                )}
+                            >
+                                <Briefcase className="w-4 h-4" />
+                                <span className="flex-1 text-left">Projekte</span>
+                                {folderCounts.projects > 0 && (
+                                    <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">
+                                        {folderCounts.projects}
+                                    </span>
+                                )}
+                            </button>
+
+                            <button
+                                onClick={() => setActiveFolder('offers')}
+                                className={cn(
+                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    activeFolder === 'offers'
+                                        ? "bg-rose-50 text-rose-700"
+                                        : "text-slate-700 hover:bg-slate-100"
+                                )}
+                            >
+                                <FileText className="w-4 h-4" />
+                                <span className="flex-1 text-left">Angebote</span>
+                                {folderCounts.offers > 0 && (
+                                    <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">
+                                        {folderCounts.offers}
+                                    </span>
+                                )}
+                            </button>
+
+                            <button
+                                onClick={() => setActiveFolder('suppliers')}
+                                className={cn(
+                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    activeFolder === 'suppliers'
+                                        ? "bg-rose-50 text-rose-700"
+                                        : "text-slate-700 hover:bg-slate-100"
+                                )}
+                            >
+                                <Briefcase className="w-4 h-4" />
+                                <span className="flex-1 text-left">Lieferanten</span>
+                                {folderCounts.suppliers > 0 && (
+                                    <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full">
+                                        {folderCounts.suppliers}
+                                    </span>
+                                )}
+                            </button>
+                        </>
+                    )}
+
+                    <div className="h-px bg-slate-100 my-2" />
+
+                    <button
+                        onClick={() => setActiveFolder('trash')}
+                        className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            activeFolder === 'trash'
+                                ? "bg-rose-50 text-rose-700"
+                                : "text-slate-700 hover:bg-slate-100"
+                        )}
+                    >
+                        <Trash2 className="w-4 h-4" />
+                        <span className="flex-1 text-left">Papierkorb</span>
+                        {folderCounts.trash > 0 && (
+                            <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">
+                                {folderCounts.trash}
+                            </span>
+                        )}
+                    </button>
+
+                    <button
+                        onClick={() => setActiveFolder('spam')}
+                        className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            activeFolder === 'spam'
+                                ? "bg-rose-50 text-rose-700"
+                                : "text-slate-700 hover:bg-slate-100"
+                        )}
+                    >
+                        <AlertCircle className="w-4 h-4" />
+                        <span className="flex-1 text-left">Spam</span>
+                        {folderCounts.spam > 0 && (
+                            <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">
+                                {folderCounts.spam}
+                            </span>
+                        )}
+                    </button>
+
+                    <button
+                        onClick={() => setActiveFolder('newsletter')}
+                        className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            activeFolder === 'newsletter'
+                                ? "bg-rose-50 text-rose-700"
+                                : "text-slate-700 hover:bg-slate-100"
+                        )}
+                    >
+                        <Mail className="w-4 h-4" />
+                        <span className="flex-1 text-left">Newsletter</span>
+                        {folderCounts.newsletter > 0 && (
+                            <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
+                                {folderCounts.newsletter}
+                            </span>
+                        )}
+                    </button>
+
+                    <div className="h-px bg-slate-100 my-2" />
+
+                    {/* Settings Button */}
+                    <button
+                        onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
+                        className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            showSettings
+                                ? "bg-rose-50 text-rose-700"
+                                : "text-slate-700 hover:bg-slate-100"
+                        )}
+                    >
+                        <Settings className="w-4 h-4" />
+                        <span className="flex-1 text-left">Einstellungen</span>
+                    </button>
+                </div>
+            </div>
+
+            {/* Middle List - Email List */}
+            <div className="w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+                {/* Search */}
+                <div className="p-4 border-b border-slate-200">
+                    <div className="relative">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Input
+                            placeholder="Suchen..."
+                            className="pl-9 bg-slate-50 border-slate-200"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                {/* List */}
+                <div className="flex-1 overflow-y-auto">
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-500 gap-2">
+                            <RefreshCw className="w-6 h-6 animate-spin" />
+                            <p className="text-sm">Lade E-Mails...</p>
+                        </div>
+                    ) : filteredEmails.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                            <Mail className="w-12 h-12 mb-2 opacity-20" />
+                            <p className="text-sm">Keine E-Mails gefunden</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-slate-100">
+                            {filteredEmails.map(email => (
+                                <div
+                                    key={email.id}
+                                    onClick={(e) => handleEmailClick(e, email)}
+                                    className={cn(
+                                        "p-4 cursor-pointer hover:bg-slate-50 transition-colors border-l-4",
+                                        selectedIds.has(email.id)
+                                            ? "bg-rose-50 border-l-rose-500"
+                                            : email.isRead
+                                                ? "bg-white border-l-transparent"
+                                                : "bg-white border-l-blue-500"
+                                    )}
+                                >
+                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                        <p className={cn(
+                                            "text-sm truncate",
+                                            !email.isRead ? "font-bold text-slate-900" : "font-medium text-slate-700"
+                                        )}>
+                                            {getDisplayName(email)}
+                                        </p>
+                                        <span className="text-xs text-slate-400 whitespace-nowrap">
+                                            {formatDate(email.sentAt)}
+                                        </span>
+                                    </div>
+                                    <p className={cn(
+                                        "text-sm mb-1 truncate",
+                                        !email.isRead ? "font-semibold text-slate-800" : "text-slate-600"
+                                    )}>
+                                        {email.subject || '(Kein Betreff)'}
+                                    </p>
+                                    <p className="text-xs text-slate-400 line-clamp-2">
+                                        {(email.body || '...').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 150)}
+                                    </p>
+
+                                    {/* Badges */}
+                                    <div className="flex gap-2 mt-2">
+                                        {email.attachments && email.attachments.length > 0 && (
+                                            <div className="flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                                <Paperclip className="w-3 h-3" />
+                                                {email.attachments.length}
+                                            </div>
+                                        )}
+                                        {email.zuordnungTyp && email.zuordnungTyp !== 'KEINE' && (
+                                            <div className="flex items-center gap-1 text-xs text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">
+                                                <FolderPlus className="w-3 h-3" />
+                                                {email.zuordnungTyp}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer Status */}
+                <div className="p-2 border-t border-slate-200 text-xs text-slate-400 text-center">
+                    {filteredEmails.length} Nachrichten {selectedIds.size > 0 && `(${selectedIds.size} ausgewählt)`}
+                </div>
+            </div>
+
+            {/* Right Pane - Preview/Compose */}
+            <div className="flex-1 bg-slate-50 flex flex-col min-w-0">
+                {renderRightPane()}
+            </div>
+
+            {/* Assignment Modal */}
+            <AssignModal
+                isOpen={showAssignModal}
+                onClose={() => setShowAssignModal(false)}
+                onAssign={handleAssign}
+                emailSubject={selectedEmail?.subject || ''}
+                emailId={selectedEmail?.id}
+            />
+
+            {/* Standard ImageViewer for Images */}
+            {previewAttachment?.type === 'image' && (
+                <ImageViewer
+                    src={previewAttachment.url}
+                    alt={previewAttachment.name}
+                    onClose={() => setPreviewAttachment(null)}
+                    images={visibleAttachments
+                        .filter(att => isImageAttachment(att.originalFilename || att.filename || att.storedFilename || ''))
+                        .map(att => ({
+                            url: `/api/emails/${selectedEmail?.id}/attachments/${att.id}`,
+                            name: att.originalFilename || att.filename || att.storedFilename || 'Bild'
+                        }))}
+                    startIndex={visibleAttachments
+                        .filter(att => isImageAttachment(att.originalFilename || att.filename || att.storedFilename || ''))
+                        .findIndex(att => `/api/emails/${selectedEmail?.id}/attachments/${att.id}` === previewAttachment.url)}
+                />
+            )}
+
+            {/* Existing Dialog for PDFs and others */}
+            <Dialog
+                open={!!previewAttachment && previewAttachment.type !== 'image'}
+                onOpenChange={(open) => !open && setPreviewAttachment(null)}
+            >
+                <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] flex flex-col">
+                    <DialogHeader className="shrink-0">
+                        <DialogTitle className="flex items-center justify-between">
+                            <span className="truncate">{previewAttachment?.name}</span>
+                            <div className="flex gap-2">
+                                <Button variant="outline" size="sm" onClick={() => {
+                                    if (previewAttachment?.url) {
+                                        const a = document.createElement('a');
+                                        a.href = previewAttachment.url;
+                                        a.download = previewAttachment.name;
+                                        a.click();
+                                    }
+                                }}>
+                                    <Download className="w-4 h-4 mr-1" /> Download
+                                </Button>
+                            </div>
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="flex-1 bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center p-2 border border-slate-200 min-h-0">
+                        {previewAttachment?.type === 'pdf' ? (
+                            <PdfCanvasViewer
+                                url={previewAttachment.url}
+                                className="w-full h-full min-h-[80vh] overflow-y-auto overflow-x-hidden"
+                            />
+                        ) : (
+                            <div className="text-center text-slate-500">
+                                <File className="w-16 h-16 mx-auto mb-4" />
+                                <p>Keine Vorschau verfügbar</p>
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}

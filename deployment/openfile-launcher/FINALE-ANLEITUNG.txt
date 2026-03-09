@@ -1,0 +1,108 @@
+==========================================================================
+  OpenFile Launcher - FINALE INSTALLATION FÜR CLIENTS
+==========================================================================
+
+✅ BEREIT ZUR VERTEILUNG!
+
+Sie haben jetzt eine vollständig eigenständige Setup-Lösung.
+
+
+WELCHE DATEIEN VERTEILEN?
+--------------------------
+
+Option 1 (EINFACHSTE):
+  → SETUP-STARTEN.bat  
+  → OpenFileLauncher-Setup-FINAL.ps1
+  
+  Beide Dateien zusammen verteilen
+  Client macht: Doppelklick auf SETUP-STARTEN.bat
+
+Option 2 (NUR POWERSHELL):
+  → OpenFileLauncher-Setup-FINAL.ps1
+  
+  Nur diese eine Datei verteilen
+  Client macht: Rechtsklick → "Mit PowerShell ausführen"
+
+
+EMPFOHLENE OPTION: Option 1
+---------------------------
+
+Kopieren Sie BEIDE Dateien:
+- SETUP-STARTEN.bat
+- OpenFileLauncher-Setup-FINAL.ps1
+
+Auf:
+✅ Netzwerkfreigabe (z.B. \\SERVER\Software\OpenFileLauncher\)
+✅ E-Mail als Anhang (beide Dateien)
+✅ USB-Stick
+
+
+INSTALLATION BEIM CLIENT:
+--------------------------
+
+1. Client erhält beide Dateien
+2. Doppelklick auf "SETUP-STARTEN.bat"
+3. "Ja" bei UAC-Abfrage
+4. Wartet 5-10 Sekunden
+5. "Installation erfolgreich!" erscheint
+6. FERTIG! ✅
+
+
+WAS WURDE INSTALLIERT:
+----------------------
+
+✅ C:\Program Files (x86)\OpenFileLauncher\launcher.ps1
+✅ Registry: openfile:// URL-Schema
+✅ Log-Verzeichnis: C:\ProgramData\OpenFileLauncher\
+
+
+TEST NACH INSTALLATION:
+-----------------------
+
+Browser öffnen und eingeben:
+
+  openfile://open?path=%5C%5CSERVER_PC%5CCADdrawings%5Ctest.txt
+
+Wenn Browser fragt "openfile:// öffnen?" → Ja klicken
+Wenn Datei öffnet ODER "Datei nicht gefunden" erscheint
+→ Launcher funktioniert! ✅
+
+
+PROBLEMLÖSUNG:
+--------------
+
+Falls Fehler bei Installation:
+1. Als Administrator ausführen
+2. Windows PowerShell Execution Policy prüfen
+3. Log anschauen: C:\ProgramData\OpenFileLauncher\launcher.log
+
+Falls Links nicht funktionieren:
+1. Sicherstellen: Client hat Zugriff auf \\SERVER_PC\CADdrawings
+2. Netzlaufwerk Z: manuell mappen: net use Z: \\SERVER_PC\CADdrawings
+3. Log prüfen: C:\ProgramData\OpenFileLauncher\launcher.log
+
+
+DEINSTALLATION:
+---------------
+
+Falls ein Client deinstallieren möchte:
+
+1. Orderinhalt löschen: C:\Program Files (x86)\OpenFileLauncher\
+2. Registry-Schlüssel löschen: HKEY_CLASSES_ROOT\openfile
+   (ODER das uninstall-Skript verwenden)
+
+
+WICHTIG FÜR SIE:
+----------------
+
+✅ Keine .exe-Kompilierung nötig
+✅ Keine IExpress-Probleme
+✅ Alles in PowerShell - einfach zu warten
+✅ Funktioniert auf allen Windows 10/11 Clients
+
+Bei Problemen: Launcher.log auf dem Client prüfen!
+
+
+==========================================================================
+  Bei Fragen: thomas@example-company.de
+==========================================================================

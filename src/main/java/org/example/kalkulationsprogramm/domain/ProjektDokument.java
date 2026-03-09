@@ -1,0 +1,48 @@
+package org.example.kalkulationsprogramm.domain;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.LocalDate;
+
+@Setter
+@Getter
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public class ProjektDokument implements Dokument {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private String originalDateiname;
+
+    @Column(nullable = false, unique = true)
+    private String gespeicherterDateiname;
+
+    private String dateityp;
+    private Long dateigroesse;
+    private LocalDate uploadDatum;
+    private LocalDate emailVersandDatum;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DokumentGruppe dokumentGruppe = DokumentGruppe.DIVERSE_DOKUMENTE;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "Projekt")
+    private Projekt projekt;
+
+    // Tracks which employee uploaded this document (nullable for legacy data)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "uploaded_by_id")
+    private Mitarbeiter uploadedBy;
+
+    // Optional: Links document to a supplier (e.g., for invoices, delivery notes)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lieferant_id")
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties({ "projekte", "emails", "bestellungen" })
+    private Lieferanten lieferant;
+
+}

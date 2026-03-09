@@ -1,0 +1,224 @@
+<mxfile host="app.diagrams.net" modified="2026-03-07" type="device">
+  <diagram name="Systemarchitektur" id="arch-overview">
+    <mxGraphModel dx="1422" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="Kalkulationsprogramm – Systemarchitektur" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=22;fontStyle=1;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="600" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Spring Boot + React – Modulare ERP-Lösung für Handwerksbetriebe" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=13;fontColor=#64748b;" vertex="1" parent="1">
+          <mxGeometry x="400" y="55" width="600" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== FRONTEND LAYER ==================== -->
+        <mxCell id="fe-layer" value="Frontend (React + Vite + Tailwind CSS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce7f3;strokeColor=#be185d;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="1280" height="170" as="geometry"/>
+        </mxCell>
+
+        <!-- Frontend Apps -->
+        <mxCell id="fe-main" value="&lt;b&gt;react-pc-frontend&lt;/b&gt;&lt;br&gt;Haupt-UI&lt;br&gt;&lt;font color=&quot;#64748b&quot; style=&quot;font-size:10px&quot;&gt;31 Seiten | ~100 Komponenten&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff1f2;strokeColor=#e11d48;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="140" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-text" value="&lt;b&gt;react-textbausteine&lt;/b&gt;&lt;br&gt;Textbaustein-Editor&lt;br&gt;&lt;font color=&quot;#64748b&quot; style=&quot;font-size:10px&quot;&gt;TipTap Rich-Text Editor&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff1f2;strokeColor=#e11d48;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="350" y="140" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-zeit" value="&lt;b&gt;react-zeiterfassung&lt;/b&gt;&lt;br&gt;Mobile PWA&lt;br&gt;&lt;font color=&quot;#64748b&quot; style=&quot;font-size:10px&quot;&gt;Offline-fähige Zeiterfassung&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff1f2;strokeColor=#e11d48;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="600" y="140" width="220" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Frontend Tech -->
+        <mxCell id="fe-tech1" value="React 18" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fda4af;strokeColor=#be185d;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="135" width="100" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-tech2" value="TypeScript" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fda4af;strokeColor=#be185d;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="970" y="135" width="100" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-tech3" value="Tailwind CSS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fda4af;strokeColor=#be185d;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="135" width="100" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-tech4" value="Vite" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fda4af;strokeColor=#be185d;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="135" width="100" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-tech5" value="Lucide Icons" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fda4af;strokeColor=#be185d;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="175" width="100" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-tech6" value="TipTap Editor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fda4af;strokeColor=#be185d;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="970" y="175" width="100" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-tech7" value="PDF.js" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fda4af;strokeColor=#be185d;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="175" width="100" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe-tech8" value="Vitest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fda4af;strokeColor=#be185d;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="175" width="100" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- REST API Arrow -->
+        <mxCell id="api-arrow" value="REST API (JSON)" style="shape=flexArrow;endArrow=classic;startArrow=classic;html=1;fillColor=#e11d48;strokeColor=#be185d;fontStyle=1;fontSize=12;fontColor=#be185d;width=12;endSize=5;startSize=5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="700" y="280" as="sourcePoint"/>
+            <mxPoint x="700" y="320" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== CONTROLLER LAYER ==================== -->
+        <mxCell id="ctrl-layer" value="Controller Layer (55 REST-Endpoints)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="1280" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ctrl-1" value="&lt;b&gt;Projektmanagement&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;ProjektController&lt;br&gt;AngebotController&lt;br&gt;ArtikelController&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="360" width="170" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ctrl-2" value="&lt;b&gt;Rechnungswesen&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;AusgangsDokController&lt;br&gt;RechnungsübersichtCtrl&lt;br&gt;OffenePostenController&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="265" y="360" width="180" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ctrl-3" value="&lt;b&gt;E-Mail-System&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;EmailController&lt;br&gt;UnifiedEmailController&lt;br&gt;EmailSignatureController&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="460" y="360" width="170" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ctrl-4" value="&lt;b&gt;Zeiterfassung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;ZeiterfassungApiCtrl&lt;br&gt;ZeiterfassungController&lt;br&gt;ZeitkontoKorrekturCtrl&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="645" y="360" width="170" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ctrl-5" value="&lt;b&gt;Einkauf&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;BestellungController&lt;br&gt;LieferantDokumentCtrl&lt;br&gt;VendorInvoiceController&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="830" y="360" width="170" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ctrl-6" value="&lt;b&gt;Stammdaten&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;KundeController&lt;br&gt;LieferantenController&lt;br&gt;MitarbeiterController&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1015" y="360" width="150" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ctrl-7" value="&lt;b&gt;Weitere&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;MietobjektController&lt;br&gt;FormularTemplateCtrl&lt;br&gt;DokumentGeneratorCtrl&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="360" width="150" height="75" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== SERVICE LAYER ==================== -->
+        <mxCell id="svc-layer" value="Service Layer (~78 Services – Geschäftslogik)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="470" width="1280" height="180" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="svc-1" value="&lt;b&gt;Projekt &amp; Angebot&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;ProjektManagementService&lt;br&gt;ProjektPersistenceService&lt;br&gt;AngebotService&lt;br&gt;ArtikelService / ArtikelImportService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="505" width="200" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc-2" value="&lt;b&gt;Rechnungswesen&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;AusgangsDokService&lt;br&gt;RechnungPdfService&lt;br&gt;GeschaeftsdokumentService&lt;br&gt;ZugferdErstellService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="295" y="505" width="200" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc-3" value="&lt;b&gt;E-Mail&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;EmailImportService (IMAP)&lt;br&gt;EmailAutoAssignmentService&lt;br&gt;EmailAttachmentProcessingService&lt;br&gt;SmtpHtmlMailSender&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="510" y="505" width="215" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc-4" value="&lt;b&gt;Zeiterfassung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;ZeiterfassungApiService&lt;br&gt;ZeitkontoService&lt;br&gt;MonatsSaldoService&lt;br&gt;ZeitbuchungAuditService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="740" y="505" width="200" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc-5" value="&lt;b&gt;KI &amp; Dokumente&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;GeminiDokumentAnalyseService&lt;br&gt;GeminiScannerService&lt;br&gt;ZugferdExtractorService&lt;br&gt;PdfAiExtractorService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="955" y="505" width="210" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc-6" value="&lt;b&gt;PDF-Generierung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;BestellungPdfService&lt;br&gt;StuecklistePdfService&lt;br&gt;ProjektAuswertungPdfService&lt;br&gt;MietabrechnungPdfService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="600" width="200" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc-7" value="&lt;b&gt;Stammdaten-Services&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;KundenDetailService | LieferantenDetailService | MitarbeiterService | FirmeninformationService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="295" y="600" width="430" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc-8" value="&lt;b&gt;Miete &amp; Abrechnung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;MietobjektService | MietabrechnungService | KostenVerteilungService | BwaService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="740" y="600" width="425" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== MAPPER LAYER ==================== -->
+        <mxCell id="mapper-layer" value="Mapper Layer (8 Mapper – DTO ↔ Entity)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontStyle=1;fontSize=13;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="60" y="665" width="1280" height="35" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== REPOSITORY LAYER ==================== -->
+        <mxCell id="repo-layer" value="Repository Layer (73 Repositories – Spring Data JPA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e7ff;strokeColor=#4338ca;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="715" width="1280" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="repo-info" value="&lt;font style=&quot;font-size:11px&quot;&gt;ProjektRepository | AngebotRepository | AusgangsGeschaeftsDokumentRepository | EmailRepository | ZeitbuchungRepository | KundeRepository | LieferantenRepository | MitarbeiterRepository | ArtikelRepository | GeschaeftsdokumentRepository | MonatsSaldoRepository | ... (73 total)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="740" width="1240" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== DOMAIN LAYER ==================== -->
+        <mxCell id="domain-layer" value="Domain Layer (~110 Entities &amp; Enums – JPA / Hibernate)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fae8ff;strokeColor=#a21caf;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="810" width="1280" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dom-1" value="&lt;b&gt;Kern-Entities&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Projekt | Angebot | Kunde&lt;br&gt;Lieferanten | Mitarbeiter&lt;br&gt;Artikel | ArtikelInProjekt&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="840" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="dom-2" value="&lt;b&gt;Dokumente&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;AusgangsGeschaeftsDokument&lt;br&gt;Geschaeftsdokument&lt;br&gt;LieferantDokument | Zahlung&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="265" y="840" width="190" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="dom-3" value="&lt;b&gt;E-Mail&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Email | EmailAttachment&lt;br&gt;EmailSignature&lt;br&gt;EmailBlacklistEntry&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="840" width="155" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="dom-4" value="&lt;b&gt;Zeiterfassung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Zeitbuchung | Zeitkonto&lt;br&gt;ZeitbuchungAudit&lt;br&gt;MonatsSaldo | Abwesenheit&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="640" y="840" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="dom-5" value="&lt;b&gt;Enums (25+)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;AusgangsDokTyp | Mahnstufe&lt;br&gt;AuditAktion | BuchungsTyp&lt;br&gt;ProjektArt | Verrechnungseinheit&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="825" y="840" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="dom-6" value="&lt;b&gt;Miete&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Mietobjekt | Raum&lt;br&gt;Mietpartei | Zaehlerstand&lt;br&gt;Kostenposition&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="840" width="150" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== DATABASE ==================== -->
+        <mxCell id="db-layer" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;fontSize=14;verticalAlign=top;spacingTop=5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="940" width="1280" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="db-icon" value="MySQL 8.0 – kalkulationsprogramm_db" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#dc2626;strokeColor=#991b1b;fontStyle=1;fontSize=13;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="520" y="935" width="360" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="db-flyway" value="Flyway Migrationen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fca5a5;strokeColor=#dc2626;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="920" y="950" width="140" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== EXTERNAL SYSTEMS ==================== -->
+        <mxCell id="ext-layer" value="Externe Systeme &amp; Integrationen" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=14;fontStyle=1;fontColor=#64748b;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1020" width="300" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ext-imap" value="📧 IMAP Server&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;E-Mail Import&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#475569;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1055" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ext-smtp" value="📤 SMTP Server&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;E-Mail Versand&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#475569;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="240" y="1055" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ext-gemini" value="🤖 Google Gemini AI&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Dokumentenanalyse / OCR&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#475569;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="1055" width="170" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ext-zugferd" value="📄 ZUGFeRD / Mustang&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;E-Invoicing (EU-Norm)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#475569;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="590" y="1055" width="170" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ext-fs" value="📁 Dateisystem&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;uploads/ (UUID-Dateien)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#475569;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="1055" width="150" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ext-gmaps" value="🗺️ Google Maps&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Adressen-Anzeige&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#475569;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="950" y="1055" width="150" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ext-gaeb" value="📋 GAEB Import&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Leistungsverzeichnis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#475569;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="1055" width="150" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== CROSS-CUTTING ==================== -->
+        <mxCell id="cc-layer" value="Querschnittliche Aspekte" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=14;fontStyle=1;fontColor=#64748b;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1125" width="300" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="cc-1" value="🔒 GoBD-Compliance&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Unveränderbarkeit, Audit-Trail&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1155" width="180" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="cc-2" value="📝 Audit-Logging&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;ZeitbuchungAudit, Storno-Trail&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="1155" width="180" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="cc-3" value="⚡ Async Processing&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;AsyncConfig, Spring Events&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="1155" width="180" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="cc-4" value="🔄 DTO-Pattern&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;~130 DTOs, 8 Mapper&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="1155" width="160" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="cc-5" value="🗂️ Exception Handling&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;RestExceptionHandler&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="1155" width="170" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="cc-6" value="📊 Performance-Cache&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;MonatsSaldo Warmup&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="1155" width="170" height="45" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,54 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Runtime Data ###
+/uploads
+/attachments
+/signatures
+
+### Logs & Crash Dumps ###
+hs_err_pid*.log
+*.log
+!react-*/changelog.log
+
+### Build Artifacts ###
+build_log.txt
+build_error_log.txt
+**/node_modules/
+
+### AI Indexer Cache ###
+.rag-cache.json
+
+### Misc ###
+package-lock.json

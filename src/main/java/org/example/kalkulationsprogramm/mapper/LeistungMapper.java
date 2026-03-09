@@ -1,0 +1,54 @@
+package org.example.kalkulationsprogramm.mapper;
+
+import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.domain.Leistung;
+import org.example.kalkulationsprogramm.domain.Produktkategorie;
+import org.example.kalkulationsprogramm.dto.Leistung.LeistungCreateDto;
+import org.example.kalkulationsprogramm.dto.Leistung.LeistungDto;
+import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
+import org.springframework.stereotype.Component;
+
+@Component
+@RequiredArgsConstructor
+public class LeistungMapper {
+
+    private final ProduktkategorieRepository produktkategorieRepository;
+
+    public LeistungDto toDto(Leistung leistung) {
+        if (leistung == null)
+            return null;
+        LeistungDto dto = new LeistungDto();
+        dto.setId(leistung.getId());
+        dto.setName(leistung.getBezeichnung());
+        dto.setDescription(leistung.getBeschreibung());
+        dto.setPrice(leistung.getPreis());
+        dto.setUnit(leistung.getEinheit());
+        if (leistung.getKategorie() != null) {
+            dto.setFolderId(leistung.getKategorie().getId());
+        }
+        return dto;
+    }
+
+    public Leistung toEntity(LeistungCreateDto dto) {
+        if (dto == null)
+            return null;
+        Leistung leistung = new Leistung();
+        updateEntity(leistung, dto);
+        return leistung;
+    }
+
+    public void updateEntity(Leistung leistung, LeistungCreateDto dto) {
+        leistung.setBezeichnung(dto.getName());
+        leistung.setBeschreibung(dto.getDescription());
+        leistung.setPreis(dto.getPrice());
+        leistung.setEinheit(dto.getUnit());
+
+        if (dto.getFolderId() != null) {
+            Produktkategorie kat = produktkategorieRepository.findById(dto.getFolderId())
+                    .orElse(null);
+            leistung.setKategorie(kat);
+        } else {
+            leistung.setKategorie(null);
+        }
+    }
+}
