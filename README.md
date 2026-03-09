@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/c__Users_User_Documents_GitHub_Kalkulationsprogramm_src_main_resources_static_firmenlogo.png" alt="Logo" width="120" />
-</p>
-
 <h1 align="center">Handwerkerprogramm</h1>
 
 <p align="center">
@@ -151,8 +147,8 @@ graph TB
 ### 1. Repository klonen
 
 ```bash
-git clone https://github.com/Winfo2024Kuhn/Handwerkerprogramm.git
-cd Handwerkerprogramm
+git clone https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe.git
+cd ERP-System-fuer-Handwerksbetriebe
 ```
 
 ### 2. Datenbank konfigurieren
@@ -208,8 +204,6 @@ Handwerkerprogramm/
 ├── react-zeiterfassung/     # 📱 Mobile PWA (18 Seiten)
 │   └── src/pages/           # Stempeluhr, Urlaub, Salden
 │
-├── react-textbausteine/     # 📝 Textbaustein-Editor
-│
 ├── docs/                    # 📚 Dokumentation
 │   ├── GOBD_COMPLIANCE.md   # GoBD-Konformität
 │   ├── RECHNUNGSWESEN.md    # Rechnungsprozesse
@@ -247,7 +241,7 @@ Architektur-Diagramme (draw.io) liegen in [`docs/Dokumentation/`](docs/Dokumenta
 |--------|------|
 | REST-Controller | 56 |
 | Business-Services | 84 |
-| Domain-Entities | 90 |
+| Domain-Entities | 109 |
 | Desktop-Seiten (PC) | 31 |
 | Mobile-Seiten (PWA) | 18 |
 | Dokumentationen | 7 |
@@ -298,7 +292,7 @@ Beiträge sind willkommen! Dieses Projekt lebt davon, dass Handwerksbetriebe und
 
 ## 📜 Lizenz
 
-Dieses Projekt ist Open Source. Details folgen.
+Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 
 ---
 
