@@ -91,7 +91,7 @@ graph TB
     subgraph Backend["Spring Boot Backend"]
         API["REST API<br/>(56 Controller)"]
         Services["Business Logic<br/>(84 Services)"]
-        Domain["Domain Model<br/>(109 Entities)"]
+        Domain["Domain Model<br/>(90 Entities)"]
     end
 
     subgraph Extern["Externe Dienste"]
@@ -193,7 +193,7 @@ Handwerkerprogramm/
 │   ├── controller/          # 56 REST-Controller
 │   ├── service/             # 84 Business-Services
 │   ├── repository/          # Spring Data Repositories
-│   ├── domain/              # 109 JPA-Entities
+│   ├── domain/              # 90 JPA-Entities
 │   ├── dto/                 # API-Datenmodelle
 │   ├── config/              # Spring-Konfiguration
 │   └── mapper/              # DTO ↔ Entity Mapper
@@ -241,7 +241,7 @@ Architektur-Diagramme (draw.io) liegen in [`docs/Dokumentation/`](docs/Dokumenta
 |--------|------|
 | REST-Controller | 56 |
 | Business-Services | 84 |
-| Domain-Entities | 109 |
+| Domain-Entities | 90 |
 | Desktop-Seiten (PC) | 31 |
 | Mobile-Seiten (PWA) | 18 |
 | Dokumentationen | 7 |
