@@ -133,78 +133,15 @@ Die mobile PWA läuft auf **jedem Smartphone im Browser** – kein App Store nö
 
 ---
 
-## ✨ Alle Features im Überblick
+## 📋 Weitere Module
 
-### 📊 Projektkalkulation & Controlling
-- Hierarchische Produktkategorien (z. B. „Dach > Flachdach") mit Verrechnungseinheiten (m², kg, Stück, lfd. Meter)
-- **Erfolgsanalyse-Dashboard** mit Echtzeit-KPIs: Gewinn, Material-/Arbeitskosten, Top-10-Kunden
-- Monatlicher Umsatzverlauf mit Vorjahresvergleich
-- Regionale Projekt-Heatmap nach PLZ
-- Automatische Zeitkalkulation per Linearer Regression auf Produktkategorien
-
-### 📄 Rechnungswesen (GoBD-konform)
-- Komplette Dokumentenkette: **Angebot → Auftragsbestätigung → Teilrechnung → Abschlagsrechnung → Schlussrechnung**
-- GoBD-konforme Unveränderbarkeit, Löschverbot, Storno-Verfahren und lückenlose Nummerierung
-- **Abrechnungsverlauf** mit Restbetrags-Berechnung – verhindert Überabrechnung
-- Automatische MwSt-Berechnung, Rechnungsadress-Override, PDF-Generierung
-- **ZUGFeRD/XRechnung**-Integration (E-Rechnungen erstellen & lesen)
-- Offene-Posten-Verwaltung mit Mahnwesen (3 Stufen)
-
-### 📧 E-Mail-Zentrale & Auto-Import
-- IMAP-Import alle 60 Sekunden mit Spam-Filter und Thread-Erkennung
-- **Automatische Zuordnung** zu Kunden, Lieferanten und Projekten (per Domain-Matching)
-- **Eingangsrechnungen automatisch aus E-Mails:** PDF-Anhänge werden erkannt → per ZUGFeRD/XML oder KI-OCR analysiert → als Lieferantendokument angelegt → mit offenen Bestellungen verknüpft
-- Signatur- und Abwesenheitsnotiz-Verwaltung
-- **KI-gestütztes E-Mail-Polishing:** Korrigiert Grammatik & Rechtschreibung, behält aber den persönlichen Ton bei
-
-### 📱 Mobile App (PWA) – 18 Seiten
-- **Zeiterfassung:** 3-Schritt-Wizard (Projekt → Kategorie → Arbeitsgang), Start/Stop, automatische Umbuchung bei Projekt-Wechsel
-- **Offline-fähig** mit IndexedDB-Cache und automatischem Sync bei Reconnect
-- **Bautagebuch mit Fotos:** Fotos direkt von der Kamera ins Projekt laden, mit Zeitstempel und Mitarbeitername
-- **Lieferschein-Scanner:** Kamera-Scan mit Perspektivkorrektur (Eckpunkte justierbar), KI-Analyse von Nummer, Datum und Bestellreferenz
-- **Reklamationen:** Problem beschreiben, Beweisfotos hochladen, mit Lieferschein verknüpfen
-- **Kunden- & Lieferantenadressen:** Click-to-Call, SMS, E-Mail, **Google-Maps-Navigation** zur Baustelle
-- **Angebote:** Angebots-Details, Fotos und Bautagebuch einsehen
-- **Teamkalender:** Farbcodierte Abwesenheiten (Urlaub, Krank, Fortbildung) in Wochen-/Monatsansicht
-- **Urlaub & Abwesenheiten:** Anträge stellen mit Feiertag-Check und Genehmigungsworkflow
-- **Saldenübersicht:** Soll/Ist-Stunden, Überstunden, Resturlaub, Krankheitstage
-- Feiertage (Bayern) automatisch berücksichtigt
-- GoBD-konformer **Audit-Trail** für jede Buchungsänderung
-- **Automatische Nachkalkulation:** Gebuchte Zeiten fließen direkt in die Gewinn-Berechnung des Projekts
-
-### 🤖 Intelligente Dokumentenverarbeitung
-- Automatische Erkennung: ZUGFeRD → XML → **Gemini AI** (OCR-Fallback)
-- Lieferantenrechnungen mit Confidence-Score und Verifizierungs-Flag
-- **Kopie/Entwurf-Erkennung:** KI erkennt Wasserzeichen wie „Abschrift" oder „Entwurf" automatisch
-- Prozentuale oder absolute Projektzuordnung für Eingangsrechnungen
-- Gutschrift-Rechnungs-Verknüpfung
-
-### 🛒 Bestellwesen & Eingangsrechnungen
-- Offene Artikel pro Projekt sammeln und gruppiert nach Lieferant bestellen
-- Kilogramm-Berechnung für Werkstoffe, Schnittformen und Winkel für Profile
-- Lieferantenpreise hinterlegen, Bestellungs-PDF generieren
-- **4-Stufen-Kette:** Anfrage → Bestellung → Rechnung → Zugeordnet
-- **Rechnungssplitting:** Eingangsrechnungen prozentual oder absolut auf Projekte & Kostenstellen verteilen
-
-### 🏠 Mietverwaltung
-- Jahres-Nebenkostenabrechnung für Mietobjekte
-- Kostenstellen-Verteilung nach Verbrauch oder Fläche
-- Zählerstanderfassung (Wasser, Strom, Gas) mit Vorjahresvergleich
-- PDF-Generierung für Mieter
-
-### 📝 Dokumentengenerator (WYSIWYG)
-- Template-basierte Dokumente mit Platzhaltern (`{{KUNDENNAME}}`, `{{LEISTUNGEN_TABELLE}}`, ...)
-- Rich-Text-Editor mit Formatierung, Bildern und Tabellen
-- Professionelle PDF-Ausgabe mit Firmenbriefkopf
-
-### 🧠 KI-Assistent & Automatisierung
-- **Kontextbewusster Chat-Assistent** mit RAG auf dem gesamten Quellcode
-- **Google Search Grounding** für DIN-Normen, Materialinfos und Vorschriften
-- **PDF-Analyse** mit Gemini Vision (OCR-Fallback über Ollama)
-- **E-Mail-Polishing** – KI verbessert Formulierung, behält den Ton bei
-- **Automatische Zeitkalkulation** per Linearer Regression auf Produktkategorien
-- **Echtzeit-Nachkalkulation** aus Mitarbeiter-Zeiterfassung + Materialkosten
-- **Auto-Import aus E-Mail** – Eingangsrechnungen werden aus dem Postfach geholt, analysiert und Bestellungen zugeordnet
+| Modul | Highlights |
+|-------|-----------|
+| **📄 Rechnungswesen** | Vollständige Dokumentenkette (Angebot → Schlussrechnung), GoBD-konforme Unveränderbarkeit & Storno-Verfahren, ZUGFeRD/XRechnung, Mahnwesen (3 Stufen) |
+| **🛒 Bestellwesen** | 4-Stufen-Kette (Anfrage → Rechnung), Kilogramm-Berechnung für Profile, Rechnungssplitting auf Projekte & Kostenstellen |
+| **🏠 Mietverwaltung** | Jahres-Nebenkostenabrechnung, Zählerstanderfassung (Wasser, Strom, Gas), PDF für Mieter |
+| **📝 Dokumentengenerator** | WYSIWYG-Editor mit Platzhaltern (`{{KUNDENNAME}}` etc.), Firmenbriefkopf, PDF-Ausgabe |
+| **📊 Controlling-Dashboard** | Echtzeit-KPIs, monatlicher Umsatzverlauf mit Vorjahresvergleich, Projekt-Heatmap nach PLZ |
 
 ---
 
@@ -615,28 +552,6 @@ Architektur-Diagramme (draw.io) liegen in [`docs/Dokumentation/`](docs/Dokumenta
 | Mobile-Seiten (PWA) | 18 |
 | Dokumentationen | 7 |
 | Architektur-Diagramme | 7 |
-
----
-
-## 🔧 Build & Deployment
-
-```bash
-# Tests ausführen
-./mvnw test
-
-# JAR bauen
-./mvnw clean package
-
-# Windows-Installer erzeugen
-./mvnw package
-./mvnw jpackage:jpackage
-# → Installer liegt in target/installer/
-
-# Frontend für Produktion bauen
-cd react-pc-frontend && npm run build
-```
-
-Detaillierte Deployment-Anleitung: [`deployment/README.md`](deployment/README.md)
 
 ---
 
