@@ -578,6 +578,9 @@ Beiträge sind willkommen! Dieses Projekt lebt davon, dass Handwerksbetriebe und
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 
+Eine vollständige Auflistung aller verwendeten Drittanbieter-Bibliotheken und deren Lizenzen
+findet sich in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
+
 ---
 
 <p align="center">
