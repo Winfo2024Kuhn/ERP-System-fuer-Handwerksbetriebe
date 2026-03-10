@@ -18,7 +18,7 @@ param(
 $DB_HOST = "192.168.x.x"
 $DB_PORT = "3307"
 $DB_NAME = "kalkulationsprogramm_db"
-$DB_USER = "Marvin"
+$DB_USER = "YOUR_DB_USERNAME"
 $DB_PASSWORD = "YOUR_DB_PASSWORD"
 $MYSQLDUMP_PATH = "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe"
 
