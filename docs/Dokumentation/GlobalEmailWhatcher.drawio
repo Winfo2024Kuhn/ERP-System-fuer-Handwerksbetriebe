@@ -1,0 +1,66 @@
+<mxfile host="65bd71144e">
+    <diagram name="Seite-1" id="QdPuYZDfRuMyQ2jA3S3L">
+        <mxGraphModel dx="1263" dy="779" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-2" value="GlobalEmailWhatcher" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=none;arcSize=23;movableLabel=1;fontSize=14;container=1;" parent="1" vertex="1">
+                    <mxGeometry x="-25" y="810" width="950" height="510" as="geometry">
+                        <mxRectangle x="124" y="380" width="70" height="20" as="alternateBounds"/>
+                        <mxPoint x="-348" y="-204" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-16" value="Email prüfen" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=none;arcSize=30;fontSize=14;" parent="Or2ExNwX96hh4UPD-Gom-2" vertex="1">
+                    <mxGeometry x="397.01492537313425" y="71.16279069767442" width="155.97014925373134" height="47.441860465116285" as="geometry"/>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-21" value="" style="rhombus;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontSize=14;align=left;direction=south;" parent="Or2ExNwX96hh4UPD-Gom-2" vertex="1">
+                    <mxGeometry x="453.731343283582" y="166.046511627907" width="42.537313432835816" height="35.58139534883721" as="geometry"/>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-22" value="" style="html=1;align=left;verticalAlign=top;endArrow=open;endSize=12;strokeColor=#000000;fontSize=14;rounded=0;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="Or2ExNwX96hh4UPD-Gom-2" source="Or2ExNwX96hh4UPD-Gom-21" edge="1">
+                    <mxGeometry x="-1" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="340.25597014925376" y="243.13953488372093"/>
+                            <mxPoint x="340.25597014925376" y="296.51162790697674"/>
+                        </Array>
+                        <mxPoint x="330.3305970149254" y="237.2093023255814" as="sourcePoint"/>
+                        <mxPoint x="340.25597014925376" y="296.51162790697674" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-23" value="[Guard 1]" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];labelBackgroundColor=#ffffff;fontSize=14;" parent="Or2ExNwX96hh4UPD-Gom-22" connectable="0" vertex="1">
+                    <mxGeometry x="-0.419" relative="1" as="geometry">
+                        <mxPoint x="0.5" y="-15" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-24" value="" style="html=1;align=left;verticalAlign=top;endArrow=open;endSize=12;strokeColor=#000000;fontSize=14;rounded=0;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" parent="Or2ExNwX96hh4UPD-Gom-2" source="Or2ExNwX96hh4UPD-Gom-21" edge="1">
+                    <mxGeometry x="-1" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="552.9425373134328" y="243.13953488372093"/>
+                        </Array>
+                        <mxPoint x="623.8380597014926" y="249.06976744186048" as="sourcePoint"/>
+                        <mxPoint x="552.9425373134328" y="296.51162790697674" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-25" value="[Guard 2]" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];labelBackgroundColor=#ffffff;fontSize=14;" parent="Or2ExNwX96hh4UPD-Gom-24" connectable="0" vertex="1">
+                    <mxGeometry x="-0.419" relative="1" as="geometry">
+                        <mxPoint x="-0.5" y="-15" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-26" value="" style="html=1;align=left;verticalAlign=top;endArrow=open;endSize=12;strokeColor=#000000;fontSize=14;rounded=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="Or2ExNwX96hh4UPD-Gom-2" source="Or2ExNwX96hh4UPD-Gom-16" target="Or2ExNwX96hh4UPD-Gom-21" edge="1">
+                    <mxGeometry x="-1" relative="1" as="geometry">
+                        <mxPoint x="475" y="142.32558139534885" as="sourcePoint"/>
+                        <mxPoint x="453.68880597014925" y="213.4883720930233" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-27" value="" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;" parent="Or2ExNwX96hh4UPD-Gom-2" vertex="1">
+                    <mxGeometry x="625" y="101.63" width="165" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;endArrow=open;endFill=0;" parent="1" source="Or2ExNwX96hh4UPD-Gom-8" target="Or2ExNwX96hh4UPD-Gom-16" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="Or2ExNwX96hh4UPD-Gom-8" value="Email" style="html=1;fontSize=14;strokeColor=#000000;fillColor=default;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="405" y="800" width="90" height="30" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

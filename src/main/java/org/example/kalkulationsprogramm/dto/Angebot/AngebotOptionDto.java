@@ -1,0 +1,14 @@
+package org.example.kalkulationsprogramm.dto.Angebot;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class AngebotOptionDto {
+    private Long id;
+    private String bauvorhaben;
+}
+

@@ -1,0 +1,210 @@
+@import "tailwindcss";
+
+/* Mobile Zeiterfassung App - Corporate Identity */
+:root {
+  --rose-primary: #dc2626;
+  --rose-light: #fef2f2;
+  --slate-dark: #0f172a;
+  
+  /* Safe area variables - fallback to 0 */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* Basis-Styling */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #0f172a;
+  background: #f8fafc; /* slate-50 - passend zum App-Hintergrund */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Höhe für verschiedene Browser */
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100%;
+  min-height: -webkit-fill-available; /* iOS Safari/PWA */
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#root {
+  height: 100%;
+  height: 100dvh; /* Dynamic viewport height - berücksichtigt iOS chrome */
+  display: flex;
+  flex-direction: column;
+}
+
+/* iOS PWA Standalone Mode - Safe Areas werden NICHT mehr als utility classes verwendet!
+   Stattdessen direkt auf den relevanten Elementen anwenden */
+
+/* OLD: Diese Klassen NICHT MEHR VERWENDEN - sie verursachen doppeltes Padding */
+/* .safe-area-top und .safe-area-bottom wurden durch inline-styles ersetzt */
+
+/* Safe area - deaktiviert, wird in der mobilen App nicht benötigt */
+.safe-area-top {
+  padding-top: 0;
+}
+
+.safe-area-bottom {
+  padding-bottom: 0;
+}
+
+/* Scrollbar verstecken für mobile */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ==================== Global Button Click Feedback ==================== */
+
+/* Authentisches Klick-Feedback für alle Buttons */
+button {
+  transition: transform 0.1s ease-out, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+/* Für wichtige Action-Buttons noch stärkerer Effekt */
+button.btn-primary:active:not(:disabled),
+button[class*="bg-rose-600"]:active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* ==================== Premium Sync Spinner Animations ==================== */
+
+/* Pulsing Spin - für Sync-Buttons */
+.animate-sync-spin {
+  animation: sync-spin 1s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+}
+
+@keyframes sync-spin {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+
+  50% {
+    transform: rotate(180deg) scale(1.1);
+  }
+
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+/* Elastic Spin - mehr Bounce */
+.animate-elastic-spin {
+  animation: elastic-spin 0.8s ease-in-out infinite;
+}
+
+@keyframes elastic-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  60% {
+    transform: rotate(380deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Gradient Border Spinner - Premium Loading */
+.spinner-gradient {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent, #dc2626);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 0);
+  animation: gradient-spin 0.9s linear infinite;
+}
+
+@keyframes gradient-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Glow Pulse Spin - für wichtige Aktionen */
+.animate-glow-spin {
+  animation: glow-spin 1.2s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(220, 38, 38, 0.5));
+}
+
+@keyframes glow-spin {
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+    filter: drop-shadow(0 0 4px rgba(220, 38, 38, 0.3));
+  }
+
+  50% {
+    transform: rotate(180deg);
+    filter: drop-shadow(0 0 12px rgba(220, 38, 38, 0.7));
+  }
+}
+
+/* Triple Ring Spinner */
+.spinner-rings {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.spinner-rings::before,
+.spinner-rings::after,
+.spinner-rings span {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.spinner-rings::before {
+  border-top-color: #dc2626;
+  animation: ring-spin 1s linear infinite;
+}
+
+.spinner-rings::after {
+  inset: 4px;
+  border-right-color: #f87171;
+  animation: ring-spin 1.5s linear infinite reverse;
+}
+
+.spinner-rings span {
+  inset: 8px;
+  border-bottom-color: #fecaca;
+  animation: ring-spin 2s linear infinite;
+}
+
+@keyframes ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

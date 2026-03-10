@@ -1,0 +1,178 @@
+<mxfile host="65bd71144e">
+    <diagram name="Datenmodell-Kernentitäten" id="datenmodell">
+        <mxGraphModel dx="1790" dy="1298" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="Datenmodell – Kern-Entitäten &amp; Beziehungen" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=20;fontStyle=1;fontColor=#1e293b;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="20" width="600" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="~110 Entities &amp; Enums | JPA / Hibernate | MySQL 8.0" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;fontColor=#64748b;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="55" width="600" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="projekt" value="&lt;b style=&quot;font-size:14px&quot;&gt;Projekt&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, bezeichnung, ort&lt;br&gt;auftragsNummer&lt;br&gt;beginn, fertigstellung&lt;br&gt;projektArt (Enum)&lt;br&gt;abgeschlossen&lt;br&gt;kunde_id (FK → Kunde)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dc2626;strokeColor=#991b1b;fontSize=12;fontColor=#ffffff;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="470" y="290" width="200" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="kunde" value="&lt;b style=&quot;font-size:13px&quot;&gt;Kunde&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, firma, vorname, nachname&lt;br&gt;strasse, plz, ort&lt;br&gt;telefon, email&lt;br&gt;anrede (Enum)&lt;br&gt;kundennummer&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fce7f3;strokeColor=#be185d;fontSize=12;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="100" width="190" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-kunde-projekt" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#be185d;fontSize=11;fontColor=#be185d;fontStyle=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=0;" parent="1" source="kunde" target="projekt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="angebot" value="&lt;b style=&quot;font-size:13px&quot;&gt;Angebot&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, bauvorhaben, betrag&lt;br&gt;anlegedatum, bildUrl&lt;br&gt;abgeschlossen&lt;br&gt;kundenEmails []&lt;br&gt;kunde_id (FK)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fce7f3;strokeColor=#be185d;fontSize=12;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="310" width="180" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-kunde-angebot" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#be185d;fontSize=11;fontColor=#be185d;fontStyle=1;" parent="1" source="kunde" target="angebot" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="lieferant" value="&lt;b style=&quot;font-size:13px&quot;&gt;Lieferanten&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, name, strasse, plz, ort&lt;br&gt;telefon, email, website&lt;br&gt;lieferantenart (Enum)&lt;br&gt;kundennummer&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;fontSize=12;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="100" width="190" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="mitarbeiter" value="&lt;b style=&quot;font-size:13px&quot;&gt;Mitarbeiter&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, vorname, nachname&lt;br&gt;abteilung_id (FK)&lt;br&gt;qualifikation (Enum)&lt;br&gt;eintrittsdatum&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;fontSize=12;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="620" y="100" width="180" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-ma-abt" value="" style="html=1;endArrow=ERone;startArrow=ERmany;endFill=0;startFill=0;strokeColor=#15803d;dashed=1;" parent="1" source="mitarbeiter" target="abteilung" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="abteilung" value="&lt;b&gt;Abteilung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, name, nummer&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;fontSize=12;shadow=1;" parent="1" vertex="1">
+                    <mxGeometry x="850" y="130" width="100" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="artikel" value="&lt;b style=&quot;font-size:13px&quot;&gt;Artikel&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, bezeichnung&lt;br&gt;verrechnungseinheit (Enum)&lt;br&gt;preis, gewicht&lt;br&gt;kategorie_id (FK)&lt;br&gt;lieferant_id (FK)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=12;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="1010" y="320" width="180" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-lief-art" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#1d4ed8;fontSize=11;fontColor=#1d4ed8;fontStyle=1;" parent="1" source="lieferant" target="artikel" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="artikelprojekt" value="&lt;b&gt;ArtikelInProjekt&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;projekt_id (FK)&lt;br&gt;artikel_id (FK)&lt;br&gt;menge, endpreis&lt;br&gt;bestellt (boolean)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="340" width="110" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-proj-aip" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#a16207;" parent="1" source="projekt" target="artikelprojekt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-art-aip" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#a16207;" parent="1" source="artikel" target="artikelprojekt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ausgangsdok" value="&lt;b style=&quot;font-size:13px&quot;&gt;AusgangsGeschaeftsDokument&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, dokumentNummer (YYYY/MM/NNNNN)&lt;br&gt;typ (Enum: ANGEBOT, AB, RECHNUNG, ...)&lt;br&gt;betragNetto, betragBrutto, mwstSatz&lt;br&gt;gebucht, storniert, storniertAm&lt;br&gt;positionen (JSON)&lt;br&gt;vorgaenger_id (FK → self)&lt;br&gt;projekt_id (FK), kunde_id (FK)&lt;br&gt;abschlagsNummer (auto-increment)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dc2626;strokeColor=#991b1b;fontSize=12;fontColor=#ffffff;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="520" width="290" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-proj-ausgdok" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#dc2626;fontSize=11;fontColor=#dc2626;fontStyle=1;" parent="1" source="projekt" target="ausgangsdok" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="counter" value="&lt;b&gt;AusgangsDokumentCounter&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;jahr, monat, zaehler&lt;br&gt;Pessimistic Lock&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;fontSize=11;shadow=1;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="570" width="170" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-counter" value="" style="html=1;endArrow=none;startArrow=none;strokeColor=#dc2626;dashed=1;" parent="1" source="counter" target="ausgangsdok" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="geschdok" value="&lt;b style=&quot;font-size:13px&quot;&gt;Geschaeftsdokument&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, dokumentNummer, datum&lt;br&gt;betragNetto, betragBrutto&lt;br&gt;genehmigt, abgeschlossen&lt;br&gt;nettotage, skontoTage, skontoProzent&lt;br&gt;lieferant_id (FK)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;fontSize=12;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="1250" y="310" width="240" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-lief-gesch" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#1d4ed8;fontSize=11;fontColor=#1d4ed8;fontStyle=1;" parent="1" source="lieferant" target="geschdok" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="zahlung" value="&lt;b&gt;Zahlung&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, betrag, datum&lt;br&gt;zahlungsart&lt;br&gt;verwendungszweck&lt;br&gt;geschaeftsdokument_id&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="1270" y="540" width="160" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-gesch-zahl" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#15803d;fontSize=11;fontColor=#15803d;fontStyle=1;" parent="1" source="geschdok" target="zahlung" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="liefdok" value="&lt;b&gt;LieferantDokument&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, dateiname, typ (Enum)&lt;br&gt;emailAttachment_id (FK)&lt;br&gt;lieferant_id (FK)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="1360" y="190" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-lief-liefdok" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#1d4ed8;" parent="1" source="lieferant" target="liefdok" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="email" value="&lt;b style=&quot;font-size:13px&quot;&gt;Email&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, von, an, cc, betreff&lt;br&gt;bodyHtml, datum&lt;br&gt;direction (IN/OUT)&lt;br&gt;messageId, threadId&lt;br&gt;processingStatus&lt;br&gt;zuordnungTyp (Enum)&lt;br&gt;kunde_id, lieferant_id,&lt;br&gt;projekt_id, angebot_id (FK)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="770" width="210" height="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="emailattach" value="&lt;b&gt;EmailAttachment&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, dateiname, mimeType&lt;br&gt;gespeicherterDateiname (UUID)&lt;br&gt;email_id (FK)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="830" width="210" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-email-attach" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#7c3aed;fontSize=11;fontColor=#7c3aed;fontStyle=1;" parent="1" source="email" target="emailattach" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="zeitbuchung" value="&lt;b style=&quot;font-size:13px&quot;&gt;Zeitbuchung&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, startZeit, endZeit&lt;br&gt;pauseMinuten, istStunden&lt;br&gt;mitarbeiter_id (FK)&lt;br&gt;projekt_id (FK)&lt;br&gt;arbeitsgang_id (FK)&lt;br&gt;produktkategorie_id (FK)&lt;br&gt;idempotencyKey (UUID)&lt;br&gt;erfassungsQuelle (Enum)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;fontSize=12;shadow=1;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="620" y="570" width="200" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-proj-zeit" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#15803d;fontSize=11;fontColor=#15803d;fontStyle=1;" parent="1" source="projekt" target="zeitbuchung" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-ma-zeit" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#15803d;dashed=1;" parent="1" source="mitarbeiter" target="zeitbuchung" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="zeitaudit" value="&lt;b&gt;ZeitbuchungAudit&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Snapshot der Zeitbuchung&lt;br&gt;versionNummer&lt;br&gt;auditAktion (Enum)&lt;br&gt;aenderungsgrund (Pflicht!)&lt;br&gt;geaendertVon, geaendertAm&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="610" y="820" width="200" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="r-zeit-audit" value="1:N" style="html=1;endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#dc2626;fontSize=11;fontColor=#dc2626;fontStyle=1;" parent="1" source="zeitbuchung" target="zeitaudit" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="monatssaldo" value="&lt;b&gt;MonatsSaldo (Cache)&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;mitarbeiter_id, monat, jahr&lt;br&gt;istStunden, sollStunden&lt;br&gt;abwesenheitStunden&lt;br&gt;gueltig (boolean)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="590" width="170" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="arbeitsgang" value="&lt;b&gt;Arbeitsgang&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, bezeichnung&lt;br&gt;stundensaetze []&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="385" width="130" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="produktkat" value="&lt;b&gt;Produktkategorie&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, name, beschreibung&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="510" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="leistung" value="&lt;b&gt;Leistung&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;id, bezeichnung, beschreibung&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="490" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="abwesenheit" value="&lt;b&gt;Abwesenheit&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;mitarbeiter_id (FK)&lt;br&gt;typ (Enum: URLAUB, KRANK, ...)&lt;br&gt;von, bis, stunden&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="750" width="170" height="85" as="geometry"/>
+                </mxCell>
+                <mxCell id="firma" value="&lt;b&gt;Firmeninformation&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;firmenname, strasse, plz, ort&lt;br&gt;telefon, email, steuernummer&lt;br&gt;bankdaten, logo&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#475569;fontSize=11;shadow=1;verticalAlign=top;spacingTop=3;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="100" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;arcSize=8;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="1020" width="700" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-title" value="&lt;b&gt;Legende&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="75" y="1025" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dc2626;strokeColor=#991b1b;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="1055" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-1t" value="Kern-Projekt &amp; Ausgangs-Dokumente" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="1050" width="250" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fce7f3;strokeColor=#be185d;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="1078" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-2t" value="Kunden &amp; Angebote" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="1073" width="200" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="1101" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-3t" value="Lieferanten &amp; Eingangs-Dokumente" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="1096" width="250" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-4" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="1055" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-4t" value="Mitarbeiter &amp; Zeiterfassung" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="1050" width="200" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-5" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="1078" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-5t" value="Artikel, Arbeitsgänge &amp; Kategorien" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="1073" width="250" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-6" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="1101" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-6t" value="E-Mail-System" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="1096" width="200" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-7" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="1055" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg-7t" value="Audit / GoBD" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="680" y="1050" width="100" height="22" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

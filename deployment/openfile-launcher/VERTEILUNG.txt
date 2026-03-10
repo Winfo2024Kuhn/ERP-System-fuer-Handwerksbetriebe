@@ -1,0 +1,85 @@
+==========================================================================
+  OpenFile Launcher - VERTEILUNG AN CLIENTS
+==========================================================================
+
+Die Datei "OpenFileLauncher-Setup.exe" ist fertig!
+
+VERTEILUNG:
+-----------
+
+Diese EINE Datei können Sie jetzt an Ihre Mitarbeiter verteilen:
+
+  ✅ Per E-Mail
+  ✅ Auf Netzwerkfreigabe (z.B. \\SERVER\Software\)
+  ✅ Per USB-Stick
+  ✅ Per Firmen-Chat
+
+
+INSTALLATION BEIM CLIENT:
+-------------------------
+
+1. Client erhält "OpenFileLauncher-Setup.exe"
+2. Doppelklick auf die Datei
+3. "Ja" bei der Sicherheitsabfrage klicken
+4. Kurz warten (~10 Sekunden)
+5. Erfolgsmeldung erscheint
+6. FERTIG! ✅
+
+
+WAS PASSIERT BEI DER INSTALLATION:
+----------------------------------
+
+✅ Kopiert launcher.ps1 nach C:\Program Files (x86)\OpenFileLauncher\
+✅ Registriert das openfile://-Schema in Windows
+✅ Erstellt Log-Verzeichnis für Fehlersuche
+
+Keine Neustarts erforderlich!
+Funktioniert sofort nach der Installation!
+
+
+TEST NACH INSTALLATION:
+-----------------------
+
+Der Client kann testen, ob es funktioniert:
+
+1. Browser öffnen (Chrome, Edge, Firefox)
+2. Diese URL eingeben:
+   
+   openfile://open?path=%5C%5CSERVER_PC%5CCADdrawings%5Ctest.txt
+
+3. Wenn die Datei öffnet oder "Datei nicht gefunden" erscheint
+   → Installation erfolgreich! ✅
+
+
+HÄUFIGE FRAGEN:
+---------------
+
+Q: Muss jeder Client Admin-Rechte haben?
+A: Ja, für die Installation einmalig. Danach nicht mehr.
+
+Q: Funktioniert es ohne Netzwerkverbindung zum Server?
+A: Die Installation ja. Zum Öffnen von Dateien braucht der Client
+   Zugriff auf \\SERVER_PC\CADdrawings
+
+Q: Was ist, wenn ein Client den Launcher wieder deinstallieren will?
+A: Systemsteuerung → Programme → "OpenFile Launcher" deinstallieren
+   ODER das uninstall-Skript verwenden
+
+
+PROBLEMLÖSUNG:
+--------------
+
+Falls ein Client Probleme hat:
+
+1. Log-Datei prüfen:
+   C:\ProgramData\OpenFileLauncher\launcher.log
+
+2. Sicherstellen, dass der Client Zugriff auf das Netzlaufwerk hat:
+   \\SERVER_PC\CADdrawings
+
+3. Falls nötig: Neuinstallation mit der Setup.exe
+
+
+==========================================================================
+  Bei Fragen: Siehe README.md oder SCHNELLSTART.txt
+==========================================================================
