@@ -49,6 +49,7 @@ export interface KontextDaten {
     bezugsdokument?: string;
     bezugsdokumentTyp?: string;
     kundenEmails?: string[];
+    zahlungsziel?: number;
 }
 
 export interface TextbausteinApiDto {

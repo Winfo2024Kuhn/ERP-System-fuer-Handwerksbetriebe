@@ -214,6 +214,8 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
 
     // Abschlagsrechnung: user-defined installment amount
     const [abschlagBetragNetto, setAbschlagBetragNetto] = useState<number | null>(null);
+    // Abschlagsrechnung: Eingabemodus und Originalwert
+    const [abschlagInfo, setAbschlagInfo] = useState<{ modus: string; eingabeWert: number } | null>(null);
 
     // Email Versand State
     const [showEmailModal, setShowEmailModal] = useState(false);
@@ -269,7 +271,13 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
             'BAUVORHABEN': kontextDaten.projektBauvorhaben || betreff || '',
             'BEZUGSDOKUMENT': kontextDaten.bezugsdokument || '',
             'BEZUGSDOKUMENTNUMMER': kontextDaten.bezugsdokument || '',
-            'BEZUGSDOKUMENTTYP': kontextDaten.bezugsdokumentTyp || ''
+            'BEZUGSDOKUMENTTYP': kontextDaten.bezugsdokumentTyp || '',
+            'ZAHLUNGSZIEL': (() => {
+                const days = kontextDaten.zahlungsziel ?? 8;
+                const d = datum ? new Date(datum) : new Date();
+                d.setDate(d.getDate() + days);
+                return d.toLocaleDateString('de-DE');
+            })()
         };
 
         return text.replace(/\{\{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*\}\}/g, (match, key) => {
@@ -377,6 +385,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                             anrede: projekt.kundeDto?.anrede,
                             ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
                             kundenEmails: emails,
+                            zahlungsziel: projekt.kundeDto?.zahlungsziel ?? 8,
                         });
                         setBetreff(projekt.bauvorhaben || '');
                     }
@@ -395,6 +404,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                             anrede: angebot.kundenAnrede || angebot.anrede,
                             ansprechpartner: angebot.kundenAnsprechpartner || angebot.kundenAnsprechspartner,
                             kundenEmails: emails,
+                            zahlungsziel: angebot.zahlungsziel ?? 8,
                             ...(isFollowUp ? { bezugsdokument: angebot.angebotsnummer, bezugsdokumentTyp: 'Angebot' } : {})
                         });
                         setBetreff(angebot.bauvorhaben || '');
@@ -431,7 +441,8 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                             rechnungsadresse: data.rechnungsadresse,
                             projektnummer: data.projektnummer,
                             projektBauvorhaben: data.projektBauvorhaben,
-                            bezugsdokument: data.vorgaengerNummer
+                            bezugsdokument: data.vorgaengerNummer,
+                            zahlungsziel: data.zahlungszielTage ?? 8
                         });
                     } else {
                         if (data.projektId) {
@@ -447,7 +458,8 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                                     rechnungsadresse: buildAdresse(projekt.kundeDto),
                                     anrede: projekt.kundeDto?.anrede,
                                     ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
-                                    bezugsdokument: data.vorgaengerNummer
+                                    bezugsdokument: data.vorgaengerNummer,
+                                    zahlungsziel: data.zahlungszielTage ?? projekt.kundeDto?.zahlungsziel ?? 8
                                 });
                             }
                         } else if (data.angebotId) {
@@ -462,6 +474,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                                     rechnungsadresse: buildAdresseFromAngebot(angebot),
                                     anrede: angebot.kundenAnrede || angebot.anrede,
                                     ansprechpartner: angebot.kundenAnsprechpartner || angebot.kundenAnsprechspartner,
+                                    zahlungsziel: data.zahlungszielTage ?? angebot.zahlungsziel ?? 8,
                                     ...(isFollowUp ? { bezugsdokument: angebot.angebotsnummer, bezugsdokumentTyp: 'Angebot' } : {})
                                 });
                             }
@@ -476,7 +489,8 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                                     rechnungsadresse: buildAdresse(kunde),
                                     anrede: kunde.anrede,
                                     ansprechpartner: kunde.ansprechspartner || kunde.ansprechpartner,
-                                    bezugsdokument: data.vorgaengerNummer
+                                    bezugsdokument: data.vorgaengerNummer,
+                                    zahlungsziel: data.zahlungszielTage ?? kunde.zahlungsziel ?? 8
                                 });
                             }
                         } else {
@@ -486,7 +500,8 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                                 rechnungsadresse: data.rechnungsadresse,
                                 projektnummer: data.projektnummer,
                                 projektBauvorhaben: data.projektBauvorhaben,
-                                bezugsdokument: data.vorgaengerNummer
+                                bezugsdokument: data.vorgaengerNummer,
+                                zahlungsziel: data.zahlungszielTage ?? 8
                             });
                         }
                     }
@@ -521,9 +536,12 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                                 // Legacy format: plain array of blocks
                                 loadedBlocks = parsed;
                             } else if (parsed && Array.isArray(parsed.blocks)) {
-                                // New format: { blocks, globalRabatt }
+                                // New format: { blocks, globalRabatt, abschlagInfo }
                                 loadedBlocks = parsed.blocks;
                                 loadedGlobalRabatt = parsed.globalRabatt || 0;
+                                if (parsed.abschlagInfo) {
+                                    setAbschlagInfo(parsed.abschlagInfo);
+                                }
                             }
                             setBlocks(loadedBlocks.filter(b => b.type !== 'CLOSURE'));
                             setGlobalRabatt(loadedGlobalRabatt);
@@ -650,7 +668,11 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                 // Abschlagsrechnung: benutzerdefinierten Abschlagsbetrag verwenden
                 betragNetto = abschlagBetragNetto;
             }
-            const positionenData = JSON.stringify({ blocks, globalRabatt });
+            const positionenData = JSON.stringify({
+                blocks,
+                globalRabatt,
+                ...(abschlagInfo ? { abschlagInfo } : {})
+            });
 
             if (dokument?.id) {
                 const res = await fetch(`/api/ausgangs-dokumente/${dokument.id}`, {
@@ -1553,7 +1575,9 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                     const otherPositions = (verlauf.positionen || []).filter(
                         (pos: any) => pos.id !== dokument.id && !pos.storniert
                     );
-                    if (otherPositions.length > 0) {
+                    // Always send abrechnungsverlauf when basisdokument exists
+                    // (even with 0 other positions, to show Gesamtauftragssumme on first Abschlagsrechnung)
+                    if (verlauf.basisdokumentBetragNetto != null && verlauf.basisdokumentBetragNetto > 0) {
                         abrechnungsverlauf = {
                             basisdokumentNummer: verlauf.basisdokumentNummer,
                             basisdokumentTyp: verlauf.basisdokumentTyp,
@@ -1586,6 +1610,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
             globalRabattProzent: globalRabatt > 0 ? globalRabatt : null,
             abrechnungsverlauf,
             betragNetto: dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagBetragNetto !== null ? abschlagBetragNetto : undefined,
+            abschlagInfo: dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagInfo ? abschlagInfo : undefined,
         };
     };
 
