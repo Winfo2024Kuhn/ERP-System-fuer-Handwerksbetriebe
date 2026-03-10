@@ -1,12 +1,20 @@
 package org.example.kalkulationsprogramm.domain;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.MapsId;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * Geschäftsmetadaten für Lieferanten-Dokumente.
@@ -87,6 +95,10 @@ public class LieferantGeschaeftsdokument {
     // Lagerbestellung-Flag (Bestellung ohne Projekt-Zuordnung)
     @Column(nullable = false)
     private Boolean lagerbestellung = false; // true = Lagerbestellung, keine Projekt-Zuordnung nötig
+
+    // Ausgeblendet-Flag (z.B. alte importierte Rechnungen ohne Projektbezug)
+    @Column(nullable = false)
+    private Boolean ausgeblendet = false;
 
     private Boolean verifiziert = false; // true wenn strukturiert aus ZUGFeRD/XML
     private String datenquelle; // ZUGFERD, XML, AI

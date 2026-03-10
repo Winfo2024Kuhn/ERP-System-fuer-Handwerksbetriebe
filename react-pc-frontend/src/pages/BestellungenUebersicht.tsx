@@ -86,13 +86,25 @@ interface KetteCardProps {
     onOpenPdf: (url: string, title: string) => void;
     showZuordnenButton?: boolean;
     onZuordnen?: (kette: DokumentenKette) => void;
+    showAusblendenButton?: boolean;
+    onAusblenden?: (kette: DokumentenKette) => void;
 }
 
-function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen }: KetteCardProps) {
+function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen, showAusblendenButton, onAusblenden }: KetteCardProps) {
     const rechnung = kette.dokumente.find(d => d.typ === 'RECHNUNG');
 
     return (
-        <Card className="p-4 hover:shadow-md transition-shadow">
+        <Card className="p-4 hover:shadow-md transition-shadow relative">
+            {/* Ausblenden-Button (rotes X oben rechts) */}
+            {showAusblendenButton && onAusblenden && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); onAusblenden(kette); }}
+                    className="absolute top-2 right-2 p-1 rounded-full text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                    title="Aus Übersicht entfernen"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+            )}
             {/* Header mit Lieferant */}
             <div className="flex items-center justify-between mb-3">
                 <div>
@@ -676,6 +688,8 @@ export default function BestellungenUebersicht() {
     // Zuordnung Modal State
     const [zuordnungKette, setZuordnungKette] = useState<DokumentenKette | null>(null);
 
+    const toast = useToast();
+
     const loadData = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -698,6 +712,22 @@ export default function BestellungenUebersicht() {
     const handleOpenPdf = (url: string, title: string) => {
         setPreviewUrl(url);
         setPreviewTitle(title);
+    };
+
+    const handleAusblenden = async (kette: DokumentenKette) => {
+        const rechnung = kette.dokumente.find(d => d.typ === 'RECHNUNG');
+        if (!rechnung) return;
+        try {
+            const res = await fetch(`/api/bestellungen-uebersicht/ausblenden/${rechnung.id}`, { method: 'POST' });
+            if (res.ok) {
+                toast.success('Rechnung ausgeblendet');
+                loadData();
+            } else {
+                toast.error('Fehler beim Ausblenden');
+            }
+        } catch {
+            toast.error('Netzwerkfehler');
+        }
     };
 
     const currentList = tab === 'offen'
@@ -797,6 +827,8 @@ export default function BestellungenUebersicht() {
                             onOpenPdf={handleOpenPdf}
                             showZuordnenButton={tab === 'abgeschlossen'}
                             onZuordnen={setZuordnungKette}
+                            showAusblendenButton={tab === 'abgeschlossen'}
+                            onAusblenden={handleAusblenden}
                         />
                     ))}
                 </div>

@@ -540,6 +540,23 @@ public class AusgangsGeschaeftsDokumentService {
         // Offenen-Posten-Eintrag des Originals als bezahlt markieren (storniert)
         markiereOffenenPostenAlsBezahlt(original);
 
+        // Kaskadierende Stornierung: Wenn eine Abschlagsrechnung storniert wird,
+        // müssen abhängige Schlussrechnungen (gleicher Vorgänger) ebenfalls storniert werden,
+        // da deren Betrag auf Basis der Abschlagsrechnungen berechnet wurde.
+        if (original.getTyp() == AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG
+                && original.getVorgaenger() != null) {
+            List<AusgangsGeschaeftsDokument> geschwister = dokumentRepository
+                    .findByVorgaengerIdOrderByErstelltAmAsc(original.getVorgaenger().getId());
+            for (AusgangsGeschaeftsDokument geschwisterDok : geschwister) {
+                if (geschwisterDok.getTyp() == AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
+                        && !geschwisterDok.isStorniert()) {
+                    log.info("Kaskadierende Stornierung: Schlussrechnung {} wird mitstorniert (Abschlagsrechnung {} storniert)",
+                            geschwisterDok.getDokumentNummer(), original.getDokumentNummer());
+                    stornieren(geschwisterDok.getId());
+                }
+            }
+        }
+
         // Projekt-Preis aktualisieren
         if (original.getProjekt() != null) {
             aktualisiereProjektPreisAusDokumenten(original.getProjekt().getId());
@@ -1175,13 +1192,9 @@ public class AusgangsGeschaeftsDokumentService {
                 .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Storno-Beträge addieren (Stornos haben negative Beträge)
-        BigDecimal summeStornos = alleDokumente.stream()
-                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.STORNO)
-                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        summeRechnungen = summeRechnungen.add(summeStornos);
+        // Stornierte Rechnungen sind bereits über !isStorniert() ausgeschlossen,
+        // daher werden Storno-Dokumente (negative Beträge) NICHT mehr abgezogen,
+        // um doppelte Berücksichtigung zu vermeiden.
 
         // AB hat Priorität, dann Angebote
         BigDecimal neuerBruttoPreis = summeAB.compareTo(BigDecimal.ZERO) > 0 ? summeAB : summeAngebote;
@@ -1202,7 +1215,8 @@ public class AusgangsGeschaeftsDokumentService {
             projekt.setAbgeschlossen(true);
         } else {
             projekt.setBezahlt(false);
-            projekt.setAbgeschlossen(false);
+            // abgeschlossen wird NICHT automatisch zurückgesetzt –
+            // der Benutzer steuert dies manuell über die Checkbox
         }
 
         projektRepository.save(projekt);

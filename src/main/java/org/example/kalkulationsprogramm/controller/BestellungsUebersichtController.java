@@ -3,8 +3,6 @@ package org.example.kalkulationsprogramm.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,8 +30,6 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/bestellungen-uebersicht")
 @RequiredArgsConstructor
 public class BestellungsUebersichtController {
-
-    private static final Logger log = LoggerFactory.getLogger(BestellungsUebersichtController.class);
 
     private final LieferantDokumentRepository dokumentRepository;
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
@@ -67,6 +63,12 @@ public class BestellungsUebersichtController {
                 .map(gd -> gd.getDokument() != null ? gd.getDokument().getId() : -1L)
                 .collect(Collectors.toSet());
 
+        // IDs aller ausgeblendeten Dokumente
+        Set<Long> ausgeblendetIds = geschaeftsdokumentRepository.findAll().stream()
+                .filter(gd -> Boolean.TRUE.equals(gd.getAusgeblendet()))
+                .map(gd -> gd.getDokument() != null ? gd.getDokument().getId() : -1L)
+                .collect(Collectors.toSet());
+
         // Ketten bilden
         List<DokumentenKette> alleKetten = buildKetten(alleDokumente);
 
@@ -85,6 +87,12 @@ public class BestellungsUebersichtController {
                     .allMatch(d -> d.typ == LieferantDokumentTyp.ANGEBOT);
 
             if (hatRechnung) {
+                // Prüfe ob die Rechnung ausgeblendet ist
+                boolean istAusgeblendet = kette.dokumente.stream()
+                        .filter(d -> d.typ == LieferantDokumentTyp.RECHNUNG)
+                        .anyMatch(d -> ausgeblendetIds.contains(d.id));
+                if (istAusgeblendet) continue;
+
                 // Prüfe ob die Rechnung bereits zugeordnet oder als Lagerbestellung markiert ist
                 boolean istZugeordnet = kette.dokumente.stream()
                         .filter(d -> d.typ == LieferantDokumentTyp.RECHNUNG)
@@ -345,7 +353,7 @@ public class BestellungsUebersichtController {
             projektDokumentRepository.save(dok);
         } catch (IOException e) {
             // Fehler beim Kopieren protokollieren, aber nicht abbrechen
-            log.warn("Fehler beim Kopieren des PDFs: {}", e.getMessage());
+            System.err.println("Fehler beim Kopieren des PDFs: " + e.getMessage());
         }
     }
     
@@ -372,6 +380,22 @@ public class BestellungsUebersichtController {
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", "Als Lagerbestellung markiert"));
+    }
+
+    /**
+     * Blendet eine Dokumenten-Kette aus der Bestellungsübersicht aus.
+     * Für alte/irrelevante Rechnungen ohne Projektbezug.
+     */
+    @PostMapping("/ausblenden/{dokId}")
+    @Transactional
+    public ResponseEntity<?> ausblendenDokument(@PathVariable Long dokId) {
+        var gd = geschaeftsdokumentRepository.findById(dokId).orElse(null);
+        if (gd == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
+        }
+        gd.setAusgeblendet(true);
+        geschaeftsdokumentRepository.save(gd);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Rechnung ausgeblendet"));
     }
 
     /**
