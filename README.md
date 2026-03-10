@@ -27,7 +27,16 @@
 <br/>
 
 <p align="center">
-  <strong>📱 Mobile App (PWA)</strong>
+  <strong>� Automatische Zeitkalkulation per Linearer Regression</strong>
+</p>
+<p align="center">
+  <img src="assets/Produktkategorie_Nachkalkulation.png" alt="Produktkategorie Nachkalkulation – Lineare Regression" width="90%" />
+</p>
+
+<br/>
+
+<p align="center">
+  <strong>�📱 Mobile App (PWA)</strong>
 </p>
 <p align="center">
   <img src="assets/mobild_frontend.png" alt="Mobile Zeiterfassung – PWA für die Baustelle" width="35%" />
