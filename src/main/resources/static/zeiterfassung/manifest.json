@@ -1,0 +1,19 @@
+{
+    "name": "Zeiterfassung",
+    "short_name": "Zeit",
+    "description": "Mobile Zeiterfassung für Mitarbeiter",
+    "start_url": "/zeiterfassung/",
+    "scope": "/zeiterfassung/",
+    "display": "standalone",
+    "background_color": "#0f172a",
+    "theme_color": "#dc2626",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        }
+    ]
+}

@@ -1,0 +1,47 @@
+==========================================================================
+  OpenFile Launcher - Schnellstart-Anleitung
+==========================================================================
+
+INSTALLATION (auf einem Client-PC):
+------------------------------------
+
+1. Kopieren Sie diesen GESAMTEN Ordner auf den Ziel-PC
+   (z.B. auf den Desktop)
+
+2. RECHTSKLICK auf "INSTALL.bat"
+
+3. Wählen Sie "Als Administrator ausführen"
+
+4. Bestätigen Sie mit "Ja"
+
+5. Fertig! ✅
+
+
+TEST:
+-----
+
+Öffnen Sie einen Browser und geben Sie ein:
+
+  openfile://open?path=%5C%5CSERVER_PC%5CCADdrawings%5Ctest.txt
+
+Wenn eine Datei geöffnet wird (oder eine Fehlermeldung "Datei nicht 
+gefunden" erscheint), funktioniert der Launcher! ✅
+
+
+PROBLEME?
+---------
+
+→ Siehe README.md für detaillierte Hilfe
+→ Log-Datei prüfen: C:\ProgramData\OpenFileLauncher\launcher.log
+
+
+DEINSTALLATION:
+---------------
+
+Rechtsklick auf "uninstall-openfile-launcher.ps1"
+→ "Als Administrator ausführen"
+
+
+==========================================================================
+  Example Company - Internes Tool
+==========================================================================

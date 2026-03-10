@@ -1,0 +1,596 @@
+package org.example.kalkulationsprogramm.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+
+import org.example.kalkulationsprogramm.domain.Angebot;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentCounter;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
+import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
+import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
+import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
+import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
+import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.LeistungRepository;
+import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
+import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+@ExtendWith(MockitoExtension.class)
+class AusgangsGeschaeftsDokumentServiceTest {
+
+    @Mock private AusgangsGeschaeftsDokumentRepository dokumentRepository;
+    @Mock private AusgangsGeschaeftsDokumentCounterRepository counterRepository;
+    @Mock private ProjektRepository projektRepository;
+    @Mock private AngebotRepository angebotRepository;
+    @Mock private KundeRepository kundeRepository;
+    @Mock private FrontendUserProfileRepository frontendUserProfileRepository;
+    @Mock private LeistungRepository leistungRepository;
+    @Mock private ProduktkategorieRepository produktkategorieRepository;
+    @Mock private ProjektDokumentRepository projektDokumentRepository;
+    @Mock private ZeitbuchungRepository zeitbuchungRepository;
+
+    private AusgangsGeschaeftsDokumentService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new AusgangsGeschaeftsDokumentService(
+                "uploads",
+                dokumentRepository,
+                counterRepository,
+                projektRepository,
+                angebotRepository,
+                kundeRepository,
+                frontendUserProfileRepository,
+                leistungRepository,
+                produktkategorieRepository,
+                projektDokumentRepository,
+                zeitbuchungRepository);
+    }
+
+    private void mockCounterForNummer() {
+        AusgangsGeschaeftsDokumentCounter counter = new AusgangsGeschaeftsDokumentCounter();
+        counter.setZaehler(0L);
+        when(counterRepository.findByMonatKeyForUpdate(any())).thenReturn(Optional.of(counter));
+        when(counterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    @Nested
+    class Erstellen {
+
+        @Test
+        void erstelltDokumentMitKorrekterNummer() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setBetreff("Testangebot");
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getDokumentNummer()).isNotNull();
+            assertThat(result.getDokumentNummer()).contains("/");
+            assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            assertThat(result.getBetreff()).isEqualTo("Testangebot");
+        }
+
+        @Test
+        void berechnetBruttoMitMwstKorrekt() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dto.setBetragNetto(new BigDecimal("1000.00"));
+            dto.setMwstSatz(new BigDecimal("0.19"));
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getBetragBrutto()).isEqualByComparingTo(new BigDecimal("1190.00"));
+        }
+
+        @Test
+        void uebernimmtKundeAusProjektWennNichtExplizitGesetzt() {
+            mockCounterForNummer();
+            Kunde kunde = new Kunde();
+            kunde.setId(10L);
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            projekt.setKundenId(kunde);
+            when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setProjektId(5L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getKunde()).isEqualTo(kunde);
+        }
+
+        @Test
+        void uebernimmtInhalteVomVorgaenger() {
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument vorgaenger = new AusgangsGeschaeftsDokument();
+            vorgaenger.setId(100L);
+            vorgaenger.setHtmlInhalt("<p>Vorgänger</p>");
+            vorgaenger.setPositionenJson("{\"blocks\":[]}");
+            Kunde kunde = new Kunde();
+            kunde.setId(10L);
+            vorgaenger.setKunde(kunde);
+            when(dokumentRepository.findById(100L)).thenReturn(Optional.of(vorgaenger));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(2L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            dto.setVorgaengerId(100L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getHtmlInhalt()).isEqualTo("<p>Vorgänger</p>");
+            assertThat(result.getPositionenJson()).isEqualTo("{\"blocks\":[]}");
+            assertThat(result.getKunde()).isEqualTo(kunde);
+        }
+
+        @Test
+        void wirftExceptionBeiDoppeltemBasisdokumentProProjekt() {
+            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNull(5L)).thenReturn(true);
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setProjektId(5L);
+
+            assertThatThrownBy(() -> service.erstellen(dto))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Basisdokument");
+        }
+
+        @Test
+        void wirftExceptionBeiDoppeltemBasisdokumentProAngebot() {
+            when(dokumentRepository.existsByAngebotIdAndVorgaengerIsNull(7L)).thenReturn(true);
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setAngebotId(7L);
+
+            assertThatThrownBy(() -> service.erstellen(dto))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Basisdokument");
+        }
+
+        @Test
+        void setztAbschlagsnummerKorrekt() {
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument vorgaenger = new AusgangsGeschaeftsDokument();
+            vorgaenger.setId(50L);
+            vorgaenger.setBetragNetto(new BigDecimal("10000.00"));
+            vorgaenger.setBetragBrutto(new BigDecimal("11900.00"));
+            when(dokumentRepository.findById(50L)).thenReturn(Optional.of(vorgaenger));
+            when(dokumentRepository.countByVorgaengerIdAndTyp(50L, AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG))
+                    .thenReturn(2);
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(50L)).thenReturn(Collections.emptyList());
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(3L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG);
+            dto.setVorgaengerId(50L);
+            dto.setBetragNetto(new BigDecimal("500.00"));
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getAbschlagsNummer()).isEqualTo(3);
+        }
+
+        @Test
+        void setztDefaultMwstSatzWennNichtGesetzt() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setBetragNetto(new BigDecimal("100.00"));
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getMwstSatz()).isEqualByComparingTo(new BigDecimal("0.19"));
+        }
+
+        @Test
+        void setztDatumAufHeuteWennNichtGesetzt() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getDatum()).isEqualTo(LocalDate.now());
+        }
+    }
+
+    @Nested
+    class Aktualisieren {
+
+        @Test
+        void aktualisiertDokumentErfolgreich() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dokument.setBetreff("Alt");
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+            dto.setBetreff("Neu");
+            dto.setBetragNetto(new BigDecimal("2000.00"));
+            dto.setMwstSatz(new BigDecimal("0.19"));
+
+            AusgangsGeschaeftsDokument result = service.aktualisieren(1L, dto);
+
+            assertThat(result.getBetreff()).isEqualTo("Neu");
+            assertThat(result.getBetragNetto()).isEqualByComparingTo(new BigDecimal("2000.00"));
+            assertThat(result.getBetragBrutto()).isEqualByComparingTo(new BigDecimal("2380.00"));
+        }
+
+        @Test
+        void wirftExceptionBeiGebuchtemDokument() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dokument.setGebucht(true);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+            dto.setBetreff("Änderung");
+
+            assertThatThrownBy(() -> service.aktualisieren(1L, dto))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("gesperrt");
+        }
+
+        @Test
+        void wirftExceptionBeiNichtGefundenemDokument() {
+            when(dokumentRepository.findById(999L)).thenReturn(Optional.empty());
+
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+
+            assertThatThrownBy(() -> service.aktualisieren(999L, dto))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("nicht gefunden");
+        }
+    }
+
+    @Nested
+    class Buchen {
+
+        @Test
+        void buchtRechnungErfolgreich() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dokument.setDokumentNummer("2026/03/00001");
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            dokument.setProjekt(projekt);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.existsByDokumentid("2026/03/00001")).thenReturn(false);
+
+            AusgangsGeschaeftsDokument result = service.buchen(1L);
+
+            assertThat(result.isGebucht()).isTrue();
+            assertThat(result.getGebuchtAm()).isEqualTo(LocalDate.now());
+        }
+
+        @Test
+        void buchtAngebotNicht() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            AusgangsGeschaeftsDokument result = service.buchen(1L);
+
+            assertThat(result.isGebucht()).isFalse();
+        }
+
+        @Test
+        void gibtBereitsGebuchtesZurueckOhneAenderung() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dokument.setGebucht(true);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            AusgangsGeschaeftsDokument result = service.buchen(1L);
+
+            verify(dokumentRepository, never()).save(any());
+            assertThat(result.isGebucht()).isTrue();
+        }
+
+        @Test
+        void wirftExceptionBeiStorniertemDokument() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dokument.setStorniert(true);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            assertThatThrownBy(() -> service.buchen(1L))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Storniert");
+        }
+    }
+
+    @Nested
+    class Stornieren {
+
+        @Test
+        void storniertRechnungUndErstelltGegendokument() {
+            AusgangsGeschaeftsDokument original = new AusgangsGeschaeftsDokument();
+            original.setId(1L);
+            original.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            original.setDokumentNummer("2026/03/00001");
+            original.setBetragNetto(new BigDecimal("1000.00"));
+            original.setBetragBrutto(new BigDecimal("1190.00"));
+            original.setMwstSatz(new BigDecimal("0.19"));
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(original));
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findAllGeschaeftsdokumente()).thenReturn(Collections.emptyList());
+
+            AusgangsGeschaeftsDokument storno = service.stornieren(1L);
+
+            assertThat(original.isStorniert()).isTrue();
+            assertThat(original.getStorniertAm()).isEqualTo(LocalDate.now());
+            assertThat(storno.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.STORNO);
+            assertThat(storno.getBetragNetto()).isEqualByComparingTo(new BigDecimal("-1000.00"));
+            assertThat(storno.getBetragBrutto()).isEqualByComparingTo(new BigDecimal("-1190.00"));
+            assertThat(storno.isGebucht()).isTrue();
+        }
+
+        @Test
+        void wirftExceptionBeiBereitsStorniertemDokument() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dokument.setStorniert(true);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            assertThatThrownBy(() -> service.stornieren(1L))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("bereits storniert");
+        }
+
+        @Test
+        void wirftExceptionBeiAngebotStornierung() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            assertThatThrownBy(() -> service.stornieren(1L))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Nur Rechnungen");
+        }
+    }
+
+    @Nested
+    class Loeschen {
+
+        @Test
+        void loeschtEntwurfMitBegruendung() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            service.loeschen(1L, "Test-Begründung");
+
+            verify(dokumentRepository).delete(dokument);
+        }
+
+        @Test
+        void wirftExceptionBeiLeeremGrund() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            assertThatThrownBy(() -> service.loeschen(1L, ""))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Begründung");
+        }
+
+        @Test
+        void wirftExceptionBeiGebuchtemDokument() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dokument.setGebucht(true);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            assertThatThrownBy(() -> service.loeschen(1L, "Grund"))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("GoBD");
+        }
+
+        @Test
+        void wirftExceptionBeiVersandtemDokument() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dokument.setVersandDatum(LocalDate.now());
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            assertThatThrownBy(() -> service.loeschen(1L, "Grund"))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("versandte");
+        }
+
+        @Test
+        void wirftExceptionBeiStornoTyp() {
+            AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+            dokument.setId(1L);
+            dokument.setTyp(AusgangsGeschaeftsDokumentTyp.STORNO);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+
+            assertThatThrownBy(() -> service.loeschen(1L, "Grund"))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Stornorechnungen");
+        }
+    }
+
+    @Nested
+    class EnsureAngebotDokument {
+
+        @Test
+        void gibtExistierendeNummerZurueck() {
+            AusgangsGeschaeftsDokument existing = new AusgangsGeschaeftsDokument();
+            existing.setDokumentNummer("2026/03/00001");
+            when(dokumentRepository.findFirstByAngebotIdAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+                    .thenReturn(Optional.of(existing));
+
+            String result = service.ensureAngebotDokument(5L);
+
+            assertThat(result).isEqualTo("2026/03/00001");
+            verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        void erstelltNeuesDokumentWennKeinesExistiert() {
+            when(dokumentRepository.findFirstByAngebotIdAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+                    .thenReturn(Optional.empty());
+            Angebot angebot = new Angebot();
+            angebot.setId(5L);
+            angebot.setBauvorhaben("Bauprojekt");
+            when(angebotRepository.findById(5L)).thenReturn(Optional.of(angebot));
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            String result = service.ensureAngebotDokument(5L);
+
+            assertThat(result).isNotNull();
+            verify(dokumentRepository, atLeastOnce()).save(any());
+        }
+
+        @Test
+        void gibtNullZurueckBeiNullId() {
+            assertThat(service.ensureAngebotDokument(null)).isNull();
+        }
+    }
+
+    @Nested
+    class Abrechnungsverlauf {
+
+        @Test
+        void berechnetRestbetragKorrekt() {
+            AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
+            basis.setId(1L);
+            basis.setDokumentNummer("2026/03/00001");
+            basis.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            basis.setBetragNetto(new BigDecimal("10000.00"));
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(basis));
+
+            AusgangsGeschaeftsDokument abschlag1 = new AusgangsGeschaeftsDokument();
+            abschlag1.setId(2L);
+            abschlag1.setDokumentNummer("2026/03/00002");
+            abschlag1.setTyp(AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG);
+            abschlag1.setBetragNetto(new BigDecimal("3000.00"));
+            abschlag1.setAbschlagsNummer(1);
+
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L))
+                    .thenReturn(List.of(abschlag1));
+
+            var verlauf = service.getAbrechnungsverlauf(1L);
+
+            assertThat(verlauf.getBasisdokumentBetragNetto()).isEqualByComparingTo(new BigDecimal("10000.00"));
+            assertThat(verlauf.getBereitsAbgerechnet()).isEqualByComparingTo(new BigDecimal("3000.00"));
+            assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(new BigDecimal("7000.00"));
+            assertThat(verlauf.getPositionen()).hasSize(1);
+        }
+
+        @Test
+        void ignoriertStornierteRechnungenBeimRestbetrag() {
+            AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
+            basis.setId(1L);
+            basis.setDokumentNummer("2026/03/00001");
+            basis.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            basis.setBetragNetto(new BigDecimal("10000.00"));
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(basis));
+
+            AusgangsGeschaeftsDokument storniert = new AusgangsGeschaeftsDokument();
+            storniert.setId(2L);
+            storniert.setDokumentNummer("2026/03/00002");
+            storniert.setTyp(AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG);
+            storniert.setBetragNetto(new BigDecimal("3000.00"));
+            storniert.setStorniert(true);
+
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L))
+                    .thenReturn(List.of(storniert));
+
+            var verlauf = service.getAbrechnungsverlauf(1L);
+
+            assertThat(verlauf.getBereitsAbgerechnet()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(new BigDecimal("10000.00"));
+        }
+    }
+}

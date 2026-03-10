@@ -1,0 +1,208 @@
+<mxfile host="app.diagrams.net" modified="2026-03-07" type="device">
+  <diagram name="Rechnungswesen" id="rechnungswesen">
+    <mxGraphModel dx="1422" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="Rechnungswesen – Dokumenttypen, Nummernvergabe &amp; PDF-Generierung" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=20;fontStyle=1;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="250" y="20" width="700" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== DOKUMENTTYPEN ==================== -->
+        <mxCell id="typ-section" value="1. AUSGANGS-DOKUMENTTYPEN (AusgangsGeschaeftsDokumentTyp)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=15;fontStyle=1;fontColor=#be185d;" vertex="1" parent="1">
+          <mxGeometry x="60" y="75" width="600" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="typ-angebot" value="&lt;b&gt;📝 ANGEBOT&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Kostenvoranschlag&lt;br&gt;für Kunden&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce7f3;strokeColor=#be185d;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="115" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="typ-ab" value="&lt;b&gt;✅ AUFTRAGS-&lt;br&gt;BESTÄTIGUNG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Auftragsannahme&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce7f3;strokeColor=#be185d;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="115" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="typ-rechnung" value="&lt;b&gt;🧾 RECHNUNG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Einzelrechnung&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce7f3;strokeColor=#be185d;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="115" width="130" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="typ-teil" value="&lt;b&gt;📄 TEIL-&lt;br&gt;RECHNUNG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Zwischenrechnung&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce7f3;strokeColor=#be185d;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="530" y="115" width="130" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="typ-abschlag" value="&lt;b&gt;💰 ABSCHLAGS-&lt;br&gt;RECHNUNG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Teilbetrag (Nr. 1, 2, ...)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dc2626;strokeColor=#991b1b;fontSize=11;fontColor=#ffffff;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="115" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="typ-schluss" value="&lt;b&gt;🏁 SCHLUSS-&lt;br&gt;RECHNUNG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Abzug aller Abschläge&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dc2626;strokeColor=#991b1b;fontSize=11;fontColor=#ffffff;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="840" y="115" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="typ-gutschrift" value="&lt;b&gt;↩️ GUTSCHRIFT&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Rückerstattung&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="115" width="120" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="typ-storno" value="&lt;b&gt;❌ STORNO&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Gegendokument&lt;br&gt;(GoBD-konform)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="115" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== DOKUMENTKETTE ==================== -->
+        <mxCell id="chain-section" value="2. DOKUMENTKETTE (Typischer Ablauf)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=15;fontStyle=1;fontColor=#1d4ed8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="200" width="600" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Chain Flow -->
+        <mxCell id="c-angebot" value="&lt;b&gt;ANGEBOT&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="245" width="130" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="ca1" value="Umwandlung" style="html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=10;fontColor=#2563eb;" edge="1" parent="1" source="c-angebot" target="c-ab">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c-ab" value="&lt;b&gt;AUFTRAGS-&lt;br&gt;BESTÄTIGUNG&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="250" y="240" width="145" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="ca2" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#2563eb;" edge="1" parent="1" source="c-ab" target="c-abschlag1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c-abschlag1" value="&lt;b&gt;1. ABSCHLAG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;abschlagsNr=1&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dc2626;strokeColor=#991b1b;fontSize=12;fontColor=#ffffff;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="245" width="120" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="ca3" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#dc2626;" edge="1" parent="1" source="c-abschlag1" target="c-abschlag2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c-abschlag2" value="&lt;b&gt;2. ABSCHLAG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;abschlagsNr=2&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dc2626;strokeColor=#991b1b;fontSize=12;fontColor=#ffffff;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="245" width="120" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="ca4" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#dc2626;" edge="1" parent="1" source="c-abschlag2" target="c-abschlag3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c-abschlag3" value="&lt;b&gt;N. ABSCHLAG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;abschlagsNr=N&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dc2626;strokeColor=#991b1b;fontSize=12;fontColor=#ffffff;shadow=1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="245" width="120" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="ca5" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#dc2626;" edge="1" parent="1" source="c-abschlag3" target="c-schluss">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c-schluss" value="&lt;b&gt;SCHLUSS-&lt;br&gt;RECHNUNG&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#15803d;strokeColor=#14532d;fontSize=13;fontColor=#ffffff;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="970" y="240" width="130" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- Content Vererbung -->
+        <mxCell id="inherit-box" value="&lt;b&gt;📋 Content-Vererbung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Bei Umwandlung werden Positionen, Texte und Beträge&lt;br&gt;vom Vorgängerdokument übernommen (vorgaengerId FK)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="60" y="310" width="430" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== NUMMERNVERGABE ==================== -->
+        <mxCell id="num-section" value="3. AUTOMATISCHE NUMMERNVERGABE" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=15;fontStyle=1;fontColor=#15803d;" vertex="1" parent="1">
+          <mxGeometry x="60" y="385" width="600" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="num-flow" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="425" width="1200" height="130" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="num-trigger" value="&lt;b&gt;Dokument&lt;br&gt;erstellen&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="450" width="110" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="na1" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#16a34a;" edge="1" parent="1" source="num-trigger" target="num-lock">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="num-lock" value="&lt;b&gt;🔒 Pessimistic&lt;br&gt;DB-Lock&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;auf Counter-Zeile&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="445" width="130" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="na2" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#16a34a;" edge="1" parent="1" source="num-lock" target="num-counter">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="num-counter" value="&lt;b&gt;Counter lesen&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;AusgangsDokument-&lt;br&gt;Counter (DB-Entity)&lt;br&gt;aktueller Zählerstand&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="440" width="160" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="na3" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#16a34a;" edge="1" parent="1" source="num-counter" target="num-inc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="num-inc" value="&lt;b&gt;Counter + 1&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Hochzählen &amp;&lt;br&gt;speichern&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="450" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="na4" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#16a34a;" edge="1" parent="1" source="num-inc" target="num-format">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="num-format" value="&lt;b&gt;Formatierung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;font-weight:bold;&quot;&gt;YYYY/MM/NNNNN&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;z.B. 2026/03/00042&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="445" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="na5" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#16a34a;" edge="1" parent="1" source="num-format" target="num-assign">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="num-assign" value="&lt;b&gt;🔒 Release&lt;br&gt;Lock&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Nummer zugewiesen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="445" width="110" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== PDF GENERIERUNG ==================== -->
+        <mxCell id="pdf-section" value="4. PDF-GENERIERUNG &amp; ZUGFeRD" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=15;fontStyle=1;fontColor=#7c3aed;" vertex="1" parent="1">
+          <mxGeometry x="60" y="580" width="600" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pdf-flow" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="620" width="1200" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pdf-data" value="&lt;b&gt;Rechnungsdaten&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Positionen (JSON)&lt;br&gt;Kunde, Betrag&lt;br&gt;MwSt-Satz&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="645" width="150" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="pa1" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#7c3aed;" edge="1" parent="1" source="pdf-data" target="pdf-svc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="pdf-svc" value="&lt;b&gt;RechnungPdfService&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;• Layout-Rendering&lt;br&gt;• Positionen einfügen&lt;br&gt;• Firmenlogo&lt;br&gt;• Fußzeile&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="640" width="170" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="pa2" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#7c3aed;" edge="1" parent="1" source="pdf-svc" target="zugferd-svc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="zugferd-svc" value="&lt;b&gt;ZugferdErstellService&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;• Mustang-Bibliothek&lt;br&gt;• XML generieren&lt;br&gt;• In PDF einbetten&lt;br&gt;• EU-Norm konform&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="640" width="170" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="pa3" value="" style="html=1;endArrow=block;endFill=1;strokeColor=#7c3aed;" edge="1" parent="1" source="zugferd-svc" target="pdf-result">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="pdf-result" value="&lt;b&gt;📄 Hybrid-PDF&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Sichtbare Rechnung&lt;br&gt;+ eingebettetes XML&lt;br&gt;(maschinenlesbar)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="645" width="160" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="pa4" value="E-Mail / Download" style="html=1;endArrow=block;endFill=1;strokeColor=#7c3aed;fontSize=10;fontColor=#7c3aed;" edge="1" parent="1" source="pdf-result" target="pdf-versand">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="pdf-versand" value="&lt;b&gt;📤 Versand&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Per E-Mail oder&lt;br&gt;Download&lt;br&gt;→ gebucht=true&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#c026d3;fontSize=11;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="930" y="645" width="130" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== MwSt BERECHNUNG ==================== -->
+        <mxCell id="mwst-section" value="5. MwSt-BERECHNUNG &amp; POSITIONEN" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=15;fontStyle=1;fontColor=#a16207;" vertex="1" parent="1">
+          <mxGeometry x="60" y="795" width="600" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mwst-box" value="&lt;b&gt;MwSt-Formel&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:16px;font-weight:bold;&quot;&gt;Brutto = Netto × (1 + MwSt-Satz)&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Beispiel: 10.000€ Netto × 1,19 = 11.900€ Brutto&lt;br&gt;MwSt-Satz wird pro Dokument gespeichert (Standard: 19%)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=13;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="835" width="400" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pos-box" value="&lt;b&gt;Rechnungspositionen (JSON)&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Positionen werden als JSON-String gespeichert:&lt;br&gt;&lt;br&gt;• Positionsnummer&lt;br&gt;• Beschreibung / Leistungstext&lt;br&gt;• Menge &amp; Einheit&lt;br&gt;• Einzelpreis &amp; Gesamtpreis&lt;br&gt;• Optional: Rabatt pro Position&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=12;shadow=1;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="500" y="835" width="280" height="155" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="addr-box" value="&lt;b&gt;📍 Rechnungsadresse&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Override möglich:&lt;br&gt;Pro Dokument abweichende&lt;br&gt;Adresse vom Kundenstamm&lt;br&gt;&lt;br&gt;Felder: Firma, Straße, PLZ,&lt;br&gt;Ort, Ansprechpartner&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#a16207;fontSize=12;shadow=1;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="820" y="835" width="220" height="145" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== ÜBERSICHT ==================== -->
+        <mxCell id="ueb-section" value="6. RECHNUNGSÜBERSICHT" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=15;fontStyle=1;fontColor=#dc2626;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1010" width="600" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ueb-monat" value="&lt;b&gt;📅 Monatsgruppierung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Alle Rechnungen gruppiert&lt;br&gt;nach Monat/Jahr&lt;br&gt;mit Summenberechnung&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;fontSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1050" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ueb-jahr" value="&lt;b&gt;📊 Jahresübersicht&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Jahresumsatz&lt;br&gt;pro Dokumenttyp&lt;br&gt;Export-Funktionen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;fontSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="290" y="1050" width="180" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ueb-export" value="&lt;b&gt;📤 Steuerberater-Export&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;SteuerberaterEmail-&lt;br&gt;ProcessingService&lt;br&gt;Monatsexport per E-Mail&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;fontSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="1050" width="200" height="75" as="geometry"/>
+        </mxCell>
+
+        <!-- Storno Prozess -->
+        <mxCell id="storno-box" value="&lt;b&gt;❌ Storno-Prozess (GoBD)&lt;/b&gt;&lt;hr&gt;&lt;font style=&quot;font-size:10px&quot;&gt;1. Neues STORNO-Dokument wird erstellt&lt;br&gt;2. Original erhält storniert=true + storniertAm&lt;br&gt;3. Beide Dokumente bleiben erhalten&lt;br&gt;4. Audit-Trail vollständig&lt;br&gt;5. Löschung NICHT möglich (außer Entwürfe)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;fontSize=12;shadow=1;align=left;spacingLeft=10;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="740" y="1040" width="340" height="120" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
