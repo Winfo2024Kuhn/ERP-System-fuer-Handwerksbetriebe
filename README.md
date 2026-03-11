@@ -42,6 +42,15 @@
   <img src="assets/mobild_frontend.png" alt="Mobile Zeiterfassung – PWA für die Baustelle" width="35%" />
 </p>
 
+<br/>
+
+<p align="center">
+  <strong>📝 Dokumenteditor – Block-basierte Angebots- & Rechnungserstellung</strong>
+</p>
+<p align="center">
+  <img src="assets/Dokumenteditor.png" alt="Dokumenteditor – Block-basierter Editor mit Live-PDF-Vorschau" width="90%" />
+</p>
+
 ---
 
 ## 🙋 Über dieses Projekt
@@ -131,16 +140,45 @@ Die mobile PWA läuft auf **jedem Smartphone im Browser** – kein App Store nö
 
 > Auf der Baustelle kein Internet? Kein Problem. Die App arbeitet offline weiter und synchronisiert alles, sobald wieder Empfang da ist.
 
+### 📝 Dokumenteditor – vom Angebot zur Nachkalkulation in einer Kette
+
+Der Dokumenteditor ist das Herzstück des Rechnungswesens. Hier entsteht alles – vom ersten Angebot bis zur Schlussrechnung:
+
+**Der Workflow:** Du legst einmalig deine **Leistungen** an (z. B. „Fenster einbauen", „Putz auftragen") und ordnest jede Leistung einer **Produktkategorie** zu (z. B. „Fensterbau", „Putzarbeiten"). Im Dokumenteditor ziehst du diese Leistungen als Blöcke in dein Angebot – mit Menge, Einheit und Preis. Sobald das Angebot zum Projekt wird, weiß das System automatisch, welche Produktkategorien betroffen sind. Deine Mitarbeiter buchen ihre Zeiten auf genau diese Kategorien. Das Ergebnis: **Die Nachkalkulation läuft vollautomatisch** – geplante Stunden aus dem Angebot vs. tatsächlich gebuchte Stunden, aufgeschlüsselt nach Kategorie und Arbeitsgang.
+
+- **Block-basierter Aufbau mit Drag & Drop:** Leistungspositionen, Textbausteine, Abschnittsüberschriften, Trennlinien – frei kombinierbar und per Drag & Drop sortierbar
+- **Leistungskatalog → Produktkategorien → Zeiterfassung:** Jede Leistung ist an eine Produktkategorie gebunden. Wenn der Mitarbeiter auf der Baustelle Zeit bucht, wählt er dieselbe Kategorie – das System verbindet beides automatisch
+- **Live-PDF-Vorschau:** Rechts neben dem Editor siehst du in Echtzeit das fertige PDF mit Firmenbriefkopf, Positionsnummern und Summenblock
+- **7 Dokumenttypen:** Angebot, Rechnung, Teilrechnung, Abschlagsrechnung, Schlussrechnung, Gutschrift, Storno – alle aus einem Editor
+- **Abschnitte mit Zwischensummen:** Positionen in Bauabschnitte gruppieren (z. B. „Erdgeschoss", „Dacharbeiten") – Zwischensumme wird automatisch berechnet
+- **GAEB-Import:** Leistungsverzeichnisse im GAEB-XML-Format importieren – Positionen werden direkt als Blöcke angelegt
+- **E-Mail-Versand mit ZUGFeRD:** Dokument direkt per E-Mail versenden – wahlweise als Standard-PDF oder ZUGFeRD/XRechnung (EN 16931)
+- **GoBD-konforme Sperrung:** Gebuchte Rechnungen werden automatisch gesperrt – nur noch Storno möglich
+
+> Du legst einmal deine Leistungen und Kategorien an – danach stellt sich das Programm von selbst ein: Angebote kalkulieren, Zeiten erfassen, Nachkalkulation auswerten. Alles hängt zusammen.
+
+### 🎨 Formular-Designer – eigene Vorlagen wie in Canva
+
+Jede Firma hat ihren eigenen Stil. Im Formular-Designer gestaltest du deine **Dokumentvorlagen pixelgenau** auf einer DIN-A4-Arbeitsfläche:
+
+- **Canva-ähnlicher Editor:** Elemente frei auf der Seite platzieren – per Drag & Drop verschieben, an Kanten und Hilfslinien einrasten lassen, Größe per Anfasser ändern
+- **12 Elementtypen:** Logo, Überschriften, Freitext, Adressfeld, Kundennummer, Dokumentnummer, Datum, Projektnummer, Leistungstabelle, Seitenzahl und mehr
+- **Platzhalter mit Live-Vorschau:** `{{KUNDENNAME}}`, `{{BAUVORHABEN}}`, `{{DATUM}}` etc. – werden in der Vorschau mit echten Daten aus der Datenbank gefüllt
+- **Mehrseitige Vorlagen:** Seite 1 mit Briefkopf und Logo, Folgeseiten nur mit Tabelle und Seitenzahl – unabhängig gestaltbar
+- **Vorlagen-Bibliothek:** Templates speichern, duplizieren und verschiedenen Dokumenttypen zuweisen (ein Template für Angebote, ein anderes für Rechnungen)
+- **Magnetische Hilfslinien:** Automatisches Einrasten an Kanten, Mitten und Nachbar-Elementen für saubere Ausrichtung
+- **Undo/Redo:** Bis zu 50 Schritte rückgängig machen (Strg+Z)
+
+> Einmal das Firmen-Layout gestalten – danach werden alle Angebote, Rechnungen und Lieferscheine automatisch in deinem Corporate Design erzeugt.
+
 ---
 
 ## 📋 Weitere Module
 
 | Modul | Highlights |
 |-------|-----------|
-| **📄 Rechnungswesen** | Vollständige Dokumentenkette (Angebot → Schlussrechnung), GoBD-konforme Unveränderbarkeit & Storno-Verfahren, ZUGFeRD/XRechnung, Mahnwesen (3 Stufen) |
 | **🛒 Bestellwesen** | 4-Stufen-Kette (Anfrage → Rechnung), Kilogramm-Berechnung für Profile, Rechnungssplitting auf Projekte & Kostenstellen |
 | **🏠 Mietverwaltung** | Jahres-Nebenkostenabrechnung, Zählerstanderfassung (Wasser, Strom, Gas), PDF für Mieter |
-| **📝 Dokumentengenerator** | WYSIWYG-Editor mit Platzhaltern (`{{KUNDENNAME}}` etc.), Firmenbriefkopf, PDF-Ausgabe |
 | **📊 Controlling-Dashboard** | Echtzeit-KPIs, monatlicher Umsatzverlauf mit Vorjahresvergleich, Projekt-Heatmap nach PLZ |
 
 ---
