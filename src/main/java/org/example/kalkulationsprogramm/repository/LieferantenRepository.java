@@ -43,6 +43,6 @@ public interface LieferantenRepository extends JpaRepository<Lieferanten, Long>,
 
     List<Lieferanten> findByIstAktivTrueOrderByLieferantennameAsc();
 
-    @Query("select distinct l from Lieferanten l left join l.kundenEmails e left join fetch l.kundenEmails where lower(l.lieferantenname) like lower(concat('%', :query, '%')) or lower(e) like lower(concat('%', :query, '%'))")
+    @Query("select distinct l from Lieferanten l left join fetch l.kundenEmails e where lower(l.lieferantenname) like lower(concat('%', :query, '%')) or lower(e) like lower(concat('%', :query, '%'))")
     List<Lieferanten> searchByNameOrEmail(@Param("query") String query);
 }

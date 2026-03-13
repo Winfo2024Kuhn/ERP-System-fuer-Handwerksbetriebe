@@ -19,7 +19,7 @@ public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecific
     /**
      * Sucht Kunden nach Name, Ansprechpartner, Kundennummer oder E-Mail.
      */
-    @Query("SELECT DISTINCT k FROM Kunde k LEFT JOIN k.kundenEmails e LEFT JOIN FETCH k.kundenEmails " +
+    @Query("SELECT DISTINCT k FROM Kunde k LEFT JOIN FETCH k.kundenEmails e " +
            "WHERE LOWER(k.name) LIKE LOWER(CONCAT('%', :query, '%')) " +
            "OR LOWER(k.ansprechspartner) LIKE LOWER(CONCAT('%', :query, '%')) " +
            "OR LOWER(k.kundennummer) LIKE LOWER(CONCAT('%', :query, '%')) " +

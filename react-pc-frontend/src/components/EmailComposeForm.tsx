@@ -920,7 +920,7 @@ export function EmailComposeForm({
 
             {/* Footer - Only show if variant is default */}
             {variant !== 'modal' && (
-                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 flex-shrink-0">
+                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 flex-shrink-0 pr-40">
                     <Button variant="outline" onClick={onClose} disabled={sending}>
                         Abbrechen
                     </Button>

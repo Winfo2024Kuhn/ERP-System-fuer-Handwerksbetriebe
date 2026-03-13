@@ -50,5 +50,8 @@ build_error_log.txt
 ### AI Indexer Cache ###
 .rag-cache.json
 
+### Local Overrides (Secrets, Credentials) ###
+src/main/resources/application-local.properties
+
 ### Misc ###
 package-lock.json
