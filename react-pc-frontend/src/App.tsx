@@ -35,6 +35,7 @@ import FirmaEditor from './pages/FirmaEditor';
 import BestellungEditor from './pages/BestellungEditor';
 import DocumentEditorPage from './pages/DocumentEditorPage';
 import ArbeitszeitartEditor from './pages/ArbeitszeitartEditor';
+import EinstellungenEditor from './pages/EinstellungenEditor';
 
 export default function App() {
   return (
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="/urlaubsantraege" element={<ErrorBoundary><Urlaubsantraege /></ErrorBoundary>} />
           <Route path="/abteilung-berechtigungen" element={<ErrorBoundary><AbteilungBerechtigungenEditor /></ErrorBoundary>} />
           <Route path="/firma" element={<ErrorBoundary><FirmaEditor /></ErrorBoundary>} />
+          <Route path="/einstellungen" element={<ErrorBoundary><EinstellungenEditor /></ErrorBoundary>} />
 
           <Route path="*" element={<Navigate to="/projekte" replace />} />
         </Route>
