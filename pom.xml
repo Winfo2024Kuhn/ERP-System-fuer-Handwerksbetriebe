@@ -142,7 +142,7 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>test</scope>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.awaitility</groupId>
@@ -207,14 +207,21 @@
                 <artifactId>jpackage-maven-plugin</artifactId>
                 <version>1.6.6</version>
                 <configuration>
-                    <name>Kalkulationsprogramm</name>
-                    <input>${project.build.directory}</input>
+                    <name>ERP-Handwerk</name>
+                    <appVersion>1.0.0</appVersion>
+                    <vendor>Winfo2024Kuhn</vendor>
+                    <description>ERP-System fuer Handwerksbetriebe</description>
+                    <input>${project.build.directory}/jpackage-input</input>
                     <mainJar>${project.build.finalName}.jar</mainJar>
                     <mainClass>org.springframework.boot.loader.launch.JarLauncher</mainClass>
                     <destination>${project.build.directory}/installer</destination>
+                    <javaOptions>-Dspring.profiles.active=h2 -Xmx512m -Dfile.encoding=UTF-8</javaOptions>
                     <type>EXE</type>
+                    <winDirChooser>true</winDirChooser>
+                    <winShortcut>true</winShortcut>
+                    <winMenu>true</winMenu>
+                    <winMenuGroup>ERP Handwerk</winMenuGroup>
                 </configuration>
-
             </plugin>
 
             <plugin>
