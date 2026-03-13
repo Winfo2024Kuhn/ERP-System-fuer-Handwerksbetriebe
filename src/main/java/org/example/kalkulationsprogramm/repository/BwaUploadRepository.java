@@ -1,14 +1,14 @@
 package org.example.kalkulationsprogramm.repository;
 
+import java.util.List;
+import java.util.Optional;
+
 import org.example.kalkulationsprogramm.domain.BwaTyp;
 import org.example.kalkulationsprogramm.domain.BwaUpload;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
-import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface BwaUploadRepository extends JpaRepository<BwaUpload, Long> {
@@ -43,4 +43,7 @@ public interface BwaUploadRepository extends JpaRepository<BwaUpload, Long> {
     java.math.BigDecimal summeGemeinkostenAusBwa(@Param("jahr") Integer jahr);
 
     boolean existsBySourceEmailIdAndOriginalDateiname(Long emailId, String originalDateiname);
+
+    @Query("SELECT DISTINCT b.jahr FROM BwaUpload b ORDER BY b.jahr DESC")
+    List<Integer> findDistinctJahre();
 }

@@ -1,17 +1,24 @@
 package org.example.kalkulationsprogramm.repository;
 
-import org.example.kalkulationsprogramm.domain.*;
+import java.util.List;
+import java.util.Optional;
+
+import org.example.kalkulationsprogramm.domain.Angebot;
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.EmailProcessingStatus;
+import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.Projekt;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
-
 @Repository
 public interface EmailRepository extends JpaRepository<Email, Long> {
 
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.deletedAt IS NOT NULL ORDER BY e.deletedAt DESC")
   List<Email> findByDeletedAtIsNotNullOrderByDeletedAtDesc();
 
   long countByDeletedAtIsNotNullAndIsReadFalse();
@@ -26,7 +33,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   List<Email> findByDirection(EmailDirection direction);
 
-  List<Email> findByDirectionOrderBySentAtDesc(EmailDirection direction);
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.direction = :direction ORDER BY e.sentAt DESC")
+  List<Email> findByDirectionOrderBySentAtDesc(@Param("direction") EmailDirection direction);
 
   List<Email> findBySenderDomain(String senderDomain);
 
@@ -39,16 +47,18 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.projekt = :projekt ORDER BY e.sentAt DESC")
   List<Email> findByProjektOrderBySentAtDesc(@Param("projekt") Projekt projekt);
 
-  List<Email> findByAngebotOrderBySentAtDesc(Angebot angebot);
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.angebot = :angebot ORDER BY e.sentAt DESC")
+  List<Email> findByAngebotOrderBySentAtDesc(@Param("angebot") Angebot angebot);
 
-  List<Email> findByLieferantOrderBySentAtDesc(Lieferanten lieferant);
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.lieferant = :lieferant ORDER BY e.sentAt DESC")
+  List<Email> findByLieferantOrderBySentAtDesc(@Param("lieferant") Lieferanten lieferant);
 
   List<Email> findByProjektInOrderBySentAtDesc(java.util.Collection<Projekt> projekte);
 
   List<Email> findByAngebotInOrderBySentAtDesc(java.util.Collection<Angebot> angebote);
 
-  // ID-based methods for better performance/flexibility
-  List<Email> findByLieferantIdOrderBySentAtDesc(Long lieferantId);
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.lieferant.id = :lieferantId ORDER BY e.sentAt DESC")
+  List<Email> findByLieferantIdOrderBySentAtDesc(@Param("lieferantId") Long lieferantId);
 
   /**
    * Findet alle Emails eines Lieferanten mit vorgeladenen Attachments.
@@ -62,7 +72,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   Optional<Email> findFirstByLieferantIdOrderBySentAtDesc(Long lieferantId);
 
-  List<Email> findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp typ);
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.zuordnungTyp = :typ ORDER BY e.sentAt DESC")
+  List<Email> findByZuordnungTypOrderBySentAtDesc(@Param("typ") EmailZuordnungTyp typ);
 
   /**
    * Findet alle unzugeordneten Emails von BEKANNTEN Kunden
@@ -316,7 +327,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   /**
    * Findet alle Spam-Emails.
    */
-  @Query("SELECT e FROM Email e WHERE e.isSpam = true AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.isSpam = true AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findSpam();
 
   /**
@@ -335,7 +346,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   /**
    * Findet alle Newsletter.
    */
-  @Query("SELECT e FROM Email e WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findNewsletter();
 
   /**
@@ -371,7 +382,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Note: "Nicht zugeordnet" emails (known customers) still appear here
    * because they are a subset, not a separate folder.
    */
-  @Query("SELECT e FROM Email e " +
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments " +
       "WHERE e.direction = 'IN' " +
       "AND e.zuordnungTyp = 'KEINE' " +
       "AND e.deletedAt IS NULL " +
@@ -405,19 +416,19 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   // NEW FOLDERS: PROJECT, OFFER, SUPPLIER
   // ═══════════════════════════════════════════════════════════════
 
-  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findProjectEmails();
 
   @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL AND e.isRead = false")
   long countProjectEmailsUnread();
 
-  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'ANGEBOT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.zuordnungTyp = 'ANGEBOT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findAngebotEmails();
 
   @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'ANGEBOT' AND e.deletedAt IS NULL AND e.isRead = false")
   long countAngebotEmailsUnread();
 
-  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findLieferantEmails();
 
   @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL AND e.isRead = false")

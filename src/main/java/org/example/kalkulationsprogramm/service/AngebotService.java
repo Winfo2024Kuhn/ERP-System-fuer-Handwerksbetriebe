@@ -109,7 +109,7 @@ public class AngebotService {
     }
 
     public List<AngebotResponseDto> alle() {
-        return angebotRepository.findAll().stream()
+        return angebotRepository.findAllWithKundenEmails().stream()
                 .filter(angebot -> angebot.getProjekt() == null)
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
@@ -160,7 +160,7 @@ public class AngebotService {
             if (nurOhneProjekt) {
                 return alle();
             }
-            return angebotRepository.findAll().stream()
+            return angebotRepository.findAllWithKundenEmails().stream()
                     .map(this::mapToDto)
                     .collect(Collectors.toList());
         }

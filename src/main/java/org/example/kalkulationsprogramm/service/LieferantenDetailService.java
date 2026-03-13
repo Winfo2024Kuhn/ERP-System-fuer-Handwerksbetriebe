@@ -152,7 +152,7 @@ public class LieferantenDetailService {
         // Need to add findByLieferantId to EmailRepository or use existing methods
         // Assuming findByLieferantIdDesc or similar
         // For now: placeholder query logic using existing repo if possible
-        return emailRepository.findByLieferantIdOrderBySentAtDesc(lieferantId);
+        return emailRepository.findByLieferantIdWithAttachments(lieferantId);
     }
 
     private LieferantEmailDto toEmailDto(org.example.kalkulationsprogramm.domain.Email email) {

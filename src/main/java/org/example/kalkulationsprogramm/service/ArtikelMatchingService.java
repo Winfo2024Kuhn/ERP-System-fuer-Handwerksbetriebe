@@ -1,6 +1,10 @@
 package org.example.kalkulationsprogramm.service;
 
-import lombok.AllArgsConstructor;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
+
+import org.apache.commons.text.similarity.JaroWinklerSimilarity;
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
@@ -8,10 +12,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
-import org.apache.commons.text.similarity.JaroWinklerSimilarity;
+import lombok.AllArgsConstructor;
 
 /**
  * Hilfsservice, der ausgehend von Produktinformationen passende Artikel und Lieferanten vorschlägt.
@@ -55,11 +56,8 @@ public class ArtikelMatchingService {
     public Optional<Lieferanten> findeLieferantFuerEmail(String email) {
         if (email == null || !email.contains("@")) return Optional.empty();
         String domain = email.substring(email.indexOf('@') + 1).trim().toLowerCase();
-        return lieferantenRepository.findAll().stream()
-                .filter(l -> l.getKundenEmails().stream()
-                        .map(e -> e == null ? null : e.trim().toLowerCase())
-                        .anyMatch(e -> e != null && e.endsWith(domain)))
-                .findFirst();
+        List<Lieferanten> matches = lieferantenRepository.findByEmailDomain(domain);
+        return matches.isEmpty() ? Optional.empty() : Optional.of(matches.getFirst());
     }
 
     /**

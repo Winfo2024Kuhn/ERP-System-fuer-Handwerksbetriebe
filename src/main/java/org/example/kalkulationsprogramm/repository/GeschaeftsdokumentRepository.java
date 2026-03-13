@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.repository;
 
+import java.util.List;
+import java.util.Optional;
+
 import org.example.kalkulationsprogramm.domain.Dokumenttyp;
 import org.example.kalkulationsprogramm.domain.Geschaeftsdokument;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -7,21 +10,20 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
-
 @Repository
 public interface GeschaeftsdokumentRepository extends JpaRepository<Geschaeftsdokument, Long> {
 
         /**
          * Findet alle Dokumente eines Projekts, sortiert nach Datum.
          */
-        List<Geschaeftsdokument> findByProjektIdOrderByDatumDesc(Long projektId);
+        @Query("SELECT DISTINCT g FROM Geschaeftsdokument g LEFT JOIN FETCH g.zahlungen LEFT JOIN FETCH g.projekt LEFT JOIN FETCH g.kunde LEFT JOIN FETCH g.vorgaengerDokument WHERE g.projekt.id = :projektId ORDER BY g.datum DESC")
+        List<Geschaeftsdokument> findByProjektIdOrderByDatumDesc(@Param("projektId") Long projektId);
 
         /**
          * Findet alle Dokumente eines Kunden, sortiert nach Datum.
          */
-        List<Geschaeftsdokument> findByKundeIdOrderByDatumDesc(Long kundeId);
+        @Query("SELECT DISTINCT g FROM Geschaeftsdokument g LEFT JOIN FETCH g.zahlungen LEFT JOIN FETCH g.projekt LEFT JOIN FETCH g.kunde LEFT JOIN FETCH g.vorgaengerDokument WHERE g.kunde.id = :kundeId ORDER BY g.datum DESC")
+        List<Geschaeftsdokument> findByKundeIdOrderByDatumDesc(@Param("kundeId") Long kundeId);
 
         /**
          * Findet alle Dokumente eines bestimmten Dokumenttyps.

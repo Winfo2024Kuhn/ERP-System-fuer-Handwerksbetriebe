@@ -1,18 +1,21 @@
 package org.example.kalkulationsprogramm.repository;
 
+import java.time.LocalDate;
+import java.util.List;
+
 import org.example.kalkulationsprogramm.domain.Angebot;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
-import java.time.LocalDate;
-import java.util.List;
-
 public interface AngebotRepository extends JpaRepository<Angebot, Long> {
+     @Query("SELECT DISTINCT a FROM Angebot a LEFT JOIN FETCH a.kunde k LEFT JOIN FETCH k.kundenEmails WHERE a.projekt.id IN :ids")
      List<Angebot> findByProjektIdIn(List<Long> ids);
 
-     List<Angebot> findByKundeId(Long kundeId);
+     @Query("SELECT DISTINCT a FROM Angebot a LEFT JOIN FETCH a.kunde k LEFT JOIN FETCH k.kundenEmails WHERE a.kunde.id = :kundeId")
+     List<Angebot> findByKundeId(@org.springframework.data.repository.query.Param("kundeId") Long kundeId);
 
-     List<Angebot> findByKunde_KundennummerIgnoreCase(String kundennummer);
+     @Query("SELECT DISTINCT a FROM Angebot a LEFT JOIN FETCH a.kunde k LEFT JOIN FETCH k.kundenEmails WHERE LOWER(k.kundennummer) = LOWER(:kundennummer)")
+     List<Angebot> findByKunde_KundennummerIgnoreCase(@org.springframework.data.repository.query.Param("kundennummer") String kundennummer);
 
      @Query("select a.projekt.id, g.dokumentid from Angebot a join a.dokumente g where a.projekt.id in :ids and g.geschaeftsdokumentart = 'Angebot'")
      List<Object[]> findDokumentIdsByProjektIds(List<Long> ids);
@@ -22,7 +25,7 @@ public interface AngebotRepository extends JpaRepository<Angebot, Long> {
 
      @Query("""
                SELECT DISTINCT a FROM Angebot a
-               LEFT JOIN a.kunde k
+               LEFT JOIN FETCH a.kunde k
                LEFT JOIN k.kundenEmails e
                WHERE (
                       :kundenname IS NULL OR
@@ -79,7 +82,7 @@ public interface AngebotRepository extends JpaRepository<Angebot, Long> {
 
      @Query("""
                SELECT DISTINCT a FROM Angebot a
-               LEFT JOIN a.kunde k
+               LEFT JOIN FETCH a.kunde k
                LEFT JOIN k.kundenEmails e
                LEFT JOIN a.kundenEmails ae
                WHERE LOWER(a.bauvorhaben) LIKE LOWER(CONCAT('%', :query, '%'))

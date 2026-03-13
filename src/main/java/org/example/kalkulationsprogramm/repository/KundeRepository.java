@@ -1,13 +1,13 @@
 package org.example.kalkulationsprogramm.repository;
 
+import java.util.List;
+import java.util.Optional;
+
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-
-import java.util.List;
-import java.util.Optional;
 
 public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecificationExecutor<Kunde>
 {
@@ -19,7 +19,7 @@ public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecific
     /**
      * Sucht Kunden nach Name, Ansprechpartner, Kundennummer oder E-Mail.
      */
-    @Query("SELECT DISTINCT k FROM Kunde k LEFT JOIN k.kundenEmails e " +
+    @Query("SELECT DISTINCT k FROM Kunde k LEFT JOIN k.kundenEmails e LEFT JOIN FETCH k.kundenEmails " +
            "WHERE LOWER(k.name) LIKE LOWER(CONCAT('%', :query, '%')) " +
            "OR LOWER(k.ansprechspartner) LIKE LOWER(CONCAT('%', :query, '%')) " +
            "OR LOWER(k.kundennummer) LIKE LOWER(CONCAT('%', :query, '%')) " +

@@ -1,7 +1,17 @@
 package org.example.kalkulationsprogramm.service;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.regex.Pattern;
+
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.EmailSignatureImage;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
@@ -13,11 +23,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.*;
-import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
@@ -37,9 +44,7 @@ public class EmailSignatureService {
 
     @Transactional(readOnly = true)
     public List<EmailSignature> list() {
-        List<EmailSignature> signatures = signatureRepository.findAllByOrderByUpdatedAtDesc();
-        signatures.forEach(sig -> Optional.ofNullable(sig.getImages()).ifPresent(List::size));
-        return signatures;
+        return signatureRepository.findAllByOrderByUpdatedAtDesc();
     }
 
     @Transactional(readOnly = true)

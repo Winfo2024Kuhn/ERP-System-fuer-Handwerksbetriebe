@@ -1,10 +1,16 @@
 package org.example.kalkulationsprogramm.service;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.example.kalkulationsprogramm.domain.BwaPosition;
 import org.example.kalkulationsprogramm.domain.BwaUpload;
+import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
-import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.dto.BwaUploadDto;
 import org.example.kalkulationsprogramm.repository.BwaUploadRepository;
 import org.junit.jupiter.api.Nested;
@@ -12,16 +18,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class BwaServiceTest {
@@ -175,16 +174,7 @@ class BwaServiceTest {
 
         @Test
         void gibtVerfuegbareJahreSortiertZurueck() {
-            BwaUpload u1 = new BwaUpload();
-            u1.setJahr(2023);
-            BwaUpload u2 = new BwaUpload();
-            u2.setJahr(2025);
-            BwaUpload u3 = new BwaUpload();
-            u3.setJahr(2024);
-            BwaUpload u4 = new BwaUpload();
-            u4.setJahr(2025); // Duplikat
-
-            when(bwaUploadRepository.findAll()).thenReturn(List.of(u1, u2, u3, u4));
+            when(bwaUploadRepository.findDistinctJahre()).thenReturn(List.of(2025, 2024, 2023));
 
             List<Integer> result = service.findAvailableYears();
 
@@ -193,7 +183,7 @@ class BwaServiceTest {
 
         @Test
         void gibtLeereListeZurueckBeiKeinenUploads() {
-            when(bwaUploadRepository.findAll()).thenReturn(List.of());
+            when(bwaUploadRepository.findDistinctJahre()).thenReturn(List.of());
 
             List<Integer> result = service.findAvailableYears();
 

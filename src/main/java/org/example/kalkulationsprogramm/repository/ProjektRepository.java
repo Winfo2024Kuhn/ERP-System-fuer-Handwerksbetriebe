@@ -1,18 +1,18 @@
 package org.example.kalkulationsprogramm.repository;
 
-import org.example.kalkulationsprogramm.domain.Projekt;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.data.jpa.repository.EntityGraph;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
-
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+
+import org.example.kalkulationsprogramm.domain.Projekt;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpecificationExecutor<Projekt> {
@@ -34,7 +34,7 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
 
         @Query("""
                         SELECT DISTINCT p FROM Projekt p
-                        LEFT JOIN p.kundenId k
+                        LEFT JOIN FETCH p.kundenId k
                         LEFT JOIN k.kundenEmails e
                         LEFT JOIN p.kundenEmails pe
                         WHERE LOWER(p.bauvorhaben) LIKE LOWER(CONCAT('%', :query, '%'))
@@ -69,7 +69,8 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
         @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.kundenId k LEFT JOIN FETCH k.kundenEmails")
         List<Projekt> findAllWithKundenEmails();
 
-        List<Projekt> findByKundenId_Id(Long kundenId);
+        @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.kundenId WHERE p.kundenId.id = :kundenId")
+        List<Projekt> findByKundenId_Id(@Param("kundenId") Long kundenId);
 
         List<Projekt> findByAnlegedatumBetween(LocalDate start, LocalDate ende);
 
