@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Mail, Brain, Smartphone, CheckCircle, XCircle, Loader2, Save, TestTube, Eye, EyeOff, ExternalLink, QrCode, Copy, AlertTriangle, Info } from 'lucide-react';
+import { Mail, Brain, Smartphone, CheckCircle, XCircle, Loader2, Save, TestTube, Eye, EyeOff, ExternalLink, QrCode, Copy, AlertTriangle, Info } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -20,7 +20,7 @@ interface SmtpSettings {
 }
 
 function SmtpSection() {
-    const { addToast } = useToast();
+    const toast = useToast();
     const [settings, setSettings] = useState<SmtpSettings>({ host: '', port: 465, username: '', passwordSet: false });
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -58,14 +58,14 @@ function SmtpSection() {
                 }),
             });
             if (res.ok) {
-                addToast('SMTP-Einstellungen gespeichert', 'success');
+                toast.success('SMTP-Einstellungen gespeichert');
                 setPassword('');
                 loadSettings();
             } else {
-                addToast('Fehler beim Speichern', 'error');
+                toast.error('Fehler beim Speichern');
             }
         } catch {
-            addToast('Verbindungsfehler', 'error');
+            toast.error('Verbindungsfehler');
         } finally {
             setSaving(false);
         }
@@ -90,9 +90,9 @@ function SmtpSection() {
                 const data = await res.json();
                 setTestResult(data);
                 if (data.success) {
-                    addToast(data.message, 'success');
+                    toast.success(data.message);
                 } else {
-                    addToast(data.message, 'error');
+                    toast.error(data.message);
                 }
             }
         } catch {
@@ -211,7 +211,7 @@ function SmtpSection() {
 // ==================== Gemini KI Einstellungen ====================
 
 function GeminiSection() {
-    const { addToast } = useToast();
+    const toast = useToast();
     const [apiKeySet, setApiKeySet] = useState(false);
     const [apiKey, setApiKey] = useState('');
     const [showKey, setShowKey] = useState(false);
@@ -243,14 +243,14 @@ function GeminiSection() {
                 body: JSON.stringify({ apiKey }),
             });
             if (res.ok) {
-                addToast('Gemini API Key gespeichert', 'success');
+                toast.success('Gemini API Key gespeichert');
                 setApiKey('');
                 loadSettings();
             } else {
-                addToast('Fehler beim Speichern', 'error');
+                toast.error('Fehler beim Speichern');
             }
         } catch {
-            addToast('Verbindungsfehler', 'error');
+            toast.error('Verbindungsfehler');
         } finally {
             setSaving(false);
         }
@@ -268,8 +268,8 @@ function GeminiSection() {
             if (res.ok) {
                 const data = await res.json();
                 setTestResult(data);
-                if (data.success) addToast(data.message, 'success');
-                else addToast(data.message, 'error');
+                if (data.success) toast.success(data.message);
+                else toast.error(data.message);
             }
         } catch {
             setTestResult({ success: false, message: 'Verbindungsfehler zum Server' });
