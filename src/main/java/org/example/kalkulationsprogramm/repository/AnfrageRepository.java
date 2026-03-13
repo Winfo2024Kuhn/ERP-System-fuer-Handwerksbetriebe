@@ -8,11 +8,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
+     @Query("SELECT DISTINCT a FROM Anfrage a LEFT JOIN FETCH a.kunde k LEFT JOIN FETCH k.kundenEmails WHERE a.projekt.id IN :ids")
      List<Anfrage> findByProjektIdIn(List<Long> ids);
 
-     List<Anfrage> findByKundeId(Long kundeId);
+     @Query("SELECT DISTINCT a FROM Anfrage a LEFT JOIN FETCH a.kunde k LEFT JOIN FETCH k.kundenEmails WHERE a.kunde.id = :kundeId")
+     List<Anfrage> findByKundeId(@org.springframework.data.repository.query.Param("kundeId") Long kundeId);
 
-     List<Anfrage> findByKunde_KundennummerIgnoreCase(String kundennummer);
+     @Query("SELECT DISTINCT a FROM Anfrage a LEFT JOIN FETCH a.kunde k LEFT JOIN FETCH k.kundenEmails WHERE LOWER(k.kundennummer) = LOWER(:kundennummer)")
+     List<Anfrage> findByKunde_KundennummerIgnoreCase(@org.springframework.data.repository.query.Param("kundennummer") String kundennummer);
 
      @Query("select a.projekt.id, g.dokumentid from Anfrage a join a.dokumente g where a.projekt.id in :ids and g.geschaeftsdokumentart = 'Anfrage'")
      List<Object[]> findDokumentIdsByProjektIds(List<Long> ids);
@@ -22,7 +25,7 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
 
      @Query("""
                SELECT DISTINCT a FROM Anfrage a
-               LEFT JOIN a.kunde k
+               LEFT JOIN FETCH a.kunde k
                LEFT JOIN k.kundenEmails e
                WHERE (
                       :kundenname IS NULL OR
@@ -79,7 +82,7 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
 
      @Query("""
                SELECT DISTINCT a FROM Anfrage a
-               LEFT JOIN a.kunde k
+               LEFT JOIN FETCH a.kunde k
                LEFT JOIN k.kundenEmails e
                LEFT JOIN a.kundenEmails ae
                WHERE LOWER(a.bauvorhaben) LIKE LOWER(CONCAT('%', :query, '%'))

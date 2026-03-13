@@ -59,7 +59,6 @@ public class AnfrageService {
         anfrage.setAnlegedatum(dto.getAnlegedatum() != null ? dto.getAnlegedatum() : LocalDate.now());
         anfrage.setProjektStrasse(dto.getProjektStrasse());
         anfrage.setProjektPlz(dto.getProjektPlz());
-        anfrage.setProjektPlz(dto.getProjektPlz());
         anfrage.setProjektOrt(dto.getProjektOrt());
         anfrage.setKurzbeschreibung(dto.getKurzbeschreibung());
         if (dto.getAbgeschlossen() != null) {
@@ -73,20 +72,7 @@ public class AnfrageService {
         }
 
         anfrageRepository.save(anfrage);
-
-        // E-Mail-Backfill Trigger
-        try {
-            List<String> kundenEmails = dto.getKundenEmails();
-            if (kundenEmails != null && !kundenEmails.isEmpty()) {
-                eventPublisher
-                        .publishEvent(org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.forNewEntity(
-                                org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.EntityType.ANFRAGE,
-                                anfrage.getId(),
-                                kundenEmails));
-            }
-        } catch (Exception e) {
-            // log
-        }
+        publishEmailBackfillEvent(anfrage, dto, true);
 
         return mapToDto(anfrage);
     }
@@ -99,7 +85,6 @@ public class AnfrageService {
         // No redundant string fields setters
         anfrage.setAnlegedatum(dto.getAnlegedatum() != null ? dto.getAnlegedatum() : LocalDate.now());
         anfrage.setProjektStrasse(dto.getProjektStrasse());
-        anfrage.setProjektPlz(dto.getProjektPlz());
         anfrage.setProjektPlz(dto.getProjektPlz());
         anfrage.setProjektOrt(dto.getProjektOrt());
         anfrage.setKurzbeschreibung(dto.getKurzbeschreibung());
@@ -118,26 +103,13 @@ public class AnfrageService {
         }
 
         anfrageRepository.save(anfrage);
-
-        // E-Mail-Backfill Trigger
-        try {
-            List<String> kundenEmails = dto.getKundenEmails();
-            if (kundenEmails != null && !kundenEmails.isEmpty()) {
-                eventPublisher
-                        .publishEvent(org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.forNewEntity(
-                                org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.EntityType.ANFRAGE,
-                                anfrage.getId(),
-                                kundenEmails));
-            }
-        } catch (Exception e) {
-            // log
-        }
+        publishEmailBackfillEvent(anfrage, dto, true);
 
         return mapToDto(anfrage);
     }
 
     public List<AnfrageResponseDto> alle() {
-        return anfrageRepository.findAll().stream()
+        return anfrageRepository.findAllWithKundenEmails().stream()
                 .filter(anfrage -> anfrage.getProjekt() == null)
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
@@ -188,7 +160,7 @@ public class AnfrageService {
             if (nurOhneProjekt) {
                 return alle();
             }
-            return anfrageRepository.findAll().stream()
+            return anfrageRepository.findAllWithKundenEmails().stream()
                     .map(this::mapToDto)
                     .collect(Collectors.toList());
         }
@@ -237,7 +209,6 @@ public class AnfrageService {
             a.setBauvorhaben(dto.getBauvorhaben());
             a.setProjektStrasse(dto.getProjektStrasse());
             a.setProjektPlz(dto.getProjektPlz());
-            a.setProjektPlz(dto.getProjektPlz());
             a.setProjektOrt(dto.getProjektOrt());
             a.setKurzbeschreibung(dto.getKurzbeschreibung());
             if (dto.getBetrag() != null) {
@@ -246,9 +217,6 @@ public class AnfrageService {
             if (dto.getAbgeschlossen() != null) {
                 a.setAbgeschlossen(dto.getAbgeschlossen());
             }
-            // Email updates are ignored for now as they belong to Kunde.
-            // Only backfill if we want to re-scan for this customer.
-            boolean invokeBackfill = true;
 
             if (dto.getAnlegedatum() != null) {
                 a.setAnlegedatum(dto.getAnlegedatum());
@@ -261,23 +229,7 @@ public class AnfrageService {
             }
 
             anfrageRepository.save(a);
-
-            // E-Mail-Backfill Trigger
-            if (invokeBackfill) {
-                try {
-                    List<String> kundenEmails = dto.getKundenEmails();
-                    if (kundenEmails != null && !kundenEmails.isEmpty()) {
-                        eventPublisher.publishEvent(
-                                org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.forAddressChange(
-                                        org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.EntityType.ANFRAGE,
-                                        a.getId(),
-                                        kundenEmails,
-                                        kundenEmails));
-                    }
-                } catch (Exception e) {
-                    // log
-                }
-            }
+            publishEmailBackfillEvent(a, dto, false);
 
             return mapToDto(a);
         }).orElse(null);
@@ -289,7 +241,6 @@ public class AnfrageService {
             a.setBauvorhaben(dto.getBauvorhaben());
             a.setProjektStrasse(dto.getProjektStrasse());
             a.setProjektPlz(dto.getProjektPlz());
-            a.setProjektPlz(dto.getProjektPlz());
             a.setProjektOrt(dto.getProjektOrt());
             a.setKurzbeschreibung(dto.getKurzbeschreibung());
             if (dto.getBetrag() != null) {
@@ -298,7 +249,6 @@ public class AnfrageService {
             if (dto.getAbgeschlossen() != null) {
                 a.setAbgeschlossen(dto.getAbgeschlossen());
             }
-            boolean invokeBackfill = true;
             if (dto.getAnlegedatum() != null) {
                 a.setAnlegedatum(dto.getAnlegedatum());
             }
@@ -320,23 +270,7 @@ public class AnfrageService {
             }
 
             anfrageRepository.save(a);
-
-            // E-Mail-Backfill Trigger
-            if (invokeBackfill) {
-                try {
-                    List<String> kundenEmails = dto.getKundenEmails();
-                    if (kundenEmails != null && !kundenEmails.isEmpty()) {
-                        eventPublisher.publishEvent(
-                                org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.forAddressChange(
-                                        org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.EntityType.ANFRAGE,
-                                        a.getId(),
-                                        kundenEmails,
-                                        kundenEmails));
-                    }
-                } catch (Exception e) {
-                    // log
-                }
-            }
+            publishEmailBackfillEvent(a, dto, false);
 
             return mapToDto(a);
         }).orElse(null);
@@ -363,6 +297,30 @@ public class AnfrageService {
         }
         if ((dto.getKundenEmails() == null || dto.getKundenEmails().isEmpty()) && kunde.getKundenEmails() != null) {
             dto.setKundenEmails(new ArrayList<>(kunde.getKundenEmails()));
+        }
+    }
+
+    private void publishEmailBackfillEvent(Anfrage anfrage, AnfrageErstellenDto dto, boolean isNew) {
+        try {
+            List<String> kundenEmails = dto.getKundenEmails();
+            if (kundenEmails != null && !kundenEmails.isEmpty()) {
+                if (isNew) {
+                    eventPublisher.publishEvent(
+                            org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.forNewEntity(
+                                    org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.EntityType.ANFRAGE,
+                                    anfrage.getId(),
+                                    kundenEmails));
+                } else {
+                    eventPublisher.publishEvent(
+                            org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.forAddressChange(
+                                    org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.EntityType.ANFRAGE,
+                                    anfrage.getId(),
+                                    kundenEmails,
+                                    kundenEmails));
+                }
+            }
+        } catch (Exception e) {
+            // Silent fallback – email backfill is non-critical
         }
     }
 
@@ -454,7 +412,7 @@ public class AnfrageService {
                 .filter(AnfrageGeschaeftsdokument.class::isInstance)
                 .map(AnfrageGeschaeftsdokument.class::cast)
                 .filter(d -> d.getGeschaeftsdokumentart() != null
-                        && d.getGeschaeftsdokumentart().toLowerCase().contains("angebot"))
+                        && d.getGeschaeftsdokumentart().toLowerCase().contains("anfrage"))
                 .findFirst()
                 .ifPresent(d -> dto.setAnfragesnummer(d.getDokumentid()));
 
