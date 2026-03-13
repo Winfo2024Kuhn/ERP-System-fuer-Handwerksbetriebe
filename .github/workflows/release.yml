@@ -1,0 +1,57 @@
+name: Build & Release Windows Installer
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 23
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '23'
+
+      - name: Build JAR
+        run: ./mvnw.cmd clean package -DskipTests -q
+
+      - name: Stage JAR for jpackage
+        run: |
+          mkdir target\jpackage-input
+          copy target\Kalkulationsprogramm-1.0.0.jar target\jpackage-input\
+
+      - name: Build Windows Installer
+        run: ./mvnw.cmd jpackage:jpackage -q
+
+      - name: Upload Installer as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ERP-Handwerk-Installer
+          path: target/installer/*.exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/installer/*.exe
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            1. **`ERP-Handwerk-1.0.0.exe`** herunterladen (siehe Assets unten)
+            2. Doppelklick → Installieren
+            3. Startmenü → **„ERP Handwerk"** → Fertig ✅
+
+            **Keine Voraussetzungen nötig** – kein Java, kein Docker, keine Datenbank.
+
+            Standard-Login: `Marvin` / `123456`
+
+            📖 [Vollständige Installationsanleitung](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md)
