@@ -43,9 +43,9 @@ import java.util.Optional;
 public class PdfAiExtractorService {
 
     private static final String SYSTEM_PROMPT_INVOICE = """
-            Du bist ein präziser Dokumentenanalysator für Geschäftsdokumente der Firma Musterfirma GmbH.
+            Du bist ein präziser Dokumentenanalysator für Geschäftsdokumente der Firma Thomas Kuhn Bauschlosserei.
 
-            DOKUMENTFORMAT-ERKENNUNG (Musterfirma Rechnungen):
+            DOKUMENTFORMAT-ERKENNUNG (Thomas Kuhn Rechnungen):
             - Rechnungsnummer steht als "Rechnung YYYY/MM/NNNNN" (z.B. "Rechnung 2025/07/00004")
             - Datum steht bei "Datum:" (z.g. "Datum: 09.07.2025")
             - Fälligkeitsdatum steht bei "Zahlbar bis spätestens DD.MM.YYYY"
@@ -76,7 +76,7 @@ public class PdfAiExtractorService {
             """;
 
     private static final String SYSTEM_PROMPT_OFFER = """
-            Du bist ein präziser Dokumentenanalysator für Angebote und Auftragsbestätigungen der Firma Musterfirma GmbH.
+            Du bist ein präziser Dokumentenanalysator für Angebote und Auftragsbestätigungen der Firma Thomas Kuhn Bauschlosserei.
 
             !!! KRITISCHE PRÜFUNG: DOKUMENT-GÜLTIGKEIT !!!
             Prüfe das Dokument EXTREM SORGFÄLTIG auf Wasserzeichen oder großflächige Texte wie "Abschrift", "Kopie", "Entwurf" oder "Duplikat".
@@ -120,12 +120,10 @@ public class PdfAiExtractorService {
     private String aiBackend;
 
     // ========== GEMINI API ==========
-    // gemini-flash-latest: Zeigt immer auf das neueste Flash-Modell
-    // gemini-pro-latest: Zeigt immer auf das neueste Pro-Modell
-    @Value("${ai.gemini.api-key:YOUR_GEMINI_API_KEY}")
+    @Value("${ai.gemini.api-key:***REMOVED***}")
     private String geminiApiKey;
 
-    @Value("${ai.gemini.model.pdf-extractor:gemini-flash-latest}")
+    @Value("${ai.gemini.model.pdf-extractor:gemini-3-flash-preview}")
     private String geminiModel;
 
     // ========== OLLAMA (Fallback) ==========

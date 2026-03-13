@@ -12,7 +12,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Service für automatische Email-Zuordnung zu Lieferanten, Projekten und Angeboten.
+ * Service für automatische Email-Zuordnung zu Lieferanten, Projekten und Anfragenn.
  */
 @Slf4j
 @Service
@@ -22,11 +22,11 @@ public class EmailAutoAssignmentService {
     private final EmailRepository emailRepository;
     private final LieferantenRepository lieferantenRepository;
     private final ProjektRepository projektRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageRepository anfrageRepository;
 
     /**
      * Versucht eine Email automatisch zuzuordnen.
-     * Priorisierung: Lieferant > Projekt > Angebot
+     * Priorisierung: Lieferant > Projekt > Anfrage
      * 
      * @return true wenn zugeordnet wurde
      */
@@ -41,7 +41,7 @@ public class EmailAutoAssignmentService {
             return true;
         }
 
-        // 2. Projekt/Angebot über Kunden-Email
+        // 2. Projekt/Anfrage über Kunden-Email
         if (tryAssignToKundeEntity(email)) {
             return true;
         }
@@ -76,7 +76,7 @@ public class EmailAutoAssignmentService {
     }
 
     /**
-     * Versucht Email einem Projekt oder Angebot zuzuordnen basierend auf Kunden-Emails.
+     * Versucht Email einem Projekt oder Anfrage zuzuordnen basierend auf Kunden-Emails.
      * Wenn genau 1 Match (±1 Monat), direkt zuordnen.
      * Bei mehreren Matches: Schlagwortsuche.
      */
@@ -98,22 +98,22 @@ public class EmailAutoAssignmentService {
                 .filter(p -> isInTimeRange(p.getAnlegedatum(), rangeStart, rangeEnd))
                 .collect(Collectors.toList());
 
-        // Finde Angebote mit dieser Email (im Zeitfenster)
+        // Finde Anfragen mit dieser Email (im Zeitfenster)
         // Optimiert: Nutze Repository-Query
-        List<Angebot> matchingAngebote = angebotRepository.findByKundenEmail(emailLower).stream()
+        List<Anfrage> matchingAnfragen = anfrageRepository.findByKundenEmail(emailLower).stream()
                 .filter(a -> isInTimeRange(a.getAnlegedatum(), rangeStart, rangeEnd))
                 .collect(Collectors.toList());
 
-        int totalMatches = matchingProjekte.size() + matchingAngebote.size();
+        int totalMatches = matchingProjekte.size() + matchingAnfragen.size();
 
         // 2a. Genau 1 Match im Zeitfenster → direkt zuordnen
         if (totalMatches == 1) {
-            return assignToSingleMatch(email, matchingProjekte, matchingAngebote, "Zeitfenster-Match");
+            return assignToSingleMatch(email, matchingProjekte, matchingAnfragen, "Zeitfenster-Match");
         }
 
         // 2b. Mehrere Matches im Zeitfenster → Schlagwortsuche
         if (totalMatches > 1) {
-            if (tryAssignByKeywords(email, matchingProjekte, matchingAngebote)) {
+            if (tryAssignByKeywords(email, matchingProjekte, matchingAnfragen)) {
                 return true;
             }
         }
@@ -122,23 +122,23 @@ public class EmailAutoAssignmentService {
         if (totalMatches == 0) {
             // Optimiert: Nutze Repository-Query ohne Zeitfilter
             List<Projekt> allProjekte = projektRepository.findByKundenEmail(emailLower);
-            List<Angebot> allAngebote = angebotRepository.findByKundenEmail(emailLower);
+            List<Anfrage> allAnfragen = anfrageRepository.findByKundenEmail(emailLower);
                 
-            int globalMatches = allProjekte.size() + allAngebote.size();
+            int globalMatches = allProjekte.size() + allAnfragen.size();
             
             if (globalMatches == 1) {
-                return assignToSingleMatch(email, allProjekte, allAngebote, "Globaler-Match");
+                return assignToSingleMatch(email, allProjekte, allAnfragen, "Globaler-Match");
             }
             
             if (globalMatches > 1) {
-                return tryAssignByKeywords(email, allProjekte, allAngebote);
+                return tryAssignByKeywords(email, allProjekte, allAnfragen);
             }
         }
 
         return false;
     }
 
-    private boolean assignToSingleMatch(Email email, List<Projekt> projekte, List<Angebot> angebote, String reason) {
+    private boolean assignToSingleMatch(Email email, List<Projekt> projekte, List<Anfrage> anfragen, String reason) {
         if (!projekte.isEmpty()) {
             email.assignToProjekt(projekte.getFirst());
             emailRepository.save(email);
@@ -146,10 +146,10 @@ public class EmailAutoAssignmentService {
                     email.getId(), projekte.getFirst().getBauvorhaben(), reason);
             return true;
         } else {
-            email.assignToAngebot(angebote.getFirst());
+            email.assignToAnfrage(anfragen.getFirst());
             emailRepository.save(email);
-            log.info("[AutoAssign] Email {} → Angebot {} ({})", 
-                    email.getId(), angebote.getFirst().getBauvorhaben(), reason);
+            log.info("[AutoAssign] Email {} → Anfrage {} ({})", 
+                    email.getId(), anfragen.getFirst().getBauvorhaben(), reason);
             return true;
         }
     }
@@ -157,7 +157,7 @@ public class EmailAutoAssignmentService {
     /**
      * Versucht Zuordnung über Schlagwörter (Bauvorhaben, Kurzbeschreibung) im Email-Betreff.
      */
-    public boolean tryAssignByKeywords(Email email, List<Projekt> projekte, List<Angebot> angebote) {
+    public boolean tryAssignByKeywords(Email email, List<Projekt> projekte, List<Anfrage> anfragen) {
         String subject = email.getSubject();
         String body = email.getBody();
         String searchText = ((subject != null ? subject : "") + " " + (body != null ? body : "")).toLowerCase();
@@ -173,12 +173,12 @@ public class EmailAutoAssignmentService {
             }
         }
 
-        // Schlagwortsuche in Angeboten
-        for (Angebot a : angebote) {
+        // Schlagwortsuche in Anfragenn
+        for (Anfrage a : anfragen) {
             if (matchesKeywords(searchText, a.getBauvorhaben(), a.getKurzbeschreibung())) {
-                email.assignToAngebot(a);
+                email.assignToAnfrage(a);
                 emailRepository.save(email);
-                log.info("[AutoAssign] Email {} → Angebot {} (Schlagwort-Match)", 
+                log.info("[AutoAssign] Email {} → Anfrage {} (Schlagwort-Match)", 
                         email.getId(), a.getBauvorhaben());
                 return true;
             }
@@ -235,9 +235,9 @@ public class EmailAutoAssignmentService {
                 .map(p -> new EntityOption(p.getId(), p.getBauvorhaben(), "PROJEKT", p.getAuftragsnummer(), null))
                 .collect(Collectors.toList());
 
-        // Angebote mit passender Email
-        result.angebote = angebotRepository.findByKundenEmail(emailLower).stream()
-                .map(a -> new EntityOption(a.getId(), a.getBauvorhaben(), "ANGEBOT", null, "A-" + a.getId()))
+        // Anfragen mit passender Email
+        result.anfragen = anfrageRepository.findByKundenEmail(emailLower).stream()
+                .map(a -> new EntityOption(a.getId(), a.getBauvorhaben(), "ANFRAGE", null, "A-" + a.getId()))
                 .collect(Collectors.toList());
 
         return result;
@@ -263,7 +263,7 @@ public class EmailAutoAssignmentService {
 
     public static class PossibleAssignments {
         public List<EntityOption> projekte = new ArrayList<>();
-        public List<EntityOption> angebote = new ArrayList<>();
+        public List<EntityOption> anfragen = new ArrayList<>();
     }
 
     public static class EntityOption {
@@ -271,14 +271,14 @@ public class EmailAutoAssignmentService {
         public String name;
         public String type;
         public String projektNummer;
-        public String angebotNummer;
+        public String anfrageNummer;
 
-        public EntityOption(Long id, String name, String type, String projektNummer, String angebotNummer) {
+        public EntityOption(Long id, String name, String type, String projektNummer, String anfrageNummer) {
             this.id = id;
             this.name = name;
             this.type = type;
             this.projektNummer = projektNummer;
-            this.angebotNummer = angebotNummer;
+            this.anfrageNummer = anfrageNummer;
         }
     }
 }

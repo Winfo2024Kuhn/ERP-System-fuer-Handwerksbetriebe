@@ -33,13 +33,13 @@ public class UnifiedEmailDto {
 
     // Metadaten
     private String direction; // IN, OUT
-    private String zuordnungTyp; // KEINE, PROJEKT, ANGEBOT, LIEFERANT
+    private String zuordnungTyp; // KEINE, PROJEKT, ANFRAGE, LIEFERANT
 
     // Zuordnungs-Info
     private Long projektId;
     private String projektName;
-    private Long angebotId;
-    private String angebotName;
+    private Long anfrageId;
+    private String anfrageName;
     private Long lieferantId;
     private String lieferantName;
 

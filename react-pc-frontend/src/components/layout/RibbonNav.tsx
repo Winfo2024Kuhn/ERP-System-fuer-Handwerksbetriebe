@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
-    FileText, Home, Layers, List, Mail, Package,
+    FileText, Home, Layers, List, Mail, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
     Calendar, CalendarDays, Plane, Shield
 } from 'lucide-react';
@@ -61,6 +61,7 @@ const NAVIGATION: NavCategory[] = [
                 items: [
                     { name: 'Dokumentenrechte', href: '/abteilung-berechtigungen', icon: Shield },
                     { name: 'Firma', href: '/firma', icon: Building2 },
+                    { name: 'Einstellungen', href: '/einstellungen', icon: Settings },
                 ]
             }
         ]
@@ -72,7 +73,7 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Aufträge',
                 items: [
                     { name: 'Projekte', href: '/projekte', icon: Briefcase },
-                    { name: 'Angebote', href: '/angebote', icon: FileCheck },
+                    { name: 'Anfragen', href: '/anfragen', icon: FileCheck },
                 ]
             },
             {

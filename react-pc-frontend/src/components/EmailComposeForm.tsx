@@ -21,9 +21,9 @@ export interface EmailComposeFormProps {
     // For projects
     projektId?: number;
     projekt?: ProjektDetail;
-    // For offers (Angebote)
-    angebotId?: number;
-    angebot?: {
+    // For offers (Anfragen)
+    anfrageId?: number;
+    anfrage?: {
         bauvorhaben: string;
         kundenName?: string;
         kundenEmails?: string[];
@@ -133,8 +133,8 @@ export function EmailComposeForm({
     onClose,
     projektId,
     projekt,
-    angebotId,
-    angebot,
+    anfrageId,
+    anfrage,
     kundeId,
     initialRecipient = '',
     initialSubject = '',
@@ -143,9 +143,9 @@ export function EmailComposeForm({
     onSuccess,
     variant = 'default'
 }: EmailComposeFormProps) {
-    // Determine context: projekt or angebot
-    const isAngebotContext = !!angebotId;
-    const entityId = projektId || angebotId;
+    // Determine context: projekt or anfrage
+    const isAnfrageContext = !!anfrageId;
+    const entityId = projektId || anfrageId;
 
     // State für vom Backend geladene Daten (Emails + Projektdaten für Template)
     const [fetchedEmails, setFetchedEmails] = useState<string[]>([]);
@@ -153,7 +153,7 @@ export function EmailComposeForm({
 
     // Effektives Projekt: Prop oder vom Backend geladenes Projekt
     const effectiveProjekt = projekt || fetchedProjekt;
-    const entityName = effectiveProjekt?.bauvorhaben || angebot?.bauvorhaben || '';
+    const entityName = effectiveProjekt?.bauvorhaben || anfrage?.bauvorhaben || '';
 
     // Beim Öffnen: Verknüpfte E-Mails + Projektdaten direkt vom Backend laden
     useEffect(() => {
@@ -168,8 +168,8 @@ export function EmailComposeForm({
                         if (data.kundeDto?.kundenEmails) data.kundeDto.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
                         setFetchedProjekt(data);
                     }
-                } else if (angebotId) {
-                    const res = await fetch(`/api/angebote/${angebotId}`);
+                } else if (anfrageId) {
+                    const res = await fetch(`/api/anfragen/${anfrageId}`);
                     if (res.ok) {
                         const data = await res.json();
                         if (data.kundenEmails) data.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
@@ -181,7 +181,7 @@ export function EmailComposeForm({
             if (emails.length > 0) setFetchedEmails(emails);
         };
         loadLinkedData();
-    }, [projektId, angebotId]);
+    }, [projektId, anfrageId]);
 
     // Merge: Props + Backend (dedupliziert)
     const entityKundenEmails = useMemo(() => {
@@ -198,9 +198,9 @@ export function EmailComposeForm({
                 if (e && !emails.includes(e)) emails.push(e);
             });
         }
-        // Angebot-E-Mails als Fallback
-        if (angebot?.kundenEmails) {
-            angebot.kundenEmails.forEach(e => {
+        // Anfrage-E-Mails als Fallback
+        if (anfrage?.kundenEmails) {
+            anfrage.kundenEmails.forEach(e => {
                 if (e && !emails.includes(e)) emails.push(e);
             });
         }
@@ -209,7 +209,7 @@ export function EmailComposeForm({
             if (e && !emails.includes(e)) emails.push(e);
         });
         return emails;
-    }, [effectiveProjekt?.kundenEmails, effectiveProjekt?.kundeDto?.kundenEmails, angebot?.kundenEmails, fetchedEmails]);
+    }, [effectiveProjekt?.kundenEmails, effectiveProjekt?.kundeDto?.kundenEmails, anfrage?.kundenEmails, fetchedEmails]);
 
 
     const [recipient, setRecipient] = useState<string>(initialRecipient || '');
@@ -286,7 +286,7 @@ export function EmailComposeForm({
         return '';
     }, []);
 
-    // E-Mail-Dokumente laden (für Projekte UND Angebote)
+    // E-Mail-Dokumente laden (für Projekte UND Anfragen)
     const loadEmailDokumente = useCallback(async () => {
         if (!entityId) {
             setEmailDokumente([]);
@@ -294,9 +294,9 @@ export function EmailComposeForm({
         }
         setLoadingDokumente(true);
         try {
-            // Unterschiedlicher Endpoint für Angebote vs. Projekte
-            const apiUrl = isAngebotContext
-                ? `/api/angebote/${entityId}/email-dokumente`
+            // Unterschiedlicher Endpoint für Anfragen vs. Projekte
+            const apiUrl = isAnfrageContext
+                ? `/api/anfragen/${entityId}/email-dokumente`
                 : `/api/projekte/${entityId}/email-dokumente`;
             const res = await fetch(apiUrl);
             if (res.ok) {
@@ -308,9 +308,9 @@ export function EmailComposeForm({
         } finally {
             setLoadingDokumente(false);
         }
-    }, [entityId, isAngebotContext]);
+    }, [entityId, isAnfrageContext]);
 
-    // Template laden basierend auf Dokument (für Projekt UND Angebot)
+    // Template laden basierend auf Dokument (für Projekt UND Anfrage)
     const loadTemplate = useCallback(async (dokument: ProjektDokument) => {
         const dokumentTyp = detectDokumentTyp(dokument.geschaeftsdokumentart);
         if (!dokumentTyp) return;
@@ -319,15 +319,15 @@ export function EmailComposeForm({
             const currentUser = getCurrentFrontendUser();
 
             let requestBody;
-            if (isAngebotContext && angebot) {
-                // Angebot-Kontext: Daten aus Angebot + Dokument
+            if (isAnfrageContext && anfrage) {
+                // Anfrage-Kontext: Daten aus Anfrage + Dokument
                 // Anrede aus Kundendaten verwenden, nicht hardcoded
-                const kundeAnrede = anredeEnumToText(angebot.kundenAnrede);
+                const kundeAnrede = anredeEnumToText(anfrage.kundenAnrede);
                 requestBody = {
                     dokumentTyp,
                     anrede: kundeAnrede,
-                    kundenName: angebot.kundenAnsprechpartner || angebot.kundenName || '',
-                    bauvorhaben: angebot.bauvorhaben || '',
+                    kundenName: anfrage.kundenAnsprechpartner || anfrage.kundenName || '',
+                    bauvorhaben: anfrage.bauvorhaben || '',
                     projektnummer: '',
                     dokumentnummer: dokument.rechnungsnummer || '',
                     betrag: formatBetrag(dokument.rechnungsbetrag),
@@ -372,7 +372,7 @@ export function EmailComposeForm({
         } catch (err) {
             console.error('Template konnte nicht geladen werden:', err);
         }
-    }, [effectiveProjekt, angebot, signature, isAngebotContext]);
+    }, [effectiveProjekt, anfrage, signature, isAnfrageContext]);
 
     // Initialisierung - nur einmal beim Mount
     useEffect(() => {
@@ -500,7 +500,7 @@ export function EmailComposeForm({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     body: plainText,
-                    context: contextText || (entityName ? `Projekt/Angebot: ${entityName}` : null)
+                    context: contextText || (entityName ? `Projekt/Anfrage: ${entityName}` : null)
                 })
             });
 
@@ -558,7 +558,7 @@ export function EmailComposeForm({
             const formData = new FormData();
 
             const dtoPayload = {
-                sender: 'info@example-company.de',
+                sender: 'bauschlosserei-kuhn@t-online.de',
                 recipients: [finalRecipient],
                 cc: ccRecipients.filter(c => c.trim().length > 0),
                 subject: subject.trim(),
@@ -567,8 +567,8 @@ export function EmailComposeForm({
                 benutzer: currentUser?.displayName || '',
                 frontendUserId: currentUser?.id || null,
                 // Include entity assignment in the DTO
-                projektId: !isAngebotContext && entityId ? entityId : null,
-                angebotId: isAngebotContext && entityId ? entityId : null,
+                projektId: !isAnfrageContext && entityId ? entityId : null,
+                anfrageId: isAnfrageContext && entityId ? entityId : null,
             };
 
             formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
@@ -598,7 +598,7 @@ export function EmailComposeForm({
                 e => e.toLowerCase() === finalRecipient.toLowerCase()
             );
 
-            if (isNewEmail && (kundeId || projektId || angebotId)) {
+            if (isNewEmail && (kundeId || projektId || anfrageId)) {
                 setNewEmailToSave(finalRecipient);
                 setShowSaveEmailDialog(true);
                 // Don't close yet — wait for save dialog decision
@@ -615,7 +615,7 @@ export function EmailComposeForm({
     };
 
     // Save new email to a specific entity
-    const handleSaveEmail = async (target: 'kunde' | 'projekt' | 'angebot') => {
+    const handleSaveEmail = async (target: 'kunde' | 'projekt' | 'anfrage') => {
         if (!newEmailToSave) return;
         setSavingEmail(true);
         try {
@@ -624,8 +624,8 @@ export function EmailComposeForm({
                 url = `/api/kunden/${kundeId}/emails`;
             } else if (target === 'projekt' && projektId) {
                 url = `/api/projekte/${projektId}/emails`;
-            } else if (target === 'angebot' && angebotId) {
-                url = `/api/angebote/${angebotId}/emails`;
+            } else if (target === 'anfrage' && anfrageId) {
+                url = `/api/anfragen/${anfrageId}/emails`;
             }
             if (url) {
                 await fetch(url, {
@@ -661,7 +661,7 @@ export function EmailComposeForm({
                     <div>
                         <h2 className="text-lg font-semibold text-slate-900">Neue E-Mail</h2>
                         <p className="text-sm text-slate-500">
-                            {entityName ? `${isAngebotContext ? 'Angebot' : 'Projekt'}: ${entityName}` : 'Freie E-Mail'}
+                            {entityName ? `${isAnfrageContext ? 'Anfrage' : 'Projekt'}: ${entityName}` : 'Freie E-Mail'}
                         </p>
                     </div>
                 </div>
@@ -772,12 +772,12 @@ export function EmailComposeForm({
                         />
                     </div>
 
-                    {/* Dokument Auswahl - für Projekt UND Angebot Kontext (ausgeblendet wenn initialAttachments vorhanden) */}
+                    {/* Dokument Auswahl - für Projekt UND Anfrage Kontext (ausgeblendet wenn initialAttachments vorhanden) */}
                     {entityId && !(initialAttachments && initialAttachments.length > 0) && (
                         <div className="space-y-2">
                             <Label className="flex items-center gap-2 text-slate-700">
                                 <Paperclip className="w-4 h-4" />
-                                Dokument aus {isAngebotContext ? 'Angebot' : 'Projekt'} anhängen
+                                Dokument aus {isAnfrageContext ? 'Anfrage' : 'Projekt'} anhängen
                             </Label>
                             <div className="flex gap-2">
                                 <select
@@ -976,15 +976,15 @@ export function EmailComposeForm({
                                     Als Projekt-E-Mail speichern
                                 </Button>
                             )}
-                            {angebotId && (
+                            {anfrageId && (
                                 <Button
-                                    onClick={() => handleSaveEmail('angebot')}
+                                    onClick={() => handleSaveEmail('anfrage')}
                                     disabled={savingEmail}
                                     className="w-full bg-rose-600 hover:bg-rose-700 text-white justify-start"
                                     size="sm"
                                 >
                                     {savingEmail ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
-                                    Als Angebot-E-Mail speichern
+                                    Als Anfrage-E-Mail speichern
                                 </Button>
                             )}
                             <Button

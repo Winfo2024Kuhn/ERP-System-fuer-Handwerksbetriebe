@@ -74,10 +74,10 @@ public class GeminiDokumentAnalyseService {
     @Value("${ai.gemini.api-key}")
     private String geminiApiKey;
 
-    @Value("${ai.gemini.model.dokument-analyse:gemini-flash-latest}")
+    @Value("${ai.gemini.model.dokument-analyse:gemini-3-flash-preview}")
     private String geminiModel;
 
-    @Value("${ai.gemini.model.pro:gemini-pro-latest}")
+    @Value("${ai.gemini.model.pro:gemini-3.1-pro-preview}")
     private String geminiProModel;
 
     @Value("${upload.path:uploads}")
@@ -103,7 +103,7 @@ public class GeminiDokumentAnalyseService {
 
             1. ANGEBOT:
                - Titel enthält: "Angebot", "Offerte", "Kostenvoranschlag"
-               - Typische Nummern: AN-..., A-..., Angebot-Nr...
+               - Typische Nummern: AN-..., A-..., Angebots-Nr...
                - Hat KEINE Zahlungsaufforderung, keinen Fälligkeitstermin
                - Ist unverbindlich, Kunde muss erst bestellen
 
@@ -155,7 +155,7 @@ public class GeminiDokumentAnalyseService {
                 "liefertermin": "YYYY-MM-DD oder null",
                 "zahlungsziel": "YYYY-MM-DD (berechnetes Fälligkeitsdatum) oder null",
                 "bestellnummer": "Unsere Bestellnummer falls erwähnt oder null",
-                "referenzNummer": "Nummer die auf ein VORHERIGES Dokument verweist. PRIORITÄT je nach Dokumenttyp: Bei AB→Angebots-Nr./Angebot-Nr. suchen. Bei RECHNUNG/LIEFERSCHEIN→Auftrags-Nr./AB-Nr. suchen. Bei GUTSCHRIFT→Rechnungs-Nr. suchen. Suche nach: 'Ihr Angebot', 'Angebots-Nr.', 'Auftrags-Nr.', 'AB-Nr.', 'Ihre Bestellung', 'Rechnungs-Nr.'",
+                "referenzNummer": "Nummer die auf ein VORHERIGES Dokument verweist. PRIORITÄT je nach Dokumenttyp: Bei AB→Anfrages-Nr./Anfrage-Nr. suchen. Bei RECHNUNG/LIEFERSCHEIN→Auftrags-Nr./AB-Nr. suchen. Bei GUTSCHRIFT→Rechnungs-Nr. suchen. Suche nach: 'Ihr Angebot', 'Angebots-Nr.', 'Auftrags-Nr.', 'AB-Nr.', 'Ihre Bestellung', 'Rechnungs-Nr.'",
                 "bereitsGezahlt": true/false,
                 "skontoTage": 8 oder null,
                 "skontoProzent": 2.0 oder null,
@@ -237,9 +237,9 @@ public class GeminiDokumentAnalyseService {
                 - Bei automatischen Zahlungsarten ist bereitsGezahlt IMMER true!
             10. IMMER nach Skonto-Bedingungen suchen! Diese stehen oft klein gedruckt am Dokumentende.
             11. Wenn zahlungsziel nicht als Datum lesbar, aber nettoTage erkannt: berechne zahlungsziel selbst!
-            12. Wenn das Dokument kein Angebot/AB/Lieferschein/Rechnung ist --> dokumentTyp="SONSTIG", istGeschaeftsdokument=false
+            12. Wenn das Dokument kein Anfrage/AB/Lieferschein/Rechnung ist --> dokumentTyp="SONSTIG", istGeschaeftsdokument=false
             13. REFERENZNUMMER EXTRAKTION (SEHR WICHTIG für Dokumenten-Verknüpfung!):
-                - Bei AUFTRAGSBESTAETIGUNG: Suche nach "Ihr Angebot", "Angebots-Nr.", "Bezug: Angebot" → das ist die Angebotsnummer
+                - Bei AUFTRAGSBESTAETIGUNG: Suche nach "Ihr Anfrage", "Anfrages-Nr.", "Bezug: Anfrage" → das ist die Anfragesnummer
                 - Bei LIEFERSCHEIN: Suche nach "Auftrags-Nr.", "AB-Nr.", "Ihre Bestellung" → das ist die AB-Nummer
                 - Bei RECHNUNG: Suche nach "Auftrags-Nr.", "AB-Nr." (PRIORITÄT!) oder "Lieferschein-Nr." → verweist auf AB oder Lieferschein
                 - Bei GUTSCHRIFT: Suche nach "Rechnungs-Nr.", "zu Rechnung" → verweist auf die Original-Rechnung
@@ -965,9 +965,13 @@ public class GeminiDokumentAnalyseService {
             // Bei PDF+XML-Paar sollen beide Dokumente die gleichen Geschäftsdaten
             // referenzieren
             if (geschaeftsdaten.getDokumentNummer() != null && !geschaeftsdaten.getDokumentNummer().isBlank()) {
-                var existingOpt = lieferantGeschaeftsdokumentRepository.findByDokumentNummer(
-                        geschaeftsdaten.getDokumentNummer());
-                if (existingOpt.isPresent() && !existingOpt.get().getId().equals(freshDokument.getId())) {
+                Long lieferantId = freshDokument.getLieferant().getId();
+                var existingList = lieferantGeschaeftsdokumentRepository.findByLieferantIdAndDokumentNummer(
+                        lieferantId, geschaeftsdaten.getDokumentNummer());
+                var existingOpt = existingList.stream()
+                        .filter(gd -> !gd.getId().equals(freshDokument.getId()))
+                        .findFirst();
+                if (existingOpt.isPresent()) {
                     LieferantGeschaeftsdokument bestehendes = existingOpt.get();
                     log.info(
                             "Dokumentnummer {} existiert bereits (ID={}). Aktualisiere statt löschen.",

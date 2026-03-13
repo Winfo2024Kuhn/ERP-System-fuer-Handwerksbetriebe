@@ -10,7 +10,7 @@ import java.time.LocalDate;
 @Setter
 public class KundeStatistikDto {
     private long projektAnzahl;
-    private long angebotAnzahl;
+    private long anfrageAnzahl;
     private long emailAdresseAnzahl;
     private LocalDate letzteAktivitaet;
     private BigDecimal gesamtUmsatz;

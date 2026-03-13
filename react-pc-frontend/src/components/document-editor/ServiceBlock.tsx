@@ -1,9 +1,13 @@
-import { Trash2 } from 'lucide-react';
+import { Trash2, Clock, BarChart3 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { TiptapEditor } from '../TiptapEditor';
 import { cn } from '../../lib/utils';
 import { formatCurrency, serviceLineTotal } from './helpers';
 import type { DocBlock, EditorInstance } from './types';
+import type { ZeitprognoseDto } from '../../types';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { KategorieAnalyseModal } from '../KategorieAnalyseModal';
 
 interface ServiceBlockProps {
     block: DocBlock;
@@ -33,7 +37,52 @@ export function ServiceBlock({
     const total = serviceLineTotal(block);
     const hasDiscount = (block.discount ?? 0) > 0;
 
+    const [zeitprognose, setZeitprognose] = useState<ZeitprognoseDto | null>(null);
+    const [prognoseLoading, setPrognoseLoading] = useState(false);
+    const [showAnalyse, setShowAnalyse] = useState(false);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Fetch time prediction when leistungId or quantity changes
+    useEffect(() => {
+        if (!block.leistungId || !block.quantity || block.quantity <= 0) {
+            setZeitprognose(null);
+            return;
+        }
+
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+
+        debounceRef.current = setTimeout(async () => {
+            setPrognoseLoading(true);
+            try {
+                const res = await fetch(`/api/leistungen/${block.leistungId}/zeitprognose?menge=${block.quantity}`);
+                if (res.ok) {
+                    setZeitprognose(await res.json());
+                } else {
+                    setZeitprognose(null);
+                }
+            } catch {
+                setZeitprognose(null);
+            } finally {
+                setPrognoseLoading(false);
+            }
+        }, 500);
+
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    }, [block.leistungId, block.quantity]);
+
     return (
+        <>
+        {showAnalyse && zeitprognose?.kategorieId && createPortal(
+            <KategorieAnalyseModal
+                kategorie={{
+                    id: zeitprognose.kategorieId,
+                    bezeichnung: zeitprognose.kategorieName,
+                    isLeaf: true,
+                }}
+                onClose={() => setShowAnalyse(false)}
+            />,
+            document.body
+        )}
         <div
             className={cn(
                 "bg-white rounded-xl border transition-all duration-200",
@@ -196,7 +245,35 @@ export function ServiceBlock({
                         </div>
                     </div>
                 </div>
+
+                {/* Time prediction badge */}
+                {zeitprognose && (
+                    <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 rounded-md px-2.5 py-1 text-xs font-medium border border-blue-100">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>~{(zeitprognose.prognostizierteStunden ?? 0).toFixed(1)} h geschätzt</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400" title={`Vorhersagegenauigkeit: ${((zeitprognose.rQuadrat ?? 0) * 100).toFixed(0)}% · Basierend auf ${zeitprognose.datenpunkte ?? 0} abgeschlossenen Projekten`}>
+                            {(zeitprognose.rQuadrat ?? 0) >= 0.7 ? '🟢 Zuverlässig' : (zeitprognose.rQuadrat ?? 0) >= 0.4 ? '🟡 Grobe Schätzung' : '🔴 Wenig Erfahrungswerte'} · {zeitprognose.datenpunkte ?? 0} Projekte
+                        </span>
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setShowAnalyse(true); }}
+                            className="ml-auto flex items-center gap-1 text-[11px] text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded px-1.5 py-0.5 transition-colors"
+                            title="Zeitanalyse anzeigen"
+                        >
+                            <BarChart3 className="w-3.5 h-3.5" />
+                            Analyse
+                        </button>
+                    </div>
+                )}
+                {prognoseLoading && (
+                    <div className="mt-2 pt-2 border-t border-slate-100">
+                        <span className="text-[10px] text-slate-400 animate-pulse">Zeitprognose wird berechnet...</span>
+                    </div>
+                )}
             </div>
         </div>
+        </>
     );
 }

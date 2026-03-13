@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.dto.ContactDto;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -23,7 +23,7 @@ public class ContactService {
     private final KundeRepository kundeRepository;
     private final LieferantenRepository lieferantenRepository;
     private final ProjektRepository projektRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageRepository anfrageRepository;
 
     @Transactional(readOnly = true)
     public List<ContactDto> searchContacts(String query) {
@@ -82,29 +82,29 @@ public class ContactService {
             }
         });
 
-        // 4. Angebote (Kunde-Emails + Angebot-spezifische Emails)
-        angebotRepository.searchByBauvorhabenOrKundeOrEmail(query).forEach(a -> {
-            String angebotName = a.getKunde() != null ? a.getKunde().getName() : "Unbekannt";
+        // 4. Anfragen (Kunde-Emails + Anfrage-spezifische Emails)
+        anfrageRepository.searchByBauvorhabenOrKundeOrEmail(query).forEach(a -> {
+            String anfrageName = a.getKunde() != null ? a.getKunde().getName() : "Unbekannt";
             // Kunde-Stamm-Emails
             if (a.getKunde() != null && a.getKunde().getKundenEmails() != null) {
                 a.getKunde().getKundenEmails().forEach(email -> {
                     results.add(ContactDto.builder()
-                            .id("ANGEBOT_" + a.getId())
-                            .name(angebotName)
+                            .id("ANFRAGE_" + a.getId())
+                            .name(anfrageName)
                             .email(email)
-                            .type("ANGEBOT")
+                            .type("ANFRAGE")
                             .context(a.getBauvorhaben())
                             .build());
                 });
             }
-            // Angebot-spezifische Emails aus angebot_kunden_emails
+            // Anfrage-spezifische Emails aus anfrage_kunden_emails
             if (a.getKundenEmails() != null) {
                 a.getKundenEmails().forEach(email -> {
                     results.add(ContactDto.builder()
-                            .id("ANGEBOT_" + a.getId())
-                            .name(angebotName)
+                            .id("ANFRAGE_" + a.getId())
+                            .name(anfrageName)
                             .email(email)
-                            .type("ANGEBOT")
+                            .type("ANFRAGE")
                             .context(a.getBauvorhaben())
                             .build());
                 });

@@ -46,7 +46,7 @@ public class EmailImportService {
     // IMAP-Ordner für eingehende E-Mails
     private static final List<String> INCOMING_FOLDERS = List.of(
             "INBOX",
-            "INBOX.Archives (2).Eingangsangebote",
+            "INBOX.Archives (2).Eingangsanfragen",
             "INBOX.Archives (2).Eingangs Ab's",
             "INBOX.Archives (2).Eingangsrechnungen",
             "INBOX.Archives (2).Gedruckte Eingangsrechnungen",
@@ -92,7 +92,7 @@ public class EmailImportService {
         String pass = System.getenv("IMAP_PASSWORD");
         String host = System.getenv("IMAP_HOST");
         if (host == null || host.isBlank()) {
-            host = "imap.example.com";
+            host = "secureimap.t-online.de";
         }
         int port = 993;
 
@@ -236,8 +236,8 @@ public class EmailImportService {
             // Konversations-Thread!)
             if (parentEmail.getProjekt() != null) {
                 email.assignToProjekt(parentEmail.getProjekt());
-            } else if (parentEmail.getAngebot() != null) {
-                email.assignToAngebot(parentEmail.getAngebot());
+            } else if (parentEmail.getAnfrage() != null) {
+                email.assignToAnfrage(parentEmail.getAnfrage());
             } else if (parentEmail.getLieferant() != null) {
                 email.assignToLieferant(parentEmail.getLieferant());
             }
@@ -586,7 +586,7 @@ public class EmailImportService {
         Map<String, Long> stats = new HashMap<>();
         stats.put("total", emailRepository.count());
         stats.put("projekt", emailRepository.countByZuordnungTyp(EmailZuordnungTyp.PROJEKT));
-        stats.put("angebot", emailRepository.countByZuordnungTyp(EmailZuordnungTyp.ANGEBOT));
+        stats.put("anfrage", emailRepository.countByZuordnungTyp(EmailZuordnungTyp.ANFRAGE));
         stats.put("lieferant", emailRepository.countByZuordnungTyp(EmailZuordnungTyp.LIEFERANT));
         stats.put("unassigned", emailRepository.countByZuordnungTyp(EmailZuordnungTyp.KEINE));
         stats.put("unread", emailRepository.countUnread());
@@ -633,7 +633,7 @@ public class EmailImportService {
     /**
      * Backfill: Verknüpft bestehende Emails nachträglich mit ihren Parent-Emails.
      * Basiert auf Subject-Pattern-Matching (AW:/RE:/FWD:) für Emails ohne Parent.
-     * Erbt auch die Zuordnung (Projekt/Angebot/Lieferant) vom Parent.
+     * Erbt auch die Zuordnung (Projekt/Anfrage/Lieferant) vom Parent.
      * 
      * @return Anzahl der verknüpften Emails
      */
@@ -694,8 +694,8 @@ public class EmailImportService {
                 if (email.getZuordnungTyp() == EmailZuordnungTyp.KEINE) {
                     if (bestParent.getProjekt() != null) {
                         email.assignToProjekt(bestParent.getProjekt());
-                    } else if (bestParent.getAngebot() != null) {
-                        email.assignToAngebot(bestParent.getAngebot());
+                    } else if (bestParent.getAnfrage() != null) {
+                        email.assignToAnfrage(bestParent.getAnfrage());
                     } else if (bestParent.getLieferant() != null) {
                         email.assignToLieferant(bestParent.getLieferant());
                     }
@@ -749,7 +749,7 @@ public class EmailImportService {
         String pass = System.getenv("IMAP_PASSWORD");
         String host = System.getenv("IMAP_HOST");
         if (host == null || host.isBlank()) {
-            host = "imap.example.com";
+            host = "secureimap.t-online.de";
         }
 
         Properties props = new Properties();

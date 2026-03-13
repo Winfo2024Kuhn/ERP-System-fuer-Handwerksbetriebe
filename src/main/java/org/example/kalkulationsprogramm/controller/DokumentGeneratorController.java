@@ -1,19 +1,31 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
-import org.example.kalkulationsprogramm.service.RechnungPdfService;
-import org.example.kalkulationsprogramm.service.RechnungPdfService.*;
-import org.example.kalkulationsprogramm.service.ZugferdErstellService;
-import org.springframework.http.*;
-import org.springframework.web.bind.annotation.*;
-
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
+
+import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.service.RechnungPdfService;
+import org.example.kalkulationsprogramm.service.RechnungPdfService.ContentBlockDto;
+import org.example.kalkulationsprogramm.service.RechnungPdfService.FormBlockDto;
+import org.example.kalkulationsprogramm.service.RechnungPdfService.KopfdatenDto;
+import org.example.kalkulationsprogramm.service.RechnungPdfService.LayoutDto;
+import org.example.kalkulationsprogramm.service.RechnungPdfService.RechnungDto;
+import org.example.kalkulationsprogramm.service.ZugferdErstellService;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Controller für den Dokument-Generator (/document-builder).
@@ -34,7 +46,7 @@ public class DokumentGeneratorController {
      * Haupt-Request vom Frontend DocumentBuilder
      */
     public record GeneratePdfRequest(
-            String dokumentTyp, // ANGEBOT, RECHNUNG, etc.
+            String dokumentTyp, // ANFRAGE, RECHNUNG, etc.
             String templateName, // Name der verwendeten Vorlage
             KopfdatenRequest kopfdaten,
             List<FormBlockRequest> layoutBlocks, // FormBlocks aus der Vorlage
@@ -44,7 +56,13 @@ public class DokumentGeneratorController {
             String backgroundImagePage2, // Base64-encoded Hintergrundbild Seite 2+
             Double globalRabattProzent, // Globaler Rabatt in % (0-100)
             AbrechnungsverlaufRequest abrechnungsverlauf, // Abrechnungsverlauf für Rechnungsabzüge
-            Double betragNetto) { // Überschreibt berechnete Nettosumme (z.B. für Abschlagsrechnungen)
+            Double betragNetto, // Überschreibt berechnete Nettosumme (z.B. für Abschlagsrechnungen)
+            AbschlagInfoRequest abschlagInfo) { // Info zum Abschlag-Eingabemodus
+    }
+
+    public record AbschlagInfoRequest(
+            String modus,       // "prozent", "netto", "brutto"
+            Double eingabeWert) { // Originalwert der Eingabe (z.B. 30 bei 30%)
     }
 
     public record AbrechnungsverlaufRequest(
@@ -230,22 +248,31 @@ public class DokumentGeneratorController {
 
             // Abrechnungsverlauf konvertieren (falls vorhanden)
             RechnungPdfService.AbrechnungsverlaufPdfDto abrechnungsverlaufPdf = null;
-            if (request.abrechnungsverlauf() != null && request.abrechnungsverlauf().positionen() != null
-                    && !request.abrechnungsverlauf().positionen().isEmpty()) {
+            if (request.abrechnungsverlauf() != null && request.abrechnungsverlauf().basisdokumentBetragNetto() != null
+                    && request.abrechnungsverlauf().basisdokumentBetragNetto() > 0) {
                 var avReq = request.abrechnungsverlauf();
-                var posList = avReq.positionen().stream().map(p -> new RechnungPdfService.AbrechnungspositionPdfDto(
+                List<RechnungPdfService.AbrechnungspositionPdfDto> posList = avReq.positionen() != null ? avReq.positionen().stream().map(p -> new RechnungPdfService.AbrechnungspositionPdfDto(
                         p.dokumentNummer(),
                         p.typ(),
                         p.datum() != null ? LocalDate.parse(p.datum()) : null,
                         p.betragNetto() != null ? BigDecimal.valueOf(p.betragNetto()) : BigDecimal.ZERO,
                         p.abschlagsNummer()
-                )).toList();
+                )).toList() : List.of();
                 abrechnungsverlaufPdf = new RechnungPdfService.AbrechnungsverlaufPdfDto(
                         avReq.basisdokumentNummer(),
                         avReq.basisdokumentTyp(),
                         avReq.basisdokumentDatum() != null && !avReq.basisdokumentDatum().isBlank() ? LocalDate.parse(avReq.basisdokumentDatum()) : null,
                         avReq.basisdokumentBetragNetto() != null ? BigDecimal.valueOf(avReq.basisdokumentBetragNetto()) : BigDecimal.ZERO,
                         posList
+                );
+            }
+
+            // AbschlagInfo konvertieren (falls vorhanden)
+            RechnungPdfService.AbschlagInfoPdfDto abschlagInfoPdf = null;
+            if (request.abschlagInfo() != null && request.abschlagInfo().modus() != null) {
+                abschlagInfoPdf = new RechnungPdfService.AbschlagInfoPdfDto(
+                        request.abschlagInfo().modus(),
+                        request.abschlagInfo().eingabeWert() != null ? BigDecimal.valueOf(request.abschlagInfo().eingabeWert()) : null
                 );
             }
 
@@ -259,7 +286,8 @@ public class DokumentGeneratorController {
                     request.backgroundImagePage2(),
                     globalRabatt,
                     abrechnungsverlaufPdf,
-                    request.betragNetto() != null ? BigDecimal.valueOf(request.betragNetto()) : null);
+                    request.betragNetto() != null ? BigDecimal.valueOf(request.betragNetto()) : null,
+                    abschlagInfoPdf);
 
             // 5. PDF generieren
             byte[] pdfBytes = rechnungPdfService.generatePdfBytes(rechnungDto);

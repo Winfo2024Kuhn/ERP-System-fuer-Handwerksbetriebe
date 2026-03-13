@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 /**
  * Attachment einer Email.
  * 
- * Ersetzt die alten Tabellen: projekt_email_files, angebot_email_file, lieferant_email_attachments
+ * Ersetzt die alten Tabellen: projekt_email_files, anfrage_email_file, lieferant_email_attachments
  */
 @Entity
 @Table(name = "email_attachment", indexes = {

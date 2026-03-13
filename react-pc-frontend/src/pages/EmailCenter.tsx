@@ -80,13 +80,13 @@ interface EmailItem {
     replies?: EmailItem[];
     zuordnungTyp?: string;
     projektName?: string;
-    angebotName?: string;
+    anfrageName?: string;
     lieferantName?: string;
     isRead?: boolean;
     recipient?: string;
     // Assignment IDs
     projektId?: number;
-    angebotId?: number;
+    anfrageId?: number;
     lieferantId?: number;
 }
 
@@ -100,7 +100,7 @@ type FolderType = 'inbox' | 'sent' | 'trash' | 'spam' | 'newsletter' | 'projects
 const getSenderName = (email: EmailItem) => {
     if (email.lieferantName) return email.lieferantName;
     if (email.projektName) return email.projektName;
-    if (email.angebotName) return email.angebotName;
+    if (email.anfrageName) return email.anfrageName;
     if (email.fromAddress) {
         const match = email.fromAddress.match(/^"?(.*?)"? <.*>$/);
         if (match && match[1]) return match[1];
@@ -208,7 +208,7 @@ function EmailAttachmentCard({ attachment, email, onPreview }: {
 interface AssignModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAssign: (type: 'projekt' | 'angebot', targetId: number) => Promise<void>;
+    onAssign: (type: 'projekt' | 'anfrage', targetId: number) => Promise<void>;
     emailSubject: string;
     emailId?: number;
 }
@@ -218,15 +218,15 @@ interface EntityOption {
     name: string;
     type: string;
     projektNummer?: string;
-    angebotNummer?: string;
+    anfrageNummer?: string;
 }
 
 function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: AssignModalProps) {
     const toast = useToast();
-    const [searchType, setSearchType] = useState<'projekt' | 'angebot'>('projekt');
+    const [searchType, setSearchType] = useState<'projekt' | 'anfrage'>('projekt');
     const [searchQuery, setSearchQuery] = useState('');
     const [results, setResults] = useState<any[]>([]);
-    const [suggestions, setSuggestions] = useState<{ projekte: EntityOption[], angebote: EntityOption[] }>({ projekte: [], angebote: [] });
+    const [suggestions, setSuggestions] = useState<{ projekte: EntityOption[], anfragen: EntityOption[] }>({ projekte: [], anfragen: [] });
     const [loading, setLoading] = useState(false);
     const [loadingSuggestions, setLoadingSuggestions] = useState(false);
     const [assigning, setAssigning] = useState(false);
@@ -240,7 +240,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
                 .then(data => {
                     setSuggestions({
                         projekte: data.projekte || [],
-                        angebote: data.angebote || []
+                        anfragen: data.anfragen || []
                     });
                 })
                 .catch(err => console.error('Failed to load suggestions:', err))
@@ -265,7 +265,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
         try {
             const endpoint = searchType === 'projekt'
                 ? `/api/projekte/search?q=${encodeURIComponent(searchQuery)}`
-                : `/api/angebote/search?q=${encodeURIComponent(searchQuery)}`;
+                : `/api/anfragen/search?q=${encodeURIComponent(searchQuery)}`;
             const res = await fetch(endpoint);
             if (res.ok) {
                 setResults(await res.json());
@@ -282,7 +282,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
         return () => clearTimeout(timeout);
     }, [fetchResults]);
 
-    const handleSelect = async (type: 'projekt' | 'angebot', id: number) => {
+    const handleSelect = async (type: 'projekt' | 'anfrage', id: number) => {
         setAssigning(true);
         try {
             await onAssign(type, id);
@@ -294,7 +294,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
         }
     };
 
-    const currentSuggestions = searchType === 'projekt' ? suggestions.projekte : suggestions.angebote;
+    const currentSuggestions = searchType === 'projekt' ? suggestions.projekte : suggestions.anfragen;
     const hasSuggestions = currentSuggestions.length > 0;
 
     return (
@@ -320,15 +320,15 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
                             )}
                         </Button>
                         <Button
-                            variant={searchType === 'angebot' ? 'default' : 'outline'}
+                            variant={searchType === 'anfrage' ? 'default' : 'outline'}
                             size="sm"
-                            onClick={() => setSearchType('angebot')}
-                            className={searchType === 'angebot' ? 'bg-rose-600 hover:bg-rose-700' : ''}
+                            onClick={() => setSearchType('anfrage')}
+                            className={searchType === 'anfrage' ? 'bg-rose-600 hover:bg-rose-700' : ''}
                         >
                             <FileText className="w-4 h-4 mr-1" />
-                            Angebot
-                            {suggestions.angebote.length > 0 && (
-                                <span className="ml-1 bg-white/20 px-1.5 rounded text-xs">{suggestions.angebote.length}</span>
+                            Anfrage
+                            {suggestions.anfragen.length > 0 && (
+                                <span className="ml-1 bg-white/20 px-1.5 rounded text-xs">{suggestions.anfragen.length}</span>
                             )}
                         </Button>
                     </div>
@@ -351,7 +351,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
                                 >
                                     <p className="font-medium text-slate-900">
                                         {item.projektNummer && <span className="text-rose-600 mr-2">{item.projektNummer}</span>}
-                                        {item.angebotNummer && <span className="text-rose-600 mr-2">{item.angebotNummer}</span>}
+                                        {item.anfrageNummer && <span className="text-rose-600 mr-2">{item.anfrageNummer}</span>}
                                         {item.name}
                                     </p>
                                     <p className="text-xs text-rose-600">⭐ Empfohlen</p>
@@ -364,7 +364,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
                     <div className="pt-2 border-t border-slate-200">
                         <p className="text-xs text-slate-500 mb-2">Oder manuell suchen:</p>
                         <Input
-                            placeholder={`${searchType === 'projekt' ? 'Projekt' : 'Angebot'} suchen...`}
+                            placeholder={`${searchType === 'projekt' ? 'Projekt' : 'Anfrage'} suchen...`}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="border-slate-200"
@@ -483,7 +483,7 @@ export default function EmailCenter() {
                         const hasAssignment =
                             (email.zuordnungTyp && email.zuordnungTyp !== 'KEINE') ||
                             email.projektId ||
-                            email.angebotId ||
+                            email.anfrageId ||
                             email.lieferantId;
                         return !hasAssignment;
                     });
@@ -698,12 +698,12 @@ export default function EmailCenter() {
         loadStats();
     };
 
-    const handleAssign = async (type: 'projekt' | 'angebot', targetId: number) => {
+    const handleAssign = async (type: 'projekt' | 'anfrage', targetId: number) => {
         if (!selectedEmail) return;
 
         const url = type === 'projekt'
             ? `/api/emails/${selectedEmail.id}/assign/${targetId}`
-            : `/api/emails/${selectedEmail.id}/assign/angebot/${targetId}`;
+            : `/api/emails/${selectedEmail.id}/assign/anfrage/${targetId}`;
 
         const res = await fetch(url, { method: 'POST' });
         if (!res.ok) throw new Error('Failed to assign');
@@ -891,7 +891,7 @@ export default function EmailCenter() {
                     initialSubject={initialSubject}
                     initialBody={initialBody}
                     projektId={replyToEmail?.projektId}
-                    angebotId={replyToEmail?.angebotId}
+                    anfrageId={replyToEmail?.anfrageId}
                 />
             );
         }
@@ -1156,7 +1156,7 @@ export default function EmailCenter() {
                                 )}
                             >
                                 <FileText className="w-4 h-4" />
-                                <span className="flex-1 text-left">Angebote</span>
+                                <span className="flex-1 text-left">Anfragen</span>
                                 {folderCounts.offers > 0 && (
                                     <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">
                                         {folderCounts.offers}

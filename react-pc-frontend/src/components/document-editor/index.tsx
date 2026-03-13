@@ -30,7 +30,7 @@ import {
 } from '@dnd-kit/sortable';
 
 import type { DocBlock, DocumentEditorProps, KontextDaten, TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, EditorInstance } from './types';
-import { buildAdresse, buildAdresseFromAngebot, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary } from './helpers';
+import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary } from './helpers';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
@@ -150,7 +150,7 @@ function RechnungsadresseBlock({
     );
 }
 
-export default function DocumentEditor({ projektId, angebotId, dokumentId, initialDokumentTyp, onClose }: DocumentEditorProps) {
+export default function DocumentEditor({ projektId, anfrageId, dokumentId, initialDokumentTyp, onClose }: DocumentEditorProps) {
     const toast = useToast();
     // --- State ---
     const [loading, setLoading] = useState(true);
@@ -201,7 +201,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
 
     // Abrechnungsverlauf: already-billed amount by other invoices (for Schlussrechnung etc.)
     const [bereitsAbgerechnetDurchAndere, setBereitsAbgerechnetDurchAndere] = useState<number | null>(null);
-    // Basisdokument-Nettobetrag (Gesamtauftragssumme aus AB/Angebot)
+    // Basisdokument-Nettobetrag (Gesamtauftragssumme aus AB/Anfrage)
     const [basisdokumentBetragNetto, setBasisdokumentBetragNetto] = useState<number | null>(null);
     // Detaillierte Abrechnungspositionen für die ClosureBlock-Anzeige
     const [abrechnungsPositionen, setAbrechnungsPositionen] = useState<Array<{
@@ -389,25 +389,25 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                         });
                         setBetreff(projekt.bauvorhaben || '');
                     }
-                } else if (angebotId) {
-                    const res = await fetch(`/api/angebote/${angebotId}`);
+                } else if (anfrageId) {
+                    const res = await fetch(`/api/anfragen/${anfrageId}`);
                     if (res.ok) {
-                        const angebot = await res.json();
+                        const anfrage = await res.json();
                         const isFollowUp = dokumentTyp !== 'ANGEBOT';
                         const emails: string[] = [];
-                        if (angebot.kundenEmails) angebot.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
+                        if (anfrage.kundenEmails) anfrage.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
                         setKontextDaten({
-                            kundennummer: angebot.kundennummer,
-                            kundenName: angebot.kundenName,
-                            kundeId: angebot.kundenId,
-                            rechnungsadresse: buildAdresseFromAngebot(angebot),
-                            anrede: angebot.kundenAnrede || angebot.anrede,
-                            ansprechpartner: angebot.kundenAnsprechpartner || angebot.kundenAnsprechspartner,
+                            kundennummer: anfrage.kundennummer,
+                            kundenName: anfrage.kundenName,
+                            kundeId: anfrage.kundenId,
+                            rechnungsadresse: buildAdresseFromAnfrage(anfrage),
+                            anrede: anfrage.kundenAnrede || anfrage.anrede,
+                            ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
                             kundenEmails: emails,
-                            zahlungsziel: angebot.zahlungsziel ?? 8,
-                            ...(isFollowUp ? { bezugsdokument: angebot.angebotsnummer, bezugsdokumentTyp: 'Angebot' } : {})
+                            zahlungsziel: anfrage.zahlungsziel ?? 8,
+                            ...(isFollowUp ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' } : {})
                         });
-                        setBetreff(angebot.bauvorhaben || '');
+                        setBetreff(anfrage.bauvorhaben || '');
                     }
                 }
             } catch (err) {
@@ -415,7 +415,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
             }
         };
         loadKontext();
-    }, [projektId, angebotId]);
+    }, [projektId, anfrageId]);
 
     // --- Load Document ---
     useEffect(() => {
@@ -462,20 +462,20 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                                     zahlungsziel: data.zahlungszielTage ?? projekt.kundeDto?.zahlungsziel ?? 8
                                 });
                             }
-                        } else if (data.angebotId) {
-                            const angRes = await fetch(`/api/angebote/${data.angebotId}`);
+                        } else if (data.anfrageId) {
+                            const angRes = await fetch(`/api/anfragen/${data.anfrageId}`);
                             if (angRes.ok) {
-                                const angebot = await angRes.json();
+                                const anfrage = await angRes.json();
                                 const isFollowUp = data.typ !== 'ANGEBOT';
                                 setKontextDaten({
-                                    kundennummer: angebot.kundennummer,
-                                    kundenName: angebot.kundenName,
-                                    kundeId: angebot.kundenId,
-                                    rechnungsadresse: buildAdresseFromAngebot(angebot),
-                                    anrede: angebot.kundenAnrede || angebot.anrede,
-                                    ansprechpartner: angebot.kundenAnsprechpartner || angebot.kundenAnsprechspartner,
-                                    zahlungsziel: data.zahlungszielTage ?? angebot.zahlungsziel ?? 8,
-                                    ...(isFollowUp ? { bezugsdokument: angebot.angebotsnummer, bezugsdokumentTyp: 'Angebot' } : {})
+                                    kundennummer: anfrage.kundennummer,
+                                    kundenName: anfrage.kundenName,
+                                    kundeId: anfrage.kundenId,
+                                    rechnungsadresse: buildAdresseFromAnfrage(anfrage),
+                                    anrede: anfrage.kundenAnrede || anfrage.anrede,
+                                    ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
+                                    zahlungsziel: data.zahlungszielTage ?? anfrage.zahlungsziel ?? 8,
+                                    ...(isFollowUp ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' } : {})
                                 });
                             }
                         } else if (data.kundeId) {
@@ -507,9 +507,9 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                     }
 
                     // Fetch predecessor type
-                    if (data.angebotId && !data.gebucht) {
+                    if (data.anfrageId && !data.gebucht) {
                         // Already loaded above
-                    } else if (data.angebotId && data.typ !== 'ANGEBOT') {
+                    } else if (data.anfrageId && data.typ !== 'ANGEBOT') {
                         setKontextDaten(prev => ({ ...prev, bezugsdokumentTyp: 'Angebot' }));
                     } else if (data.vorgaengerId) {
                         fetch(`/api/ausgangs-dokumente/${data.vorgaengerId}`)
@@ -696,7 +696,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
-                    notifyDokumentChanged({ projektId, angebotId, dokumentId: updated.id });
+                    notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
                 } else {
                     const errorText = await res.text();
                     console.error('Fehler beim Speichern:', res.status, errorText);
@@ -711,7 +711,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                     htmlInhalt,
                     positionenJson: positionenData,
                     projektId,
-                    angebotId
+                    anfrageId
                 };
                 const res = await fetch('/api/ausgangs-dokumente', {
                     method: 'POST',
@@ -728,7 +728,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
-                    notifyDokumentChanged({ projektId, angebotId, dokumentId: created.id });
+                    notifyDokumentChanged({ projektId, anfrageId, dokumentId: created.id });
                 }
             }
         } catch (err) {
@@ -736,7 +736,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
         } finally {
             setSaving(false);
         }
-    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, angebotId, isLocked, syncDocumentIdInUrl, bereitsAbgerechnetDurchAndere, globalRabatt]);
+    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, bereitsAbgerechnetDurchAndere, globalRabatt]);
 
     // --- Change Detection ---
     useEffect(() => {
@@ -1116,7 +1116,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
             const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
             lastSavedStateRef.current = currentState;
             setHasUnsavedChanges(false);
-            notifyDokumentChanged({ projektId, angebotId, dokumentId: updated.id });
+            notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
             return true;
         } catch (err) {
             console.error('Fehler beim Buchen:', err);
@@ -2004,6 +2004,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                             fontSize: extractFontSizeFromHtml(descHtml),
                             fett: extractBoldFromHtml(descHtml),
                             leistungId: l.id,
+                            kategorieId: l.folderId ?? undefined,
                         });
                     }}
                     onClose={() => setShowLeistungPicker(false)}
@@ -2063,9 +2064,9 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                     setEmailBody('');
                 }}
                 projektId={projektId}
-                angebotId={angebotId}
+                anfrageId={anfrageId}
                 kundeId={kontextDaten.kundeId}
-                angebot={{
+                anfrage={{
                     bauvorhaben: kontextDaten.projektBauvorhaben || betreff || '',
                     kundenName: kontextDaten.kundenName,
                     kundenEmails: kontextDaten.kundenEmails,
@@ -2086,7 +2087,7 @@ export default function DocumentEditor({ projektId, angebotId, dokumentId, initi
                             if (res.ok) {
                                 const updated = await res.json();
                                 setDokument(updated);
-                                notifyDokumentChanged({ projektId, angebotId, dokumentId: updated.id });
+                                notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
                             }
                         } catch (err) {
                             console.error('Fehler beim Setzen des Versanddatums:', err);

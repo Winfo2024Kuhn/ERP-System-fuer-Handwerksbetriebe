@@ -22,7 +22,7 @@ public class ProjektDokumentResponseDto {
     private String rechnungsnummer;
     private LocalDate rechnungsdatum;
     private LocalDate faelligkeitsdatum;
-    private String geschaeftsdokumentart; // Rechnung, Angebot, Auftragsbestätigung, Mahnung
+    private String geschaeftsdokumentart; // Rechnung, Anfrage, Auftragsbestätigung, Mahnung
     private String mahnstufe;
     private Long referenzDokumentId;
     private String referenzDokumentNummer;

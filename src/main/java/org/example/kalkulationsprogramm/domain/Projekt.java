@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -77,6 +78,7 @@ public class Projekt {
 
     // Aus ZUGFeRD-Dokumenten extrahierte Rechnungsdaten
 
+    @BatchSize(size = 30)
     @OneToMany(mappedBy = "projekt", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProjektProduktkategorie> projektProduktkategorien = new ArrayList<>();
 
@@ -95,7 +97,7 @@ public class Projekt {
     private List<ProjektDokument> projektDokument = new ArrayList<>();
 
     @OneToMany(mappedBy = "projekt", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Angebot> angebote = new ArrayList<>();
+    private List<Anfrage> anfragen = new ArrayList<>();
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "kundenId")

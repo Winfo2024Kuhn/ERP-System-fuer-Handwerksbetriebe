@@ -10,19 +10,19 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * DTO für den Abrechnungsverlauf eines Basisdokuments (Angebot/AB).
+ * DTO für den Abrechnungsverlauf eines Basisdokuments (Anfrage/AB).
  * Zeigt alle bereits erstellten Rechnungen und den verbleibenden Restbetrag.
  */
 @Data
 public class AbrechnungsverlaufDto {
 
-    /** ID des Basisdokuments (Angebot oder AB) */
+    /** ID des Basisdokuments (Anfrage oder AB) */
     private Long basisdokumentId;
 
     /** Dokumentnummer des Basisdokuments */
     private String basisdokumentNummer;
 
-    /** Typ des Basisdokuments (ANGEBOT oder AUFTRAGSBESTAETIGUNG) */
+    /** Typ des Basisdokuments (ANFRAGE oder AUFTRAGSBESTAETIGUNG) */
     private AusgangsGeschaeftsDokumentTyp basisdokumentTyp;
 
     /** Datum des Basisdokuments */

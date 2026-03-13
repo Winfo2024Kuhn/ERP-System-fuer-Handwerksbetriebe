@@ -1,13 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
-
+import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
@@ -19,7 +12,13 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import lombok.AllArgsConstructor;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 @AllArgsConstructor
@@ -120,11 +119,13 @@ public class OfferPriceService {
                             }
                         }, () -> {
                             unmatched.add(finalItem);
-                            log.debug("Kein DB-Match für Artikel {} bei Lieferant {}", code, lieferant.getLieferantenname());
+                            System.out.println("[OfferPriceService] Kein DB-Match für Artikel " + code +
+                                    " bei Lieferant " + lieferant.getLieferantenname());
                         });
             }, () -> {
                 unmatched.add(finalItem);
-                log.debug("Kein DB-Match für Artikel {} bei Lieferant {}", code, lieferant.getLieferantenname());
+                System.out.println("[OfferPriceService] Kein DB-Match für Artikel " + code +
+                        " bei Lieferant " + lieferant.getLieferantenname());
             });
 
             if (savedFlag.get()) {

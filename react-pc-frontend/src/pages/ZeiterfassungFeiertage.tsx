@@ -79,7 +79,7 @@ export default function ZeiterfassungFeiertage() {
                 <div className="bg-white rounded-lg border border-slate-200">
                     <div className="p-4 border-b border-slate-200">
                         <h3 className="font-bold text-lg">Bayerische Feiertage {jahr}</h3>
-                        <p className="text-slate-500 text-sm">Automatisch generiert inkl. Mariä Himmelfahrt (Bayern, kath. Gemeinde)</p>
+                        <p className="text-slate-500 text-sm">Automatisch generiert inkl. Mariä Himmelfahrt (Greußenheim)</p>
                     </div>
                     {loading ? (
                         <div className="p-8 text-center">

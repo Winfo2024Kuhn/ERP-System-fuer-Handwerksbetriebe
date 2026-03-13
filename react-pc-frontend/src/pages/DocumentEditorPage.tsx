@@ -3,7 +3,7 @@ import DocumentEditor from '../components/DocumentEditor';
 import { KiHilfeChat } from '../components/KiHilfeChat';
 
 /**
- * Page wrapper for DocumentEditor that reads projektId/angebotId from URL params.
+ * Page wrapper for DocumentEditor that reads projektId/anfrageId from URL params.
  * Opens as fullscreen page (no MainLayout sidebar).
  */
 export default function DocumentEditorPage() {
@@ -11,7 +11,7 @@ export default function DocumentEditorPage() {
     const navigate = useNavigate();
 
     const projektId = searchParams.get('projektId');
-    const angebotId = searchParams.get('angebotId');
+    const anfrageId = searchParams.get('anfrageId');
     const dokumentId = searchParams.get('dokumentId');
     const dokumentTyp = searchParams.get('dokumentTyp');
 
@@ -28,7 +28,7 @@ export default function DocumentEditorPage() {
         <>
             <DocumentEditor
                 projektId={projektId ? parseInt(projektId) : undefined}
-                angebotId={angebotId ? parseInt(angebotId) : undefined}
+                anfrageId={anfrageId ? parseInt(anfrageId) : undefined}
                 dokumentId={dokumentId ? parseInt(dokumentId) : undefined}
                 initialDokumentTyp={dokumentTyp as import('../types').AusgangsGeschaeftsDokumentTyp | undefined}
                 onClose={handleClose}

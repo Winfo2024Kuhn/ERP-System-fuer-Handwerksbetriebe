@@ -7,7 +7,7 @@ package org.example.kalkulationsprogramm.domain;
  */
 public enum EmailProcessingType {
     PROJEKT, // Email wurde für Projekt-Import verarbeitet
-    ANGEBOT, // Email wurde für Angebots-Import verarbeitet
+    ANFRAGE, // Email wurde für Anfrages-Import verarbeitet
     LIEFERANT, // Email wurde für Lieferanten-Import verarbeitet
     STEUERBERATER // Email wurde für BWA-Import vom Steuerberater verarbeitet
 }

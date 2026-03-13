@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.domain;
 
 /**
  * Dokumenttypen für Lieferanten-Dokumente.
- * Bilden die Dokumentenkette: Angebot → Auftragsbestätigung → Lieferschein →
+ * Bilden die Dokumentenkette: Anfrage → Auftragsbestätigung → Lieferschein →
  * Rechnung
  * SONSTIG für nicht-geschäftliche Dokumente (Kataloge, Infoblätter etc.)
  */

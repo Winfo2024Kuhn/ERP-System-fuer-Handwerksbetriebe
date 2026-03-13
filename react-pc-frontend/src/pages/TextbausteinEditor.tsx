@@ -47,7 +47,7 @@ const EMPTY_TEMPLATE: TextTemplate = {
   content: [
     '<p>Sehr geehrte Damen und Herren,</p>',
     '<p><br></p>',
-    '<p>vielen Dank für Ihre Anfrage. Nachfolgend finden Sie unsere Angebotsdetails.</p>',
+    '<p>vielen Dank für Ihre Anfrage. Nachfolgend finden Sie unsere Anfragesdetails.</p>',
     '<p><br></p>',
     '<p><strong>Anrede:</strong> {{Anrede}}</p>',
     '<p><strong>Kunde:</strong> {{Kundenname}}</p>',

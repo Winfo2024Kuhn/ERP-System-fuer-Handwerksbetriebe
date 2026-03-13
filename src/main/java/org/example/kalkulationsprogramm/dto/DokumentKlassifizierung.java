@@ -11,7 +11,7 @@ public record DokumentKlassifizierung(
         // Erkannter Dokumenttyp
         LieferantDokumentTyp typ,
 
-        // true wenn es sich um ein Geschäftsdokument handelt (Angebot/AB/LS/RE)
+        // true wenn es sich um ein Geschäftsdokument handelt (Anfrage/AB/LS/RE)
         boolean istGeschaeftsdokument,
 
         // true wenn dieses Dokument bereits existiert (gleiche Dokumentnummer beim

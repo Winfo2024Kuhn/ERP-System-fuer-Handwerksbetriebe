@@ -12,7 +12,7 @@ import ArtikelEditor from './pages/ArtikelEditor';
 import ArbeitsgangEditor from './pages/ArbeitsgangEditor';
 import ProduktkategorieEditor from './pages/ProduktkategorieEditor';
 import ProjektEditor from './pages/ProjektEditor';
-import AngebotEditor from './pages/AngebotEditor';
+import AnfrageEditor from './pages/AnfrageEditor';
 import BestellungenUebersicht from './pages/BestellungenUebersicht';
 import ErfolgsanalyseEditor from './pages/ErfolgsanalyseEditor';
 import FormularwesenEditor from './pages/FormularwesenEditor';
@@ -35,6 +35,7 @@ import FirmaEditor from './pages/FirmaEditor';
 import BestellungEditor from './pages/BestellungEditor';
 import DocumentEditorPage from './pages/DocumentEditorPage';
 import ArbeitszeitartEditor from './pages/ArbeitszeitartEditor';
+import EinstellungenEditor from './pages/EinstellungenEditor';
 
 export default function App() {
   return (
@@ -58,7 +59,7 @@ export default function App() {
           <Route path="/arbeitsgaenge" element={<ErrorBoundary><ArbeitsgangEditor /></ErrorBoundary>} />
           <Route path="/produktkategorien" element={<ErrorBoundary><ProduktkategorieEditor /></ErrorBoundary>} />
           <Route path="/projekte" element={<ErrorBoundary><ProjektEditor /></ErrorBoundary>} />
-          <Route path="/angebote" element={<ErrorBoundary><AngebotEditor /></ErrorBoundary>} />
+          <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />
           <Route path="/bestellungen" element={<ErrorBoundary><BestellungenUebersicht /></ErrorBoundary>} />
           <Route path="/bestellungen/bedarf" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
           <Route path="/kalender" element={<ErrorBoundary><TerminKalender /></ErrorBoundary>} />
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="/urlaubsantraege" element={<ErrorBoundary><Urlaubsantraege /></ErrorBoundary>} />
           <Route path="/abteilung-berechtigungen" element={<ErrorBoundary><AbteilungBerechtigungenEditor /></ErrorBoundary>} />
           <Route path="/firma" element={<ErrorBoundary><FirmaEditor /></ErrorBoundary>} />
+          <Route path="/einstellungen" element={<ErrorBoundary><EinstellungenEditor /></ErrorBoundary>} />
 
           <Route path="*" element={<Navigate to="/projekte" replace />} />
         </Route>

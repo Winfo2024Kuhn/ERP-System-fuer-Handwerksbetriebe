@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Projekt;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
@@ -45,7 +45,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
     private ProjektRepository projektRepository;
 
     @Mock
-    private AngebotRepository angebotRepository;
+    private AnfrageRepository anfrageRepository;
 
     @Mock
     private KundeRepository kundeRepository;
@@ -77,7 +77,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
                 dokumentRepository,
                 counterRepository,
                 projektRepository,
-                angebotRepository,
+                anfrageRepository,
                 kundeRepository,
                 frontendUserProfileRepository,
                 leistungRepository,
@@ -98,10 +98,10 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             projekt.setBezahlt(false);
             projekt.setAbgeschlossen(false);
 
-            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
-            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-            angebot.setBetragBrutto(new BigDecimal("1000.00"));
-            angebot.setStorniert(false);
+            AusgangsGeschaeftsDokument anfrage = new AusgangsGeschaeftsDokument();
+            anfrage.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            anfrage.setBetragBrutto(new BigDecimal("1000.00"));
+            anfrage.setStorniert(false);
 
             AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
             rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
@@ -110,7 +110,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
 
             when(projektRepository.findById(1L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(1L))
-                    .thenReturn(List.of(angebot, rechnung));
+                    .thenReturn(List.of(anfrage, rechnung));
             when(projektDokumentRepository.existsOffenePostenByProjektId(1L)).thenReturn(false);
 
             service.aktualisiereProjektPreisAusDokumenten(1L);
@@ -128,10 +128,10 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             projekt.setBezahlt(false);
             projekt.setAbgeschlossen(false);
 
-            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
-            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-            angebot.setBetragBrutto(new BigDecimal("5000.00"));
-            angebot.setStorniert(false);
+            AusgangsGeschaeftsDokument anfrage = new AusgangsGeschaeftsDokument();
+            anfrage.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            anfrage.setBetragBrutto(new BigDecimal("5000.00"));
+            anfrage.setStorniert(false);
 
             AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
             rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
@@ -140,7 +140,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
 
             when(projektRepository.findById(2L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(2L))
-                    .thenReturn(List.of(angebot, rechnung));
+                    .thenReturn(List.of(anfrage, rechnung));
             // Noch offene Posten vorhanden!
             when(projektDokumentRepository.existsOffenePostenByProjektId(2L)).thenReturn(true);
 
@@ -159,10 +159,10 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             projekt.setBezahlt(false);
             projekt.setAbgeschlossen(false);
 
-            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
-            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-            angebot.setBetragBrutto(new BigDecimal("10000.00"));
-            angebot.setStorniert(false);
+            AusgangsGeschaeftsDokument anfrage = new AusgangsGeschaeftsDokument();
+            anfrage.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            anfrage.setBetragBrutto(new BigDecimal("10000.00"));
+            anfrage.setStorniert(false);
 
             AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
             rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
@@ -171,7 +171,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
 
             when(projektRepository.findById(3L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(3L))
-                    .thenReturn(List.of(angebot, rechnung));
+                    .thenReturn(List.of(anfrage, rechnung));
 
             service.aktualisiereProjektPreisAusDokumenten(3L);
 
@@ -187,10 +187,10 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             projekt.setBezahlt(true);
             projekt.setAbgeschlossen(true);
 
-            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
-            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-            angebot.setBetragBrutto(new BigDecimal("2000.00"));
-            angebot.setStorniert(false);
+            AusgangsGeschaeftsDokument anfrage = new AusgangsGeschaeftsDokument();
+            anfrage.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            anfrage.setBetragBrutto(new BigDecimal("2000.00"));
+            anfrage.setStorniert(false);
 
             AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
             rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
@@ -199,7 +199,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
 
             when(projektRepository.findById(4L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(4L))
-                    .thenReturn(List.of(angebot, rechnung));
+                    .thenReturn(List.of(anfrage, rechnung));
             // Offene Posten wurden hinzugefügt
             when(projektDokumentRepository.existsOffenePostenByProjektId(4L)).thenReturn(true);
 
@@ -210,16 +210,16 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
         }
 
         @Test
-        void auftragsbestaetigungHatPrioritaetVorAngebot() {
+        void auftragsbestaetigungHatPrioritaetVorAnfrage() {
             Projekt projekt = new Projekt();
             projekt.setId(5L);
             projekt.setBruttoPreis(BigDecimal.ZERO);
             projekt.setBezahlt(false);
 
-            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
-            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-            angebot.setBetragBrutto(new BigDecimal("5000.00"));
-            angebot.setStorniert(false);
+            AusgangsGeschaeftsDokument anfrage = new AusgangsGeschaeftsDokument();
+            anfrage.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            anfrage.setBetragBrutto(new BigDecimal("5000.00"));
+            anfrage.setStorniert(false);
 
             AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
             ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
@@ -233,7 +233,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
 
             when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(5L))
-                    .thenReturn(List.of(angebot, ab, rechnung));
+                    .thenReturn(List.of(anfrage, ab, rechnung));
             when(projektDokumentRepository.existsOffenePostenByProjektId(5L)).thenReturn(false);
 
             service.aktualisiereProjektPreisAusDokumenten(5L);

@@ -416,7 +416,7 @@ export default function FormularwesenMain() {
             <PageLayout
                 ribbonCategory="Vorlagen-Center"
                 title="FORMULARWESEN"
-                subtitle="Erstelle und verwalte Dokumentvorlagen für Angebote, Rechnungen und mehr."
+                subtitle="Erstelle und verwalte Dokumentvorlagen für Anfragen, Rechnungen und mehr."
                 actions={
                     <Button size="sm" onClick={handleCreateNew}>
                         <Plus className="w-4 h-4 mr-1" />Neue Vorlage

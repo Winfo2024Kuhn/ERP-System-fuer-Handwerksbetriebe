@@ -1,18 +1,18 @@
 package org.example.kalkulationsprogramm.repository;
 
-import org.example.kalkulationsprogramm.domain.Projekt;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.data.jpa.repository.EntityGraph;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
-
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+
+import org.example.kalkulationsprogramm.domain.Projekt;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpecificationExecutor<Projekt> {
@@ -49,10 +49,10 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
                         """)
         List<Projekt> searchByBauvorhabenOrKundeOrEmail(@Param("query") String query);
 
-        @Query("SELECT p FROM Projekt p JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id IN :kategorieIds")
+        @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.zeitbuchungen JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id IN :kategorieIds")
         List<Projekt> findByProduktkategorieIds(@Param("kategorieIds") List<Long> kategorieIds);
 
-        @Query("SELECT p FROM Projekt p JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id IN :kategorieIds AND p.abschlussdatum BETWEEN :start AND :end")
+        @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.zeitbuchungen JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id IN :kategorieIds AND p.abschlussdatum BETWEEN :start AND :end")
         List<Projekt> findByProduktkategorieIdsAndAbschlussdatumBetween(@Param("kategorieIds") List<Long> kategorieIds,
                         @Param("start") LocalDate start, @Param("end") LocalDate end);
 

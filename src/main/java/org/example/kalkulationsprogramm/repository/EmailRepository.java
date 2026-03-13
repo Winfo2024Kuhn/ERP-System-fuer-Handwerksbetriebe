@@ -39,13 +39,13 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.projekt = :projekt ORDER BY e.sentAt DESC")
   List<Email> findByProjektOrderBySentAtDesc(@Param("projekt") Projekt projekt);
 
-  List<Email> findByAngebotOrderBySentAtDesc(Angebot angebot);
+  List<Email> findByAnfrageOrderBySentAtDesc(Anfrage anfrage);
 
   List<Email> findByLieferantOrderBySentAtDesc(Lieferanten lieferant);
 
   List<Email> findByProjektInOrderBySentAtDesc(java.util.Collection<Projekt> projekte);
 
-  List<Email> findByAngebotInOrderBySentAtDesc(java.util.Collection<Angebot> angebote);
+  List<Email> findByAnfrageInOrderBySentAtDesc(java.util.Collection<Anfrage> anfragen);
 
   // ID-based methods for better performance/flexibility
   List<Email> findByLieferantIdOrderBySentAtDesc(Long lieferantId);
@@ -66,19 +66,19 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   /**
    * Findet alle unzugeordneten Emails von BEKANNTEN Kunden
-   * (deren Absender-Adresse EXAKT in kunden_emails, angebot_kunden_emails oder
+   * (deren Absender-Adresse EXAKT in kunden_emails, anfrage_kunden_emails oder
    * projekt_kunden_emails vorkommt).
    * Filtert Newsletter-Mails heraus.
    * Zusätzlich: Email-Sendedatum muss innerhalb von ±1 Monat zum Anlegedatum oder
    * Abschlussdatum
-   * eines passenden Projekts oder Angebots liegen (Karenzzeit).
+   * eines passenden Projekts oder Anfrages liegen (Karenzzeit).
    */
   @Query(value = """
       SELECT DISTINCT e.* FROM email e
       WHERE e.zuordnung_typ = 'KEINE'
         AND e.direction = 'IN'
         AND e.projekt_id IS NULL
-        AND e.angebot_id IS NULL
+        AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
         AND e.deleted_at IS NULL
         AND (e.is_spam IS NULL OR e.is_spam = FALSE)
@@ -95,10 +95,10 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
                 )
             )
             OR
-            -- Angebot-Kunden-Emails mit ±1 Monat Karenzzeit
+            -- Anfrage-Kunden-Emails mit ±1 Monat Karenzzeit
             EXISTS (
-                SELECT 1 FROM angebot_kunden_emails ake
-                JOIN angebot a ON ake.angebot_id = a.id
+                SELECT 1 FROM anfrage_kunden_emails ake
+                JOIN anfrage a ON ake.anfrage_id = a.id
                 WHERE (LOWER(ake.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ake.email), '>%'))
                 AND (
                     DATE(e.sent_at) BETWEEN DATE_SUB(a.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(a.anlegedatum, CURRENT_DATE()), INTERVAL 1 MONTH)
@@ -122,14 +122,14 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   /**
    * Zählt alle unzugeordneten Emails von BEKANNTEN Kunden.
-   * Mit ±1 Monat Karenzzeit bezogen auf Projekt/Angebot-Datumsangaben.
+   * Mit ±1 Monat Karenzzeit bezogen auf Projekt/Anfrage-Datumsangaben.
    */
   @Query(value = """
       SELECT COUNT(DISTINCT e.id) FROM email e
       WHERE e.zuordnung_typ = 'KEINE'
         AND e.direction = 'IN'
         AND e.projekt_id IS NULL
-        AND e.angebot_id IS NULL
+        AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
         AND e.deleted_at IS NULL
         AND e.is_read = false
@@ -144,8 +144,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
                 AND DATE(e.sent_at) BETWEEN DATE_SUB(p.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(p.abschlussdatum, p.anlegedatum), INTERVAL 1 MONTH)
             )
             OR EXISTS (
-                SELECT 1 FROM angebot_kunden_emails ake
-                JOIN angebot a ON ake.angebot_id = a.id
+                SELECT 1 FROM anfrage_kunden_emails ake
+                JOIN anfrage a ON ake.anfrage_id = a.id
                 WHERE (LOWER(ake.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ake.email), '>%'))
                 AND DATE(e.sent_at) BETWEEN DATE_SUB(a.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(a.anlegedatum, CURRENT_DATE()), INTERVAL 1 MONTH)
             )
@@ -232,7 +232,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.direction = 'IN'
         AND e.zuordnung_typ = 'KEINE'
         AND e.projekt_id IS NULL
-        AND e.angebot_id IS NULL
+        AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
       ORDER BY e.sent_at DESC
       """, nativeQuery = true)
@@ -250,7 +250,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.direction = 'IN'
         AND e.zuordnung_typ = 'KEINE'
         AND e.projekt_id IS NULL
-        AND e.angebot_id IS NULL
+        AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
       """, nativeQuery = true)
   long countPotentialInquiries();
@@ -265,7 +265,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.deletedAt IS NULL
         AND e.direction = org.example.kalkulationsprogramm.domain.EmailDirection.IN
         AND e.projekt IS NULL
-        AND e.angebot IS NULL
+        AND e.anfrage IS NULL
         AND e.lieferant IS NULL
       ORDER BY e.sentAt DESC
       """)
@@ -354,7 +354,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.deletedAt IS NULL
         AND e.direction = org.example.kalkulationsprogramm.domain.EmailDirection.IN
         AND e.projekt IS NULL
-        AND e.angebot IS NULL
+        AND e.anfrage IS NULL
         AND e.lieferant IS NULL
       ORDER BY e.sentAt DESC
       """)
@@ -379,7 +379,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       "AND e.isNewsletter = false " +
       "AND e.isPotentialInquiry = false " +
       "AND e.projekt IS NULL " +
-      "AND e.angebot IS NULL " +
+      "AND e.anfrage IS NULL " +
       "AND e.lieferant IS NULL " +
       "ORDER BY e.sentAt DESC")
   List<Email> findInboxFiltered();
@@ -397,7 +397,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       "AND e.isPotentialInquiry = false " +
       "AND e.isRead = false " +
       "AND e.projekt IS NULL " +
-      "AND e.angebot IS NULL " +
+      "AND e.anfrage IS NULL " +
       "AND e.lieferant IS NULL")
   long countInboxFilteredUnread();
 
@@ -411,11 +411,11 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL AND e.isRead = false")
   long countProjectEmailsUnread();
 
-  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'ANGEBOT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
-  List<Email> findAngebotEmails();
+  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  List<Email> findAnfrageEmails();
 
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'ANGEBOT' AND e.deletedAt IS NULL AND e.isRead = false")
-  long countAngebotEmailsUnread();
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.deletedAt IS NULL AND e.isRead = false")
+  long countAnfrageEmailsUnread();
 
   @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findLieferantEmails();

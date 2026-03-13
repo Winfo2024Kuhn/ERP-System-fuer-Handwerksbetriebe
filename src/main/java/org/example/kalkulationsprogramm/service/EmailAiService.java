@@ -33,7 +33,7 @@ public class EmailAiService {
             "- Wenn der Text salopp/kurz ist (z.B. 'Passt morgen?'), verbessere nur die Fehler, aber mache daraus keinen Roman.\\n" +
             "- Der Text darf NICHT nach einer künstlichen Intelligenz klingen.\\n" +
             "- Strukturiere den Text mit HTML-Absätzen (<p>), um die Lesbarkeit zu verbessern.\\n" +
-            "Entferne Signaturen, Grußformeln und den Namen des Absenders am Ende vollständig (z.B. 'LG Max', 'Max Mustermann', 'Mit freundlichen Grüßen'), da diese vom Programm automatisch angefügt werden. Der Text soll ohne Schlussformel enden.\n" +
+            "Entferne Signaturen, Grußformeln und den Namen des Absenders am Ende vollständig (z.B. 'LG Marvin', 'Marvin Kuhn', 'Mit freundlichen Grüßen'), da diese vom Programm automatisch angefügt werden. Der Text soll ohne Schlussformel enden.\\n" +
             "Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im Format { \"email\": \"...\" }, wobei der Wert der verbesserte E-Mail-Text als HTML (ohne <html>/<body> Tags, nur <p>...) ist.";
 
     private final ObjectMapper objectMapper;
@@ -41,7 +41,7 @@ public class EmailAiService {
             .connectTimeout(Duration.ofSeconds(60))
             .build();
 
-    @Value("${ai.email.model:gemini-flash-latest}")
+    @Value("${ai.email.model:gemini-3-flash-preview}")
     private String model;
 
     @Value("${ai.gemini.api-key:}")

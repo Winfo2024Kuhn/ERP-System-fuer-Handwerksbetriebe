@@ -6,7 +6,7 @@ interface EmailListInputProps {
     emails: string[];
     onChange: (emails: string[]) => void;
     kundenEmails?: string[];  // Vom Kunden vorhandene E-Mails (nur zur Anzeige)
-    angebotEmails?: string[]; // Vom Angebot vorhandene E-Mails (nur zur Anzeige)
+    anfrageEmails?: string[]; // Vom Anfrage vorhandene E-Mails (nur zur Anzeige)
     placeholder?: string;
     label?: string;
 }
@@ -15,7 +15,7 @@ export const EmailListInput: React.FC<EmailListInputProps> = ({
     emails,
     onChange,
     kundenEmails = [],
-    angebotEmails = [],
+    anfrageEmails = [],
     placeholder = "E-Mail-Adresse eingeben...",
     label = "E-Mail-Adressen"
 }) => {
@@ -30,7 +30,7 @@ export const EmailListInput: React.FC<EmailListInputProps> = ({
     // Check for duplicates across all lists
     const isDuplicate = (email: string) => {
         const lowerEmail = email.toLowerCase().trim();
-        const allEmails = [...emails, ...kundenEmails, ...angebotEmails].map(e => e.toLowerCase().trim());
+        const allEmails = [...emails, ...kundenEmails, ...anfrageEmails].map(e => e.toLowerCase().trim());
         return allEmails.includes(lowerEmail);
     };
 
@@ -97,14 +97,14 @@ export const EmailListInput: React.FC<EmailListInputProps> = ({
                 </div>
             )}
 
-            {/* Angebot-E-Mails (read-only display) */}
-            {angebotEmails.length > 0 && (
+            {/* Anfrage-E-Mails (read-only display) */}
+            {anfrageEmails.length > 0 && (
                 <div className="space-y-1">
-                    <p className="text-xs text-slate-500">Vom Angebot:</p>
+                    <p className="text-xs text-slate-500">Vom Anfrage:</p>
                     <div className="flex flex-wrap gap-2">
-                        {angebotEmails.filter(e => !kundenEmails.includes(e)).map((email, idx) => (
+                        {anfrageEmails.filter(e => !kundenEmails.includes(e)).map((email, idx) => (
                             <span
-                                key={`angebot-${idx}`}
+                                key={`anfrage-${idx}`}
                                 className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 text-slate-600 text-sm rounded-lg"
                             >
                                 <Mail className="w-3 h-3" />
