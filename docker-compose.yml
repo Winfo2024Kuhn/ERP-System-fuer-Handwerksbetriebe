@@ -1,6 +1,55 @@
 version: "3.8"
 
 services:
+
+  # ========== MySQL Datenbank ==========
+  mysql:
+    image: mysql:8.0
+    container_name: kalkulationsprogramm-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-CHANGE_ME_ROOT_PW}
+      MYSQL_DATABASE: kalkulationsprogramm_db
+      MYSQL_USER: ${MYSQL_USER:-erp_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME_DB_PW}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_german2_ci
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-CHANGE_ME_ROOT_PW}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # ========== Spring Boot Anwendung ==========
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kalkulationsprogramm-app
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      MYSQL_USER: ${MYSQL_USER:-erp_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME_DB_PW}
+      APP_ADMIN_USER: ${APP_ADMIN_USER:-Marvin}
+      APP_ADMIN_PASS: ${APP_ADMIN_PASS:-123456}
+    volumes:
+      - app_uploads:/app/uploads
+      - app_logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ========== Qdrant (Vektordatenbank für KI/RAG) ==========
   qdrant:
     image: qdrant/qdrant:v1.12.1
     container_name: kalkulationsprogramm-qdrant
@@ -14,4 +63,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  mysql_data:
+  app_uploads:
+  app_logs:
   qdrant_data:

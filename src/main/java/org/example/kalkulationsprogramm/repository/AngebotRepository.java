@@ -46,7 +46,7 @@ public interface AngebotRepository extends JpaRepository<Angebot, Long> {
                  AND (
                       :angebotsnummer IS NULL OR EXISTS (
                           SELECT d FROM AusgangsGeschaeftsDokument d
-                          WHERE d.angebot = a
+                          WHERE d.projekt = a.projekt
                             AND d.typ = 'ANGEBOT'
                             AND LOWER(d.dokumentNummer) LIKE LOWER(CONCAT('%', :angebotsnummer, '%'))
                       )
