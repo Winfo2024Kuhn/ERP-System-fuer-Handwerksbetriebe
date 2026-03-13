@@ -83,6 +83,7 @@ class AnfrageServiceTest {
         doc.setGeschaeftsdokumentart("Angebot");
         doc.setDokumentid("ANG-123");
         when(anfrageDokumentRepository.findByAnfrageId(5L)).thenReturn(List.of(doc));
+        when(ausgangsGeschaeftsDokumentService.resolveAnfragesnummer(5L)).thenReturn("ANG-123");
 
         AnfrageResponseDto dto = service.findeDto(5L);
         assertThat(dto).isNotNull();
@@ -167,7 +168,7 @@ class AnfrageServiceTest {
         p.setId(10L);
         a2.setProjekt(p);
 
-        when(anfrageRepository.findAll()).thenReturn(List.of(a1, a2));
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(List.of(a1, a2));
 
         List<AnfrageResponseDto> result = service.alle();
         assertThat(result).hasSize(1);
