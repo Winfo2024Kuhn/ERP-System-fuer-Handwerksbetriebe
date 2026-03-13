@@ -1,0 +1,43 @@
+# Build output
+target/
+!target/Kalkulationsprogramm-*.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+
+# Git
+.git/
+.gitignore
+
+# Node modules (Frontends)
+react-pc-frontend/node_modules/
+react-zeiterfassung/node_modules/
+react-textbausteine/node_modules/
+node_modules/
+
+# Runtime data
+uploads/
+logs/
+*.log
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env
+application-local.properties

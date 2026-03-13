@@ -46,7 +46,7 @@ public class ZugferdErstellService {
                 }
 
                 TradeParty seller = new TradeParty();
-                seller.setName("Example Company"); // Pflicht: Name
+                seller.setName("Bauschlosserei Kuhn"); // Pflicht: Name
 
                 TradeParty buyer = new TradeParty();
                 buyer.setName(daten.getKundenName() != null ? daten.getKundenName() : "Kunde");

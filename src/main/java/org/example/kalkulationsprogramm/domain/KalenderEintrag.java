@@ -12,7 +12,7 @@ import java.util.Set;
 
 /**
  * Entity für Kalendereinträge/Termine im Projektmanagement.
- * Kann optional mit Projekt, Kunde, Lieferant oder Angebot verknüpft werden.
+ * Kann optional mit Projekt, Kunde, Lieferant oder Anfrage verknüpft werden.
  * Jeder Eintrag hat einen Ersteller (Owner) und kann Teilnehmer (Eingeladene) haben.
  */
 @Getter
@@ -79,8 +79,8 @@ public class KalenderEintrag {
     private Lieferanten lieferant;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "angebot_id")
-    private Angebot angebot;
+    @JoinColumn(name = "anfrage_id")
+    private Anfrage anfrage;
 
     @Column(nullable = false)
     private LocalDateTime erstelltAm;

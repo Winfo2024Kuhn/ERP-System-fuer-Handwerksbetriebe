@@ -9,8 +9,6 @@ import com.lowagie.text.pdf.PdfWriter;
 import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
@@ -28,8 +26,6 @@ import java.util.stream.Collectors;
 @Service
 @AllArgsConstructor
 public class BestellungPdfService {
-
-    private static final Logger log = LoggerFactory.getLogger(BestellungPdfService.class);
 
     private final BestellungService bestellungService;
     private final SchnittbilderRepository schnittbilderRepository;
@@ -111,7 +107,7 @@ public class BestellungPdfService {
             try {
                 var mainReader = new com.lowagie.text.pdf.PdfReader(Files.readAllBytes(temp));
                 var refIs = BestellungPdfService.class
-                        .getResourceAsStream("/static/Schnittbilder_Formstahl.pdf");
+                        .getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf");
                 if (refIs != null) {
                     Path merged = Files.createTempFile(dir, "bestellung-merged-", ".pdf.html");
                     var refReader = new com.lowagie.text.pdf.PdfReader(refIs);
@@ -141,7 +137,8 @@ public class BestellungPdfService {
                 }
             } catch (IOException ignored) {
             }
-            log.debug("Generated file: {}, exists={}", temp.toAbsolutePath(), Files.exists(temp));
+            System.out.println("[BestellungPdfService] Generated file: " + temp.toAbsolutePath() + ", exists="
+                    + Files.exists(temp));
             if (!Files.exists(temp)) {
                 Files.createDirectories(temp.getParent());
                 Files.createFile(temp);
@@ -225,7 +222,7 @@ public class BestellungPdfService {
             try {
                 var mainReader = new com.lowagie.text.pdf.PdfReader(Files.readAllBytes(temp));
                 var refIs = BestellungPdfService.class
-                        .getResourceAsStream("/static/Schnittbilder_Formstahl.pdf");
+                        .getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf");
                 if (refIs != null) {
                     Path merged = Files.createTempFile(dir, "bestellung-merged-", ".pdf.html");
                     var refReader = new com.lowagie.text.pdf.PdfReader(refIs);

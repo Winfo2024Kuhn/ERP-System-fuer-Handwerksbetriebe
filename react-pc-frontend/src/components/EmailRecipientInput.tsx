@@ -9,7 +9,7 @@ interface ContactDto {
     id: string;
     name: string;
     email: string;
-    type: string; // KUNDE, LIEFERANT, PROJEKT, ANGEBOT
+    type: string; // KUNDE, LIEFERANT, PROJEKT, ANFRAGE
     context?: string;
 }
 
@@ -27,7 +27,7 @@ const TYPE_CONFIG: Record<string, { label: string; icon: typeof User; color: str
     KUNDE: { label: 'Kunde', icon: User, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
     LIEFERANT: { label: 'Lieferant', icon: Building2, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
     PROJEKT: { label: 'Projekt', icon: Briefcase, color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
-    ANGEBOT: { label: 'Angebot', icon: FileText, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+    ANFRAGE: { label: 'Anfrage', icon: FileText, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
 };
 
 export function EmailRecipientInput({
@@ -349,7 +349,7 @@ export function EmailRecipientInput({
                     {value && value.length >= 2 && (
                         <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/50">
                             <p className="text-[11px] text-slate-400">
-                                {displayItems.length} Treffer · Suche in Kunden, Lieferanten, Projekten & Angeboten
+                                {displayItems.length} Treffer · Suche in Kunden, Lieferanten, Projekten & Anfragenn
                             </p>
                         </div>
                     )}

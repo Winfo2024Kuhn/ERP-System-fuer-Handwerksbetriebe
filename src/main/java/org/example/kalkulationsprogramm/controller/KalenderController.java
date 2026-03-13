@@ -50,8 +50,8 @@ public class KalenderController {
             String kundeName,
             Long lieferantId,
             String lieferantName,
-            Long angebotId,
-            String angebotBetreff,
+            Long anfrageId,
+            String anfrageBetreff,
             Long erstellerId,
             String erstellerName,
             List<TeilnehmerDto> teilnehmer) {
@@ -79,8 +79,8 @@ public class KalenderController {
                     e.getKunde() != null ? e.getKunde().getName() : null,
                     e.getLieferant() != null ? e.getLieferant().getId() : null,
                     e.getLieferant() != null ? e.getLieferant().getLieferantenname() : null,
-                    e.getAngebot() != null ? e.getAngebot().getId() : null,
-                    e.getAngebot() != null ? e.getAngebot().getBauvorhaben() : null,
+                    e.getAnfrage() != null ? e.getAnfrage().getId() : null,
+                    e.getAnfrage() != null ? e.getAnfrage().getBauvorhaben() : null,
                     e.getErsteller() != null ? e.getErsteller().getId() : null,
                     e.getErsteller() != null ? e.getErsteller().getVorname() + " " + e.getErsteller().getNachname()
                             : null,
@@ -180,7 +180,7 @@ public class KalenderController {
             Long projektId,
             Long kundeId,
             Long lieferantId,
-            Long angebotId,
+            Long anfrageId,
             List<Long> teilnehmerIds,
             Long erstellerId) {
     }
@@ -204,7 +204,7 @@ public class KalenderController {
                 request.projektId(),
                 request.kundeId(),
                 request.lieferantId(),
-                request.angebotId(),
+                request.anfrageId(),
                 request.erstellerId(),
                 request.teilnehmerIds());
         return ResponseEntity.ok(KalenderEintragDto.fromEntity(saved));
@@ -236,7 +236,7 @@ public class KalenderController {
                 request.projektId(),
                 request.kundeId(),
                 request.lieferantId(),
-                request.angebotId(),
+                request.anfrageId(),
                 mitarbeiter.getId(),
                 request.teilnehmerIds());
         return ResponseEntity.ok(KalenderEintragDto.fromEntity(saved));
@@ -267,7 +267,7 @@ public class KalenderController {
                 request.projektId(),
                 request.kundeId(),
                 request.lieferantId(),
-                request.angebotId(),
+                request.anfrageId(),
                 null,
                 request.teilnehmerIds());
         return ResponseEntity.ok(KalenderEintragDto.fromEntity(saved));

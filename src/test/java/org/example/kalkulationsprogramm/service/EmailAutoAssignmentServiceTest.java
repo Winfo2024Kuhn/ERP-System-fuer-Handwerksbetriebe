@@ -25,13 +25,13 @@ class EmailAutoAssignmentServiceTest {
     @Mock private EmailRepository emailRepository;
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private ProjektRepository projektRepository;
-    @Mock private AngebotRepository angebotRepository;
+    @Mock private AnfrageRepository anfrageRepository;
 
     private EmailAutoAssignmentService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailAutoAssignmentService(emailRepository, lieferantenRepository, projektRepository, angebotRepository);
+        service = new EmailAutoAssignmentService(emailRepository, lieferantenRepository, projektRepository, anfrageRepository);
     }
 
     private Email erstelleEmail(String fromAddress, String subject) {
@@ -63,8 +63,8 @@ class EmailAutoAssignmentServiceTest {
         return p;
     }
 
-    private Angebot erstelleAngebot(Long id, String bauvorhaben, String kurzbeschreibung) {
-        Angebot a = new Angebot();
+    private Anfrage erstelleAnfrage(Long id, String bauvorhaben, String kurzbeschreibung) {
+        Anfrage a = new Anfrage();
         a.setId(id);
         a.setBauvorhaben(bauvorhaben);
         a.setKurzbeschreibung(kurzbeschreibung);
@@ -131,7 +131,7 @@ class EmailAutoAssignmentServiceTest {
 
             when(lieferantenRepository.findByEmailDomain("firma.de")).thenReturn(Collections.emptyList());
             when(projektRepository.findByKundenEmail("kunde@firma.de")).thenReturn(List.of(projekt));
-            when(angebotRepository.findByKundenEmail("kunde@firma.de")).thenReturn(Collections.emptyList());
+            when(anfrageRepository.findByKundenEmail("kunde@firma.de")).thenReturn(Collections.emptyList());
 
             boolean result = service.tryAutoAssign(email);
 
@@ -141,20 +141,20 @@ class EmailAutoAssignmentServiceTest {
         }
 
         @Test
-        void ordnetUeberKundenEmailDemAngebotZu() {
-            Email email = erstelleEmail("kunde@firma.de", "Frage zum Angebot");
+        void ordnetUeberKundenEmailDemAnfrageZu() {
+            Email email = erstelleEmail("kunde@firma.de", "Frage zum Anfrage");
 
-            Angebot angebot = erstelleAngebot(3L, "Badezimmer Renovierung", "Bad komplett");
+            Anfrage anfrage = erstelleAnfrage(3L, "Badezimmer Renovierung", "Bad komplett");
 
             when(lieferantenRepository.findByEmailDomain("firma.de")).thenReturn(Collections.emptyList());
             when(projektRepository.findByKundenEmail("kunde@firma.de")).thenReturn(Collections.emptyList());
-            when(angebotRepository.findByKundenEmail("kunde@firma.de")).thenReturn(List.of(angebot));
+            when(anfrageRepository.findByKundenEmail("kunde@firma.de")).thenReturn(List.of(anfrage));
 
             boolean result = service.tryAutoAssign(email);
 
             assertThat(result).isTrue();
-            assertThat(email.getZuordnungTyp()).isEqualTo(EmailZuordnungTyp.ANGEBOT);
-            assertThat(email.getAngebot()).isEqualTo(angebot);
+            assertThat(email.getZuordnungTyp()).isEqualTo(EmailZuordnungTyp.ANFRAGE);
+            assertThat(email.getAnfrage()).isEqualTo(anfrage);
         }
     }
 
@@ -221,7 +221,7 @@ class EmailAutoAssignmentServiceTest {
 
             when(lieferantenRepository.findByEmailDomain("firma.de")).thenReturn(Collections.emptyList());
             when(projektRepository.findByKundenEmail("kunde@firma.de")).thenReturn(List.of(altesProjekt));
-            when(angebotRepository.findByKundenEmail("kunde@firma.de")).thenReturn(Collections.emptyList());
+            when(anfrageRepository.findByKundenEmail("kunde@firma.de")).thenReturn(Collections.emptyList());
 
             boolean result = service.tryAutoAssign(email);
 
@@ -251,7 +251,7 @@ class EmailAutoAssignmentServiceTest {
             when(lieferantenRepository.findByEmailDomain("firma.de")).thenReturn(Collections.emptyList());
             // Schritt 2: Mehrere Projekte über Kunden-Email → Keyword-Suche
             when(projektRepository.findByKundenEmail("kunde@firma.de")).thenReturn(List.of(projekt1, projekt2));
-            when(angebotRepository.findByKundenEmail("kunde@firma.de")).thenReturn(Collections.emptyList());
+            when(anfrageRepository.findByKundenEmail("kunde@firma.de")).thenReturn(Collections.emptyList());
 
             boolean result = service.tryAutoAssign(email);
 
@@ -272,17 +272,17 @@ class EmailAutoAssignmentServiceTest {
             Email email = erstelleEmail("kunde@firma.de", "Frage");
 
             Projekt projekt = erstelleProjekt(1L, "Dachsanierung", "Dach");
-            Angebot angebot = erstelleAngebot(2L, "Kellersanierung", "Keller");
+            Anfrage anfrage = erstelleAnfrage(2L, "Kellersanierung", "Keller");
 
             when(projektRepository.findByKundenEmail("kunde@firma.de")).thenReturn(List.of(projekt));
-            when(angebotRepository.findByKundenEmail("kunde@firma.de")).thenReturn(List.of(angebot));
+            when(anfrageRepository.findByKundenEmail("kunde@firma.de")).thenReturn(List.of(anfrage));
 
             EmailAutoAssignmentService.PossibleAssignments assignments = service.findPossibleAssignments(email);
 
             assertThat(assignments.projekte).hasSize(1);
             assertThat(assignments.projekte.getFirst().name).isEqualTo("Dachsanierung");
-            assertThat(assignments.angebote).hasSize(1);
-            assertThat(assignments.angebote.getFirst().name).isEqualTo("Kellersanierung");
+            assertThat(assignments.anfragen).hasSize(1);
+            assertThat(assignments.anfragen.getFirst().name).isEqualTo("Kellersanierung");
         }
 
         @Test
@@ -292,7 +292,7 @@ class EmailAutoAssignmentServiceTest {
             EmailAutoAssignmentService.PossibleAssignments assignments = service.findPossibleAssignments(email);
 
             assertThat(assignments.projekte).isEmpty();
-            assertThat(assignments.angebote).isEmpty();
+            assertThat(assignments.anfragen).isEmpty();
         }
     }
 
@@ -309,7 +309,7 @@ class EmailAutoAssignmentServiceTest {
 
             when(lieferantenRepository.findByEmailDomain("random.com")).thenReturn(Collections.emptyList());
             when(projektRepository.findByKundenEmail("unknown@random.com")).thenReturn(Collections.emptyList());
-            when(angebotRepository.findByKundenEmail("unknown@random.com")).thenReturn(Collections.emptyList());
+            when(anfrageRepository.findByKundenEmail("unknown@random.com")).thenReturn(Collections.emptyList());
 
             boolean result = service.tryAutoAssign(email);
 

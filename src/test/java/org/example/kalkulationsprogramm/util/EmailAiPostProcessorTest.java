@@ -29,9 +29,9 @@ class EmailAiPostProcessorTest {
 
     @Test
     void removesVerbesserteVersionHeading() {
-        String in = "Verbesserte Version:\n\nHallo zusammen,\nbitte finden Sie anbei das Angebot.";
+        String in = "Verbesserte Version:\n\nHallo zusammen,\nbitte finden Sie anbei das Anfrage.";
         String out = EmailAiPostProcessor.sanitizePlainText(in);
-        assertEquals("Hallo zusammen,\nbitte finden Sie anbei das Angebot.", out);
+        assertEquals("Hallo zusammen,\nbitte finden Sie anbei das Anfrage.", out);
     }
 
     @Test

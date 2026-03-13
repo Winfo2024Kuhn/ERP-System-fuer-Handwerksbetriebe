@@ -1,0 +1,43 @@
+# ============================================================
+# Lokale Konfiguration (NICHT committen!)
+# Kopiere diese Datei nach: application-local.properties
+# und trage deine individuellen Werte ein.
+# ============================================================
+
+# ========== Datenbank ==========
+spring.datasource.url=jdbc:mysql://localhost:3307/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_german2_ci
+spring.datasource.username=DEIN_DB_BENUTZERNAME
+spring.datasource.password=DEIN_DB_PASSWORT
+
+# ========== SMTP (E-Mail-Versand) ==========
+smtp.host=smtp.example.com
+smtp.port=465
+smtp.username=deine-email@example.com
+smtp.password=DEIN_SMTP_PASSWORT
+
+spring.mail.host=smtp.example.com
+spring.mail.port=465
+spring.mail.username=deine-email@example.com
+spring.mail.password=DEIN_SMTP_PASSWORT
+
+# ========== Gemini API ==========
+ai.gemini.api-key=DEIN_GEMINI_API_KEY
+
+# ========== HiCAD Netzwerkpfade (optional) ==========
+#hicad.network-url=\\\\DEIN_SERVER\\CADdrawings
+#hicad.network-drive-letter=Z:
+
+# ========== Zeiterfassung PWA Base-URL (optional) ==========
+#zeiterfassung.base-url=https://deine-subdomain.trycloudflare.com
+
+# ========== Vendor Integrations (optional) ==========
+#vendor.microsoft.enabled=true
+#vendor.microsoft.tenant-id=DEIN_TENANT_ID
+#vendor.microsoft.client-id=DEIN_CLIENT_ID
+#vendor.microsoft.client-secret=DEIN_CLIENT_SECRET
+#vendor.microsoft.billing-account-id=DEIN_BILLING_ACCOUNT_ID
+
+#vendor.amazon.enabled=true
+#vendor.amazon.client-id=DEIN_CLIENT_ID
+#vendor.amazon.client-secret=DEIN_CLIENT_SECRET
+#vendor.amazon.refresh-token=DEIN_REFRESH_TOKEN

@@ -27,11 +27,13 @@ export interface DocBlock {
     discount?: number;
     /** ID der Leistung aus der Stammdaten-Tabelle (für Kategoriezuordnung) */
     leistungId?: number;
+    /** ID der Produktkategorie (von Leistung.kategorie) */
+    kategorieId?: number;
 }
 
 export interface DocumentEditorProps {
     projektId?: number;
-    angebotId?: number;
+    anfrageId?: number;
     dokumentId?: number;
     initialDokumentTyp?: import('../../types').AusgangsGeschaeftsDokumentTyp;
     onClose: () => void;
@@ -67,6 +69,7 @@ export interface LeistungApiDto {
     description: string;
     price: number;
     unit: { name: string; anzeigename: string };
+    folderId?: number;
 }
 
 export interface ArbeitszeitartApiDto {

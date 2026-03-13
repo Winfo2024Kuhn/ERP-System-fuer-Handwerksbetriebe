@@ -18,9 +18,9 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
     List<AusgangsGeschaeftsDokument> findByProjektIdOrderByDatumDesc(Long projektId);
 
     /**
-     * Findet alle Dokumente für ein Angebot, sortiert nach Datum absteigend
+     * Findet alle Dokumente für ein Anfrage, sortiert nach Datum absteigend
      */
-    List<AusgangsGeschaeftsDokument> findByAngebotIdOrderByDatumDesc(Long angebotId);
+    List<AusgangsGeschaeftsDokument> findByAnfrageIdOrderByDatumDesc(Long anfrageId);
 
     /**
      * Findet alle Dokumente für einen Kunden, sortiert nach Datum absteigend
@@ -44,10 +44,10 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
     int countByVorgaengerIdAndTyp(Long vorgaengerId, AusgangsGeschaeftsDokumentTyp typ);
 
     /**
-     * Findet das (eindeutige) Dokument eines bestimmten Typs für ein Angebot.
-     * z.B. das ANGEBOT-Dokument, aus dem die Angebotsnummer abgeleitet wird.
+     * Findet das (eindeutige) Dokument eines bestimmten Typs für ein Anfrage.
+     * z.B. das ANFRAGE-Dokument, aus dem die Anfragesnummer abgeleitet wird.
      */
-    Optional<AusgangsGeschaeftsDokument> findFirstByAngebotIdAndTyp(Long angebotId, AusgangsGeschaeftsDokumentTyp typ);
+    Optional<AusgangsGeschaeftsDokument> findFirstByAnfrageIdAndTyp(Long anfrageId, AusgangsGeschaeftsDokumentTyp typ);
 
     /**
      * Prüft ob bereits ein Basisdokument (ohne Vorgänger) für ein Projekt existiert.
@@ -55,16 +55,16 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
     boolean existsByProjektIdAndVorgaengerIsNull(Long projektId);
 
     /**
-     * Prüft ob bereits ein Basisdokument (ohne Vorgänger) für ein Angebot existiert.
+     * Prüft ob bereits ein Basisdokument (ohne Vorgänger) für ein Anfrage existiert.
      */
-    boolean existsByAngebotIdAndVorgaengerIsNull(Long angebotId);
+    boolean existsByAnfrageIdAndVorgaengerIsNull(Long anfrageId);
 
     /**
-     * Findet alle Dokumente, die über ein Angebot mit einem Projekt verknüpft sind
-     * (angebot.projekt_id = projektId), aber kein direktes projekt_id gesetzt haben.
+     * Findet alle Dokumente, die über ein Anfrage mit einem Projekt verknüpft sind
+     * (anfrage.projekt_id = projektId), aber kein direktes projekt_id gesetzt haben.
      */
-    @Query("SELECT d FROM AusgangsGeschaeftsDokument d WHERE d.angebot.projekt.id = :projektId AND d.projekt IS NULL")
-    List<AusgangsGeschaeftsDokument> findByAngebotProjektIdAndProjektIsNull(Long projektId);
+    @Query("SELECT d FROM AusgangsGeschaeftsDokument d WHERE d.anfrage.projekt.id = :projektId AND d.projekt IS NULL")
+    List<AusgangsGeschaeftsDokument> findByAnfrageProjektIdAndProjektIsNull(Long projektId);
 
     /**
      * Findet die höchste Dokumentnummer für einen Monat (für neue Nummer)

@@ -59,8 +59,8 @@ type DokumentTreeNode = {
 interface DokumentHierarchieProps {
     ausgangsDokumente: AusgangsGeschaeftsDokument[];
     projektId?: number;
-    angebotId?: number;
-    /** Wenn gesetzt, werden nur diese Dokumenttypen im Erstellen-Dialog angeboten */
+    anfrageId?: number;
+    /** Wenn gesetzt, werden nur diese Dokumenttypen im Erstellen-Dialog anfragenn */
     allowedTypes?: AusgangsGeschaeftsDokumentTyp[];
     /** Wenn true, werden Rechnungserstellungs-Aktionen ausgeblendet */
     hideRechnungActions?: boolean;
@@ -72,17 +72,17 @@ interface DokumentHierarchieProps {
 export function DokumentHierarchie({
     ausgangsDokumente,
     projektId,
-    angebotId,
+    anfrageId,
     allowedTypes,
     hideRechnungActions,
     onRefresh,
     confirmDialog,
     toast,
 }: DokumentHierarchieProps) {
-    // URL-Param für den Dokument-Editor: projektId oder angebotId
-    const editorParam = projektId ? `projektId=${projektId}` : `angebotId=${angebotId}`;
+    // URL-Param für den Dokument-Editor: projektId oder anfrageId
+    const editorParam = projektId ? `projektId=${projektId}` : `anfrageId=${anfrageId}`;
     // Payload-Felder für die Dokumenterstellung
-    const createPayloadIds = projektId ? { projektId } : { angebotId };
+    const createPayloadIds = projektId ? { projektId } : { anfrageId };
     const [actionMenuId, setActionMenuId] = useState<number | null>(null);
     const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set());
 
@@ -416,7 +416,7 @@ export function DokumentHierarchie({
                                         <button
                                             className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2"
                                             onClick={async () => {
-                                                if (await confirmDialog({ title: "In Auftragsbestätigung umwandeln", message: `Angebot ${dok.dokumentNummer} in Auftragsbestätigung umwandeln?`, variant: "info", confirmLabel: "Umwandeln" })) {
+                                                if (await confirmDialog({ title: "In Auftragsbestätigung umwandeln", message: `Anfrage ${dok.dokumentNummer} in Auftragsbestätigung umwandeln?`, variant: "info", confirmLabel: "Umwandeln" })) {
                                                     try {
                                                         const response = await fetch('/api/ausgangs-dokumente', {
                                                             method: 'POST',

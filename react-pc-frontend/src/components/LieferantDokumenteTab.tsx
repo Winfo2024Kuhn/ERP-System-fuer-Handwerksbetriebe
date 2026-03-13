@@ -359,7 +359,7 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
                         <p className="text-lg font-semibold text-slate-900">{dokumente.length}</p>
                     </div>
                     <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-                        <p className="text-xs text-blue-600 uppercase tracking-wide">Angebote</p>
+                        <p className="text-xs text-blue-600 uppercase tracking-wide">Anfragen</p>
                         <p className="text-lg font-semibold text-blue-900">{dokumente.filter(d => d.typ === 'ANGEBOT').length}</p>
                     </div>
                     <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">

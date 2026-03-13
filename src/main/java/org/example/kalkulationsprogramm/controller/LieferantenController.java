@@ -19,8 +19,6 @@ import org.example.kalkulationsprogramm.dto.Projekt.ProjektEmailDto;
 import org.example.kalkulationsprogramm.mapper.LieferantMapper;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.example.kalkulationsprogramm.service.LieferantArtikelpreisService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantEmailResolver;
@@ -75,8 +73,6 @@ import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 @RequestMapping("/api/lieferanten")
 @RequiredArgsConstructor
 public class LieferantenController {
-
-    private static final Logger log = LoggerFactory.getLogger(LieferantenController.class);
 
     private final LieferantenRepository lieferantenRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
@@ -396,7 +392,7 @@ public class LieferantenController {
             return ResponseEntity.ok(ret);
 
         } catch (Exception e) {
-            log.error("Fehler beim Senden der E-Mail", e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -719,7 +715,7 @@ public class LieferantenController {
             }
 
         } catch (Exception e) {
-            log.error("Fehler bei Multi-Invoice-Analyse", e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -818,7 +814,7 @@ public class LieferantenController {
             return ResponseEntity.ok(dokumentService.getDokumentById(dokument.getId()));
 
         } catch (Exception e) {
-            log.error("Fehler beim Dokument-Import", e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError().build();
         }
     }

@@ -113,7 +113,7 @@ export default function TemplateGallery({ templates, onCreateNew, onEdit, onDupl
                     </div>
                     <p className="text-lg font-medium text-slate-700">Noch keine Vorlagen erstellt</p>
                     <p className="text-sm text-slate-500 mt-1 max-w-sm">
-                        Erstelle deine erste Dokumentvorlage und verwende sie für Angebote, Rechnungen und mehr.
+                        Erstelle deine erste Dokumentvorlage und verwende sie für Anfragen, Rechnungen und mehr.
                     </p>
                     <Button size="sm" className="mt-4" onClick={onCreateNew}>
                         <Plus className="w-4 h-4 mr-1" />Erste Vorlage erstellen

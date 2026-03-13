@@ -51,8 +51,6 @@ import org.example.kalkulationsprogramm.service.ProjektManagementService;
 import org.example.kalkulationsprogramm.service.StuecklistePdfService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -78,9 +76,6 @@ import lombok.AllArgsConstructor;
 @RequestMapping("/api/projekte")
 @AllArgsConstructor
 public class ProjektController {
-
-    private static final Logger log = LoggerFactory.getLogger(ProjektController.class);
-
     private static final int MAX_PAGE_SIZE = 50;
 
     private final DateiSpeicherService dateiSpeicherService;
@@ -115,7 +110,7 @@ public class ProjektController {
                     uploadedBy);
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
         } catch (Exception e) {
-            log.error("Fehler beim Erstellen des Projekts", e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -131,7 +126,7 @@ public class ProjektController {
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), null, null, uploadedBy);
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
         } catch (Exception e) {
-            log.error("Fehler beim Erstellen des Projekts (JSON)", e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -143,7 +138,7 @@ public class ProjektController {
             ProjektResponseDto dto = projektManagementService.fuegeZeitenHinzu(projektId, zeiten);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            log.error("Fehler beim Hinzufügen von Zeiten zu Projekt {}", projektId, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -162,7 +157,7 @@ public class ProjektController {
                             "inline; filename=\"" + dateiname + "\"")
                     .body(pdf);
         } catch (Exception e) {
-            log.error("Fehler beim Erzeugen der Stückliste für Projekt {}", projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -179,7 +174,7 @@ public class ProjektController {
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), imageFile, uploadedBy);
             return ResponseEntity.ok(responseDto);
         } catch (Exception e) {
-            log.error("Fehler beim Aktualisieren des Projekts {}", projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -196,7 +191,7 @@ public class ProjektController {
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), null, uploadedBy);
             return ResponseEntity.ok(responseDto);
         } catch (Exception e) {
-            log.error("Fehler beim Aktualisieren des Projekts {} (JSON)", projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -208,7 +203,7 @@ public class ProjektController {
             ProjektResponseDto dto = projektManagementService.aktualisiereMaterialkosten(projektID, materialkosten);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            log.error("Fehler beim Aktualisieren der Materialkosten für Projekt {}", projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -221,7 +216,7 @@ public class ProjektController {
                     kurzbeschreibung);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            log.error("Fehler beim Aktualisieren der Kurzbeschreibung für Projekt {}", projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -233,7 +228,7 @@ public class ProjektController {
             ProjektResponseDto dto = projektManagementService.fuegeArtikelMaterialkosten(projektID, artikelAuswahl);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            log.error("Fehler beim Hinzufügen von Artikeln als Materialkosten für Projekt {}", projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -246,7 +241,7 @@ public class ProjektController {
                     artikelInProjektID);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            log.error("Fehler beim Entfernen des Artikels {} aus Projekt {}", artikelInProjektID, projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -260,7 +255,7 @@ public class ProjektController {
                     artikelInProjektID, dto);
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
-            log.error("Fehler beim Aktualisieren des Artikels {} in Projekt {}", artikelInProjektID, projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -272,7 +267,7 @@ public class ProjektController {
             ProjektResponseDto dto = projektManagementService.entferneMaterialkosten(projektID, materialID);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            log.error("Fehler beim Entfernen der Materialkosten {} aus Projekt {}", materialID, projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -284,7 +279,7 @@ public class ProjektController {
             ProjektResponseDto dto = projektManagementService.fuegeProduktkategorienHinzu(projektID, kategorien);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            log.error("Fehler beim Hinzufügen von Produktkategorien zu Projekt {}", projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -298,7 +293,7 @@ public class ProjektController {
                     kategorieID, dto);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            log.error("Fehler beim Aktualisieren der Produktkategorie {} in Projekt {}", kategorieID, projektID, e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
@@ -494,7 +489,7 @@ public class ProjektController {
                 return name + ".pdf";
             }
         } catch (Exception e) {
-            log.warn("Fehler beim Ermitteln des Dateinamens", e);
+            e.printStackTrace();
         }
         return null; // Kein Override -> Originalname wird verwendet
     }
@@ -596,7 +591,7 @@ public class ProjektController {
         public String pdfUrl;
     }
 
-    // Sendbare Dokumente (Rechnung/Angebot/Auftragsbestätigung/Zeichnung) für
+    // Sendbare Dokumente (Rechnung/Anfrage/Auftragsbestätigung/Zeichnung) für
     // E-Mail-Versand-Dropdown
     @GetMapping("/{projektID}/email-dokumente")
     public ResponseEntity<List<ProjektDokumentResponseDto>> emailDokumente(@PathVariable Long projektID) {
@@ -1291,7 +1286,7 @@ public class ProjektController {
 
             return ResponseEntity.status(HttpStatus.CREATED).body(mapBildToDto(gespeichert));
         } catch (Exception e) {
-            log.error("Fehler beim Hochladen des Notizbildes", e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

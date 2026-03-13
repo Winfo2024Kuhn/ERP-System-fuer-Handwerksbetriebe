@@ -52,9 +52,9 @@ interface EmailComposeModalProps {
     // For projects
     projektId?: number;
     projekt?: ProjektDetail;
-    // For offers (Angebote)
-    angebotId?: number;
-    angebot?: {
+    // For offers (Anfragen)
+    anfrageId?: number;
+    anfrage?: {
         bauvorhaben: string;
         kundenName?: string;
         kundenEmails?: string[];
@@ -77,8 +77,8 @@ export default function EmailComposeModal({
     onClose,
     projektId,
     projekt,
-    angebotId,
-    angebot,
+    anfrageId,
+    anfrage,
     kundeId,
     initialAttachments,
     initialRecipient,
@@ -100,8 +100,8 @@ export default function EmailComposeModal({
                     onClose={onClose}
                     projektId={projektId}
                     projekt={projekt}
-                    angebotId={angebotId}
-                    angebot={angebot}
+                    anfrageId={anfrageId}
+                    anfrage={anfrage}
                     kundeId={kundeId}
                     initialAttachments={initialAttachments}
                     initialRecipient={initialRecipient}

@@ -20,7 +20,7 @@ public class KalenderService {
     private final ProjektRepository projektRepository;
     private final KundeRepository kundeRepository;
     private final LieferantenRepository lieferantenRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageRepository anfrageRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
 
     /**
@@ -78,7 +78,7 @@ public class KalenderService {
      */
     @Transactional
     public KalenderEintrag saveEintrag(KalenderEintrag eintrag, Long projektId, Long kundeId, Long lieferantId,
-            Long angebotId, Long erstellerId, List<Long> teilnehmerIds) {
+            Long anfrageId, Long erstellerId, List<Long> teilnehmerIds) {
         // Verknüpfungen setzen
         if (projektId != null) {
             eintrag.setProjekt(projektRepository.findById(projektId).orElse(null));
@@ -98,10 +98,10 @@ public class KalenderService {
             eintrag.setLieferant(null);
         }
 
-        if (angebotId != null) {
-            eintrag.setAngebot(angebotRepository.findById(angebotId).orElse(null));
+        if (anfrageId != null) {
+            eintrag.setAnfrage(anfrageRepository.findById(anfrageId).orElse(null));
         } else {
-            eintrag.setAngebot(null);
+            eintrag.setAnfrage(null);
         }
 
         // Ersteller setzen (nur bei neuem Eintrag, wenn noch kein Ersteller)
@@ -126,8 +126,8 @@ public class KalenderService {
      */
     @Transactional
     public KalenderEintrag saveEintrag(KalenderEintrag eintrag, Long projektId, Long kundeId, Long lieferantId,
-            Long angebotId) {
-        return saveEintrag(eintrag, projektId, kundeId, lieferantId, angebotId, null, null);
+            Long anfrageId) {
+        return saveEintrag(eintrag, projektId, kundeId, lieferantId, anfrageId, null, null);
     }
 
     /**

@@ -7,7 +7,7 @@ import lombok.Setter;
 @Setter
 public class ConversionRateDto {
     private int jahr;
-    private long angeboteGesamt;
-    private long angeboteZuProjekt;
+    private long anfragenGesamt;
+    private long anfragenZuProjekt;
     private double conversionRate;
 }

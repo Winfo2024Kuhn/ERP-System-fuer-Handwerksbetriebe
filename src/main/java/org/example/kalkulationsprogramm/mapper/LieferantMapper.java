@@ -3,16 +3,12 @@ package org.example.kalkulationsprogramm.mapper;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantListItemDto;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
 public class LieferantMapper {
-
-    private static final Logger log = LoggerFactory.getLogger(LieferantMapper.class);
 
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
 
@@ -52,7 +48,7 @@ public class LieferantMapper {
                 dto.setLieferzeit(avgLieferzeit.intValue());
             }
         } catch (Exception e) {
-            log.warn("Fehler bei Lieferzeit-Berechnung für Lieferant {}: {}", lieferant.getId(), e.getMessage());
+            System.err.println("[LieferantMapper] Fehler bei Lieferzeit-Berechnung: " + e.getMessage());
         }
         
         // Berechne Anzahl der Bestellungen (Auftragsbestätigungen)
@@ -62,7 +58,7 @@ public class LieferantMapper {
                 dto.setBestellungen(bestellungen.intValue());
             }
         } catch (Exception e) {
-            log.warn("Fehler bei Bestellungen-Zählung für Lieferant {}: {}", lieferant.getId(), e.getMessage());
+            System.err.println("[LieferantMapper] Fehler bei Bestellungen-Zählung: " + e.getMessage());
         }
         
         return dto;

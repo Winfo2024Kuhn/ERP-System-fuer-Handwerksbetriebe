@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.Abteilung;
-import org.example.kalkulationsprogramm.domain.Angebot;
-import org.example.kalkulationsprogramm.domain.AngebotNotiz;
-import org.example.kalkulationsprogramm.domain.AngebotNotizBild;
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.AnfrageNotiz;
+import org.example.kalkulationsprogramm.domain.AnfrageNotizBild;
 import org.example.kalkulationsprogramm.domain.Arbeitsgang;
 import org.example.kalkulationsprogramm.domain.ArbeitsgangStundensatz;
 import org.example.kalkulationsprogramm.domain.Artikel;
@@ -28,8 +28,8 @@ import org.example.kalkulationsprogramm.dto.Projekt.MaterialKilogrammDto;
 import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto;
 import org.example.kalkulationsprogramm.mapper.ProjektMapper;
 import org.example.kalkulationsprogramm.repository.AbteilungRepository;
-import org.example.kalkulationsprogramm.repository.AngebotNotizRepository;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
@@ -72,7 +72,7 @@ class ProjektManagementServiceTest {
     @Mock
     private ProjektRepository projektRepository;
     @Mock
-    private AngebotNotizRepository angebotNotizRepository;
+    private AnfrageNotizRepository anfrageNotizRepository;
     @Mock
     private ProjektNotizRepository projektNotizRepository;
     @Mock
@@ -86,7 +86,7 @@ class ProjektManagementServiceTest {
     @Mock
     private ProjektMapper projektMapper;
     @Mock
-    private AngebotRepository angebotRepository;
+    private AnfrageRepository anfrageRepository;
     @Mock
     private ZeitbuchungRepository ZeitbuchungRepository;
     @Mock
@@ -113,11 +113,11 @@ class ProjektManagementServiceTest {
         when(artikelInProjektRepository.sumKilogrammByProjektGroupedByWerkstoff(any()))
                 .thenReturn(List.of());
         service = new ProjektManagementService(projektRepository,
-                angebotNotizRepository,
+                anfrageNotizRepository,
                 projektNotizRepository,
                 produktkategorieRepository,
                 arbeitsgangRepository, kundeRepository, dateiSpeicherService, projektMapper,
-                angebotRepository, ZeitbuchungRepository, stundensatzRepository,
+                anfrageRepository, ZeitbuchungRepository, stundensatzRepository,
                 artikelRepository, artikelInProjektRepository, projektPersistenceService,
                 lieferantenRepository, emailRepository, eventPublisher);
         service.setAusgangsGeschaeftsDokumentService(ausgangsGeschaeftsDokumentService);
@@ -537,38 +537,38 @@ class ProjektManagementServiceTest {
     }
 
     @Test
-    void transfersNotesAndImagesFromAngebotToProjekt() {
+    void transfersNotesAndImagesFromAnfrageToProjekt() {
         // Given
-        Long angebotId = 1L;
+        Long anfrageId = 1L;
         Long projektId = 100L;
         ProjektErstellenDto dto = new ProjektErstellenDto();
-        dto.setAngebotIds(List.of(angebotId));
+        dto.setAnfrageIds(List.of(anfrageId));
         dto.setAuftragsnummer("2024/01/00001");
 
-        Angebot angebot = new Angebot();
-        angebot.setId(angebotId);
-        angebot.setDokumente(new ArrayList<>());
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(anfrageId);
+        anfrage.setDokumente(new ArrayList<>());
         Kunde kunde = new Kunde();
         kunde.setId(10L);
-        angebot.setKunde(kunde);
+        anfrage.setKunde(kunde);
         when(kundeRepository.findById(10L)).thenReturn(Optional.of(kunde));
 
-        when(angebotRepository.findAllById(dto.getAngebotIds())).thenReturn(List.of(angebot));
+        when(anfrageRepository.findAllById(dto.getAnfrageIds())).thenReturn(List.of(anfrage));
 
         // Mock Notizen
-        AngebotNotiz notiz = new AngebotNotiz();
+        AnfrageNotiz notiz = new AnfrageNotiz();
         notiz.setNotiz("Test Notiz");
         notiz.setMobileSichtbar(true);
         notiz.setErstelltAm(java.time.LocalDateTime.now());
         notiz.setMitarbeiter(new Mitarbeiter());
 
-        AngebotNotizBild bild = new AngebotNotizBild();
+        AnfrageNotizBild bild = new AnfrageNotizBild();
         bild.setOriginalDateiname("test.jpg");
         bild.setGespeicherterDateiname("uuid-test.jpg");
         bild.setErstelltAm(java.time.LocalDateTime.now());
         notiz.setBilder(List.of(bild));
 
-        when(angebotNotizRepository.findByAngebotIdOrderByErstelltAmDesc(angebotId)).thenReturn(List.of(notiz));
+        when(anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(anfrageId)).thenReturn(List.of(notiz));
 
         // Mock Projekt creation
         Projekt projekt = new Projekt();

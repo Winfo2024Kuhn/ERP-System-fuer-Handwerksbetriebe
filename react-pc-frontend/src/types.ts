@@ -23,7 +23,7 @@ export interface Kunde {
 export interface Kommunikation {
   id: number;
   referenzId: number;
-  referenzTyp: 'PROJEKT' | 'ANGEBOT' | 'STAMMDATEN' | 'BESTELLUNG'; // Added BESTELLUNG
+  referenzTyp: 'PROJEKT' | 'ANFRAGE' | 'STAMMDATEN' | 'BESTELLUNG'; // Added BESTELLUNG
   referenzName: string;
   subject: string;
   absender: string;
@@ -43,7 +43,7 @@ export interface EmailAttachment {
 
 export interface KundeStatistik {
   projektAnzahl: number;
-  angebotAnzahl: number;
+  anfrageAnzahl: number;
   emailAdresseAnzahl: number;
   letzteAktivitaet?: string;
   gesamtUmsatz?: number;
@@ -298,6 +298,7 @@ export interface ProjektAnalyse {
   masseinheit: number;
   zeitGesamt: number;
   arbeitsgaenge: ProjektArbeitsgangAnalyse[];
+  ausreisser?: boolean;
 }
 
 export interface ArbeitsgangAnalyse {
@@ -314,6 +315,21 @@ export interface ProduktkategorieAnalyse {
   verrechnungseinheit: string;
   projekte: ProjektAnalyse[];
   arbeitsgangAnalysen: ArbeitsgangAnalyse[];
+  rQuadrat: number;
+  residualStdAbweichung: number;
+  datenpunkte: number;
+}
+
+export interface ZeitprognoseDto {
+  prognostizierteStunden: number;
+  fixzeit: number;
+  steigung: number;
+  rQuadrat: number;
+  residualStdAbweichung: number;
+  datenpunkte: number;
+  kategorieId: number;
+  kategorieName: string;
+  verrechnungseinheit: string;
 }
 
 // ==================== Projekt DTOs ====================
@@ -422,11 +438,11 @@ export interface ProjektDokument {
   uploadedByNachname?: string;
 }
 
-// Geschäftsdokument (Rechnungen, Angebote, Auftragsbestätigungen, etc.)
+// Geschäftsdokument (Rechnungen, Anfragen, Auftragsbestätigungen, etc.)
 export interface ProjektGeschaeftsdokument {
   id: number;
-  dokumentid: string;              // Dokumentnummer (Rechnungsnummer, Angebotsnummer, etc.)
-  geschaeftsdokumentart: string;   // Rechnung, Angebot, Auftragsbestätigung, Zeichnung, Mahnung
+  dokumentid: string;              // Dokumentnummer (Rechnungsnummer, Anfragesnummer, etc.)
+  geschaeftsdokumentart: string;   // Rechnung, Anfrage, Auftragsbestätigung, Zeichnung, Mahnung
   originalDateiname: string;
   url: string;
   netzwerkPfad?: string;
@@ -510,14 +526,14 @@ export interface ProjektDetail extends Projekt {
   gesamtKilogramm?: number;
 }
 
-// ==================== Angebot DTOs ====================
-export interface Angebot {
+// ==================== Anfrage DTOs ====================
+export interface Anfrage {
   id: number;
   kundenId?: number;
   kundenName?: string;
   bauvorhaben: string;
   kundennummer?: string;
-  angebotsnummer?: string;
+  anfragesnummer?: string;
   betrag?: number;
   kundenEmails?: string[];
   emailVersandDatum?: string;
@@ -539,7 +555,7 @@ export interface Angebot {
   kundenAnrede?: string;
 }
 
-export interface AngebotDokument {
+export interface AnfrageDokument {
   id: number;
   originalDateiname: string;
   dateityp?: string;
@@ -557,7 +573,7 @@ export interface AngebotDokument {
   bezahlt?: boolean;
 }
 
-export interface AngebotEmailAttachment {
+export interface AnfrageEmailAttachment {
   id?: number;
   originalFilename: string;
   storedFilename: string;
@@ -565,24 +581,24 @@ export interface AngebotEmailAttachment {
   inline?: boolean;
 }
 
-export interface AngebotEmail {
+export interface AnfrageEmail {
   id: number;
   sender?: string;
   recipients?: string[];
   subject?: string;
   body?: string;
   sentAt?: string;
-  attachments?: AngebotEmailAttachment[];
+  attachments?: AnfrageEmailAttachment[];
   direction?: 'IN' | 'OUT';
   parentId?: number;
-  replies?: AngebotEmail[];
+  replies?: AnfrageEmail[];
   benutzer?: string;
   frontendUserId?: number;
 }
 
-export interface AngebotDetail extends Angebot {
-  emails?: AngebotEmail[];
-  dokumente?: AngebotDokument[];
+export interface AnfrageDetail extends Anfrage {
+  emails?: AnfrageEmail[];
+  dokumente?: AnfrageDokument[];
 }
 
 // ==================== Formularwesen DTOs ====================
@@ -723,8 +739,8 @@ export interface AusgangsGeschaeftsDokument {
   projektId?: number;
   projektBauvorhaben?: string;
   projektnummer?: string;
-  // Angebot
-  angebotId?: number;
+  // Anfrage
+  anfrageId?: number;
   // Kunde (Rechnungsadresse)
   kundeId?: number;
   kundennummer?: string;
@@ -749,7 +765,7 @@ export interface AusgangsGeschaeftsDokumentErstellen {
   htmlInhalt?: string;
   positionenJson?: string;
   projektId?: number;
-  angebotId?: number;
+  anfrageId?: number;
   kundeId?: number;
   vorgaengerId?: number;
   // Ersteller

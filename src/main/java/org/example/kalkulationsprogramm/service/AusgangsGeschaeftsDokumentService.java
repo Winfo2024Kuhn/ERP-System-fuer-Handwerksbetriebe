@@ -18,7 +18,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import org.example.kalkulationsprogramm.domain.Angebot;
+import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentCounter;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
@@ -33,7 +33,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.Abrechnun
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
@@ -61,7 +61,7 @@ public class AusgangsGeschaeftsDokumentService {
     private final AusgangsGeschaeftsDokumentRepository dokumentRepository;
     private final AusgangsGeschaeftsDokumentCounterRepository counterRepository;
     private final ProjektRepository projektRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageRepository anfrageRepository;
     private final KundeRepository kundeRepository;
     private final FrontendUserProfileRepository frontendUserProfileRepository;
     private final LeistungRepository leistungRepository;
@@ -74,7 +74,7 @@ public class AusgangsGeschaeftsDokumentService {
             AusgangsGeschaeftsDokumentRepository dokumentRepository,
             AusgangsGeschaeftsDokumentCounterRepository counterRepository,
             ProjektRepository projektRepository,
-            AngebotRepository angebotRepository,
+            AnfrageRepository anfrageRepository,
             KundeRepository kundeRepository,
             FrontendUserProfileRepository frontendUserProfileRepository,
             LeistungRepository leistungRepository,
@@ -85,7 +85,7 @@ public class AusgangsGeschaeftsDokumentService {
         this.dokumentRepository = dokumentRepository;
         this.counterRepository = counterRepository;
         this.projektRepository = projektRepository;
-        this.angebotRepository = angebotRepository;
+        this.anfrageRepository = anfrageRepository;
         this.kundeRepository = kundeRepository;
         this.frontendUserProfileRepository = frontendUserProfileRepository;
         this.leistungRepository = leistungRepository;
@@ -113,13 +113,13 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto) {
-        // Nur ein Basisdokument (ohne Vorgänger) pro Projekt/Angebot erlaubt
+        // Nur ein Basisdokument (ohne Vorgänger) pro Projekt/Anfrage erlaubt
         if (dto.getVorgaengerId() == null) {
             if (dto.getProjektId() != null && dokumentRepository.existsByProjektIdAndVorgaengerIsNull(dto.getProjektId())) {
                 throw new IllegalStateException("Es existiert bereits ein Basisdokument für dieses Projekt.");
             }
-            if (dto.getAngebotId() != null && dokumentRepository.existsByAngebotIdAndVorgaengerIsNull(dto.getAngebotId())) {
-                throw new IllegalStateException("Es existiert bereits ein Basisdokument für dieses Angebot.");
+            if (dto.getAnfrageId() != null && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNull(dto.getAnfrageId())) {
+                throw new IllegalStateException("Es existiert bereits ein Basisdokument für dieses Anfrage.");
             }
         }
 
@@ -151,16 +151,16 @@ public class AusgangsGeschaeftsDokumentService {
             }
         }
 
-        if (dto.getAngebotId() != null) {
-            Angebot angebot = angebotRepository.findById(dto.getAngebotId()).orElse(null);
-            dokument.setAngebot(angebot);
-            // Kunde aus Angebot übernehmen falls nicht explizit gesetzt
-            if (dto.getKundeId() == null && angebot != null && angebot.getKunde() != null) {
-                dokument.setKunde(angebot.getKunde());
+        if (dto.getAnfrageId() != null) {
+            Anfrage anfrage = anfrageRepository.findById(dto.getAnfrageId()).orElse(null);
+            dokument.setAnfrage(anfrage);
+            // Kunde aus Anfrage übernehmen falls nicht explizit gesetzt
+            if (dto.getKundeId() == null && anfrage != null && anfrage.getKunde() != null) {
+                dokument.setKunde(anfrage.getKunde());
             }
-            // Projekt aus Angebot übernehmen falls nicht explizit gesetzt
-            if (dokument.getProjekt() == null && angebot != null && angebot.getProjekt() != null) {
-                dokument.setProjekt(angebot.getProjekt());
+            // Projekt aus Anfrage übernehmen falls nicht explizit gesetzt
+            if (dokument.getProjekt() == null && anfrage != null && anfrage.getProjekt() != null) {
+                dokument.setProjekt(anfrage.getProjekt());
             }
         }
 
@@ -184,9 +184,9 @@ public class AusgangsGeschaeftsDokumentService {
                 if (dokument.getKunde() == null && vorgaenger.getKunde() != null) {
                     dokument.setKunde(vorgaenger.getKunde());
                 }
-                // Angebot vom Vorgänger übernehmen falls nicht gesetzt
-                if (dokument.getAngebot() == null && vorgaenger.getAngebot() != null) {
-                    dokument.setAngebot(vorgaenger.getAngebot());
+                // Anfrage vom Vorgänger übernehmen falls nicht gesetzt
+                if (dokument.getAnfrage() == null && vorgaenger.getAnfrage() != null) {
+                    dokument.setAnfrage(vorgaenger.getAnfrage());
                 }
                 // Projekt vom Vorgänger übernehmen falls nicht gesetzt
                 if (dokument.getProjekt() == null && vorgaenger.getProjekt() != null) {
@@ -236,51 +236,51 @@ public class AusgangsGeschaeftsDokumentService {
             aktualisiereProjektPreisAusDokumenten(saved.getProjekt().getId());
         }
 
-        // Angebot-Preis aktualisieren
-        if (saved.getAngebot() != null) {
-            aktualisiereAngebotPreisAusDokumenten(saved.getAngebot().getId());
+        // Anfrage-Preis aktualisieren
+        if (saved.getAnfrage() != null) {
+            aktualisiereAnfragePreisAusDokumenten(saved.getAnfrage().getId());
         }
 
-        // ProjektProduktkategorien automatisch zuweisen bei Angebot/AB
+        // ProjektProduktkategorien automatisch zuweisen bei Anfrage/AB
         if (saved.getProjekt() != null && KATEGORIE_RELEVANTE_TYPEN.contains(saved.getTyp())) {
             aktualisiereProjektProduktkategorienAusDokumenten(saved.getProjekt().getId());
-        } else if (saved.getAngebot() != null && saved.getAngebot().getProjekt() != null
+        } else if (saved.getAnfrage() != null && saved.getAnfrage().getProjekt() != null
                 && KATEGORIE_RELEVANTE_TYPEN.contains(saved.getTyp())) {
-            aktualisiereProjektProduktkategorienAusDokumenten(saved.getAngebot().getProjekt().getId());
+            aktualisiereProjektProduktkategorienAusDokumenten(saved.getAnfrage().getProjekt().getId());
         }
 
         return saved;
     }
 
     /**
-     * Stellt sicher, dass ein ANGEBOT-Dokument für das gegebene Angebot existiert.
-     * Wird automatisch aufgerufen, wenn der AngebotEditor geöffnet wird.
-     * Pro Angebot darf nur ein ANGEBOT-Dokument existieren.
+     * Stellt sicher, dass ein ANFRAGE-Dokument für das gegebene Anfrage existiert.
+     * Wird automatisch aufgerufen, wenn der AnfrageEditor geöffnet wird.
+     * Pro Anfrage darf nur ein ANFRAGE-Dokument existieren.
      *
-     * @return die dokumentNummer des (ggf. neu erstellten) ANGEBOT-Dokuments, oder null
+     * @return die dokumentNummer des (ggf. neu erstellten) ANFRAGE-Dokuments, oder null
      */
     @Transactional
-    public String ensureAngebotDokument(Long angebotId) {
-        if (angebotId == null) return null;
+    public String ensureAnfrageDokument(Long anfrageId) {
+        if (anfrageId == null) return null;
 
-        // Prüfen ob bereits ein ANGEBOT-Dokument existiert
+        // Prüfen ob bereits ein ANFRAGE-Dokument existiert
         Optional<AusgangsGeschaeftsDokument> existing = dokumentRepository
-                .findFirstByAngebotIdAndTyp(angebotId, AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+                .findFirstByAnfrageIdAndTyp(anfrageId, AusgangsGeschaeftsDokumentTyp.ANGEBOT);
         if (existing.isPresent()) {
             return existing.get().getDokumentNummer();
         }
 
-        // Angebot laden
-        Angebot angebot = angebotRepository.findById(angebotId).orElse(null);
-        if (angebot == null) return null;
+        // Anfrage laden
+        Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
+        if (anfrage == null) return null;
 
-        // Neues ANGEBOT-Dokument automatisch erstellen
+        // Neues ANFRAGE-Dokument automatisch erstellen
         AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
         dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-        dto.setAngebotId(angebotId);
-        dto.setBetreff(angebot.getBauvorhaben());
-        if (angebot.getKunde() != null) {
-            dto.setKundeId(angebot.getKunde().getId());
+        dto.setAnfrageId(anfrageId);
+        dto.setBetreff(anfrage.getBauvorhaben());
+        if (anfrage.getKunde() != null) {
+            dto.setKundeId(anfrage.getKunde().getId());
         }
 
         AusgangsGeschaeftsDokument created = erstellen(dto);
@@ -288,14 +288,30 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Gibt die Angebotsnummer (= dokumentNummer des ANGEBOT-Dokuments) zurück, falls vorhanden.
+     * Gibt die Anfragesnummer (= dokumentNummer des ANFRAGE-Dokuments) zurück, falls vorhanden.
      */
-    public String resolveAngebotsnummer(Long angebotId) {
-        if (angebotId == null) return null;
+    public String resolveAnfragesnummer(Long anfrageId) {
+        if (anfrageId == null) return null;
         return dokumentRepository
-                .findFirstByAngebotIdAndTyp(angebotId, AusgangsGeschaeftsDokumentTyp.ANGEBOT)
+                .findFirstByAnfrageIdAndTyp(anfrageId, AusgangsGeschaeftsDokumentTyp.ANGEBOT)
                 .map(AusgangsGeschaeftsDokument::getDokumentNummer)
                 .orElse(null);
+    }
+
+    /**
+     * Stub: Angebotsnummer aus AusgangsGeschaeftsDokumenten ableiten.
+     * Aktuell kein Angebot-FK in AusgangsGeschaeftsDokument vorhanden.
+     */
+    public String resolveAngebotsnummer(Long angebotId) {
+        return null;
+    }
+
+    /**
+     * Stub: Angebotspreis aus Dokumenten aktualisieren.
+     * Aktuell kein Angebot-FK in AusgangsGeschaeftsDokument vorhanden.
+     */
+    public void aktualisiereAngebotPreisAusDokumenten(Long angebotId) {
+        // No-op: AusgangsGeschaeftsDokument hat noch keine Angebot-Relation
     }
 
     /**
@@ -333,17 +349,17 @@ public class AusgangsGeschaeftsDokumentService {
             aktualisiereProjektPreisAusDokumenten(saved.getProjekt().getId());
         }
 
-        // Angebot-Preis aktualisieren
-        if (saved.getAngebot() != null) {
-            aktualisiereAngebotPreisAusDokumenten(saved.getAngebot().getId());
+        // Anfrage-Preis aktualisieren
+        if (saved.getAnfrage() != null) {
+            aktualisiereAnfragePreisAusDokumenten(saved.getAnfrage().getId());
         }
 
-        // ProjektProduktkategorien automatisch aktualisieren bei Angebot/AB-Änderung
+        // ProjektProduktkategorien automatisch aktualisieren bei Anfrage/AB-Änderung
         if (saved.getProjekt() != null && KATEGORIE_RELEVANTE_TYPEN.contains(saved.getTyp())) {
             aktualisiereProjektProduktkategorienAusDokumenten(saved.getProjekt().getId());
-        } else if (saved.getAngebot() != null && saved.getAngebot().getProjekt() != null
+        } else if (saved.getAnfrage() != null && saved.getAnfrage().getProjekt() != null
                 && KATEGORIE_RELEVANTE_TYPEN.contains(saved.getTyp())) {
-            aktualisiereProjektProduktkategorienAusDokumenten(saved.getAngebot().getProjekt().getId());
+            aktualisiereProjektProduktkategorienAusDokumenten(saved.getAnfrage().getProjekt().getId());
         }
 
         return saved;
@@ -368,7 +384,7 @@ public class AusgangsGeschaeftsDokumentService {
     /**
      * Bucht ein Dokument (nach Export).
      * Nur Rechnungstypen werden dadurch gesperrt (GoBD).
-     * Angebote/ABs werden NICHT gebucht, da sie nachträglich angepasst werden können.
+     * Anfragen/ABs werden NICHT gebucht, da sie nachträglich angepasst werden können.
      */
     @Transactional
     public AusgangsGeschaeftsDokument buchen(Long id) {
@@ -383,9 +399,9 @@ public class AusgangsGeschaeftsDokumentService {
             throw new RuntimeException("Storniertes Dokument kann nicht gebucht werden.");
         }
 
-        // Angebote und ABs werden nicht gebucht – sie sollen nachträglich anpassbar bleiben
+        // Anfragen und ABs werden nicht gebucht – sie sollen nachträglich anpassbar bleiben
         if (NICHT_BUCHBARE_TYPEN.contains(dokument.getTyp())) {
-            log.info("Dokument {} (Typ: {}) wird nicht gebucht – Angebote/ABs bleiben immer bearbeitbar",
+            log.info("Dokument {} (Typ: {}) wird nicht gebucht – Anfragen/ABs bleiben immer bearbeitbar",
                     dokument.getDokumentNummer(), dokument.getTyp());
             return dokument;
         }
@@ -401,7 +417,7 @@ public class AusgangsGeschaeftsDokumentService {
     /**
      * Bucht ein Dokument nach E-Mail-Versand (GoBD-konform).
      * Setzt Versanddatum. Nur Rechnungstypen werden dadurch gesperrt.
-     * Angebote/ABs bekommen das Versanddatum, werden aber NICHT gebucht.
+     * Anfragen/ABs bekommen das Versanddatum, werden aber NICHT gebucht.
      */
     @Transactional
     public AusgangsGeschaeftsDokument buchenNachEmailVersand(Long id) {
@@ -414,7 +430,7 @@ public class AusgangsGeschaeftsDokumentService {
 
         dokument.setVersandDatum(LocalDate.now());
 
-        // Angebote und ABs werden nicht gebucht – nur Versanddatum setzen
+        // Anfragen und ABs werden nicht gebucht – nur Versanddatum setzen
         boolean istNichtBuchbar = NICHT_BUCHBARE_TYPEN.contains(dokument.getTyp());
         boolean warBereitsGebucht = dokument.isGebucht();
         if (!warBereitsGebucht && !istNichtBuchbar) {
@@ -519,7 +535,7 @@ public class AusgangsGeschaeftsDokumentService {
 
         storno.setVorgaenger(original);
         storno.setProjekt(original.getProjekt());
-        storno.setAngebot(original.getAngebot());
+        storno.setAnfrage(original.getAnfrage());
         storno.setKunde(original.getKunde());
         storno.setRechnungsadresseOverride(original.getRechnungsadresseOverride());
 
@@ -562,9 +578,9 @@ public class AusgangsGeschaeftsDokumentService {
             aktualisiereProjektPreisAusDokumenten(original.getProjekt().getId());
         }
 
-        // Angebot-Preis aktualisieren
-        if (original.getAngebot() != null) {
-            aktualisiereAngebotPreisAusDokumenten(original.getAngebot().getId());
+        // Anfrage-Preis aktualisieren
+        if (original.getAnfrage() != null) {
+            aktualisiereAnfragePreisAusDokumenten(original.getAnfrage().getId());
         }
 
         return savedStorno;
@@ -707,30 +723,30 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Findet alle Dokumente für ein Angebot.
+     * Findet alle Dokumente für ein Anfrage.
      */
-    public List<AusgangsGeschaeftsDokumentResponseDto> findByAngebot(Long angebotId) {
-        return dokumentRepository.findByAngebotIdOrderByDatumDesc(angebotId).stream()
+    public List<AusgangsGeschaeftsDokumentResponseDto> findByAnfrage(Long anfrageId) {
+        return dokumentRepository.findByAnfrageIdOrderByDatumDesc(anfrageId).stream()
                 .map(this::toResponseDto)
                 .collect(Collectors.toList());
     }
 
     /**
-     * Migriert alle AusgangsGeschaeftsDokumente von einem Angebot zum Projekt.
-     * Wird aufgerufen, wenn ein Angebot in ein Projekt überführt wird.
-     * Setzt das Projekt und entfernt die Angebot-Referenz, damit das Angebot gelöscht werden kann.
+     * Migriert alle AusgangsGeschaeftsDokumente von einem Anfrage zum Projekt.
+     * Wird aufgerufen, wenn ein Anfrage in ein Projekt überführt wird.
+     * Setzt das Projekt und entfernt die Anfrage-Referenz, damit das Anfrage gelöscht werden kann.
      */
     @Transactional
-    public void migrateFromAngebotToProjekt(Long angebotId, Projekt projekt) {
-        List<AusgangsGeschaeftsDokument> dokumente = dokumentRepository.findByAngebotIdOrderByDatumDesc(angebotId);
+    public void migrateFromAnfrageToProjekt(Long anfrageId, Projekt projekt) {
+        List<AusgangsGeschaeftsDokument> dokumente = dokumentRepository.findByAnfrageIdOrderByDatumDesc(anfrageId);
         for (AusgangsGeschaeftsDokument dok : dokumente) {
             dok.setProjekt(projekt);
-            dok.setAngebot(null);
+            dok.setAnfrage(null);
             dokumentRepository.save(dok);
         }
         if (!dokumente.isEmpty()) {
-            log.info("Migrierte {} Ausgangsgeschäftsdokumente von Angebot {} zu Projekt {}",
-                    dokumente.size(), angebotId, projekt.getId());
+            log.info("Migrierte {} Ausgangsgeschäftsdokumente von Anfrage {} zu Projekt {}",
+                    dokumente.size(), anfrageId, projekt.getId());
             // ProjektProduktkategorien aus den migrierten Dokumenten ableiten
             aktualisiereProjektProduktkategorienAusDokumenten(projekt.getId());
         }
@@ -788,11 +804,11 @@ public class AusgangsGeschaeftsDokumentService {
                 dokument.getId(), dokument.getTyp(), dokument.getDokumentNummer(), begruendung);
 
         Long projektId = dokument.getProjekt() != null ? dokument.getProjekt().getId() : null;
-        Long angebotId = dokument.getAngebot() != null ? dokument.getAngebot().getId() : null;
+        Long anfrageId = dokument.getAnfrage() != null ? dokument.getAnfrage().getId() : null;
         boolean kategorieRelevant = KATEGORIE_RELEVANTE_TYPEN.contains(dokument.getTyp());
-        // Für den Fall dass das Dokument über ein Angebot mit einem Projekt verknüpft ist
-        Long angebotProjektId = (dokument.getAngebot() != null && dokument.getAngebot().getProjekt() != null)
-                ? dokument.getAngebot().getProjekt().getId() : null;
+        // Für den Fall dass das Dokument über ein Anfrage mit einem Projekt verknüpft ist
+        Long anfrageProjektId = (dokument.getAnfrage() != null && dokument.getAnfrage().getProjekt() != null)
+                ? dokument.getAnfrage().getProjekt().getId() : null;
         dokumentRepository.delete(dokument);
 
         // Projekt-Preis aktualisieren
@@ -800,17 +816,17 @@ public class AusgangsGeschaeftsDokumentService {
             aktualisiereProjektPreisAusDokumenten(projektId);
         }
 
-        // Angebot-Preis aktualisieren
-        if (angebotId != null) {
-            aktualisiereAngebotPreisAusDokumenten(angebotId);
+        // Anfrage-Preis aktualisieren
+        if (anfrageId != null) {
+            aktualisiereAnfragePreisAusDokumenten(anfrageId);
         }
 
         // ProjektProduktkategorien dynamisch aktualisieren nach Löschung
         if (kategorieRelevant) {
             if (projektId != null) {
                 aktualisiereProjektProduktkategorienAusDokumenten(projektId);
-            } else if (angebotProjektId != null) {
-                aktualisiereProjektProduktkategorienAusDokumenten(angebotProjektId);
+            } else if (anfrageProjektId != null) {
+                aktualisiereProjektProduktkategorienAusDokumenten(anfrageProjektId);
             }
         }
     }
@@ -1095,8 +1111,8 @@ public class AusgangsGeschaeftsDokumentService {
             dto.setProjektnummer(dokument.getProjekt().getAuftragsnummer());
         }
 
-        if (dokument.getAngebot() != null) {
-            dto.setAngebotId(dokument.getAngebot().getId());
+        if (dokument.getAnfrage() != null) {
+            dto.setAnfrageId(dokument.getAnfrage().getId());
         }
 
         if (dokument.getKunde() != null) {
@@ -1156,8 +1172,8 @@ public class AusgangsGeschaeftsDokumentService {
      * aus den AusgangsGeschaeftsDokumenten.
      *
      * Logik:
-     * - Auftragsbestätigungen haben Priorität vor Angeboten für den Brutto-Preis.
-     * - Falls keine ABs, wird die Angebotssumme verwendet.
+     * - Auftragsbestätigungen haben Priorität vor Anfragenn für den Brutto-Preis.
+     * - Falls keine ABs, wird die Anfragessumme verwendet.
      * - bezahlt = true wenn Summe der (nicht-stornierten) Rechnungen >= Projekt-Preis UND alle Offene-Posten-Rechnungen bezahlt.
      * - abgeschlossen = true wenn bezahlt = true.
      */
@@ -1182,7 +1198,7 @@ public class AusgangsGeschaeftsDokumentService {
                 .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal summeAngebote = aktive.stream()
+        BigDecimal summeAnfragen = aktive.stream()
                 .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.ANGEBOT)
                 .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -1196,12 +1212,12 @@ public class AusgangsGeschaeftsDokumentService {
         // daher werden Storno-Dokumente (negative Beträge) NICHT mehr abgezogen,
         // um doppelte Berücksichtigung zu vermeiden.
 
-        // AB hat Priorität, dann Angebote
-        BigDecimal neuerBruttoPreis = summeAB.compareTo(BigDecimal.ZERO) > 0 ? summeAB : summeAngebote;
+        // AB hat Priorität, dann Anfragen
+        BigDecimal neuerBruttoPreis = summeAB.compareTo(BigDecimal.ZERO) > 0 ? summeAB : summeAnfragen;
 
-        // Nur überschreiben wenn aktueller Wert null oder 0 ist
-        BigDecimal aktuellerPreis = projekt.getBruttoPreis();
-        if (aktuellerPreis == null || aktuellerPreis.compareTo(BigDecimal.ZERO) == 0) {
+        // Wenn Dokumente (AB/Angebote) vorhanden sind, Preis immer aus Dokumenten übernehmen.
+        // Ohne Dokumente bleibt der manuell gesetzte Preis erhalten.
+        if (neuerBruttoPreis.compareTo(BigDecimal.ZERO) > 0) {
             projekt.setBruttoPreis(neuerBruttoPreis);
         }
 
@@ -1215,32 +1231,31 @@ public class AusgangsGeschaeftsDokumentService {
             projekt.setAbgeschlossen(true);
         } else {
             projekt.setBezahlt(false);
-            // abgeschlossen wird NICHT automatisch zurückgesetzt –
-            // der Benutzer steuert dies manuell über die Checkbox
+            projekt.setAbgeschlossen(false);
         }
 
         projektRepository.save(projekt);
     }
 
-    // --- Angebot-Preis Berechnung aus Dokumenten ---
+    // --- Anfrage-Preis Berechnung aus Dokumenten ---
 
     /**
-     * Berechnet den Betrag (Brutto) eines Angebots on-the-fly
+     * Berechnet den Betrag (Brutto) eines Anfrages on-the-fly
      * aus den AusgangsGeschaeftsDokumenten.
      *
      * Logik analog zu Projekt:
-     * - Auftragsbestätigungen haben Priorität vor Angeboten für den Brutto-Preis.
-     * - Falls keine ABs, wird die Angebotssumme verwendet.
+     * - Auftragsbestätigungen haben Priorität vor Anfragenn für den Brutto-Preis.
+     * - Falls keine ABs, wird die Anfragessumme verwendet.
      */
     @Transactional
-    public void aktualisiereAngebotPreisAusDokumenten(Long angebotId) {
-        if (angebotId == null) return;
+    public void aktualisiereAnfragePreisAusDokumenten(Long anfrageId) {
+        if (anfrageId == null) return;
 
-        Angebot angebot = angebotRepository.findById(angebotId).orElse(null);
-        if (angebot == null) return;
+        Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
+        if (anfrage == null) return;
 
         List<AusgangsGeschaeftsDokument> alleDokumente =
-                dokumentRepository.findByAngebotIdOrderByDatumDesc(angebotId);
+                dokumentRepository.findByAnfrageIdOrderByDatumDesc(anfrageId);
 
         // Stornierte Dokumente ausfiltern
         List<AusgangsGeschaeftsDokument> aktive = alleDokumente.stream()
@@ -1253,32 +1268,32 @@ public class AusgangsGeschaeftsDokumentService {
                 .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal summeAngebote = aktive.stream()
+        BigDecimal summeAnfragen = aktive.stream()
                 .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.ANGEBOT)
                 .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // AB hat Priorität, dann Angebote
-        BigDecimal neuerBetrag = summeAB.compareTo(BigDecimal.ZERO) > 0 ? summeAB : summeAngebote;
+        // AB hat Priorität, dann Anfragen
+        BigDecimal neuerBetrag = summeAB.compareTo(BigDecimal.ZERO) > 0 ? summeAB : summeAnfragen;
 
         // Nur überschreiben wenn aktueller Wert null oder 0 ist
-        BigDecimal aktuellerBetrag = angebot.getBetrag();
+        BigDecimal aktuellerBetrag = anfrage.getBetrag();
         if (aktuellerBetrag == null || aktuellerBetrag.compareTo(BigDecimal.ZERO) == 0) {
-            angebot.setBetrag(neuerBetrag);
+            anfrage.setBetrag(neuerBetrag);
         }
-        angebotRepository.save(angebot);
+        anfrageRepository.save(anfrage);
     }
 
     // --- Projekt-Produktkategorien aus Dokumenten ableiten ---
 
     /**
      * Aktualisiert die ProjektProduktkategorien eines Projekts anhand der Leistungen
-     * in den Angebots-/AB-Dokumenten.
+     * in den Anfrages-/AB-Dokumenten.
      *
      * Logik:
-     * - Auftragsbestätigungen (Childobjekte) haben Priorität vor Angeboten.
+     * - Auftragsbestätigungen (Childobjekte) haben Priorität vor Anfragenn.
      * - Wenn ABs existieren, werden NUR deren Leistungen berücksichtigt.
-     * - Sonst fallen die Angebots-Dokumente zurück.
+     * - Sonst fallen die Anfrages-Dokumente zurück.
      * - Aus den positionenJson der effektiven Dokumente werden die leistungIds extrahiert.
      * - Die zugehörigen Produktkategorien werden dem Projekt zugewiesen.
      * - Bereits existierende Kategorien bleiben erhalten, neue werden hinzugefügt,
@@ -1294,10 +1309,10 @@ public class AusgangsGeschaeftsDokumentService {
         List<AusgangsGeschaeftsDokument> alleDokumente = new ArrayList<>(
                 dokumentRepository.findByProjektIdOrderByDatumDesc(projektId));
 
-        // Auch Dokumente einbeziehen, die über Angebote mit dem Projekt verknüpft sind
-        List<AusgangsGeschaeftsDokument> angebotDokumente =
-                dokumentRepository.findByAngebotProjektIdAndProjektIsNull(projektId);
-        alleDokumente.addAll(angebotDokumente);
+        // Auch Dokumente einbeziehen, die über Anfragen mit dem Projekt verknüpft sind
+        List<AusgangsGeschaeftsDokument> anfrageDokumente =
+                dokumentRepository.findByAnfrageProjektIdAndProjektIsNull(projektId);
+        alleDokumente.addAll(anfrageDokumente);
 
         // Nur aktive (nicht stornierte) Dokumente berücksichtigen
         List<AusgangsGeschaeftsDokument> aktive = alleDokumente.stream()

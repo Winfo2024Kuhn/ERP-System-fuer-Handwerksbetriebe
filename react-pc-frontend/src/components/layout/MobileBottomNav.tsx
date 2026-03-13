@@ -31,7 +31,7 @@ const PRIMARY_TABS: NavItem[] = [
 const SUBMENU_ITEMS: Record<string, NavItem[]> = {
     '/projekte': [
         { name: 'Projekte', href: '/projekte', icon: Briefcase },
-        { name: 'Angebote', href: '/angebote', icon: FileCheck },
+        { name: 'Anfragen', href: '/anfragen', icon: FileCheck },
         { name: 'Bestellungen', href: '/bestellungen', icon: ShoppingCart },
     ],
     '/zeitbuchungen': [

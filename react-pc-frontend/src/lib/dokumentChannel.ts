@@ -1,13 +1,13 @@
 /**
  * Cross-tab communication channel for document changes.
- * Uses BroadcastChannel API to notify other tabs (e.g. ProjektEditor, AngebotEditor)
+ * Uses BroadcastChannel API to notify other tabs (e.g. ProjektEditor, AnfrageEditor)
  * when a Geschäftsdokument is created or updated in the DocumentEditor.
  */
 
 export interface DokumentChangedEvent {
     type: 'dokument-changed';
     projektId?: number;
-    angebotId?: number;
+    anfrageId?: number;
     dokumentId?: number;
 }
 

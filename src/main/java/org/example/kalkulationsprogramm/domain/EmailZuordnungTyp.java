@@ -6,7 +6,7 @@ package org.example.kalkulationsprogramm.domain;
  */
 public enum EmailZuordnungTyp {
     PROJEKT,
-    ANGEBOT,
+    ANFRAGE,
     LIEFERANT,
     STEUERBERATER,
     KEINE

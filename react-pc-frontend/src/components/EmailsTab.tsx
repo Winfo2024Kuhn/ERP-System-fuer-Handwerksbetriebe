@@ -39,7 +39,7 @@ export interface EmailsTabProps {
 
     // Entity context - exactly one should be provided
     projektId?: number;
-    angebotId?: number;
+    anfrageId?: number;
     kundeId?: number;
     lieferantId?: number;
 
@@ -56,8 +56,8 @@ export interface EmailsTabProps {
         kundeDto?: { kundenEmails?: string[] };
     };
 
-    // Optional: Angebot detail object for compose modal  
-    angebot?: {
+    // Optional: Anfrage detail object for compose modal  
+    anfrage?: {
         bauvorhaben: string;
         kundenName?: string;
         kundenEmails?: string[];
@@ -75,13 +75,13 @@ export interface EmailsTabProps {
 export const EmailsTab: React.FC<EmailsTabProps> = ({
     emails,
     projektId,
-    angebotId,
+    anfrageId,
     kundeId,
     lieferantId,
     entityName,
     kundenEmail,
     projekt,
-    angebot,
+    anfrage,
     onEmailSent,
     showComposeButton = true,
 }) => {
@@ -92,7 +92,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
     const [showComposeModal, setShowComposeModal] = useState(false);
 
     // Determine the entity ID for the detail modal
-    const entityId = projektId || angebotId || kundeId || lieferantId || 0;
+    const entityId = projektId || anfrageId || kundeId || lieferantId || 0;
 
     // Filter emails
     const filteredEmails = useMemo(() => {
@@ -229,7 +229,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                     </div>
 
                     {/* Compose button */}
-                    {showComposeButton && (projektId || angebotId) && (
+                    {showComposeButton && (projektId || anfrageId) && (
                         <Button
                             onClick={() => setShowComposeModal(true)}
                             className="bg-rose-600 text-white hover:bg-rose-700"
@@ -312,15 +312,15 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                 />
             )}
 
-            {/* Compose Modal - only for Projekt or Angebot */}
+            {/* Compose Modal - only for Projekt or Anfrage */}
             {showComposeModal && (
                 <EmailComposeModal
                     isOpen={showComposeModal}
                     onClose={handleComposeClose}
                     projektId={projektId}
                     projekt={projekt as any}
-                    angebotId={angebotId}
-                    angebot={angebot}
+                    anfrageId={anfrageId}
+                    anfrage={anfrage}
                 />
             )}
         </div>

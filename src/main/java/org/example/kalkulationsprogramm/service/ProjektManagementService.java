@@ -9,11 +9,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.example.kalkulationsprogramm.domain.Angebot;
-import org.example.kalkulationsprogramm.domain.AngebotDokument;
-import org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument;
-import org.example.kalkulationsprogramm.domain.AngebotNotiz;
-import org.example.kalkulationsprogramm.domain.AngebotNotizBild;
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.AnfrageDokument;
+import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.AnfrageNotiz;
+import org.example.kalkulationsprogramm.domain.AnfrageNotizBild;
 import org.example.kalkulationsprogramm.domain.Arbeitsgang;
 import org.example.kalkulationsprogramm.domain.ArbeitsgangStundensatz;
 import org.example.kalkulationsprogramm.domain.Artikel;
@@ -45,8 +45,8 @@ import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProdu
 import org.example.kalkulationsprogramm.exception.FalscheAuftragsnummerException;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.mapper.ProjektMapper;
-import org.example.kalkulationsprogramm.repository.AngebotNotizRepository;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
@@ -58,8 +58,6 @@ import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -80,18 +78,16 @@ import jakarta.transaction.Transactional;
 public class
 
 ProjektManagementService {
-
-    private static final Logger log = LoggerFactory.getLogger(ProjektManagementService.class);
     private static final String PROJEKT_KUNDE_PFLICHT_MESSAGE = "Für Projekte muss ein Kunde ausgewählt werden.";
     private final ProjektRepository projektRepository;
-    private final AngebotNotizRepository angebotNotizRepository;
+    private final AnfrageNotizRepository anfrageNotizRepository;
     private final ProjektNotizRepository projektNotizRepository;
     private final ProduktkategorieRepository produktkategorieRepository;
     private final ArbeitsgangRepository arbeitsgangRepository;
     private final KundeRepository kundeRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final ProjektMapper projektMapper;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageRepository anfrageRepository;
     private final ZeitbuchungRepository ZeitbuchungRepository;
     private final ArbeitsgangStundensatzRepository stundensatzRepository;
     private final ArtikelRepository artikelRepository;
@@ -108,14 +104,14 @@ ProjektManagementService {
     private EntityManager entityManager;
 
     public ProjektManagementService(ProjektRepository projektRepository,
-            AngebotNotizRepository angebotNotizRepository,
+            AnfrageNotizRepository anfrageNotizRepository,
             ProjektNotizRepository projektNotizRepository,
             ProduktkategorieRepository produktkategorieRepository,
             ArbeitsgangRepository arbeitsgangRepository,
             KundeRepository kundeRepository,
             DateiSpeicherService dateiSpeicherService,
             ProjektMapper projektMapper,
-            AngebotRepository angebotRepository,
+            AnfrageRepository anfrageRepository,
             ZeitbuchungRepository ZeitbuchungRepository,
             ArbeitsgangStundensatzRepository stundensatzRepository,
             ArtikelRepository artikelRepository,
@@ -125,14 +121,14 @@ ProjektManagementService {
             EmailRepository emailRepository,
             org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.projektRepository = projektRepository;
-        this.angebotNotizRepository = angebotNotizRepository;
+        this.anfrageNotizRepository = anfrageNotizRepository;
         this.projektNotizRepository = projektNotizRepository;
         this.produktkategorieRepository = produktkategorieRepository;
         this.arbeitsgangRepository = arbeitsgangRepository;
         this.kundeRepository = kundeRepository;
         this.dateiSpeicherService = dateiSpeicherService;
         this.projektMapper = projektMapper;
-        this.angebotRepository = angebotRepository;
+        this.anfrageRepository = anfrageRepository;
         this.ZeitbuchungRepository = ZeitbuchungRepository;
         this.stundensatzRepository = stundensatzRepository;
         this.artikelRepository = artikelRepository;
@@ -147,18 +143,18 @@ ProjektManagementService {
     public ProjektResponseDto erstelleProjekt(ProjektErstellenDto dto, String strasse, String plz, String ort,
             MultipartFile bild, List<MultipartFile> dokumente, Mitarbeiter uploadedBy)
             throws FalscheAuftragsnummerException {
-        // Kundenprüfung erfolgt nach dem Übernehmen von Angebotsdaten.
+        // Kundenprüfung erfolgt nach dem Übernehmen von Anfragesdaten.
         Projekt neuesProjekt = new Projekt();
         neuesProjekt.setStrasse(strasse);
         neuesProjekt.setPlz(plz);
         neuesProjekt.setOrt(ort);
 
-        // Wenn Referenzangebote angegeben wurden, fehlende Felder aus dem ersten
+        // Wenn Referenzanfragen angegeben wurden, fehlende Felder aus dem ersten
         // übernehmen und Bruttopreis summieren
-        if (dto.getAngebotIds() != null && !dto.getAngebotIds().isEmpty()) {
-            List<Angebot> angebote = angebotRepository.findAllById(dto.getAngebotIds());
-            if (!angebote.isEmpty()) {
-                Angebot erstes = angebote.getFirst();
+        if (dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()) {
+            List<Anfrage> anfragen = anfrageRepository.findAllById(dto.getAnfrageIds());
+            if (!anfragen.isEmpty()) {
+                Anfrage erstes = anfragen.getFirst();
                 if (dto.getBauvorhaben() == null) {
                     dto.setBauvorhaben(erstes.getBauvorhaben());
                 }
@@ -170,9 +166,9 @@ ProjektManagementService {
                 }
                 if (dto.getAuftragsnummer() == null) {
                     erstes.getDokumente().stream()
-                            .filter(AngebotGeschaeftsdokument.class::isInstance)
-                            .map(AngebotGeschaeftsdokument.class::cast)
-                            .map(AngebotGeschaeftsdokument::getDokumentid)
+                            .filter(AnfrageGeschaeftsdokument.class::isInstance)
+                            .map(AnfrageGeschaeftsdokument.class::cast)
+                            .map(AnfrageGeschaeftsdokument::getDokumentid)
                             .findFirst()
                             .ifPresent(dto::setAuftragsnummer);
                 }
@@ -180,7 +176,7 @@ ProjektManagementService {
                     dto.setKundennummer(erstes.getKunde().getKundennummer());
                 }
                 if ((dto.getKundenEmails() == null || dto.getKundenEmails().isEmpty())) {
-                    dto.setKundenEmails(angebote.stream()
+                    dto.setKundenEmails(anfragen.stream()
                             .flatMap(a -> (a.getKunde() != null && a.getKunde().getKundenEmails() != null)
                                     ? a.getKunde().getKundenEmails().stream()
                                     : java.util.stream.Stream.empty())
@@ -188,8 +184,8 @@ ProjektManagementService {
                             .distinct()
                             .collect(Collectors.toList()));
                 }
-                java.math.BigDecimal summe = angebote.stream()
-                        .map(Angebot::getBetrag)
+                java.math.BigDecimal summe = anfragen.stream()
+                        .map(Anfrage::getBetrag)
                         .filter(java.util.Objects::nonNull)
                         .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
                 dto.setBruttoPreis(summe);
@@ -330,34 +326,34 @@ ProjektManagementService {
             }
         } catch (Exception e) {
             // Log but don't fail transaction
-            log.warn("Failed to trigger email backfill: {}", e.getMessage());
+            System.err.println("Failed to trigger email backfill: " + e.getMessage());
         }
 
-        if (dto.getAngebotIds() != null && !dto.getAngebotIds().isEmpty()) {
-            List<Angebot> angebote = angebotRepository.findAllById(dto.getAngebotIds());
-            boolean imageSetFromAngebot = false;
-            for (Angebot a : angebote) {
-                // Übernehme Profilbild vom Angebot, falls Projekt noch keines hat
-                if (!imageSetFromAngebot
+        if (dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()) {
+            List<Anfrage> anfragen = anfrageRepository.findAllById(dto.getAnfrageIds());
+            boolean imageSetFromAnfrage = false;
+            for (Anfrage a : anfragen) {
+                // Übernehme Profilbild vom Anfrage, falls Projekt noch keines hat
+                if (!imageSetFromAnfrage
                         && (gespeichertesProjekt.getBildUrl() == null || gespeichertesProjekt.getBildUrl().isBlank())) {
                     if (a.getBildUrl() != null && !a.getBildUrl().isBlank()) {
                         gespeichertesProjekt.setBildUrl(a.getBildUrl());
-                        imageSetFromAngebot = true;
+                        imageSetFromAnfrage = true;
                     }
                 }
-                for (AngebotDokument doc : a.getDokumente()) {
-                    dateiSpeicherService.verschiebeAngebotsDatei(doc, gespeichertesProjekt);
+                for (AnfrageDokument doc : a.getDokumente()) {
+                    dateiSpeicherService.verschiebeAnfragesDatei(doc, gespeichertesProjekt);
                 }
-                // E-Mail-Verlauf vom Angebot in das Projekt kopieren (inkl. Anhänge)
+                // E-Mail-Verlauf vom Anfrage in das Projekt kopieren (inkl. Anhänge)
                 try {
-                    copyAngebotEmailsToProjekt(a, gespeichertesProjekt);
+                    copyAnfrageEmailsToProjekt(a, gespeichertesProjekt);
                 } catch (Exception ignored) {
                 }
-                // Notizen vom Angebot in das Projekt kopieren (inkl. Bilder)
+                // Notizen vom Anfrage in das Projekt kopieren (inkl. Bilder)
                 try {
-                    List<AngebotNotiz> aNotizen = angebotNotizRepository
-                            .findByAngebotIdOrderByErstelltAmDesc(a.getId());
-                    for (AngebotNotiz aNotiz : aNotizen) {
+                    List<AnfrageNotiz> aNotizen = anfrageNotizRepository
+                            .findByAnfrageIdOrderByErstelltAmDesc(a.getId());
+                    for (AnfrageNotiz aNotiz : aNotizen) {
                         ProjektNotiz pNotiz = new ProjektNotiz();
                         pNotiz.setProjekt(gespeichertesProjekt);
                         pNotiz.setMitarbeiter(aNotiz.getMitarbeiter());
@@ -367,7 +363,7 @@ ProjektManagementService {
 
                         List<ProjektNotizBild> pBilder = new ArrayList<>();
                         if (aNotiz.getBilder() != null) {
-                            for (AngebotNotizBild aBild : aNotiz.getBilder()) {
+                            for (AnfrageNotizBild aBild : aNotiz.getBilder()) {
                                 ProjektNotizBild pBild = new ProjektNotizBild();
                                 pBild.setNotiz(pNotiz);
                                 pBild.setOriginalDateiname(aBild.getOriginalDateiname());
@@ -381,19 +377,19 @@ ProjektManagementService {
                         projektNotizRepository.save(pNotiz);
                     }
                 } catch (Exception e) {
-                    log.warn("Fehler beim Kopieren der Angebotsnotizen: {}", e.getMessage());
+                    System.err.println("Fehler beim Kopieren der Anfragesnotizen: " + e.getMessage());
                 }
 
-                // Ausgangsgeschäftsdokumente vom Angebot zum Projekt migrieren
+                // Ausgangsgeschäftsdokumente vom Anfrage zum Projekt migrieren
                 try {
-                    ausgangsGeschaeftsDokumentService.migrateFromAngebotToProjekt(a.getId(), gespeichertesProjekt);
+                    ausgangsGeschaeftsDokumentService.migrateFromAnfrageToProjekt(a.getId(), gespeichertesProjekt);
                 } catch (Exception e) {
-                    log.warn("Fehler beim Migrieren der Ausgangsgeschäftsdokumente: {}", e.getMessage());
+                    System.err.println("Fehler beim Migrieren der Ausgangsgeschäftsdokumente: " + e.getMessage());
                 }
 
-                angebotRepository.delete(a);
+                anfrageRepository.delete(a);
             }
-            if (imageSetFromAngebot) {
+            if (imageSetFromAnfrage) {
                 try {
                     projektRepository.save(gespeichertesProjekt);
                 } catch (Exception ignored) {
@@ -439,6 +435,9 @@ ProjektManagementService {
         }
         if (dto.getKurzbeschreibung() != null) {
             projekt.setKurzbeschreibung(dto.getKurzbeschreibung());
+        }
+        if (dto.getBruttoPreis() != null) {
+            projekt.setBruttoPreis(dto.getBruttoPreis());
         }
         if (dto.getAbschlussdatum() != null) {
             projekt.setAbschlussdatum(dto.getAbschlussdatum());
@@ -690,28 +689,28 @@ ProjektManagementService {
                                 kundenEmails)); // All
             }
         } catch (Exception e) {
-            log.warn("Failed to trigger email backfill update: {}", e.getMessage());
+            System.err.println("Failed to trigger email backfill update: " + e.getMessage());
         }
 
-        if (dto.getAngebotIds() != null && !dto.getAngebotIds().isEmpty()) {
-            List<Angebot> angebote = angebotRepository.findAllById(dto.getAngebotIds());
-            boolean imageSetFromAngebot = false;
-            for (Angebot a : angebote) {
-                if (!imageSetFromAngebot
+        if (dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()) {
+            List<Anfrage> anfragen = anfrageRepository.findAllById(dto.getAnfrageIds());
+            boolean imageSetFromAnfrage = false;
+            for (Anfrage a : anfragen) {
+                if (!imageSetFromAnfrage
                         && (gespeichertesProjekt.getBildUrl() == null || gespeichertesProjekt.getBildUrl().isBlank())) {
                     if (a.getBildUrl() != null && !a.getBildUrl().isBlank()) {
                         gespeichertesProjekt.setBildUrl(a.getBildUrl());
-                        imageSetFromAngebot = true;
+                        imageSetFromAnfrage = true;
                     }
                 }
                 // if (a.getProjekt() == null) {
-                // for (AngebotDokument doc : a.getDokumente()) {
-                // dateiSpeicherService.verschiebeAngebotsDatei(doc, gespeichertesProjekt);
+                // for (AnfrageDokument doc : a.getDokumente()) {
+                // dateiSpeicherService.verschiebeAnfragesDatei(doc, gespeichertesProjekt);
                 // }
-                // angebotRepository.delete(a);
+                // anfrageRepository.delete(a);
                 // }
             }
-            if (imageSetFromAngebot) {
+            if (imageSetFromAnfrage) {
                 try {
                     projektRepository.save(gespeichertesProjekt);
                 } catch (Exception ignored) {
@@ -1270,24 +1269,24 @@ ProjektManagementService {
         return dto;
     }
 
-    private void copyAngebotEmailsToProjekt(Angebot angebot, Projekt projekt) {
-        if (angebot == null || projekt == null) {
+    private void copyAnfrageEmailsToProjekt(Anfrage anfrage, Projekt projekt) {
+        if (anfrage == null || projekt == null) {
             return;
         }
         try {
-            // Alle E-Mails vom Angebot abrufen und dem Projekt zuordnen
-            List<Email> angebotEmails = emailRepository.findByAngebotOrderBySentAtDesc(angebot);
-            for (Email email : angebotEmails) {
-                // E-Mail vom Angebot zum Projekt übertragen
+            // Alle E-Mails vom Anfrage abrufen und dem Projekt zuordnen
+            List<Email> anfrageEmails = emailRepository.findByAnfrageOrderBySentAtDesc(anfrage);
+            for (Email email : anfrageEmails) {
+                // E-Mail vom Anfrage zum Projekt übertragen
                 email.assignToProjekt(projekt);
                 emailRepository.save(email);
             }
-            if (!angebotEmails.isEmpty()) {
-                log.debug("Übertragen: {} E-Mails von Angebot {} zu Projekt {}",
-                        angebotEmails.size(), angebot.getId(), projekt.getId());
+            if (!anfrageEmails.isEmpty()) {
+                System.out.println("Übertragen: " + anfrageEmails.size() + " E-Mails von Anfrage "
+                        + anfrage.getId() + " zu Projekt " + projekt.getId());
             }
         } catch (Exception e) {
-            log.warn("Fehler beim Übertragen der E-Mails von Angebot zu Projekt: {}", e.getMessage());
+            System.err.println("Fehler beim Übertragen der E-Mails von Anfrage zu Projekt: " + e.getMessage());
         }
     }
 
@@ -1325,7 +1324,7 @@ ProjektManagementService {
                     try {
                         runnable.run();
                     } catch (Exception e) {
-                        log.warn("Fehler in afterCommit-Callback", e);
+                        e.printStackTrace();
                     }
                 }
             });

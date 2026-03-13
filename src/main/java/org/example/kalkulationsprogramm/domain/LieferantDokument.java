@@ -9,7 +9,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Dokument eines Lieferanten (Angebot, Auftragsbestätigung, Lieferschein,
+ * Dokument eines Lieferanten (Anfrage, Auftragsbestätigung, Lieferschein,
  * Rechnung).
  * Unterstützt:
  * - Referenz auf LieferantEmailAttachment (kein Kopieren von Dateien)
@@ -60,7 +60,7 @@ public class LieferantDokument {
     private Set<LieferantDokumentProjektAnteil> projektAnteile = new HashSet<>();
 
     // Rekursive Verknüpfung: Dokument-Kette (z.B. Rechnung -> Lieferschein -> AB ->
-    // Angebot)
+    // Anfrage)
     @ManyToMany
     @JoinTable(name = "lieferant_dokument_verknuepfung", joinColumns = @JoinColumn(name = "dokument_id"), inverseJoinColumns = @JoinColumn(name = "verknuepft_id"))
     private Set<LieferantDokument> verknuepfteDokumente = new HashSet<>();

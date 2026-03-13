@@ -1,24 +1,29 @@
 package org.example.kalkulationsprogramm.service;
 
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.example.kalkulationsprogramm.domain.Angebot;
 import org.example.kalkulationsprogramm.domain.AngebotDokument;
 import org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument;
-import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.Angebot.AngebotErstellenDto;
 import org.example.kalkulationsprogramm.dto.Angebot.AngebotResponseDto;
 import org.example.kalkulationsprogramm.repository.AngebotDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AngebotRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.junit.jupiter.api.Test;
-
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class AngebotServiceTest {
 
@@ -167,7 +172,7 @@ class AngebotServiceTest {
         p.setId(10L);
         a2.setProjekt(p);
 
-        when(angebotRepository.findAll()).thenReturn(List.of(a1, a2));
+        when(angebotRepository.findAllWithKundenEmails()).thenReturn(List.of(a1, a2));
 
         List<AngebotResponseDto> result = service.alle();
         assertThat(result).hasSize(1);

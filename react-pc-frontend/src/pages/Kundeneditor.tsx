@@ -111,8 +111,8 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                         <p className="text-lg font-semibold text-blue-900">{kunde.statistik?.projektAnzahl || 0}</p>
                     </div>
                     <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
-                        <p className="text-xs text-purple-600 uppercase tracking-wide">Angebote</p>
-                        <p className="text-lg font-semibold text-purple-900">{kunde.statistik?.angebotAnzahl || 0}</p>
+                        <p className="text-xs text-purple-600 uppercase tracking-wide">Anfragen</p>
+                        <p className="text-lg font-semibold text-purple-900">{kunde.statistik?.anfrageAnzahl || 0}</p>
                     </div>
                 </div>
 

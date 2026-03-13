@@ -26,7 +26,7 @@ interface EmailReplyModalProps {
     onClose: () => void;
     // Context can be specific or inferred from email
     context?: {
-        type: 'projekt' | 'angebot' | 'lieferant';
+        type: 'projekt' | 'anfrage' | 'lieferant';
         id: number;
     };
     email: ProjektEmail; 
@@ -269,7 +269,7 @@ export function EmailReplyModal({
             const formData = new FormData();
             
             const dtoPayload = {
-                sender: 'info@example-company.de', // TODO: Settings
+                sender: 'bauschlosserei-kuhn@t-online.de', // TODO: Settings
                 recipients: [recipient.trim()],
                 subject: subject.trim(),
                 body: prepareHtmlForSending(fullBody),
@@ -279,7 +279,7 @@ export function EmailReplyModal({
                 frontendUserId: currentUser?.id || null,
                 // Explicit Assignment
                 projektId: context?.type === 'projekt' ? context.id : undefined,
-                angebotId: context?.type === 'angebot' ? context.id : undefined,
+                anfrageId: context?.type === 'anfrage' ? context.id : undefined,
                 lieferantId: context?.type === 'lieferant' ? context.id : undefined
             };
 

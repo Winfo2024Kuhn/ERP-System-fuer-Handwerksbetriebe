@@ -22,7 +22,7 @@ public class AbschlussInfoDto {
     private BigDecimal gesamtsumme;
 
     // Referenzen zu Vorgängerdokumenten
-    private VorgaengerInfoDto angebotReferenz;
+    private VorgaengerInfoDto anfrageReferenz;
     private VorgaengerInfoDto auftragsbestaetigungReferenz;
 
     // Bisherige Zahlungen aus allen vorherigen Rechnungen derselben Kette

@@ -29,7 +29,7 @@ const ICON_HICAD = `${BASE_URL}hicad_logo.png`;
 
 interface DocumentManagerProps {
     projektId?: number;
-    angebotId?: number;
+    anfrageId?: number;
     className?: string;
 }
 
@@ -92,7 +92,7 @@ const openViaNetworkPath = (doc: ProjektDokument): boolean => {
     return false;
 };
 
-export default function DocumentManager({ projektId, angebotId, className }: DocumentManagerProps) {
+export default function DocumentManager({ projektId, anfrageId, className }: DocumentManagerProps) {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [documents, setDocuments] = useState<ProjektDokument[]>([]);
@@ -108,10 +108,10 @@ export default function DocumentManager({ projektId, angebotId, className }: Doc
     const [selectedLieferantId, setSelectedLieferantId] = useState<number | null>(null);
 
     // Determine API base path based on context
-    const isAngebotContext = !!angebotId;
-    const entityId = projektId || angebotId;
-    const apiBasePath = isAngebotContext
-        ? `/api/angebote/${entityId}/dokumente`
+    const isAnfrageContext = !!anfrageId;
+    const entityId = projektId || anfrageId;
+    const apiBasePath = isAnfrageContext
+        ? `/api/anfragen/${entityId}/dokumente`
         : `/api/projekte/${entityId}/dokumente`;
 
     // Dokumente laden
@@ -222,7 +222,7 @@ export default function DocumentManager({ projektId, angebotId, className }: Doc
     
     // Handler for initiating upload - shows Lieferant selection for DIVERSE_DOKUMENTE
     const initiateUpload = (files: File[], gruppe: DokumentGruppe) => {
-        if (gruppe === 'DIVERSE_DOKUMENTE' && !isAngebotContext) {
+        if (gruppe === 'DIVERSE_DOKUMENTE' && !isAnfrageContext) {
             // Show modal for Lieferant selection
             setPendingUpload({ files, gruppe });
             setSelectedLieferantId(null);

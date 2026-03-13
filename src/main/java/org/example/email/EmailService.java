@@ -24,8 +24,6 @@ import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.util.ByteArrayDataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Simple service for sending emails using the jakarta.mail API. The service can
@@ -34,9 +32,6 @@ import org.slf4j.LoggerFactory;
  * can be reused outside of a Spring context.
  */
 public class EmailService {
-
-    private static final Logger log = LoggerFactory.getLogger(EmailService.class);
-
     private final String host;
     private final int port;
     private final String username;
@@ -152,7 +147,7 @@ public class EmailService {
 
             try {
                 Store store = session.getStore("imaps");
-                store.connect("imap.example.com", 993, username, password);
+                store.connect("secureimap.t-online.de", 993, username, password);
 
                 String filename = attachmentFileName != null ? attachmentFileName.toLowerCase() : "";
                 if (filename.contains("rechnung")) {
@@ -160,34 +155,35 @@ public class EmailService {
                     ausgangsrechnungen.open(Folder.READ_WRITE);
                     ausgangsrechnungen.appendMessages(new Message[] { message });
                     ausgangsrechnungen.close(false);
-                    log.debug("Email-Kopie im 'Ausgangsrechnungen' Ordner gespeichert.");
+                    System.out.println("Email-Kopie im 'Ausgangsrechnungen' Ordner gespeichert.");
                 } else if (filename.contains("auftragsbestaetigung") || filename.contains("auftragsbestätigung")) {
                     Folder ausgangsabs = store.getFolder("INBOX.Archives (2).Ausgangs Ab's");
                     ausgangsabs.open(Folder.READ_WRITE);
                     ausgangsabs.appendMessages(new Message[] { message });
                     ausgangsabs.close(false);
-                    log.debug("Email-Kopie im 'Ausgangs Ab's' Ordner gespeichert.");
-                } else if (filename.contains("angebot")) {
-                    Folder ausgangsangebote = store.getFolder("INBOX.Archives (2).Ausgangsangebote");
-                    ausgangsangebote.open(Folder.READ_WRITE);
-                    ausgangsangebote.appendMessages(new Message[] { message });
-                    ausgangsangebote.close(false);
-                    log.debug("Email-Kopie im 'Ausgangsangebote' Ordner gespeichert.");
+                    System.out.println("Email-Kopie im 'Ausgangs Ab's' Ordner gespeichert.");
+                } else if (filename.contains("anfrage")) {
+                    Folder ausgangsanfragen = store.getFolder("INBOX.Archives (2).Ausgangsanfragen");
+                    ausgangsanfragen.open(Folder.READ_WRITE);
+                    ausgangsanfragen.appendMessages(new Message[] { message });
+                    ausgangsanfragen.close(false);
+                    System.out.println("Email-Kopie im 'Ausgangsanfragen' Ordner gespeichert.");
                 } else if (filename.contains("zeichnung") || filename.contains("entwurf")) {
                     Folder ausgangszeichnungen = store.getFolder("INBOX.Archives (2).Ausgangszeichnungen");
                     ausgangszeichnungen.open(Folder.READ_WRITE);
                     ausgangszeichnungen.appendMessages(new Message[] { message });
                     ausgangszeichnungen.close(false);
-                    log.debug("Email-Kopie im 'Ausgangszeichnungen' Ordner gespeichert.");
+                    System.out.println("Email-Kopie im 'Ausgangszeichnungen' Ordner gespeichert.");
                 }
 
                 store.close();
             } catch (MessagingException me) {
-                log.warn("Konnte E-Mail nicht im Archive-Ordner speichern: {}", me.getMessage());
+                System.err.println("Konnte E-Mail nicht im Archive-Ordner speichern: " + me.getMessage());
             }
-            log.debug("Email sent to {}", recipient);
+            System.out.println("Email sent to " + recipient);
         } catch (MessagingException | IOException e) {
-            log.error("Failed to send email to {}", recipient, e);
+            System.err.println("Failed to send email: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -506,7 +502,7 @@ public class EmailService {
                 body.append(
                         "anbei sende ich Ihnen die Schlussrechnung für unsere erbrachten Leistungen. Die detaillierte Rechnung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>")
                         .append("Wir würden uns sehr über eine Bewertung freuen: ")
-                        .append("<a href='https://www.google.com/maps/place/Musterfirma+GmbH'>Jetzt Bewertung abgeben</a><br><br>");
+                        .append("<a href='https://www.google.com/search?sca_esv=492959cb0fa9f70d&rlz=1C1PNBB_enDE1053DE1084&tbm=lcl&sxsrf=ADLYWILf4Roj9xg6afAhB21yr68i1Xzf9g:1730210619766&q=Bauschlosserei+Thomas+Kuhn+Rezensionen&rflfq=1&num=20&stick=H4sIAAAAAAAAAONgkxIxNDQ3MbE0MzS0NDQxNjA3sgDCDYyMrxjVnBJLi5MzcvKLi1OLUjMVQjLycxOLFbxLM_IUglKrUvOKM_PzUvMWsRKpEABCza3ubQAAAA&rldimm=11744961191430728282&hl=de-DE&sa=X&ved=2ahUKEwj1ooLr4LOJAxWwhv0HHd8_LCAQ9fQKegQIShAF&biw=1920&bih=1065&dpr=1#lkt=LocalPoiReviews'>Jetzt Bewertung abgeben</a><br><br>");
             case MAHNUNG ->
                 body.append("leider haben wir festgestellt, dass die Rechnung mit der Nummer ")
                         .append(rechnungsnummer).append(" für das Bauvorhaben ").append(bauvorhaben)
@@ -516,7 +512,7 @@ public class EmailService {
                         .append("Bitte überweisen Sie den ausstehenden Betrag umgehend, um zusätzliche Mahngebühren zu vermeiden.<br><br>");
             case ABSCHLAGSRECHNUNG ->
                 body.append(
-                        "anbei sende ich Ihnen eine Abschlagsrechnung gemäß unserem Angebot. Die detaillierte Rechnung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>");
+                        "anbei sende ich Ihnen eine Abschlagsrechnung gemäß unserem Anfrage. Die detaillierte Rechnung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>");
             case RECHNUNG ->
                 body.append(
                         "anbei sende ich Ihnen die Rechnung für unsere erbrachten Leistungen. Die detaillierte Rechnung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>");
@@ -668,24 +664,24 @@ public class EmailService {
     public static EmailContent buildOfferEmail(String anredeGeehrte,
             String kundenName,
             String bauvorhaben,
-            String angebotsnummer,
+            String anfragesnummer,
             String benutzer,
             String position) {
-        String subject = "Angebot: (BV: " + bauvorhaben + ") Angebotsnummer: " + angebotsnummer;
+        String subject = "Anfrage: (BV: " + bauvorhaben + ") Anfragesnummer: " + anfragesnummer;
         StringBuilder body = new StringBuilder();
         body.append(anredeGeehrte);
         if (kundenName != null && !kundenName.isBlank()) {
             body.append(" ").append(kundenName);
         }
         body.append(",<br><br>")
-                .append("Im Anhang finden Sie das besprochene Angebot.<br>")
+                .append("Im Anhang finden Sie das besprochene Anfrage.<br>")
                 .append("Bei Rückfragen können Sie sich gerne telefonisch oder per E-Mail bei uns melden.<br><br>")
                 .append("Bei Auftragserteilung wird von uns eine 3D Zeichnung mit genauen Maßen erstellt.<br>")
                 .append("Nach Freigabe der Zeichnung gehen wir in die Produktion.<br><br>")
                 .append("<b>Bauvorhaben:</b> <span style=\"color:#C00000\">")
                 .append(bauvorhaben).append("</span><br>")
-                .append("<b>Angebotsnummer:</b> <span style=\"color:#C00000\">")
-                .append(angebotsnummer).append("</span><br><br>");
+                .append("<b>Anfragesnummer:</b> <span style=\"color:#C00000\">")
+                .append(anfragesnummer).append("</span><br><br>");
 
         return new EmailContent(subject, body.toString());
     }
@@ -700,9 +696,9 @@ public class EmailService {
                 .append("anbei finden Sie die PDF mit dem ersten Entwurf Ihres Bauprojekts.<br>")
                 .append("Bitte nehmen Sie sich etwas Zeit, um das Design sorgfältig zu überprüfen.<br>")
                 .append("Sollten Sie weitere Änderungswünsche haben oder Fragen auftauchen, stehe ich Ihnen gerne zur Verfügung.<br>")
-                .append("Wir möchten Sie darauf hinweisen, dass größere Zeichnungsänderungen, wie beispielsweise eine Änderung der Machart, die gravierend vom Angebotstext abweicht, aufgrund des damit verbundenen Zeitaufwands zusätzliche Kosten verursachen können.<br>")
+                .append("Wir möchten Sie darauf hinweisen, dass größere Zeichnungsänderungen, wie beispielsweise eine Änderung der Machart, die gravierend vom Anfragestext abweicht, aufgrund des damit verbundenen Zeitaufwands zusätzliche Kosten verursachen können.<br>")
                 .append("Wir bitten um Ihr Verständnis dafür.<br>")
-                .append("Falls dies im Angebot so vereinbart war, wird nach Abschluss der Planung eine Abschlagsrechnung erstellt.<br>")
+                .append("Falls dies im Anfrage so vereinbart war, wird nach Abschluss der Planung eine Abschlagsrechnung erstellt.<br>")
                 .append("Bei Fragen oder weiteren Anliegen stehe ich Ihnen jederzeit zur Verfügung.<br>")
                 .append("Vielen Dank für Ihre Zusammenarbeit und Ihr Verständnis.<br><br>");
 
@@ -714,12 +710,12 @@ public class EmailService {
         return signature.append("<br><br>")
                 .append("Mit freundlichen Grüßen,<br><br>")
                 .append(benutzer + "<br>")
-                .append("Musterfirma GmbH<br>Musterstraße 1<br>12345 Musterstadt<br>")
-                .append("Tel.: 01234-56 78<br><br>")
-                .append("<a href=\"mailto:info@musterfirma.de\">Email</a><br>")
-                .append("<a href=\"https://www.instagram.com/musterfirma/\">Instagram</a><br>")
-                .append("<a href=\"https://musterfirma.de/\">Website</a><br><br>")
-                .append("<a href=\"https://musterfirma.de/\"><img src=\"/firmenlogo.png\" width=\"250\" height=\"120\"></a>")
+                .append("Bauschlosserei Kuhn<br>Friedenstr. 17<br>97259 Greußenheim<br>")
+                .append("Tel.: 09369-23 23<br><br>")
+                .append("<a href=\"mailto:bauschlosserei-kuhn@t-online.de\">Email</a><br>")
+                .append("<a href=\"https://www.instagram.com/bauschlossereikuhn/\">Instagram</a><br>")
+                .append("<a href=\"https://bauschlosserei-kuhn.de/\">Website</a><br><br>")
+                .append("<a href=\"https://bauschlosserei-kuhn.de/\"><img src=\"/firmenlogo.png\" width=\"250\" height=\"120\"></a>")
                 .toString();
     }
 
@@ -735,13 +731,13 @@ public class EmailService {
     public static void main(String[] args) {
         // SMTP configuration (replace with real credentials)
         EmailService service = new EmailService(
-                "smtp.example.com", // host
+                "securesmtp.t-online.de", // host
                 465, // port
-                "info-info@example-company.de", // username
-                "YOUR_SMTP_PASSWORD" // password
+                "info-bauschlosserei-kuhn@t-online.de", // username
+                "Lini+marviTkom" // password
         );
 
-        String attachmentPath = "C:/Users/user/Downloads/Rechnung2025_05_00004(1.AbschlagsrechnungzuAngebot2025_05_00001).Pdf"; // path
+        String attachmentPath = "C:/Users/bausc/Downloads/Rechnung2025_05_00004(1.AbschlagsrechnungzuAnfrage2025_05_00001).Pdf"; // path
                                                                                                                                  // to
                                                                                                                                  // PDF
 
@@ -759,9 +755,9 @@ public class EmailService {
         );
 
         service.sendEmail(
-                "test@example.com", // Empfänger
+                "mkuhn864@gmail.com", // Empfänger
                 null, // CC
-                "info@musterfirma.de", // Absender
+                "bauschlosserei-kuhn@t-online.de", // Absender
                 content.subject(), // Betreff
                 content.htmlBody(), // HTML-Inhalt
                 attachmentPath, // Anhang

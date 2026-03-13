@@ -149,7 +149,7 @@ public class SpamFilterService {
     public void analyzeAndMarkSpam(Email email) {
         // WICHTIG: Zugeordnete Emails dürfen niemals als Spam oder Newsletter markiert
         // werden
-        if (email.getLieferant() != null || email.getProjekt() != null || email.getAngebot() != null) {
+        if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null) {
             email.setSpam(false);
             email.setNewsletter(false);
             email.setSpamScore(0);

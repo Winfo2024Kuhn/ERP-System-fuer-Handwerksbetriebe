@@ -27,7 +27,7 @@ interface ClosureBlockProps {
     bereitsAbgerechnetDurchAndere?: number | null;
     /** Detaillierte Positionen vorheriger Abrechnungen */
     abrechnungsPositionen?: AbrechnungsPosition[];
-    /** Nettobetrag des Basisdokuments (AB/Angebot) */
+    /** Nettobetrag des Basisdokuments (AB/Anfrage) */
     basisdokumentBetragNetto?: number | null;
 }
 

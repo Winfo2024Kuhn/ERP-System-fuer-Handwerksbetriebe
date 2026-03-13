@@ -1,5 +1,18 @@
 package org.example.kalkulationsprogramm.service;
 
+import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.LieferantNotiz;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantNotizDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -8,32 +21,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
-import org.example.kalkulationsprogramm.domain.LieferantNotiz;
-import org.example.kalkulationsprogramm.domain.Lieferanten;
-import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantAttachmentViewDto;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
+
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantKommunikationDto;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantNotizDto;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailFileDto;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
 public class LieferantenDetailService {
-
-    private static final Logger log = LoggerFactory.getLogger(LieferantenDetailService.class);
 
     private static final int EMAIL_LIMIT_DEFAULT = 50;
 
@@ -241,7 +238,7 @@ public class LieferantenDetailService {
                 statistik.setGesamtKosten(gesamtKosten);
             }
         } catch (Exception e) {
-            log.warn("Fehler bei Statistik-Berechnung für Lieferant {}: {}", lieferant.getId(), e.getMessage());
+            System.err.println("[LieferantenDetailService] Fehler bei Statistik-Berechnung: " + e.getMessage());
         }
 
         return statistik;

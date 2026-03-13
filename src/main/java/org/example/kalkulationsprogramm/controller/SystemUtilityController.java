@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -31,7 +30,7 @@ public class SystemUtilityController {
      */
     @GetMapping("/openfile-launcher-setup")
     public ResponseEntity<byte[]> downloadOpenFileLauncherSetup() throws IOException {
-        Path downloadsDir = Paths.get(downloadsPath);
+        Path downloadsDir = Path.of(downloadsPath);
         Path batFile = downloadsDir.resolve("OpenFileLauncher-Install.bat");
         Path ps1File = downloadsDir.resolve("OpenFileLauncher-Setup.ps1");
         

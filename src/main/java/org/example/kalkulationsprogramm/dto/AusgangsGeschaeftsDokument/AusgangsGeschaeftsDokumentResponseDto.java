@@ -40,8 +40,8 @@ public class AusgangsGeschaeftsDokumentResponseDto {
     private String projektBauvorhaben;
     private String projektnummer;
 
-    // Angebot
-    private Long angebotId;
+    // Anfrage
+    private Long anfrageId;
 
     // Kunde (für Rechnungsadresse)
     private Long kundeId;

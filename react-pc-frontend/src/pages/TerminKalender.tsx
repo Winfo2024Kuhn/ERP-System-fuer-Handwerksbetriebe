@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     ChevronLeft, ChevronRight, Plus, X, Save, Trash2, Loader2, Calendar,
     Briefcase, User, Truck, FileCheck, Clock, CalendarDays, LayoutGrid, List, Users, CalendarClock
@@ -6,6 +7,7 @@ import {
 import { Button } from '../components/ui/button';
 import { SearchableSelect } from '../components/ui/searchable-select';
 import { DatePicker } from '../components/ui/datepicker';
+import { useConfirm } from '../components/ui/confirm-dialog';
 
 interface Teilnehmer {
     id: number;
@@ -27,8 +29,8 @@ interface KalenderEintrag {
     kundeName: string | null;
     lieferantId: number | null;
     lieferantName: string | null;
-    angebotId: number | null;
-    angebotBetreff: string | null;
+    anfrageId: number | null;
+    anfrageBetreff: string | null;
     erstellerId: number | null;
     erstellerName: string | null;
     teilnehmer: Teilnehmer[];
@@ -38,29 +40,6 @@ interface KalenderTag {
     datum: string;
     wochentag: number;
     eintraege: KalenderEintrag[];
-}
-
-interface Projekt {
-    id: number;
-    bauvorhaben: string;
-    auftragsnummer: string;
-    kunde?: string;
-}
-
-interface Kunde {
-    id: number;
-    name: string;
-}
-
-interface Lieferant {
-    id: number;
-    lieferantenname: string;
-}
-
-interface Angebot {
-    id: number;
-    bauvorhaben: string;
-    kundenName?: string;
 }
 
 interface Mitarbeiter {
@@ -116,7 +95,7 @@ const FARB_OPTIONEN = [
 function getFarbStyle(farbe: string | null, eintragId?: number) {
     // Bei normalen Terminen (positive ID): Rot auf Violett korrigieren (alter falscher Default)
     const korrigierteFarbe = (eintragId && eintragId > 0 && farbe === '#dc2626') ? '#7c3aed' : farbe;
-    
+
     // First check in standard event colors
     const found = FARB_OPTIONEN.find(f => f.value === korrigierteFarbe);
     if (found) return found;
@@ -152,6 +131,7 @@ const getCurrentUserMitarbeiterId = (): number | null => {
 };
 
 export default function TerminKalender() {
+    const [searchParams, setSearchParams] = useSearchParams();
     const [jahr, setJahr] = useState(new Date().getFullYear());
     const [monat, setMonat] = useState(new Date().getMonth() + 1);
     const [eintraege, setEintraege] = useState<KalenderEintrag[]>([]);
@@ -173,11 +153,7 @@ export default function TerminKalender() {
     // Ausgewählter Tag für Tagesansicht
     const [selectedTag, setSelectedTag] = useState<Date>(new Date());
 
-    // Stammdaten für Verknüpfungen
-    const [projekte, setProjekte] = useState<Projekt[]>([]);
-    const [kunden, setKunden] = useState<Kunde[]>([]);
-    const [lieferanten, setLieferanten] = useState<Lieferant[]>([]);
-    const [angebote, setAngebote] = useState<Angebot[]>([]);
+    // Stammdaten für Teilnehmer-Auswahl
     const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
 
     // Modal-State
@@ -185,39 +161,8 @@ export default function TerminKalender() {
     const [editingEintrag, setEditingEintrag] = useState<KalenderEintrag | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-    // Lade Stammdaten einmalig
+    // Lade Mitarbeiter einmalig (für Teilnehmer-Checkboxen)
     useEffect(() => {
-        fetch('/api/projekte?size=500')
-            .then(res => res.json())
-            .then(data => {
-                const allProjekte = data?.projekte ?? (Array.isArray(data) ? data : []);
-                setProjekte(allProjekte.filter((p: Projekt & { abgeschlossen?: boolean }) => !p.abgeschlossen));
-            });
-
-        fetch('/api/kunden?size=500')
-            .then(res => res.json())
-            .then(data => {
-                const arr = data?.kunden ?? (Array.isArray(data) ? data : []);
-                setKunden(arr);
-            })
-            .catch(err => console.error('Fehler beim Laden der Kunden:', err));
-
-        fetch('/api/lieferanten?size=500')
-            .then(res => res.json())
-            .then(data => {
-                const arr = data?.lieferanten ?? (Array.isArray(data) ? data : []);
-                setLieferanten(arr);
-            })
-            .catch(err => console.error('Fehler beim Laden der Lieferanten:', err));
-
-        fetch('/api/angebote?size=100')
-            .then(res => res.json())
-            .then(data => {
-                const arr = data?.angebote ?? (Array.isArray(data) ? data : []);
-                setAngebote(arr);
-            });
-
-        // Lade Mitarbeiter für Teilnehmer-Auswahl
         fetch('/api/mitarbeiter')
             .then(res => res.json())
             .then(data => {
@@ -231,6 +176,19 @@ export default function TerminKalender() {
     useEffect(() => {
         loadEintraege();
     }, [jahr, monat]);
+
+    // Deep-link: navigate to specific date from URL param ?date=2026-03-06
+    useEffect(() => {
+        const dateParam = searchParams.get('date');
+        if (!dateParam) return;
+        const parsed = new Date(dateParam + 'T00:00:00');
+        if (isNaN(parsed.getTime())) return;
+        setJahr(parsed.getFullYear());
+        setMonat(parsed.getMonth() + 1);
+        setAnsicht('tag');
+        setSelectedTag(parsed);
+        setSearchParams({}, { replace: true });
+    }, [searchParams]);
 
     const loadEintraege = async () => {
         setLoading(true);
@@ -310,8 +268,8 @@ export default function TerminKalender() {
                         kundeName: null,
                         lieferantId: null,
                         lieferantName: null,
-                        angebotId: null,
-                        angebotBetreff: null,
+                        anfrageId: null,
+                        anfrageBetreff: null,
                         erstellerId: a.mitarbeiterId,
                         erstellerName: a.mitarbeiterName,
                         teilnehmer: []
@@ -337,8 +295,8 @@ export default function TerminKalender() {
                         kundeName: null,
                         lieferantId: null,
                         lieferantName: null,
-                        angebotId: null,
-                        angebotBetreff: null,
+                        anfrageId: null,
+                        anfrageBetreff: null,
                         erstellerId: null,
                         erstellerName: 'System',
                         teilnehmer: []
@@ -424,8 +382,8 @@ export default function TerminKalender() {
                         kundeName: null,
                         lieferantId: null,
                         lieferantName: null,
-                        angebotId: null,
-                        angebotBetreff: null,
+                        anfrageId: null,
+                        anfrageBetreff: null,
                         erstellerId: null,
                         erstellerName: 'System',
                         teilnehmer: []
@@ -452,8 +410,8 @@ export default function TerminKalender() {
                         kundeName: null,
                         lieferantId: null,
                         lieferantName: null,
-                        angebotId: null,
-                        angebotBetreff: null,
+                        anfrageId: null,
+                        anfrageBetreff: null,
                         erstellerId: a.mitarbeiterId,
                         erstellerName: a.mitarbeiterName,
                         teilnehmer: []
@@ -683,9 +641,13 @@ export default function TerminKalender() {
                     </div>
 
                     {/* Stunden-Grid */}
-                    <div className="divide-y divide-slate-100">
+                    <div>
                         {(() => {
                             const tagStr = formatLocalDate(selectedTag);
+                            const HOUR_HEIGHT = 80; // px pro Stunde
+                            const START_HOUR = 7;
+                            const END_HOUR = 19; // 7:00 bis 18:59 (12 Stunden)
+                            const TOTAL_HOURS = END_HOUR - START_HOUR;
 
                             // Feiertage für den Tag
                             const tagesFeiertage: KalenderEintrag[] = feiertage
@@ -705,8 +667,8 @@ export default function TerminKalender() {
                                     kundeName: null,
                                     lieferantId: null,
                                     lieferantName: null,
-                                    angebotId: null,
-                                    angebotBetreff: null,
+                                    anfrageId: null,
+                                    anfrageBetreff: null,
                                     erstellerId: null,
                                     erstellerName: 'System',
                                     teilnehmer: []
@@ -732,8 +694,8 @@ export default function TerminKalender() {
                                         kundeName: null,
                                         lieferantId: null,
                                         lieferantName: null,
-                                        angebotId: null,
-                                        angebotBetreff: null,
+                                        anfrageId: null,
+                                        anfrageBetreff: null,
                                         erstellerId: a.mitarbeiterId,
                                         erstellerName: a.mitarbeiterName,
                                         teilnehmer: []
@@ -743,29 +705,27 @@ export default function TerminKalender() {
                             // Normale Einträge für den Tag
                             const normaleEintraege = eintraege.filter(e => e.datum === tagStr);
 
-                            // Alle Einträge kombinieren
-                            const alleTagesEintraege = [...tagesFeiertage, ...abwesenheitsEintraege, ...normaleEintraege];
+                            // Ganztägige Einträge (oben anzeigen)
+                            const ganztaegige = [...tagesFeiertage, ...abwesenheitsEintraege, ...normaleEintraege].filter(
+                                e => e.ganztaegig || !e.startZeit
+                            );
 
-                            return Array.from({ length: 12 }, (_, i) => i + 7).map(stunde => {
-                                const stundenStr = `${stunde.toString().padStart(2, '0')}:00`;
-                                const stundenEintraege = alleTagesEintraege.filter(e => {
-                                    if (e.ganztaegig) return stunde === 7; // Ganztägig um 7 Uhr zeigen
-                                    if (!e.startZeit) return false;
-                                    const startStunde = parseInt(e.startZeit.substring(0, 2));
-                                    return startStunde === stunde;
-                                });
+                            // Zeitbasierte Einträge (absolut positioniert)
+                            const zeitbasierte = normaleEintraege.filter(e => !e.ganztaegig && e.startZeit);
 
-                                return (
-                                    <div
-                                        key={stunde}
-                                        className="flex gap-4 p-4 min-h-[80px] hover:bg-rose-50/30 cursor-pointer transition-colors"
-                                        onClick={() => handleDayClick(tagStr)}
-                                    >
-                                        <div className="w-16 text-sm font-medium text-slate-400 shrink-0">
-                                            {stundenStr}
-                                        </div>
-                                        <div className="flex-1 space-y-2">
-                                            {stundenEintraege.map(eintrag => {
+                            // Hilfsfunktion: Zeit in Minuten seit START_HOUR
+                            const zeitZuMinuten = (zeit: string): number => {
+                                const h = parseInt(zeit.substring(0, 2));
+                                const m = parseInt(zeit.substring(3, 5));
+                                return (h - START_HOUR) * 60 + m;
+                            };
+
+                            return (
+                                <>
+                                    {/* Ganztägige Einträge oben */}
+                                    {ganztaegige.length > 0 && (
+                                        <div className="border-b border-slate-200 p-4 space-y-2">
+                                            {ganztaegige.map(eintrag => {
                                                 const farbStyle = getFarbStyle(eintrag.farbe, eintrag.id);
                                                 return (
                                                     <div
@@ -776,16 +736,9 @@ export default function TerminKalender() {
                                                         <div className="flex items-start justify-between gap-2">
                                                             <div>
                                                                 <p className={`font-semibold ${farbStyle.text}`}>{eintrag.titel}</p>
-                                                                {!eintrag.ganztaegig && eintrag.startZeit && (
-                                                                    <p className="text-xs text-slate-600 flex items-center gap-1 mt-0.5">
-                                                                        <Clock className="w-3 h-3" />
-                                                                        {eintrag.startZeit.substring(0, 5)}
-                                                                        {eintrag.endeZeit && ` – ${eintrag.endeZeit.substring(0, 5)}`}
-                                                                    </p>
-                                                                )}
-                                                                {eintrag.ganztaegig && (
-                                                                    <p className="text-xs text-slate-500 mt-0.5">Ganztägig</p>
-                                                                )}
+                                                                <p className="text-xs text-slate-500 mt-0.5">
+                                                                    {eintrag.beschreibung || 'Ganztägig'}
+                                                                </p>
                                                             </div>
                                                             {eintrag.teilnehmer && eintrag.teilnehmer.length > 0 && (
                                                                 <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-xs rounded flex items-center gap-0.5">
@@ -793,16 +746,75 @@ export default function TerminKalender() {
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        {eintrag.beschreibung && (
-                                                            <p className="text-xs text-slate-600 mt-1 line-clamp-2">{eintrag.beschreibung}</p>
-                                                        )}
                                                     </div>
                                                 );
                                             })}
                                         </div>
+                                    )}
+
+                                    {/* Zeitraster mit absolut positionierten Events */}
+                                    <div className="relative" style={{ height: TOTAL_HOURS * HOUR_HEIGHT }}>
+                                        {/* Stundenlinien + Labels */}
+                                        {Array.from({ length: TOTAL_HOURS }, (_, i) => i + START_HOUR).map(stunde => (
+                                            <div
+                                                key={stunde}
+                                                className="absolute left-0 right-0 border-b border-slate-100 hover:bg-rose-50/30 cursor-pointer transition-colors"
+                                                style={{ top: (stunde - START_HOUR) * HOUR_HEIGHT, height: HOUR_HEIGHT }}
+                                                onClick={() => handleDayClick(tagStr)}
+                                            >
+                                                <div className="w-16 text-sm font-medium text-slate-400 pl-4 pt-2">
+                                                    {`${stunde.toString().padStart(2, '0')}:00`}
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        {/* Absolut positionierte Events */}
+                                        {zeitbasierte.map(eintrag => {
+                                            const farbStyle = getFarbStyle(eintrag.farbe, eintrag.id);
+                                            const startMin = zeitZuMinuten(eintrag.startZeit!);
+                                            const endeMin = eintrag.endeZeit
+                                                ? zeitZuMinuten(eintrag.endeZeit)
+                                                : startMin + 60; // Fallback: 1 Stunde
+                                            const dauer = Math.max(endeMin - startMin, 30); // Mindestens 30 Minuten
+
+                                            const topPx = Math.max(0, startMin * (HOUR_HEIGHT / 60));
+                                            const heightPx = dauer * (HOUR_HEIGHT / 60);
+
+                                            return (
+                                                <div
+                                                    key={eintrag.id}
+                                                    className={`absolute left-20 right-4 p-3 rounded-lg border-l-4 cursor-pointer hover:shadow-md transition-all overflow-hidden ${farbStyle.bg} ${farbStyle.border}`}
+                                                    style={{
+                                                        top: topPx,
+                                                        height: heightPx,
+                                                        zIndex: 10,
+                                                    }}
+                                                    onClick={(e) => handleEventClick(eintrag, e)}
+                                                >
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div>
+                                                            <p className={`font-semibold ${farbStyle.text}`}>{eintrag.titel}</p>
+                                                            <p className="text-xs text-slate-600 flex items-center gap-1 mt-0.5">
+                                                                <Clock className="w-3 h-3" />
+                                                                {eintrag.startZeit!.substring(0, 5)}
+                                                                {eintrag.endeZeit && ` – ${eintrag.endeZeit.substring(0, 5)}`}
+                                                            </p>
+                                                            {eintrag.beschreibung && (
+                                                                <p className="text-xs text-slate-600 mt-1 line-clamp-2">{eintrag.beschreibung}</p>
+                                                            )}
+                                                        </div>
+                                                        {eintrag.teilnehmer && eintrag.teilnehmer.length > 0 && (
+                                                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-xs rounded flex items-center gap-0.5">
+                                                                <Users className="w-3 h-3" /> {eintrag.teilnehmer.length}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                );
-                            });
+                                </>
+                            );
                         })()}
                     </div>
                 </div>
@@ -1000,10 +1012,6 @@ export default function TerminKalender() {
                 <EventModal
                     datum={selectedDate!}
                     eintrag={editingEintrag}
-                    projekte={projekte}
-                    kunden={kunden}
-                    lieferanten={lieferanten}
-                    angebote={angebote}
                     mitarbeiter={mitarbeiter}
                     currentUserMitarbeiterId={getCurrentUserMitarbeiterId()}
                     onClose={handleCloseModal}
@@ -1021,17 +1029,14 @@ export default function TerminKalender() {
 interface EventModalProps {
     datum: string;
     eintrag: KalenderEintrag | null;
-    projekte: Projekt[];
-    kunden: Kunde[];
-    lieferanten: Lieferant[];
-    angebote: Angebot[];
     mitarbeiter: Mitarbeiter[];
     currentUserMitarbeiterId: number | null;
     onClose: () => void;
     onSave: () => void;
 }
 
-function EventModal({ datum, eintrag, projekte, kunden, lieferanten, angebote, mitarbeiter, currentUserMitarbeiterId, onClose, onSave }: EventModalProps) {
+function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onClose, onSave }: EventModalProps) {
+    const confirmDialog = useConfirm();
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
@@ -1048,7 +1053,7 @@ function EventModal({ datum, eintrag, projekte, kunden, lieferanten, angebote, m
     const [projektId, setProjektId] = useState<string>(eintrag?.projektId?.toString() || '');
     const [kundeId, setKundeId] = useState<string>(eintrag?.kundeId?.toString() || '');
     const [lieferantId, setLieferantId] = useState<string>(eintrag?.lieferantId?.toString() || '');
-    const [angebotId, setAngebotId] = useState<string>(eintrag?.angebotId?.toString() || '');
+    const [anfrageId, setAnfrageId] = useState<string>(eintrag?.anfrageId?.toString() || '');
 
     // Teilnehmer (eingeladene Mitarbeiter)
     // Bei neuem Termin: aktuellen User automatisch vorauswählen
@@ -1062,6 +1067,74 @@ function EventModal({ datum, eintrag, projekte, kunden, lieferanten, angebote, m
         }
         return [];
     });
+
+    // Async search functions for dropdowns
+    const searchProjekte = async (term: string) => {
+        try {
+            const res = await fetch(`/api/projekte/simple?q=${encodeURIComponent(term)}&size=50&nurOffene=false`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            const arr = Array.isArray(data) ? data : [];
+            return [
+                { value: '', label: 'Kein Projekt' },
+                ...arr.map((p: { id: number; bauvorhaben: string; auftragsnummer: string; kunde?: string }) => ({
+                    value: p.id.toString(),
+                    label: p.bauvorhaben || `Projekt #${p.id}`,
+                    sublabel: `${p.auftragsnummer || ''}${p.kunde ? ' • ' + p.kunde : ''}`
+                }))
+            ];
+        } catch { return []; }
+    };
+
+    const searchKunden = async (term: string) => {
+        try {
+            const res = await fetch(`/api/kunden?q=${encodeURIComponent(term)}&size=50`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            const arr = data?.kunden ?? (Array.isArray(data) ? data : []);
+            return [
+                { value: '', label: 'Kein Kunde' },
+                ...arr.map((k: { id: number; name: string; kundennummer?: string; ort?: string }) => ({
+                    value: k.id.toString(),
+                    label: k.name,
+                    sublabel: [k.kundennummer, k.ort].filter(Boolean).join(' • ') || undefined
+                }))
+            ];
+        } catch { return []; }
+    };
+
+    const searchLieferanten = async (term: string) => {
+        try {
+            const res = await fetch(`/api/lieferanten?q=${encodeURIComponent(term)}&size=50`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            const arr = data?.lieferanten ?? (Array.isArray(data) ? data : []);
+            return [
+                { value: '', label: 'Kein Lieferant' },
+                ...arr.map((l: { id: number; lieferantenname: string }) => ({
+                    value: l.id.toString(),
+                    label: l.lieferantenname
+                }))
+            ];
+        } catch { return []; }
+    };
+
+    const searchAnfragen = async (term: string) => {
+        try {
+            const res = await fetch(`/api/anfragen?q=${encodeURIComponent(term)}`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            const arr = data?.anfragen ?? (Array.isArray(data) ? data : []);
+            return [
+                { value: '', label: 'Kein Anfrage' },
+                ...arr.map((a: { id: number; bauvorhaben: string; kundenName?: string; projektOrt?: string }) => ({
+                    value: a.id.toString(),
+                    label: a.bauvorhaben || `Anfrage #${a.id}`,
+                    sublabel: [a.kundenName, a.projektOrt].filter(Boolean).join(' • ') || undefined
+                }))
+            ];
+        } catch { return []; }
+    };
 
     const formatieresDatum = new Date(eventDatum).toLocaleDateString('de-DE', {
         weekday: 'long',
@@ -1086,7 +1159,7 @@ function EventModal({ datum, eintrag, projekte, kunden, lieferanten, angebote, m
                 projektId: projektId ? parseInt(projektId) : null,
                 kundeId: kundeId ? parseInt(kundeId) : null,
                 lieferantId: lieferantId ? parseInt(lieferantId) : null,
-                angebotId: angebotId ? parseInt(angebotId) : null,
+                anfrageId: anfrageId ? parseInt(anfrageId) : null,
                 teilnehmerIds: teilnehmerIds.length > 0 ? teilnehmerIds : null,
                 // Bei neuem Termin: aktuellen Benutzer als Ersteller setzen
                 erstellerId: !eintrag ? currentUserMitarbeiterId : null,
@@ -1112,7 +1185,7 @@ function EventModal({ datum, eintrag, projekte, kunden, lieferanten, angebote, m
 
     const handleDelete = async () => {
         if (!eintrag) return;
-        if (!confirm('Möchten Sie diesen Termin wirklich löschen?')) return;
+        if (!await confirmDialog({ title: 'Termin löschen', message: 'Möchten Sie diesen Termin wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
 
         setDeleting(true);
         try {
@@ -1267,14 +1340,8 @@ function EventModal({ datum, eintrag, projekte, kunden, lieferanten, angebote, m
                                         <SearchableSelect
                                             value={projektId}
                                             onChange={(val) => setProjektId(val)}
-                                            options={[
-                                                { value: '', label: 'Kein Projekt' },
-                                                ...projekte.map(p => ({
-                                                    value: p.id.toString(),
-                                                    label: p.bauvorhaben,
-                                                    sublabel: `${p.auftragsnummer}${p.kunde ? ' • ' + p.kunde : ''}`
-                                                }))
-                                            ]}
+                                            onSearch={searchProjekte}
+                                            selectedLabel={eintrag?.projektName || undefined}
                                             placeholder="Projekt auswählen..."
                                             searchPlaceholder="Projekt suchen..."
                                         />
@@ -1290,13 +1357,8 @@ function EventModal({ datum, eintrag, projekte, kunden, lieferanten, angebote, m
                                         <SearchableSelect
                                             value={kundeId}
                                             onChange={(val) => setKundeId(val)}
-                                            options={[
-                                                { value: '', label: 'Kein Kunde' },
-                                                ...kunden.map(k => ({
-                                                    value: k.id.toString(),
-                                                    label: k.name
-                                                }))
-                                            ]}
+                                            onSearch={searchKunden}
+                                            selectedLabel={eintrag?.kundeName || undefined}
                                             placeholder="Kunde auswählen..."
                                             searchPlaceholder="Kunde suchen..."
                                         />
@@ -1312,38 +1374,27 @@ function EventModal({ datum, eintrag, projekte, kunden, lieferanten, angebote, m
                                         <SearchableSelect
                                             value={lieferantId}
                                             onChange={(val) => setLieferantId(val)}
-                                            options={[
-                                                { value: '', label: 'Kein Lieferant' },
-                                                ...lieferanten.map(l => ({
-                                                    value: l.id.toString(),
-                                                    label: l.lieferantenname
-                                                }))
-                                            ]}
+                                            onSearch={searchLieferanten}
+                                            selectedLabel={eintrag?.lieferantName || undefined}
                                             placeholder="Lieferant auswählen..."
                                             searchPlaceholder="Lieferant suchen..."
                                         />
                                     </div>
                                 </div>
 
-                                {/* Angebot */}
+                                {/* Anfrage */}
                                 <div className="flex items-start gap-2">
                                     <div className="p-2 bg-green-50 rounded-lg mt-1">
                                         <FileCheck className="w-4 h-4 text-green-600" />
                                     </div>
                                     <div className="flex-1">
                                         <SearchableSelect
-                                            value={angebotId}
-                                            onChange={(val) => setAngebotId(val)}
-                                            options={[
-                                                { value: '', label: 'Kein Angebot' },
-                                                ...angebote.map(a => ({
-                                                    value: a.id.toString(),
-                                                    label: a.bauvorhaben || `Angebot #${a.id}`,
-                                                    sublabel: a.kundenName ? `👤 ${a.kundenName}` : undefined
-                                                }))
-                                            ]}
-                                            placeholder="Angebot auswählen..."
-                                            searchPlaceholder="Angebot suchen..."
+                                            value={anfrageId}
+                                            onChange={(val) => setAnfrageId(val)}
+                                            onSearch={searchAnfragen}
+                                            selectedLabel={eintrag?.anfrageBetreff || undefined}
+                                            placeholder="Anfrage auswählen..."
+                                            searchPlaceholder="Anfrage suchen..."
                                         />
                                     </div>
                                 </div>

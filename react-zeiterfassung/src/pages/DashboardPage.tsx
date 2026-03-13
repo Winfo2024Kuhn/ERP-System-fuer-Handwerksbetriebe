@@ -87,14 +87,14 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
     const loadHeuteGearbeitet = async () => {
         const token = localStorage.getItem('zeiterfassung_token')
         if (!token) return
-        
+
         // 1. Get cached server data (from IndexedDB) - this is NON-BLOCKING
         const cachedData = await OfflineService.getHeuteGearbeitet(token)
         const cachedMinuten = (cachedData.stunden || 0) * 60 + (cachedData.minuten || 0)
-        
+
         // 2. Get offline completed bookings (tracked locally)
         const offlineMinuten = await OfflineService.getOfflineHeuteMinuten()
-        
+
         // 3. Calculate current running session time
         let currentSessionMinuten = 0
         const storedSession = localStorage.getItem('zeiterfassung_active_session')
@@ -109,7 +109,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                 }
             } catch { /* ignore */ }
         }
-        
+
         // Total = cached server data + offline bookings + running session
         const totalMinuten = cachedMinuten + offlineMinuten + currentSessionMinuten
         setHeuteStunden(Math.floor(totalMinuten / 60))
@@ -139,6 +139,21 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         if (pendingCount > 0) {
             console.log(`⚠️ ${pendingCount} pending entries - überspringe Server-Sync, behalte lokale Session`)
             return // SKIP server sync entirely!
+        }
+
+        // Check if a 'start' entry was recently synced — if yes, give the server
+        // a few seconds before we trust its GET /aktiv response.
+        // Without this cooldown, the GET can arrive before the server's transaction
+        // is fully visible, returning { aktiv: false } and killing the local session.
+        const startSyncedAt = localStorage.getItem('zeiterfassung_start_synced_at')
+        if (startSyncedAt && localSession) {
+            const elapsed = Date.now() - parseInt(startSyncedAt, 10)
+            if (elapsed < 15000) { // 15 second cooldown
+                console.log(`⏳ Start wurde vor ${(elapsed / 1000).toFixed(1)}s gesynct - behalte lokale Session (Cooldown)`)
+                return // Trust local session during cooldown
+            }
+            // Cooldown expired - clean up the flag
+            localStorage.removeItem('zeiterfassung_start_synced_at')
         }
 
         // Only sync with server if NO pending entries (we're fully synced)
@@ -171,23 +186,12 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                     setActiveSession(session)
                     console.log('✅ Session vom Server synchronisiert:', session)
                 } else {
-                    // Server says no active session
-                    // BUT: Only clear local session if it's older than 5 minutes
-                    // This prevents race conditions where sync just completed
+                    // Server says no active session AND we have no pending entries
+                    // (we already returned early above if pendingCount > 0)
+                    // Safe to trust the server here.
                     if (localSession) {
-                        const sessionStart = new Date(localSession.startTime)
-                        const now = new Date()
-                        const ageMinutes = (now.getTime() - sessionStart.getTime()) / 60000
-                        
-                        if (ageMinutes < 5) {
-                            // Session is very recent - might be a race condition with sync
-                            // Keep local session and wait for next sync cycle
-                            console.log(`⏳ Lokale Session ist ${ageMinutes.toFixed(1)} min alt - behalte sie (mögliche Race Condition)`)
-                            return
-                        }
+                        console.log('ℹ️ Server hat keine aktive Session mehr - räume lokale Session auf')
                     }
-                    
-                    // Old or no local session - clear it
                     localStorage.removeItem('zeiterfassung_active_session')
                     setActiveSession(null)
                     console.log('ℹ️ Keine aktive Session')
@@ -225,7 +229,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         loadHeuteGearbeitet()
         // Load vacation expiration warning
         loadUrlaubsVerfallWarnung()
-        
+
         // NOTE: Online/Heartbeat handlers wurden nach App.tsx verschoben
         // um globalen Sync auf allen Seiten zu ermöglichen
     }, [])
@@ -277,7 +281,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         if (!activeSession) return
 
         const token = localStorage.getItem('zeiterfassung_token')
-        
+
         // Calculate elapsed minutes for offline tracking (only for work, not pause)
         const start = new Date(activeSession.startTime)
         const now = new Date()
@@ -306,7 +310,8 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             }
         } catch (err) {
             console.log('Offline (oder Timeout) - speichere Stop-Event lokal')
-            await OfflineService.addPendingEntry('stop', { token })
+            const stopTime = new Date().toISOString()
+            await OfflineService.addPendingEntry('stop', { token }, stopTime)
             // Track offline worked minutes (only for actual work, not pauses)
             if (isWorkSession && elapsedMinutes > 0) {
                 await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
@@ -359,7 +364,8 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             }
         } catch {
             console.log('Offline - speichere Pause-Event lokal')
-            await OfflineService.addPendingEntry('pause', { token })
+            const pauseTime = new Date().toISOString()
+            await OfflineService.addPendingEntry('pause', { token }, pauseTime)
             // Optimistic UI update for offline pause
             const pauseSession: Session = {
                 projektId: null,
@@ -394,11 +400,13 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
 
             if (!res.ok) {
                 console.warn('Stop-Aufruf nicht erfolgreich, speichere für später')
-                await OfflineService.addPendingEntry('stop', { token })
+                const stopTime = new Date().toISOString()
+                await OfflineService.addPendingEntry('stop', { token }, stopTime)
             }
         } catch {
             console.log('Offline - speichere Stop-Event für Pause lokal')
-            await OfflineService.addPendingEntry('stop', { token })
+            const stopTime = new Date().toISOString()
+            await OfflineService.addPendingEntry('stop', { token }, stopTime)
         }
 
         // Clear local pause session and navigate to time tracking
@@ -407,50 +415,12 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         navigate('/zeiterfassung')
     }
 
-    // Switch to a different project (stop current booking, navigate to project selection)
-    const handleSwitchProjekt = async () => {
+    // Switch to a different project - DON'T stop yet, navigate to selection first
+    // The old booking will only be stopped when the user actually starts a new one
+    const handleSwitchProjekt = () => {
         if (!activeSession) return
-
-        const token = localStorage.getItem('zeiterfassung_token')
-        
-        // Calculate elapsed minutes for offline tracking
-        const start = new Date(activeSession.startTime)
-        const now = new Date()
-        const elapsedMinutes = Math.floor((now.getTime() - start.getTime()) / 60000)
-        const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
-
-        try {
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 3000)
-
-            const res = await fetch('/api/zeiterfassung/stop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token }),
-                signal: controller.signal
-            })
-            clearTimeout(timeoutId)
-
-            if (res.ok) {
-                console.log('Buchung für Projektwechsel gestoppt')
-            } else {
-                throw new Error('Server error')
-            }
-        } catch (err) {
-            console.log('Offline (oder Timeout) - speichere Stop-Event lokal')
-            await OfflineService.addPendingEntry('stop', { token })
-            // Track offline worked minutes
-            if (isWorkSession && elapsedMinutes > 0) {
-                await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
-            }
-        }
-
-        // Clear local session and navigate to time tracking for new project
-        localStorage.removeItem('zeiterfassung_active_session')
-        setActiveSession(null)
-        setElapsedTime('00:00:00')
-        loadHeuteGearbeitet()
-        navigate('/zeiterfassung')
+        // Navigate with switching flag - old session stays active until new one is confirmed
+        navigate('/zeiterfassung?switching=true')
     }
 
     // Open Arbeitsgang switch modal
@@ -472,7 +442,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
     // Open Kategorie switch modal
     const handleOpenKategorieSwitch = async () => {
         if (!activeSession?.projektId) return
-        
+
         // Load categories for current project
         const katData = await OfflineService.getKategorien(activeSession.projektId) as Array<{ id: number; name: string }>
         setKategorien(katData)
@@ -485,7 +455,8 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         setSwitching(true)
 
         const token = localStorage.getItem('zeiterfassung_token')
-        
+        const oldSession = { ...activeSession } // Backup for rollback
+
         // Calculate elapsed minutes for offline tracking
         const start = new Date(activeSession.startTime)
         const now = new Date()
@@ -497,7 +468,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             const stopController = new AbortController()
             const stopTimeout = setTimeout(() => stopController.abort(), 3000)
 
-            await fetch('/api/zeiterfassung/stop', {
+            const stopRes = await fetch('/api/zeiterfassung/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token }),
@@ -533,6 +504,25 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                 }
                 localStorage.setItem('zeiterfassung_active_session', JSON.stringify(newSession))
                 setActiveSession(newSession)
+            } else {
+                // Start failed after stop succeeded - try to restore old booking
+                console.warn('⚠️ Kategorie-Start fehlgeschlagen nach Stop - versuche Wiederherstellung')
+                if (stopRes.ok) {
+                    try {
+                        await fetch('/api/zeiterfassung/start', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                token,
+                                projektId: oldSession.projektId,
+                                arbeitsgangId: oldSession.arbeitsgangId,
+                                produktkategorieId: oldSession.produktkategorieId ?? null
+                            })
+                        })
+                    } catch { /* best effort */ }
+                }
+                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(oldSession))
+                setActiveSession(oldSession as Session)
             }
         } catch (err) {
             console.log('Offline - Kategorie-Switch wird lokal gespeichert')
@@ -540,15 +530,16 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             if (isWorkSession && elapsedMinutes > 0) {
                 await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
             }
-            
+
             // Offline: Stop old, Start new with different category
-            await OfflineService.addPendingEntry('stop', { token })
+            const switchTime = new Date().toISOString()
+            await OfflineService.addPendingEntry('stop', { token }, switchTime)
             await OfflineService.addPendingEntry('start', {
                 token,
                 projektId: activeSession.projektId,
                 arbeitsgangId: activeSession.arbeitsgangId,
                 produktkategorieId: newKategorie.id
-            })
+            }, switchTime)
 
             // Optimistic UI update
             const newSession = {
@@ -573,7 +564,8 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         setSwitching(true)
 
         const token = localStorage.getItem('zeiterfassung_token')
-        
+        const oldSession = { ...activeSession } // Backup for rollback
+
         // Calculate elapsed minutes for offline tracking (only for work, not pause)
         const start = new Date(activeSession.startTime)
         const now = new Date()
@@ -586,7 +578,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             const stopController = new AbortController()
             const stopTimeout = setTimeout(() => stopController.abort(), 3000)
 
-            await fetch('/api/zeiterfassung/stop', {
+            const stopRes = await fetch('/api/zeiterfassung/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token }),
@@ -628,6 +620,35 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                 }
                 localStorage.setItem('zeiterfassung_active_session', JSON.stringify(newSession))
                 setActiveSession(newSession)
+            } else {
+                // Start failed after stop succeeded - try to restart old booking
+                console.warn('⚠️ Start fehlgeschlagen nach Stop - versuche alte Buchung wiederherzustellen')
+                if (stopRes.ok) {
+                    try {
+                        const restoreRes = await fetch('/api/zeiterfassung/start', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                token,
+                                projektId: oldSession.projektId,
+                                arbeitsgangId: oldSession.arbeitsgangId,
+                                produktkategorieId: oldSession.produktkategorieId ?? null
+                            })
+                        })
+                        if (restoreRes.ok) {
+                            console.log('✅ Alte Buchung wiederhergestellt')
+                            // Keep old session in localStorage
+                        } else {
+                            // Could not restore - at least keep UI showing old session
+                            console.error('❌ Alte Buchung konnte nicht wiederhergestellt werden')
+                        }
+                    } catch {
+                        console.error('❌ Restore fehlgeschlagen')
+                    }
+                }
+                // Keep old session visible regardless
+                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(oldSession))
+                setActiveSession(oldSession as Session)
             }
         } catch (err) {
             console.log('Offline (oder Timeout) - Switch wird lokal gespeichert')
@@ -635,15 +656,16 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             if (isWorkSession && elapsedMinutes > 0) {
                 await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
             }
-            
+
             // Offline Switch: Stop old, Start new locally
-            await OfflineService.addPendingEntry('stop', { token })
+            const switchTime = new Date().toISOString()
+            await OfflineService.addPendingEntry('stop', { token }, switchTime)
             await OfflineService.addPendingEntry('start', {
                 token,
                 projektId: activeSession.projektId,
                 arbeitsgangId: newArbeitsgang.id,
                 produktkategorieId: activeSession.produktkategorieId ?? null
-            })
+            }, switchTime)
 
             // Update UI with "Fake" Session (IMMEDIATE optimistic update)
             const newSession = {
@@ -685,7 +707,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             </header>
 
             {/* Main Content */}
-            <main className="flex-1 p-4 space-y-4 overflow-y-auto safe-area-bottom pb-6">
+            <main className="flex-1 p-4 space-y-4 overflow-y-auto safe-area-bottom pb-16">
 
                 {/* Aktive Buchung oder Start Button */}
                 {activeSession ? (
@@ -821,13 +843,13 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                     </button>
 
                     <button
-                        onClick={() => navigate('/angebote')}
+                        onClick={() => navigate('/anfragen')}
                         className="bg-white border border-slate-200 rounded-xl p-4 hover:border-rose-200 hover:shadow-md transition-all text-center"
                     >
                         <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center mx-auto mb-2">
                             <FolderOpen className="w-5 h-5 text-amber-600" />
                         </div>
-                        <p className="text-sm font-semibold text-slate-900">Angebote</p>
+                        <p className="text-sm font-semibold text-slate-900">Anfragen</p>
                     </button>
 
                     <button
@@ -1053,11 +1075,10 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                                             <button
                                                 key={kat.id}
                                                 onClick={() => handleSwitchKategorie(kat)}
-                                                className={`w-full border rounded-xl p-4 text-left transition-all mb-2 ${
-                                                    activeSession?.produktkategorieId === kat.id
+                                                className={`w-full border rounded-xl p-4 text-left transition-all mb-2 ${activeSession?.produktkategorieId === kat.id
                                                         ? 'bg-purple-50 border-purple-300 ring-1 ring-purple-300'
                                                         : 'bg-slate-50 border-slate-200 hover:border-purple-300 hover:bg-purple-50'
-                                                }`}
+                                                    }`}
                                             >
                                                 <p className="font-medium text-slate-900">{kat.name}</p>
                                             </button>

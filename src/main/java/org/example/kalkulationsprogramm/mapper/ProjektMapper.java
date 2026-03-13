@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.mapper;
 
 import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Projekt;
-import org.example.kalkulationsprogramm.dto.Angebot.AngebotResponseDto;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektResponseDto;
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenResponseDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
@@ -18,7 +18,7 @@ import java.util.List;
 @AllArgsConstructor
 public class ProjektMapper {
     private final ProduktkategorieMapper produktkategorieMapper;
-    private final AngebotMapper angebotMapper;
+    private final AnfrageMapper anfrageMapper;
     private final KundeMapper kundeMapper;
 
     public ProjektResponseDto toProjektResponseDto(Projekt projekt) {
@@ -171,11 +171,11 @@ public class ProjektMapper {
             dto.setZeiten(zeitDtos);
         }
 
-        if (projekt.getAngebote() != null) {
-            List<AngebotResponseDto> angebotDtos = projekt.getAngebote().stream()
-                    .map(angebotMapper::toAngebotResponseDto)
+        if (projekt.getAnfragen() != null) {
+            List<AnfrageResponseDto> anfrageDtos = projekt.getAnfragen().stream()
+                    .map(anfrageMapper::toAnfrageResponseDto)
                     .toList();
-            dto.setAngebote(angebotDtos);
+            dto.setAnfragen(anfrageDtos);
         }
         // Emails are now handled via separate API / Endpoint
         // if (projekt.getEmails() != null) { ... }

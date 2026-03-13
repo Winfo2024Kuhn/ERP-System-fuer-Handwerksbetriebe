@@ -229,7 +229,7 @@ export function TextbausteinPickerModal({
 }) {
     const [search, setSearch] = useState('');
 
-    // Get the label for the current document type (e.g. "Angebot", "Rechnung")
+    // Get the label for the current document type (e.g. "Anfrage", "Rechnung")
     const dokumentTypLabel = dokumentTyp
         ? AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp
         : null;

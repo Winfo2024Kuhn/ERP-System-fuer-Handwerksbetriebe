@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 /**
  * Controller für die Bestellungs-Übersicht mit Dokumenten-Ketten.
  * Gruppiert Lieferanten-Dokumente nach Status:
- * - Offene Anfragen (nur Angebot, keine Folgedokumente)
+ * - Offene Anfragen (nur Anfrage, keine Folgedokumente)
  * - Laufende Bestellungen (AB vorhanden, keine Rechnung)
  * - Abgeschlossen (Rechnung vorhanden, noch nicht zugeordnet)
  * - Zugeordnet (Rechnung vorhanden und Projekten zugeordnet)
@@ -63,12 +63,6 @@ public class BestellungsUebersichtController {
                 .map(gd -> gd.getDokument() != null ? gd.getDokument().getId() : -1L)
                 .collect(Collectors.toSet());
 
-        // IDs aller ausgeblendeten Dokumente
-        Set<Long> ausgeblendetIds = geschaeftsdokumentRepository.findAll().stream()
-                .filter(gd -> Boolean.TRUE.equals(gd.getAusgeblendet()))
-                .map(gd -> gd.getDokument() != null ? gd.getDokument().getId() : -1L)
-                .collect(Collectors.toSet());
-
         // Ketten bilden
         List<DokumentenKette> alleKetten = buildKetten(alleDokumente);
 
@@ -83,16 +77,10 @@ public class BestellungsUebersichtController {
                     .anyMatch(d -> d.typ == LieferantDokumentTyp.RECHNUNG);
             boolean hatAB = kette.dokumente.stream()
                     .anyMatch(d -> d.typ == LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
-            boolean hatNurAngebot = kette.dokumente.stream()
+            boolean hatNurAnfrage = kette.dokumente.stream()
                     .allMatch(d -> d.typ == LieferantDokumentTyp.ANGEBOT);
 
             if (hatRechnung) {
-                // Prüfe ob die Rechnung ausgeblendet ist
-                boolean istAusgeblendet = kette.dokumente.stream()
-                        .filter(d -> d.typ == LieferantDokumentTyp.RECHNUNG)
-                        .anyMatch(d -> ausgeblendetIds.contains(d.id));
-                if (istAusgeblendet) continue;
-
                 // Prüfe ob die Rechnung bereits zugeordnet oder als Lagerbestellung markiert ist
                 boolean istZugeordnet = kette.dokumente.stream()
                         .filter(d -> d.typ == LieferantDokumentTyp.RECHNUNG)
@@ -105,7 +93,7 @@ public class BestellungsUebersichtController {
                 }
             } else if (hatAB) {
                 laufendeBestellungen.add(kette);
-            } else if (hatNurAngebot) {
+            } else if (hatNurAnfrage) {
                 offeneAnfragen.add(kette);
             }
         }
@@ -380,22 +368,6 @@ public class BestellungsUebersichtController {
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", "Als Lagerbestellung markiert"));
-    }
-
-    /**
-     * Blendet eine Dokumenten-Kette aus der Bestellungsübersicht aus.
-     * Für alte/irrelevante Rechnungen ohne Projektbezug.
-     */
-    @PostMapping("/ausblenden/{dokId}")
-    @Transactional
-    public ResponseEntity<?> ausblendenDokument(@PathVariable Long dokId) {
-        var gd = geschaeftsdokumentRepository.findById(dokId).orElse(null);
-        if (gd == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
-        }
-        gd.setAusgeblendet(true);
-        geschaeftsdokumentRepository.save(gd);
-        return ResponseEntity.ok(Map.of("success", true, "message", "Rechnung ausgeblendet"));
     }
 
     /**

@@ -14,9 +14,9 @@ import java.util.List;
 
 /**
  * Zentrale Entity für alle ausgehenden Geschäftsdokumente.
- * Angebote, Auftragsbestätigungen, Rechnungen, etc.
+ * Anfragen, Auftragsbestätigungen, Rechnungen, etc.
  * 
- * Verknüpfungskette: Angebot → AB → Rechnung(en)
+ * Verknüpfungskette: Anfrage → AB → Rechnung(en)
  */
 @Entity
 @Table(name = "ausgangs_geschaeftsdokument")
@@ -35,7 +35,7 @@ public class AusgangsGeschaeftsDokument {
     private String dokumentNummer;
 
     /**
-     * Typ des Dokuments (Angebot, AB, Rechnung, etc.)
+     * Typ des Dokuments (Anfrage, AB, Rechnung, etc.)
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
@@ -121,15 +121,15 @@ public class AusgangsGeschaeftsDokument {
     private Projekt projekt;
 
     /**
-     * Verknüpftes Angebot (für Dokumente die aus Angebot-Kontext erstellt wurden)
+     * Verknüpftes Anfrage (für Dokumente die aus Anfrage-Kontext erstellt wurden)
      */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "angebot_id")
-    private Angebot angebot;
+    @JoinColumn(name = "anfrage_id")
+    private Anfrage anfrage;
 
     /**
      * Verknüpfter Kunde - für Rechnungsadresse!
-     * Die Adresse kommt immer aus Kunde, nicht aus Projekt/Angebot.
+     * Die Adresse kommt immer aus Kunde, nicht aus Projekt/Anfrage.
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "kunde_id")
@@ -137,7 +137,7 @@ public class AusgangsGeschaeftsDokument {
 
     /**
      * Vorgänger-Dokument für Dokumentenkette.
-     * z.B. AB verweist auf Angebot, Rechnung verweist auf AB
+     * z.B. AB verweist auf Anfrage, Rechnung verweist auf AB
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "vorgaenger_id")
@@ -230,7 +230,7 @@ public class AusgangsGeschaeftsDokument {
      * Sperrlogik:
      * - Stornierte Dokumente sind immer gesperrt (Korrekturnachweis).
      * - Gebuchte Rechnungen/Gutschriften/Stornos sind gesperrt (GoBD).
-     * - Angebote und ABs bleiben auch nach Buchung/Versand bearbeitbar.
+     * - Anfragen und ABs bleiben auch nach Buchung/Versand bearbeitbar.
      */
     public boolean istBearbeitbar() {
         if (storniert) return false;

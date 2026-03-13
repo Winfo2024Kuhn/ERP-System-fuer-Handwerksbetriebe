@@ -12,10 +12,10 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EmailCenterItemDto {
-    // "projekt" or "angebot"
+    // "projekt" or "anfrage"
     private String type;
     private Long id;
-    // ID des zugehörigen Containers (Projekt- oder Angebots-ID), falls vorhanden
+    // ID des zugehörigen Containers (Projekt- oder Anfrages-ID), falls vorhanden
     private Long containerId;
     private String sender;
     private List<String> recipients;

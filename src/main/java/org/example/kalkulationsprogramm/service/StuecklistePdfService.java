@@ -241,7 +241,7 @@ public class StuecklistePdfService {
             throw new RuntimeException("PDF generation failed", e);
         }
         try {
-            java.io.InputStream refIs = StuecklistePdfService.class.getResourceAsStream("/static/Schnittbilder_Formstahl.pdf");
+            java.io.InputStream refIs = StuecklistePdfService.class.getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf");
             if (refIs != null) {
                 com.lowagie.text.pdf.PdfReader mainReader = new com.lowagie.text.pdf.PdfReader(baos.toByteArray());
                 com.lowagie.text.pdf.PdfReader refReader = new com.lowagie.text.pdf.PdfReader(refIs);

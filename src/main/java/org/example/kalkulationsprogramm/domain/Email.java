@@ -1,20 +1,35 @@
 package org.example.kalkulationsprogramm.domain;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Lob;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 /**
  * Zentrale Email-Entity für alle eingehenden und ausgehenden E-Mails.
  * 
- * Ersetzt die alten Tabellen: projekt_email, angebot_email, lieferant_email
+ * Ersetzt die alten Tabellen: projekt_email, anfrage_email, lieferant_email
  * 
- * Zuordnung ist exklusiv: Eine Email gehört zu genau EINER Entität (Projekt, Angebot oder Lieferant).
+ * Zuordnung ist exklusiv: Eine Email gehört zu genau EINER Entität (Projekt, Anfrage oder Lieferant).
  */
 @Entity
 @Table(name = "email", indexes = {
@@ -23,7 +38,7 @@ import java.util.List;
     @Index(name = "idx_email_direction", columnList = "direction"),
     @Index(name = "idx_email_zuordnung", columnList = "zuordnungTyp"),
     @Index(name = "idx_email_projekt", columnList = "projekt_id"),
-    @Index(name = "idx_email_angebot", columnList = "angebot_id"),
+    @Index(name = "idx_email_anfrage", columnList = "anfrage_id"),
     @Index(name = "idx_email_lieferant", columnList = "lieferant_id"),
     @Index(name = "idx_email_processing", columnList = "processingStatus"),
     @Index(name = "idx_email_sent_at", columnList = "sentAt")
@@ -138,8 +153,8 @@ public class Email {
     private Projekt projekt;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "angebot_id")
-    private Angebot angebot;
+    @JoinColumn(name = "anfrage_id")
+    private Anfrage anfrage;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lieferant_id")
@@ -256,16 +271,16 @@ public class Email {
     public void assignToProjekt(Projekt projekt) {
         this.zuordnungTyp = EmailZuordnungTyp.PROJEKT;
         this.projekt = projekt;
-        this.angebot = null;
+        this.anfrage = null;
         this.lieferant = null;
     }
 
     /**
-     * Ordnet diese Email einem Angebot zu.
+     * Ordnet diese Email einem Anfrage zu.
      */
-    public void assignToAngebot(Angebot angebot) {
-        this.zuordnungTyp = EmailZuordnungTyp.ANGEBOT;
-        this.angebot = angebot;
+    public void assignToAnfrage(Anfrage anfrage) {
+        this.zuordnungTyp = EmailZuordnungTyp.ANFRAGE;
+        this.anfrage = anfrage;
         this.projekt = null;
         this.lieferant = null;
     }
@@ -277,7 +292,7 @@ public class Email {
         this.zuordnungTyp = EmailZuordnungTyp.LIEFERANT;
         this.lieferant = lieferant;
         this.projekt = null;
-        this.angebot = null;
+        this.anfrage = null;
         this.steuerberater = null;
     }
 
@@ -288,7 +303,7 @@ public class Email {
         this.zuordnungTyp = EmailZuordnungTyp.STEUERBERATER;
         this.steuerberater = steuerberater;
         this.projekt = null;
-        this.angebot = null;
+        this.anfrage = null;
         this.lieferant = null;
     }
 
@@ -298,7 +313,7 @@ public class Email {
     public void clearAssignment() {
         this.zuordnungTyp = EmailZuordnungTyp.KEINE;
         this.projekt = null;
-        this.angebot = null;
+        this.anfrage = null;
         this.lieferant = null;
         this.steuerberater = null;
     }

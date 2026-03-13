@@ -184,7 +184,7 @@ ${sig}
         if (initialized) return;
 
         const monthName = getMonthName(monat);
-        setSubject(`Stundenaufstellung ${monthName} ${jahr} - Example Company`);
+        setSubject(`Stundenaufstellung ${monthName} ${jahr} - Bauschlosserei Kuhn`);
 
         loadSignature().then(sig => {
             const body = generateEmailBody(sig);
@@ -214,7 +214,7 @@ ${sig}
             const formData = new FormData();
 
             const dtoPayload = {
-                sender: 'info@example-company.de',
+                sender: 'bauschlosserei-kuhn@t-online.de',
                 recipients: [recipient.trim()],
                 cc: [],
                 subject: subject.trim(),

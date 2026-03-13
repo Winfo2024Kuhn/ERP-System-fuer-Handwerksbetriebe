@@ -90,8 +90,8 @@ const EmailHistory: React.FC<EmailHistoryProps> = ({ kommunikation }) => {
                 let url = '';
                 if (email.referenzTyp === 'PROJEKT') {
                     url = `/api/projekte/${email.referenzId}/emails`;
-                } else if (email.referenzTyp === 'ANGEBOT') {
-                    url = `/api/emails/angebot/${email.referenzId}`;
+                } else if (email.referenzTyp === 'ANFRAGE') {
+                    url = `/api/emails/anfrage/${email.referenzId}`;
                 }
 
                 if (url) {

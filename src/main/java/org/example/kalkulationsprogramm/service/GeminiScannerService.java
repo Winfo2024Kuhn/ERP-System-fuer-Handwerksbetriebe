@@ -30,7 +30,7 @@ public class GeminiScannerService {
     @Value("${ai.gemini.api-key}")
     private String geminiApiKey;
 
-    @Value("${ai.gemini.model.scanner:gemini-flash-latest}")
+    @Value("${ai.gemini.model.scanner:gemini-3-flash-preview}")
     private String geminiModel;
 
     private static final String SYSTEM_PROMPT_FILENAME = """

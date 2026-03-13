@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * REST Controller für Geschäftsdokumente.
- * Unterstützt Dokumenten-Workflow: Angebot → Auftragsbestätigung → Rechnung(en)
+ * Unterstützt Dokumenten-Workflow: Anfrage → Auftragsbestätigung → Rechnung(en)
  */
 @RestController
 @RequestMapping("/api/geschaeftsdokumente")
@@ -75,7 +75,7 @@ public class GeschaeftsdokumentController {
 
     /**
      * Dokument in anderen Typ konvertieren.
-     * z.B. Angebot → Auftragsbestätigung, AB → Rechnung
+     * z.B. Anfrage → Auftragsbestätigung, AB → Rechnung
      */
     @PostMapping("/{id}/konvertieren")
     public ResponseEntity<GeschaeftsdokumentResponseDto> konvertieren(

@@ -55,7 +55,7 @@ public class EmailCleanupService {
         List<Email> spamEmails = emailRepository.findSpam();
         for (Email email : spamEmails) {
             // Zugeordnete Emails überspringen
-            if (email.getLieferant() != null || email.getProjekt() != null || email.getAngebot() != null) {
+            if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null) {
                 log.debug("Email-Cleanup übersprungen (zugeordnet): id={}", email.getId());
                 continue;
             }
@@ -71,7 +71,7 @@ public class EmailCleanupService {
         List<Email> newsletters = emailRepository.findNewsletter();
         for (Email email : newsletters) {
             // Zugeordnete Emails überspringen
-            if (email.getLieferant() != null || email.getProjekt() != null || email.getAngebot() != null) {
+            if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null) {
                 log.debug("Email-Cleanup übersprungen (zugeordnet): id={}", email.getId());
                 continue;
             }

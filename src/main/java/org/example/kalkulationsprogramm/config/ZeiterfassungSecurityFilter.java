@@ -33,7 +33,7 @@ public class ZeiterfassungSecurityFilter implements Filter {
             "/api/lieferanten",
             "/api/zeiterfassung",
             "/api/urlaub",
-            "/api/angebote",
+            "/api/anfragen",
             "/api/dokumente",
             "/api/images",
             "/api/kalender/mobile");
