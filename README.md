@@ -259,60 +259,29 @@ graph TB
 
 ## 🚀 Schnellstart
 
-### Voraussetzungen
+### 💿 Für Endanwender: 1-Klick-Installation (Windows)
 
-- **Java 23** (JDK) – [Eclipse Adoptium](https://adoptium.net/)
-- **MySQL 8** – Datenbank `kalkulationsprogramm_db` anlegen
-- **Node.js 18+** – für die React-Frontends
+**Keine Vorkenntnisse nötig. Kein Java, kein Docker, keine Datenbank.**
 
-### 1. Repository klonen
+1. **[⬇️ ERP-Handwerk-1.0.0.exe herunterladen](https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/releases)**
+2. Doppelklick → Installieren
+3. Startmenü → **„ERP Handwerk"** → Fertig ✅
+
+> Der Installer enthält alles: eigene Java-Laufzeitumgebung, eingebettete Datenbank und die komplette Anwendung.
+
+### 🐳 Für Entwickler: Docker
 
 ```bash
 git clone https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe.git
 cd ERP-System-fuer-Handwerksbetriebe
+docker compose up -d --build
 ```
 
-### 2. Datenbank konfigurieren
+### 🔧 Weitere Optionen
 
-Erstelle `src/main/resources/application-local.properties`:
+Detaillierte Anleitungen für alle Installationsvarianten (Docker, manuelle Installation, Installer selbst bauen):
 
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db
-spring.datasource.username=DEIN_USER
-spring.datasource.password=DEIN_PASSWORT
-```
-
-### 3. Backend starten
-
-```bash
-./mvnw spring-boot:run
-```
-
-### 4. Firmenlogo hinterlegen
-
-Lege dein eigenes Firmenlogo als **`firmenlogo_icon.png`** in folgendem Ordner ab:
-
-```
-react-pc-frontend/public/firmenlogo_icon.png
-```
-
-Das Logo wird dann automatisch in der Anwendung (z. B. im Header und auf generierten PDFs) angezeigt.
-
-### 5. Desktop-Frontend starten
-
-```bash
-cd react-pc-frontend
-npm install
-npm run dev
-```
-
-### 6. Mobile Zeiterfassung starten (optional)
-
-```bash
-cd react-zeiterfassung
-npm install
-npm run dev
-```
+📖 **[Vollständige Installationsanleitung →](docs/INSTALLATION.md)**
 
 ---
 
