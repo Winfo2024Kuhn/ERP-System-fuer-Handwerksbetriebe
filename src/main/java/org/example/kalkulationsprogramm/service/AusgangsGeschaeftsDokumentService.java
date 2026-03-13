@@ -299,6 +299,22 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
+     * Stub: Angebotsnummer aus AusgangsGeschaeftsDokumenten ableiten.
+     * Aktuell kein Angebot-FK in AusgangsGeschaeftsDokument vorhanden.
+     */
+    public String resolveAngebotsnummer(Long angebotId) {
+        return null;
+    }
+
+    /**
+     * Stub: Angebotspreis aus Dokumenten aktualisieren.
+     * Aktuell kein Angebot-FK in AusgangsGeschaeftsDokument vorhanden.
+     */
+    public void aktualisiereAngebotPreisAusDokumenten(Long angebotId) {
+        // No-op: AusgangsGeschaeftsDokument hat noch keine Angebot-Relation
+    }
+
+    /**
      * Aktualisiert ein Dokument (nur wenn nicht gebucht).
      */
     @Transactional

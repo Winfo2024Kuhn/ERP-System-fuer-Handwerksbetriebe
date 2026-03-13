@@ -35,6 +35,7 @@ public class ProjektErstellenDto {
 
     // Fremdschlüssel
     private List<Long> anfrageIds;
+    private List<Long> angebotIds;
     private List<ZeitErfassenDto> zeitPositionen;
     private List<ProjektProduktkategorieErfassenDto> produktkategorien;
 

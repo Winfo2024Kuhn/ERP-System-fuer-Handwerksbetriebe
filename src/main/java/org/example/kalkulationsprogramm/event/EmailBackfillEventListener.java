@@ -1,15 +1,24 @@
 package org.example.kalkulationsprogramm.event;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.domain.*;
-import org.example.kalkulationsprogramm.repository.*;
+import java.util.List;
+
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
+import org.example.kalkulationsprogramm.repository.EmailRepository;
+import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-import java.util.List;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Listener für EmailAddressChangedEvent.
@@ -51,6 +60,7 @@ public class EmailBackfillEventListener {
                 case LIEFERANT -> handleLieferantBackfill(event);
                 case ANFRAGE -> handleAnfrageBackfill(event);
                 case PROJEKT -> handleProjektBackfill(event);
+                case ANGEBOT -> 0;
             };
 
             log.info("[EmailBackfill] {} ID={}: {} E-Mails rückwirkend zugeordnet",
