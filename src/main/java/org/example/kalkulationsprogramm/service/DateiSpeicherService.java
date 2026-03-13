@@ -91,6 +91,10 @@ public class DateiSpeicherService {
     @Setter(onMethod_ = @org.springframework.beans.factory.annotation.Autowired)
     private org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository lieferantDokumentProjektAnteilRepository;
 
+    // Für Angebot-Dokument-Löschung
+    @Setter(onMethod_ = @org.springframework.beans.factory.annotation.Autowired)
+    private org.example.kalkulationsprogramm.repository.AngebotDokumentRepository angebotDokumentRepository;
+
     @Autowired
     public DateiSpeicherService(@Value("${file.upload-dir}") String uploadDir,
             @Value("${file.offer-upload-dir:${file.upload-dir}}") String offerUploadDir,
@@ -1350,6 +1354,22 @@ public class DateiSpeicherService {
                     e);
         }
         this.anfrageDokumentRepository.delete(dokument);
+    }
+
+    @Transactional
+    public void loescheAngebotDatei(Long dokumentID) {
+        org.example.kalkulationsprogramm.domain.AngebotDokument dokument = this.angebotDokumentRepository.findById(dokumentID)
+                .orElseThrow(() -> new RuntimeException("Angebotsdokument konnte nicht gefunden werden!"));
+        try {
+            Path dateipfad = this.anfragenSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
+            if (!Files.deleteIfExists(dateipfad)) {
+                Path fallbackPfad = this.dokumentenSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
+                Files.deleteIfExists(fallbackPfad);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Fehler beim Löschen der physischen Datei: " + dokument.getOriginalDateiname(), e);
+        }
+        this.angebotDokumentRepository.delete(dokument);
     }
 
     /**
