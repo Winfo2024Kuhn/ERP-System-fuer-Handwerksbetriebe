@@ -44,6 +44,18 @@ class OffenePostenControllerTest {
     @MockBean
     private MitarbeiterRepository mitarbeiterRepository;
 
+    @MockBean
+    private org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiDokumentAnalyseService;
+
+    @MockBean
+    private org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
+
+    @MockBean
+    private org.example.kalkulationsprogramm.repository.ProjektDokumentRepository projektDokumentRepository;
+
+    @MockBean
+    private org.example.kalkulationsprogramm.service.DateiSpeicherService dateiSpeicherService;
+
     private Mitarbeiter buildMitarbeiterMitAbteilung(Long abteilungId) {
         Mitarbeiter m = new Mitarbeiter();
         m.setId(1L);
