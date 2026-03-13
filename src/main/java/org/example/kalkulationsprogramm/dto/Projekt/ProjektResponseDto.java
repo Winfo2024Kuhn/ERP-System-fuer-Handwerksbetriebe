@@ -5,7 +5,7 @@ import lombok.Setter;
 import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieResponseDto;
 import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitResponseDto;
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenResponseDto;
-import org.example.kalkulationsprogramm.dto.Angebot.AngebotResponseDto;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektResponseDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeResponseDto;
@@ -44,6 +44,6 @@ public class ProjektResponseDto {
     private boolean produktiv;
     private List<ProjektProduktkategorieResponseDto> produktkategorien;
     private List<ZeitResponseDto> zeiten;
-    private List<AngebotResponseDto> angebote;
+    private List<AnfrageResponseDto> anfragen;
     private List<ProjektEmailDto> emails;
 }

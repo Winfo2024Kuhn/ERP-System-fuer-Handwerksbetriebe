@@ -102,15 +102,15 @@ class AusgangsGeschaeftsDokumentControllerTest {
     }
 
     @Nested
-    @DisplayName("GET /api/ausgangs-dokumente/angebot/{angebotId}")
-    class GetByAngebot {
+    @DisplayName("GET /api/ausgangs-dokumente/anfrage/{anfrageId}")
+    class GetByAnfrage {
 
         @Test
-        @DisplayName("Gibt Dokumente eines Angebots zurück")
-        void gibtDokumenteFuerAngebotZurueck() throws Exception {
-            given(service.findByAngebot(10L)).willReturn(List.of(buildResponseDto(1L, "RE-2026-001")));
+        @DisplayName("Gibt Dokumente eines Anfrages zurück")
+        void gibtDokumenteFuerAnfrageZurueck() throws Exception {
+            given(service.findByAnfrage(10L)).willReturn(List.of(buildResponseDto(1L, "RE-2026-001")));
 
-            mockMvc.perform(get("/api/ausgangs-dokumente/angebot/10"))
+            mockMvc.perform(get("/api/ausgangs-dokumente/anfrage/10"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].dokumentNummer").value("RE-2026-001"));
         }

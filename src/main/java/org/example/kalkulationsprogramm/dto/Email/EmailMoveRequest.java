@@ -4,7 +4,7 @@ import lombok.Data;
 
 @Data
 public class EmailMoveRequest {
-    private String targetType; // "angebot" or "projekt"
+    private String targetType; // "anfrage" or "projekt"
     private Long targetId;
 }
 

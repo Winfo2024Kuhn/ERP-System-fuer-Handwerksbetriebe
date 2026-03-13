@@ -8,8 +8,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-import org.example.kalkulationsprogramm.domain.Angebot;
-import org.example.kalkulationsprogramm.domain.AngebotDokument;
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.Dokument;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.domain.Mahnstufe;
@@ -20,8 +20,8 @@ import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.exception.ForbiddenException;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
-import org.example.kalkulationsprogramm.repository.AngebotDokumentRepository;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
@@ -49,15 +49,15 @@ class DateiSpeicherServiceTest {
     private DateiSpeicherService createService(Path localRoot, String networkUrl, ProjektDokumentRepository dokRepo)
             throws IOException {
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
         ProduktkategorieMapper mapper = mock(ProduktkategorieMapper.class);
         String path = localRoot.toString();
         return new DateiSpeicherService(path, path, path, path, path, networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
     }
 
     private static class ServiceSetup {
@@ -83,8 +83,8 @@ class DateiSpeicherServiceTest {
 
         ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
@@ -94,7 +94,7 @@ class DateiSpeicherServiceTest {
                 docRoot.toString(), offerRoot.toString(), hicadRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(),
                 networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
         return new ServiceSetup(service, dokRepo, projRepo);
     }
 
@@ -141,20 +141,20 @@ class DateiSpeicherServiceTest {
     }
 
     @Test
-    void verschiebtAngebotsDateiAlsBasisDokumentWennKeinGeschaeftsDokument() throws IOException {
+    void verschiebtAnfragesDateiAlsBasisDokumentWennKeinGeschaeftsDokument() throws IOException {
         Path temp = Files.createTempDirectory("shareRoot");
         String networkUrl = "\\\\server\\share";
         ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
         ProduktkategorieMapper mapper = mock(ProduktkategorieMapper.class);
         String path = temp.toString();
         DateiSpeicherService service = new DateiSpeicherService(path, path, path, path, path, networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
 
         Projekt projekt = new Projekt();
         projekt.setId(1L);
@@ -162,9 +162,9 @@ class DateiSpeicherServiceTest {
         when(dokRepo.findByProjektId(1L)).thenReturn(java.util.Collections.emptyList());
         when(projRepo.save(any(Projekt.class))).thenReturn(projekt);
 
-        AngebotDokument angebotDok = new AngebotDokument();
-        angebotDok.setOriginalDateiname("test.pdf");
-        angebotDok.setGespeicherterDateiname("abc.pdf");
+        AnfrageDokument anfrageDok = new AnfrageDokument();
+        anfrageDok.setOriginalDateiname("test.pdf");
+        anfrageDok.setGespeicherterDateiname("abc.pdf");
 
         final ProjektDokument[] saved = new ProjektDokument[1];
         when(dokRepo.save(any(ProjektDokument.class))).thenAnswer(invocation -> {
@@ -172,7 +172,7 @@ class DateiSpeicherServiceTest {
             return saved[0];
         });
 
-        service.verschiebeAngebotsDatei(angebotDok, projekt);
+        service.verschiebeAnfragesDatei(anfrageDok, projekt);
 
         assertNotNull(saved[0]);
         assertFalse(saved[0] instanceof org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument);
@@ -188,18 +188,18 @@ class DateiSpeicherServiceTest {
 
         ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
         ProduktkategorieMapper mapper = mock(ProduktkategorieMapper.class);
 
-        Angebot angebot = new Angebot();
-        when(angebotRepo.findById(1L)).thenReturn(Optional.of(angebot));
+        Anfrage anfrage = new Anfrage();
+        when(anfrageRepo.findById(1L)).thenReturn(Optional.of(anfrage));
 
-        final AngebotDokument[] saved = new AngebotDokument[1];
-        when(angebotDokRepo.save(any(AngebotDokument.class))).thenAnswer(invocation -> {
+        final AnfrageDokument[] saved = new AnfrageDokument[1];
+        when(anfrageDokRepo.save(any(AnfrageDokument.class))).thenAnswer(invocation -> {
             saved[0] = invocation.getArgument(0);
             return saved[0];
         });
@@ -207,12 +207,12 @@ class DateiSpeicherServiceTest {
         DateiSpeicherService service = new DateiSpeicherService(
                 docRoot.toString(), offerRoot.toString(), hicadRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "zeichnung.sza", "application/octet-stream", "data".getBytes());
 
-        service.speichereAngebotsDatei(file, 1L, DokumentGruppe.DIVERSE_DOKUMENTE);
+        service.speichereAnfragesDatei(file, 1L, DokumentGruppe.DIVERSE_DOKUMENTE);
 
         assertNotNull(saved[0]);
         assertTrue(Files.exists(hicadRoot.resolve(saved[0].getGespeicherterDateiname())));
@@ -221,7 +221,7 @@ class DateiSpeicherServiceTest {
     }
 
     @Test
-    void speichertNormaleAngebotsDateiImOfferVerzeichnis() throws IOException {
+    void speichertNormaleAnfragesDateiImOfferVerzeichnis() throws IOException {
         Path docRoot = Files.createTempDirectory("docRoot");
         Path offerRoot = Files.createTempDirectory("offerRoot");
         Path hicadRoot = Files.createTempDirectory("hicadRoot");
@@ -230,18 +230,18 @@ class DateiSpeicherServiceTest {
 
         ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
         ProduktkategorieMapper mapper = mock(ProduktkategorieMapper.class);
 
-        Angebot angebot = new Angebot();
-        when(angebotRepo.findById(1L)).thenReturn(Optional.of(angebot));
+        Anfrage anfrage = new Anfrage();
+        when(anfrageRepo.findById(1L)).thenReturn(Optional.of(anfrage));
 
-        final AngebotDokument[] saved = new AngebotDokument[1];
-        when(angebotDokRepo.save(any(AngebotDokument.class))).thenAnswer(invocation -> {
+        final AnfrageDokument[] saved = new AnfrageDokument[1];
+        when(anfrageDokRepo.save(any(AnfrageDokument.class))).thenAnswer(invocation -> {
             saved[0] = invocation.getArgument(0);
             return saved[0];
         });
@@ -249,12 +249,12 @@ class DateiSpeicherServiceTest {
         DateiSpeicherService service = new DateiSpeicherService(
                 docRoot.toString(), offerRoot.toString(), hicadRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
 
         MockMultipartFile file = new MockMultipartFile(
-                "datei", "angebot.pdf", "application/pdf", "data".getBytes());
+                "datei", "anfrage.pdf", "application/pdf", "data".getBytes());
 
-        service.speichereAngebotsDatei(file, 1L, DokumentGruppe.DIVERSE_DOKUMENTE);
+        service.speichereAnfragesDatei(file, 1L, DokumentGruppe.DIVERSE_DOKUMENTE);
 
         assertNotNull(saved[0]);
         assertTrue(Files.exists(offerRoot.resolve(saved[0].getGespeicherterDateiname())));
@@ -263,7 +263,7 @@ class DateiSpeicherServiceTest {
     }
 
     @Test
-    void speichertExcelDateiImSpezialVerzeichnis_Angebot() throws IOException {
+    void speichertExcelDateiImSpezialVerzeichnis_Anfrage() throws IOException {
         Path docRoot = Files.createTempDirectory("docRoot");
         Path offerRoot = Files.createTempDirectory("offerRoot");
         Path hicadRoot = Files.createTempDirectory("hicadRoot");
@@ -272,18 +272,18 @@ class DateiSpeicherServiceTest {
 
         ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
         ProduktkategorieMapper mapper = mock(ProduktkategorieMapper.class);
 
-        Angebot angebot = new Angebot();
-        when(angebotRepo.findById(1L)).thenReturn(java.util.Optional.of(angebot));
+        Anfrage anfrage = new Anfrage();
+        when(anfrageRepo.findById(1L)).thenReturn(java.util.Optional.of(anfrage));
 
-        final AngebotDokument[] saved = new AngebotDokument[1];
-        when(angebotDokRepo.save(any(AngebotDokument.class))).thenAnswer(invocation -> {
+        final AnfrageDokument[] saved = new AnfrageDokument[1];
+        when(anfrageDokRepo.save(any(AnfrageDokument.class))).thenAnswer(invocation -> {
             saved[0] = invocation.getArgument(0);
             return saved[0];
         });
@@ -291,13 +291,13 @@ class DateiSpeicherServiceTest {
         DateiSpeicherService service = new DateiSpeicherService(
                 docRoot.toString(), offerRoot.toString(), hicadRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "tabelle.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "data".getBytes());
 
-        service.speichereAngebotsDatei(file, 1L, DokumentGruppe.DIVERSE_DOKUMENTE);
+        service.speichereAnfragesDatei(file, 1L, DokumentGruppe.DIVERSE_DOKUMENTE);
 
         assertNotNull(saved[0]);
         assertTrue(Files.exists(hicadRoot.resolve(saved[0].getGespeicherterDateiname())));
@@ -315,8 +315,8 @@ class DateiSpeicherServiceTest {
 
         ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
@@ -342,7 +342,7 @@ class DateiSpeicherServiceTest {
         DateiSpeicherService service = new DateiSpeicherService(
                 docRoot.toString(), offerRoot.toString(), hicadRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "rechnung.pdf", "application/pdf", "data".getBytes());
@@ -366,8 +366,8 @@ class DateiSpeicherServiceTest {
 
         ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
@@ -393,7 +393,7 @@ class DateiSpeicherServiceTest {
         DateiSpeicherService service = new DateiSpeicherService(
                 docRoot.toString(), offerRoot.toString(), hicadRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "eingang.pdf", "application/pdf", "data".getBytes());
@@ -415,8 +415,8 @@ class DateiSpeicherServiceTest {
 
         ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
         ProjektRepository projRepo = mock(ProjektRepository.class);
-        AngebotDokumentRepository angebotDokRepo = mock(AngebotDokumentRepository.class);
-        AngebotRepository angebotRepo = mock(AngebotRepository.class);
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
         ProduktkategorieRepository prodRepo = mock(ProduktkategorieRepository.class);
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
@@ -435,7 +435,7 @@ class DateiSpeicherServiceTest {
         DateiSpeicherService service = new DateiSpeicherService(
                 docRoot.toString(), offerRoot.toString(), hicadRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), networkUrl, "",
-                dokRepo, projRepo, angebotDokRepo, angebotRepo, prodRepo, kundeRepo, zugferd, mapper);
+                dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper);
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "mappe.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

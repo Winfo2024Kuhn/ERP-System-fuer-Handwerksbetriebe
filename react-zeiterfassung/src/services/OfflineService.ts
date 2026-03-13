@@ -434,13 +434,6 @@ export const OfflineService = {
                     console.warn(`⚠️ Sync verworfen (${res.status}): ${entry.type} - ${errorBody.error || 'Unbekannt'}`)
                     await db.delete('pending', entry.id)
                     discarded++
-                    
-                    // IMPORTANT: If a 'start' entry was discarded (e.g. server rejected it),
-                    // we must also clear the local session to stay in sync
-                    if (entry.type === 'start') {
-                        console.warn('⚠️ Start-Eintrag wurde vom Server abgelehnt - lösche lokale Session')
-                        localStorage.removeItem('zeiterfassung_active_session')
-                    }
                 } else {
                     // Server error (5xx) - transient, keep for retry
                     console.warn(`🔁 Sync retry later (${res.status}): ${entry.type}`)

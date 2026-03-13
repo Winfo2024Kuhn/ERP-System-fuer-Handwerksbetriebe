@@ -34,7 +34,7 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
 
         @Query("""
                         SELECT DISTINCT p FROM Projekt p
-                        LEFT JOIN FETCH p.kundenId k
+                        LEFT JOIN p.kundenId k
                         LEFT JOIN k.kundenEmails e
                         LEFT JOIN p.kundenEmails pe
                         WHERE LOWER(p.bauvorhaben) LIKE LOWER(CONCAT('%', :query, '%'))
@@ -69,8 +69,7 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
         @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.kundenId k LEFT JOIN FETCH k.kundenEmails")
         List<Projekt> findAllWithKundenEmails();
 
-        @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.kundenId WHERE p.kundenId.id = :kundenId")
-        List<Projekt> findByKundenId_Id(@Param("kundenId") Long kundenId);
+        List<Projekt> findByKundenId_Id(Long kundenId);
 
         List<Projekt> findByAnlegedatumBetween(LocalDate start, LocalDate ende);
 

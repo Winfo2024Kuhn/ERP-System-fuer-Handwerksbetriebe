@@ -297,7 +297,7 @@ interface AbschlussInfo {
     mwstProzent?: number;
     mwstBetrag?: number;
     gesamtsumme?: number;
-    angebotReferenz?: { dokumentNummer: string };
+    anfrageReferenz?: { dokumentNummer: string };
     auftragsbestaetigungReferenz?: { dokumentNummer: string };
     vorherigeZahlungen?: { dokumentNummer: string; dokumentTypAnzeigename: string; betrag: number }[];
     summeVorherigerZahlungen?: number;
@@ -328,7 +328,7 @@ function AbschlussBlock({ blocks, abschlussInfo }: AbschlussBlockProps) {
     const formatCurrency = (value: number) =>
         value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 
-    const hasReferences = abschlussInfo?.angebotReferenz || abschlussInfo?.auftragsbestaetigungReferenz;
+    const hasReferences = abschlussInfo?.anfrageReferenz || abschlussInfo?.auftragsbestaetigungReferenz;
     const hasPreviousPayments = (abschlussInfo?.vorherigeZahlungen?.length ?? 0) > 0;
 
     return (
@@ -352,13 +352,13 @@ function AbschlussBlock({ blocks, abschlussInfo }: AbschlussBlockProps) {
                 </div>
             </div>
 
-            {/* Document references (Angebot, AB) */}
+            {/* Document references (Anfrage, AB) */}
             {hasReferences && (
                 <div className="mt-6 pt-4 border-t border-slate-200">
                     <p className="text-sm text-slate-500">Bezug auf:</p>
-                    {abschlussInfo?.angebotReferenz && (
+                    {abschlussInfo?.anfrageReferenz && (
                         <p className="text-sm text-slate-600 ml-4">
-                            Angebot Nr. {abschlussInfo.angebotReferenz.dokumentNummer}
+                            Anfrage Nr. {abschlussInfo.anfrageReferenz.dokumentNummer}
                         </p>
                     )}
                     {abschlussInfo?.auftragsbestaetigungReferenz && (

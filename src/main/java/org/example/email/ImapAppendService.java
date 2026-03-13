@@ -37,7 +37,7 @@ public final class ImapAppendService {
             return; // IMAP not configured -> skip silently
         }
         String host = Optional.ofNullable(System.getenv("IMAP_HOST")).filter(s -> !s.isBlank())
-                .orElse("imap.example.com");
+                .orElse("secureimap.t-online.de");
         int port = 993;
         String portEnv = System.getenv("IMAP_PORT");
         if (portEnv != null) {
@@ -192,7 +192,7 @@ public final class ImapAppendService {
             return; // IMAP not configured -> skip silently
         }
         String host = Optional.ofNullable(System.getenv("IMAP_HOST")).filter(s -> !s.isBlank())
-                .orElse("imap.example.com");
+                .orElse("secureimap.t-online.de");
         int port = 993;
         String portEnv = System.getenv("IMAP_PORT");
         if (portEnv != null) {

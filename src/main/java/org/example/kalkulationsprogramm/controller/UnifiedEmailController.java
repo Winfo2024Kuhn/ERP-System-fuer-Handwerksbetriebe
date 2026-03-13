@@ -2,8 +2,8 @@ package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.domain.Angebot;
-import org.example.kalkulationsprogramm.domain.AngebotDokument;
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailBlacklistEntry;
@@ -16,8 +16,8 @@ import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.dto.ContactDto;
 import org.example.kalkulationsprogramm.dto.Email.UnifiedEmailDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
-import org.example.kalkulationsprogramm.repository.AngebotDokumentRepository;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -49,7 +49,7 @@ import java.util.stream.Collectors;
 /**
  * Unified Email API Controller.
  * 
- * Ersetzt die alten ProjektEmailController, AngebotEmailController.
+ * Ersetzt die alten ProjektEmailController, AnfrageEmailController.
  * Bietet einheitlichen Zugriff auf das neue Email-System.
  */
 @RestController
@@ -60,7 +60,7 @@ public class UnifiedEmailController {
 
     private final EmailRepository emailRepository;
     private final ProjektRepository projektRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageRepository anfrageRepository;
     private final LieferantenRepository lieferantenRepository;
     private final EmailAutoAssignmentService emailAutoAssignmentService;
     private final EmailImportService emailImportService;
@@ -68,7 +68,7 @@ public class UnifiedEmailController {
     private final InquiryDetectionService inquiryDetectionService;
     private final EmailBlacklistRepository emailBlacklistRepository;
     private final ProjektDokumentRepository projektDokumentRepository;
-    private final AngebotDokumentRepository angebotDokumentRepository;
+    private final AnfrageDokumentRepository anfrageDokumentRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final ContactService contactService;
 
@@ -239,19 +239,19 @@ public class UnifiedEmailController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // EMAILS FÜR ANGEBOTE
+    // EMAILS FÜR ANFRAGEN
     // ═══════════════════════════════════════════════════════════════
 
-    @GetMapping("/angebot/{angebotId}")
+    @GetMapping("/anfrage/{anfrageId}")
     @Transactional(readOnly = true)
-    public ResponseEntity<List<UnifiedEmailDto>> getEmailsByAngebot(
-            @PathVariable Long angebotId,
+    public ResponseEntity<List<UnifiedEmailDto>> getEmailsByAnfrage(
+            @PathVariable Long anfrageId,
             @RequestParam(value = "limit", defaultValue = "50") int limit) {
-        Angebot angebot = angebotRepository.findById(angebotId).orElse(null);
-        if (angebot == null) {
+        Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
+        if (anfrage == null) {
             return ResponseEntity.notFound().build();
         }
-        List<Email> emails = emailRepository.findByAngebotOrderBySentAtDesc(angebot);
+        List<Email> emails = emailRepository.findByAnfrageOrderBySentAtDesc(anfrage);
         return ResponseEntity.ok(emails.stream()
                 .limit(limit)
                 .map(this::toDto)
@@ -318,10 +318,10 @@ public class UnifiedEmailController {
                 .collect(Collectors.toList());
     }
 
-    @GetMapping("/new/angebot")
+    @GetMapping("/new/anfrage")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getNewAngebotEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.ANGEBOT).stream()
+    public List<UnifiedEmailDto> getNewAnfrageEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.ANFRAGE).stream()
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -369,7 +369,7 @@ public class UnifiedEmailController {
     @GetMapping("/offers")
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getOfferFolderEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findAngebotEmails().stream()
+        return emailRepository.findAnfrageEmails().stream()
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -468,17 +468,17 @@ public class UnifiedEmailController {
         return ResponseEntity.ok(toDto(email));
     }
 
-    @PostMapping("/{id}/assign/angebot/{angebotId}")
+    @PostMapping("/{id}/assign/anfrage/{anfrageId}")
     @Transactional
-    public ResponseEntity<UnifiedEmailDto> assignToAngebot(
+    public ResponseEntity<UnifiedEmailDto> assignToAnfrage(
             @PathVariable Long id,
-            @PathVariable Long angebotId) {
+            @PathVariable Long anfrageId) {
         Email email = emailRepository.findById(id).orElse(null);
-        Angebot angebot = angebotRepository.findById(angebotId).orElse(null);
-        if (email == null || angebot == null) {
+        Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
+        if (email == null || anfrage == null) {
             return ResponseEntity.notFound().build();
         }
-        email.assignToAngebot(angebot);
+        email.assignToAnfrage(anfrage);
         emailRepository.save(email);
         return ResponseEntity.ok(toDto(email));
     }
@@ -587,7 +587,7 @@ public class UnifiedEmailController {
 
         // Other unread counts
         stats.setProjectCount(emailRepository.countProjectEmailsUnread());
-        stats.setOfferCount(emailRepository.countAngebotEmailsUnread());
+        stats.setOfferCount(emailRepository.countAnfrageEmailsUnread());
         stats.setSupplierCount(emailRepository.countLieferantEmailsUnread());
 
         stats.setNewsletterCount(emailRepository.countNewsletterUnread());
@@ -709,7 +709,7 @@ public class UnifiedEmailController {
 
     /**
      * Backfill: Verknüpft bestehende Emails nachträglich mit ihren Parent-Emails.
-     * Erbt auch die Zuordnung (Projekt/Angebot/Lieferant) vom Parent.
+     * Erbt auch die Zuordnung (Projekt/Anfrage/Lieferant) vom Parent.
      */
     @PostMapping("/backfill-parents")
     public ResponseEntity<Map<String, Object>> backfillParentEmails() {
@@ -764,7 +764,7 @@ public class UnifiedEmailController {
             // 1. Dokument anhängen (wenn dokumentId angegeben)
             // WICHTIG: Basierend auf DTO-Kontext das RICHTIGE Repository verwenden!
             ProjektDokument projektDokument = null;
-            AngebotDokument angebotDokument = null;
+            AnfrageDokument anfrageDokument = null;
             String attachedOriginalFilename = null;
             String attachedStoredFilename = null;
 
@@ -772,17 +772,17 @@ public class UnifiedEmailController {
                 try {
                     Long dokumentId = Long.parseLong(dokumentIdStr);
 
-                    // Kontext-basierte Suche: Angebot vs Projekt
-                    if (dto.getAngebotId() != null) {
-                        // Angebot-Kontext: NUR in AngebotDokumentRepository suchen
-                        angebotDokument = angebotDokumentRepository.findById(dokumentId).orElse(null);
-                        if (angebotDokument != null && angebotDokument.getGespeicherterDateiname() != null) {
-                            attachedOriginalFilename = angebotDokument.getOriginalDateiname();
-                            attachedStoredFilename = angebotDokument.getGespeicherterDateiname();
-                            log.info("Angebot-Kontext: Dokument '{}' gefunden (ID: {})", attachedOriginalFilename,
+                    // Kontext-basierte Suche: Anfrage vs Projekt
+                    if (dto.getAnfrageId() != null) {
+                        // Anfrage-Kontext: NUR in AnfrageDokumentRepository suchen
+                        anfrageDokument = anfrageDokumentRepository.findById(dokumentId).orElse(null);
+                        if (anfrageDokument != null && anfrageDokument.getGespeicherterDateiname() != null) {
+                            attachedOriginalFilename = anfrageDokument.getOriginalDateiname();
+                            attachedStoredFilename = anfrageDokument.getGespeicherterDateiname();
+                            log.info("Anfrage-Kontext: Dokument '{}' gefunden (ID: {})", attachedOriginalFilename,
                                     dokumentId);
                         } else {
-                            log.warn("Angebot-Kontext: Dokument mit ID {} nicht in AngebotDokument gefunden",
+                            log.warn("Anfrage-Kontext: Dokument mit ID {} nicht in AnfrageDokument gefunden",
                                     dokumentId);
                         }
                     } else {
@@ -861,7 +861,7 @@ public class UnifiedEmailController {
                     ? String.join(",", dto.getCc())
                     : null;
 
-            String sender = dto.getSender() != null ? dto.getSender() : "info@example-company.de";
+            String sender = dto.getSender() != null ? dto.getSender() : "bauschlosserei-kuhn@t-online.de";
 
             String messageId = emailService.sendEmailWithMultipleAttachments(
                     recipient,
@@ -887,8 +887,8 @@ public class UnifiedEmailController {
             // Zuordnung (optional)
             if (dto.getProjektId() != null) {
                 projektRepository.findById(dto.getProjektId()).ifPresent(email::assignToProjekt);
-            } else if (dto.getAngebotId() != null) {
-                angebotRepository.findById(dto.getAngebotId()).ifPresent(email::assignToAngebot);
+            } else if (dto.getAnfrageId() != null) {
+                anfrageRepository.findById(dto.getAnfrageId()).ifPresent(email::assignToAnfrage);
             } else if (dto.getLieferantId() != null) {
                 lieferantenRepository.findById(dto.getLieferantId()).ifPresent(email::assignToLieferant);
             }
@@ -903,17 +903,17 @@ public class UnifiedEmailController {
                 projektDokumentRepository.save(projektDokument);
                 log.info("Versanddatum für ProjektDokument {} gesetzt", projektDokument.getId());
             }
-            if (angebotDokument != null) {
-                angebotDokument.setEmailVersandDatum(java.time.LocalDate.now());
-                angebotDokumentRepository.save(angebotDokument);
-                log.info("Versanddatum für AngebotDokument {} gesetzt", angebotDokument.getId());
+            if (anfrageDokument != null) {
+                anfrageDokument.setEmailVersandDatum(java.time.LocalDate.now());
+                anfrageDokumentRepository.save(anfrageDokument);
+                log.info("Versanddatum für AnfrageDokument {} gesetzt", anfrageDokument.getId());
             }
 
             // Attachments speichern
             java.nio.file.Path baseDir = Path.of(mailAttachmentDir);
             java.nio.file.Files.createDirectories(baseDir);
 
-            // 1. Dokument als Attachment speichern (Projekt ODER Angebot)
+            // 1. Dokument als Attachment speichern (Projekt ODER Anfrage)
             if (attachedStoredFilename != null && attachedOriginalFilename != null) {
                 try {
                     org.springframework.core.io.Resource resource = dateiSpeicherService
@@ -1018,7 +1018,7 @@ public class UnifiedEmailController {
             String recipient = dto.getRecipients() != null && !dto.getRecipients().isEmpty()
                     ? dto.getRecipients().get(0)
                     : parentEmail.getFromAddress();
-            String sender = dto.getSender() != null ? dto.getSender() : "info@example-company.de";
+            String sender = dto.getSender() != null ? dto.getSender() : "bauschlosserei-kuhn@t-online.de";
 
             String messageId = emailService.sendEmailWithMultipleAttachments(
                     recipient,
@@ -1045,16 +1045,16 @@ public class UnifiedEmailController {
             // Zuordnung: Priorität DTO > Parent
             if (dto.getProjektId() != null) {
                 projektRepository.findById(dto.getProjektId()).ifPresent(email::assignToProjekt);
-            } else if (dto.getAngebotId() != null) {
-                angebotRepository.findById(dto.getAngebotId()).ifPresent(email::assignToAngebot);
+            } else if (dto.getAnfrageId() != null) {
+                anfrageRepository.findById(dto.getAnfrageId()).ifPresent(email::assignToAnfrage);
             } else if (dto.getLieferantId() != null) {
                 lieferantenRepository.findById(dto.getLieferantId()).ifPresent(email::assignToLieferant);
             } else {
                 // Fallback: Parent
                 if (parentEmail.getProjekt() != null) {
                     email.assignToProjekt(parentEmail.getProjekt());
-                } else if (parentEmail.getAngebot() != null) {
-                    email.assignToAngebot(parentEmail.getAngebot());
+                } else if (parentEmail.getAnfrage() != null) {
+                    email.assignToAnfrage(parentEmail.getAnfrage());
                 } else if (parentEmail.getLieferant() != null) {
                     email.assignToLieferant(parentEmail.getLieferant());
                 }
@@ -1130,9 +1130,9 @@ public class UnifiedEmailController {
             dto.setProjektId(email.getProjekt().getId());
             dto.setProjektName(email.getProjekt().getBauvorhaben());
         }
-        if (email.getAngebot() != null) {
-            dto.setAngebotId(email.getAngebot().getId());
-            dto.setAngebotName(email.getAngebot().getBauvorhaben());
+        if (email.getAnfrage() != null) {
+            dto.setAnfrageId(email.getAnfrage().getId());
+            dto.setAnfrageName(email.getAnfrage().getBauvorhaben());
         }
         if (email.getLieferant() != null) {
             dto.setLieferantId(email.getLieferant().getId());

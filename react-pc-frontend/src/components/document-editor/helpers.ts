@@ -68,11 +68,11 @@ export function buildAdresse(kunde: any): string {
     return parts.join('\n');
 }
 
-export function buildAdresseFromAngebot(angebot: any): string {
+export function buildAdresseFromAnfrage(anfrage: any): string {
     const parts = [];
-    if (angebot.kundenName) parts.push(angebot.kundenName);
-    if (angebot.kundenStrasse) parts.push(angebot.kundenStrasse);
-    if (angebot.kundenPlz || angebot.kundenOrt) parts.push(`${angebot.kundenPlz || ''} ${angebot.kundenOrt || ''}`.trim());
+    if (anfrage.kundenName) parts.push(anfrage.kundenName);
+    if (anfrage.kundenStrasse) parts.push(anfrage.kundenStrasse);
+    if (anfrage.kundenPlz || anfrage.kundenOrt) parts.push(`${anfrage.kundenPlz || ''} ${anfrage.kundenOrt || ''}`.trim());
     return parts.join('\n');
 }
 

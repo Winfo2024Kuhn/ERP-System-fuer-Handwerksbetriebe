@@ -277,7 +277,7 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         // Signatur laden und Body initialisieren
         loadSignature().then(sig => {
             setSignature(sig);
-            const initialBody = `<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte erstellen Sie uns ein Angebot für die angehängten Positionen.</p><p><br></p>${sig}`;
+            const initialBody = `<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte erstellen Sie uns ein Anfrage für die angehängten Positionen.</p><p><br></p>${sig}`;
             setBody(initialBody);
         });
     }, [isOpen, projektName, loadSignature]);

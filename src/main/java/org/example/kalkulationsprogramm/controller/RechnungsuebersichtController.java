@@ -501,7 +501,7 @@ public class RechnungsuebersichtController {
                 java.nio.file.Files.deleteIfExists(tempPath);
             }
         } catch (Exception e) {
-            log.error("Fehler bei Multi-Invoice-Analyse", e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -602,7 +602,7 @@ public class RechnungsuebersichtController {
             return ResponseEntity.ok(Map.of("id", dokument.getId(), "message", "Import erfolgreich"));
 
         } catch (Exception e) {
-            log.error("Fehler beim Import", e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError()
                     .body(Map.of("message", "Fehler beim Import: " + e.getMessage()));
         }

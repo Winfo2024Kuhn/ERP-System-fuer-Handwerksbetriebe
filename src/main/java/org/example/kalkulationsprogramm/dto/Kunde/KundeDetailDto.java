@@ -22,6 +22,6 @@ public class KundeDetailDto {
     private KundeStatistikDto statistik;
     private List<KundeAggregierteEmailDto> aggregierteEmails;
     private List<KundeProjektKurzDto> projekte;
-    private List<KundeAngebotKurzDto> angebote;
+    private List<KundeAnfrageKurzDto> anfragen;
     private List<KundeKommunikationDto> kommunikation;
 }

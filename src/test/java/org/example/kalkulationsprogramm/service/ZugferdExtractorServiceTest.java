@@ -66,7 +66,7 @@ class ZugferdExtractorServiceTest {
 
         @Test
         void liefertLeereArtikelpositionenBeiUngueltigemPdf() {
-            ZugferdDaten result = service.extract("nicht_existiert.pdf", "angebot_xyz.pdf");
+            ZugferdDaten result = service.extract("nicht_existiert.pdf", "anfrage_xyz.pdf");
 
             assertThat(result.getArtikelPositionen()).isNotNull().isEmpty();
         }

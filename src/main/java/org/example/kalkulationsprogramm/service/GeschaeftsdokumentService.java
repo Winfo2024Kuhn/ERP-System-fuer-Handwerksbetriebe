@@ -258,7 +258,7 @@ public class GeschaeftsdokumentService {
             vorgaengerInfo.setBetragBrutto(current.getBetragBrutto());
 
             if (TYP_ANGEBOT == current.getDokumenttyp()) {
-                info.setAngebotReferenz(vorgaengerInfo);
+                info.setAnfrageReferenz(vorgaengerInfo);
             } else if (TYP_AB == current.getDokumenttyp()) {
                 info.setAuftragsbestaetigungReferenz(vorgaengerInfo);
             }

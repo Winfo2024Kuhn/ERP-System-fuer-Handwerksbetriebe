@@ -2252,6 +2252,15 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             toast.error('Bitte geben Sie einen gültigen Betrag ein.');
                                             return;
                                         }
+                                        // Abschlag-Eingabemodus und Originalwert speichern
+                                        positionenJson = JSON.stringify({
+                                            blocks: [],
+                                            globalRabatt: 0,
+                                            abschlagInfo: {
+                                                modus: abschlagsEingabeModus,
+                                                eingabeWert: parseFloat(abschlagsBetrag)
+                                            }
+                                        });
                                     } else if (rechnungTyp === 'SCHLUSSRECHNUNG' && abrechnungsverlauf) {
                                         betrag = abrechnungsverlauf.restbetrag;
                                     } else if (rechnungTyp === 'RECHNUNG' && rechnungBasisDok.betragNetto) {

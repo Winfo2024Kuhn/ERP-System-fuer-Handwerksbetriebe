@@ -1,24 +1,17 @@
 package org.example.kalkulationsprogramm.repository;
 
-import java.util.List;
-import java.util.Optional;
-
-import org.example.kalkulationsprogramm.domain.Angebot;
-import org.example.kalkulationsprogramm.domain.Email;
-import org.example.kalkulationsprogramm.domain.EmailDirection;
-import org.example.kalkulationsprogramm.domain.EmailProcessingStatus;
-import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
-import org.example.kalkulationsprogramm.domain.Lieferanten;
-import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.*;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+import java.util.Optional;
+
 @Repository
 public interface EmailRepository extends JpaRepository<Email, Long> {
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.deletedAt IS NOT NULL ORDER BY e.deletedAt DESC")
   List<Email> findByDeletedAtIsNotNullOrderByDeletedAtDesc();
 
   long countByDeletedAtIsNotNullAndIsReadFalse();
@@ -33,8 +26,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   List<Email> findByDirection(EmailDirection direction);
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.direction = :direction ORDER BY e.sentAt DESC")
-  List<Email> findByDirectionOrderBySentAtDesc(@Param("direction") EmailDirection direction);
+  List<Email> findByDirectionOrderBySentAtDesc(EmailDirection direction);
 
   List<Email> findBySenderDomain(String senderDomain);
 
@@ -47,18 +39,16 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.projekt = :projekt ORDER BY e.sentAt DESC")
   List<Email> findByProjektOrderBySentAtDesc(@Param("projekt") Projekt projekt);
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.angebot = :angebot ORDER BY e.sentAt DESC")
-  List<Email> findByAngebotOrderBySentAtDesc(@Param("angebot") Angebot angebot);
+  List<Email> findByAnfrageOrderBySentAtDesc(Anfrage anfrage);
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.lieferant = :lieferant ORDER BY e.sentAt DESC")
-  List<Email> findByLieferantOrderBySentAtDesc(@Param("lieferant") Lieferanten lieferant);
+  List<Email> findByLieferantOrderBySentAtDesc(Lieferanten lieferant);
 
   List<Email> findByProjektInOrderBySentAtDesc(java.util.Collection<Projekt> projekte);
 
-  List<Email> findByAngebotInOrderBySentAtDesc(java.util.Collection<Angebot> angebote);
+  List<Email> findByAnfrageInOrderBySentAtDesc(java.util.Collection<Anfrage> anfragen);
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.lieferant.id = :lieferantId ORDER BY e.sentAt DESC")
-  List<Email> findByLieferantIdOrderBySentAtDesc(@Param("lieferantId") Long lieferantId);
+  // ID-based methods for better performance/flexibility
+  List<Email> findByLieferantIdOrderBySentAtDesc(Long lieferantId);
 
   /**
    * Findet alle Emails eines Lieferanten mit vorgeladenen Attachments.
@@ -72,24 +62,23 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   Optional<Email> findFirstByLieferantIdOrderBySentAtDesc(Long lieferantId);
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.zuordnungTyp = :typ ORDER BY e.sentAt DESC")
-  List<Email> findByZuordnungTypOrderBySentAtDesc(@Param("typ") EmailZuordnungTyp typ);
+  List<Email> findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp typ);
 
   /**
    * Findet alle unzugeordneten Emails von BEKANNTEN Kunden
-   * (deren Absender-Adresse EXAKT in kunden_emails, angebot_kunden_emails oder
+   * (deren Absender-Adresse EXAKT in kunden_emails, anfrage_kunden_emails oder
    * projekt_kunden_emails vorkommt).
    * Filtert Newsletter-Mails heraus.
    * Zusätzlich: Email-Sendedatum muss innerhalb von ±1 Monat zum Anlegedatum oder
    * Abschlussdatum
-   * eines passenden Projekts oder Angebots liegen (Karenzzeit).
+   * eines passenden Projekts oder Anfrages liegen (Karenzzeit).
    */
   @Query(value = """
       SELECT DISTINCT e.* FROM email e
       WHERE e.zuordnung_typ = 'KEINE'
         AND e.direction = 'IN'
         AND e.projekt_id IS NULL
-        AND e.angebot_id IS NULL
+        AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
         AND e.deleted_at IS NULL
         AND (e.is_spam IS NULL OR e.is_spam = FALSE)
@@ -106,10 +95,10 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
                 )
             )
             OR
-            -- Angebot-Kunden-Emails mit ±1 Monat Karenzzeit
+            -- Anfrage-Kunden-Emails mit ±1 Monat Karenzzeit
             EXISTS (
-                SELECT 1 FROM angebot_kunden_emails ake
-                JOIN angebot a ON ake.angebot_id = a.id
+                SELECT 1 FROM anfrage_kunden_emails ake
+                JOIN anfrage a ON ake.anfrage_id = a.id
                 WHERE (LOWER(ake.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ake.email), '>%'))
                 AND (
                     DATE(e.sent_at) BETWEEN DATE_SUB(a.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(a.anlegedatum, CURRENT_DATE()), INTERVAL 1 MONTH)
@@ -133,14 +122,14 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   /**
    * Zählt alle unzugeordneten Emails von BEKANNTEN Kunden.
-   * Mit ±1 Monat Karenzzeit bezogen auf Projekt/Angebot-Datumsangaben.
+   * Mit ±1 Monat Karenzzeit bezogen auf Projekt/Anfrage-Datumsangaben.
    */
   @Query(value = """
       SELECT COUNT(DISTINCT e.id) FROM email e
       WHERE e.zuordnung_typ = 'KEINE'
         AND e.direction = 'IN'
         AND e.projekt_id IS NULL
-        AND e.angebot_id IS NULL
+        AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
         AND e.deleted_at IS NULL
         AND e.is_read = false
@@ -155,8 +144,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
                 AND DATE(e.sent_at) BETWEEN DATE_SUB(p.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(p.abschlussdatum, p.anlegedatum), INTERVAL 1 MONTH)
             )
             OR EXISTS (
-                SELECT 1 FROM angebot_kunden_emails ake
-                JOIN angebot a ON ake.angebot_id = a.id
+                SELECT 1 FROM anfrage_kunden_emails ake
+                JOIN anfrage a ON ake.anfrage_id = a.id
                 WHERE (LOWER(ake.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ake.email), '>%'))
                 AND DATE(e.sent_at) BETWEEN DATE_SUB(a.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(a.anlegedatum, CURRENT_DATE()), INTERVAL 1 MONTH)
             )
@@ -243,7 +232,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.direction = 'IN'
         AND e.zuordnung_typ = 'KEINE'
         AND e.projekt_id IS NULL
-        AND e.angebot_id IS NULL
+        AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
       ORDER BY e.sent_at DESC
       """, nativeQuery = true)
@@ -261,7 +250,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.direction = 'IN'
         AND e.zuordnung_typ = 'KEINE'
         AND e.projekt_id IS NULL
-        AND e.angebot_id IS NULL
+        AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
       """, nativeQuery = true)
   long countPotentialInquiries();
@@ -276,7 +265,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.deletedAt IS NULL
         AND e.direction = org.example.kalkulationsprogramm.domain.EmailDirection.IN
         AND e.projekt IS NULL
-        AND e.angebot IS NULL
+        AND e.anfrage IS NULL
         AND e.lieferant IS NULL
       ORDER BY e.sentAt DESC
       """)
@@ -327,7 +316,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   /**
    * Findet alle Spam-Emails.
    */
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.isSpam = true AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT e FROM Email e WHERE e.isSpam = true AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findSpam();
 
   /**
@@ -346,7 +335,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   /**
    * Findet alle Newsletter.
    */
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT e FROM Email e WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findNewsletter();
 
   /**
@@ -365,7 +354,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.deletedAt IS NULL
         AND e.direction = org.example.kalkulationsprogramm.domain.EmailDirection.IN
         AND e.projekt IS NULL
-        AND e.angebot IS NULL
+        AND e.anfrage IS NULL
         AND e.lieferant IS NULL
       ORDER BY e.sentAt DESC
       """)
@@ -382,7 +371,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Note: "Nicht zugeordnet" emails (known customers) still appear here
    * because they are a subset, not a separate folder.
    */
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments " +
+  @Query("SELECT e FROM Email e " +
       "WHERE e.direction = 'IN' " +
       "AND e.zuordnungTyp = 'KEINE' " +
       "AND e.deletedAt IS NULL " +
@@ -390,7 +379,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       "AND e.isNewsletter = false " +
       "AND e.isPotentialInquiry = false " +
       "AND e.projekt IS NULL " +
-      "AND e.angebot IS NULL " +
+      "AND e.anfrage IS NULL " +
       "AND e.lieferant IS NULL " +
       "ORDER BY e.sentAt DESC")
   List<Email> findInboxFiltered();
@@ -408,7 +397,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       "AND e.isPotentialInquiry = false " +
       "AND e.isRead = false " +
       "AND e.projekt IS NULL " +
-      "AND e.angebot IS NULL " +
+      "AND e.anfrage IS NULL " +
       "AND e.lieferant IS NULL")
   long countInboxFilteredUnread();
 
@@ -416,19 +405,19 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   // NEW FOLDERS: PROJECT, OFFER, SUPPLIER
   // ═══════════════════════════════════════════════════════════════
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findProjectEmails();
 
   @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL AND e.isRead = false")
   long countProjectEmailsUnread();
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.zuordnungTyp = 'ANGEBOT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
-  List<Email> findAngebotEmails();
+  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  List<Email> findAnfrageEmails();
 
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'ANGEBOT' AND e.deletedAt IS NULL AND e.isRead = false")
-  long countAngebotEmailsUnread();
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.deletedAt IS NULL AND e.isRead = false")
+  long countAnfrageEmailsUnread();
 
-  @Query("SELECT DISTINCT e FROM Email e LEFT JOIN FETCH e.attachments WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findLieferantEmails();
 
   @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL AND e.isRead = false")

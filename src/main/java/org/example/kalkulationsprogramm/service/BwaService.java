@@ -1,8 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import java.util.List;
-import java.util.stream.Collectors;
-
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.BwaPosition;
 import org.example.kalkulationsprogramm.domain.BwaUpload;
 import org.example.kalkulationsprogramm.dto.BwaPositionDto;
@@ -11,8 +10,9 @@ import org.example.kalkulationsprogramm.repository.BwaUploadRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -43,7 +43,11 @@ public class BwaService {
 
     @Transactional(readOnly = true)
     public List<Integer> findAvailableYears() {
-        return bwaUploadRepository.findDistinctJahre();
+        return bwaUploadRepository.findAll().stream()
+                .map(BwaUpload::getJahr)
+                .distinct()
+                .sorted(Comparator.reverseOrder())
+                .collect(Collectors.toList());
     }
 
     private BwaUploadDto toDto(BwaUpload b) {

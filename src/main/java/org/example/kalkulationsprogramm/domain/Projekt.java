@@ -97,7 +97,7 @@ public class Projekt {
     private List<ProjektDokument> projektDokument = new ArrayList<>();
 
     @OneToMany(mappedBy = "projekt", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Angebot> angebote = new ArrayList<>();
+    private List<Anfrage> anfragen = new ArrayList<>();
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "kundenId")

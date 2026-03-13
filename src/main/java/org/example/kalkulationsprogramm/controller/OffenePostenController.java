@@ -1,16 +1,25 @@
 package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.example.kalkulationsprogramm.domain.Abteilung;
-import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
-import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import lombok.extern.slf4j.Slf4j;
+import org.example.kalkulationsprogramm.domain.*;
+import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +34,7 @@ import java.util.stream.Collectors;
  * - Abteilung 2 (Buchhaltung): Sieht NUR genehmigte Rechnungen
  * - Andere Abteilungen: Kein Zugriff
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/offene-posten")
 @RequiredArgsConstructor
@@ -35,6 +45,13 @@ public class OffenePostenController {
 
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
+    private final GeminiDokumentAnalyseService geminiDokumentAnalyseService;
+    private final ProjektRepository projektRepository;
+    private final ProjektDokumentRepository projektDokumentRepository;
+    private final DateiSpeicherService dateiSpeicherService;
+
+    @Value("${file.upload-dir}")
+    private String uploadDir;
 
     /**
      * Gibt alle offenen (unbezahlten) Eingangsrechnungen zurück.
@@ -199,6 +216,136 @@ public class OffenePostenController {
 
         LieferantGeschaeftsdokument saved = geschaeftsdokumentRepository.save(gd);
         return ResponseEntity.ok(toDto(saved, darfGenehmigen));
+    }
+
+    // ==================== Ausgangsrechnungen manuell ====================
+
+    /**
+     * Analysiert eine hochgeladene Datei per Gemini AI und gibt die extrahierten
+     * Rechnungsdaten zurück (Vorschau, ohne Speicherung).
+     */
+    @PostMapping("/ausgang/analyze")
+    public ResponseEntity<?> analyzeAusgangsrechnung(
+            @RequestParam("datei") MultipartFile datei) {
+        if (datei.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Keine Datei hochgeladen"));
+        }
+        try {
+            // Temporäre Datei erstellen für Analyse
+            String originalFilename = StringUtils.cleanPath(
+                    datei.getOriginalFilename() != null ? datei.getOriginalFilename() : "upload.pdf");
+            Path tempDir = Files.createTempDirectory("ausgang-analyze-");
+            Path tempFile = tempDir.resolve(originalFilename);
+            datei.transferTo(tempFile.toFile());
+
+            try {
+                LieferantDokumentDto.AnalyzeResponse result =
+                        geminiDokumentAnalyseService.analyzeFile(tempFile, originalFilename);
+                if (result == null) {
+                    return ResponseEntity.ok(Map.of("error", "Analyse fehlgeschlagen - bitte manuell ausfüllen"));
+                }
+                return ResponseEntity.ok(result);
+            } finally {
+                // Temp-Dateien aufräumen
+                Files.deleteIfExists(tempFile);
+                Files.deleteIfExists(tempDir);
+            }
+        } catch (Exception e) {
+            log.error("Fehler bei Ausgangsrechnung-Analyse: {}", e.getMessage(), e);
+            return ResponseEntity.ok(Map.of("error", "Analyse fehlgeschlagen: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Importiert eine manuell hochgeladene Ausgangsrechnung als offenen Posten.
+     * Erstellt ein ProjektGeschaeftsdokument mit Zuordnung zum Projekt.
+     */
+    @PostMapping("/ausgang/import")
+    @Transactional
+    public ResponseEntity<?> importAusgangsrechnung(
+            @RequestParam("datei") MultipartFile datei,
+            @RequestParam("projektId") Long projektId,
+            @RequestParam("rechnungsnummer") String rechnungsnummer,
+            @RequestParam(value = "rechnungsdatum", required = false) String rechnungsdatumStr,
+            @RequestParam(value = "faelligkeitsdatum", required = false) String faelligkeitsdatumStr,
+            @RequestParam(value = "betragBrutto", required = false) String betragBruttoStr,
+            @RequestParam(value = "geschaeftsdokumentart", required = false, defaultValue = "Rechnung") String geschaeftsdokumentart) {
+
+        if (datei.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Keine Datei hochgeladen"));
+        }
+        if (!StringUtils.hasText(rechnungsnummer)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Rechnungsnummer ist erforderlich"));
+        }
+
+        Projekt projekt = projektRepository.findById(projektId).orElse(null);
+        if (projekt == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Projekt nicht gefunden"));
+        }
+
+        // Duplikat-Prüfung
+        if (projektDokumentRepository.existsByDokumentid(rechnungsnummer)) {
+            return ResponseEntity.status(409).body(Map.of("error",
+                    "Rechnungsnummer '" + rechnungsnummer + "' existiert bereits"));
+        }
+
+        try {
+            // Datei speichern
+            ProjektDokument saved = dateiSpeicherService.speichereDatei(
+                    datei, projektId, DokumentGruppe.GESCHAEFTSDOKUMENTE);
+
+            // Falls speichereDatei kein ProjektGeschaeftsdokument erstellt hat (z.B. bei Nicht-ZUGFeRD),
+            // müssen wir es zu einem upgraden
+            ProjektGeschaeftsdokument geschaeftsdokument;
+            if (saved instanceof ProjektGeschaeftsdokument existing) {
+                geschaeftsdokument = existing;
+            } else {
+                // Bestehenden Eintrag löschen und als Geschäftsdokument neu anlegen
+                String gespeicherterDateiname = saved.getGespeicherterDateiname();
+                String originalDateiname = saved.getOriginalDateiname();
+                String dateityp = saved.getDateityp();
+                Long dateiGroesse = saved.getDateigroesse();
+                projektDokumentRepository.delete(saved);
+                projektDokumentRepository.flush();
+
+                geschaeftsdokument = new ProjektGeschaeftsdokument();
+                geschaeftsdokument.setProjekt(projekt);
+                geschaeftsdokument.setOriginalDateiname(originalDateiname);
+                geschaeftsdokument.setGespeicherterDateiname(gespeicherterDateiname);
+                geschaeftsdokument.setDateityp(dateityp);
+                geschaeftsdokument.setDateigroesse(dateiGroesse);
+                geschaeftsdokument.setUploadDatum(LocalDate.now());
+                geschaeftsdokument.setDokumentGruppe(DokumentGruppe.GESCHAEFTSDOKUMENTE);
+            }
+
+            // Metadaten setzen
+            geschaeftsdokument.setDokumentid(rechnungsnummer);
+            geschaeftsdokument.setGeschaeftsdokumentart(geschaeftsdokumentart);
+            geschaeftsdokument.setBezahlt(false);
+
+            if (StringUtils.hasText(rechnungsdatumStr)) {
+                geschaeftsdokument.setRechnungsdatum(LocalDate.parse(rechnungsdatumStr));
+            }
+            if (StringUtils.hasText(faelligkeitsdatumStr)) {
+                geschaeftsdokument.setFaelligkeitsdatum(LocalDate.parse(faelligkeitsdatumStr));
+            }
+            if (StringUtils.hasText(betragBruttoStr)) {
+                geschaeftsdokument.setBruttoBetrag(new BigDecimal(betragBruttoStr));
+            }
+
+            ProjektGeschaeftsdokument result = projektDokumentRepository.save(geschaeftsdokument);
+            log.info("Manuelle Ausgangsrechnung importiert: {} für Projekt {} (ID: {})",
+                    rechnungsnummer, projekt.getBauvorhaben(), result.getId());
+
+            return ResponseEntity.ok(Map.of(
+                    "id", result.getId(),
+                    "rechnungsnummer", rechnungsnummer,
+                    "projektId", projektId
+            ));
+        } catch (Exception e) {
+            log.error("Fehler beim Import der Ausgangsrechnung: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Import fehlgeschlagen: " + e.getMessage()));
+        }
     }
 
     // ==================== Hilfsmethoden ====================

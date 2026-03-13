@@ -23,7 +23,7 @@ public interface EmailAttachmentRepository extends JpaRepository<EmailAttachment
 
   /**
    * Findet alle PDF/XML-Attachments die noch nicht KI-verarbeitet wurden.
-   * Diese sind Kandidaten für die Rechnungs-/Angebots-Erkennung.
+   * Diese sind Kandidaten für die Rechnungs-/Anfrages-Erkennung.
    */
   @Query("""
       SELECT a FROM EmailAttachment a

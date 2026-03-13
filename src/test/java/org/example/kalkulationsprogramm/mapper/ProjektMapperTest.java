@@ -16,7 +16,7 @@ import static org.mockito.Mockito.mock;
 class ProjektMapperTest {
 
     private final ProjektMapper mapper = new ProjektMapper(new ProduktkategorieMapper(),
-            new AngebotMapper(), mock(KundeMapper.class));
+            new AnfrageMapper(), mock(KundeMapper.class));
 
     @Test
     void mapsKilogrammOnArtikel() {

@@ -79,13 +79,13 @@ public class EmailTemplateController {
                             "MAHNUNG");
                 }
                 case "ANGEBOT" -> {
-                    String angebotsnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
+                    String anfragesnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
                     String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
                     content = EmailService.buildOfferEmail(
                             anrede,
                             kundenName,
                             bauvorhaben,
-                            angebotsnummer,
+                            anfragesnummer,
                             benutzer,
                             null);
                 }

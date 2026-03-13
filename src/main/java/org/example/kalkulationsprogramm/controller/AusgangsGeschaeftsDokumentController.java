@@ -56,11 +56,11 @@ public class AusgangsGeschaeftsDokumentController {
     }
 
     /**
-     * Alle Dokumente für ein Angebot abrufen.
+     * Alle Dokumente für ein Anfrage abrufen.
      */
-    @GetMapping("/angebot/{angebotId}")
-    public ResponseEntity<List<AusgangsGeschaeftsDokumentResponseDto>> getByAngebot(@PathVariable Long angebotId) {
-        return ResponseEntity.ok(service.findByAngebot(angebotId));
+    @GetMapping("/anfrage/{anfrageId}")
+    public ResponseEntity<List<AusgangsGeschaeftsDokumentResponseDto>> getByAnfrage(@PathVariable Long anfrageId) {
+        return ResponseEntity.ok(service.findByAnfrage(anfrageId));
     }
 
     /**

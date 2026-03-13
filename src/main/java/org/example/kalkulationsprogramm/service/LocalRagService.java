@@ -54,7 +54,7 @@ public class LocalRagService {
      */
     private static final Map<String, List<String>> ROUTE_TO_FILE_KEYWORDS = Map.ofEntries(
             Map.entry("/projekte", List.of("ProjektEditor")),
-            Map.entry("/angebote", List.of("AngebotEditor")),
+            Map.entry("/anfragen", List.of("AnfrageEditor")),
             Map.entry("/kunden", List.of("Kundeneditor")),
             Map.entry("/lieferanten", List.of("LieferantenEditor")),
             Map.entry("/artikel", List.of("ArtikelEditor")),

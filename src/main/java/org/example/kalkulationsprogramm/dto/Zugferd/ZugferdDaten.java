@@ -19,7 +19,7 @@ public class ZugferdDaten {
     private BigDecimal betrag;
     private String anrede;
     private String kundennummer;
-    private String geschaeftsdokumentart; // Rechnung, Angebot, Auftragsbestätigung
+    private String geschaeftsdokumentart; // Rechnung, Anfrage, Auftragsbestätigung
     private Long referenzDokumentId;
     private String mahnstufe;
 

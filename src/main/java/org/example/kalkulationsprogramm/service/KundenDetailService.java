@@ -3,7 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Kunde.*;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.jsoup.Jsoup;
@@ -27,12 +27,12 @@ public class KundenDetailService {
     private static final Logger LOG = LoggerFactory.getLogger(KundenDetailService.class);
     private static final String QUELLE_STAMMDATEN = "STAMMDATEN";
     private static final String QUELLE_PROJEKT = "PROJEKT";
-    private static final String QUELLE_ANGEBOT = "ANGEBOT";
+    private static final String QUELLE_ANFRAGE = "ANFRAGE";
     private static final int MAX_KOMMUNIKATION_EINTRAEGE = 250;
 
     private final KundeRepository kundeRepository;
     private final ProjektRepository projektRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageRepository anfrageRepository;
     private final org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
@@ -42,18 +42,18 @@ public class KundenDetailService {
         return kundeRepository.findById(kundenId)
                 .map(kunde -> {
                     List<Projekt> projekte = projektRepository.findByKundenId_Id(kunde.getId());
-                    List<Angebot> angebote = loadAngeboteForKunde(kunde, projekte);
+                    List<Anfrage> anfragen = loadAnfragenForKunde(kunde, projekte);
                     
                     // Lade Emails effizient über Repository
                     List<Email> projektEmails = projekte.isEmpty() ? List.of() : emailRepository.findByProjektInOrderBySentAtDesc(projekte);
-                    List<Email> angebotEmails = angebote.isEmpty() ? List.of() : emailRepository.findByAngebotInOrderBySentAtDesc(angebote);
+                    List<Email> anfrageEmails = anfragen.isEmpty() ? List.of() : emailRepository.findByAnfrageInOrderBySentAtDesc(anfragen);
                     
-                    return buildDetailDto(kunde, projekte, angebote, projektEmails, angebotEmails);
+                    return buildDetailDto(kunde, projekte, anfragen, projektEmails, anfrageEmails);
                 });
     }
 
-    private KundeDetailDto buildDetailDto(Kunde kunde, List<Projekt> projekte, List<Angebot> angebote,
-                                          List<Email> projektEmails, List<Email> angebotEmails) {
+    private KundeDetailDto buildDetailDto(Kunde kunde, List<Projekt> projekte, List<Anfrage> anfragen,
+                                          List<Email> projektEmails, List<Email> anfrageEmails) {
         KundeDetailDto dto = new KundeDetailDto();
         dto.setId(kunde.getId());
         dto.setKundennummer(kunde.getKundennummer());
@@ -67,38 +67,38 @@ public class KundenDetailService {
         dto.setMobiltelefon(kunde.getMobiltelefon());
         dto.setKundenEmails(new ArrayList<>(Objects.requireNonNullElse(kunde.getKundenEmails(), List.of())));
         dto.setProjekte(mapProjekte(projekte));
-        dto.setAngebote(mapAngebote(angebote));
-        dto.setAggregierteEmails(aggregateEmails(kunde, projekte, angebote));
+        dto.setAnfragen(mapAnfragen(anfragen));
+        dto.setAggregierteEmails(aggregateEmails(kunde, projekte, anfragen));
         try {
-            dto.setKommunikation(buildKommunikationsHistorie(projektEmails, angebotEmails));
+            dto.setKommunikation(buildKommunikationsHistorie(projektEmails, anfrageEmails));
         } catch (Exception ex) {
             LOG.warn("Kommunikationsverlauf für Kunden {} konnte nicht erzeugt werden: {}", kunde.getId(),
                     ex.getMessage(), ex);
             dto.setKommunikation(List.of());
         }
-        dto.setStatistik(buildStatistik(projekte, angebote, dto.getAggregierteEmails()));
+        dto.setStatistik(buildStatistik(projekte, anfragen, dto.getAggregierteEmails()));
         return dto;
     }
 
-    private List<Angebot> loadAngeboteForKunde(Kunde kunde, List<Projekt> projekte) {
+    private List<Anfrage> loadAnfragenForKunde(Kunde kunde, List<Projekt> projekte) {
         Set<Long> seenIds = new LinkedHashSet<>();
-        List<Angebot> result = new ArrayList<>();
+        List<Anfrage> result = new ArrayList<>();
         List<Long> projektIds = Objects.requireNonNullElse(projekte, List.<Projekt>of()).stream()
                 .map(Projekt::getId)
                 .filter(Objects::nonNull)
                 .toList();
         if (!projektIds.isEmpty()) {
-            angebotRepository.findByProjektIdIn(projektIds).forEach(angebot -> {
-                if (angebot.getId() != null && seenIds.add(angebot.getId())) {
-                    result.add(angebot);
+            anfrageRepository.findByProjektIdIn(projektIds).forEach(anfrage -> {
+                if (anfrage.getId() != null && seenIds.add(anfrage.getId())) {
+                    result.add(anfrage);
                 }
             });
         }
         if (StringUtils.hasText(kunde.getKundennummer())) {
-            angebotRepository.findByKunde_KundennummerIgnoreCase(kunde.getKundennummer())
-                    .forEach(angebot -> {
-                        if (angebot.getId() != null && seenIds.add(angebot.getId())) {
-                            result.add(angebot);
+            anfrageRepository.findByKunde_KundennummerIgnoreCase(kunde.getKundennummer())
+                    .forEach(anfrage -> {
+                        if (anfrage.getId() != null && seenIds.add(anfrage.getId())) {
+                            result.add(anfrage);
                         }
                     });
         }
@@ -127,47 +127,47 @@ public class KundenDetailService {
                 .collect(Collectors.toList());
     }
 
-    private List<KundeAngebotKurzDto> mapAngebote(List<Angebot> angebote) {
-        if (angebote == null) {
+    private List<KundeAnfrageKurzDto> mapAnfragen(List<Anfrage> anfragen) {
+        if (anfragen == null) {
             return List.of();
         }
-        return angebote.stream()
-                .sorted(Comparator.comparing(Angebot::getAnlegedatum, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(angebot -> {
-                    KundeAngebotKurzDto dto = new KundeAngebotKurzDto();
-                    dto.setId(angebot.getId());
-                    dto.setBauvorhaben(angebot.getBauvorhaben());
-                    dto.setAngebotsnummer(resolveAngebotsnummer(angebot));
-                    dto.setAnlegedatum(angebot.getAnlegedatum());
-                    dto.setBetrag(angebot.getBetrag());
+        return anfragen.stream()
+                .sorted(Comparator.comparing(Anfrage::getAnlegedatum, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(anfrage -> {
+                    KundeAnfrageKurzDto dto = new KundeAnfrageKurzDto();
+                    dto.setId(anfrage.getId());
+                    dto.setBauvorhaben(anfrage.getBauvorhaben());
+                    dto.setAnfragesnummer(resolveAnfragesnummer(anfrage));
+                    dto.setAnlegedatum(anfrage.getAnlegedatum());
+                    dto.setBetrag(anfrage.getBetrag());
                     return dto;
                 })
                 .collect(Collectors.toList());
     }
 
-    private String resolveAngebotsnummer(Angebot angebot) {
+    private String resolveAnfragesnummer(Anfrage anfrage) {
         // Priorität: AusgangsGeschaeftsDokument (neues System)
-        String nummerNeu = ausgangsGeschaeftsDokumentService.resolveAngebotsnummer(angebot.getId());
+        String nummerNeu = ausgangsGeschaeftsDokumentService.resolveAnfragesnummer(anfrage.getId());
         if (nummerNeu != null) {
             return nummerNeu;
         }
-        // Fallback: altes System (AngebotGeschaeftsdokument)
-        if (angebot.getDokumente() == null) {
+        // Fallback: altes System (AnfrageGeschaeftsdokument)
+        if (anfrage.getDokumente() == null) {
             return null;
         }
-        return angebot.getDokumente().stream()
-                .filter(AngebotGeschaeftsdokument.class::isInstance)
-                .map(AngebotGeschaeftsdokument.class::cast)
+        return anfrage.getDokumente().stream()
+                .filter(AnfrageGeschaeftsdokument.class::isInstance)
+                .map(AnfrageGeschaeftsdokument.class::cast)
                 .filter(doc -> doc.getGeschaeftsdokumentart() != null &&
                         doc.getGeschaeftsdokumentart().toLowerCase(Locale.GERMAN).contains("angebot"))
-                .map(AngebotGeschaeftsdokument::getDokumentid)
+                .map(AnfrageGeschaeftsdokument::getDokumentid)
                 .filter(StringUtils::hasText)
                 .findFirst()
                 .orElse(null);
     }
 
     private List<KundeAggregierteEmailDto> aggregateEmails(Kunde kunde, List<Projekt> projekte,
-            List<Angebot> angebote) {
+            List<Anfrage> anfragen) {
         Map<String, KundeAggregierteEmailDto> map = new LinkedHashMap<>();
         addEmails(map, Objects.requireNonNullElse(kunde.getKundenEmails(), List.of()),
                 QUELLE_STAMMDATEN, kunde.getId(), "Stammdaten", true);
@@ -176,16 +176,16 @@ public class KundenDetailService {
             String beschreibung = buildProjektBeschreibung(projekt);
             addEmails(map, emails, QUELLE_PROJEKT, projekt.getId(), beschreibung, false);
         }
-        for (Angebot angebot : Objects.requireNonNullElse(angebote, List.<Angebot>of())) {
+        for (Anfrage anfrage : Objects.requireNonNullElse(anfragen, List.<Anfrage>of())) {
             List<String> emails = new ArrayList<>();
-            if (angebot.getKunde() != null && angebot.getKunde().getKundenEmails() != null) {
-                emails.addAll(angebot.getKunde().getKundenEmails());
+            if (anfrage.getKunde() != null && anfrage.getKunde().getKundenEmails() != null) {
+                emails.addAll(anfrage.getKunde().getKundenEmails());
             }
-            if (angebot.getKundenEmails() != null) {
-                emails.addAll(angebot.getKundenEmails());
+            if (anfrage.getKundenEmails() != null) {
+                emails.addAll(anfrage.getKundenEmails());
             }
-            String beschreibung = buildAngebotBeschreibung(angebot);
-            addEmails(map, emails, QUELLE_ANGEBOT, angebot.getId(), beschreibung, false);
+            String beschreibung = buildAnfrageBeschreibung(anfrage);
+            addEmails(map, emails, QUELLE_ANFRAGE, anfrage.getId(), beschreibung, false);
         }
         return new ArrayList<>(map.values());
     }
@@ -231,21 +231,21 @@ public class KundenDetailService {
         return "Projekt #" + projekt.getId();
     }
 
-    private String buildAngebotBeschreibung(Angebot angebot) {
-        if (angebot == null) {
-            return "Angebot";
+    private String buildAnfrageBeschreibung(Anfrage anfrage) {
+        if (anfrage == null) {
+            return "Anfrage";
         }
-        String nummer = resolveAngebotsnummer(angebot);
+        String nummer = resolveAnfragesnummer(anfrage);
         if (StringUtils.hasText(nummer)) {
-            return "Angebot " + nummer;
+            return "Anfrage " + nummer;
         }
-        if (StringUtils.hasText(angebot.getBauvorhaben())) {
-            return angebot.getBauvorhaben();
+        if (StringUtils.hasText(anfrage.getBauvorhaben())) {
+            return anfrage.getBauvorhaben();
         }
-        return "Angebot #" + angebot.getId();
+        return "Anfrage #" + anfrage.getId();
     }
 
-    private List<KundeKommunikationDto> buildKommunikationsHistorie(List<Email> projektEmails, List<Email> angebotEmails) {
+    private List<KundeKommunikationDto> buildKommunikationsHistorie(List<Email> projektEmails, List<Email> anfrageEmails) {
         List<KundeKommunikationDto> timeline = new ArrayList<>();
         
         for (Email email : projektEmails) {
@@ -253,9 +253,9 @@ public class KundenDetailService {
              timeline.add(createKommunikationDto(email, QUELLE_PROJEKT, email.getProjekt().getId(), referenzName));
         }
         
-        for (Email email : angebotEmails) {
-             String referenzName = buildAngebotBeschreibung(email.getAngebot());
-             timeline.add(createKommunikationDto(email, QUELLE_ANGEBOT, email.getAngebot().getId(), referenzName));
+        for (Email email : anfrageEmails) {
+             String referenzName = buildAnfrageBeschreibung(email.getAnfrage());
+             timeline.add(createKommunikationDto(email, QUELLE_ANFRAGE, email.getAnfrage().getId(), referenzName));
         }
 
         timeline.sort(Comparator.comparing(
@@ -325,7 +325,7 @@ public class KundenDetailService {
                     dto.setId(f.getId());
                     dto.setFilename(f.getOriginalFilename());
                     // Construct URL dependent on type, or generic
-                    String pathSegment = referenzTyp.equals(QUELLE_PROJEKT) ? "projekte" : "angebote";
+                    String pathSegment = referenzTyp.equals(QUELLE_PROJEKT) ? "projekte" : "anfragen";
                     // Using unified API would be better: /api/emails/{id}/attachments/{attId}
                     // But sticking to legacy structure if needed, or using Unified Controller:
                     // Let's use unified:
@@ -347,13 +347,13 @@ public class KundenDetailService {
     }
 
     private KundeStatistikDto buildStatistik(List<Projekt> projekte,
-            List<Angebot> angebote,
+            List<Anfrage> anfragen,
             List<KundeAggregierteEmailDto> aggregierteEmails) {
         KundeStatistikDto statistik = new KundeStatistikDto();
         statistik.setProjektAnzahl(Objects.requireNonNullElse(projekte, List.of()).size());
-        statistik.setAngebotAnzahl(Objects.requireNonNullElse(angebote, List.of()).size());
+        statistik.setAnfrageAnzahl(Objects.requireNonNullElse(anfragen, List.of()).size());
         statistik.setEmailAdresseAnzahl(Objects.requireNonNullElse(aggregierteEmails, List.of()).size());
-        statistik.setLetzteAktivitaet(resolveLetzteAktivitaet(projekte, angebote));
+        statistik.setLetzteAktivitaet(resolveLetzteAktivitaet(projekte, anfragen));
         statistik.setGesamtUmsatz(berechneGesamtUmsatz(projekte));
         statistik.setGesamtGewinn(berechneGesamtGewinn(projekte));
         return statistik;
@@ -374,7 +374,7 @@ public class KundenDetailService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private LocalDate resolveLetzteAktivitaet(List<Projekt> projekte, List<Angebot> angebote) {
+    private LocalDate resolveLetzteAktivitaet(List<Projekt> projekte, List<Anfrage> anfragen) {
         LocalDate letzteProjektAktivitaet = Objects
                 .requireNonNullElse(projekte, List.<Projekt>of())
                 .stream()
@@ -384,16 +384,16 @@ public class KundenDetailService {
                 .max(Comparator.naturalOrder())
                 .orElse(null);
 
-        LocalDate letztesAngebot = Objects
-                .requireNonNullElse(angebote, List.<Angebot>of())
+        LocalDate letztesAnfrage = Objects
+                .requireNonNullElse(anfragen, List.<Anfrage>of())
                 .stream()
                 .filter(Objects::nonNull)
-                .map(Angebot::getAnlegedatum)
+                .map(Anfrage::getAnlegedatum)
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder())
                 .orElse(null);
 
-        return Stream.of(letzteProjektAktivitaet, letztesAngebot)
+        return Stream.of(letzteProjektAktivitaet, letztesAnfrage)
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder())
                 .orElse(null);

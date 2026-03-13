@@ -20,7 +20,7 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
                         "LEFT JOIN FETCH k.projekt " +
                         "LEFT JOIN FETCH k.kunde " +
                         "LEFT JOIN FETCH k.lieferant " +
-                        "LEFT JOIN FETCH k.angebot " +
+                        "LEFT JOIN FETCH k.anfrage " +
                         "LEFT JOIN FETCH k.ersteller " +
                         "WHERE k.datum BETWEEN :von AND :bis " +
                         "ORDER BY k.datum, k.startZeit")
@@ -36,7 +36,7 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
                         "LEFT JOIN FETCH k.projekt " +
                         "LEFT JOIN FETCH k.kunde " +
                         "LEFT JOIN FETCH k.lieferant " +
-                        "LEFT JOIN FETCH k.angebot " +
+                        "LEFT JOIN FETCH k.anfrage " +
                         "LEFT JOIN FETCH k.ersteller " +
                         "LEFT JOIN k.teilnehmer t " +
                         "WHERE k.datum BETWEEN :von AND :bis " +
@@ -59,7 +59,7 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
                         "LEFT JOIN FETCH k.projekt " +
                         "LEFT JOIN FETCH k.kunde " +
                         "LEFT JOIN FETCH k.lieferant " +
-                        "LEFT JOIN FETCH k.angebot " +
+                        "LEFT JOIN FETCH k.anfrage " +
                         "LEFT JOIN FETCH k.ersteller " +
                         "LEFT JOIN k.teilnehmer t " +
                         "WHERE k.datum = :datum " +
@@ -87,9 +87,9 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
         List<KalenderEintrag> findByLieferantIdOrderByDatumDesc(Long lieferantId);
 
         /**
-         * Findet alle Einträge für ein bestimmtes Angebot.
+         * Findet alle Einträge für ein bestimmtes Anfrage.
          */
-        List<KalenderEintrag> findByAngebotIdOrderByDatumDesc(Long angebotId);
+        List<KalenderEintrag> findByAnfrageIdOrderByDatumDesc(Long anfrageId);
 
         /**
          * Lädt Teilnehmer für einen Kalendereintrag.

@@ -9,6 +9,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class InlineBackfillResultDto {
     private int projektUpdated;
-    private int angebotUpdated;
+    private int anfrageUpdated;
 }
 

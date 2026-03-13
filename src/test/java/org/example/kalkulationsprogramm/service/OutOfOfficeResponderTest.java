@@ -29,6 +29,7 @@ class OutOfOfficeResponderTest {
         repository = mock(OutOfOfficeScheduleRepository.class);
         emailSignatureService = mock(EmailSignatureService.class);
         mailSender = mock(HtmlMailSender.class);
+
         responder = new OutOfOfficeResponder(repository, emailSignatureService, mailSender);
         ReflectionTestUtils.setField(responder, "defaultFromAddress", "info@example.com");
     }

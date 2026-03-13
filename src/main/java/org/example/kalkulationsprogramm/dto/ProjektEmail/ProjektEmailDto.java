@@ -29,6 +29,6 @@ public class ProjektEmailDto {
 
     // Explizite Zuordnung beim Antworten
     private Long projektId;
-    private Long angebotId;
+    private Long anfrageId;
     private Long lieferantId;
 }

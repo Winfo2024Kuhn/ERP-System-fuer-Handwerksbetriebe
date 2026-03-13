@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from './ui/button';
-import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder } from 'lucide-react';
+import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder, Euro } from 'lucide-react';
 import { Select } from './ui/select-custom';
 import { CategoryMultiSelectModal } from './CategoryMultiSelectModal';
 import { EmailListInput } from './EmailListInput';
-import type { Kunde, Angebot } from '../types';
+import type { Kunde, Anfrage } from '../types';
 
 interface SelectedCategory {
     id: number;
@@ -25,7 +25,7 @@ interface ProjektErstellenPayload {
     strasse?: string;
     plz?: string;
     ort?: string;
-    angebotIds?: number[];
+    anfrageIds?: number[];
     projektArt?: string;
 }
 
@@ -450,7 +450,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     const isEditMode = !!editProjekt;
     const [mode, setMode] = useState<'select' | 'manual'>('select');
     const [subView, setSubView] = useState<'main' | 'kundensuche' | 'kundeNeu'>('main');
-    const [angebote, setAngebote] = useState<Angebot[]>([]);
+    const [anfragen, setAnfragen] = useState<Anfrage[]>([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -459,8 +459,8 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     const [filterJahr, setFilterJahr] = useState<string>('');
     const [filterSuche, setFilterSuche] = useState('');
 
-    // Selected Angebot
-    const [selectedAngebot, setSelectedAngebot] = useState<Angebot | null>(null);
+    // Selected Anfrage
+    const [selectedAnfrage, setSelectedAnfrage] = useState<Anfrage | null>(null);
 
     // Selected Kunde
     const [selectedKunde, setSelectedKunde] = useState<Kunde | null>(null);
@@ -558,8 +558,8 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         return `${effectivePrefix}${auftragsnummerZaehler.padStart(5, '0')}`;
     }, [manuelleAuftragsnummer, prefixJahr, prefixMonat, auftragsnummerPrefix, auftragsnummerZaehler]);
 
-    // Load Angebote
-    const loadAngebote = useCallback(async () => {
+    // Load Anfragen
+    const loadAnfragen = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
@@ -568,13 +568,13 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             if (filterSuche) params.append('q', filterSuche);
             params.append('nurOhneProjekt', 'true');
 
-            const res = await fetch(`/api/angebote?${params.toString()}`);
-            if (!res.ok) throw new Error('Fehler beim Laden der Angebote');
+            const res = await fetch(`/api/anfragen?${params.toString()}`);
+            if (!res.ok) throw new Error('Fehler beim Laden der Anfragen');
             const data = await res.json();
-            setAngebote(Array.isArray(data) ? data : data.angebote || []);
+            setAnfragen(Array.isArray(data) ? data : data.anfragen || []);
         } catch (err) {
-            console.error('Load Angebote error', err);
-            setError('Angebote konnten nicht geladen werden');
+            console.error('Load Anfragen error', err);
+            setError('Anfragen konnten nicht geladen werden');
         } finally {
             setLoading(false);
         }
@@ -584,17 +584,17 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     useEffect(() => {
         if (!isOpen || mode !== 'select' || subView !== 'main') return;
         const timer = setTimeout(() => {
-            loadAngebote();
+            loadAnfragen();
         }, 350);
         return () => clearTimeout(timer);
-    }, [isOpen, mode, subView, filterJahr, filterSuche, loadAngebote]);
+    }, [isOpen, mode, subView, filterJahr, filterSuche, loadAnfragen]);
 
     // Reset form when closing OR initialize when opening in edit mode
     useEffect(() => {
         if (!isOpen) {
             setMode('select');
             setSubView('main');
-            setSelectedAngebot(null);
+            setSelectedAnfrage(null);
             setSelectedKunde(null);
             setUseKundeAdresse(false);
             setSelectedCategories([]);
@@ -623,7 +623,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             // Edit-Modus: Daten aus bestehendem Projekt laden
             setMode('manual'); // Im Edit-Modus immer Formular anzeigen
             setSubView('main');
-            setSelectedAngebot(null);
+            setSelectedAnfrage(null);
 
             // Kunde aus Projekt-Daten
             if (editProjekt.kundeDto) {
@@ -661,6 +661,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 kundennummer: editProjekt.kundennummer || '',
                 kundenId: editProjekt.kundenId,
                 auftragsnummer: editProjekt.auftragsnummer || '',
+                bruttoPreis: editProjekt.bruttoPreis,
                 strasse: editProjekt.strasse || '',
                 plz: editProjekt.plz || '',
                 ort: editProjekt.ort || '',
@@ -696,11 +697,11 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         }
     }, [isOpen, editProjekt, loadNaechsteAuftragsnummer]);
 
-    // When Angebot is selected, prefill form including Kunde
+    // When Anfrage is selected, prefill form including Kunde
     useEffect(() => {
-        if (selectedAngebot) {
+        if (selectedAnfrage) {
             // Vollständige Kundendaten laden (inkl. Adresse)
-            const kundeId = selectedAngebot.kundenId;
+            const kundeId = selectedAnfrage.kundenId;
             if (kundeId) {
                 fetch(`/api/kunden/${kundeId}`)
                     .then(res => res.ok ? res.json() : null)
@@ -710,38 +711,38 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                         } else {
                             setSelectedKunde({
                                 id: kundeId,
-                                name: selectedAngebot.kundenName || '',
-                                kundennummer: selectedAngebot.kundennummer || '',
+                                name: selectedAnfrage.kundenName || '',
+                                kundennummer: selectedAnfrage.kundennummer || '',
                             });
                         }
                     })
                     .catch(() => {
                         setSelectedKunde({
                             id: kundeId,
-                            name: selectedAngebot.kundenName || '',
-                            kundennummer: selectedAngebot.kundennummer || '',
+                            name: selectedAnfrage.kundenName || '',
+                            kundennummer: selectedAnfrage.kundennummer || '',
                         });
                     });
             } else {
                 setSelectedKunde({
                     id: 0,
-                    name: selectedAngebot.kundenName || '',
-                    kundennummer: selectedAngebot.kundennummer || '',
+                    name: selectedAnfrage.kundenName || '',
+                    kundennummer: selectedAnfrage.kundennummer || '',
                 });
             }
             setFormData({
-                bauvorhaben: selectedAngebot.bauvorhaben || '',
-                kunde: selectedAngebot.kundenName || '',
-                kundennummer: selectedAngebot.kundennummer || '',
-                kundenId: selectedAngebot.kundenId,
+                bauvorhaben: selectedAnfrage.bauvorhaben || '',
+                kunde: selectedAnfrage.kundenName || '',
+                kundennummer: selectedAnfrage.kundennummer || '',
+                kundenId: selectedAnfrage.kundenId,
                 auftragsnummer: '',
                 strasse: '',
                 plz: '',
                 ort: '',
-                angebotIds: [selectedAngebot.id],
+                anfrageIds: [selectedAnfrage.id],
             });
         }
-    }, [selectedAngebot]);
+    }, [selectedAnfrage]);
 
     // When Kunde is selected manually, update formData
     const handleKundeSelect = (kunde: Kunde) => {
@@ -761,17 +762,17 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         setSubView('main');
     };
 
-    // Checkbox-Handler: Adresse übernehmen (von Angebot wenn vorhanden, sonst von Kunde)
+    // Checkbox-Handler: Adresse übernehmen (von Anfrage wenn vorhanden, sonst von Kunde)
     const handleUseKundeAdresseChange = (checked: boolean) => {
         setUseKundeAdresse(checked);
         if (checked) {
-            // Priorisiere Angebots-Objektadresse wenn Angebot ausgewählt
-            if (selectedAngebot && (selectedAngebot.projektStrasse || selectedAngebot.projektPlz || selectedAngebot.projektOrt)) {
+            // Priorisiere Anfrages-Objektadresse wenn Anfrage ausgewählt
+            if (selectedAnfrage && (selectedAnfrage.projektStrasse || selectedAnfrage.projektPlz || selectedAnfrage.projektOrt)) {
                 setFormData(prev => ({
                     ...prev,
-                    strasse: selectedAngebot.projektStrasse || '',
-                    plz: selectedAngebot.projektPlz || '',
-                    ort: selectedAngebot.projektOrt || '',
+                    strasse: selectedAnfrage.projektStrasse || '',
+                    plz: selectedAnfrage.projektPlz || '',
+                    ort: selectedAnfrage.projektOrt || '',
                 }));
             } else if (selectedKunde) {
                 // Fallback auf Kundenadresse
@@ -871,7 +872,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     };
 
     // Keine redundante Client-seitige Filterung nötig – Backend filtert bereits korrekt
-    const filteredAngebote = angebote;
+    const filteredAnfragen = anfragen;
 
     if (!isOpen) return null;
 
@@ -896,24 +897,24 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                     <div className="px-6 py-3 border-b border-slate-100 bg-slate-50">
                         <div className="flex gap-2">
                             <button
-                                onClick={() => { setMode('select'); setSelectedAngebot(null); setSelectedKunde(null); }}
+                                onClick={() => { setMode('select'); setSelectedAnfrage(null); setSelectedKunde(null); }}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'select'
                                     ? 'bg-rose-600 text-white'
                                     : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                                     }`}
                             >
                                 <FileText className="w-4 h-4 inline-block mr-2" />
-                                Von Angebot übernehmen
+                                Von Anfrage übernehmen
                             </button>
                             <button
-                                onClick={() => { setMode('manual'); setSelectedAngebot(null); }}
+                                onClick={() => { setMode('manual'); setSelectedAnfrage(null); }}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'manual'
                                     ? 'bg-rose-600 text-white'
                                     : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                                     }`}
                             >
                                 <PlusCircle className="w-4 h-4 inline-block mr-2" />
-                                Ohne Angebot anlegen
+                                Ohne Anfrage anlegen
                             </button>
                         </div>
                     </div>
@@ -938,8 +939,8 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                         />
                     )}
 
-                    {/* Main view: Angebot selection */}
-                    {subView === 'main' && mode === 'select' && !selectedAngebot && (
+                    {/* Main view: Anfrage selection */}
+                    {subView === 'main' && mode === 'select' && !selectedAnfrage && (
                         <div className="space-y-4">
                             {/* Freitext-Suche + Jahr */}
                             <div className="flex gap-3">
@@ -970,29 +971,29 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                 <p className="text-slate-400 text-sm text-center py-1">Suche...</p>
                             )}
 
-                            {/* Angebot List */}
-                            {!loading && filteredAngebote.length === 0 ? (
-                                <p className="text-slate-500 py-8 text-center">Keine Angebote gefunden</p>
+                            {/* Anfrage List */}
+                            {!loading && filteredAnfragen.length === 0 ? (
+                                <p className="text-slate-500 py-8 text-center">Keine Anfragen gefunden</p>
                             ) : !loading && (
                                 <div className="grid gap-3 max-h-[300px] overflow-y-auto">
-                                    {filteredAngebote.map(angebot => (
+                                    {filteredAnfragen.map(anfrage => (
                                         <div
-                                            key={angebot.id}
-                                            onClick={() => setSelectedAngebot(angebot)}
+                                            key={anfrage.id}
+                                            onClick={() => setSelectedAnfrage(anfrage)}
                                             className="p-4 border border-slate-200 rounded-xl hover:border-rose-300 hover:bg-rose-50 cursor-pointer transition-colors"
                                         >
                                             <div className="flex justify-between items-start">
                                                 <div>
-                                                    <p className="font-semibold text-slate-900">{angebot.bauvorhaben || 'Kein Bauvorhaben'}</p>
+                                                    <p className="font-semibold text-slate-900">{anfrage.bauvorhaben || 'Kein Bauvorhaben'}</p>
                                                     <p className="text-sm text-slate-500">
                                                         <User className="w-3 h-3 inline-block mr-1" />
-                                                        {angebot.kundenName || 'Kein Kunde'} • {angebot.kundennummer}
+                                                        {anfrage.kundenName || 'Kein Kunde'} • {anfrage.kundennummer}
                                                     </p>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="text-sm font-medium text-rose-600">{angebot.angebotsnummer}</p>
-                                                    {angebot.betrag && (
-                                                        <p className="text-sm text-slate-500">{angebot.betrag.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</p>
+                                                    <p className="text-sm font-medium text-rose-600">{anfrage.anfragesnummer}</p>
+                                                    {anfrage.betrag && (
+                                                        <p className="text-sm text-slate-500">{anfrage.betrag.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</p>
                                                     )}
                                                 </div>
                                             </div>
@@ -1003,17 +1004,17 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                         </div>
                     )}
 
-                    {/* Main view: Form (shown after Angebot selection, in manual mode, or in edit mode) */}
-                    {subView === 'main' && (mode === 'manual' || selectedAngebot || isEditMode) && (
+                    {/* Main view: Form (shown after Anfrage selection, in manual mode, or in edit mode) */}
+                    {subView === 'main' && (mode === 'manual' || selectedAnfrage || isEditMode) && (
                         <div className="space-y-6">
-                            {selectedAngebot && (
+                            {selectedAnfrage && (
                                 <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl mb-4">
                                     <p className="text-sm text-rose-700">
                                         <FileText className="w-4 h-4 inline-block mr-2" />
-                                        Basierend auf Angebot: <strong>{selectedAngebot.angebotsnummer}</strong> – {selectedAngebot.bauvorhaben}
+                                        Basierend auf Anfrage: <strong>{selectedAnfrage.anfragesnummer}</strong> – {selectedAnfrage.bauvorhaben}
                                     </p>
-                                    <button onClick={() => { setSelectedAngebot(null); setSelectedKunde(null); }} className="text-sm text-rose-600 underline mt-1">
-                                        Anderes Angebot wählen
+                                    <button onClick={() => { setSelectedAnfrage(null); setSelectedKunde(null); }} className="text-sm text-rose-600 underline mt-1">
+                                        Anderes Anfrage wählen
                                     </button>
                                 </div>
                             )}
@@ -1169,6 +1170,24 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                             {/* Projekt beendet - nur im Edit-Modus */}
                             {isEditMode && (
                                 <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                                        <Euro className="w-4 h-4 inline-block mr-1" />
+                                        Bruttopreis (€)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={formData.bruttoPreis ?? ''}
+                                        onChange={e => handleInputChange('bruttoPreis', e.target.value ? parseFloat(e.target.value) : undefined)}
+                                        placeholder="0,00"
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                    />
+                                </div>
+                            )}
+
+                            {/* Projekt beendet - nur im Edit-Modus */}
+                            {isEditMode && (
+                                <div>
                                     <label className="flex items-center gap-3 cursor-pointer group w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg hover:border-rose-300 transition-colors">
                                         <input
                                             type="checkbox"
@@ -1230,7 +1249,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                     emails={zusaetzlicheEmails}
                                     onChange={setZusaetzlicheEmails}
                                     kundenEmails={selectedKunde?.kundenEmails || []}
-                                    angebotEmails={selectedAngebot?.kundenEmails || []}
+                                    anfrageEmails={selectedAnfrage?.kundenEmails || []}
                                     label="E-Mail-Adressen"
                                     placeholder="Weitere E-Mail hinzufügen (z.B. Statiker)..."
                                 />
@@ -1248,12 +1267,12 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                             type="checkbox"
                                             checked={useKundeAdresse}
                                             onChange={(e) => handleUseKundeAdresseChange(e.target.checked)}
-                                            disabled={!selectedKunde && !selectedAngebot}
+                                            disabled={!selectedKunde && !selectedAnfrage}
                                             className="w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500 disabled:opacity-50"
                                         />
-                                        <span className={`text-sm ${(selectedKunde || selectedAngebot) ? 'text-slate-700 group-hover:text-rose-600' : 'text-slate-400'}`}>
-                                            {selectedAngebot && (selectedAngebot.projektStrasse || selectedAngebot.projektPlz || selectedAngebot.projektOrt)
-                                                ? 'Angebots-Objektadresse übernehmen'
+                                        <span className={`text-sm ${(selectedKunde || selectedAnfrage) ? 'text-slate-700 group-hover:text-rose-600' : 'text-slate-400'}`}>
+                                            {selectedAnfrage && (selectedAnfrage.projektStrasse || selectedAnfrage.projektPlz || selectedAnfrage.projektOrt)
+                                                ? 'Anfrages-Objektadresse übernehmen'
                                                 : 'Kundenadresse übernehmen'}
                                         </span>
                                     </label>
@@ -1312,7 +1331,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                         <Button variant="outline" onClick={onClose} disabled={saving}>
                             Abbrechen
                         </Button>
-                        {(mode === 'manual' || selectedAngebot || isEditMode) && (
+                        {(mode === 'manual' || selectedAnfrage || isEditMode) && (
                             <Button
                                 onClick={handleSubmit}
                                 disabled={saving}

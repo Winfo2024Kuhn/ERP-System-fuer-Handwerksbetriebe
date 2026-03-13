@@ -22,7 +22,7 @@ public class AusgangsGeschaeftsDokumentErstellenDto {
 
     // Verknüpfungen
     private Long projektId;
-    private Long angebotId;
+    private Long anfrageId;
     private Long kundeId;
     private Long vorgaengerId;
 

@@ -13,7 +13,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
-import org.example.kalkulationsprogramm.domain.Angebot;
+import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentCounter;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
@@ -21,7 +21,7 @@ import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
@@ -45,7 +45,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
     @Mock private AusgangsGeschaeftsDokumentRepository dokumentRepository;
     @Mock private AusgangsGeschaeftsDokumentCounterRepository counterRepository;
     @Mock private ProjektRepository projektRepository;
-    @Mock private AngebotRepository angebotRepository;
+    @Mock private AnfrageRepository anfrageRepository;
     @Mock private KundeRepository kundeRepository;
     @Mock private FrontendUserProfileRepository frontendUserProfileRepository;
     @Mock private LeistungRepository leistungRepository;
@@ -62,7 +62,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
                 dokumentRepository,
                 counterRepository,
                 projektRepository,
-                angebotRepository,
+                anfrageRepository,
                 kundeRepository,
                 frontendUserProfileRepository,
                 leistungRepository,
@@ -92,14 +92,14 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-            dto.setBetreff("Testangebot");
+            dto.setBetreff("Testanfrage");
 
             AusgangsGeschaeftsDokument result = service.erstellen(dto);
 
             assertThat(result.getDokumentNummer()).isNotNull();
             assertThat(result.getDokumentNummer()).contains("/");
             assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-            assertThat(result.getBetreff()).isEqualTo("Testangebot");
+            assertThat(result.getBetreff()).isEqualTo("Testanfrage");
         }
 
         @Test
@@ -187,12 +187,12 @@ class AusgangsGeschaeftsDokumentServiceTest {
         }
 
         @Test
-        void wirftExceptionBeiDoppeltemBasisdokumentProAngebot() {
-            when(dokumentRepository.existsByAngebotIdAndVorgaengerIsNull(7L)).thenReturn(true);
+        void wirftExceptionBeiDoppeltemBasisdokumentProAnfrage() {
+            when(dokumentRepository.existsByAnfrageIdAndVorgaengerIsNull(7L)).thenReturn(true);
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
-            dto.setAngebotId(7L);
+            dto.setAnfrageId(7L);
 
             assertThatThrownBy(() -> service.erstellen(dto))
                     .isInstanceOf(IllegalStateException.class)
@@ -337,7 +337,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         }
 
         @Test
-        void buchtAngebotNicht() {
+        void buchtAnfrageNicht() {
             AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
             dokument.setId(1L);
             dokument.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
@@ -417,7 +417,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         }
 
         @Test
-        void wirftExceptionBeiAngebotStornierung() {
+        void wirftExceptionBeiAnfrageStornierung() {
             AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
             dokument.setId(1L);
             dokument.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
@@ -496,16 +496,16 @@ class AusgangsGeschaeftsDokumentServiceTest {
     }
 
     @Nested
-    class EnsureAngebotDokument {
+    class EnsureAnfrageDokument {
 
         @Test
         void gibtExistierendeNummerZurueck() {
             AusgangsGeschaeftsDokument existing = new AusgangsGeschaeftsDokument();
             existing.setDokumentNummer("2026/03/00001");
-            when(dokumentRepository.findFirstByAngebotIdAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+            when(dokumentRepository.findFirstByAnfrageIdAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
                     .thenReturn(Optional.of(existing));
 
-            String result = service.ensureAngebotDokument(5L);
+            String result = service.ensureAnfrageDokument(5L);
 
             assertThat(result).isEqualTo("2026/03/00001");
             verify(dokumentRepository, never()).save(any());
@@ -513,12 +513,12 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
         @Test
         void erstelltNeuesDokumentWennKeinesExistiert() {
-            when(dokumentRepository.findFirstByAngebotIdAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+            when(dokumentRepository.findFirstByAnfrageIdAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
                     .thenReturn(Optional.empty());
-            Angebot angebot = new Angebot();
-            angebot.setId(5L);
-            angebot.setBauvorhaben("Bauprojekt");
-            when(angebotRepository.findById(5L)).thenReturn(Optional.of(angebot));
+            Anfrage anfrage = new Anfrage();
+            anfrage.setId(5L);
+            anfrage.setBauvorhaben("Bauprojekt");
+            when(anfrageRepository.findById(5L)).thenReturn(Optional.of(anfrage));
             mockCounterForNummer();
             when(dokumentRepository.save(any())).thenAnswer(inv -> {
                 AusgangsGeschaeftsDokument d = inv.getArgument(0);
@@ -526,7 +526,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
                 return d;
             });
 
-            String result = service.ensureAngebotDokument(5L);
+            String result = service.ensureAnfrageDokument(5L);
 
             assertThat(result).isNotNull();
             verify(dokumentRepository, atLeastOnce()).save(any());
@@ -534,7 +534,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
         @Test
         void gibtNullZurueckBeiNullId() {
-            assertThat(service.ensureAngebotDokument(null)).isNull();
+            assertThat(service.ensureAnfrageDokument(null)).isNull();
         }
     }
 

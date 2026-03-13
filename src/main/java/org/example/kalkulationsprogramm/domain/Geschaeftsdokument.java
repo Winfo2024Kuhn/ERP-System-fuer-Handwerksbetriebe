@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * Zentrale Entity für alle Geschäftsdokumente.
- * Ermöglicht Verknüpfung: Angebot → Auftragsbestätigung → Rechnung(en)
+ * Ermöglicht Verknüpfung: Anfrage → Auftragsbestätigung → Rechnung(en)
  */
 @Entity
 @Table(name = "geschaeftsdokument")
@@ -23,7 +23,7 @@ public class Geschaeftsdokument {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Verknüpfung zum Dokumenttyp (z.B. Angebot, Auftragsbestätigung, Rechnung)
+    // Verknüpfung zum Dokumenttyp (z.B. Anfrage, Auftragsbestätigung, Rechnung)
     @Enumerated(EnumType.STRING)
     @Column(name = "dokumenttyp_enum", nullable = false, length = 30)
     private Dokumenttyp dokumenttyp;
@@ -56,7 +56,7 @@ public class Geschaeftsdokument {
     @JoinColumn(name = "kunde_id")
     private Kunde kunde;
 
-    // Verknüpfung zum Vorgängerdokument (z.B. AB → Angebot, Rechnung → AB)
+    // Verknüpfung zum Vorgängerdokument (z.B. AB → Anfrage, Rechnung → AB)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "vorgaenger_id")
     private Geschaeftsdokument vorgaengerDokument;

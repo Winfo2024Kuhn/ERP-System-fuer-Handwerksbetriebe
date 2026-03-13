@@ -10,7 +10,7 @@ class EmailHtmlSanitizerTest {
     void plainTextToHtml_preservesParagraphsAndLineBreaks() {
         String text = """
                 Hallo Herr Eichhoff,
-                bitte um Lieferung wie angeboten.
+                bitte um Lieferung wie anfragenn.
 
                 Mit freundlichen Grüßen
                 Max Mustermann
@@ -18,7 +18,7 @@ class EmailHtmlSanitizerTest {
 
         String html = EmailHtmlSanitizer.plainTextToHtml(text);
 
-        assertThat(html).isEqualTo("<p>Hallo Herr Eichhoff,<br/>bitte um Lieferung wie angeboten.</p><br/><br/><p>Mit freundlichen Grüßen<br/>Max Mustermann</p>");
+        assertThat(html).isEqualTo("<p>Hallo Herr Eichhoff,<br/>bitte um Lieferung wie anfragenn.</p><br/><br/><p>Mit freundlichen Grüßen<br/>Max Mustermann</p>");
     }
 
     @Test

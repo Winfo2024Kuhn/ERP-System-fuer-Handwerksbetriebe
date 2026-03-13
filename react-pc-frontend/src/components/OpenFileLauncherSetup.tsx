@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Download, CheckCircle, AlertCircle, Settings, HelpCircle } from 'lucide-react';
 import { Button } from './ui/button';
+import { useToast } from './ui/toast';
 
 /**
  * Komponente zum Herunterladen und Installieren des OpenFile Launchers.
@@ -8,6 +9,7 @@ import { Button } from './ui/button';
  * direkt aus der Webapp über das openfile:// Protokoll.
  */
 export default function OpenFileLauncherSetup() {
+    const toast = useToast();
     const [downloading, setDownloading] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
 
@@ -30,7 +32,7 @@ export default function OpenFileLauncherSetup() {
             document.body.removeChild(a);
         } catch (error) {
             console.error('Fehler beim Download:', error);
-            alert('Fehler beim Download des Setup-Pakets. Bitte kontaktieren Sie den Administrator.');
+            toast.error('Fehler beim Download des Setup-Pakets. Bitte kontaktieren Sie den Administrator.');
         } finally {
             setDownloading(false);
         }

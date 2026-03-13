@@ -408,7 +408,7 @@ public class FormularTemplateService {
                     </section>
                     <main style="margin-top: 28px;">
                       <h1>Dokumenttitel</h1>
-                      <p>Trage hier deinen Standardtext für Angebote, Rechnungen oder Auftragsbestätigungen ein.</p>
+                      <p>Trage hier deinen Standardtext für Anfragen, Rechnungen oder Auftragsbestätigungen ein.</p>
                     </main>
                   </div>
                 </body>

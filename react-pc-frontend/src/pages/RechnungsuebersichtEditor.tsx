@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { Input } from '../components/ui/input';
 import { PageLayout } from '../components/layout/PageLayout';
-import { RefreshCw, FileText, Download, X, ExternalLink, ArrowUpRight, Building2, Check, Printer, Search, Upload } from 'lucide-react';
+import { RefreshCw, FileText, Download, X, ExternalLink, ArrowUpRight, Building2, Check, Printer, Search, Upload, Wallet, Clock, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 
 // API Types
@@ -291,13 +291,27 @@ export default function RechnungsuebersichtEditor() {
         setSelectedEingang(new Set());
     }, [activeTab, selectedYear, selectedMonth, searchQuery]);
 
-    // Calculate totals
+    // Calculate totals and KPI stats
     const ausgangTotal = useMemo(() => {
         return ausgangsrechnungen.reduce((sum, r) => sum + (r.bruttoBetrag || 0), 0);
     }, [ausgangsrechnungen]);
 
     const eingangTotal = useMemo(() => {
         return eingangsrechnungen.reduce((sum, r) => sum + (r.betragBrutto || 0), 0);
+    }, [eingangsrechnungen]);
+
+    const ausgangKpi = useMemo(() => {
+        const bezahlt = ausgangsrechnungen.filter(r => r.bezahlt).length;
+        const offen = ausgangsrechnungen.length - bezahlt;
+        const offenSumme = ausgangsrechnungen.filter(r => !r.bezahlt).reduce((sum, r) => sum + (r.bruttoBetrag || 0), 0);
+        return { bezahlt, offen, offenSumme };
+    }, [ausgangsrechnungen]);
+
+    const eingangKpi = useMemo(() => {
+        const bezahlt = eingangsrechnungen.filter(r => r.bezahlt).length;
+        const offen = eingangsrechnungen.length - bezahlt;
+        const offenSumme = eingangsrechnungen.filter(r => !r.bezahlt).reduce((sum, r) => sum + (r.betragBrutto || 0), 0);
+        return { bezahlt, offen, offenSumme };
     }, [eingangsrechnungen]);
 
     // Toggle selection
@@ -502,7 +516,7 @@ export default function RechnungsuebersichtEditor() {
             }
         >
             {/* Filter Bar */}
-            <Card className="p-4 mb-6">
+            <Card className="p-4 mb-5 border-0 shadow-sm rounded-xl">
                 <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-2">
                         <label className="text-sm font-medium text-slate-600">Jahr:</label>
@@ -539,74 +553,102 @@ export default function RechnungsuebersichtEditor() {
             </Card>
 
             {/* Tab Navigation */}
-            <div className="flex gap-1 mb-6 border-b border-slate-200">
-                <button
-                    onClick={() => setActiveTab('ausgang')}
-                    className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'ausgang'
-                        ? 'border-rose-500 text-rose-600'
-                        : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                        }`}
-                >
-                    <ArrowUpRight className="w-4 h-4" />
-                    Ausgangsrechnungen
-                    <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-600">
-                        {ausgangsrechnungen.length}
-                    </span>
-                </button>
-                <button
-                    onClick={() => setActiveTab('eingang')}
-                    className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'eingang'
-                        ? 'border-rose-500 text-rose-600'
-                        : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                        }`}
-                >
-                    <Building2 className="w-4 h-4" />
-                    Eingangsrechnungen
-                    <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-600">
-                        {eingangsrechnungen.length}
-                    </span>
-                </button>
+            <div className="animate-fadeInUp">
+                <div className="flex gap-1 mb-5 border-b border-slate-200">
+                    <button
+                        onClick={() => setActiveTab('ausgang')}
+                        className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'ausgang'
+                            ? 'border-rose-500 text-rose-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+                            }`}
+                    >
+                        <ArrowUpRight className="w-4 h-4" />
+                        Ausgangsrechnungen
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('eingang')}
+                        className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'eingang'
+                            ? 'border-rose-500 text-rose-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+                            }`}
+                    >
+                        <Building2 className="w-4 h-4" />
+                        Eingangsrechnungen
+                    </button>
+                </div>
             </div>
 
             {/* Tab Content */}
             {activeTab === 'ausgang' ? (
                 <>
-                    {/* Summary Card */}
-                    <Card className="p-4 mb-6 bg-rose-50 border-rose-200">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-rose-100 rounded-lg">
-                                    <ArrowUpRight className="w-5 h-5 text-rose-600" />
+                    {/* KPI Stats */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5 animate-fadeInUp delay-1">
+                        <Card className="px-4 py-3 border-0 shadow-sm bg-white rounded-xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-rose-50 rounded-lg">
+                                    <Wallet className="w-4 h-4 text-rose-600" />
                                 </div>
                                 <div>
-                                    <p className="text-sm text-rose-700 font-medium">Summe Ausgangsrechnungen</p>
-                                    <p className="text-2xl font-bold text-rose-900">{formatEuro(ausgangTotal)} €</p>
+                                    <p className="text-[11px] text-slate-400 uppercase tracking-wide leading-none mb-0.5">Gesamtsumme</p>
+                                    <p className="text-base font-bold text-slate-900">{formatEuro(ausgangTotal)} €</p>
                                 </div>
                             </div>
-                            <div className="text-sm text-rose-600">
-                                {ausgangsrechnungen.length} {ausgangsrechnungen.length === 1 ? 'Rechnung' : 'Rechnungen'}
+                        </Card>
+                        <Card className="px-4 py-3 border-0 shadow-sm bg-white rounded-xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-slate-50 rounded-lg">
+                                    <FileText className="w-4 h-4 text-slate-500" />
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-slate-400 uppercase tracking-wide leading-none mb-0.5">Rechnungen</p>
+                                    <p className="text-base font-bold text-slate-900">{ausgangsrechnungen.length}</p>
+                                </div>
                             </div>
-                        </div>
-                    </Card>
+                        </Card>
+                        <Card className="px-4 py-3 border-0 shadow-sm bg-white rounded-xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-red-50 rounded-lg">
+                                    <Clock className="w-4 h-4 text-red-500" />
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-slate-400 uppercase tracking-wide leading-none mb-0.5">Offen</p>
+                                    <p className="text-base font-bold text-red-600">{ausgangKpi.offen}</p>
+                                </div>
+                            </div>
+                        </Card>
+                        <Card className="px-4 py-3 border-0 shadow-sm bg-white rounded-xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-green-50 rounded-lg">
+                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-slate-400 uppercase tracking-wide leading-none mb-0.5">Bezahlt</p>
+                                    <p className="text-base font-bold text-green-700">{ausgangKpi.bezahlt}</p>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
 
                     {/* Table */}
+                    <div className="animate-fadeInUp delay-2">
                     {loading ? (
-                        <Card className="p-12 text-center text-slate-500">
-                            <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin" />
-                            Lade Rechnungen...
+                        <Card className="p-8 text-center text-slate-500 border-0 shadow-sm rounded-xl">
+                            <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin text-rose-400" />
+                            <p className="text-sm">Lade Rechnungen...</p>
                         </Card>
                     ) : ausgangsrechnungen.length === 0 ? (
-                        <Card className="p-12 text-center text-slate-500 border-dashed">
-                            <FileText className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                            <p>Keine Ausgangsrechnungen gefunden.</p>
+                        <Card className="p-8 text-center border-0 shadow-sm rounded-xl">
+                            <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                            <p className="text-sm font-medium text-slate-600">Keine Ausgangsrechnungen gefunden.</p>
+                            <p className="text-xs mt-1 text-slate-400">Passen Sie die Filter an oder laden Sie eine Rechnung hoch.</p>
                         </Card>
                     ) : (
-                        <Card className="overflow-hidden">
+                        <Card className="overflow-hidden border-0 shadow-sm rounded-xl">
                             <div className="overflow-x-auto">
                                 <table className="w-full">
-                                    <thead className="bg-slate-50 border-b border-slate-200">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-200">
+                                            <th className="px-4 py-2.5 text-left">
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedAusgang.size === ausgangsrechnungen.length && ausgangsrechnungen.length > 0}
@@ -614,18 +656,18 @@ export default function RechnungsuebersichtEditor() {
                                                     className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
                                                 />
                                             </th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Projekt</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Kunde</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Rechnungsnr.</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Datum</th>
-                                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Betrag</th>
-                                            <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Bezahlt</th>
-                                            <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Dokument</th>
+                                            <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Projekt</th>
+                                            <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Kunde</th>
+                                            <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Rechnungsnr.</th>
+                                            <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Datum</th>
+                                            <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Betrag</th>
+                                            <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Bezahlt</th>
+                                            <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Dokument</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {ausgangsrechnungen.map(r => (
-                                            <tr key={r.id} className={`hover:bg-slate-50 ${r.bezahlt ? 'bg-green-50 opacity-70' : 'bg-white'}`}>
+                                            <tr key={r.id} className={`align-top transition-colors ${r.bezahlt ? 'bg-green-50/50 hover:bg-green-50/80' : 'bg-white hover:bg-slate-50/80'}`}>
                                                 <td className="px-4 py-3">
                                                     <input
                                                         type="checkbox"
@@ -682,45 +724,78 @@ export default function RechnungsuebersichtEditor() {
                             </div>
                         </Card>
                     )}
+                    </div>
                 </>
             ) : (
                 <>
-                    {/* Summary Card */}
-                    <Card className="p-4 mb-6 bg-amber-50 border-amber-200">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-amber-100 rounded-lg">
-                                    <Building2 className="w-5 h-5 text-amber-600" />
+                    {/* KPI Stats */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5 animate-fadeInUp delay-1">
+                        <Card className="px-4 py-3 border-0 shadow-sm bg-white rounded-xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-amber-50 rounded-lg">
+                                    <Wallet className="w-4 h-4 text-amber-600" />
                                 </div>
                                 <div>
-                                    <p className="text-sm text-amber-700 font-medium">Summe Eingangsrechnungen</p>
-                                    <p className="text-2xl font-bold text-amber-900">{formatEuro(eingangTotal)} €</p>
+                                    <p className="text-[11px] text-slate-400 uppercase tracking-wide leading-none mb-0.5">Gesamtsumme</p>
+                                    <p className="text-base font-bold text-slate-900">{formatEuro(eingangTotal)} €</p>
                                 </div>
                             </div>
-                            <div className="text-sm text-amber-600">
-                                {eingangsrechnungen.length} {eingangsrechnungen.length === 1 ? 'Rechnung' : 'Rechnungen'}
+                        </Card>
+                        <Card className="px-4 py-3 border-0 shadow-sm bg-white rounded-xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-slate-50 rounded-lg">
+                                    <FileText className="w-4 h-4 text-slate-500" />
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-slate-400 uppercase tracking-wide leading-none mb-0.5">Rechnungen</p>
+                                    <p className="text-base font-bold text-slate-900">{eingangsrechnungen.length}</p>
+                                </div>
                             </div>
-                        </div>
-                    </Card>
+                        </Card>
+                        <Card className="px-4 py-3 border-0 shadow-sm bg-white rounded-xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-red-50 rounded-lg">
+                                    <Clock className="w-4 h-4 text-red-500" />
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-slate-400 uppercase tracking-wide leading-none mb-0.5">Offen</p>
+                                    <p className="text-base font-bold text-red-600">{eingangKpi.offen}</p>
+                                </div>
+                            </div>
+                        </Card>
+                        <Card className="px-4 py-3 border-0 shadow-sm bg-white rounded-xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-green-50 rounded-lg">
+                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-slate-400 uppercase tracking-wide leading-none mb-0.5">Bezahlt</p>
+                                    <p className="text-base font-bold text-green-700">{eingangKpi.bezahlt}</p>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
 
                     {/* Table */}
+                    <div className="animate-fadeInUp delay-2">
                     {loading ? (
-                        <Card className="p-12 text-center text-slate-500">
-                            <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin" />
-                            Lade Rechnungen...
+                        <Card className="p-8 text-center text-slate-500 border-0 shadow-sm rounded-xl">
+                            <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin text-rose-400" />
+                            <p className="text-sm">Lade Rechnungen...</p>
                         </Card>
                     ) : eingangsrechnungen.length === 0 ? (
-                        <Card className="p-12 text-center text-slate-500 border-dashed">
-                            <FileText className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                            <p>Keine Eingangsrechnungen gefunden.</p>
+                        <Card className="p-8 text-center border-0 shadow-sm rounded-xl">
+                            <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                            <p className="text-sm font-medium text-slate-600">Keine Eingangsrechnungen gefunden.</p>
+                            <p className="text-xs mt-1 text-slate-400">Passen Sie die Filter an oder laden Sie eine Rechnung hoch.</p>
                         </Card>
                     ) : (
-                        <Card className="overflow-hidden">
+                        <Card className="overflow-hidden border-0 shadow-sm rounded-xl">
                             <div className="overflow-x-auto">
                                 <table className="w-full">
-                                    <thead className="bg-slate-50 border-b border-slate-200">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-200">
+                                            <th className="px-4 py-2.5 text-left">
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedEingang.size === eingangsrechnungen.length && eingangsrechnungen.length > 0}
@@ -728,18 +803,18 @@ export default function RechnungsuebersichtEditor() {
                                                     className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
                                                 />
                                             </th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Lieferant</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Rechnungsnr.</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Datum</th>
-                                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Netto</th>
-                                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Brutto</th>
-                                            <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Bezahlt</th>
-                                            <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Dokument</th>
+                                            <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Lieferant</th>
+                                            <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Rechnungsnr.</th>
+                                            <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Datum</th>
+                                            <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Netto</th>
+                                            <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Brutto</th>
+                                            <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Bezahlt</th>
+                                            <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Dokument</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {eingangsrechnungen.map(r => (
-                                            <tr key={r.id} className={`hover:bg-slate-50 ${r.bezahlt ? 'bg-green-50 opacity-70' : 'bg-white'}`}>
+                                            <tr key={r.id} className={`align-top transition-colors ${r.bezahlt ? 'bg-green-50/50 hover:bg-green-50/80' : 'bg-white hover:bg-slate-50/80'}`}>
                                                 <td className="px-4 py-3">
                                                     <input
                                                         type="checkbox"
@@ -796,6 +871,7 @@ export default function RechnungsuebersichtEditor() {
                             </div>
                         </Card>
                     )}
+                    </div>
                 </>
             )}
 

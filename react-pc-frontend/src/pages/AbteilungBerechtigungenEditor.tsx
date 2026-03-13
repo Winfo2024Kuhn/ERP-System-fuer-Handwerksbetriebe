@@ -17,7 +17,7 @@ interface AbteilungBerechtigung {
 }
 
 const DOKUMENT_TYP_LABELS: Record<string, string> = {
-    'ANGEBOT': 'Angebot',
+    'ANFRAGE': 'Anfrage',
     'AUFTRAGSBESTAETIGUNG': 'Auftragsbestätigung',
     'LIEFERSCHEIN': 'Lieferschein',
     'RECHNUNG': 'Rechnung'

@@ -15,9 +15,9 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-import org.example.kalkulationsprogramm.domain.Angebot;
-import org.example.kalkulationsprogramm.domain.AngebotDokument;
-import org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.AnfrageDokument;
+import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Dokument;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.domain.Kunde;
@@ -40,8 +40,8 @@ import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.exception.ForbiddenException;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
-import org.example.kalkulationsprogramm.repository.AngebotDokumentRepository;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
@@ -61,11 +61,11 @@ import lombok.Setter;
 public class DateiSpeicherService {
     private final ProjektDokumentRepository dokumentRepository;
     private final ProjektRepository projektRepository;
-    private final AngebotDokumentRepository angebotDokumentRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageDokumentRepository anfrageDokumentRepository;
+    private final AnfrageRepository anfrageRepository;
     private final Path dokumentenSpeicherplatz;
     private final Path hicadSpeicherplatz;
-    private final Path angeboteSpeicherplatz;
+    private final Path anfragenSpeicherplatz;
     private final Path bilderSpeicherplatz;
     private final Path schnittbilderSpeicherplatz;
     private final ProduktkategorieRepository produktkategorieRepository;
@@ -101,19 +101,19 @@ public class DateiSpeicherService {
             @Value("${hicad.network-drive-letter:}") String networkDriveLetter,
             ProjektDokumentRepository projektDokumentRepository,
             ProjektRepository projektRepository,
-            AngebotDokumentRepository angebotDokumentRepository,
-            AngebotRepository angebotRepository,
+            AnfrageDokumentRepository anfrageDokumentRepository,
+            AnfrageRepository anfrageRepository,
             ProduktkategorieRepository produktkategorieRepository,
             KundeRepository kundeRepository,
             ZugferdExtractorService zugferdExtractorService,
             ProduktkategorieMapper produktkategorieMapper) {
         this.dokumentRepository = projektDokumentRepository;
         this.projektRepository = projektRepository;
-        this.angebotDokumentRepository = angebotDokumentRepository;
-        this.angebotRepository = angebotRepository;
+        this.anfrageDokumentRepository = anfrageDokumentRepository;
+        this.anfrageRepository = anfrageRepository;
         this.dokumentenSpeicherplatz = Path.of(uploadDir).toAbsolutePath().normalize();
         this.hicadSpeicherplatz = Path.of(hicadLocalPath).toAbsolutePath().normalize();
-        this.angeboteSpeicherplatz = Path.of(offerUploadDir).toAbsolutePath().normalize();
+        this.anfragenSpeicherplatz = Path.of(offerUploadDir).toAbsolutePath().normalize();
         this.bilderSpeicherplatz = Path.of(iconUploadDir).toAbsolutePath().normalize();
         this.schnittbilderSpeicherplatz = Path.of(cutawayImagesDir).toAbsolutePath().normalize();
         this.produktkategorieRepository = produktkategorieRepository;
@@ -127,7 +127,7 @@ public class DateiSpeicherService {
             Files.createDirectories(this.bilderSpeicherplatz);
             Files.createDirectories(this.dokumentenSpeicherplatz);
             Files.createDirectories(this.hicadSpeicherplatz);
-            Files.createDirectories(this.angeboteSpeicherplatz);
+            Files.createDirectories(this.anfragenSpeicherplatz);
             Files.createDirectories(this.schnittbilderSpeicherplatz);
         } catch (Exception exception) {
             throw new RuntimeException("Konnte das Upload-Verzeichnis nicht erstellen.", exception);
@@ -255,9 +255,9 @@ public class DateiSpeicherService {
         return gespeichertesDokument;
     }
 
-    public AngebotDokument speichereAngebotsDatei(MultipartFile datei, Long angebotID, DokumentGruppe gruppe) {
-        Angebot angebot = angebotRepository.findById(angebotID)
-                .orElseThrow(() -> new RuntimeException("Angebot nicht gefunden!"));
+    public AnfrageDokument speichereAnfragesDatei(MultipartFile datei, Long anfrageID, DokumentGruppe gruppe) {
+        Anfrage anfrage = anfrageRepository.findById(anfrageID)
+                .orElseThrow(() -> new RuntimeException("Anfrage nicht gefunden!"));
         String originalDateiname = StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()));
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
         String lowerName = originalDateiname.toLowerCase();
@@ -265,7 +265,7 @@ public class DateiSpeicherService {
         boolean useHicadStorage = lowerName.endsWith(".sza") || lowerName.endsWith(".tcd")
                 || lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")
                 || lowerName.endsWith(".csv") || lowerName.endsWith(".ods") || lowerName.endsWith(".xlsb");
-        Path basisPfad = useHicadStorage ? this.hicadSpeicherplatz : this.angeboteSpeicherplatz;
+        Path basisPfad = useHicadStorage ? this.hicadSpeicherplatz : this.anfragenSpeicherplatz;
         Path zielPfad = basisPfad.resolve(gespeicherterDateiname);
         try {
             Files.copy(datei.getInputStream(), zielPfad, StandardCopyOption.REPLACE_EXISTING);
@@ -275,28 +275,28 @@ public class DateiSpeicherService {
         } catch (IOException ioException) {
             throw new RuntimeException("Datei konnte nicht gespeichert werden.", ioException);
         }
-        AngebotDokument dokument;
+        AnfrageDokument dokument;
         boolean istPdf = "application/pdf".equalsIgnoreCase(datei.getContentType());
         if (istPdf) {
             try {
                 var zugferdDaten = this.zugferdExtractorService.extract(zielPfad.toString(), originalDateiname);
-                if (zugferdDaten.getKundennummer() != null && angebot.getKunde() != null) {
-                    angebot.getKunde().setKundennummer(zugferdDaten.getKundennummer());
+                if (zugferdDaten.getKundennummer() != null && anfrage.getKunde() != null) {
+                    anfrage.getKunde().setKundennummer(zugferdDaten.getKundennummer());
                 }
                 if (zugferdDaten.getBetrag() != null) {
-                    angebot.setBetrag(zugferdDaten.getBetrag());
+                    anfrage.setBetrag(zugferdDaten.getBetrag());
                 }
-                angebotRepository.save(angebot);
+                anfrageRepository.save(anfrage);
                 boolean hatDaten = zugferdDaten.getRechnungsnummer() != null;
                 if (hatDaten) {
-                    var geschaeftsdokument = new AngebotGeschaeftsdokument();
+                    var geschaeftsdokument = new AnfrageGeschaeftsdokument();
                     geschaeftsdokument.setDokumentid(zugferdDaten.getRechnungsnummer());
                     geschaeftsdokument.setGeschaeftsdokumentart(zugferdDaten.getGeschaeftsdokumentart());
                     geschaeftsdokument.setBruttoBetrag(zugferdDaten.getBetrag());
                     dokument = geschaeftsdokument;
                 } else {
                     if (isDrawing) {
-                        var geschaeftsdokument = new AngebotGeschaeftsdokument();
+                        var geschaeftsdokument = new AnfrageGeschaeftsdokument();
                         String base = originalDateiname;
                         int dot = base.lastIndexOf('.');
                         if (dot > 0)
@@ -305,12 +305,12 @@ public class DateiSpeicherService {
                         geschaeftsdokument.setGeschaeftsdokumentart("Zeichnung");
                         dokument = geschaeftsdokument;
                     } else {
-                        dokument = new AngebotDokument();
+                        dokument = new AnfrageDokument();
                     }
                 }
             } catch (Exception ignored) {
                 if (isDrawing) {
-                    var geschaeftsdokument = new AngebotGeschaeftsdokument();
+                    var geschaeftsdokument = new AnfrageGeschaeftsdokument();
                     String base = originalDateiname;
                     int dot = base.lastIndexOf('.');
                     if (dot > 0)
@@ -319,24 +319,24 @@ public class DateiSpeicherService {
                     geschaeftsdokument.setGeschaeftsdokumentart("Zeichnung");
                     dokument = geschaeftsdokument;
                 } else {
-                    dokument = new AngebotDokument();
+                    dokument = new AnfrageDokument();
                 }
             }
         } else {
-            dokument = new AngebotDokument();
+            dokument = new AnfrageDokument();
         }
-        dokument.setAngebot(angebot);
+        dokument.setAnfrage(anfrage);
         dokument.setOriginalDateiname(originalDateiname);
         dokument.setGespeicherterDateiname(gespeicherterDateiname);
         dokument.setDateityp(datei.getContentType());
         dokument.setDateigroesse(datei.getSize());
         dokument.setUploadDatum(LocalDate.now());
         DokumentGruppe verwendeteGruppe = gruppe;
-        if (dokument instanceof AngebotGeschaeftsdokument && isDrawing) {
+        if (dokument instanceof AnfrageGeschaeftsdokument && isDrawing) {
             verwendeteGruppe = DokumentGruppe.GESCHAEFTSDOKUMENTE;
         }
         dokument.setDokumentGruppe(verwendeteGruppe);
-        return angebotDokumentRepository.save(dokument);
+        return anfrageDokumentRepository.save(dokument);
     }
 
     public ProjektGeschaeftsdokument speichereZugferdDatei(Path zugferdPfad, String originalDateiname, Long projektID,
@@ -432,22 +432,22 @@ public class DateiSpeicherService {
         return gespeichertesDokument;
     }
 
-    public AngebotGeschaeftsdokument speichereAngebotsZugferdDatei(Path zugferdPfad,
+    public AnfrageGeschaeftsdokument speichereAnfragesZugferdDatei(Path zugferdPfad,
             String originalDateiname,
-            Long angebotID,
+            Long anfrageID,
             ZugferdDaten daten) {
-        Angebot angebot = angebotRepository.findById(angebotID)
-                .orElseThrow(() -> new RuntimeException("Angebot nicht gefunden!"));
+        Anfrage anfrage = anfrageRepository.findById(anfrageID)
+                .orElseThrow(() -> new RuntimeException("Anfrage nicht gefunden!"));
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
-        Path zielPfad = this.angeboteSpeicherplatz.resolve(gespeicherterDateiname);
+        Path zielPfad = this.anfragenSpeicherplatz.resolve(gespeicherterDateiname);
         try {
             Files.copy(zugferdPfad, zielPfad, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new RuntimeException("Datei konnte nicht gespeichert werden.", e);
         }
 
-        AngebotGeschaeftsdokument dokument = new AngebotGeschaeftsdokument();
-        dokument.setAngebot(angebot);
+        AnfrageGeschaeftsdokument dokument = new AnfrageGeschaeftsdokument();
+        dokument.setAnfrage(anfrage);
         dokument.setOriginalDateiname(originalDateiname);
         dokument.setGespeicherterDateiname(gespeicherterDateiname);
         dokument.setDateityp("application/pdf");
@@ -479,19 +479,19 @@ public class DateiSpeicherService {
         dokument.setGeschaeftsdokumentart(dokumentart);
         dokument.setBruttoBetrag(daten.getBetrag());
 
-        AngebotGeschaeftsdokument gespeichertesDokument = (AngebotGeschaeftsdokument) angebotDokumentRepository
+        AnfrageGeschaeftsdokument gespeichertesDokument = (AnfrageGeschaeftsdokument) anfrageDokumentRepository
                 .save(dokument);
 
         boolean geaendert = false;
         if (daten.getBetrag() != null) {
-            angebot.setBetrag(daten.getBetrag());
+            anfrage.setBetrag(daten.getBetrag());
             geaendert = true;
         }
 
         if (daten.getKundennummer() != null && !daten.getKundennummer().isBlank()) {
             var existingKunde = kundeRepository.findByKundennummerIgnoreCase(daten.getKundennummer());
             if (existingKunde.isPresent()) {
-                angebot.setKunde(existingKunde.get());
+                anfrage.setKunde(existingKunde.get());
                 geaendert = true;
             } else {
                 if (daten.getKundenName() != null && !daten.getKundenName().isBlank()) {
@@ -500,7 +500,7 @@ public class DateiSpeicherService {
                     k.setKundennummer(daten.getKundennummer());
                     try {
                         k = kundeRepository.save(k);
-                        angebot.setKunde(k);
+                        anfrage.setKunde(k);
                         geaendert = true;
                     } catch (Exception e) {
                         // Ignore
@@ -510,7 +510,7 @@ public class DateiSpeicherService {
         }
 
         if (geaendert) {
-            angebotRepository.save(angebot);
+            anfrageRepository.save(anfrage);
         }
         return gespeichertesDokument;
     }
@@ -543,9 +543,9 @@ public class DateiSpeicherService {
         return dokumentRepository.save(dokument);
     }
 
-    public void verschiebeAngebotsDatei(AngebotDokument angebotDokument, Projekt projekt) {
+    public void verschiebeAnfragesDatei(AnfrageDokument anfrageDokument, Projekt projekt) {
         ProjektDokument dokument;
-        if (angebotDokument instanceof AngebotGeschaeftsdokument gesDoc) {
+        if (anfrageDokument instanceof AnfrageGeschaeftsdokument gesDoc) {
             ProjektGeschaeftsdokument geschaeftsDok = new ProjektGeschaeftsdokument();
             geschaeftsDok.setDokumentid(gesDoc.getDokumentid());
             geschaeftsDok.setGeschaeftsdokumentart(gesDoc.getGeschaeftsdokumentart());
@@ -556,13 +556,13 @@ public class DateiSpeicherService {
         }
 
         dokument.setProjekt(projekt);
-        dokument.setOriginalDateiname(angebotDokument.getOriginalDateiname());
-        dokument.setGespeicherterDateiname(angebotDokument.getGespeicherterDateiname());
-        dokument.setDateityp(angebotDokument.getDateityp());
-        dokument.setDateigroesse(angebotDokument.getDateigroesse());
-        dokument.setUploadDatum(angebotDokument.getUploadDatum());
-        dokument.setEmailVersandDatum(angebotDokument.getEmailVersandDatum());
-        dokument.setDokumentGruppe(angebotDokument.getDokumentGruppe());
+        dokument.setOriginalDateiname(anfrageDokument.getOriginalDateiname());
+        dokument.setGespeicherterDateiname(anfrageDokument.getGespeicherterDateiname());
+        dokument.setDateityp(anfrageDokument.getDateityp());
+        dokument.setDateigroesse(anfrageDokument.getDateigroesse());
+        dokument.setUploadDatum(anfrageDokument.getUploadDatum());
+        dokument.setEmailVersandDatum(anfrageDokument.getEmailVersandDatum());
+        dokument.setDokumentGruppe(anfrageDokument.getDokumentGruppe());
 
         dokumentRepository.save(dokument);
         aktualisiereProjektFinanzstatus(projekt.getId());
@@ -578,8 +578,8 @@ public class DateiSpeicherService {
         return dokumentRepository.findByProjektId(projektID);
     }
 
-    public List<AngebotDokument> holeDokumenteZuAngebot(Long angebotID) {
-        return angebotDokumentRepository.findByAngebotId(angebotID);
+    public List<AnfrageDokument> holeDokumenteZuAnfrage(Long anfrageID) {
+        return anfrageDokumentRepository.findByAnfrageId(anfrageID);
     }
 
     public List<ProjektGeschaeftsdokument> holeOffeneGeschaeftsdokumente() {
@@ -939,13 +939,13 @@ public class DateiSpeicherService {
         dto.setJahr(jahr);
         java.time.LocalDate start = java.time.LocalDate.of(jahr, 1, 1);
         java.time.LocalDate ende = java.time.LocalDate.of(jahr, 12, 31);
-        java.util.List<Angebot> angebote = angebotRepository.findByAnlegedatumBetween(start, ende);
+        java.util.List<Anfrage> anfragen = anfrageRepository.findByAnlegedatumBetween(start, ende);
         java.util.List<Projekt> projekte = projektRepository.findByAnlegedatumBetween(start, ende);
-        long offeneAngebote = angebote != null ? angebote.size() : 0L;
+        long offeneAnfragen = anfragen != null ? anfragen.size() : 0L;
         long projekteCount = projekte != null ? projekte.size() : 0L;
-        long gesamt = projekteCount + offeneAngebote;
-        dto.setAngeboteGesamt(gesamt);
-        dto.setAngeboteZuProjekt(projekteCount);
+        long gesamt = projekteCount + offeneAnfragen;
+        dto.setAnfragenGesamt(gesamt);
+        dto.setAnfragenZuProjekt(projekteCount);
         dto.setConversionRate(gesamt > 0 ? (projekteCount * 100d) / gesamt : 0d);
         return dto;
     }
@@ -1293,10 +1293,10 @@ public class DateiSpeicherService {
     }
 
     /**
-     * Prüft ob ein Projekt als bezahlt und abgeschlossen gesetzt werden kann.
+     * Prüft ob ein Projekt als bezahlt gesetzt werden kann.
      * Bedingung: Alle Rechnungen im Offene-Posten-Center sind als bezahlt markiert.
      * Wenn erfüllt → projekt.bezahlt = true, projekt.abgeschlossen = true
-     * Wenn nicht → projekt.bezahlt = false, projekt.abgeschlossen = false
+     * Wenn nicht → projekt.bezahlt = false (abgeschlossen bleibt unverändert)
      */
     private void pruefeProjektAbschluss(Long projektId) {
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
@@ -1333,11 +1333,11 @@ public class DateiSpeicherService {
     }
 
     @Transactional
-    public void loescheAngebotDatei(Long dokumentID) {
-        AngebotDokument dokument = this.angebotDokumentRepository.findById(dokumentID)
-                .orElseThrow(() -> new RuntimeException("Angebotsdokument konnte nicht gefunden werden!"));
+    public void loescheAnfrageDatei(Long dokumentID) {
+        AnfrageDokument dokument = this.anfrageDokumentRepository.findById(dokumentID)
+                .orElseThrow(() -> new RuntimeException("Anfragesdokument konnte nicht gefunden werden!"));
         try {
-            Path dateipfad = this.angeboteSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
+            Path dateipfad = this.anfragenSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
             if (!Files.deleteIfExists(dateipfad)) {
                 Path hicadPfad = this.hicadSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
                 if (!Files.deleteIfExists(hicadPfad)) {
@@ -1349,7 +1349,7 @@ public class DateiSpeicherService {
             throw new RuntimeException("Fehler beim löschen der phyisischen Datei: " + dokument.getOriginalDateiname(),
                     e);
         }
-        this.angebotDokumentRepository.delete(dokument);
+        this.anfrageDokumentRepository.delete(dokument);
     }
 
     /**
@@ -1418,7 +1418,7 @@ public class DateiSpeicherService {
             // Try all storage locations in order
             Path[] searchPaths = {
                     dokumentenSpeicherplatz.resolve(dateiname).normalize(),
-                    angeboteSpeicherplatz.resolve(dateiname).normalize(),
+                    anfragenSpeicherplatz.resolve(dateiname).normalize(),
                     hicadSpeicherplatz.resolve(dateiname).normalize()
             };
 
@@ -1432,7 +1432,7 @@ public class DateiSpeicherService {
             }
 
             // If not found with exact name, try case-insensitive search in each directory
-            for (Path basePath : new Path[] { dokumentenSpeicherplatz, angeboteSpeicherplatz, hicadSpeicherplatz }) {
+            for (Path basePath : new Path[] { dokumentenSpeicherplatz, anfragenSpeicherplatz, hicadSpeicherplatz }) {
                 try {
                     if (Files.exists(basePath) && Files.isDirectory(basePath)) {
                         java.util.Optional<Path> found = Files.list(basePath)
@@ -1451,7 +1451,7 @@ public class DateiSpeicherService {
             }
 
             throw new RuntimeException("Datei nicht gefunden oder nicht lesbar: " + dateiname +
-                    " (gesucht in: " + dokumentenSpeicherplatz + ", " + angeboteSpeicherplatz + ", "
+                    " (gesucht in: " + dokumentenSpeicherplatz + ", " + anfragenSpeicherplatz + ", "
                     + hicadSpeicherplatz + ")");
         } catch (MalformedURLException e) {
             throw new RuntimeException("Fehler beim Lesen der Datei: " + dateiname, e);
@@ -1573,7 +1573,7 @@ public class DateiSpeicherService {
         return dokumentRepository.findByGespeicherterDateinameIgnoreCase(dateiname)
                 .map(d -> (Dokument) d)
                 .or(() -> dokumentRepository.findByOriginalDateinameIgnoreCase(dateiname).map(d -> (Dokument) d))
-                .or(() -> angebotDokumentRepository.findByGespeicherterDateinameIgnoreCase(dateiname)
+                .or(() -> anfrageDokumentRepository.findByGespeicherterDateinameIgnoreCase(dateiname)
                         .map(d -> (Dokument) d))
                 // Fallback: Mitarbeiter-Dokumente
                 .or(() -> mitarbeiterDokumentRepository != null

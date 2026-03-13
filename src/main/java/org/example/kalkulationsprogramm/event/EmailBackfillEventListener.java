@@ -25,7 +25,7 @@ public class EmailBackfillEventListener {
 
     private final KundeRepository kundeRepository;
     private final LieferantenRepository lieferantenRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageRepository anfrageRepository;
     private final ProjektRepository projektRepository;
     private final EmailRepository emailRepository;
     private final org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
@@ -49,7 +49,7 @@ public class EmailBackfillEventListener {
             int count = switch (event.getEntityType()) {
                 case KUNDE -> handleKundeBackfill(event);
                 case LIEFERANT -> handleLieferantBackfill(event);
-                case ANGEBOT -> handleAngebotBackfill(event);
+                case ANFRAGE -> handleAnfrageBackfill(event);
                 case PROJEKT -> handleProjektBackfill(event);
             };
 
@@ -85,9 +85,9 @@ public class EmailBackfillEventListener {
     private boolean tryAssignToKundeContext(Email email, Kunde kunde) {
         // 1. Get all projects and offers of this customer
         List<Projekt> projekte = projektRepository.findByKundenId_Id(kunde.getId());
-        List<Angebot> angebote = angebotRepository.findByKundeId(kunde.getId());
+        List<Anfrage> anfragen = anfrageRepository.findByKundeId(kunde.getId());
 
-        int total = projekte.size() + angebote.size();
+        int total = projekte.size() + anfragen.size();
 
         // 2. If exactly one active project/offer, assign directly (strong heuristic)
         if (total == 1) {
@@ -96,16 +96,16 @@ public class EmailBackfillEventListener {
                 log.info("[EmailBackfill] Auto-assigned email {} to single project {} of customer {}",
                         email.getId(), projekte.getFirst().getId(), kunde.getId());
             } else {
-                email.assignToAngebot(angebote.getFirst());
+                email.assignToAnfrage(anfragen.getFirst());
                 log.info("[EmailBackfill] Auto-assigned email {} to single offer {} of customer {}",
-                        email.getId(), angebote.getFirst().getId(), kunde.getId());
+                        email.getId(), anfragen.getFirst().getId(), kunde.getId());
             }
             emailRepository.save(email);
             return true;
         }
 
         // 3. Keyword matching
-        return emailAutoAssignmentService.tryAssignByKeywords(email, projekte, angebote);
+        return emailAutoAssignmentService.tryAssignByKeywords(email, projekte, anfragen);
     }
 
     private int handleLieferantBackfill(EmailAddressChangedEvent event) {
@@ -218,9 +218,9 @@ public class EmailBackfillEventListener {
         return count + alreadyProcessed;
     }
 
-    private int handleAngebotBackfill(EmailAddressChangedEvent event) {
-        Angebot angebot = angebotRepository.findById(event.getEntityId()).orElse(null);
-        if (angebot == null) {
+    private int handleAnfrageBackfill(EmailAddressChangedEvent event) {
+        Anfrage anfrage = anfrageRepository.findById(event.getEntityId()).orElse(null);
+        if (anfrage == null) {
             return 0;
         }
 
@@ -230,7 +230,7 @@ public class EmailBackfillEventListener {
             for (Email email : emails) {
                 // Double check if it really matches (query is LIKE)
                 // Actually the query filters well enough for now
-                email.assignToAngebot(angebot);
+                email.assignToAnfrage(anfrage);
                 emailRepository.save(email);
                 count++;
             }

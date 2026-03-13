@@ -72,7 +72,7 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Aufträge',
                 items: [
                     { name: 'Projekte', href: '/projekte', icon: Briefcase },
-                    { name: 'Angebote', href: '/angebote', icon: FileCheck },
+                    { name: 'Anfragen', href: '/anfragen', icon: FileCheck },
                 ]
             },
             {

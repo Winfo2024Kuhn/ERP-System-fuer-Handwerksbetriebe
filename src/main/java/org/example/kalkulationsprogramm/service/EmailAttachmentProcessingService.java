@@ -36,6 +36,7 @@ public class EmailAttachmentProcessingService {
     private final EmailAttachmentRepository emailAttachmentRepository;
     private final LieferantDokumentRepository lieferantDokumentRepository;
     private final LieferantenRepository lieferantenRepository;
+    private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final GeminiDokumentAnalyseService geminiAnalyseService;
 
     // Self-injection für transactional proxy calls auf eigene Methoden
@@ -129,6 +130,22 @@ public class EmailAttachmentProcessingService {
         if (lieferant == null) {
             log.error("Lieferant ID {} nicht gefunden", lieferantId);
             return false;
+        }
+
+        // 2b. Duplikat-Check: Gleiche Dokumentnummer beim selben Lieferanten?
+        if (geschaeftsdaten != null && geschaeftsdaten.getDokumentNummer() != null
+                && !geschaeftsdaten.getDokumentNummer().isBlank()) {
+            boolean duplikat = lieferantGeschaeftsdokumentRepository.existsByLieferantIdAndDokumentNummer(
+                    lieferantId, geschaeftsdaten.getDokumentNummer());
+            if (duplikat) {
+                log.info("Duplikat erkannt: Dokumentnummer {} existiert bereits bei Lieferant {}. Überspringe.",
+                        geschaeftsdaten.getDokumentNummer(), lieferantId);
+                // Attachment als verarbeitet markieren, aber kein neues Dokument erstellen
+                attachment.setAiProcessed(true);
+                attachment.setAiProcessedAt(java.time.LocalDateTime.now());
+                emailAttachmentRepository.save(attachment);
+                return false;
+            }
         }
 
         // 3. Dokument erstellen (Atomic Save)

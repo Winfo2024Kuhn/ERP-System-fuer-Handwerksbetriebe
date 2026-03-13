@@ -204,7 +204,7 @@ public class FeiertagService {
 
     /**
      * Fallback: Generiert bayerische Feiertage lokal (falls API nicht erreichbar).
-     * Inkl. Mariä Himmelfahrt (15.8.) - gilt in überwiegend kath. Gemeinden in Bayern.
+     * Inkl. Mariä Himmelfahrt (15.8.) - gilt in Greußenheim (kath. Gemeinde).
      * 
      * Hinweis: Heiligabend und Silvester sind in Bayern KEINE gesetzlichen
      * Feiertage
@@ -220,7 +220,7 @@ public class FeiertagService {
         feiertage.add(new Feiertag(LocalDate.of(jahr, 1, 1), "Neujahr"));
         feiertage.add(new Feiertag(LocalDate.of(jahr, 1, 6), "Heilige Drei Könige"));
         feiertage.add(new Feiertag(LocalDate.of(jahr, 5, 1), "Tag der Arbeit"));
-        feiertage.add(new Feiertag(LocalDate.of(jahr, 8, 15), "Mariä Himmelfahrt")); // Bayern (kath. Gemeinde)
+        feiertage.add(new Feiertag(LocalDate.of(jahr, 8, 15), "Mariä Himmelfahrt")); // Greußenheim!
         feiertage.add(new Feiertag(LocalDate.of(jahr, 10, 3), "Tag der Deutschen Einheit"));
         feiertage.add(new Feiertag(LocalDate.of(jahr, 11, 1), "Allerheiligen"));
         feiertage.add(new Feiertag(LocalDate.of(jahr, 12, 25), "1. Weihnachtstag"));

@@ -7,9 +7,9 @@ import java.util.Locale;
 import java.util.Optional;
 
 import org.example.email.EmailService;
-import org.example.kalkulationsprogramm.domain.Angebot;
-import org.example.kalkulationsprogramm.domain.AngebotDokument;
-import org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.AnfrageDokument;
+import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
@@ -21,8 +21,8 @@ import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyResponse;
 import org.example.kalkulationsprogramm.dto.Email.EmailPreviewRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailSendRequest;
-import org.example.kalkulationsprogramm.repository.AngebotDokumentRepository;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.EmailAiService;
@@ -46,8 +46,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class EmailController {
     private final ProjektDokumentRepository dokumentRepository;
-    private final AngebotDokumentRepository angebotDokumentRepository;
-    private final AngebotRepository angebotRepository;
+    private final AnfrageDokumentRepository anfrageDokumentRepository;
+    private final AnfrageRepository anfrageRepository;
     private final org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
     private final EmailAiService emailAiService;
     private final EmailSignatureService emailSignatureService;
@@ -96,20 +96,20 @@ public class EmailController {
         ProjektDokument doc = dokumentRepository.findById(request.getDokumentId()).orElse(null);
         String userName = resolveUserName(request.getBenutzer(), request.getFrontendUserId());
 
-        // 1. Fallback: Angebot oder Zeichnung (wenn doc null)
+        // 1. Fallback: Anfrage oder Zeichnung (wenn doc null)
         if (doc == null) {
-            var angebotDocOpt = angebotDokumentRepository.findById(request.getDokumentId());
-            if (angebotDocOpt.isEmpty()) {
+            var anfrageDocOpt = anfrageDokumentRepository.findById(request.getDokumentId());
+            if (anfrageDocOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
             }
-            var angebotDoc = angebotDocOpt.get();
-            String name = angebotDoc.getOriginalDateiname();
+            var anfrageDoc = anfrageDocOpt.get();
+            String name = anfrageDoc.getOriginalDateiname();
             if (name != null) {
                 String lowerCase = name.toLowerCase();
                 if (lowerCase.contains("zeichnung") || lowerCase.contains("entwurf")) {
                     String bv = "";
-                    if (angebotDoc instanceof AngebotGeschaeftsdokument agd && agd.getAngebot() != null) {
-                        bv = agd.getAngebot().getBauvorhaben();
+                    if (anfrageDoc instanceof AnfrageGeschaeftsdokument agd && agd.getAnfrage() != null) {
+                        bv = agd.getAnfrage().getBauvorhaben();
                     }
                     if (bv == null)
                         bv = "";
@@ -158,7 +158,7 @@ public class EmailController {
             }
         }
 
-        // 3. Projekt-Geschäftsdokument (Rechnung / Angebot / AB)
+        // 3. Projekt-Geschäftsdokument (Rechnung / Anfrage / AB)
         if (!(doc instanceof ProjektGeschaeftsdokument gesDoc)) {
             return ResponseEntity.notFound().build();
         }
@@ -257,24 +257,24 @@ public class EmailController {
         return ResponseEntity.ok(content);
     }
 
-    @PostMapping("/preview/angebot")
+    @PostMapping("/preview/anfrage")
     public ResponseEntity<EmailService.EmailContent> previewOfferEmail(@RequestBody EmailPreviewRequest request) {
-        AngebotDokument doc = angebotDokumentRepository.findById(request.getDokumentId()).orElse(null);
+        AnfrageDokument doc = anfrageDokumentRepository.findById(request.getDokumentId()).orElse(null);
 
-        if (!(doc instanceof AngebotGeschaeftsdokument gesDoc)) {
+        if (!(doc instanceof AnfrageGeschaeftsdokument gesDoc)) {
             return ResponseEntity.notFound().build();
         }
-        Angebot angebot = gesDoc.getAngebot();
+        Anfrage anfrage = gesDoc.getAnfrage();
 
         String userName = resolveUserName(request.getBenutzer(), request.getFrontendUserId());
-        // Zeichnung/Entwurf beim Angebotsdokument -> Zeichnungs-E-Mail
+        // Zeichnung/Entwurf beim Anfragesdokument -> Zeichnungs-E-Mail
         if (doc.getOriginalDateiname() != null) {
             String lowerCase = doc.getOriginalDateiname().toLowerCase();
             if (lowerCase.contains("zeichnung") || lowerCase.contains("entwurf")) {
                 EmailService.EmailContent content = EmailService.buildDrawingEmail(
                         request.getAnrede(),
                         userName,
-                        angebot.getBauvorhaben() != null ? angebot.getBauvorhaben() : "");
+                        anfrage.getBauvorhaben() != null ? anfrage.getBauvorhaben() : "");
 
                 return ResponseEntity.ok(content);
             }
@@ -289,10 +289,10 @@ public class EmailController {
             return ResponseEntity.ok(content);
         }
         String bauvorhaben = request.getBauvorhaben() != null ? request.getBauvorhaben()
-                : (angebot.getBauvorhaben() != null ? angebot.getBauvorhaben() : "");
+                : (anfrage.getBauvorhaben() != null ? anfrage.getBauvorhaben() : "");
         EmailService.EmailContent content = EmailService.buildOfferEmail(
                 request.getAnrede(),
-                angebot.getKunde() != null ? angebot.getKunde().getName() : "",
+                anfrage.getKunde() != null ? anfrage.getKunde().getName() : "",
                 bauvorhaben,
                 gesDoc.getDokumentid(),
                 userName,
@@ -408,13 +408,13 @@ public class EmailController {
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/send/angebot")
+    @PostMapping("/send/anfrage")
     public ResponseEntity<Void> sendOfferEmail(@RequestBody EmailSendRequest request) {
-        AngebotDokument doc = angebotDokumentRepository.findById(request.getDokumentId()).orElse(null);
-        if (!(doc instanceof AngebotGeschaeftsdokument gesDoc)) {
+        AnfrageDokument doc = anfrageDokumentRepository.findById(request.getDokumentId()).orElse(null);
+        if (!(doc instanceof AnfrageGeschaeftsdokument gesDoc)) {
             return ResponseEntity.notFound().build();
         }
-        Angebot angebot = gesDoc.getAngebot();
+        Anfrage anfrage = gesDoc.getAnfrage();
         Path storedPath = resolveStoredPath(gesDoc.getGespeicherterDateiname());
         if (storedPath == null) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
@@ -446,30 +446,30 @@ public class EmailController {
         // ProcessedEmail-Logik entfernt - wird nun über das neue unified Email-System
         // gehandhabt
         if (request.getRecipient() != null && !request.getRecipient().isBlank()) {
-            boolean inKunde = angebot.getKunde() != null && angebot.getKunde().getKundenEmails() != null
-                    && angebot.getKunde().getKundenEmails().contains(request.getRecipient());
-            boolean inAngebot = angebot.getKundenEmails() != null
-                    && angebot.getKundenEmails().contains(request.getRecipient());
+            boolean inKunde = anfrage.getKunde() != null && anfrage.getKunde().getKundenEmails() != null
+                    && anfrage.getKunde().getKundenEmails().contains(request.getRecipient());
+            boolean inAnfrage = anfrage.getKundenEmails() != null
+                    && anfrage.getKundenEmails().contains(request.getRecipient());
 
-            if (!inKunde && !inAngebot) {
-                if (angebot.getKundenEmails() == null) {
-                    angebot.setKundenEmails(new java.util.ArrayList<>());
+            if (!inKunde && !inAnfrage) {
+                if (anfrage.getKundenEmails() == null) {
+                    anfrage.setKundenEmails(new java.util.ArrayList<>());
                 }
-                angebot.getKundenEmails().add(request.getRecipient());
+                anfrage.getKundenEmails().add(request.getRecipient());
             }
         }
         if (request.getBauvorhaben() != null) {
-            angebot.setBauvorhaben(request.getBauvorhaben());
+            anfrage.setBauvorhaben(request.getBauvorhaben());
         }
-        angebot.setEmailVersandDatum(LocalDate.now());
-        angebotRepository.save(angebot);
+        anfrage.setEmailVersandDatum(LocalDate.now());
+        anfrageRepository.save(anfrage);
         gesDoc.setEmailVersandDatum(LocalDate.now());
-        angebotDokumentRepository.save(gesDoc);
+        anfrageDokumentRepository.save(gesDoc);
         // Persist using Unified Email Entity
         try {
-            if (angebot != null) {
+            if (anfrage != null) {
                 var email = new Email();
-                email.assignToAngebot(angebot);
+                email.assignToAnfrage(anfrage);
                 email.setFromAddress(request.getFromAddress());
                 email.extractSenderDomain();
                 email.setRecipient(request.getRecipient());
@@ -516,7 +516,7 @@ public class EmailController {
                 emailRepository.save(email);
             }
         } catch (Exception ignored) {
-            log.error("Fehler beim Speichern der gesendeten Angebot-Email", ignored);
+            log.error("Fehler beim Speichern der gesendeten Anfrage-Email", ignored);
         }
         return ResponseEntity.ok().build();
     }

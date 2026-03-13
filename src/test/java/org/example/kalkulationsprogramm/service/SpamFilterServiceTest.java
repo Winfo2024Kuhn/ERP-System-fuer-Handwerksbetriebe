@@ -84,7 +84,7 @@ class SpamFilterServiceTest {
 
         @Test
         void normaleGeschaeftsEmailIstKeinSpam() {
-            Email email = erstelleEmail("info@handwerker.de", "Angebot für Dachsanierung", "Anbei unser Angebot für die geplante Dachsanierung.");
+            Email email = erstelleEmail("info@handwerker.de", "Anfrage für Dachsanierung", "Anbei unser Anfrage für die geplante Dachsanierung.");
 
             int score = service.calculateSpamScore(email);
 
@@ -101,7 +101,7 @@ class SpamFilterServiceTest {
 
         @Test
         void lieferantenDomainWirdGewhitelistet() {
-            Email email = erstelleEmail("noreply@wuerth.com", "DRINGENDES ANGEBOT", "Act now! Limited time offer!");
+            Email email = erstelleEmail("noreply@wuerth.com", "DRINGENDES ANFRAGE", "Act now! Limited time offer!");
 
             when(lieferantenRepository.findByEmail("noreply@wuerth.com")).thenReturn(Optional.empty());
             when(lieferantenRepository.existsByEmailDomain("wuerth.com")).thenReturn(true);

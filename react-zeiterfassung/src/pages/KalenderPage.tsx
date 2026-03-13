@@ -33,8 +33,8 @@ interface KalenderEintrag {
     kundeName: string | null
     lieferantId: number | null
     lieferantName: string | null
-    angebotId: number | null
-    angebotBetreff: string | null
+    anfrageId: number | null
+    anfrageBetreff: string | null
     erstellerId: number | null
     erstellerName: string | null
     teilnehmer: Teilnehmer[]
@@ -199,8 +199,8 @@ export default function KalenderPage({ mitarbeiter: _mitarbeiter, token, syncSta
             kundeName: null,
             lieferantId: null,
             lieferantName: null,
-            angebotId: null,
-            angebotBetreff: null,
+            anfrageId: null,
+            anfrageBetreff: null,
             erstellerId: null,
             erstellerName: 'System',
             teilnehmer: []
@@ -240,8 +240,8 @@ export default function KalenderPage({ mitarbeiter: _mitarbeiter, token, syncSta
                         kundeName: null,
                         lieferantId: null,
                         lieferantName: null,
-                        angebotId: null,
-                        angebotBetreff: null,
+                        anfrageId: null,
+                        anfrageBetreff: null,
                         erstellerId: a.mitarbeiterId,
                         erstellerName: a.mitarbeiterName,
                         teilnehmer: []
@@ -308,8 +308,8 @@ export default function KalenderPage({ mitarbeiter: _mitarbeiter, token, syncSta
                         kundeName: null,
                         lieferantId: null,
                         lieferantName: null,
-                        angebotId: null,
-                        angebotBetreff: null,
+                        anfrageId: null,
+                        anfrageBetreff: null,
                         erstellerId: a.mitarbeiterId,
                         erstellerName: a.mitarbeiterName,
                         teilnehmer: []
@@ -353,8 +353,8 @@ export default function KalenderPage({ mitarbeiter: _mitarbeiter, token, syncSta
                 kundeName: null,
                 lieferantId: null,
                 lieferantName: null,
-                angebotId: null,
-                angebotBetreff: null,
+                anfrageId: null,
+                anfrageBetreff: null,
                 erstellerId: a.mitarbeiterId,
                 erstellerName: a.mitarbeiterName,
                 teilnehmer: []
@@ -724,7 +724,7 @@ export default function KalenderPage({ mitarbeiter: _mitarbeiter, token, syncSta
                             )}
 
                             {/* Verknüpfungen */}
-                            {(selectedEintrag.projektId || selectedEintrag.kundeId || selectedEintrag.lieferantId || selectedEintrag.angebotId) && (
+                            {(selectedEintrag.projektId || selectedEintrag.kundeId || selectedEintrag.lieferantId || selectedEintrag.anfrageId) && (
                                 <div>
                                     <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Verknüpfungen</p>
                                     <div className="space-y-2">
@@ -773,17 +773,17 @@ export default function KalenderPage({ mitarbeiter: _mitarbeiter, token, syncSta
                                                 <ExternalLink className="w-4 h-4 text-amber-500" />
                                             </button>
                                         )}
-                                        {selectedEintrag.angebotId && selectedEintrag.angebotBetreff && (
+                                        {selectedEintrag.anfrageId && selectedEintrag.anfrageBetreff && (
                                             <button
-                                                onClick={() => { setShowEventModal(false); navigate(`/angebote?id=${selectedEintrag.angebotId}`); }}
+                                                onClick={() => { setShowEventModal(false); navigate(`/anfragen?id=${selectedEintrag.anfrageId}`); }}
                                                 className="w-full flex items-center gap-3 p-3 bg-green-50 hover:bg-green-100 border border-green-200 rounded-xl transition-colors text-left"
                                             >
                                                 <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
                                                     <FileText className="w-4 h-4 text-green-600" />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-xs text-slate-500">Angebot</p>
-                                                    <p className="text-sm font-medium text-slate-900 truncate">{selectedEintrag.angebotBetreff}</p>
+                                                    <p className="text-xs text-slate-500">Anfrage</p>
+                                                    <p className="text-sm font-medium text-slate-900 truncate">{selectedEintrag.anfrageBetreff}</p>
                                                 </div>
                                                 <ExternalLink className="w-4 h-4 text-green-500" />
                                             </button>

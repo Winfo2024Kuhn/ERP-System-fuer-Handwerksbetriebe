@@ -396,7 +396,7 @@ export function KiHilfeChat() {
                         <p className="text-sm font-medium">Wie kann ich dir helfen?</p>
                         <div className="space-y-2">
                             {[
-                                'Wie erstelle ich ein neues Angebot?',
+                                'Wie erstelle ich ein neues Anfrage?',
                                 'Wo finde ich die Zeiterfassung?',
                                 'Wie funktioniert die Kalkulation?',
                             ].map((suggestion) => (
@@ -514,7 +514,7 @@ export function KiHilfeChat() {
 
 /** Valid internal routes that can be linked */
 const VALID_ROUTES = new Set([
-    '/projekte', '/angebote', '/kunden', '/lieferanten', '/artikel',
+    '/projekte', '/anfragen', '/kunden', '/lieferanten', '/artikel',
     '/bestellungen', '/bestellungen/bedarf', '/textbausteine', '/leistungen',
     '/arbeitsgaenge', '/produktkategorien', '/mitarbeiter', '/arbeitszeitarten',
     '/kalender', '/emails', '/formulare', '/offeneposten',

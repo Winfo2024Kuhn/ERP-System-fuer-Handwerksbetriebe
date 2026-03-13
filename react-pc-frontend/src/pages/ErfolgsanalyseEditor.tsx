@@ -84,8 +84,8 @@ interface MonatsumsatzDto {
 
 interface ConversionRateDto {
     jahr: number;
-    angeboteGesamt: number;
-    angeboteZuProjekt: number;
+    anfragenGesamt: number;
+    anfragenZuProjekt: number;
     conversionRate: number;
 }
 
@@ -558,16 +558,16 @@ export default function ErfolgsanalyseEditor() {
 
     const konversionChartData = useMemo(() => {
         if (!statistiken?.konversion) return null;
-        const { angeboteGesamt, angeboteZuProjekt } = statistiken.konversion;
-        if (angeboteGesamt === 0 && angeboteZuProjekt === 0) return null;
+        const { anfragenGesamt, anfragenZuProjekt } = statistiken.konversion;
+        if (anfragenGesamt === 0 && anfragenZuProjekt === 0) return null;
 
         // Die Differenz berechnen, damit der Doughnut-Chart die korrekte 100% Verteilung zeigt
-        const offen = Math.max(0, angeboteGesamt - angeboteZuProjekt);
+        const offen = Math.max(0, anfragenGesamt - anfragenZuProjekt);
 
         return {
             labels: ['Konvertiert', 'Offen / Nicht beauftragt'],
             datasets: [{
-                data: [angeboteZuProjekt, offen],
+                data: [anfragenZuProjekt, offen],
                 backgroundColor: [
                     'rgba(225, 29, 72, 0.8)', // Rot für Konvertiert
                     'rgba(148, 163, 184, 0.4)', // Helles Grau für Offen
@@ -1066,7 +1066,7 @@ export default function ErfolgsanalyseEditor() {
                                             {formatPercent(statistiken.konversion.conversionRate)}
                                         </p>
                                         <p className="text-sm font-semibold text-slate-500 mt-1 uppercase tracking-wider">
-                                            {statistiken.konversion.angeboteZuProjekt} von {statistiken.konversion.angeboteGesamt} Projekten
+                                            {statistiken.konversion.anfragenZuProjekt} von {statistiken.konversion.anfragenGesamt} Projekten
                                         </p>
                                     </div>
                                 )}

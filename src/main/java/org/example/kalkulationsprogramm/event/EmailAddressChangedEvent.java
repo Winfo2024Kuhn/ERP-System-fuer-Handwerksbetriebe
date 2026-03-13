@@ -14,7 +14,7 @@ import java.util.List;
 public class EmailAddressChangedEvent {
 
     public enum EntityType {
-        KUNDE, LIEFERANT, ANGEBOT, PROJEKT
+        KUNDE, LIEFERANT, ANFRAGE, PROJEKT
     }
 
     /**

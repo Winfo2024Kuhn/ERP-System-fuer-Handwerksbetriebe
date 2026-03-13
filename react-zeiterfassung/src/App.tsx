@@ -6,8 +6,8 @@ import ZeiterfassungPage from './pages/ZeiterfassungPage'
 import ProjektePage from './pages/ProjektePage'
 import ProjektNotizenPage from './pages/ProjektNotizenPage'
 
-import AngebotePage from './pages/AngebotePage'
-import AngebotNotizenPage from './pages/AngebotNotizenPage'
+import AnfragenPage from './pages/AnfragenPage'
+import AnfrageNotizenPage from './pages/AnfrageNotizenPage'
 import KundenPage from './pages/KundenPage'
 import LieferantenPage from './pages/LieferantenPage'
 import UrlaubsantragPage from './pages/UrlaubsantragPage'
@@ -278,8 +278,8 @@ function App() {
         <Route path="/projekte" element={<ProjektePage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />
         <Route path="/projekte/:projektId/notizen" element={<ProjektNotizenPage />} />
 
-        <Route path="/angebote" element={<AngebotePage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />
-        <Route path="/angebote/:angebotId/notizen" element={<AngebotNotizenPage />} />
+        <Route path="/anfragen" element={<AnfragenPage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />
+        <Route path="/anfragen/:anfrageId/notizen" element={<AnfrageNotizenPage />} />
         <Route path="/kunden" element={<KundenPage syncStatus={syncStatus} onSync={syncData} />} />
         <Route path="/lieferanten" element={<LieferantenPage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />
         <Route path="/lieferanten/:lieferantId/lieferscheine" element={<LieferantLieferscheinePage />} />
