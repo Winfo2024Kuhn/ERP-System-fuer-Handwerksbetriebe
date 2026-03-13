@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.event;
 
+import java.util.List;
+
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-
-import java.util.List;
 
 /**
  * Event das ausgelöst wird, wenn E-Mail-Adressen einer Entität geändert werden.

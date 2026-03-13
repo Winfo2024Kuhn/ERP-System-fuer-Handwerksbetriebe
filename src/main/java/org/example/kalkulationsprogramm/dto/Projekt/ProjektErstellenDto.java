@@ -1,14 +1,15 @@
 package org.example.kalkulationsprogramm.dto.Projekt;
 
-import lombok.Getter;
-import lombok.Setter;
-import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieErfassenDto;
-import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto;
-import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenErfassenDto;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+
+import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenErfassenDto;
+import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieErfassenDto;
+import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto;
+
+import lombok.Getter;
+import lombok.Setter;
 
 @Getter
 @Setter
