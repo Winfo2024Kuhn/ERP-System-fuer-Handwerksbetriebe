@@ -120,7 +120,7 @@ public class PdfAiExtractorService {
     private String aiBackend;
 
     // ========== GEMINI API ==========
-    @Value("${ai.gemini.api-key:***REMOVED***}")
+    @Value("${ai.gemini.api-key:}")
     private String geminiApiKey;
 
     @Value("${ai.gemini.model.pdf-extractor:gemini-3-flash-preview}")
