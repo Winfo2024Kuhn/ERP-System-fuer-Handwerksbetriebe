@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.util.Locale;
 import java.util.Map;
 
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
@@ -46,6 +47,14 @@ public class SystemSettingsController {
 
     @PutMapping("/smtp")
     public ResponseEntity<Map<String, String>> saveSmtp(@RequestBody SmtpSettingsRequest req) {
+        if (!hasValue(req.host())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Bitte einen gültigen SMTP-Server eintragen."));
+        }
+
+        if (!hasValue(req.username())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Bitte einen gültigen SMTP-Benutzernamen eintragen."));
+        }
+
         String effectivePassword = req.password();
         if (effectivePassword == null || effectivePassword.isBlank()) {
             effectivePassword = settingsService.getSmtpPassword();
@@ -91,7 +100,15 @@ public class SystemSettingsController {
     // ==================== DTOs ====================
 
     private boolean hasValue(String val) {
-        return val != null && !val.isBlank() && !"OVERRIDE_IN_LOCAL".equals(val);
+        if (val == null) {
+            return false;
+        }
+
+        String normalized = val.trim().toLowerCase(Locale.ROOT);
+        return !normalized.isBlank()
+                && !"override_in_local".equals(normalized)
+                && !"smtp.example.com".equals(normalized)
+                && !"change_me_strong_password".equals(normalized);
     }
 
     record SmtpSettingsResponse(String host, int port, String username, boolean passwordSet) {}

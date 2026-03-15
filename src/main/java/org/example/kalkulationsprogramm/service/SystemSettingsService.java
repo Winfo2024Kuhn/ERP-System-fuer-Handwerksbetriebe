@@ -6,6 +6,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
@@ -62,7 +63,7 @@ public class SystemSettingsService {
     }
 
     public String getSmtpHost() {
-        return get("smtp.host", defaultSmtpHost);
+        return sanitizeValue(get("smtp.host", defaultSmtpHost));
     }
 
     public int getSmtpPort() {
@@ -75,15 +76,15 @@ public class SystemSettingsService {
     }
 
     public String getSmtpUsername() {
-        return get("smtp.username", defaultSmtpUsername);
+        return sanitizeValue(get("smtp.username", defaultSmtpUsername));
     }
 
     public String getSmtpPassword() {
-        return get("smtp.password", defaultSmtpPassword);
+        return sanitizeValue(get("smtp.password", defaultSmtpPassword));
     }
 
     public String getGeminiApiKey() {
-        return get("ai.gemini.api-key", defaultGeminiApiKey);
+        return sanitizeValue(get("ai.gemini.api-key", defaultGeminiApiKey));
     }
 
     public boolean isInitialConfigurationRequired() {
@@ -240,8 +241,28 @@ public class SystemSettingsService {
         return value.substring(0, 3) + "***" + value.substring(value.length() - 3);
     }
 
+    private String sanitizeValue(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        String trimmed = value.trim();
+        if (trimmed.isBlank()) {
+            return "";
+        }
+
+        String normalized = trimmed.toLowerCase(Locale.ROOT);
+        if ("override_in_local".equals(normalized)
+                || "smtp.example.com".equals(normalized)
+                || "change_me_strong_password".equals(normalized)) {
+            return "";
+        }
+
+        return trimmed;
+    }
+
     private boolean hasConfiguredValue(String value) {
-        return value != null && !value.isBlank() && !"OVERRIDE_IN_LOCAL".equals(value);
+        return !sanitizeValue(value).isBlank();
     }
 
     /**

@@ -7,6 +7,16 @@ import { useToast } from '../components/ui/toast';
 import { useAuth } from '../auth/AuthContext';
 import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfigurator';
 
+interface SmtpSetupStatus {
+    host?: string;
+    username?: string;
+    passwordSet?: boolean;
+}
+
+interface GeminiSetupStatus {
+    apiKeySet?: boolean;
+}
+
 export default function FirstLoginSetupPage() {
     const toast = useToast();
     const navigate = useNavigate();
@@ -16,13 +26,37 @@ export default function FirstLoginSetupPage() {
     const handleFinish = async () => {
         setChecking(true);
         try {
+            const [smtpRes, geminiRes] = await Promise.all([
+                fetch('/api/settings/smtp'),
+                fetch('/api/settings/gemini'),
+            ]);
+
+            if (smtpRes.ok) {
+                const smtpData = await smtpRes.json() as SmtpSetupStatus;
+                const smtpReady = !!smtpData.host?.trim() && !!smtpData.username?.trim() && !!smtpData.passwordSet;
+                if (!smtpReady) {
+                    toast.error('SMTP unvollständig: bitte Server, Benutzername und Passwort speichern.');
+                    return;
+                }
+            }
+
+            if (geminiRes.ok) {
+                const geminiData = await geminiRes.json() as GeminiSetupStatus;
+                if (!geminiData.apiKeySet) {
+                    toast.error('Gemini API Key fehlt oder ist ungültig gespeichert.');
+                    return;
+                }
+            }
+
             const refreshed = await refreshMe();
             if (refreshed?.requiresInitialSetup) {
-                toast.error('Bitte Gemini-Key und SMTP-Konfiguration vollständig speichern.');
+                toast.error('Konfiguration noch nicht vollständig. Bitte SMTP und Gemini vollständig speichern.');
                 return;
             }
             toast.success('Ersteinrichtung abgeschlossen.');
             navigate('/projekte', { replace: true });
+        } catch {
+            toast.error('Konfiguration konnte nicht geprüft werden. Bitte später erneut versuchen.');
         } finally {
             setChecking(false);
         }
