@@ -21,7 +21,10 @@ import { useConfirm } from '../components/ui/confirm-dialog';
 interface FrontendUser {
     id: number;
     displayName: string;
+    username: string | null;
     shortCode: string | null;
+    roles: string[];
+    active: boolean;
     defaultSignature: { id: number; name: string } | null;
     mitarbeiter: { id: number; vorname: string; nachname: string } | null;
 }
@@ -84,9 +87,22 @@ const UserList: React.FC<UserListProps> = ({
                                 <p className="text-sm font-semibold text-slate-900 truncate">
                                     {user.displayName}
                                 </p>
-                                {user.shortCode && (
-                                    <p className="text-xs text-slate-500">{user.shortCode}</p>
-                                )}
+                                <div className="flex items-center gap-2 text-xs text-slate-500">
+                                    <span>{user.username || 'kein Login'}</span>
+                                    <span className={cn(
+                                        'px-1.5 py-0.5 rounded border',
+                                        user.roles?.includes('ADMIN')
+                                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                                    )}>
+                                        {user.roles?.includes('ADMIN') ? 'Admin' : 'User'}
+                                    </span>
+                                    {!user.active && (
+                                        <span className="px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                                            Inaktiv
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                         <button
@@ -121,6 +137,10 @@ export default function BenutzerEditor() {
     const [formData, setFormData] = useState({
         id: null as number | null,
         displayName: '',
+        username: '',
+        password: '',
+        role: 'USER' as 'ADMIN' | 'USER',
+        active: true,
         shortCode: '',
         defaultSignatureId: null as number | null,
         mitarbeiterId: null as number | null,
@@ -166,6 +186,10 @@ export default function BenutzerEditor() {
             setFormData({
                 id: selectedUser.id,
                 displayName: selectedUser.displayName,
+                username: selectedUser.username || '',
+                password: '',
+                role: selectedUser.roles?.includes('ADMIN') ? 'ADMIN' : 'USER',
+                active: selectedUser.active !== false,
                 shortCode: selectedUser.shortCode || '',
                 defaultSignatureId: selectedUser.defaultSignature?.id || null,
                 mitarbeiterId: selectedUser.mitarbeiter?.id || null,
@@ -179,6 +203,10 @@ export default function BenutzerEditor() {
         setFormData({
             id: null,
             displayName: '',
+            username: '',
+            password: '',
+            role: 'USER',
+            active: true,
             shortCode: '',
             defaultSignatureId: null,
             mitarbeiterId: null,
@@ -187,7 +215,11 @@ export default function BenutzerEditor() {
 
     // Save user
     const handleSave = async () => {
-        if (!formData.displayName.trim()) return;
+        if (!formData.displayName.trim() || !formData.username.trim()) return;
+        if (!formData.id && formData.password.length < 8) {
+            toast.error('Neues Passwort muss mindestens 8 Zeichen lang sein.');
+            return;
+        }
         setSaving(true);
         try {
             const res = await fetch('/api/frontend-users', {
@@ -196,6 +228,10 @@ export default function BenutzerEditor() {
                 body: JSON.stringify({
                     id: formData.id,
                     displayName: formData.displayName.trim(),
+                    username: formData.username.trim(),
+                    password: formData.password || null,
+                    roles: [formData.role],
+                    active: formData.active,
                     shortCode: formData.shortCode.trim() || null,
                     defaultSignatureId: formData.defaultSignatureId,
                     mitarbeiterId: formData.mitarbeiterId,
@@ -203,6 +239,7 @@ export default function BenutzerEditor() {
             });
             if (res.ok) {
                 await loadData();
+                setFormData(prev => ({ ...prev, password: '' }));
                 if (!formData.id) {
                     // Reset form after creating new user
                     handleNewUser();
@@ -311,6 +348,63 @@ export default function BenutzerEditor() {
                             />
                         </div>
 
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="username">Benutzername *</Label>
+                                <Input
+                                    id="username"
+                                    value={formData.username}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+                                    placeholder="z.B. max.mustermann"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="password">
+                                    Passwort {formData.id ? '(optional ändern)' : '*'}
+                                </Label>
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    value={formData.password}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                                    placeholder={formData.id ? 'leer lassen = unverändert' : 'mindestens 8 Zeichen'}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Rolle *</Label>
+                                <Select
+                                    value={formData.role}
+                                    onChange={(value) => setFormData(prev => ({
+                                        ...prev,
+                                        role: value === 'ADMIN' ? 'ADMIN' : 'USER'
+                                    }))}
+                                    options={[
+                                        { value: 'USER', label: 'User' },
+                                        { value: 'ADMIN', label: 'Admin' },
+                                    ]}
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Kontostatus</Label>
+                                <div className="h-10 px-3 rounded-md border border-slate-200 flex items-center">
+                                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.active}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, active: e.target.checked }))}
+                                            className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                        />
+                                        Aktiv
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Short Code */}
                         <div className="space-y-2">
                             <Label htmlFor="shortCode">Kürzel (optional)</Label>
@@ -370,9 +464,8 @@ export default function BenutzerEditor() {
                         <div className="rounded-2xl border border-dashed border-slate-300 p-4 bg-slate-50">
                             <h4 className="text-sm font-semibold text-slate-900 mb-2">Hinweis</h4>
                             <p className="text-sm text-slate-600 leading-relaxed">
-                                Benutzerprofile werden für die Personalisierung von E-Mails und
-                                Dokumenten verwendet. Durch die Mitarbeiter-Zuordnung können hochgeladene Dokumente
-                                dem jeweiligen Mitarbeiter zugeordnet werden.
+                                Benutzerprofile steuern Login, Rollen und die Personalisierung von E-Mails/Dokumenten.
+                                Die Mitarbeiter-Zuordnung dient der Nachverfolgung hochgeladener Dokumente.
                             </p>
                         </div>
 
@@ -382,7 +475,12 @@ export default function BenutzerEditor() {
                                 className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                                 size="sm"
                                 onClick={handleSave}
-                                disabled={!formData.displayName.trim() || saving}
+                                disabled={
+                                    !formData.displayName.trim()
+                                    || !formData.username.trim()
+                                    || (!formData.id && formData.password.length < 8)
+                                    || saving
+                                }
                             >
                                 <Save className="w-4 h-4" />
                                 {saving ? 'Speichert...' : formData.id ? 'Speichern' : 'Erstellen'}

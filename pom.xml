@@ -26,10 +26,13 @@
         <tag/>
         <url/>
     </scm>
-<properties>
+    <properties>
         <java.version>23</java.version>
         <maven.compiler.source>23</maven.compiler.source>
         <maven.compiler.target>23</maven.compiler.target>
+        <flyway.url>jdbc:mariadb://localhost:3307/kalkulationsprogramm_db</flyway.url>
+        <flyway.user>Marvin</flyway.user>
+        <flyway.password>YOUR_DB_PASSWORD</flyway.password>
         
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -78,6 +81,11 @@
             <artifactId>spring-boot-devtools</artifactId>
             <scope>runtime</scope>
             <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.mariadb.jdbc</groupId>
+            <artifactId>mariadb-java-client</artifactId>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>com.mysql</groupId>
@@ -234,17 +242,21 @@
                 <artifactId>flyway-maven-plugin</artifactId>
                 <version>9.22.3</version>
                 <configuration>
-                    <url>jdbc:mysql://localhost:3307/kalkulationsprogramm_db</url>
-                    <user>Marvin</user>
-                    <password>YOUR_DB_PASSWORD</password>
+                    <url>${flyway.url}</url>
+                    <user>${flyway.user}</user>
+                    <password>${flyway.password}</password>
                     <locations>classpath:db/migration</locations>
                 </configuration>
                 <dependencies>
                     <dependency>
+                        <groupId>org.mariadb.jdbc</groupId>
+                        <artifactId>mariadb-java-client</artifactId>
+                        <version>3.4.1</version>
+                    </dependency>
+                    <dependency>
                         <groupId>com.mysql</groupId>
                         <artifactId>mysql-connector-j</artifactId>
-                        <version>8.3.0</version>
-
+                        <version>8.4.0</version>
                     </dependency>
                 </dependencies>
             </plugin>

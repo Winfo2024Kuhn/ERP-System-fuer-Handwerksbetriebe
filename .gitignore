@@ -56,6 +56,9 @@ build_error_log.txt
 .rag-cache.json
 
 ### Local Overrides (Secrets, Credentials) ###
+.env
+.env.*
+!.env.example
 src/main/resources/application-local.properties
 src/main/resources/keystore.p12
 

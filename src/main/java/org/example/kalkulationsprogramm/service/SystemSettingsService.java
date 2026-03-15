@@ -1,22 +1,31 @@
 package org.example.kalkulationsprogramm.service;
 
-import jakarta.mail.*;
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeMessage;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Properties;
+
 import org.example.kalkulationsprogramm.domain.SystemSetting;
 import org.example.kalkulationsprogramm.repository.SystemSettingRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.*;
+import jakarta.mail.AuthenticationFailedException;
+import jakarta.mail.Authenticator;
+import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
+import jakarta.mail.PasswordAuthentication;
+import jakarta.mail.Session;
+import jakarta.mail.Transport;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeMessage;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Verwaltet System-Einstellungen die zur Laufzeit im Frontend änderbar sind.
@@ -75,6 +84,17 @@ public class SystemSettingsService {
 
     public String getGeminiApiKey() {
         return get("ai.gemini.api-key", defaultGeminiApiKey);
+    }
+
+    public boolean isInitialConfigurationRequired() {
+        return !hasConfiguredValue(getGeminiApiKey()) || !isSmtpConfigured();
+    }
+
+    public boolean isSmtpConfigured() {
+        return hasConfiguredValue(getSmtpHost())
+                && getSmtpPort() > 0
+                && hasConfiguredValue(getSmtpUsername())
+                && hasConfiguredValue(getSmtpPassword());
     }
 
     /**
@@ -218,6 +238,10 @@ public class SystemSettingsService {
             return "***";
         }
         return value.substring(0, 3) + "***" + value.substring(value.length() - 3);
+    }
+
+    private boolean hasConfiguredValue(String value) {
+        return value != null && !value.isBlank() && !"OVERRIDE_IN_LOCAL".equals(value);
     }
 
     /**

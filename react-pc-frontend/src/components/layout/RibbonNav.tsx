@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { NotificationBell } from './NotificationBell';
+import { useAuth } from '../../auth/AuthContext';
 
 // Navigation structure with subgroups for better organization
 interface NavItem {
@@ -155,80 +156,59 @@ const NAVIGATION: NavCategory[] = [
     }
 ];
 
+const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer']);
+
 
 export function RibbonNavigation() {
     const location = useLocation();
+    const navigate = useNavigate();
+    const { user, isAdmin, logout } = useAuth();
+
+    const visibleNavigation = useMemo<NavCategory[]>(() => {
+        return NAVIGATION
+            .map((category) => ({
+                ...category,
+                subgroups: category.subgroups
+                    .map((subgroup) => ({
+                        ...subgroup,
+                        items: subgroup.items.filter((item) => isAdmin || !ADMIN_ONLY_PATHS.has(item.href)),
+                    }))
+                    .filter((subgroup) => subgroup.items.length > 0),
+            }))
+            .filter((category) => category.subgroups.length > 0);
+    }, [isAdmin]);
+
     const [activeCategory, setActiveCategory] = useState<string>(NAVIGATION[0].category);
     const [isExpanded, setIsExpanded] = useState(true);
 
     // Auto-select category based on current route
     useEffect(() => {
-        const currentGroup = NAVIGATION.find(group =>
+        const currentGroup = visibleNavigation.find(group =>
             group.subgroups.some(sg => sg.items.some(item => location.pathname.startsWith(item.href)))
         );
         if (currentGroup) {
             setActiveCategory(currentGroup.category);
         }
-    }, [location.pathname]);
-
-    // User Selection State
-    interface FrontendUserProfile {
-        id: number;
-        displayName: string;
-        shortCode: string | null;
-        roles?: string[];
-        mitarbeiter?: {
-            id: number;
-            loginToken?: string;
-        };
-    }
-    const [currentUser, setCurrentUser] = useState<FrontendUserProfile | null>(null);
-    const [users, setUsers] = useState<FrontendUserProfile[]>([]);
-    const [showUserMenu, setShowUserMenu] = useState(false);
-
-    // localStorage key for user selection persistence
-    const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
-
-    // Sync user selection to localStorage - inkl. loginToken für API-Authentifizierung
-    const selectUser = (user: FrontendUserProfile) => {
-        setCurrentUser(user);
-        try {
-            localStorage.setItem(FRONTEND_USER_STORAGE_KEY, JSON.stringify({
-                id: user.id,
-                displayName: user.displayName,
-                loginToken: user.mitarbeiter?.loginToken || null,
-                mitarbeiterId: user.mitarbeiter?.id || null,
-                roles: user.roles || []
-            }));
-        } catch (_) { /* ignore */ }
-    };
+    }, [location.pathname, visibleNavigation]);
 
     useEffect(() => {
-        fetch('/api/frontend-users')
-            .then(res => res.json())
-            .then(data => {
-                if (Array.isArray(data)) {
-                    setUsers(data);
-                    // Try to restore from localStorage first
-                    try {
-                        const stored = localStorage.getItem(FRONTEND_USER_STORAGE_KEY);
-                        if (stored) {
-                            const parsed = JSON.parse(stored);
-                            const found = data.find((u: FrontendUserProfile) => u.id === parsed.id);
-                            if (found) {
-                                setCurrentUser(found);
-                                return;
-                            }
-                        }
-                    } catch (_) { /* ignore */ }
-                    // Fallback: use first user
-                    if (data.length > 0) {
-                        selectUser(data[0]);
-                    }
-                }
-            })
-            .catch(err => console.error("Failed to load users", err));
-    }, []);
+        if (visibleNavigation.length === 0) {
+            return;
+        }
+        if (!visibleNavigation.some(group => group.category === activeCategory)) {
+            setActiveCategory(visibleNavigation[0].category);
+        }
+    }, [visibleNavigation, activeCategory]);
+
+    // User Menu State
+    const currentUser = user;
+    const [showUserMenu, setShowUserMenu] = useState(false);
+
+    const handleLogout = async () => {
+        setShowUserMenu(false);
+        await logout();
+        navigate('/login', { replace: true });
+    };
 
 
     const toggleRibbon = () => setIsExpanded(!isExpanded);
@@ -244,7 +224,7 @@ export function RibbonNavigation() {
 
                 {/* Category Tabs */}
                 <div className="flex-1 flex overflow-x-auto overflow-y-hidden no-scrollbar gap-2 h-full items-end">
-                    {NAVIGATION.map((group) => (
+                    {visibleNavigation.map((group) => (
                         <button
                             key={group.category}
                             onClick={() => {
@@ -285,7 +265,7 @@ export function RibbonNavigation() {
                             <p className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 line-clamp-1">
                                 {currentUser ? currentUser.displayName : "Lade..."}
                             </p>
-                            <p className="text-xs text-slate-500">Angemeldet</p>
+                            <p className="text-xs text-slate-500">{isAdmin ? 'Administrator' : 'Angemeldet'}</p>
                         </div>
                         <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform duration-200", showUserMenu ? "rotate-180" : "")} />
                     </button>
@@ -294,37 +274,25 @@ export function RibbonNavigation() {
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
                             <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
-                                {users.length > 0 && (
-                                    <div className="px-4 py-2 border-b border-slate-50 mb-2">
-                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Benutzer wechseln</p>
-                                    </div>
-                                )}
-                                {users.map((user) => (
-                                    <button
-                                        key={user.id}
-                                        onClick={() => {
-                                            selectUser(user);
-                                            setShowUserMenu(false);
-                                        }}
-                                        className={cn(
-                                            "w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-slate-50",
-                                            currentUser?.id === user.id ? "text-rose-600 font-medium bg-rose-50/50" : "text-slate-700"
-                                        )}
-                                    >
-                                        <div className={cn("w-2 h-2 rounded-full", currentUser?.id === user.id ? "bg-rose-500" : "bg-transparent")} />
-                                        {user.displayName}
-                                    </button>
-                                ))}
+                                <div className="px-4 py-2 border-b border-slate-50 mb-2">
+                                    <p className="text-sm font-semibold text-slate-700 line-clamp-1">{currentUser?.displayName || 'Benutzer'}</p>
+                                    <p className="text-xs text-slate-500">{currentUser?.username || 'Kein Username'}</p>
+                                </div>
                                 <div className="border-t border-slate-100 mt-2 pt-2 pb-1">
-                                    <Link
-                                        to="/benutzer"
-                                        onClick={() => setShowUserMenu(false)}
-                                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                    {isAdmin && (
+                                        <Link
+                                            to="/benutzer"
+                                            onClick={() => setShowUserMenu(false)}
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                        >
+                                            <User className="w-4 h-4" />
+                                            Benutzer verwalten
+                                        </Link>
+                                    )}
+                                    <button
+                                        onClick={handleLogout}
+                                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                     >
-                                        <User className="w-4 h-4" />
-                                        Benutzer verwalten
-                                    </Link>
-                                    <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
                                         <LogOut className="w-4 h-4" />
                                         Abmelden
                                     </button>
@@ -348,7 +316,7 @@ export function RibbonNavigation() {
                 )}
             >
                 <div className="px-3 py-2 flex gap-1 overflow-x-auto no-scrollbar">
-                    {NAVIGATION.find(g => g.category === activeCategory)?.subgroups.map((subgroup, sgIndex) => (
+                    {visibleNavigation.find(g => g.category === activeCategory)?.subgroups.map((subgroup, sgIndex) => (
                         <div key={subgroup.label} className="flex items-center">
                             {/* Subgroup Container */}
                             <div className="flex flex-col">
@@ -397,7 +365,7 @@ export function RibbonNavigation() {
                                 </div>
                             </div>
                             {/* Separator between subgroups */}
-                            {sgIndex < (NAVIGATION.find(g => g.category === activeCategory)?.subgroups.length ?? 0) - 1 && (
+                            {sgIndex < (visibleNavigation.find(g => g.category === activeCategory)?.subgroups.length ?? 0) - 1 && (
                                 <div className="w-px h-16 bg-slate-200 mx-3" />
                             )}
                         </div>

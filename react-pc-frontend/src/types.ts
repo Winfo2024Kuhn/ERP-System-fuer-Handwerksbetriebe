@@ -601,6 +601,40 @@ export interface AnfrageDetail extends Anfrage {
   dokumente?: AnfrageDokument[];
 }
 
+// ==================== Angebot DTOs ====================
+export interface Angebot {
+  id: number;
+  kundenId?: number;
+  kundenName?: string;
+  bauvorhaben: string;
+  kundennummer?: string;
+  angebotsnummer?: string;
+  betrag?: number;
+  kundenEmails?: string[];
+  emailVersandDatum?: string;
+  projektId?: number;
+  anlegedatum?: string;
+  bildUrl?: string;
+  projektStrasse?: string;
+  projektPlz?: string;
+  projektOrt?: string;
+  kurzbeschreibung?: string;
+  abgeschlossen?: boolean;
+  createdAt?: string;
+  kundenStrasse?: string;
+  kundenPlz?: string;
+  kundenOrt?: string;
+  kundenTelefon?: string;
+  kundenMobiltelefon?: string;
+  kundenAnsprechpartner?: string;
+  kundenAnrede?: string;
+}
+
+export interface AngebotDetail extends Angebot {
+  emails?: ProjektEmail[];
+  dokumente?: ProjektDokument[];
+}
+
 // ==================== Formularwesen DTOs ====================
 export type FormBlockType =
   | 'heading'

@@ -4,7 +4,7 @@ Dieses Verzeichnis enthält alle Scripts und Dokumentation für das Deployment d
 
 ## Lokale Installation (für Handwerker – empfohlen)
 
-Für eine einfache Einzel-PC-Installation **ohne** MySQL, Server oder IT-Kenntnisse:
+Für eine einfache Einzel-PC-Installation **ohne** MariaDB, Server oder IT-Kenntnisse:
 
 → **[local-install/README.md](./local-install/README.md)**
 
@@ -12,7 +12,7 @@ Doppelklick auf `local-install/Einrichtung-ERP-Handwerk.bat` – erstellt Deskto
 
 ---
 
-## Server-Deployment (Produktions-Server mit MySQL)
+## Server-Deployment (Produktions-Server mit MariaDB)
 
 ### Scripts (`scripts/`)
 
@@ -56,7 +56,7 @@ cd C:\Temp\Handwerkerprogramm
 
 ```powershell
 # Kompilierte JAR nach C:\Kalkulationsprogramm kopieren
-Copy-Item "target\Kalkulationsprogramm-1.0.0.jar" "C:\Kalkulationsprogramm\Kalkulationsprogramm.jar"
+Copy-Item "target\Kalkulationsprogramm-<Version>.jar" "C:\Kalkulationsprogramm\Kalkulationsprogramm.jar"
 ```
 
 ### 4. Server manuell starten (Test)
@@ -70,7 +70,7 @@ cd C:\Kalkulationsprogramm\scripts
 
 - Windows Server oder Windows 10/11
 - Java 23+
-- MySQL Client Tools (mysqldump)
+- MariaDB/MySQL Client Tools (`mariadb-dump` oder `mysqldump`)
 - Externe Festplatte E:\ für Backups
 - Administrator-Rechte für Installation
 

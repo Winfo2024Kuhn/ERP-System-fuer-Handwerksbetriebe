@@ -2,25 +2,24 @@ version: "3.8"
 
 services:
 
-  # ========== MySQL Datenbank ==========
-  mysql:
-    image: mysql:8.0
-    container_name: kalkulationsprogramm-mysql
+  # ========== MariaDB Datenbank ==========
+  mariadb:
+    image: mariadb:11.4
+    container_name: kalkulationsprogramm-mariadb
     ports:
       - "3307:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-erp_root_2024}
-      MYSQL_DATABASE: kalkulationsprogramm_db
-      MYSQL_USER: ${MYSQL_USER:-erp_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-erp_secret_2024}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-erp_root_2024}
+      MARIADB_DATABASE: kalkulationsprogramm_db
+      MARIADB_USER: ${MARIADB_USER:-erp_user}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-erp_secret_2024}
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mariadb_data:/var/lib/mysql
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_german2_ci
-      --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-erp_root_2024}"]
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p${MARIADB_ROOT_PASSWORD:-erp_root_2024}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -37,15 +36,18 @@ services:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      MYSQL_USER: ${MYSQL_USER:-erp_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-erp_secret_2024}
+      APP_DB_URL: ${APP_DB_URL:-jdbc:mariadb://mariadb:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8}
+      APP_DB_USER: ${APP_DB_USER:-erp_user}
+      APP_DB_PASS: ${APP_DB_PASS:-erp_secret_2024}
+      MARIADB_USER: ${MARIADB_USER:-erp_user}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-erp_secret_2024}
       APP_ADMIN_USER: ${APP_ADMIN_USER:-Marvin}
       APP_ADMIN_PASS: ${APP_ADMIN_PASS:-123456}
     volumes:
       - app_uploads:/app/uploads
       - app_logs:/app/logs
     depends_on:
-      mysql:
+      mariadb:
         condition: service_healthy
     restart: unless-stopped
 
@@ -63,7 +65,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  mysql_data:
+  mariadb_data:
   app_uploads:
   app_logs:
   qdrant_data:
