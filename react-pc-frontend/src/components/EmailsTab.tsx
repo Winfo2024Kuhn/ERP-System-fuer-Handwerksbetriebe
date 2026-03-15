@@ -40,6 +40,7 @@ export interface EmailsTabProps {
     // Entity context - exactly one should be provided
     projektId?: number;
     anfrageId?: number;
+    angebotId?: number;
     kundeId?: number;
     lieferantId?: number;
 
@@ -65,6 +66,15 @@ export interface EmailsTabProps {
         kundenAnsprechpartner?: string;
     };
 
+    // Optional: Angebot detail object for compose modal (mapped to anfrage payload)
+    angebot?: {
+        bauvorhaben: string;
+        kundenName?: string;
+        kundenEmails?: string[];
+        kundenAnrede?: string;
+        kundenAnsprechpartner?: string;
+    };
+
     // Callbacks
     onEmailSent?: () => void;
 
@@ -76,12 +86,14 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
     emails,
     projektId,
     anfrageId,
+    angebotId,
     kundeId,
     lieferantId,
     entityName,
     kundenEmail,
     projekt,
     anfrage,
+    angebot,
     onEmailSent,
     showComposeButton = true,
 }) => {
@@ -92,7 +104,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
     const [showComposeModal, setShowComposeModal] = useState(false);
 
     // Determine the entity ID for the detail modal
-    const entityId = projektId || anfrageId || kundeId || lieferantId || 0;
+    const entityId = projektId || anfrageId || angebotId || kundeId || lieferantId || 0;
 
     // Filter emails
     const filteredEmails = useMemo(() => {
@@ -229,7 +241,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                     </div>
 
                     {/* Compose button */}
-                    {showComposeButton && (projektId || anfrageId) && (
+                    {showComposeButton && (projektId || anfrageId || angebotId) && (
                         <Button
                             onClick={() => setShowComposeModal(true)}
                             className="bg-rose-600 text-white hover:bg-rose-700"
@@ -319,8 +331,8 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                     onClose={handleComposeClose}
                     projektId={projektId}
                     projekt={projekt as any}
-                    anfrageId={anfrageId}
-                    anfrage={anfrage}
+                    anfrageId={anfrageId ?? angebotId}
+                    anfrage={anfrage ?? angebot}
                 />
             )}
         </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar } from 'lucide-react';
+import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -12,6 +12,7 @@ import { KostenstelleDetailView } from '../components/firma/KostenstelleDetailVi
 import { DatePicker } from '../components/ui/datepicker';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfigurator';
 
 // Types
 interface Firmeninformation {
@@ -93,7 +94,7 @@ interface BwaUploadDto {
     steuerberaterName: string;
 }
 
-type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater';
+type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'systemsetup';
 type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
 const KOSTENSTELLEN_TYP_OPTIONS = [
@@ -381,7 +382,7 @@ export default function FirmaEditor() {
         <PageLayout
             ribbonCategory="Vorlagen & Stammdaten"
             title="FIRMENINFORMATIONEN"
-            subtitle="Firmendaten, Kostenstellen und Steuerberater-Integration"
+            subtitle="Firmendaten, Kostenstellen, Steuerberater und Systemkonfiguration"
         >
             {loading ? (
                 <div className="flex items-center justify-center py-20">
@@ -426,6 +427,18 @@ export default function FirmaEditor() {
                         >
                             <Users className="w-4 h-4 inline-block mr-2" />
                             Steuerberater ({steuerberater.length})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('systemsetup')}
+                            className={cn(
+                                "px-4 py-2 text-sm font-medium rounded-t-lg transition",
+                                activeTab === 'systemsetup'
+                                    ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                            )}
+                        >
+                            <Settings className="w-4 h-4 inline-block mr-2" />
+                            System-Setup
                         </button>
                     </div>
 
@@ -956,6 +969,15 @@ export default function FirmaEditor() {
                             )}
                         </div>
                     )}
+
+                    {activeTab === 'systemsetup' && (
+                        <div className="space-y-4">
+                            <p className="text-sm text-slate-500">
+                                Gemini API Key und SMTP-Verbindung zentral konfigurieren und direkt im System prüfen.
+                            </p>
+                            <SystemSetupConfigurator />
+                        </div>
+                    )}
                 </>
             )}
 
@@ -1092,6 +1114,8 @@ export default function FirmaEditor() {
                                 <input 
                                     type="checkbox" 
                                     id="sb_auto"
+                                    aria-label="Automatische E-Mail Verarbeitung"
+                                    title="Automatische E-Mail Verarbeitung"
                                     checked={editingSteuerberater?.autoProcessEmails !== false}
                                     onChange={e => setEditingSteuerberater(prev => ({ ...prev, autoProcessEmails: e.target.checked }))}
                                     className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"

@@ -479,7 +479,7 @@ function ZeiterfassungSection() {
                                 <li>Port 8080 (TCP) auf den Server-PC weiterleiten</li>
                                 <li>Die URL wird dann z.B.: <code className="bg-slate-100 px-1 rounded">http://meinefirma.myfritz.net:8080/zeiterfassung</code></li>
                             </ol>
-                            <p className="text-xs text-amber-700 mt-2 font-medium">⚠ Server ist direkt im Internet erreichbar – HTTP Basic Auth schützt die API-Endpunkte, die Zeiterfassung nutzt Token-Auth</p>
+                            <p className="text-xs text-amber-700 mt-2 font-medium">⚠ Server ist direkt im Internet erreichbar – API-Endpunkte sind über Login und Rollen geschützt, die Zeiterfassung nutzt Token-Auth</p>
                         </div>
                     </Card>
 

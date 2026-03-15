@@ -264,7 +264,7 @@ function Show-Summary {
     Write-Host "  1. Kopieren Sie die JAR-Datei nach: $DeploymentPath\" -ForegroundColor Gray
     Write-Host "  2. Benennen Sie sie um zu: Kalkulationsprogramm.jar" -ForegroundColor Gray
     Write-Host "  3. Stellen Sie sicher, dass die externe Festplatte E:\ verfuegbar ist" -ForegroundColor Gray
-    Write-Host "  4. Installieren Sie MySQL Client (fuer mysqldump)" -ForegroundColor Gray
+    Write-Host "  4. Installieren Sie MariaDB/MySQL Client (fuer mariadb-dump oder mysqldump)" -ForegroundColor Gray
     Write-Host ""
     
     Write-Host "Tasks manuell verwalten:" -ForegroundColor White

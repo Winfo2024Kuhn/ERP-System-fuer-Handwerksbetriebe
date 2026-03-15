@@ -46,7 +46,12 @@ public class SystemSettingsController {
 
     @PutMapping("/smtp")
     public ResponseEntity<Map<String, String>> saveSmtp(@RequestBody SmtpSettingsRequest req) {
-        settingsService.saveSmtpSettings(req.host(), req.port(), req.username(), req.password());
+        String effectivePassword = req.password();
+        if (effectivePassword == null || effectivePassword.isBlank()) {
+            effectivePassword = settingsService.getSmtpPassword();
+        }
+
+        settingsService.saveSmtpSettings(req.host(), req.port(), req.username(), effectivePassword);
         return ResponseEntity.ok(Map.of("message", "SMTP-Einstellungen gespeichert."));
     }
 

@@ -1,14 +1,38 @@
 package org.example.kalkulationsprogramm.domain;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.persistence.*;
 
-import java.util.ArrayList;
-import java.util.List;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "frontend_user_profile")
+@Table(
+    name = "frontend_user_profile",
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_frontend_user_profile_username", columnNames = "username")
+    }
+)
 public class FrontendUserProfile {
 
     @Id
@@ -20,6 +44,23 @@ public class FrontendUserProfile {
 
     @Column(name = "short_code", length = 50)
     private String shortCode;
+
+    @Column(name = "username", length = 120)
+    private String username;
+
+    @JsonIgnore
+    @Column(name = "password_hash", length = 255)
+    private String passwordHash;
+
+    @Column(name = "active", nullable = false)
+    private boolean active = true;
+
+    @JsonIgnore
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "frontend_user_profile_role", joinColumns = @JoinColumn(name = "frontend_user_profile_id"))
+    @Column(name = "role_name", nullable = false, length = 50)
+    @Enumerated(EnumType.STRING)
+    private Set<FrontendUserRole> roleSet = new LinkedHashSet<>();
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "default_signature_id")
@@ -34,12 +75,21 @@ public class FrontendUserProfile {
     @Transient
     @JsonProperty("roles")
     public List<String> getRoles() {
-        if (mitarbeiter != null) {
-            return mitarbeiter.getAbteilungen().stream()
-                    .map(Abteilung::getName)
-                    .toList();
+        LinkedHashSet<String> roles = new LinkedHashSet<>();
+
+        if (roleSet != null) {
+            roleSet.stream()
+                    .map(Enum::name)
+                    .forEach(roles::add);
         }
-        return new ArrayList<>();
+
+        if (mitarbeiter != null) {
+            mitarbeiter.getAbteilungen().stream()
+                    .map(Abteilung::getName)
+                    .forEach(roles::add);
+        }
+
+        return new ArrayList<>(roles);
     }
 
     public Long getId() {
@@ -64,6 +114,42 @@ public class FrontendUserProfile {
 
     public void setShortCode(String shortCode) {
         this.shortCode = shortCode;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+
+    public Set<FrontendUserRole> getRoleSet() {
+        return roleSet;
+    }
+
+    public void setRoleSet(Set<FrontendUserRole> roleSet) {
+        this.roleSet = roleSet == null ? new LinkedHashSet<>() : new LinkedHashSet<>(roleSet);
+    }
+
+    public boolean hasRole(FrontendUserRole role) {
+        return role != null && roleSet != null && roleSet.contains(role);
     }
 
     public EmailSignature getDefaultSignature() {

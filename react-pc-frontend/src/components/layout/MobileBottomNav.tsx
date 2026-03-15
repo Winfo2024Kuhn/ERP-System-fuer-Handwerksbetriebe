@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
@@ -7,6 +7,7 @@ import {
     BarChart3, Euro, Home, Layers, List, Calendar,
     CalendarDays, Plane, Shield, FileJson, ChevronRight
 } from 'lucide-react';
+import { useAuth } from '../../auth/AuthContext';
 
 interface NavItem {
     name: string;
@@ -87,22 +88,42 @@ const MORE_SECTIONS: NavSection[] = [
     },
 ];
 
+const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer']);
+
 export function MobileBottomNav() {
     const location = useLocation();
+    const { isAdmin } = useAuth();
     const [showMoreSheet, setShowMoreSheet] = useState(false);
     const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
     const [lastTap, setLastTap] = useState<{ tab: string; time: number } | null>(null);
 
+    const filteredSubmenuItems = useMemo<Record<string, NavItem[]>>(() => {
+        return Object.fromEntries(
+            Object.entries(SUBMENU_ITEMS)
+                .map(([key, items]) => [key, items.filter(item => isAdmin || !ADMIN_ONLY_PATHS.has(item.href))] as const)
+                .filter(([, items]) => items.length > 0)
+        );
+    }, [isAdmin]);
+
+    const filteredMoreSections = useMemo<NavSection[]>(() => {
+        return MORE_SECTIONS
+            .map(section => ({
+                ...section,
+                items: section.items.filter(item => isAdmin || !ADMIN_ONLY_PATHS.has(item.href)),
+            }))
+            .filter(section => section.items.length > 0);
+    }, [isAdmin]);
+
     // Find which primary tab is active based on current route
     const getActiveTab = () => {
         // Check if current path matches any submenu item
-        for (const [tabHref, items] of Object.entries(SUBMENU_ITEMS)) {
+        for (const [tabHref, items] of Object.entries(filteredSubmenuItems)) {
             if (items.some(item => location.pathname === item.href || location.pathname.startsWith(item.href + '/'))) {
                 return tabHref;
             }
         }
         // Check "Mehr" sections
-        for (const section of MORE_SECTIONS) {
+        for (const section of filteredMoreSections) {
             if (section.items.some(item => location.pathname === item.href || location.pathname.startsWith(item.href + '/'))) {
                 return 'more';
             }
@@ -124,14 +145,14 @@ export function MobileBottomNav() {
 
         if (lastTap && lastTap.tab === tabHref && now - lastTap.time < 300) {
             // Double-tap: show submenu
-            if (SUBMENU_ITEMS[tabHref]) {
+            if (filteredSubmenuItems[tabHref]) {
                 setActiveSubmenu(activeSubmenu === tabHref ? null : tabHref);
             }
             setLastTap(null);
         } else {
             // Single tap: navigate (if different tab) or show submenu directly on active tab
             setLastTap({ tab: tabHref, time: now });
-            if (activeTab === tabHref && SUBMENU_ITEMS[tabHref]) {
+            if (activeTab === tabHref && filteredSubmenuItems[tabHref]) {
                 setActiveSubmenu(activeSubmenu === tabHref ? null : tabHref);
             }
         }
@@ -148,10 +169,10 @@ export function MobileBottomNav() {
             )}
 
             {/* Submenu Dropdown */}
-            {activeSubmenu && SUBMENU_ITEMS[activeSubmenu] && (
+            {activeSubmenu && filteredSubmenuItems[activeSubmenu] && (
                 <div className="fixed bottom-20 left-4 right-4 bg-white rounded-2xl shadow-2xl z-50 md:hidden overflow-hidden animate-slideUp border border-slate-100">
                     <div className="p-2">
-                        {SUBMENU_ITEMS[activeSubmenu].map((item) => {
+                        {filteredSubmenuItems[activeSubmenu].map((item) => {
                             const isActive = location.pathname === item.href;
                             return (
                                 <Link
@@ -198,6 +219,8 @@ export function MobileBottomNav() {
                         <h2 className="text-lg font-bold text-slate-900">Weitere Bereiche</h2>
                         <button
                             onClick={() => setShowMoreSheet(false)}
+                            aria-label="Mehr-Bereich schließen"
+                            title="Schließen"
                             className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition-colors active:scale-95"
                         >
                             <X className="w-5 h-5" />
@@ -205,8 +228,8 @@ export function MobileBottomNav() {
                     </div>
 
                     {/* Sheet Content */}
-                    <div className="overflow-y-auto overscroll-contain pb-safe" style={{ maxHeight: 'calc(80vh - 80px)' }}>
-                        {MORE_SECTIONS.map((section) => (
+                    <div className="overflow-y-auto overscroll-contain pb-safe max-h-[calc(80vh-80px)]">
+                        {filteredMoreSections.map((section) => (
                             <div key={section.label} className="px-4 py-3">
                                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 mb-2">
                                     {section.label}
@@ -256,7 +279,7 @@ export function MobileBottomNav() {
                 <div className="relative flex items-center justify-around px-2 h-16 pb-safe">
                     {PRIMARY_TABS.map((tab) => {
                         const isActive = activeTab === tab.href;
-                        const hasSubmenu = !!SUBMENU_ITEMS[tab.href];
+                        const hasSubmenu = !!filteredSubmenuItems[tab.href];
 
                         return (
                             <Link
