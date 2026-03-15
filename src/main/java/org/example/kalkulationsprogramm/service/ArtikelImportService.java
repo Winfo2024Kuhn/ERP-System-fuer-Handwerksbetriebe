@@ -1,16 +1,5 @@
 package org.example.kalkulationsprogramm.service;
 
-import lombok.AllArgsConstructor;
-import org.example.kalkulationsprogramm.domain.*;
-import org.example.kalkulationsprogramm.repository.ArtikelRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
-import java.util.Optional;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
@@ -19,7 +8,24 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
+
+import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.Kategorie;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.Werkstoff;
+import org.example.kalkulationsprogramm.repository.ArtikelRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import lombok.AllArgsConstructor;
 
 @Service
 @AllArgsConstructor
@@ -28,6 +34,7 @@ public class ArtikelImportService {
     private final ArtikelRepository artikelRepository;
     private final LieferantenRepository lieferantenRepository;
     private final org.example.kalkulationsprogramm.repository.KategorieRepository kategorieRepository;
+    private final WerkstoffRepository werkstoffRepository;
 
     private static final Logger log = LoggerFactory.getLogger(ArtikelImportService.class);
 
@@ -36,6 +43,7 @@ public class ArtikelImportService {
             Map.entry("preis", "nettopreis"),
             Map.entry("produktlinie", "produktlinie"),
             Map.entry("produktname", "produktname"),
+            Map.entry("werkstoff", "werkstoff"),
             Map.entry("produkttext", "produkttext"),
             Map.entry("verpackungseinheit", "packgroesse"),
             Map.entry("preiseinheit", "preiseinheit"),
@@ -167,6 +175,10 @@ public class ArtikelImportService {
 
                     setIfPresent(artikel::setProduktlinie, "produktlinie", values, headerIndex, spaltenZuordnung);
                     setIfPresent(artikel::setProduktname, "produktname", values, headerIndex, spaltenZuordnung);
+                        String werkstoffName = getValue("werkstoff", values, headerIndex, spaltenZuordnung);
+                        if (werkstoffName != null) {
+                        artikel.setWerkstoff(resolveWerkstoff(werkstoffName));
+                        }
                     setIfPresent(artikel::setProdukttext, "produkttext", values, headerIndex, spaltenZuordnung);
                     setIfPresentLong(artikel::setVerpackungseinheit, "verpackungseinheit", values, headerIndex,
                             spaltenZuordnung);
@@ -267,6 +279,19 @@ public class ArtikelImportService {
             }
             setter.accept(val);
         }
+    }
+
+    private Werkstoff resolveWerkstoff(String werkstoffName) {
+        String normalized = werkstoffName == null ? null : werkstoffName.trim();
+        if (normalized == null || normalized.isBlank()) {
+            return null;
+        }
+        return werkstoffRepository.findByNameIgnoreCase(normalized)
+                .orElseGet(() -> {
+                    Werkstoff werkstoff = new Werkstoff();
+                    werkstoff.setName(normalized);
+                    return werkstoffRepository.save(werkstoff);
+                });
     }
 
     private BigDecimal normalizePreis(BigDecimal preis) {

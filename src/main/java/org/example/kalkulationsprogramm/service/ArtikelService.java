@@ -1,26 +1,26 @@
 package org.example.kalkulationsprogramm.service;
 
-import lombok.AllArgsConstructor;
+import java.util.List;
+
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
+import org.example.kalkulationsprogramm.repository.KategorieRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-
-import org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto;
-import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
-import org.example.kalkulationsprogramm.repository.KategorieRepository;
-import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import lombok.AllArgsConstructor;
 
 @Service
 @AllArgsConstructor
-public class ArtikelService {
+public class ArtikelService implements ArtikelServiceContract {
 
     private final ArtikelRepository artikelRepository;
     private final KategorieRepository kategorieRepository;
