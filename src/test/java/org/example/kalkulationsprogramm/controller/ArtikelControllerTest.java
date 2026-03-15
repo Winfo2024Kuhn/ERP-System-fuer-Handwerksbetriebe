@@ -1,28 +1,31 @@
 package org.example.kalkulationsprogramm.controller;
 
-import org.example.kalkulationsprogramm.domain.*;
+import java.util.List;
+
+import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
+import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
-import org.example.kalkulationsprogramm.service.ArtikelService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
+import org.example.kalkulationsprogramm.service.ArtikelServiceContract;
 import org.example.kalkulationsprogramm.service.KategorieService;
-
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.test.web.servlet.MockMvc;
-
-import java.util.List;
-
-import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.nullValue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -35,7 +38,7 @@ class ArtikelControllerTest {
     private MockMvc mockMvc;
 
     @MockBean
-    private ArtikelService artikelService;
+    private ArtikelServiceContract artikelService;
 
     @MockBean
     private ArtikelImportService artikelImportService;
