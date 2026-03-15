@@ -216,6 +216,7 @@
                     <mainClass>org.springframework.boot.loader.launch.JarLauncher</mainClass>
                     <destination>${project.build.directory}/installer</destination>
                     <javaOptions>-Dspring.profiles.active=h2 -Xmx512m -Dfile.encoding=UTF-8</javaOptions>
+                    <addModules>ALL-MODULE-PATH</addModules>
                     <type>EXE</type>
                     <winDirChooser>true</winDirChooser>
                     <winShortcut>true</winShortcut>
