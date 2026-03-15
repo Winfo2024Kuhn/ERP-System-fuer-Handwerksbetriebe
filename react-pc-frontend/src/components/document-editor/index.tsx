@@ -42,6 +42,7 @@ import { SummenFooter } from './SummenFooter';
 import { LivePreviewPanel } from './LivePreviewPanel';
 import { ExportWarningModal, UnsavedChangesModal, PrintOptionsModal, TextbausteinPickerModal, LeistungPickerModal, StundensatzPickerModal } from './Modals';
 import { RabattDialog } from './RabattDialog';
+import { KategorieBestaetigenDialog } from './KategorieBestaetigenDialog';
 import { EmailComposeModal } from '../EmailComposeModal';
 import { anredeEnumToText } from '../EmailComposeForm';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
@@ -198,6 +199,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     // Global Rabatt
     const [globalRabatt, setGlobalRabatt] = useState<number>(0);
     const [showRabattDialog, setShowRabattDialog] = useState(false);
+
+    // Kategorie-Bestätigung beim Einfügen einer Leistung
+    const [pendingLeistungInsert, setPendingLeistungInsert] = useState<{
+        block: DocBlock;
+        leistungName: string;
+        kategorieId: number;
+        kategoriePfad: string;
+    } | null>(null);
 
     // Abrechnungsverlauf: already-billed amount by other invoices (for Schlussrechnung etc.)
     const [bereitsAbgerechnetDurchAndere, setBereitsAbgerechnetDurchAndere] = useState<number | null>(null);
@@ -986,7 +995,51 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             fontSize: rawBlock.fontSize ?? 10,
         };
 
-        setBlocks([...blocks, newBlock]);
+        // Wenn eine Leistung mit Produktkategorie in ein Projekt eingefügt wird,
+        // den User fragen ob die Kategorie dem Projekt zugeordnet werden soll
+        if (type === 'SERVICE' && newBlock.leistungId && newBlock.kategorieId && projektId) {
+            const leistung = leistungen.find(l => l.id === newBlock.leistungId);
+            setPendingLeistungInsert({
+                block: newBlock,
+                leistungName: leistung?.name || newBlock.title || 'Leistung',
+                kategorieId: newBlock.kategorieId,
+                kategoriePfad: leistung?.kategoriePfad || `Kategorie #${newBlock.kategorieId}`,
+            });
+            return;
+        }
+
+        setBlocks(prev => [...prev, newBlock]);
+    };
+
+    const handleKategorieBestaetigt = async (kategorieId: number) => {
+        if (!pendingLeistungInsert || !projektId) return;
+        const finalBlock = { ...pendingLeistungInsert.block, kategorieId };
+        setBlocks(prev => [...prev, finalBlock]);
+        setPendingLeistungInsert(null);
+        try {
+            const res = await fetch(`/api/projekte/${projektId}/produktkategorien`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify([{ produktkategorieID: kategorieId, menge: 0 }]),
+            });
+            if (res.ok) {
+                toast.success('Kategorie dem Projekt zugeordnet');
+            } else if (res.status === 409) {
+                // Kategorie war bereits zugeordnet – kein Problem
+                toast.success('Kategorie ist bereits im Projekt vorhanden');
+            } else {
+                const text = await res.text();
+                toast.error(text || 'Fehler beim Zuordnen der Kategorie');
+            }
+        } catch {
+            toast.error('Fehler beim Zuordnen der Kategorie');
+        }
+    };
+
+    const handleKategorieUeberspringen = () => {
+        if (!pendingLeistungInsert) return;
+        setBlocks(prev => [...prev, pendingLeistungInsert.block]);
+        setPendingLeistungInsert(null);
     };
 
     const updateBlock = (id: string, updates: Partial<DocBlock>) => {
@@ -2044,6 +2097,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         setShowRabattDialog(false);
                     }}
                     onClose={() => setShowRabattDialog(false)}
+                />
+            )}
+
+            {/* Kategorie-Bestätigung beim Leistungseinfügen */}
+            {pendingLeistungInsert && (
+                <KategorieBestaetigenDialog
+                    leistungName={pendingLeistungInsert.leistungName}
+                    vorgeschlageneKategorieId={pendingLeistungInsert.kategorieId}
+                    vorgeschlageneKategoriePfad={pendingLeistungInsert.kategoriePfad}
+                    onBestaetigen={handleKategorieBestaetigt}
+                    onUeberspringen={handleKategorieUeberspringen}
                 />
             )}
 
