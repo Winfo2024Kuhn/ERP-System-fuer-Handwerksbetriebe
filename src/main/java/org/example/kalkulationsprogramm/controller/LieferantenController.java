@@ -1,9 +1,22 @@
 package org.example.kalkulationsprogramm.controller;
 
-import jakarta.persistence.criteria.JoinType;
-import jakarta.persistence.criteria.ListJoin;
-import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+import org.example.kalkulationsprogramm.domain.EmailSignature;
+import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.LieferantNotiz;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisCreateRequest;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisDto;
@@ -13,25 +26,18 @@ import org.example.kalkulationsprogramm.dto.Lieferant.LieferantCreateRequestDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantListItemDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantNotizDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantUpdateRequestDto;
+import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektEmailDto;
 import org.example.kalkulationsprogramm.mapper.LieferantMapper;
+import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.LieferantArtikelpreisService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantEmailResolver;
-
-import org.example.kalkulationsprogramm.domain.LieferantNotiz;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantNotizDto;
-import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
-
-import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
-import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
-import java.io.IOException;
-import java.nio.file.Path;
-
 import org.example.kalkulationsprogramm.service.LieferantenDetailService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -42,32 +48,24 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.util.Date;
-import java.util.Optional;
-import org.example.kalkulationsprogramm.domain.EmailSignature;
-import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
+import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.ListJoin;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/lieferanten")
@@ -439,6 +437,46 @@ public class LieferantenController {
                 .flatMap(l -> l.getKundenEmails().stream())
                 .distinct()
                 .toList();
+    }
+
+    /**
+     * Fügt eine einzelne E-Mail-Adresse zu den Lieferanten-E-Mails hinzu.
+     */
+    @PostMapping(value = "/{id}/emails", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Transactional
+    public ResponseEntity<Map<String, Object>> addLieferantEmail(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        if (!StringUtils.hasText(email)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "E-Mail-Adresse fehlt"));
+        }
+
+        Lieferanten lieferant = lieferantenRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lieferant nicht gefunden"));
+
+        String normalized = email.trim().toLowerCase(Locale.GERMAN);
+        if (lieferant.getKundenEmails() == null) {
+            lieferant.setKundenEmails(new ArrayList<>());
+        }
+        if (lieferant.getKundenEmails().contains(normalized)) {
+            return ResponseEntity.ok(Map.of("message", "E-Mail-Adresse bereits vorhanden", "added", false));
+        }
+
+        lieferant.getKundenEmails().add(normalized);
+        lieferantenRepository.save(lieferant);
+
+        try {
+            lieferantEmailResolver.refresh();
+            eventPublisher.publishEvent(org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.forAddressChange(
+                    org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.EntityType.LIEFERANT,
+                    lieferant.getId(),
+                    List.of(normalized),
+                    new ArrayList<>(lieferant.getKundenEmails())));
+        } catch (Exception ignored) {
+        }
+
+        return ResponseEntity.ok(Map.of("message", "E-Mail-Adresse gespeichert", "added", true));
     }
 
     private Specification<Lieferanten> buildSpec(String field, String value) {
