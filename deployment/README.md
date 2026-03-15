@@ -1,8 +1,18 @@
 # Deployment Scripts - Handwerkerprogramm
 
-Dieses Verzeichnis enthält alle Scripts und Dokumentation für das Deployment des Kalkulationsprogramms auf dem Produktions-Server.
+Dieses Verzeichnis enthält alle Scripts und Dokumentation für das Deployment des Kalkulationsprogramms.
 
-## Übersicht
+## Lokale Installation (für Handwerker – empfohlen)
+
+Für eine einfache Einzel-PC-Installation **ohne** MySQL, Server oder IT-Kenntnisse:
+
+→ **[local-install/README.md](./local-install/README.md)**
+
+Doppelklick auf `local-install/Einrichtung-ERP-Handwerk.bat` – erstellt Desktop-Symbol + Autostart.
+
+---
+
+## Server-Deployment (Produktions-Server mit MySQL)
 
 ### Scripts (`scripts/`)
 

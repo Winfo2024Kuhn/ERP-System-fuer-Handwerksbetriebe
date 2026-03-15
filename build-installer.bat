@@ -61,12 +61,16 @@ echo ============================================
 echo   Installer erstellt in:
 echo   target\installer\ERP-Handwerk-1.0.0.exe
 echo.
-echo   Der Installer enthaelt:
-echo   - Eigene Java-Laufzeitumgebung (JRE)
-echo   - Eingebettete H2-Datenbank
-echo   - Startmenue-Eintrag + Desktop-Shortcut
+echo   ALTERNATIV: Lokale Installation (empfohlen)
+echo   ============================================
+echo   Falls der jpackage-Installer Probleme macht
+echo   (z.B. "Failed to launch JVM"), verwenden Sie
+echo   stattdessen die lokale Einrichtung:
 echo.
-echo   Der Benutzer braucht NICHTS vorinstalliert!
+echo     deployment\local-install\Einrichtung-ERP-Handwerk.bat
+echo.
+echo   Voraussetzung: Java 23+ installiert
+echo   Erstellt Desktop-Shortcut + Autostart
 echo ============================================
 echo.
 pause
