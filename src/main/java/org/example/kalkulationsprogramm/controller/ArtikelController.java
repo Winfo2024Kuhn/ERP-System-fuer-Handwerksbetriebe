@@ -1,7 +1,23 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.AllArgsConstructor;
-import org.example.kalkulationsprogramm.domain.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
+import org.example.kalkulationsprogramm.domain.Kategorie;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ExterneNummerDto;
@@ -10,7 +26,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
-import org.example.kalkulationsprogramm.service.ArtikelService;
+import org.example.kalkulationsprogramm.service.ArtikelServiceContract;
 import org.example.kalkulationsprogramm.service.KategorieService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -19,17 +35,20 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
-
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import lombok.AllArgsConstructor;
 
 @RestController
 @RequestMapping("/api/artikel")
@@ -48,7 +67,7 @@ public class ArtikelController {
             Map.entry("preis", new SortField("artikelpreis.preis", false)),
             Map.entry("preisDatum", new SortField("artikelpreis.preisAenderungsdatum", false)));
 
-    private final ArtikelService artikelService;
+    private final ArtikelServiceContract artikelService;
     private final ArtikelImportService artikelImportService;
     private final ArtikelMatchingService artikelMatchingService;
     private final LieferantenRepository lieferantenRepository;

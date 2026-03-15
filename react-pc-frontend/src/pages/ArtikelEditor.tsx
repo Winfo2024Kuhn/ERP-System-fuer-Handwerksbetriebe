@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Package, Edit2, ChevronLeft, ChevronRight, Save, X, Search, Folder, Plus } from "lucide-react";
+import { RefreshCw, Package, Edit2, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -36,6 +36,7 @@ export default function ArtikelEditor() {
     // Modals state
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
+    const [showCategoryManagerModal, setShowCategoryManagerModal] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [supplierSelectionMode, setSupplierSelectionMode] = useState<'filter' | 'edit'>('filter');
 
@@ -223,6 +224,15 @@ export default function ArtikelEditor() {
                         <Plus className="w-4 h-4 mr-2" />
                         Neu
                     </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                        onClick={() => setShowCategoryManagerModal(true)}
+                    >
+                        <FolderPlus className="w-4 h-4 mr-2" />
+                        Kategorien anlegen
+                    </Button>
                     <Button variant="outline" size="sm" onClick={loadArtikel}>
                         <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
                         Aktualisieren
@@ -400,6 +410,12 @@ export default function ArtikelEditor() {
                 <CategoryTreeModal
                     onSelect={(id, name) => { handleFilterChange('kategorieId', id); handleFilterChange('kategorieName', name); setShowCategoryModal(false); }}
                     onClose={() => setShowCategoryModal(false)}
+                />
+            )}
+            {showCategoryManagerModal && (
+                <CategoryTreeModal
+                    mode="manage"
+                    onClose={() => setShowCategoryManagerModal(false)}
                 />
             )}
         </PageLayout>

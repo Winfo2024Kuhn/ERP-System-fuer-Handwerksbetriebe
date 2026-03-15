@@ -25,6 +25,7 @@ import { Select } from '../components/ui/select-custom';
 import { cn } from "../lib/utils";
 import { Input } from "../components/ui/input";
 import { useToast } from '../components/ui/toast';
+import { useConfirm } from '../components/ui/confirm-dialog';
 
 // Statische Icon-Pfade
 const BASE_URL = '/react-textbausteine/';
@@ -133,11 +134,9 @@ interface Bestellung {
     anschnittWinkelRechts?: string;
 }
 
-interface ProjektGruppe {
-    projektId: number | null;
-    projektName: string;
-    projektNummer?: string;
-    kundenName?: string;
+interface LieferantGruppe {
+    lieferantId: number | null;
+    lieferantName: string;
     items: Bestellung[];
 }
 
@@ -192,19 +191,20 @@ const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({ file, o
 interface BestellungEmailModalProps {
     isOpen: boolean;
     onClose: () => void;
-    projektId: number;
-    projektName: string;
+    lieferantId: number;
+    lieferantName: string;
     onSuccess: () => void;
 }
 
 const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
     isOpen,
     onClose,
-    projektId,
-    projektName,
+    lieferantId,
+    lieferantName,
     onSuccess,
 }) => {
     const toast = useToast();
+    const confirmDialog = useConfirm();
     const editorRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -223,6 +223,8 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
     const [beautifying, setBeautifying] = useState(false);
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
     const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null);
+
+    const pdfPreviewUrl = `/api/bestellungen/lieferant/${lieferantId}/pdf`;
 
     // Signatur laden
     const loadSignature = useCallback(async () => {
@@ -244,7 +246,7 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         if (!isOpen) return;
 
         // Reset
-        setSubject(`Anfrage: (${projektName})`);
+        setSubject(`Bestellanfrage: ${lieferantName}`);
         setSending(false);
         setBeautifying(false);
         setUploadedFiles([]);
@@ -253,16 +255,33 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         setCustomRecipient('');
         setCc('');
         setCcManual('');
+        setLieferantenEmails([]);
+        setRecipient('');
 
-        // Lieferanten-E-Mails laden
-        fetch('/api/lieferanten/emails')
-            .then(res => res.json())
-            .then(data => {
-                const emails = Array.isArray(data) ? data : [];
-                setLieferantenEmails(emails);
-                if (emails.length > 0) setRecipient(emails[0]);
+        // Lieferanten-spezifische E-Mails laden
+        fetch(`/api/lieferanten/${lieferantId}`)
+            .then(async res => {
+                if (!res.ok) {
+                    throw new Error('Lieferant konnte nicht geladen werden');
+                }
+                return res.json();
             })
-            .catch(console.error);
+            .then(data => {
+                const emails = Array.isArray(data?.kundenEmails)
+                    ? data.kundenEmails.filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
+                    : [];
+                setLieferantenEmails(emails);
+                if (emails.length > 0) {
+                    setRecipient(emails[0]);
+                    setShowCustomRecipient(false);
+                } else {
+                    setShowCustomRecipient(true);
+                }
+            })
+            .catch((error) => {
+                console.error(error);
+                setShowCustomRecipient(true);
+            });
 
         // Absender-Adressen laden
         fetch('/api/email/from-addresses')
@@ -277,10 +296,10 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         // Signatur laden und Body initialisieren
         loadSignature().then(sig => {
             setSignature(sig);
-            const initialBody = `<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte erstellen Sie uns ein Anfrage für die angehängten Positionen.</p><p><br></p>${sig}`;
+            const initialBody = `<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte erstellen Sie uns ein Angebot für die angehängten Positionen.</p><p><br></p>${sig}`;
             setBody(initialBody);
         });
-    }, [isOpen, projektName, loadSignature]);
+    }, [isOpen, lieferantId, lieferantName, loadSignature]);
 
     // AI Verschönerung
     const handleBeautify = async () => {
@@ -346,9 +365,13 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
 
     // Senden
     const handleSend = async () => {
-        const finalRecipient = showCustomRecipient ? customRecipient : recipient;
+        const finalRecipient = (showCustomRecipient ? customRecipient : recipient).trim();
         if (!finalRecipient) {
             toast.warning('Bitte Empfänger auswählen oder eingeben');
+            return;
+        }
+        if (!subject.trim()) {
+            toast.warning('Bitte Betreff eingeben');
             return;
         }
 
@@ -357,30 +380,76 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         try {
             const user = getCurrentFrontendUser();
             const formData = new FormData();
-            formData.append('projektId', projektId.toString());
-            formData.append('recipient', finalRecipient);
-            formData.append('cc', cc === 'manual' ? ccManual : cc);
-            formData.append('fromAddress', fromAddress);
-            formData.append('subject', subject);
-            formData.append('htmlBody', prepareHtmlForSending(editorRef.current?.innerHTML || body));
-            if (user) {
-                formData.append('frontendUserId', user.id.toString());
-                formData.append('benutzer', user.displayName);
+
+            const dtoPayload = {
+                sender: fromAddress || 'bauschlosserei-kuhn@t-online.de',
+                recipients: [finalRecipient],
+                cc: (cc === 'manual' ? ccManual : cc)
+                    .split(',')
+                    .map(value => value.trim())
+                    .filter(Boolean),
+                subject: subject.trim(),
+                body: prepareHtmlForSending(editorRef.current?.innerHTML || body),
+                direction: 'OUT',
+                benutzer: user?.displayName || '',
+                frontendUserId: user?.id || null,
+                lieferantId,
+            };
+
+            formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
+
+            const bestellungPdfRes = await fetch(pdfPreviewUrl);
+            if (!bestellungPdfRes.ok) {
+                throw new Error('Bestell-PDF konnte nicht geladen werden');
             }
+            const bestellungPdfBlob = await bestellungPdfRes.blob();
+            const safeLieferantName = (lieferantName || 'lieferant').replace(/[^a-zA-Z0-9äöüÄÖÜß]+/g, '_');
+            formData.append('attachments', bestellungPdfBlob, `Bestellung_${safeLieferantName}.pdf`);
 
             // Zusätzliche Anhänge
             uploadedFiles.forEach(uf => {
                 formData.append('attachments', uf.file);
             });
 
-            const res = await fetch('/api/bestellungen/email/send', {
+            const res = await fetch('/api/emails/send', {
                 method: 'POST',
                 body: formData,
             });
 
             if (!res.ok) throw new Error('Senden fehlgeschlagen');
 
-            toast.success('E-Mail versendet');
+            const isNewEmail = !lieferantenEmails.some(
+                email => email.toLowerCase() === finalRecipient.toLowerCase()
+            );
+
+            if (isNewEmail) {
+                const shouldSave = await confirmDialog({
+                    title: 'E-Mail-Adresse speichern?',
+                    message: `Soll die Adresse ${finalRecipient} beim Lieferanten ${lieferantName} gespeichert werden?`,
+                    confirmLabel: 'Speichern',
+                    cancelLabel: 'Nicht speichern',
+                    variant: 'info',
+                });
+
+                if (shouldSave) {
+                    const saveRes = await fetch(`/api/lieferanten/${lieferantId}/emails`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: finalRecipient }),
+                    });
+
+                    if (saveRes.ok) {
+                        toast.success('E-Mail versendet und Adresse gespeichert');
+                    } else {
+                        toast.warning('E-Mail versendet, Adresse konnte nicht gespeichert werden');
+                    }
+                } else {
+                    toast.success('E-Mail versendet');
+                }
+            } else {
+                toast.success('E-Mail versendet');
+            }
+
             onSuccess();
             onClose();
         } catch (err) {
@@ -410,7 +479,7 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                         <div className="flex items-center gap-3">
                             <Mail className="w-5 h-5 text-rose-600" />
                             <h2 className="text-lg font-semibold text-slate-900">
-                                Anfrage für {projektName} senden
+                                Bestellung an {lieferantName} senden
                             </h2>
                         </div>
                         <div className="flex items-center gap-2">
@@ -443,7 +512,7 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                                 Automatisch angehängt: Bestellungs-PDF
                             </p>
                             <a
-                                href={`/api/bestellungen/projekt/${projektId}/pdf`}
+                                href={pdfPreviewUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-2 text-rose-600 hover:underline text-sm"
@@ -577,6 +646,8 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                                     multiple
                                     onChange={handleFileUpload}
                                     className="hidden"
+                                    title="Dateien als zusätzlichen Anhang auswählen"
+                                    aria-label="Dateien als zusätzlichen Anhang auswählen"
                                 />
                             </div>
 
@@ -635,13 +706,13 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
 };
 
 // ==================== PROJEKT GRUPPE COMPONENT ====================
-interface ProjektGruppeCardProps {
-    gruppe: ProjektGruppe;
+interface LieferantGruppeCardProps {
+    gruppe: LieferantGruppe;
     onToggleBestellt: (id: number, bestellt: boolean) => Promise<void>;
-    onEmailClick: (projektId: number, projektName: string) => void;
+    onEmailClick: (lieferantId: number, lieferantName: string) => void;
 }
 
-const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
+const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
     gruppe,
     onToggleBestellt,
     onEmailClick,
@@ -656,9 +727,14 @@ const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
         return kg.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
+    const projektAnzahl = useMemo(() => {
+        const ids = new Set(gruppe.items.map(item => item.projektId).filter((id): id is number => !!id));
+        return ids.size;
+    }, [gruppe.items]);
+
     const handlePdfExport = () => {
-        if (gruppe.projektId) {
-            window.open(`/api/bestellungen/projekt/${gruppe.projektId}/pdf`, '_blank');
+        if (gruppe.lieferantId) {
+            window.open(`/api/bestellungen/lieferant/${gruppe.lieferantId}/pdf`, '_blank');
         }
     };
 
@@ -677,14 +753,11 @@ const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
                     )}
                     <div>
                         <h3 className="font-semibold text-slate-900">
-                            {gruppe.projektName || 'Ohne Projekt'}
+                            {gruppe.lieferantName || 'Ohne Lieferant'}
                         </h3>
                         <div className="flex items-center gap-4 text-sm text-slate-500">
-                            {gruppe.projektNummer && (
-                                <span>#{gruppe.projektNummer}</span>
-                            )}
-                            {gruppe.kundenName && (
-                                <span>{gruppe.kundenName}</span>
+                            {projektAnzahl > 0 && (
+                                <span>{projektAnzahl} Projekte</span>
                             )}
                             <span>{gruppe.items.length} Positionen</span>
                             {totalKg > 0 && (
@@ -699,15 +772,15 @@ const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
                         variant="outline"
                         size="sm"
                         onClick={handlePdfExport}
-                        disabled={!gruppe.projektId}
+                        disabled={!gruppe.lieferantId}
                     >
                         <Download className="w-4 h-4 mr-1" />
                         PDF
                     </Button>
                     <Button
                         size="sm"
-                        onClick={() => gruppe.projektId && onEmailClick(gruppe.projektId, gruppe.projektName)}
-                        disabled={!gruppe.projektId}
+                        onClick={() => gruppe.lieferantId && onEmailClick(gruppe.lieferantId, gruppe.lieferantName)}
+                        disabled={!gruppe.lieferantId}
                         className="bg-rose-600 text-white hover:bg-rose-700"
                     >
                         <Mail className="w-4 h-4 mr-1" />
@@ -723,6 +796,9 @@ const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
                         <thead className="bg-slate-100">
                             <tr>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Bestellt</th>
+                                <th className="px-4 py-3 text-left font-medium text-slate-600">Projektnummer</th>
+                                <th className="px-4 py-3 text-left font-medium text-slate-600">Projekt</th>
+                                <th className="px-4 py-3 text-left font-medium text-slate-600">Kunde</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Artikelnummer</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Produkt</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Produkttext</th>
@@ -730,7 +806,6 @@ const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Werkstoff</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Kategorie</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Menge</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Lieferant</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -745,7 +820,18 @@ const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
                                             checked={b.bestellt}
                                             onChange={e => onToggleBestellt(b.id, e.target.checked)}
                                             className="w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500"
+                                            title={`Position ${b.produktname || ''} als bestellt markieren`}
+                                            aria-label={`Position ${b.produktname || ''} als bestellt markieren`}
                                         />
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-600">
+                                        {b.projektNummer || '-'}
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-900 font-medium">
+                                        {b.projektName || '-'}
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-600">
+                                        {b.kundenName || '-'}
                                     </td>
                                     <td className="px-4 py-3 text-slate-900 font-mono text-xs">
                                         {b.externeArtikelnummer || '-'}
@@ -768,9 +854,6 @@ const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
                                     <td className="px-4 py-3 text-slate-900">
                                         {b.menge ? `${b.menge} ${b.einheit || ''}` : '-'}
                                     </td>
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {b.lieferantName || '-'}
-                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -785,7 +868,7 @@ const ProjektGruppeCard: React.FC<ProjektGruppeCardProps> = ({
 export default function BestellungEditor() {
     const [bestellungen, setBestellungen] = useState<Bestellung[]>([]);
     const [loading, setLoading] = useState(true);
-    const [emailModal, setEmailModal] = useState<{ projektId: number; projektName: string } | null>(null);
+    const [emailModal, setEmailModal] = useState<{ lieferantId: number; lieferantName: string } | null>(null);
 
     const loadBestellungen = useCallback(async () => {
         setLoading(true);
@@ -805,23 +888,26 @@ export default function BestellungEditor() {
         loadBestellungen();
     }, [loadBestellungen]);
 
-    // Group by project
-    const projektGruppen = useMemo(() => {
-        const gruppiert: Record<string, ProjektGruppe> = {};
+    // Group by supplier
+    const lieferantGruppen = useMemo(() => {
+        const gruppiert: Record<string, LieferantGruppe> = {};
         bestellungen.forEach(b => {
-            const key = b.projektId?.toString() || '0';
+            const key = b.lieferantId != null
+                ? `lieferant-${b.lieferantId}`
+                : `ohne-${(b.lieferantName || 'lieferant').toLowerCase()}`;
             if (!gruppiert[key]) {
                 gruppiert[key] = {
-                    projektId: b.projektId || null,
-                    projektName: b.projektName || 'Ohne Projekt',
-                    projektNummer: b.projektNummer,
-                    kundenName: b.kundenName,
+                    lieferantId: b.lieferantId || null,
+                    lieferantName: b.lieferantName || 'Ohne Lieferant',
                     items: [],
                 };
             }
             gruppiert[key].items.push(b);
         });
-        return Object.values(gruppiert);
+
+        return Object.values(gruppiert).sort((a, b) =>
+            a.lieferantName.localeCompare(b.lieferantName, 'de-DE')
+        );
     }, [bestellungen]);
 
     const handleToggleBestellt = async (id: number, bestellt: boolean) => {
@@ -836,8 +922,8 @@ export default function BestellungEditor() {
         }
     };
 
-    const handleEmailClick = (projektId: number, projektName: string) => {
-        setEmailModal({ projektId, projektName });
+    const handleEmailClick = (lieferantId: number, lieferantName: string) => {
+        setEmailModal({ lieferantId, lieferantName });
     };
 
     return (
@@ -845,7 +931,7 @@ export default function BestellungEditor() {
         <PageLayout
             ribbonCategory="Einkauf"
             title="Bestellungen"
-            subtitle="Offene Bestellungen verwalten und an Lieferanten senden."
+            subtitle="Offene Bestellungen nach Lieferanten verwalten und versenden."
             actions={
                 <Button variant="outline" size="sm" onClick={loadBestellungen} disabled={loading}>
                     <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
@@ -859,16 +945,16 @@ export default function BestellungEditor() {
                 <div className="flex items-center justify-center py-12">
                     <RefreshCw className="w-8 h-8 text-rose-600 animate-spin" />
                 </div>
-            ) : projektGruppen.length === 0 ? (
+            ) : lieferantGruppen.length === 0 ? (
                 <Card className="p-12 text-center">
                     <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                     <p className="text-slate-500 text-lg">Keine offenen Bestellungen vorhanden.</p>
                 </Card>
             ) : (
                 <div className="space-y-6">
-                    {projektGruppen.map((gruppe) => (
-                        <ProjektGruppeCard
-                            key={gruppe.projektId || 'no-project'}
+                    {lieferantGruppen.map((gruppe) => (
+                        <LieferantGruppeCard
+                            key={gruppe.lieferantId || gruppe.lieferantName || 'ohne-lieferant'}
                             gruppe={gruppe}
                             onToggleBestellt={handleToggleBestellt}
                             onEmailClick={handleEmailClick}
@@ -882,8 +968,8 @@ export default function BestellungEditor() {
                 <BestellungEmailModal
                     isOpen={true}
                     onClose={() => setEmailModal(null)}
-                    projektId={emailModal.projektId}
-                    projektName={emailModal.projektName}
+                    lieferantId={emailModal.lieferantId}
+                    lieferantName={emailModal.lieferantName}
                     onSuccess={loadBestellungen}
                 />
             )}
