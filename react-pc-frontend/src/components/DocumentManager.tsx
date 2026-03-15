@@ -30,6 +30,7 @@ const ICON_HICAD = `${BASE_URL}hicad_logo.png`;
 interface DocumentManagerProps {
     projektId?: number;
     anfrageId?: number;
+    angebotId?: number;
     className?: string;
 }
 
@@ -92,7 +93,7 @@ const openViaNetworkPath = (doc: ProjektDokument): boolean => {
     return false;
 };
 
-export default function DocumentManager({ projektId, anfrageId, className }: DocumentManagerProps) {
+export default function DocumentManager({ projektId, anfrageId, angebotId, className }: DocumentManagerProps) {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [documents, setDocuments] = useState<ProjektDokument[]>([]);
@@ -109,9 +110,12 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
 
     // Determine API base path based on context
     const isAnfrageContext = !!anfrageId;
-    const entityId = projektId || anfrageId;
+    const isAngebotContext = !!angebotId;
+    const entityId = projektId || anfrageId || angebotId;
     const apiBasePath = isAnfrageContext
         ? `/api/anfragen/${entityId}/dokumente`
+        : isAngebotContext
+            ? `/api/angebote/${entityId}/dokumente`
         : `/api/projekte/${entityId}/dokumente`;
 
     // Dokumente laden

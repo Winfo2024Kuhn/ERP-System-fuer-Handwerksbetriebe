@@ -13,12 +13,12 @@ Die einfachste Methode. **Keine Voraussetzungen** – kein Java, kein Docker, ke
 Lade den neuesten Installer von der [**Releases-Seite**](https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/releases) herunter:
 
 ```
-ERP-Handwerk-1.0.0.exe
+ERP-Handwerk-<Version>.exe
 ```
 
 ### Schritt 2 – Installieren
 
-1. Doppelklick auf `ERP-Handwerk-1.0.0.exe`
+1. Doppelklick auf `ERP-Handwerk-<Version>.exe`
 2. Installationsordner wählen (Standard: `C:\Program Files\ERP-Handwerk`)
 3. **„Installieren"** klicken
 
@@ -69,7 +69,7 @@ docker compose up -d --build
 Oder unter Windows einfach `start-docker.bat` doppelklicken.
 
 **Was passiert automatisch:**
-- MySQL 8 wird heruntergeladen und konfiguriert
+- MariaDB 11 wird heruntergeladen und konfiguriert
 - Datenbank und Tabellen werden erstellt
 - Qdrant (Vektor-DB für KI) wird gestartet
 - Die Anwendung startet auf `http://localhost:8080`
@@ -85,7 +85,7 @@ Oder unter Windows einfach `start-docker.bat` doppelklicken.
 | Komponente | Version | Download |
 |------------|---------|----------|
 | Java (JDK) | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
-| MySQL | 8+ | [MySQL Downloads](https://dev.mysql.com/downloads/) |
+| MariaDB | 11+ | [MariaDB Downloads](https://mariadb.org/download/) |
 | Node.js | 18+ | [nodejs.org](https://nodejs.org/) (nur für Frontend-Entwicklung) |
 
 ### 1. Repository klonen
@@ -95,12 +95,12 @@ git clone https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe.git
 cd ERP-System-fuer-Handwerksbetriebe
 ```
 
-### 2. MySQL-Datenbank einrichten
+### 2. Datenbank einrichten (MariaDB oder MySQL)
 
 ```sql
 CREATE DATABASE kalkulationsprogramm_db
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_german2_ci;
+   CHARACTER SET utf8mb4
+   COLLATE utf8mb4_german2_ci;
 CREATE USER 'erp'@'localhost' IDENTIFIED BY 'DEIN_DB_PASSWORT';
 GRANT ALL PRIVILEGES ON kalkulationsprogramm_db.* TO 'erp'@'localhost';
 ```
@@ -110,7 +110,12 @@ GRANT ALL PRIVILEGES ON kalkulationsprogramm_db.* TO 'erp'@'localhost';
 Erstelle `src/main/resources/application-local.properties`:
 
 ```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
+# MariaDB (Standard)
+spring.datasource.url=jdbc:mariadb://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
+
+# oder MySQL 8+
+# spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+
 spring.datasource.username=erp
 spring.datasource.password=DEIN_DB_PASSWORT
 ```
@@ -158,7 +163,7 @@ Um den Windows-Installer selbst zu erstellen:
 
 # 2. Staging-Verzeichnis erstellen
 mkdir target/jpackage-input
-cp target/Kalkulationsprogramm-1.0.0.jar target/jpackage-input/
+cp target/Kalkulationsprogramm-<Version>.jar target/jpackage-input/
 
 # 3. Installer erstellen
 ./mvnw jpackage:jpackage
@@ -166,7 +171,7 @@ cp target/Kalkulationsprogramm-1.0.0.jar target/jpackage-input/
 
 Oder einfach: `build-installer.bat` doppelklicken.
 
-Der Installer liegt dann unter: `target/installer/ERP-Handwerk-1.0.0.exe`
+Der Installer liegt dann unter: `target/installer/ERP-Handwerk-<Version>.exe`
 
 ### Was der Installer enthält
 
@@ -174,35 +179,35 @@ Der Installer liegt dann unter: `target/installer/ERP-Handwerk-1.0.0.exe`
 |------------|--------------|
 | JRE 23 | Eigene Java-Laufzeitumgebung (~170 MB) |
 | Spring Boot App | Backend + eingebettetes Frontend |
-| H2-Datenbank | Eingebettete Datenbank (kein MySQL nötig) |
+| H2-Datenbank | Eingebettete Datenbank (kein MariaDB nötig) |
 | JVM-Parameter | `-Dspring.profiles.active=h2 -Xmx512m` |
 
 ---
 
 ## Häufige Fragen (FAQ)
 
-### Kann ich von H2 auf MySQL wechseln?
+### Kann ich von H2 auf MariaDB wechseln?
 
-Ja. Die H2-Datenbank ist für den Einstieg gedacht. Für den produktiven Einsatz mit mehreren Nutzern empfehlen wir MySQL:
+Ja. Die H2-Datenbank ist für den Einstieg gedacht. Für den produktiven Einsatz mit mehreren Nutzern empfehlen wir MariaDB:
 
-1. MySQL installieren und Datenbank anlegen (siehe Variante 3)
+1. MariaDB installieren und Datenbank anlegen (siehe Variante 3)
 2. `application-local.properties` erstellen
 3. Die Anwendung ohne `h2`-Profil starten:
    ```bash
-   java -jar Kalkulationsprogramm-1.0.0.jar --spring.profiles.active=local
+java -jar Kalkulationsprogramm-<Version>.jar --spring.profiles.active=local
    ```
 
 ### Port 8080 ist belegt – was tun?
 
 Starte die Anwendung mit einem anderen Port:
 ```bash
-java -jar Kalkulationsprogramm-1.0.0.jar --server.port=9090
+java -jar Kalkulationsprogramm-<Version>.jar --server.port=9090
 ```
 
 ### Wie sichere ich meine Daten?
 
 - **H2-Modus:** Kopiere den Ordner `%USERPROFILE%\ERP-Handwerk\` regelmäßig auf ein Backup-Medium
-- **MySQL-Modus:** Verwende `mysqldump` für regelmäßige Backups
+- **MariaDB-Modus:** Verwende `mariadb-dump` oder `mysqldump` für regelmäßige Backups
 - **Docker-Modus:** Die Daten liegen in Docker Volumes – sichere diese über `docker cp` oder Volume-Backups
 
 ### Kann ich das Programm im Netzwerk nutzen?

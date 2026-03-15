@@ -60,6 +60,7 @@ interface DokumentHierarchieProps {
     ausgangsDokumente: AusgangsGeschaeftsDokument[];
     projektId?: number;
     anfrageId?: number;
+    angebotId?: number;
     /** Wenn gesetzt, werden nur diese Dokumenttypen im Erstellen-Dialog anfragenn */
     allowedTypes?: AusgangsGeschaeftsDokumentTyp[];
     /** Wenn true, werden Rechnungserstellungs-Aktionen ausgeblendet */
@@ -73,16 +74,18 @@ export function DokumentHierarchie({
     ausgangsDokumente,
     projektId,
     anfrageId,
+    angebotId,
     allowedTypes,
     hideRechnungActions,
     onRefresh,
     confirmDialog,
     toast,
 }: DokumentHierarchieProps) {
+    const contextAnfrageId = anfrageId ?? angebotId;
     // URL-Param für den Dokument-Editor: projektId oder anfrageId
-    const editorParam = projektId ? `projektId=${projektId}` : `anfrageId=${anfrageId}`;
+    const editorParam = projektId ? `projektId=${projektId}` : `anfrageId=${contextAnfrageId}`;
     // Payload-Felder für die Dokumenterstellung
-    const createPayloadIds = projektId ? { projektId } : { anfrageId };
+    const createPayloadIds = projektId ? { projektId } : { anfrageId: contextAnfrageId };
     const [actionMenuId, setActionMenuId] = useState<number | null>(null);
     const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set());
 

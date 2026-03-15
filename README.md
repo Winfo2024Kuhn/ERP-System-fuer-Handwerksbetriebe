@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Spring_Boot-3.2.5-6DB33F?logo=spring-boot" alt="Spring Boot" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/MySQL-8-4479A1?logo=mysql&logoColor=white" alt="MySQL" />
+  <img src="https://img.shields.io/badge/MariaDB-11-003545?logo=mariadb&logoColor=white" alt="MariaDB" />
   <img src="https://img.shields.io/badge/KI--Assistent-Gemini-4285F4?logo=google&logoColor=white" alt="KI" />
   <img src="https://img.shields.io/badge/Lizenz-MIT-green" alt="Lizenz" />
 </p>
@@ -218,7 +218,7 @@ graph TB
     end
 
     subgraph Daten["Datenspeicher"]
-        MySQL["🐬 MySQL"]
+        MariaDB["🐬 MariaDB"]
         FS["📁 Dateisystem (uploads/)"]
         Cache["📦 RAG-Cache (.json)"]
     end
@@ -228,7 +228,7 @@ graph TB
     KI --> API
     API --> Services
     Services --> Domain
-    Domain --> MySQL
+    Domain --> MariaDB
     Services --> FS
     Services --> AI
     Services --> IMAP
@@ -245,7 +245,7 @@ graph TB
 | Schicht | Technologie |
 |---------|-------------|
 | **Backend** | Java 23, Spring Boot 3.2.5, JPA/Hibernate, Flyway |
-| **Datenbank** | MySQL 8 |
+| **Datenbank** | MariaDB 11 |
 | **Desktop-Frontend** | React 18 + TypeScript + Vite + Tailwind CSS |
 | **Mobile App** | React PWA (Offline-fähig via IndexedDB) |
 | **KI-Assistent** | Google Gemini API (Chat, Vision, Embedding), Google Search Grounding |
@@ -263,7 +263,7 @@ graph TB
 
 **Keine Vorkenntnisse nötig. Kein Java, kein Docker, keine Datenbank.**
 
-1. **[⬇️ ERP-Handwerk-1.0.0.exe herunterladen](https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/releases)**
+1. **[⬇️ ERP-Handwerk-<Version>.exe herunterladen](https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/releases)**
 2. Doppelklick → Installieren
 3. Startmenü → **„ERP Handwerk"** → Fertig ✅
 
@@ -294,7 +294,7 @@ Das Handwerkerprogramm kann auf zwei Arten betrieben werden: **lokal im Firmenne
 | Komponente | Version | Hinweis |
 |------------|---------|---------|
 | Java (JDK) | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
-| MySQL | 8+ | Datenbank `kalkulationsprogramm_db` anlegen |
+| MariaDB | 11+ | Datenbank `kalkulationsprogramm_db` anlegen |
 | Node.js | 18+ | Nur für Frontend-Build nötig |
 
 ### Backend für Produktion vorbereiten
@@ -334,7 +334,7 @@ export APP_ADMIN_PASS="sicheresPasswort123!"
 
 Ideal, wenn alle Nutzer im **gleichen Netzwerk (LAN/WLAN)** arbeiten – z. B. im Büro oder in der Werkstatt.
 
-#### 1. MySQL einrichten
+#### 1. Datenbank einrichten (MariaDB oder MySQL)
 
 ```sql
 CREATE DATABASE kalkulationsprogramm_db
@@ -349,7 +349,12 @@ GRANT ALL PRIVILEGES ON kalkulationsprogramm_db.* TO 'erp'@'localhost';
 Erstelle `src/main/resources/application-local.properties`:
 
 ```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
+# MariaDB (Standard)
+spring.datasource.url=jdbc:mariadb://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
+
+# oder MySQL 8+
+# spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+
 spring.datasource.username=erp
 spring.datasource.password=DEIN_DB_PASSWORT
 ```

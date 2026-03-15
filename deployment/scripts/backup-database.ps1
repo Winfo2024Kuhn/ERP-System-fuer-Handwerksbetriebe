@@ -2,7 +2,7 @@
 # Automatisches Datenbank-Backup Script
 # Kalkulationsprogramm
 # =========================================================
-# Dieses Script erstellt automatische Backups der MySQL-Datenbank
+# Dieses Script erstellt automatische Backups der MariaDB/MySQL-Datenbank
 # auf der externen Festplatte E:\ und zusätzlich auf OneDrive
 # =========================================================
 
@@ -20,14 +20,19 @@ $DB_PORT = "3307"
 $DB_NAME = "kalkulationsprogramm_db"
 $DB_USER = "YOUR_DB_USERNAME"
 $DB_PASSWORD = "YOUR_DB_PASSWORD"
-$MYSQLDUMP_PATH = "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe"
+$MYSQLDUMP_PATH = "C:\Program Files\MariaDB 11.4\bin\mariadb-dump.exe"
 
-# Alternative Pfade für mysqldump falls nicht gefunden
+# Alternative Pfade für Dump-Tools falls nicht gefunden
 $MYSQLDUMP_ALTERNATIVES = @(
+    "C:\Program Files\MariaDB 11.4\bin\mariadb-dump.exe",
+    "C:\Program Files\MariaDB 11.3\bin\mariadb-dump.exe",
+    "C:\Program Files\MariaDB 11.2\bin\mariadb-dump.exe",
+    "C:\Program Files\MariaDB 10.11\bin\mariadb-dump.exe",
     "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
     "C:\Program Files\MySQL\MySQL Server 8.3\bin\mysqldump.exe",
     "C:\Program Files\MySQL\MySQL Server 9.0\bin\mysqldump.exe",
     "C:\Program Files (x86)\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
+    "mariadb-dump.exe", # Falls im PATH
     "mysqldump.exe"  # Falls im PATH
 )
 
@@ -73,9 +78,10 @@ function Ensure-Directory {
 
 function Find-MySQLDump {
     foreach ($path in $MYSQLDUMP_ALTERNATIVES) {
-        if ($path -eq "mysqldump.exe") {
-            # Prüfe ob mysqldump im PATH ist
-            $cmd = Get-Command mysqldump -ErrorAction SilentlyContinue
+        if ($path -eq "mysqldump.exe" -or $path -eq "mariadb-dump.exe") {
+            # Prüfe ob Dump-Tool im PATH ist
+            $cmdName = [System.IO.Path]::GetFileNameWithoutExtension($path)
+            $cmd = Get-Command $cmdName -ErrorAction SilentlyContinue
             if ($cmd) {
                 return $cmd.Source
             }
@@ -233,22 +239,22 @@ if (-not (Ensure-Directory $LogDir)) {
     Write-Log "WARNUNG: Konnte Log-Verzeichnis nicht erstellen!" "WARN"
 }
 
-# Schritt 3: mysqldump finden
-Write-Log "Suche mysqldump..."
+# Schritt 3: Dump-Tool finden
+Write-Log "Suche Dump-Tool (mariadb-dump/mysqldump)..."
 $MYSQLDUMP_PATH = Find-MySQLDump
 if (-not $MYSQLDUMP_PATH) {
-    Write-Log "FEHLER: mysqldump.exe nicht gefunden!" "ERROR"
-    Write-Log "Bitte installieren Sie MySQL Client oder passen Sie den Pfad an." "ERROR"
+    Write-Log "FEHLER: Kein Dump-Tool gefunden (mariadb-dump oder mysqldump)." "ERROR"
+    Write-Log "Bitte installieren Sie MariaDB/MySQL Client-Tools oder passen Sie den Pfad an." "ERROR"
     exit 1
 }
-Write-Log "mysqldump gefunden: $MYSQLDUMP_PATH"
+Write-Log "Dump-Tool gefunden: $MYSQLDUMP_PATH"
 
 # Schritt 4: Datenbank-Backup erstellen
 Write-Log "Erstelle Datenbank-Backup..."
 Write-Log "Ziel: $backupFilePath"
 
 try {
-    # mysqldump Befehl ausführen
+    # Dump-Befehl ausführen
     $arguments = @(
         "--host=$DB_HOST",
         "--port=$DB_PORT",
@@ -265,7 +271,7 @@ try {
     $process = Start-Process -FilePath $MYSQLDUMP_PATH -ArgumentList $arguments -NoNewWindow -Wait -PassThru
     
     if ($process.ExitCode -ne 0) {
-        Write-Log "mysqldump ist mit Fehlercode $($process.ExitCode) beendet!" "ERROR"
+        Write-Log "Dump-Tool ist mit Fehlercode $($process.ExitCode) beendet!" "ERROR"
         exit 1
     }
     
