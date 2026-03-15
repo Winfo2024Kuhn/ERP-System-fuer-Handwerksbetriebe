@@ -41,8 +41,26 @@ echo.
 echo [2/4] Erstelle Staging-Verzeichnis...
 if exist target\jpackage-input rmdir /s /q target\jpackage-input
 mkdir target\jpackage-input
-copy target\Kalkulationsprogramm-1.0.0.jar target\jpackage-input\ >nul
-echo       Staging fertig.
+
+set "APP_JAR="
+for %%f in (target\Kalkulationsprogramm-*.jar) do (
+    set "APP_JAR=%%~nxf"
+)
+
+if not defined APP_JAR (
+    echo [FEHLER] Keine Spring-Boot-JAR in target\ gefunden!
+    pause
+    exit /b 1
+)
+
+copy "target\%APP_JAR%" target\jpackage-input\ >nul
+if errorlevel 1 (
+    echo [FEHLER] Konnte target\%APP_JAR% nicht in target\jpackage-input\ kopieren!
+    pause
+    exit /b 1
+)
+
+echo       Staging fertig: %APP_JAR%
 
 echo.
 echo [3/4] Erstelle Windows-Installer mit jpackage...
@@ -57,9 +75,18 @@ if errorlevel 1 (
 echo.
 echo [4/4] Fertig!
 echo.
+set "INSTALLER_EXE="
+for %%f in (target\installer\ERP-Handwerk-*.exe) do (
+    set "INSTALLER_EXE=%%~nxf"
+)
+
 echo ============================================
 echo   Installer erstellt in:
-echo   target\installer\ERP-Handwerk-1.0.0.exe
+if defined INSTALLER_EXE (
+echo   target\installer\%INSTALLER_EXE%
+) else (
+echo   target\installer\ERP-Handwerk-<Version>.exe
+)
 echo.
 echo   ALTERNATIV: Lokale Installation (empfohlen)
 echo   ============================================
