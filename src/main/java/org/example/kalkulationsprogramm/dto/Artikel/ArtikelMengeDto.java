@@ -9,6 +9,7 @@ public class ArtikelMengeDto {
     private Long artikelId;
     private java.math.BigDecimal menge;
     private String einheit;
+    private Boolean ausLager;
     private String kommentar;
     private Long lieferantId;
     private java.math.BigDecimal preis;

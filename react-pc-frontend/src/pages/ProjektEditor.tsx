@@ -22,6 +22,7 @@ import {
     MapPin,
     Paperclip,
     Plus,
+    Package,
     Receipt,
     RefreshCw,
     Search,
@@ -35,7 +36,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import type { Projekt, ProjektDetail, ProjektEmail, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto } from "../types";
+import type { Projekt, ProjektDetail, ProjektEmail, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, Artikel } from "../types";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
 import { DetailLayout } from "../components/DetailLayout";
 import { ProjektErstellenModal } from "../components/ProjektErstellenModal";
@@ -176,8 +177,17 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         }
     };
     const [showMaterialModal, setShowMaterialModal] = useState(false);
+    const [showLagerArtikelModal, setShowLagerArtikelModal] = useState(false);
     const [newMaterial, setNewMaterial] = useState<{ beschreibung: string, betrag: string, lieferantId?: string, rechnungsnummer: string }>({ beschreibung: '', betrag: '', rechnungsnummer: '' });
     const [savingMaterial, setSavingMaterial] = useState(false);
+    const [lagerArtikel, setLagerArtikel] = useState<Artikel[]>([]);
+    const [loadingLagerArtikel, setLoadingLagerArtikel] = useState(false);
+    const [savingLagerArtikel, setSavingLagerArtikel] = useState(false);
+    const [lagerArtikelError, setLagerArtikelError] = useState<string | null>(null);
+    const [lagerArtikelSearch, setLagerArtikelSearch] = useState('');
+    const [selectedLagerArtikelKeys, setSelectedLagerArtikelKeys] = useState<Set<string>>(new Set());
+    const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<string, string>>({});
+    const [lagerArtikelBeschaffung, setLagerArtikelBeschaffung] = useState<Record<string, 'lager' | 'bestellen'>>({});
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [showSupplierPicker, setShowSupplierPicker] = useState(false);
     const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
@@ -581,6 +591,231 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const formatDate = (dateStr?: string) => {
         if (!dateStr) return '-';
         return new Date(dateStr).toLocaleDateString('de-DE');
+    };
+
+    const getLagerArtikelKey = (artikel: Artikel) => `${artikel.id}-${artikel.lieferantId ?? 'none'}`;
+
+    const getVerrechnungseinheitName = (einheit?: Artikel['verrechnungseinheit']) => {
+        if (!einheit) return 'STUECK';
+        return typeof einheit === 'string' ? einheit : einheit.name;
+    };
+
+    const getVerrechnungseinheitLabel = (einheit?: Artikel['verrechnungseinheit']) => {
+        if (!einheit) return 'Stück';
+        if (typeof einheit === 'object') return einheit.anzeigename || einheit.name;
+        if (einheit === 'STUECK') return 'Stück';
+        if (einheit === 'LAUFENDE_METER') return 'Laufende Meter';
+        if (einheit === 'QUADRATMETER') return 'Quadratmeter';
+        if (einheit === 'KILOGRAMM') return 'Kilogramm';
+        return einheit;
+    };
+
+    const mapEinheitForBackend = (einheit?: Artikel['verrechnungseinheit']) => {
+        const name = getVerrechnungseinheitName(einheit);
+        if (name === 'LAUFENDE_METER') return 'METER';
+        return name;
+    };
+
+    const resetLagerArtikelSelection = () => {
+        setSelectedLagerArtikelKeys(new Set());
+        setLagerArtikelMengen({});
+        setLagerArtikelBeschaffung({});
+        setLagerArtikelSearch('');
+    };
+
+    const loadLagerArtikel = useCallback(async () => {
+        setLoadingLagerArtikel(true);
+        setLagerArtikelError(null);
+        try {
+            const pageSize = 50;
+            let page = 0;
+            let guard = 0;
+            let allRows: Artikel[] = [];
+            let total = 0;
+
+            while (guard < 500) {
+                const params = new URLSearchParams();
+                params.set('page', String(page));
+                params.set('size', String(pageSize));
+                params.set('sort', 'produktname');
+                params.set('dir', 'asc');
+
+                const res = await fetch(`/api/artikel?${params.toString()}`);
+                if (!res.ok) throw new Error('Artikel konnten nicht geladen werden');
+
+                const data = await res.json();
+                const list: Artikel[] = Array.isArray(data?.artikel) ? data.artikel : [];
+                allRows = allRows.concat(list);
+
+                total = typeof data?.gesamt === 'number' ? data.gesamt : allRows.length;
+                if (list.length === 0 || (page + 1) * pageSize >= total) break;
+
+                page += 1;
+                guard += 1;
+            }
+
+            const pricedRows = allRows.filter(a => a.preis !== undefined && a.preis !== null && !!a.lieferantId);
+            const uniqueRows = new Map<string, Artikel>();
+            for (const artikel of pricedRows) {
+                const key = getLagerArtikelKey(artikel);
+                if (!uniqueRows.has(key)) {
+                    uniqueRows.set(key, artikel);
+                }
+            }
+
+            const sorted = Array.from(uniqueRows.values()).sort((a, b) => {
+                const aName = a.produktname || '';
+                const bName = b.produktname || '';
+                return aName.localeCompare(bName, 'de-DE');
+            });
+
+            setLagerArtikel(sorted);
+        } catch (error) {
+            console.error('Fehler beim Laden der Lagerartikel:', error);
+            setLagerArtikel([]);
+            setLagerArtikelError('Lagerartikel konnten nicht geladen werden.');
+        } finally {
+            setLoadingLagerArtikel(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!showLagerArtikelModal) return;
+        loadLagerArtikel();
+    }, [showLagerArtikelModal, loadLagerArtikel]);
+
+    const filteredLagerArtikel = useMemo(() => {
+        const query = lagerArtikelSearch.trim().toLowerCase();
+        if (!query) return lagerArtikel;
+
+        return lagerArtikel.filter((artikel) => {
+            const fields = [
+                artikel.externeArtikelnummer,
+                artikel.produktname,
+                artikel.produkttext,
+                artikel.lieferantenname,
+                artikel.werkstoffName,
+                artikel.kategoriePfad,
+            ]
+                .filter(Boolean)
+                .map(v => String(v).toLowerCase());
+            return fields.some(f => f.includes(query));
+        });
+    }, [lagerArtikel, lagerArtikelSearch]);
+
+    const handleToggleLagerArtikel = (artikel: Artikel, checked: boolean) => {
+        const key = getLagerArtikelKey(artikel);
+        setSelectedLagerArtikelKeys(prev => {
+            const next = new Set(prev);
+            if (checked) {
+                next.add(key);
+            } else {
+                next.delete(key);
+            }
+            return next;
+        });
+
+        if (checked) {
+            setLagerArtikelMengen(prev => {
+                if (prev[key]) return prev;
+                return { ...prev, [key]: '1' };
+            });
+            setLagerArtikelBeschaffung(prev => {
+                if (prev[key]) return prev;
+                return { ...prev, [key]: 'lager' };
+            });
+        } else {
+            setLagerArtikelBeschaffung(prev => {
+                if (!prev[key]) return prev;
+                const next = { ...prev };
+                delete next[key];
+                return next;
+            });
+        }
+    };
+
+    const handleLagerMengeChange = (artikel: Artikel, value: string) => {
+        const key = getLagerArtikelKey(artikel);
+        setLagerArtikelMengen(prev => ({ ...prev, [key]: value }));
+
+        const parsed = parseFloat(value.replace(',', '.'));
+        setSelectedLagerArtikelKeys(prev => {
+            const next = new Set(prev);
+            if (!Number.isNaN(parsed) && parsed > 0) {
+                next.add(key);
+            } else {
+                next.delete(key);
+            }
+            return next;
+        });
+
+        setLagerArtikelBeschaffung(prev => {
+            if (!Number.isNaN(parsed) && parsed > 0) {
+                if (prev[key]) return prev;
+                return { ...prev, [key]: 'lager' };
+            }
+            if (!prev[key]) return prev;
+            const next = { ...prev };
+            delete next[key];
+            return next;
+        });
+    };
+
+    const handleLagerBeschaffungChange = (artikel: Artikel, value: string) => {
+        const key = getLagerArtikelKey(artikel);
+        const beschaffung = value === 'bestellen' ? 'bestellen' : 'lager';
+        setLagerArtikelBeschaffung(prev => ({ ...prev, [key]: beschaffung }));
+    };
+
+    const handleSaveLagerArtikel = async () => {
+        if (selectedLagerArtikelKeys.size === 0) {
+            toast.error('Bitte wählen Sie mindestens einen Artikel aus.');
+            return;
+        }
+
+        const payload = lagerArtikel
+            .filter(artikel => selectedLagerArtikelKeys.has(getLagerArtikelKey(artikel)))
+            .map(artikel => {
+                const key = getLagerArtikelKey(artikel);
+                const rawMenge = (lagerArtikelMengen[key] || '1').replace(',', '.');
+                const menge = parseFloat(rawMenge);
+                return {
+                    artikelId: artikel.id,
+                    lieferantId: artikel.lieferantId,
+                    preis: artikel.preis,
+                    menge,
+                    einheit: mapEinheitForBackend(artikel.verrechnungseinheit),
+                    ausLager: (lagerArtikelBeschaffung[key] ?? 'lager') === 'lager',
+                };
+            });
+
+        if (payload.some(p => Number.isNaN(p.menge) || p.menge <= 0)) {
+            toast.error('Bitte geben Sie für alle gewählten Artikel eine Menge größer als 0 ein.');
+            return;
+        }
+
+        setSavingLagerArtikel(true);
+        try {
+            const res = await fetch(`/api/projekte/${projekt.id}/materialkosten/artikel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (res.ok) {
+                toast.success(`${payload.length} Artikel zum Projekt hinzugefügt.`);
+                setShowLagerArtikelModal(false);
+                resetLagerArtikelSelection();
+                await onRefresh();
+            } else {
+                toast.error('Artikel konnten nicht hinzugefügt werden.');
+            }
+        } catch (error) {
+            console.error('Fehler beim Hinzufügen von Artikeln:', error);
+            toast.error('Fehler beim Hinzufügen von Artikeln.');
+        } finally {
+            setSavingLagerArtikel(false);
+        }
     };
 
     const handleSaveMaterial = async () => {
@@ -1162,9 +1397,19 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     <div className="space-y-3">
                         <div className="flex justify-between items-center mb-2">
                             <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Manuell erfasste Materialkosten</h4>
-                            <Button size="sm" onClick={() => setShowMaterialModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
-                                <Plus className="w-4 h-4 mr-2" /> Kosten erfassen
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setShowLagerArtikelModal(true)}
+                                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                >
+                                    <Package className="w-4 h-4 mr-2" /> Artikel aus Lager
+                                </Button>
+                                <Button size="sm" onClick={() => setShowMaterialModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
+                                    <Plus className="w-4 h-4 mr-2" /> Kosten erfassen
+                                </Button>
+                            </div>
                         </div>
 
                         {projekt.materialkosten && projekt.materialkosten.length > 0 ? (
@@ -1179,6 +1424,27 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             ))
                         ) : (
                             <p className="text-slate-500 text-center py-4">Keine manuell erfassten Materialkosten.</p>
+                        )}
+                    </div>
+
+                    <div className="space-y-3">
+                        <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Artikel aus Lager</h4>
+                        {projekt.artikel && projekt.artikel.length > 0 ? (
+                            projekt.artikel.map((a) => (
+                                <div key={a.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-100">
+                                    <div>
+                                        <p className="font-medium text-slate-900">{a.produktname || a.beschreibung || 'Artikel'}</p>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            {a.externeArtikelnummer ? `Nr. ${a.externeArtikelnummer} · ` : ''}
+                                            {a.lieferantName ? `${a.lieferantName} · ` : ''}
+                                            {a.stueckzahl ? `${a.stueckzahl} Stück` : a.meter ? `${a.meter} m` : a.kilogramm ? `${a.kilogramm} kg` : '-'}
+                                        </p>
+                                    </div>
+                                    <p className="font-semibold text-slate-900">{formatCurrency(a.preisProStueck ?? a.gesamtpreis ?? 0)}</p>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-slate-500 text-center py-4">Keine Artikel aus dem Lager im Projekt.</p>
                         )}
                     </div>
 
@@ -2508,6 +2774,147 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         <Button variant="outline" onClick={() => setShowMaterialModal(false)}>Abbrechen</Button>
                         <Button onClick={handleSaveMaterial} disabled={savingMaterial || !newMaterial.beschreibung || !newMaterial.betrag}>
                             {savingMaterial ? 'Speichern...' : 'Speichern'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Lagerartikel Modal */}
+            <Dialog
+                open={showLagerArtikelModal}
+                onOpenChange={(open) => {
+                    setShowLagerArtikelModal(open);
+                    if (!open) {
+                        resetLagerArtikelSelection();
+                    }
+                }}
+                className="w-[96vw] h-[92vh] max-w-none"
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Artikel aus Lager hinzufügen</DialogTitle>
+                        <p className="text-sm text-slate-500">
+                            Wählen Sie einen oder mehrere Artikel mit hinterlegtem Lieferantenpreis und legen Sie pro Artikel fest, ob er aus Lager kommt oder bestellt werden muss.
+                        </p>
+                    </DialogHeader>
+
+                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                            <Input
+                                placeholder="Artikel, Nummer, Lieferant oder Werkstoff suchen..."
+                                className="pl-9"
+                                value={lagerArtikelSearch}
+                                onChange={(e) => setLagerArtikelSearch(e.target.value)}
+                            />
+                        </div>
+                        <Button variant="outline" onClick={loadLagerArtikel} disabled={loadingLagerArtikel || savingLagerArtikel}>
+                            <RefreshCw className={cn('w-4 h-4 mr-2', loadingLagerArtikel && 'animate-spin')} /> Neu laden
+                        </Button>
+                    </div>
+
+                    <div className="text-xs text-slate-500">
+                        {loadingLagerArtikel
+                            ? 'Artikel werden geladen...'
+                            : `${filteredLagerArtikel.length} von ${lagerArtikel.length} Artikeln mit Lieferantenpreis`}
+                    </div>
+
+                    {lagerArtikelError && (
+                        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                            {lagerArtikelError}
+                        </div>
+                    )}
+
+                    <div className="flex-1 min-h-0 border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="h-full overflow-auto">
+                            <table className="min-w-full text-sm">
+                                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+                                    <tr>
+                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[90px]">Auswahl</th>
+                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Artikel</th>
+                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Lieferant</th>
+                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Einheit</th>
+                                        <th className="px-3 py-2 text-right font-medium text-slate-600">Preis</th>
+                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[140px]">Menge</th>
+                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[190px]">Bezug</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredLagerArtikel.map((artikel) => {
+                                        const key = getLagerArtikelKey(artikel);
+                                        const checked = selectedLagerArtikelKeys.has(key);
+                                        const beschaffung = lagerArtikelBeschaffung[key] || 'lager';
+                                        return (
+                                            <tr key={key} className={cn('border-b border-slate-100', checked && 'bg-rose-50/50')}>
+                                                <td className="px-3 py-2 align-top">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={(e) => handleToggleLagerArtikel(artikel, e.target.checked)}
+                                                        title={`Artikel ${artikel.produktname || ''} auswählen`}
+                                                        aria-label={`Artikel ${artikel.produktname || ''} auswählen`}
+                                                        className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2 align-top">
+                                                    <div className="font-medium text-slate-900">{artikel.produktname || '-'}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">
+                                                        {artikel.externeArtikelnummer ? `Nr. ${artikel.externeArtikelnummer}` : 'Ohne Artikelnummer'}
+                                                        {artikel.werkstoffName ? ` · ${artikel.werkstoffName}` : ''}
+                                                    </div>
+                                                    {artikel.produkttext && (
+                                                        <div className="text-xs text-slate-400 mt-1 line-clamp-2">{artikel.produkttext}</div>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-2 align-top text-slate-700">{artikel.lieferantenname || '-'}</td>
+                                                <td className="px-3 py-2 align-top text-slate-700">{getVerrechnungseinheitLabel(artikel.verrechnungseinheit)}</td>
+                                                <td className="px-3 py-2 align-top text-right font-medium text-slate-900">{formatCurrency(artikel.preis)}</td>
+                                                <td className="px-3 py-2 align-top">
+                                                    <Input
+                                                        type="number"
+                                                        min="0.01"
+                                                        step="0.01"
+                                                        value={lagerArtikelMengen[key] || ''}
+                                                        onChange={(e) => handleLagerMengeChange(artikel, e.target.value)}
+                                                        placeholder="z.B. 5"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2 align-top">
+                                                    <Select
+                                                        value={beschaffung}
+                                                        onChange={(value) => handleLagerBeschaffungChange(artikel, value)}
+                                                        disabled={!checked}
+                                                        options={[
+                                                            { value: 'lager', label: 'Aus Lager' },
+                                                            { value: 'bestellen', label: 'Bestellen' },
+                                                        ]}
+                                                        placeholder="Bezug wählen"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+
+                            {!loadingLagerArtikel && filteredLagerArtikel.length === 0 && (
+                                <div className="text-center text-slate-500 py-10">
+                                    Keine Artikel mit Lieferantenpreis gefunden.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowLagerArtikelModal(false)} disabled={savingLagerArtikel}>
+                            Abbrechen
+                        </Button>
+                        <Button
+                            onClick={handleSaveLagerArtikel}
+                            disabled={savingLagerArtikel || selectedLagerArtikelKeys.size === 0}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                            {savingLagerArtikel ? 'Übernehme...' : `Abschließen (${selectedLagerArtikelKeys.size})`}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
