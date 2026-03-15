@@ -10,7 +10,7 @@
     </parent>
     <groupId>org.example</groupId>
     <artifactId>Kalkulationsprogramm</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.2</version>
     <name>Kalkulationsprogramm</name>
     <description>Kalkulationsprogramm</description>
     <url/>
@@ -205,17 +205,21 @@
             <plugin>
                 <groupId>org.panteleyev</groupId>
                 <artifactId>jpackage-maven-plugin</artifactId>
-                <version>1.6.6</version>
+                <version>1.7.2</version>
                 <configuration>
                     <name>ERP-Handwerk</name>
-                    <appVersion>1.0.0</appVersion>
+                    <appVersion>${project.version}</appVersion>
                     <vendor>Winfo2024Kuhn</vendor>
                     <description>ERP-System fuer Handwerksbetriebe</description>
                     <input>${project.build.directory}/jpackage-input</input>
                     <mainJar>${project.build.finalName}.jar</mainJar>
                     <mainClass>org.springframework.boot.loader.launch.JarLauncher</mainClass>
                     <destination>${project.build.directory}/installer</destination>
-                    <javaOptions>-Dspring.profiles.active=h2 -Xmx512m -Dfile.encoding=UTF-8</javaOptions>
+                    <javaOptions>
+                        <option>-Dspring.profiles.active=h2</option>
+                        <option>-Xmx512m</option>
+                        <option>-Dfile.encoding=UTF-8</option>
+                    </javaOptions>
                     <addModules>ALL-MODULE-PATH</addModules>
                     <type>EXE</type>
                     <winDirChooser>true</winDirChooser>

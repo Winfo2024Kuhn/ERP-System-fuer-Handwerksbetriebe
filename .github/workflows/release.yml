@@ -25,9 +25,14 @@ jobs:
         run: ./mvnw.cmd clean package -DskipTests -q
 
       - name: Stage JAR for jpackage
+        shell: pwsh
         run: |
-          mkdir target\jpackage-input
-          copy target\Kalkulationsprogramm-1.0.0.jar target\jpackage-input\
+          New-Item -ItemType Directory -Path target/jpackage-input -Force | Out-Null
+          $jar = Get-ChildItem target/Kalkulationsprogramm-*.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $jar) {
+            throw "Keine Spring-Boot-JAR in target/ gefunden."
+          }
+          Copy-Item $jar.FullName target/jpackage-input/
 
       - name: Build Windows Installer
         run: ./mvnw.cmd jpackage:jpackage -q
@@ -46,7 +51,7 @@ jobs:
           body: |
             ## Installation
 
-            1. **`ERP-Handwerk-1.0.0.exe`** herunterladen (siehe Assets unten)
+            1. **`ERP-Handwerk-<Version>.exe`** herunterladen (siehe Assets unten)
             2. Doppelklick → Installieren
             3. Startmenü → **„ERP Handwerk"** → Fertig ✅
 
