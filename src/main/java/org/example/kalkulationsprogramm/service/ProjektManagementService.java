@@ -846,8 +846,9 @@ ProjektManagementService {
                 }
                 aip.setPreisProStueck(preisProEinheit);
                 aip.setHinzugefuegtAm(java.time.LocalDate.now());
-                aip.setBestellt(false);
-                aip.setBestelltAm(null);
+                boolean ausLager = Boolean.TRUE.equals(auswahl.getAusLager());
+                aip.setBestellt(ausLager);
+                aip.setBestelltAm(ausLager ? LocalDate.now() : null);
                 aip.setKommentar(auswahl.getKommentar());
                 // Zuschnitt-Daten nur zulassen, wenn Wurzelkategorie 64/65
                 if (darfSchnittbildVerwenden(artikel)) {

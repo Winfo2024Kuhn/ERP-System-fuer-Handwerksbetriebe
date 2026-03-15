@@ -508,11 +508,17 @@ export interface ArtikelInProjekt {
   id: number;
   artikelId: number;
   artikelNummer?: string;
+  externeArtikelnummer?: string;
+  produktname?: string;
+  produkttext?: string;
   beschreibung?: string;
   stueckzahl?: number;
   meter?: number;
+  kilogramm?: number;
   einzelpreis?: number;
   gesamtpreis?: number;
+  preisProStueck?: number;
+  lieferantName?: string;
 }
 
 export interface ProjektDetail extends Projekt {
