@@ -92,6 +92,7 @@ export function DocumentEditorSidebar({
             fontSize: extractFontSizeFromHtml(descHtml),
             fett: extractBoldFromHtml(descHtml),
             leistungId: l.id,
+            kategorieId: l.folderId ?? undefined,
         });
     };
 

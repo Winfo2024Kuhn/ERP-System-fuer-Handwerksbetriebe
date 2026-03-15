@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 public class LeistungMapper {
 
     private final ProduktkategorieRepository produktkategorieRepository;
+    private final ProduktkategorieMapper produktkategorieMapper;
 
     public LeistungDto toDto(Leistung leistung) {
         if (leistung == null)
@@ -25,6 +26,7 @@ public class LeistungMapper {
         dto.setUnit(leistung.getEinheit());
         if (leistung.getKategorie() != null) {
             dto.setFolderId(leistung.getKategorie().getId());
+            dto.setKategoriePfad(produktkategorieMapper.toProduktkategorieResponseDto(leistung.getKategorie()).getPfad());
         }
         return dto;
     }

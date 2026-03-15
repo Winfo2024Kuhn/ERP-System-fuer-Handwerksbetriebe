@@ -273,14 +273,16 @@ public class ProjektController {
     }
 
     @PostMapping("/{projektID}/produktkategorien")
-    public ResponseEntity<ProjektResponseDto> fuegeProduktkategorienHinzu(@PathVariable Long projektID,
+    public ResponseEntity<?> fuegeProduktkategorienHinzu(@PathVariable Long projektID,
             @RequestBody List<ProjektProduktkategorieErfassenDto> kategorien) {
         try {
             ProjektResponseDto dto = projektManagementService.fuegeProduktkategorienHinzu(projektID, kategorien);
             return ResponseEntity.ok(dto);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         }
     }
 

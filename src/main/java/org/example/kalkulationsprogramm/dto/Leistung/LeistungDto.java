@@ -13,4 +13,5 @@ public class LeistungDto {
     private BigDecimal price;
     private Verrechnungseinheit unit;
     private Long folderId;
+    private String kategoriePfad;
 }

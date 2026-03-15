@@ -70,6 +70,7 @@ export interface LeistungApiDto {
     price: number;
     unit: { name: string; anzeigename: string };
     folderId?: number;
+    kategoriePfad?: string;
 }
 
 export interface ArbeitszeitartApiDto {
