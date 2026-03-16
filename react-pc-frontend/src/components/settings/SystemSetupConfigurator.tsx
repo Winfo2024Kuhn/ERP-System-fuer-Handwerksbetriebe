@@ -17,6 +17,20 @@ import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { useToast } from '../ui/toast';
 
+async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
+    try {
+        const text = await res.text();
+        const data = JSON.parse(text);
+        if (typeof data?.message === 'string' && data.message.trim()) {
+            return data.message;
+        }
+        if (text.trim()) return text;
+    } catch {
+        // ignore parse errors
+    }
+    return fallback;
+}
+
 interface SmtpSettings {
     host: string;
     port: number;
@@ -111,8 +125,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 await loadSettings();
                 onSaved?.();
             } else {
-                const text = await res.text();
-                toast.error(text || 'SMTP konnte nicht gespeichert werden.');
+                toast.error(await parseErrorMessage(res, 'SMTP konnte nicht gespeichert werden.'));
             }
         } catch {
             toast.error('Verbindung zum Server fehlgeschlagen.');
@@ -174,8 +187,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 await loadSettings();
                 onSaved?.();
             } else {
-                const text = await res.text();
-                toast.error(text || 'Gemini API Key konnte nicht gespeichert werden.');
+                toast.error(await parseErrorMessage(res, 'Gemini API Key konnte nicht gespeichert werden.'));
             }
         } catch {
             toast.error('Verbindung zum Server fehlgeschlagen.');

@@ -210,11 +210,7 @@ public class FrontendUserProfileService {
     }
 
     private long countOtherActiveAdmins(Long excludedProfileId) {
-        return repository.findAll().stream()
-                .filter(FrontendUserProfile::isActive)
-                .filter(profile -> profile.hasRole(FrontendUserRole.ADMIN))
-                .filter(profile -> !profile.getId().equals(excludedProfileId))
-                .count();
+        return repository.countActiveByRoleExcludingId(FrontendUserRole.ADMIN, excludedProfileId);
     }
 
     private Set<FrontendUserRole> normalizeRoleSet(Set<FrontendUserRole> requestedRoles, Set<FrontendUserRole> fallback) {

@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.config;
 
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -24,10 +26,10 @@ public class FrontendUserBootstrapInitializer implements ApplicationRunner {
     private final FrontendUserProfileRepository repository;
     private final PasswordEncoder passwordEncoder;
 
-    @Value("${app.admin.username:admin}")
+    @Value("${app.admin.username:}")
     private String adminUsername;
 
-    @Value("${app.admin.password:changeme}")
+    @Value("${app.admin.password:}")
     private String adminPassword;
 
     @Override
@@ -40,9 +42,15 @@ public class FrontendUserBootstrapInitializer implements ApplicationRunner {
                 ? "admin"
                 : adminUsername.trim().toLowerCase(Locale.ROOT);
 
-        String bootstrapPassword = (adminPassword == null || adminPassword.isBlank())
-                ? "changeme123"
-                : adminPassword;
+        final String bootstrapPassword;
+        final boolean passwordGenerated;
+        if (adminPassword == null || adminPassword.isBlank()) {
+            bootstrapPassword = generateSecurePassword();
+            passwordGenerated = true;
+        } else {
+            bootstrapPassword = adminPassword;
+            passwordGenerated = false;
+        }
 
         FrontendUserProfile admin = new FrontendUserProfile();
         admin.setDisplayName("Administrator");
@@ -53,6 +61,21 @@ public class FrontendUserBootstrapInitializer implements ApplicationRunner {
         admin.setRoleSet(new LinkedHashSet<>(Set.of(FrontendUserRole.ADMIN, FrontendUserRole.USER)));
 
         repository.save(admin);
-        log.info("Bootstrap-Admin für Frontend-Login wurde angelegt: username={}", normalizedUsername);
+
+        if (passwordGenerated) {
+            log.warn("==========================================================");
+            log.warn("Bootstrap-Admin angelegt: username={}", normalizedUsername);
+            log.warn("Einmaliges Passwort (bitte sofort aendern): {}", bootstrapPassword);
+            log.warn("Setzen Sie APP_ADMIN_PASS, um ein eigenes Passwort zu verwenden.");
+            log.warn("==========================================================");
+        } else {
+            log.info("Bootstrap-Admin fuer Frontend-Login wurde angelegt: username={}", normalizedUsername);
+        }
+    }
+
+    private static String generateSecurePassword() {
+        byte[] bytes = new byte[18];
+        new SecureRandom().nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }
