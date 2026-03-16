@@ -86,7 +86,7 @@ public class FrontendUserProfileService {
             mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
         }
 
-        boolean usernameProvided = username != null;
+        boolean usernameProvided = username != null && !username.isBlank();
         String normalizedUsername = usernameProvided ? normalizeUsername(username) : null;
 
         FrontendUserProfile target;

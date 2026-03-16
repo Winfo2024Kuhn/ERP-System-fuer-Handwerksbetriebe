@@ -123,7 +123,7 @@ public class LieferantenController {
 
         Specification<Lieferanten> specs = Specification.where(null);
         if (StringUtils.hasText(query)) {
-            final String likeValue = wrapLike(query).toLowerCase(Locale.GERMAN);
+            final String likeValue = wrapLike(query).toLowerCase(Locale.ROOT);
             specs = specs.and((root, cq, cb) -> {
                 cq.distinct(true);
                 return cb.or(
@@ -138,7 +138,7 @@ public class LieferantenController {
         specs = specs.and(buildSpec("lieferantenTyp", typ));
         specs = specs.and(buildSpec("ort", ort));
         if (StringUtils.hasText(email)) {
-            final String likeValue = wrapLike(email).toLowerCase(Locale.GERMAN);
+            final String likeValue = wrapLike(email).toLowerCase(Locale.ROOT);
             specs = specs.and((root, cq, cb) -> {
                 cq.distinct(true);
                 ListJoin<Lieferanten, String> join = root.joinList("kundenEmails", JoinType.LEFT);
@@ -455,7 +455,7 @@ public class LieferantenController {
         Lieferanten lieferant = lieferantenRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lieferant nicht gefunden"));
 
-        String normalized = email.trim().toLowerCase(Locale.GERMAN);
+        String normalized = email.trim().toLowerCase(Locale.ROOT);
         if (lieferant.getKundenEmails() == null) {
             lieferant.setKundenEmails(new ArrayList<>());
         }
@@ -483,7 +483,7 @@ public class LieferantenController {
         if (!StringUtils.hasText(value)) {
             return null;
         }
-        final String likeValue = wrapLike(value).toLowerCase(Locale.GERMAN);
+        final String likeValue = wrapLike(value).toLowerCase(Locale.ROOT);
         return (root, cq, cb) -> cb.like(cb.lower(root.get(field)), likeValue);
     }
 
@@ -511,7 +511,7 @@ public class LieferantenController {
             if (!StringUtils.hasText(email)) {
                 continue;
             }
-            normalized.add(email.trim().toLowerCase(Locale.GERMAN));
+            normalized.add(email.trim().toLowerCase(Locale.ROOT));
         }
         return new ArrayList<>(normalized);
     }
