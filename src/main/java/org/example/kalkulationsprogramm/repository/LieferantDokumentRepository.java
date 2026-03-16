@@ -50,4 +50,11 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
                         "OR LOWER(d.originalDateiname) LIKE LOWER(CONCAT('%', :query, '%')))")
         List<LieferantDokument> searchLieferscheine(@Param("lieferantId") Long lieferantId,
                         @Param("query") String query);
+
+        /**
+         * Findet alle Lieferscheine die nach einem bestimmten Zeitpunkt hochgeladen
+         * wurden (für Benachrichtigungen auf dem PC-Desktop).
+         */
+        @Query("SELECT d FROM LieferantDokument d WHERE d.typ = org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN AND d.uploadDatum >= :since ORDER BY d.uploadDatum DESC")
+        List<LieferantDokument> findRecentLieferscheine(@Param("since") java.time.LocalDateTime since);
 }
