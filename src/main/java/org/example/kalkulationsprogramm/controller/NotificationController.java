@@ -11,13 +11,18 @@ import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.KalenderEintrag;
+import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.LieferantReklamation;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.ProjektNotiz;
+import org.example.kalkulationsprogramm.domain.ReklamationStatus;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.KalenderEintragRepository;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantReklamationRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.UrlaubsantragRepository;
@@ -43,6 +48,8 @@ public class NotificationController {
         private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
         private final ProjektDokumentRepository projektDokumentRepository;
         private final KalenderEintragRepository kalenderEintragRepository;
+        private final LieferantDokumentRepository lieferantDokumentRepository;
+        private final LieferantReklamationRepository lieferantReklamationRepository;
 
         @GetMapping("/summary")
         public NotificationSummaryDto getSummary(@RequestParam(required = false) Long mitarbeiterId) {
@@ -323,6 +330,117 @@ public class NotificationController {
                                                                         zeitInfo,
                                                                         t.getDatum().toString(),
                                                                         "/kalender?date=" + t.getDatum().toString()));
+                                                });
+                        }
+                } catch (Exception ignored) {
+                }
+
+                // 8. Neue Lieferscheine (letzte 48 Stunden – von Mitarbeitern per Mobil-App hochgeladen)
+                try {
+                        LocalDateTime zweiTageFrueh = LocalDateTime.now().minusHours(48);
+                        List<LieferantDokument> neueLieferscheine = lieferantDokumentRepository
+                                        .findRecentLieferscheine(zweiTageFrueh);
+                        if (!neueLieferscheine.isEmpty()) {
+                                categories.add(new CategoryDto("LIEFERSCHEINE", "Neue Lieferscheine",
+                                                neueLieferscheine.size(), "Truck", "/lieferanten"));
+
+                                neueLieferscheine.stream()
+                                                .limit(3)
+                                                .forEach(d -> {
+                                                        String lieferantName = "";
+                                                        try {
+                                                                if (d.getLieferant() != null) {
+                                                                        lieferantName = d.getLieferant()
+                                                                                        .getLieferantenname();
+                                                                }
+                                                        } catch (Exception e) { /* lazy loading */ }
+                                                        String dokumentNr = "";
+                                                        try {
+                                                                if (d.getGeschaeftsdaten() != null
+                                                                                && d.getGeschaeftsdaten()
+                                                                                                .getDokumentNummer() != null) {
+                                                                        dokumentNr = d.getGeschaeftsdaten()
+                                                                                        .getDokumentNummer();
+                                                                }
+                                                        } catch (Exception e) { /* lazy loading */ }
+                                                        String titel = dokumentNr.isBlank()
+                                                                        ? d.getEffektiverDateiname() != null
+                                                                                        ? d.getEffektiverDateiname()
+                                                                                        : "Lieferschein"
+                                                                        : dokumentNr;
+                                                        String uploader = "";
+                                                        try {
+                                                                if (d.getUploadedBy() != null) {
+                                                                        uploader = d.getUploadedBy().getVorname()
+                                                                                        + " "
+                                                                                        + d.getUploadedBy()
+                                                                                                        .getNachname();
+                                                                }
+                                                        } catch (Exception e) { /* lazy loading */ }
+                                                        Long lieferantId = null;
+                                                        try {
+                                                                if (d.getLieferant() != null) {
+                                                                        lieferantId = d.getLieferant().getId();
+                                                                }
+                                                        } catch (Exception e) { /* lazy loading */ }
+                                                        recentItems.add(new RecentItemDto(
+                                                                        "LIEFERSCHEIN",
+                                                                        titel,
+                                                                        lieferantName + (uploader.isBlank() ? ""
+                                                                                        : " – von " + uploader),
+                                                                        d.getUploadDatum() != null
+                                                                                        ? d.getUploadDatum().toString()
+                                                                                        : "",
+                                                                        lieferantId != null
+                                                                                        ? "/lieferanten?lieferantId="
+                                                                                                        + lieferantId
+                                                                                        : "/lieferanten"));
+                                                });
+                        }
+                } catch (Exception ignored) {
+                }
+
+                // 9. Offene Reklamationen (von Mitarbeitern per Mobil-App erfasst)
+                try {
+                        List<LieferantReklamation> offeneReklamationen = lieferantReklamationRepository
+                                        .findByStatusOrderByErstelltAmDesc(ReklamationStatus.OFFEN);
+                        if (!offeneReklamationen.isEmpty()) {
+                                categories.add(new CategoryDto("REKLAMATIONEN", "Offene Reklamationen",
+                                                offeneReklamationen.size(), "AlertTriangle", "/lieferanten"));
+
+                                offeneReklamationen.stream()
+                                                .limit(3)
+                                                .forEach(r -> {
+                                                        String lieferantName = "";
+                                                        Long lieferantId = null;
+                                                        try {
+                                                                if (r.getLieferant() != null) {
+                                                                        lieferantName = r.getLieferant()
+                                                                                        .getLieferantenname();
+                                                                        lieferantId = r.getLieferant().getId();
+                                                                }
+                                                        } catch (Exception e) { /* lazy loading */ }
+                                                        String beschreibung = r.getBeschreibung() != null
+                                                                        && !r.getBeschreibung().isBlank()
+                                                                        ? r.getBeschreibung().length() > 60
+                                                                                        ? r.getBeschreibung()
+                                                                                                        .substring(0,
+                                                                                                                        60)
+                                                                                                        + "…"
+                                                                                        : r.getBeschreibung()
+                                                                        : "Keine Beschreibung";
+                                                        recentItems.add(new RecentItemDto(
+                                                                        "REKLAMATION",
+                                                                        "Reklamation: " + lieferantName,
+                                                                        beschreibung,
+                                                                        r.getErstelltAm() != null
+                                                                                        ? r.getErstelltAm().toString()
+                                                                                        : "",
+                                                                        lieferantId != null
+                                                                                        ? "/lieferanten?lieferantId="
+                                                                                                        + lieferantId
+                                                                                                        + "&tab=reklamationen"
+                                                                                        : "/lieferanten"));
                                                 });
                         }
                 } catch (Exception ignored) {
