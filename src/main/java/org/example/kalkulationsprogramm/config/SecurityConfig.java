@@ -12,9 +12,17 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 
@@ -68,14 +76,24 @@ public class SecurityConfig {
     }
 
     /**
-     * Alle API-Endpoints: Session-basierte Authentifizierung via formLogin.
+     * Alle API-Endpoints: Session-basierte Authentifizierung via formLogin mit CSRF-Schutz.
+     *
+     * CSRF wird über CookieCsrfTokenRepository aktiviert: Spring Security setzt ein
+     * XSRF-TOKEN-Cookie (httpOnly=false), das der SPA-Client lesen und als
+     * X-XSRF-TOKEN-Header bei zustandsändernden Requests (POST, PUT, PATCH, DELETE)
+     * mitsenden muss.
      */
     @Bean
     @Order(3)
     public SecurityFilterChain apiFilterChain(HttpSecurity http) throws Exception {
+        CsrfTokenRequestAttributeHandler requestHandler = new CsrfTokenRequestAttributeHandler();
         http
                 .securityMatcher("/api/**")
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf
+                    .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                    .csrfTokenRequestHandler(requestHandler)
+                )
+                .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
             .userDetailsService(frontendUserDetailsService)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/bootstrap-status").permitAll()
@@ -122,7 +140,25 @@ public class SecurityConfig {
         return http.build();
     }
 
-        private void writeJson(HttpServletResponse response, int status, Map<String, Object> body) {
+    /**
+     * Erzwingt das Auflösen des CSRF-Tokens bei jeder Anfrage, damit Spring Security 6's
+     * Lazy-Token-Mechanismus das XSRF-TOKEN-Cookie tatsächlich in die Antwort schreibt.
+     */
+    private static final class CsrfCookieFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+                FilterChain filterChain) throws ServletException, IOException {
+            CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+            if (csrfToken != null) {
+                // Trigger lazy token resolution so that CookieCsrfTokenRepository writes the
+                // XSRF-TOKEN cookie to the response. The return value is intentionally unused.
+                csrfToken.getToken();
+            }
+            filterChain.doFilter(request, response);
+        }
+    }
+
+    private void writeJson(HttpServletResponse response, int status, Map<String, Object> body) {
         try {
             response.setStatus(status);
             response.setContentType("application/json;charset=UTF-8");
@@ -130,5 +166,5 @@ public class SecurityConfig {
         } catch (IOException ignored) {
             response.setStatus(status);
         }
-        }
+    }
 }
