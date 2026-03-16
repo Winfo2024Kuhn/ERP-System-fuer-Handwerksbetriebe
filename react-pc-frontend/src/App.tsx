@@ -5,7 +5,8 @@ import { ToastProvider } from './components/ui/toast';
 import { ConfirmProvider } from './components/ui/confirm-dialog';
 import { AuthProvider } from './auth/AuthContext';
 import { RequireAdmin, RequireAuth } from './auth/RouteGuards';
-
+import { SessionGuard } from './auth/SessionGuard';
+import { installSessionInterceptor } from './auth/sessionInterceptor';
 import TextbausteinEditor from './pages/TextbausteinEditor';
 import Leistungseditor from './pages/Leistungseditor';
 import Kundeneditor from './pages/Kundeneditor';
@@ -41,12 +42,17 @@ import EinstellungenEditor from './pages/EinstellungenEditor';
 import LoginPage from './pages/LoginPage';
 import FirstLoginSetupPage from './pages/FirstLoginSetupPage';
 
+// Install the global fetch interceptor once at module load time so that
+// any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
+installSessionInterceptor();
+
 export default function App() {
   return (
     <ToastProvider>
       <ConfirmProvider>
         <AuthProvider>
           <BrowserRouter>
+            <SessionGuard />
             <Routes>
               {/* Public pages */}
               <Route path="/login" element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
