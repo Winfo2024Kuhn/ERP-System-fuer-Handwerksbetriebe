@@ -25,12 +25,12 @@ export function SessionGuard() {
     const wasAuthenticatedRef = useRef(false);
     // Guard against multiple concurrent redirects
     const handlingRef = useRef(false);
-    // Always-current snapshot of the pathname (avoids stale closures)
-    const locationRef = useRef(location.pathname);
+    // Always-current snapshot of the full URL (path + query string) to avoid stale closures
+    const locationRef = useRef(location.pathname + location.search);
 
     useEffect(() => {
-        locationRef.current = location.pathname;
-    }, [location.pathname]);
+        locationRef.current = location.pathname + location.search;
+    }, [location.pathname, location.search]);
 
     useEffect(() => {
         if (user) {
@@ -45,7 +45,8 @@ export function SessionGuard() {
             // Prevent duplicate handling
             if (handlingRef.current) return;
             // Already on the login page — nothing to do
-            if (locationRef.current === '/login') return;
+            const currentPath = locationRef.current.split('?')[0];
+            if (currentPath === '/login') return;
 
             handlingRef.current = true;
             const fromPath = locationRef.current;

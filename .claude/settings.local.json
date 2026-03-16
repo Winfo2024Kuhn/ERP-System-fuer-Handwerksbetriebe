@@ -4,7 +4,8 @@
       "Bash(xargs grep:*)",
       "Bash(find c:devERP-System-fuer-Handwerksbetriebe -name *nterceptor* -o -name *http*)",
       "Bash(find c:devERP-System-fuer-Handwerksbetriebe/src -name *.properties -o -name *.yml -o -name *.yaml)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(grep -r \"useAuth\\\\|AuthContext\\\\|AuthProvider\" /c/dev/ERP-System-fuer-Handwerksbetriebe/react-pc-frontend/src --include=*.tsx --include=*.ts)"
     ]
   }
 }
