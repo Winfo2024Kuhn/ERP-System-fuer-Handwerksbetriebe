@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
@@ -34,9 +35,9 @@ public class FrontendUserController {
     }
 
     @PostMapping
-    public ResponseEntity<FrontendUserProfile> save(@RequestBody SaveProfileRequest request) {
+    public ResponseEntity<?> save(@RequestBody SaveProfileRequest request) {
         if (request.getDisplayName() == null || request.getDisplayName().isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", "Anzeigename darf nicht leer sein."));
         }
         FrontendUserProfile profile = new FrontendUserProfile();
         profile.setId(request.getId());
@@ -58,7 +59,7 @@ public class FrontendUserController {
             );
             return ResponseEntity.ok(saved);
         } catch (IllegalArgumentException | IllegalStateException ex) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         } catch (NoSuchElementException ex) {
             return ResponseEntity.notFound().build();
         }
@@ -76,12 +77,12 @@ public class FrontendUserController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<?> delete(@PathVariable Long id) {
         try {
             profileService.delete(id);
             return ResponseEntity.noContent().build();
         } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }
