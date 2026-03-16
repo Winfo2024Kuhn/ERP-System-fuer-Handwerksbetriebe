@@ -57,8 +57,8 @@ export default function App() {
               {/* Public pages */}
               <Route path="/login" element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
 
-              {/* Fullscreen pages outside MainLayout */}
-              <Route path="/dokument-editor" element={<ErrorBoundary><DocumentEditorPage /></ErrorBoundary>} />
+              {/* Fullscreen pages outside MainLayout — still require authentication */}
+              <Route path="/dokument-editor" element={<RequireAuth><ErrorBoundary><DocumentEditorPage /></ErrorBoundary></RequireAuth>} />
               <Route path="/onboarding" element={<RequireAdmin><ErrorBoundary><FirstLoginSetupPage /></ErrorBoundary></RequireAdmin>} />
 
               <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
