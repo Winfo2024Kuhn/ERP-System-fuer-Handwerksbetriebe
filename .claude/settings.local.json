@@ -3,7 +3,8 @@
     "allow": [
       "Bash(xargs grep:*)",
       "Bash(find c:devERP-System-fuer-Handwerksbetriebe -name *nterceptor* -o -name *http*)",
-      "Bash(find c:devERP-System-fuer-Handwerksbetriebe/src -name *.properties -o -name *.yml -o -name *.yaml)"
+      "Bash(find c:devERP-System-fuer-Handwerksbetriebe/src -name *.properties -o -name *.yml -o -name *.yaml)",
+      "Bash(npm run:*)"
     ]
   }
 }

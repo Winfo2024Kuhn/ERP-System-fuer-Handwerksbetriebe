@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { KeyRound, LogIn, UserPlus, RefreshCw } from 'lucide-react';
+import { KeyRound, LogIn, UserPlus, RefreshCw, ShieldAlert } from 'lucide-react';
 import { Card } from '../components/ui/card';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
@@ -85,6 +85,9 @@ export default function LoginPage() {
         setRegisterPassword('');
     };
 
+    const sessionExpired =
+        (location.state as { sessionExpired?: boolean } | null)?.sessionExpired === true;
+
     return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
             <div className="w-full max-w-md space-y-4">
@@ -93,6 +96,15 @@ export default function LoginPage() {
                     <h1 className="text-3xl font-bold text-slate-900">ANMELDUNG</h1>
                     <p className="text-slate-500 mt-1">Bitte melden Sie sich mit Ihrem Frontend-Benutzer an.</p>
                 </div>
+
+                {sessionExpired && (
+                    <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800">
+                        <ShieldAlert className="w-5 h-5 mt-0.5 shrink-0 text-amber-500" />
+                        <p className="text-sm font-medium">
+                            Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.
+                        </p>
+                    </div>
+                )}
 
                 <Card className="p-6 border-rose-100 shadow-lg">
                     <div className="flex gap-1 bg-slate-100 p-1 rounded-lg mb-5">
