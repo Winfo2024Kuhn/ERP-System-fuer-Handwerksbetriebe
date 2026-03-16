@@ -1,9 +1,10 @@
-import { AlertTriangle, Search, FileText, Wrench, Clock, X, Plus, Printer, Star } from 'lucide-react';
+import { AlertTriangle, Search, FileText, Wrench, Clock, X, Plus, Printer, Star, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto } from './types';
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from '../../types';
-import type { AusgangsGeschaeftsDokumentTyp } from '../../types';
+import type { AusgangsGeschaeftsDokumentTyp, ProduktkategorieDto } from '../../types';
+import { cn } from '../../lib/utils';
 
 /** Export Warning Modal */
 export function ExportWarningModal({
@@ -369,6 +370,114 @@ export function TextbausteinPickerModal({
     );
 }
 
+// ─── Kategorie-Baum für Leistungspicker ────────────────────────────────────
+
+interface KategorieNode {
+    id: number;
+    bezeichnung: string;
+    isLeaf: boolean;
+    parentId: number | null;
+}
+
+interface KategorieTreeNodeProps {
+    node: KategorieNode;
+    selectedId: number | null;
+    onSelect: (id: number) => void;
+    onChildrenLoaded: (children: KategorieNode[]) => void;
+}
+
+function KategorieTreeNode({ node, selectedId, onSelect, onChildrenLoaded }: KategorieTreeNodeProps) {
+    const [expanded, setExpanded] = useState(false);
+    const [children, setChildren] = useState<KategorieNode[]>([]);
+    const [loading, setLoading] = useState(false);
+    const loaded = useRef(false);
+
+    const isSelected = selectedId === node.id;
+
+    const handleToggle = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (node.isLeaf) return;
+        if (expanded) { setExpanded(false); return; }
+        setExpanded(true);
+        if (!loaded.current) {
+            setLoading(true);
+            try {
+                const res = await fetch(`/api/produktkategorien/${node.id}/unterkategorien?light=true`);
+                if (res.ok) {
+                    const data: ProduktkategorieDto[] = await res.json();
+                    const childNodes: KategorieNode[] = (Array.isArray(data) ? data : []).map(cat => ({
+                        id: Number(cat.id),
+                        bezeichnung: cat.bezeichnung || cat.pfad || 'Kategorie',
+                        isLeaf: cat.leaf ?? true,
+                        parentId: node.id,
+                    }));
+                    setChildren(childNodes);
+                    onChildrenLoaded(childNodes);
+                    loaded.current = true;
+                }
+            } catch { /* ignore */ } finally {
+                setLoading(false);
+            }
+        }
+    };
+
+    return (
+        <div>
+            <div
+                className={cn(
+                    'flex items-center gap-2 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-all duration-150',
+                    'border-slate-200 bg-white hover:border-rose-200 hover:bg-rose-50/60',
+                    isSelected && 'border-rose-500 bg-rose-50 shadow-sm'
+                )}
+                onClick={() => onSelect(node.id)}
+            >
+                {!node.isLeaf ? (
+                    <button
+                        type="button"
+                        className="p-0.5 rounded text-slate-400 hover:text-rose-600 flex-shrink-0"
+                        onClick={handleToggle}
+                    >
+                        {loading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : expanded ? (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                        ) : (
+                            <ChevronRight className="w-3.5 h-3.5" />
+                        )}
+                    </button>
+                ) : (
+                    <span className="w-5 flex-shrink-0" />
+                )}
+                {expanded
+                    ? <FolderOpen className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                    : <Folder className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                }
+                <span className={cn(
+                    'text-xs font-medium truncate',
+                    isSelected ? 'text-rose-700' : 'text-slate-700'
+                )}>
+                    {node.bezeichnung}
+                </span>
+            </div>
+            {expanded && children.length > 0 && (
+                <div className="mt-1 space-y-1 pl-3">
+                    {children.map(child => (
+                        <KategorieTreeNode
+                            key={child.id}
+                            node={child}
+                            selectedId={selectedId}
+                            onSelect={onSelect}
+                            onChildrenLoaded={onChildrenLoaded}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Leistung Picker Modal ──────────────────────────────────────────────────
+
 /** Leistung Picker Modal */
 export function LeistungPickerModal({
     leistungen,
@@ -380,63 +489,189 @@ export function LeistungPickerModal({
     onClose: () => void;
 }) {
     const [search, setSearch] = useState('');
+    const [rootKategorien, setRootKategorien] = useState<KategorieNode[]>([]);
+    const [alleKategorien, setAlleKategorien] = useState<KategorieNode[]>([]);
+    const [selectedKategorieId, setSelectedKategorieId] = useState<number | null>(null);
+    const [ladeKategorien, setLadeKategorien] = useState(true);
 
+    // Escape zum Schließen
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+
+    // Root-Kategorien laden
+    useEffect(() => {
+        fetch('/api/produktkategorien/haupt?light=true')
+            .then(r => r.ok ? r.json() : [])
+            .then((data: ProduktkategorieDto[]) => {
+                const roots: KategorieNode[] = (Array.isArray(data) ? data : []).map(cat => ({
+                    id: Number(cat.id),
+                    bezeichnung: cat.bezeichnung || cat.pfad || 'Kategorie',
+                    isLeaf: cat.leaf ?? true,
+                    parentId: null,
+                }));
+                setRootKategorien(roots);
+                setAlleKategorien(roots);
+            })
+            .catch(() => {})
+            .finally(() => setLadeKategorien(false));
+    }, []);
+
+    const handleChildrenLoaded = useCallback((children: KategorieNode[]) => {
+        setAlleKategorien(prev => {
+            const existingIds = new Set(prev.map(k => k.id));
+            const newOnes = children.filter(c => !existingIds.has(c.id));
+            return newOnes.length ? [...prev, ...newOnes] : prev;
+        });
+    }, []);
+
+    // Gefilterte Leistungen: Suche hat Vorrang, dann Kategoriefilter
     const filtered = useMemo(() => {
-        if (!search) return leistungen;
-        const q = search.toLowerCase();
-        return leistungen.filter(l =>
-            l.name.toLowerCase().includes(q) || (l.description || '').toLowerCase().includes(q)
-        );
-    }, [leistungen, search]);
+        if (search) {
+            const q = search.toLowerCase();
+            return leistungen.filter(l =>
+                l.name.toLowerCase().includes(q) || (l.description || '').toLowerCase().includes(q)
+            );
+        }
+        if (selectedKategorieId !== null) {
+            return leistungen.filter(l => l.folderId === selectedKategorieId);
+        }
+        return leistungen;
+    }, [leistungen, search, selectedKategorieId]);
+
+    const selectedKategorieName = useMemo(
+        () => alleKategorien.find(k => k.id === selectedKategorieId)?.bezeichnung ?? null,
+        [alleKategorien, selectedKategorieId]
+    );
 
     return (
-        <PickerModal title="Leistung einfügen" icon={<Wrench className="w-4 h-4 text-rose-600" />} onClose={onClose}>
-            {/* Search */}
-            <div className="px-5 pt-3 pb-2 flex-shrink-0">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Leistung suchen…"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        autoFocus
-                        className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 placeholder:text-slate-400 transition-all"
-                    />
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            <div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4 border border-slate-100 flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200"
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-shrink-0">
+                    <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-rose-50 rounded-xl">
+                            <Wrench className="w-4 h-4 text-rose-600" />
+                        </div>
+                        <div>
+                            <h3 className="text-base font-bold text-slate-900">Leistung einfügen</h3>
+                            {selectedKategorieName && !search && (
+                                <p className="text-xs text-slate-400 mt-0.5">{selectedKategorieName}</p>
+                            )}
+                        </div>
+                    </div>
+                    <button type="button" aria-label="Schließen" onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                        <X className="w-4 h-4 text-slate-400" />
+                    </button>
+                </div>
+
+                {/* Search */}
+                <div className="px-5 pt-3 pb-2 flex-shrink-0">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Leistung suchen… (durchsucht alle Kategorien)"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            autoFocus
+                            className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 placeholder:text-slate-400 transition-all"
+                        />
+                    </div>
+                </div>
+
+                {/* Two-panel body */}
+                <div className="flex flex-1 min-h-0 border-t border-slate-100">
+                    {/* Left: Kategorie-Baum */}
+                    <div className="w-72 flex-shrink-0 border-r border-slate-100 overflow-y-auto p-3 space-y-1">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold px-1 mb-2">Ordner</p>
+
+                        {/* "Alle" Option */}
+                        <div
+                            className={cn(
+                                'flex items-center gap-2 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-all duration-150',
+                                'border-slate-200 bg-white hover:border-rose-200 hover:bg-rose-50/60',
+                                selectedKategorieId === null && !search && 'border-rose-500 bg-rose-50 shadow-sm'
+                            )}
+                            onClick={() => { setSelectedKategorieId(null); setSearch(''); }}
+                        >
+                            <Folder className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                            <span className={cn(
+                                'text-xs font-medium',
+                                selectedKategorieId === null && !search ? 'text-rose-700' : 'text-slate-500'
+                            )}>
+                                Alle Leistungen
+                            </span>
+                            <span className="ml-auto text-[10px] text-slate-400">{leistungen.length}</span>
+                        </div>
+
+                        {ladeKategorien ? (
+                            <div className="flex items-center gap-2 px-2 py-3 text-xs text-slate-400">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Laden…
+                            </div>
+                        ) : rootKategorien.length === 0 ? (
+                            <p className="text-xs text-slate-400 px-2 py-3">Keine Kategorien</p>
+                        ) : rootKategorien.map(root => (
+                            <KategorieTreeNode
+                                key={root.id}
+                                node={root}
+                                selectedId={search ? null : selectedKategorieId}
+                                onSelect={id => { setSelectedKategorieId(id); setSearch(''); }}
+                                onChildrenLoaded={handleChildrenLoaded}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Right: Leistungsliste */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-1.5 min-h-0">
+                        {search && (
+                            <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold px-1 mb-2">
+                                Suchergebnisse für „{search}"
+                            </p>
+                        )}
+                        {filtered.length === 0 ? (
+                            <div className="py-12 text-center">
+                                <Search className="w-10 h-10 text-slate-200 mx-auto mb-2" />
+                                <p className="text-sm text-slate-400">
+                                    {search ? 'Keine Ergebnisse' : selectedKategorieId ? 'Keine Leistungen in dieser Kategorie' : 'Keine Leistungen vorhanden'}
+                                </p>
+                            </div>
+                        ) : filtered.map(l => (
+                            <button
+                                key={l.id}
+                                type="button"
+                                onClick={() => onSelect(l)}
+                                className="w-full group p-3 text-left bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition-all duration-150"
+                            >
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <span className="text-sm font-medium text-slate-700 group-hover:text-rose-700 block truncate">
+                                            {l.name}
+                                        </span>
+                                        {l.description && (
+                                            <span className="text-xs text-slate-400 block truncate mt-0.5">
+                                                {l.description.replace(/<[^>]*>/g, '').slice(0, 80)}
+                                            </span>
+                                        )}
+                                        {search && l.kategoriePfad && (
+                                            <span className="text-[10px] text-rose-400 block mt-0.5">{l.kategoriePfad}</span>
+                                        )}
+                                    </div>
+                                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 group-hover:bg-rose-100 group-hover:text-rose-600 px-2 py-1 rounded-lg flex-shrink-0 transition-colors whitespace-nowrap">
+                                        {l.price?.toFixed(2)} €
+                                    </span>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
-            {/* List */}
-            <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-1.5 min-h-0">
-                {filtered.length === 0 ? (
-                    <div className="py-10 text-center">
-                        <Search className="w-10 h-10 text-slate-200 mx-auto mb-2" />
-                        <p className="text-sm text-slate-400">{search ? 'Keine Ergebnisse' : 'Keine Leistungen vorhanden'}</p>
-                    </div>
-                ) : filtered.map(l => (
-                    <button
-                        key={l.id}
-                        onClick={() => onSelect(l)}
-                        className="w-full group p-3 text-left bg-white hover:bg-rose-50 border border-slate-150 hover:border-rose-200 rounded-xl transition-all duration-150"
-                    >
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                                <span className="text-sm font-medium text-slate-700 group-hover:text-rose-700 block truncate">
-                                    {l.name}
-                                </span>
-                                {l.description && (
-                                    <span className="text-xs text-slate-400 block truncate mt-0.5">
-                                        {l.description.replace(/<[^>]*>/g, '').slice(0, 80)}
-                                    </span>
-                                )}
-                            </div>
-                            <span className="text-xs font-semibold text-slate-500 bg-slate-100 group-hover:bg-rose-100 group-hover:text-rose-600 px-2 py-1 rounded-lg flex-shrink-0 transition-colors">
-                                {l.price?.toFixed(2)} €
-                            </span>
-                        </div>
-                    </button>
-                ))}
-            </div>
-        </PickerModal>
+        </div>
     );
 }
 
