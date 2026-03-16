@@ -135,7 +135,7 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
     const loadRoots = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch('/artikel/kategorien/haupt');
+            const res = await fetch('/api/artikel/kategorien/haupt');
             if (!res.ok) {
                 throw new Error('Kategorien konnten nicht geladen werden.');
             }
@@ -152,7 +152,7 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
 
     const loadChildren = useCallback(async (parentId: number) => {
         try {
-            const res = await fetch(`/artikel/kategorien/${parentId}/unterkategorien`);
+            const res = await fetch(`/api/artikel/kategorien/${parentId}/unterkategorien`);
             if (!res.ok) {
                 throw new Error('Unterkategorien konnten nicht geladen werden.');
             }
@@ -239,7 +239,7 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
         setSaving(true);
         try {
             const parentId = selectedNode ? Number(selectedNode.id) : null;
-            const res = await fetch('/artikel/kategorien', {
+            const res = await fetch('/api/artikel/kategorien', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

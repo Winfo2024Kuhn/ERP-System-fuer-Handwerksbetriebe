@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import lombok.AllArgsConstructor;
 
 @RestController
-@RequestMapping("/artikel/kategorien")
+@RequestMapping("/api/artikel/kategorien")
 @AllArgsConstructor
 public class ArtikelKategorieController {
 

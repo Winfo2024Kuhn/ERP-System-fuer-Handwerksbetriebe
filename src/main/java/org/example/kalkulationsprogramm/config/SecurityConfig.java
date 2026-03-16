@@ -12,6 +12,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -68,14 +69,19 @@ public class SecurityConfig {
     }
 
     /**
-     * Alle API-Endpoints: Session-basierte Authentifizierung via formLogin.
+     * Alle API-Endpoints: Session-basierte Authentifizierung via formLogin + CSRF-Schutz.
+     * CSRF wird über CookieCsrfTokenRepository aktiviert, damit der Browser-Client
+     * das XSRF-TOKEN-Cookie lesen und als X-XSRF-TOKEN-Header mitsenden kann.
      */
     @Bean
     @Order(3)
     public SecurityFilterChain apiFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/api/**")
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf
+                    .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                    .ignoringRequestMatchers("/api/auth/login", "/api/auth/logout")
+                )
             .userDetailsService(frontendUserDetailsService)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/bootstrap-status").permitAll()
@@ -119,6 +125,29 @@ public class SecurityConfig {
             )
             .httpBasic(AbstractHttpConfigurer::disable);
 
+        return http.build();
+    }
+
+    /**
+     * Catch-all: alle Pfade die nicht durch die obigen Chains abgedeckt werden
+     * (z.B. Controller-Pfade ausserhalb von /api/**) erfordern Authentifizierung.
+     */
+    @Bean
+    @Order(4)
+    public SecurityFilterChain catchAllFilterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(csrf -> csrf
+                    .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                )
+                .userDetailsService(frontendUserDetailsService)
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .exceptionHandling(ex -> ex
+                    .authenticationEntryPoint((request, response, authException) -> writeJson(
+                        response,
+                        HttpServletResponse.SC_UNAUTHORIZED,
+                        Map.of("success", false, "message", "Nicht authentifiziert.")
+                    ))
+                );
         return http.build();
     }
 
