@@ -31,6 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+.claude
 
 ### Runtime Data ###
 /uploads
