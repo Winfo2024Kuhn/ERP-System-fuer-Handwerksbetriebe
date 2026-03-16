@@ -41,21 +41,25 @@ const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function syncFrontendUserSelection(user: AuthUser | null) {
-    if (!user) {
-        localStorage.removeItem(FRONTEND_USER_STORAGE_KEY);
-        return;
-    }
+    try {
+        if (!user) {
+            localStorage.removeItem(FRONTEND_USER_STORAGE_KEY);
+            return;
+        }
 
-    localStorage.setItem(
-        FRONTEND_USER_STORAGE_KEY,
-        JSON.stringify({
-            id: user.id,
-            displayName: user.displayName,
-            loginToken: user.mitarbeiter?.loginToken || null,
-            mitarbeiterId: user.mitarbeiter?.id || null,
-            roles: user.roles || [],
-        })
-    );
+        localStorage.setItem(
+            FRONTEND_USER_STORAGE_KEY,
+            JSON.stringify({
+                id: user.id,
+                displayName: user.displayName,
+                loginToken: user.mitarbeiter?.loginToken || null,
+                mitarbeiterId: user.mitarbeiter?.id || null,
+                roles: user.roles || [],
+            })
+        );
+    } catch {
+        // localStorage unavailable (privacy mode, storage quota exceeded, etc.)
+    }
 }
 
 async function parseResponseMessage(res: Response, fallback: string): Promise<string> {
