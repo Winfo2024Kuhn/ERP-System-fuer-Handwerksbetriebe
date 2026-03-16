@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Search, ScanLine, Upload, FileText, Loader2, X, ChevronRight, Calendar, Hash, Save } from 'lucide-react'
 import ScannerModal from '../components/ScannerModal'
 import MobileDatePicker from '../components/MobileDatePicker'
+import { NotificationService } from '../services/NotificationService'
 
 interface Lieferant {
     id: number
@@ -182,6 +183,7 @@ export default function LieferantLieferscheinePage() {
             if (res.ok) {
                 setVerifying(false)
                 setCurrentFile(null)
+                if (token) NotificationService.onLieferscheinUploaded(token)
                 loadData() // Reload list
             } else {
                 const err = await res.json()

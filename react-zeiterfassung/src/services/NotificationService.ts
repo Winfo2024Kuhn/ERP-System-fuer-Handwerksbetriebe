@@ -121,6 +121,28 @@ export const NotificationService = {
     },
 
     /**
+     * Called after a Lieferschein was successfully uploaded from the mobile app.
+     * Stores the token so the Service Worker stays up-to-date and triggers
+     * an immediate appointment-notification check.
+     * The PC desktop picks up the new Lieferschein via its polling interval
+     * (≤60 s) without any extra push needed.
+     */
+    async onLieferscheinUploaded(token: string): Promise<void> {
+        await this.storeTokenForSW(token)
+        console.log('[NotificationService] Lieferschein uploaded – PC will pick it up on next poll')
+    },
+
+    /**
+     * Called after a Reklamation was successfully created from the mobile app.
+     * Same pattern as onLieferscheinUploaded – the PC notification bell
+     * detects the new open Reklamation on its next poll cycle.
+     */
+    async onReklamationCreated(token: string): Promise<void> {
+        await this.storeTokenForSW(token)
+        console.log('[NotificationService] Reklamation created – PC will pick it up on next poll')
+    },
+
+    /**
      * Send a message to the Service Worker to check appointments
      * and show notifications via registration.showNotification().
      * This delegates the actual notification display to the SW,
