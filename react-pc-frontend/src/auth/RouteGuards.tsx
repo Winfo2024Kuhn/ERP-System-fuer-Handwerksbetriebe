@@ -22,7 +22,7 @@ export function RequireAuth({ children }: { children: React.ReactElement }) {
     }
 
     if (!isAuthenticated) {
-        return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+        return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
     }
 
     if (isAdmin && user?.requiresInitialSetup && location.pathname !== '/onboarding') {
