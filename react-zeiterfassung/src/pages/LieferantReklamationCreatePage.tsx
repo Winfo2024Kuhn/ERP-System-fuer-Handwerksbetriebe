@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, Plus, X, Search, FileText, Camera, AlertTriangle, Loader2 } from 'lucide-react'
+import { NotificationService } from '../services/NotificationService'
 
 interface LieferscheinResult {
     id: number
@@ -95,6 +96,7 @@ export default function LieferantReklamationCreatePage() {
                 })
             }
 
+            if (token) NotificationService.onReklamationCreated(token)
             alert('Reklamation erfolgreich erstellt')
             navigate(`/lieferanten/${lieferantId}/reklamationen`)
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
-    Bell, Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, X
+    Bell, Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, X, Package
 } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ interface NotificationSummary {
 // ── Icon map ─────────────────────────────────────────────────────────────
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
-    Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock,
+    Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, Package,
 };
 
 const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -43,6 +43,8 @@ const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> 
     AUSGANG_UEBERFAELLIG: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' },
     RECHNUNGEN: { bg: 'bg-violet-50', text: 'text-violet-600', border: 'border-violet-200' },
     TERMINE: { bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200' },
+    LIEFERSCHEINE: { bg: 'bg-cyan-50', text: 'text-cyan-600', border: 'border-cyan-200' },
+    REKLAMATIONEN: { bg: 'bg-pink-50', text: 'text-pink-600', border: 'border-pink-200' },
 };
 
 const RECENT_TYPE_COLORS: Record<string, string> = {
@@ -53,6 +55,8 @@ const RECENT_TYPE_COLORS: Record<string, string> = {
     AUSGANG_UEBERFAELLIG: 'text-red-500',
     RECHNUNG: 'text-violet-500',
     TERMIN: 'text-rose-500',
+    LIEFERSCHEIN: 'text-cyan-500',
+    REKLAMATION: 'text-pink-500',
 };
 
 const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -63,6 +67,8 @@ const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string
     AUSGANG_UEBERFAELLIG: AlertTriangle,
     RECHNUNG: Truck,
     TERMIN: CalendarClock,
+    LIEFERSCHEIN: Package,
+    REKLAMATION: AlertTriangle,
 };
 
 // ── Dismissal helpers ────────────────────────────────────────────────────
@@ -126,14 +132,20 @@ export function NotificationBell() {
     const [rawData, setRawData] = useState<NotificationSummary | null>(null);
     const [data, setData] = useState<NotificationSummary | null>(null);
     const [open, setOpen] = useState(false);
-    const [prevCount, setPrevCount] = useState(0);
     const [shake, setShake] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    // Use a ref for prevCount to avoid stale-closure issues in the callback
+    const prevCountRef = useRef(0);
+    const abortRef = useRef<AbortController | null>(null);
     const navigate = useNavigate();
 
     const fetchNotifications = useCallback(async () => {
+        // Cancel any in-flight request before starting a new one
+        abortRef.current?.abort();
+        abortRef.current = new AbortController();
+        const signal = abortRef.current.signal;
+
         try {
-            // Resolve mitarbeiterId from localStorage (same pattern as TerminKalender)
             let mitarbeiterId: number | null = null;
             try {
                 const stored = localStorage.getItem('frontendUserSelection');
@@ -147,27 +159,39 @@ export function NotificationBell() {
             if (mitarbeiterId) params.set('mitarbeiterId', String(mitarbeiterId));
             const url = `/api/notifications/summary${params.toString() ? '?' + params.toString() : ''}`;
 
-            const res = await fetch(url);
-            if (!res.ok) return;
+            const res = await fetch(url, { signal });
+            if (!res.ok || signal.aborted) return;
             const summary: NotificationSummary = await res.json();
+            if (signal.aborted) return;
+
             setRawData(summary);
             const filtered = filterDismissed(summary);
-            // Animate if count increased
-            if (filtered.totalCount > prevCount && prevCount > 0) {
+            // Animate if count increased (but not on the very first load)
+            if (filtered.totalCount > prevCountRef.current && prevCountRef.current > 0) {
                 setShake(true);
                 setTimeout(() => setShake(false), 600);
             }
-            setPrevCount(filtered.totalCount);
+            prevCountRef.current = filtered.totalCount;
             setData(filtered);
-        } catch {
-            /* silently ignore */
+        } catch (err) {
+            if ((err as Error).name === 'AbortError') return;
+            /* silently ignore other errors */
         }
-    }, [prevCount]);
+    }, []); // stable reference – no external deps needed
 
     useEffect(() => {
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 60_000);
-        return () => clearInterval(interval);
+        // Refresh immediately when the browser tab becomes visible again
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') fetchNotifications();
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => {
+            abortRef.current?.abort();
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
     }, [fetchNotifications]);
 
     // Close on outside click
@@ -210,7 +234,7 @@ export function NotificationBell() {
         handleNavigate(item.link, item.type);
     };
 
-    const total = data?.totalCount ?? 0;
+    const total = data?.totalCount ?? prevCountRef.current ?? 0;
 
     return (
         <div className="relative" ref={dropdownRef}>
@@ -250,7 +274,9 @@ export function NotificationBell() {
                             )}
                         </div>
                         <button
+                            type="button"
                             onClick={() => setOpen(false)}
+                            title="Schließen"
                             className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
                         >
                             <X className="w-4 h-4" />
