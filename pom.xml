@@ -30,9 +30,9 @@
         <java.version>23</java.version>
         <maven.compiler.source>23</maven.compiler.source>
         <maven.compiler.target>23</maven.compiler.target>
-        <flyway.url>jdbc:mariadb://localhost:3307/kalkulationsprogramm_db</flyway.url>
-        <flyway.user>Marvin</flyway.user>
-        <flyway.password>YOUR_DB_PASSWORD</flyway.password>
+        <flyway.url>${env.FLYWAY_URL}</flyway.url>
+        <flyway.user>${env.FLYWAY_USER}</flyway.user>
+        <flyway.password>${env.FLYWAY_PASSWORD}</flyway.password>
         
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>

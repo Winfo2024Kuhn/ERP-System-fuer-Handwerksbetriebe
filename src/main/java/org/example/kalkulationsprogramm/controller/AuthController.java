@@ -41,6 +41,9 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
+        if (profileRepository.countByUsernameIsNotNull() > 0) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Registrierung ist nur während der Einrichtungsphase möglich."));
+        }
         try {
             FrontendUserProfile created = profileService.register(request.displayName(), request.username(), request.password());
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(

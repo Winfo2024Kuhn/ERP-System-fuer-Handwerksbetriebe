@@ -21,6 +21,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -286,12 +287,19 @@ public class ArtikelImportService {
         if (normalized == null || normalized.isBlank()) {
             return null;
         }
-        return werkstoffRepository.findByNameIgnoreCase(normalized)
-                .orElseGet(() -> {
-                    Werkstoff werkstoff = new Werkstoff();
-                    werkstoff.setName(normalized);
-                    return werkstoffRepository.save(werkstoff);
-                });
+        Optional<Werkstoff> existing = werkstoffRepository.findByNameIgnoreCase(normalized);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        try {
+            Werkstoff werkstoff = new Werkstoff();
+            werkstoff.setName(normalized);
+            return werkstoffRepository.save(werkstoff);
+        } catch (DataIntegrityViolationException e) {
+            // Concurrent import created the same Werkstoff — re-fetch
+            return werkstoffRepository.findByNameIgnoreCase(normalized)
+                    .orElseThrow(() -> e);
+        }
     }
 
     private BigDecimal normalizePreis(BigDecimal preis) {

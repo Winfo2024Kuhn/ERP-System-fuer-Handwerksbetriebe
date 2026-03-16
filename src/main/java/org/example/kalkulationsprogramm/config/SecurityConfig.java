@@ -61,14 +61,14 @@ public class SecurityConfig {
                 .securityMatcher("/", "/index.html", "/favicon.ico", "/assets/**",
                         "/static/**", "/manifest.json", "/sw.js",
                     "/dokument-editor", "/dokument-editor/**",
-                    "/login", "/onboarding")
+                    "/login", "/login/**", "/onboarding", "/onboarding/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
     }
 
     /**
-     * Alle API-Endpoints: HTTP Basic Auth erforderlich.
+     * Alle API-Endpoints: Session-basierte Authentifizierung via formLogin.
      */
     @Bean
     @Order(3)
