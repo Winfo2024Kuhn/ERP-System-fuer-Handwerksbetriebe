@@ -43,6 +43,7 @@ services:
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:-CHANGE_ME_DB_PW}
       APP_ADMIN_USER: ${APP_ADMIN_USER:-Marvin}
       APP_ADMIN_PASS: ${APP_ADMIN_PASS:-123456}
+      AI_GEMINI_API_KEY: ${AI_GEMINI_API_KEY:-}
     volumes:
       - app_uploads:/app/uploads
       - app_logs:/app/logs
