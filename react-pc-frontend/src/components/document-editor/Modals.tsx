@@ -301,7 +301,7 @@ export function TextbausteinPickerModal({
                     </span>
                     {tb.beschreibung && (
                         <span className="text-xs text-slate-400 block truncate mt-0.5">
-                            {tb.beschreibung.replace(/<[^>]*>/g, '').slice(0, 80)}
+                            {(() => { let t = tb.beschreibung; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 80); })()}
                         </span>
                     )}
                 </div>
@@ -655,7 +655,7 @@ export function LeistungPickerModal({
                                         </span>
                                         {l.description && (
                                             <span className="text-xs text-slate-400 block truncate mt-0.5">
-                                                {l.description.replace(/<[^>]*>/g, '').slice(0, 80)}
+                                                {(() => { let t = l.description; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 80); })()}
                                             </span>
                                         )}
                                         {search && l.kategoriePfad && (
@@ -731,7 +731,7 @@ export function StundensatzPickerModal({
                                 </span>
                                 {az.beschreibung && (
                                     <span className="text-xs text-slate-400 block truncate mt-0.5">
-                                        {az.beschreibung.replace(/<[^>]*>/g, '').slice(0, 80)}
+                                        {(() => { let t = az.beschreibung; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 80); })()}
                                     </span>
                                 )}
                             </div>

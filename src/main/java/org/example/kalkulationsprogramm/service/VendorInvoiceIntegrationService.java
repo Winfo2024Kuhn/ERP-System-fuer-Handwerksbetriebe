@@ -17,6 +17,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -341,7 +342,38 @@ public class VendorInvoiceIntegrationService {
             });
     }
 
+    private static final Set<String> ALLOWED_DOWNLOAD_HOSTS = Set.of(
+            "management.azure.com",
+            "sellingpartnerapi-na.amazon.com",
+            "sellingpartnerapi-eu.amazon.com",
+            "m.media-amazon.com",
+            "invoices.amazon.com"
+    );
+
+    private void validateDownloadUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            String scheme = uri.getScheme();
+            if (host == null || scheme == null) {
+                throw new SecurityException("Ungültige Download-URL: fehlender Host oder Schema");
+            }
+            if (!"https".equalsIgnoreCase(scheme)) {
+                throw new SecurityException("Nur HTTPS-Downloads erlaubt, erhalten: " + scheme);
+            }
+            boolean allowed = ALLOWED_DOWNLOAD_HOSTS.stream()
+                    .anyMatch(h -> host.equalsIgnoreCase(h) || host.endsWith("." + h));
+            if (!allowed) {
+                throw new SecurityException("Download-Host nicht erlaubt: " + host);
+            }
+        } catch (IllegalArgumentException e) {
+            throw new SecurityException("Ungültige Download-URL: " + e.getMessage());
+        }
+    }
+
     private byte[] downloadPdf(String url, String accessToken) {
+        validateDownloadUrl(url);
+
         HttpHeaders headers = new HttpHeaders();
         if (accessToken != null) {
             headers.setBearerAuth(accessToken);
@@ -362,8 +394,12 @@ public class VendorInvoiceIntegrationService {
         Path vendorDir = Path.of(attachmentDir, "vendor-invoices").toAbsolutePath().normalize();
         Files.createDirectories(vendorDir);
 
-        String storedFilename = UUID.randomUUID() + "_" + filename;
-        Path targetPath = vendorDir.resolve(storedFilename);
+        String safeFilename = Path.of(filename).getFileName().toString();
+        String storedFilename = UUID.randomUUID() + "_" + safeFilename;
+        Path targetPath = vendorDir.resolve(storedFilename).normalize();
+        if (!targetPath.startsWith(vendorDir)) {
+            throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
+        }
         Files.write(targetPath, pdfBytes);
 
         // LieferantDokument Entity erstellen

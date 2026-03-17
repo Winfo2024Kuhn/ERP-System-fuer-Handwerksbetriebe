@@ -304,6 +304,12 @@ public class GeminiDokumentAnalyseService {
     public org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse analyzeFile(
             Path dateiPfad, String originalFilename, boolean useProModel) {
         try {
+            Path normalizedPath = dateiPfad.toAbsolutePath().normalize();
+            if (!Files.exists(normalizedPath)) {
+                log.warn("Datei existiert nicht: {}", normalizedPath);
+                return null;
+            }
+            dateiPfad = normalizedPath;
             String lower = originalFilename.toLowerCase();
 
             // 1. Versuche ZUGFeRD-Extraktion bei PDF
@@ -336,6 +342,7 @@ public class GeminiDokumentAnalyseService {
             Path dateiPfad, String originalFilename) {
 
         java.util.List<org.example.kalkulationsprogramm.dto.LieferantDokumentDto.MultiInvoiceAnalyzeResponse> results = new java.util.ArrayList<>();
+        dateiPfad = dateiPfad.toAbsolutePath().normalize();
 
         try {
             // Nur PDFs können mehrere Rechnungen enthalten

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import DOMPurify from 'dompurify';
 import {
     Plus,
     Trash2,
@@ -327,7 +328,7 @@ export default function EmailSettings() {
                                             <p className="text-xs text-slate-500 mb-1">Vorschau:</p>
                                             <div
                                                 className="border border-slate-200 rounded-lg p-4 bg-white min-h-[200px] overflow-auto prose prose-sm max-w-none"
-                                                dangerouslySetInnerHTML={{ __html: newSignatureHtml || '<em class="text-slate-400">Vorschau erscheint hier...</em>' }}
+                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(newSignatureHtml || '<em class="text-slate-400">Vorschau erscheint hier...</em>') }}
                                             />
                                         </div>
                                     </div>
@@ -370,7 +371,7 @@ export default function EmailSettings() {
                                             <h4 className="font-medium text-slate-900">{sig.name}</h4>
                                             <div
                                                 className="mt-2 text-sm text-slate-600 prose prose-sm max-w-none line-clamp-3"
-                                                dangerouslySetInnerHTML={{ __html: sig.html || '<em>Kein Inhalt</em>' }}
+                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(sig.html || '<em>Kein Inhalt</em>') }}
                                             />
                                         </div>
                                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -455,7 +456,7 @@ export default function EmailSettings() {
                                         className="mt-1 border border-slate-200 rounded-lg bg-white p-4 min-h-[300px] overflow-auto focus:border-rose-300 focus:ring-1 focus:ring-rose-200 outline-none"
                                         contentEditable
                                         suppressContentEditableWarning
-                                        dangerouslySetInnerHTML={{ __html: editingOoo.message || '' }}
+                                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(editingOoo.message || '') }}
                                         onBlur={(e) => setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML })}
                                     />
                                     <p className="text-xs text-slate-500 mt-1">

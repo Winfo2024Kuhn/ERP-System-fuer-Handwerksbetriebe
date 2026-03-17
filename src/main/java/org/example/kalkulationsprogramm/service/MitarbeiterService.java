@@ -125,9 +125,12 @@ public class MitarbeiterService {
             Path uploadPath = Path.of(uploadDir).toAbsolutePath().normalize();
             Files.createDirectories(uploadPath);
 
-            String originalFileName = StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
+            String originalFileName = Path.of(StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()))).getFileName().toString();
             String savedFileName = UUID.randomUUID().toString() + "_" + originalFileName;
-            Path targetLocation = uploadPath.resolve(savedFileName);
+            Path targetLocation = uploadPath.resolve(savedFileName).normalize();
+            if (!targetLocation.startsWith(uploadPath)) {
+                throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
+            }
 
             Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
 

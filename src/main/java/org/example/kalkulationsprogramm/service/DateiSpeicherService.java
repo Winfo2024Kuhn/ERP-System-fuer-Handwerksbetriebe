@@ -141,6 +141,15 @@ public class DateiSpeicherService {
         }
     }
 
+    private static Path resolveAndValidate(Path baseDir, String filename) {
+        String safeName = Path.of(filename).getFileName().toString();
+        Path resolved = baseDir.resolve(safeName).normalize();
+        if (!resolved.startsWith(baseDir)) {
+            throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
+        }
+        return resolved;
+    }
+
     public ProjektDokument speichereDatei(MultipartFile datei, Long projektID) {
         return speichereDatei(datei, projektID, DokumentGruppe.DIVERSE_DOKUMENTE, null);
     }
@@ -164,8 +173,9 @@ public class DateiSpeicherService {
             Mitarbeiter uploadedBy, Lieferanten lieferant, String overrideFilename) {
         Projekt projekt = projektRepository.findById(projektID)
                 .orElseThrow(() -> new RuntimeException("Projekt nicht gefunden!"));
-        String originalDateiname = overrideFilename != null ? overrideFilename
+        String rawName = overrideFilename != null ? overrideFilename
                 : StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()));
+        String originalDateiname = Path.of(rawName).getFileName().toString();
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
         String lowerName = originalDateiname.toLowerCase();
         boolean isDrawing = lowerName.contains("zeichnung") || lowerName.contains("entwurf");
@@ -173,7 +183,7 @@ public class DateiSpeicherService {
                 || lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")
                 || lowerName.endsWith(".csv") || lowerName.endsWith(".ods") || lowerName.endsWith(".xlsb");
         Path basisPfad = useHicadStorage ? this.hicadSpeicherplatz : this.dokumentenSpeicherplatz;
-        Path zielPfad = basisPfad.resolve(gespeicherterDateiname);
+        Path zielPfad = resolveAndValidate(basisPfad, gespeicherterDateiname);
 
         try {
             Files.copy(datei.getInputStream(), zielPfad, StandardCopyOption.REPLACE_EXISTING);
@@ -265,7 +275,7 @@ public class DateiSpeicherService {
     public AnfrageDokument speichereAnfragesDatei(MultipartFile datei, Long anfrageID, DokumentGruppe gruppe) {
         Anfrage anfrage = anfrageRepository.findById(anfrageID)
                 .orElseThrow(() -> new RuntimeException("Anfrage nicht gefunden!"));
-        String originalDateiname = StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()));
+        String originalDateiname = Path.of(StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()))).getFileName().toString();
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
         String lowerName = originalDateiname.toLowerCase();
         boolean isDrawing = lowerName.contains("zeichnung") || lowerName.contains("entwurf");
@@ -273,7 +283,7 @@ public class DateiSpeicherService {
                 || lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")
                 || lowerName.endsWith(".csv") || lowerName.endsWith(".ods") || lowerName.endsWith(".xlsb");
         Path basisPfad = useHicadStorage ? this.hicadSpeicherplatz : this.anfragenSpeicherplatz;
-        Path zielPfad = basisPfad.resolve(gespeicherterDateiname);
+        Path zielPfad = resolveAndValidate(basisPfad, gespeicherterDateiname);
         try {
             Files.copy(datei.getInputStream(), zielPfad, StandardCopyOption.REPLACE_EXISTING);
             if (useHicadStorage) {
@@ -350,7 +360,7 @@ public class DateiSpeicherService {
             MultipartFile datei, Long angebotID, DokumentGruppe gruppe) {
         org.example.kalkulationsprogramm.domain.Angebot angebot = angebotRepository.findById(angebotID)
                 .orElseThrow(() -> new RuntimeException("Angebot nicht gefunden!"));
-        String originalDateiname = StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()));
+        String originalDateiname = Path.of(StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()))).getFileName().toString();
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
         String lowerName = originalDateiname.toLowerCase();
         boolean isDrawing = lowerName.contains("zeichnung") || lowerName.contains("entwurf");
@@ -358,7 +368,7 @@ public class DateiSpeicherService {
                 || lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")
                 || lowerName.endsWith(".csv") || lowerName.endsWith(".ods") || lowerName.endsWith(".xlsb");
         Path basisPfad = useHicadStorage ? this.hicadSpeicherplatz : this.anfragenSpeicherplatz;
-        Path zielPfad = basisPfad.resolve(gespeicherterDateiname);
+        Path zielPfad = resolveAndValidate(basisPfad, gespeicherterDateiname);
         try {
             Files.copy(datei.getInputStream(), zielPfad, StandardCopyOption.REPLACE_EXISTING);
             if (useHicadStorage) {
@@ -429,7 +439,7 @@ public class DateiSpeicherService {
         Projekt projekt = projektRepository.findById(projektID)
                 .orElseThrow(() -> new RuntimeException("Projekt nicht gefunden!"));
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
-        Path zielPfad = this.dokumentenSpeicherplatz.resolve(gespeicherterDateiname);
+        Path zielPfad = resolveAndValidate(this.dokumentenSpeicherplatz, gespeicherterDateiname);
         try {
             Files.copy(zugferdPfad, zielPfad, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
@@ -524,7 +534,7 @@ public class DateiSpeicherService {
         Anfrage anfrage = anfrageRepository.findById(anfrageID)
                 .orElseThrow(() -> new RuntimeException("Anfrage nicht gefunden!"));
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
-        Path zielPfad = this.anfragenSpeicherplatz.resolve(gespeicherterDateiname);
+        Path zielPfad = resolveAndValidate(this.anfragenSpeicherplatz, gespeicherterDateiname);
         try {
             Files.copy(zugferdPfad, zielPfad, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
@@ -605,7 +615,7 @@ public class DateiSpeicherService {
         org.example.kalkulationsprogramm.domain.Angebot angebot = angebotRepository.findById(angebotID)
                 .orElseThrow(() -> new RuntimeException("Angebot nicht gefunden!"));
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
-        Path zielPfad = this.anfragenSpeicherplatz.resolve(gespeicherterDateiname);
+        Path zielPfad = resolveAndValidate(this.anfragenSpeicherplatz, gespeicherterDateiname);
         try {
             Files.copy(zugferdPfad, zielPfad, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
@@ -648,7 +658,7 @@ public class DateiSpeicherService {
         Projekt projekt = projektRepository.findById(projektID)
                 .orElseThrow(() -> new RuntimeException("Projekt nicht gefunden!"));
         String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
-        Path zielPfad = this.dokumentenSpeicherplatz.resolve(gespeicherterDateiname);
+        Path zielPfad = resolveAndValidate(this.dokumentenSpeicherplatz, gespeicherterDateiname);
         try {
             Files.write(zielPfad, inhalt);
         } catch (IOException e) {
@@ -1509,9 +1519,9 @@ public class DateiSpeicherService {
         if (dateityp == null || !ERLAUBTE_BILD_TYPEN.contains(dateityp)) {
             throw new RuntimeException("Ungültiger Dateityp! Nur JPEG, PNG, GIF und WebP sind erlaubt.");
         }
-        String originalDateiname = StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()));
+        String originalDateiname = Path.of(StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()))).getFileName().toString();
         String speichername = generiereEinzigartigenDateinamen(originalDateiname);
-        Path zielPfad = this.bilderSpeicherplatz.resolve(speichername);
+        Path zielPfad = resolveAndValidate(this.bilderSpeicherplatz, speichername);
         try {
             Files.copy(datei.getInputStream(), zielPfad, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
@@ -1525,7 +1535,7 @@ public class DateiSpeicherService {
     public void loescheBild(String bildUrl) {
         try {
             String dateiname = Path.of(bildUrl).getFileName().toString();
-            Path dateipfad = this.bilderSpeicherplatz.resolve(dateiname);
+            Path dateipfad = resolveAndValidate(this.bilderSpeicherplatz, dateiname);
             Files.deleteIfExists(dateipfad);
         } catch (IOException e) {
             throw new RuntimeException("Fehler beim löschen der phyisischen Datei:", e);
@@ -1541,13 +1551,13 @@ public class DateiSpeicherService {
     public Resource ladeBildAlsResource(String dateiname) {
         try {
             // 1) Zuerst im normalen Bilderordner nachsehen
-            Path dateipfad = bilderSpeicherplatz.resolve(dateiname).normalize();
+            Path dateipfad = resolveAndValidate(bilderSpeicherplatz, dateiname);
             Resource resource = new UrlResource(dateipfad.toUri());
             if (resource.exists() && resource.isReadable()) {
                 return resource;
             }
             // 2) Danach im Ordner für Schnittbilder prüfen
-            Path altPfad = schnittbilderSpeicherplatz.resolve(dateiname).normalize();
+            Path altPfad = resolveAndValidate(schnittbilderSpeicherplatz, dateiname);
             Resource altRes = new UrlResource(altPfad.toUri());
             if (altRes.exists() && altRes.isReadable()) {
                 return altRes;
@@ -1562,9 +1572,9 @@ public class DateiSpeicherService {
         try {
             // Try all storage locations in order
             Path[] searchPaths = {
-                    dokumentenSpeicherplatz.resolve(dateiname).normalize(),
-                    anfragenSpeicherplatz.resolve(dateiname).normalize(),
-                    hicadSpeicherplatz.resolve(dateiname).normalize()
+                    resolveAndValidate(dokumentenSpeicherplatz, dateiname),
+                    resolveAndValidate(anfragenSpeicherplatz, dateiname),
+                    resolveAndValidate(hicadSpeicherplatz, dateiname)
             };
 
             for (Path pfad : searchPaths) {
@@ -1696,7 +1706,7 @@ public class DateiSpeicherService {
                 return; // keine UNC-Freigabe konfiguriert
             }
             Path netzBasis = Path.of(hicadNetworkUrl).toAbsolutePath().normalize();
-            Path netzZiel = netzBasis.resolve(gespeicherterDateiname).normalize();
+            Path netzZiel = resolveAndValidate(netzBasis, gespeicherterDateiname);
             if (!bereitsGespeichertPfad.normalize().equals(netzZiel)) {
                 // Erzeuge Zielordner und kopiere falls nicht identisch
                 try {

@@ -185,12 +185,15 @@ public class LieferantDokumentService {
                 Mitarbeiter uploadedBy = mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
 
                 // Datei speichern
-                String originalFilename = StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()));
+                String originalFilename = Path.of(StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()))).getFileName().toString();
                 String storedFilename = UUID.randomUUID() + "_" + originalFilename;
 
-                Path lieferantDir = Path.of(uploadPath, "lieferanten", lieferantId.toString());
+                Path lieferantDir = Path.of(uploadPath, "lieferanten", lieferantId.toString()).toAbsolutePath().normalize();
                 Files.createDirectories(lieferantDir);
-                Path targetPath = lieferantDir.resolve(storedFilename);
+                Path targetPath = lieferantDir.resolve(storedFilename).normalize();
+                if (!targetPath.startsWith(lieferantDir)) {
+                    throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
+                }
                 Files.copy(datei.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
                 // Entity erstellen

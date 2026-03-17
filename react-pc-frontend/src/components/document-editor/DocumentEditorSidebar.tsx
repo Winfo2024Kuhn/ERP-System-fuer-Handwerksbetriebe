@@ -198,7 +198,7 @@ export function DocumentEditorSidebar({
                                     </span>
                                     {tb.beschreibung && (
                                         <span className="text-[10px] text-slate-400 block truncate mt-0.5">
-                                            {tb.beschreibung.replace(/<[^>]*>/g, '').slice(0, 60)}
+                                            {(() => { let t = tb.beschreibung; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 60); })()}
                                         </span>
                                     )}
                                 </div>
