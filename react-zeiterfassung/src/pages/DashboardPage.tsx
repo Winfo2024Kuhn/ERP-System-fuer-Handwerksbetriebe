@@ -463,12 +463,16 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         const elapsedMinutes = Math.floor((now.getTime() - start.getTime()) / 60000)
         const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
 
+        // stopRes vor try deklarieren, damit im catch geprüft werden kann
+        // ob der Stop online bereits erfolgreich war (Race-Condition-Fix)
+        let stopRes: Response | null = null
+
         try {
             // Online: Stop old booking, start new with different kategorie
             const stopController = new AbortController()
             const stopTimeout = setTimeout(() => stopController.abort(), 3000)
 
-            const stopRes = await fetch('/api/zeiterfassung/stop', {
+            stopRes = await fetch('/api/zeiterfassung/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token }),
@@ -531,9 +535,13 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                 await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
             }
 
-            // Offline: Stop old, Start new with different category
+            // Nur Stop queuen wenn der online Stop NICHT bereits erfolgreich war.
+            // Wenn stopRes.ok, hat der Server den Stop schon verarbeitet - ein erneuter
+            // offline Stop würde die NEUE Buchung stoppen (Race-Condition).
             const switchTime = new Date().toISOString()
-            await OfflineService.addPendingEntry('stop', { token }, switchTime)
+            if (!stopRes || !stopRes.ok) {
+                await OfflineService.addPendingEntry('stop', { token }, switchTime)
+            }
             await OfflineService.addPendingEntry('start', {
                 token,
                 projektId: activeSession.projektId,
@@ -572,13 +580,17 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         const elapsedMinutes = Math.floor((now.getTime() - start.getTime()) / 60000)
         const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
 
+        // stopRes vor try deklarieren, damit im catch geprüft werden kann
+        // ob der Stop online bereits erfolgreich war (Race-Condition-Fix)
+        let stopRes: Response | null = null
+
         try {
             // Online Switch Attempt
             // 1. Stop
             const stopController = new AbortController()
             const stopTimeout = setTimeout(() => stopController.abort(), 3000)
 
-            const stopRes = await fetch('/api/zeiterfassung/stop', {
+            stopRes = await fetch('/api/zeiterfassung/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token }),
@@ -637,9 +649,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                         })
                         if (restoreRes.ok) {
                             console.log('✅ Alte Buchung wiederhergestellt')
-                            // Keep old session in localStorage
                         } else {
-                            // Could not restore - at least keep UI showing old session
                             console.error('❌ Alte Buchung konnte nicht wiederhergestellt werden')
                         }
                     } catch {
@@ -657,9 +667,13 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                 await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
             }
 
-            // Offline Switch: Stop old, Start new locally
+            // Nur Stop queuen wenn der online Stop NICHT bereits erfolgreich war.
+            // Wenn stopRes.ok, hat der Server den Stop schon verarbeitet - ein erneuter
+            // offline Stop würde die NEUE Buchung stoppen (Race-Condition).
             const switchTime = new Date().toISOString()
-            await OfflineService.addPendingEntry('stop', { token }, switchTime)
+            if (!stopRes || !stopRes.ok) {
+                await OfflineService.addPendingEntry('stop', { token }, switchTime)
+            }
             await OfflineService.addPendingEntry('start', {
                 token,
                 projektId: activeSession.projektId,
