@@ -371,6 +371,20 @@ export const OfflineService = {
         return db.getAll('pending')
     },
 
+    // Entfernt alle Pending-Entries eines bestimmten Typs (z.B. 'stop').
+    // Wird genutzt um verwaiste Offline-Stops zu bereinigen, wenn ein Online-Start
+    // beweist, dass der Server den Stop bereits verarbeitet hat.
+    async removePendingEntriesByType(type: 'start' | 'stop' | 'pause') {
+        const db = await initDB()
+        const all = await db.getAll('pending')
+        for (const entry of all) {
+            if (entry.type === type) {
+                await db.delete('pending', entry.id)
+                console.log(`🗑️ Pending ${type}-Entry entfernt (${entry.id.substring(0, 8)})`)
+            }
+        }
+    },
+
     // ==================== SYNC PENDING (public wrapper) ====================
     // Public API - acquires lock and does reachability check.
     async syncPending() {

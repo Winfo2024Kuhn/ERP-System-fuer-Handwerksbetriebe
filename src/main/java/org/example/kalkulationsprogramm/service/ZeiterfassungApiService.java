@@ -48,11 +48,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Service für die Zeiterfassungs-PWA.
  * Liefert gefilterte Daten und verarbeitet Zeitbuchungen.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ZeiterfassungApiService {
@@ -317,6 +319,16 @@ public class ZeiterfassungApiService {
 
         // Endezeit setzen
         LocalDateTime endeZeit = originalEndeZeit != null ? originalEndeZeit : LocalDateTime.now();
+
+        // Sicherheitscheck: endeZeit muss nach startZeit liegen.
+        // Kann durch Offline-Sync Race Conditions passieren (Stop-Entry mit altem Timestamp
+        // trifft auf eine neue Buchung die erst nach dem Original-Stop gestartet wurde).
+        if (!endeZeit.isAfter(buchung.getStartZeit())) {
+            log.warn("endeZeit ({}) <= startZeit ({}) für Buchung {} (Mitarbeiter {}) - korrigiere auf startZeit + 1 Min",
+                    endeZeit, buchung.getStartZeit(), buchung.getId(), mitarbeiter.getId());
+            endeZeit = buchung.getStartZeit().plusMinutes(1);
+        }
+
         buchung.setEndeZeit(endeZeit);
 
         // Berechne Stunden
