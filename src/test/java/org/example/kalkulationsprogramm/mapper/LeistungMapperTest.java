@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungCreateDto;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungDto;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.ProduktkategorieResponseDto;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,9 @@ class LeistungMapperTest {
     @Mock
     private ProduktkategorieRepository produktkategorieRepository;
 
+    @Mock
+    private ProduktkategorieMapper produktkategorieMapper;
+
     @InjectMocks
     private LeistungMapper mapper;
 
@@ -35,6 +39,10 @@ class LeistungMapperTest {
         void mapptAlleFelder() {
             Produktkategorie kategorie = new Produktkategorie();
             kategorie.setId(5L);
+
+            ProduktkategorieResponseDto kategorieDto = new ProduktkategorieResponseDto();
+            kategorieDto.setPfad("Kategorie / Unterkategorie");
+            when(produktkategorieMapper.toProduktkategorieResponseDto(kategorie)).thenReturn(kategorieDto);
 
             Leistung leistung = new Leistung();
             leistung.setId(1L);
