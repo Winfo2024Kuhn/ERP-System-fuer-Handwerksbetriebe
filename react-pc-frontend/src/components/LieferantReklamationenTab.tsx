@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
-import { AlertTriangle, Calendar, FileText, User, CheckCircle, Trash, Plus } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { AlertTriangle, Calendar, FileText, User, CheckCircle, Trash, Plus, Mail, Loader2 } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { ImageViewer } from "./ui/image-viewer";
 import { CreateReklamationModal } from "./CreateReklamationModal";
+import { EmailComposeForm } from "./EmailComposeForm";
+import { AiButton } from "./ui/ai-button";
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 
@@ -42,8 +44,35 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
     // Create Modal State
     const [createModalOpen, setCreateModalOpen] = useState(false);
 
+    // Email Modal State
+    const [emailModalRek, setEmailModalRek] = useState<Reklamation | null>(null);
+    const [emailAttachments, setEmailAttachments] = useState<File[]>([]);
+    const [lieferantEmails, setLieferantEmails] = useState<string[]>([]);
+    const [loadingEmailData, setLoadingEmailData] = useState(false);
+    const [generatingAi, setGeneratingAi] = useState(false);
+    const [aiSubject, setAiSubject] = useState('');
+    const [aiBody, setAiBody] = useState('');
+
     useEffect(() => {
         loadData();
+    }, [lieferantId]);
+
+    // Lieferant-Emails einmalig laden
+    useEffect(() => {
+        const fetchLieferantEmails = async () => {
+            try {
+                const res = await fetch(`/api/lieferanten/${lieferantId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.kundenEmails) {
+                        setLieferantEmails(data.kundenEmails);
+                    }
+                }
+            } catch (err) {
+                console.error('Lieferant-Emails konnten nicht geladen werden:', err);
+            }
+        };
+        fetchLieferantEmails();
     }, [lieferantId]);
 
     const loadData = async () => {
@@ -102,6 +131,66 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
             toast.error("Ein Fehler ist aufgetreten.");
         }
     };
+
+    // Reklamation per E-Mail senden: Bilder als Dateien laden und Modal öffnen
+    const handleEmailReklamation = useCallback(async (rek: Reklamation) => {
+        setLoadingEmailData(true);
+        setAiSubject('');
+        setAiBody('');
+
+        try {
+            // Bilder als File-Objekte laden
+            const files: File[] = [];
+            for (const bild of rek.bilder) {
+                try {
+                    const res = await fetch(bild.url);
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        const file = new File([blob], bild.originalDateiname, { type: blob.type });
+                        files.push(file);
+                    }
+                } catch (e) {
+                    console.warn('Bild konnte nicht geladen werden:', bild.originalDateiname);
+                }
+            }
+
+            setEmailAttachments(files);
+            setEmailModalRek(rek);
+        } catch (err) {
+            console.error(err);
+            toast.error("Fehler beim Vorbereiten der E-Mail.");
+        } finally {
+            setLoadingEmailData(false);
+        }
+    }, [toast]);
+
+    // KI-Entwurf generieren
+    const handleGenerateAiDraft = useCallback(async (rek: Reklamation) => {
+        setGeneratingAi(true);
+        try {
+            const res = await fetch('/api/email/generate-reklamation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    beschreibung: rek.beschreibung,
+                    lieferantName: rek.lieferantName,
+                    bildUrls: rek.bilder.map(b => b.url),
+                }),
+            });
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const data = await res.json();
+            if (data.subject) setAiSubject(data.subject);
+            if (data.body) setAiBody(data.body);
+            toast.success("KI-Entwurf erstellt");
+        } catch (err) {
+            console.error(err);
+            toast.error("KI-Entwurf konnte nicht erstellt werden.");
+        } finally {
+            setGeneratingAi(false);
+        }
+    }, [toast]);
 
     if (loading) {
         return <div className="p-8 text-center text-slate-500">Lade Reklamationen...</div>;
@@ -171,15 +260,27 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
                                     </div>
 
                                     {rek.status !== 'ABGESCHLOSSEN' && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleComplete(rek.id)}
-                                            className="text-slate-600 hover:text-green-600 hover:bg-green-50 border-slate-200 hover:border-green-200 mr-8"
-                                        >
-                                            <CheckCircle className="w-4 h-4 mr-2" />
-                                            Abschließen
-                                        </Button>
+                                        <div className="flex items-center gap-2 mr-8">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleEmailReklamation(rek)}
+                                                disabled={loadingEmailData}
+                                                className="text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-200 hover:border-rose-200"
+                                            >
+                                                {loadingEmailData ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
+                                                Per E-Mail senden
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleComplete(rek.id)}
+                                                className="text-slate-600 hover:text-green-600 hover:bg-green-50 border-slate-200 hover:border-green-200"
+                                            >
+                                                <CheckCircle className="w-4 h-4 mr-2" />
+                                                Abschließen
+                                            </Button>
+                                        </div>
                                     )}
                                 </div>
 
@@ -254,6 +355,42 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
                 lieferantId={lieferantId}
                 onSuccess={loadData}
             />
+
+            {/* Email Compose Modal */}
+            {emailModalRek && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-[95%] max-w-3xl h-[90vh] flex flex-col overflow-hidden">
+                        {/* KI-Entwurf Button Bar */}
+                        <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-200">
+                            <span className="text-sm text-slate-600">
+                                Reklamation #{emailModalRek.id} — {emailModalRek.bilder.length} Bild(er) angehängt
+                            </span>
+                            <AiButton
+                                onClick={() => handleGenerateAiDraft(emailModalRek)}
+                                isLoading={generatingAi}
+                                label="KI-Entwurf erstellen"
+                            />
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                            <EmailComposeForm
+                                onClose={() => {
+                                    setEmailModalRek(null);
+                                    setEmailAttachments([]);
+                                    setAiSubject('');
+                                    setAiBody('');
+                                }}
+                                lieferantId={lieferantId}
+                                lieferantEmails={lieferantEmails}
+                                initialSubject={aiSubject || `Reklamation #${emailModalRek.id} — ${emailModalRek.lieferantName}`}
+                                initialBody={aiBody}
+                                initialAttachments={emailAttachments}
+                                variant="modal"
+                                onSuccess={loadData}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

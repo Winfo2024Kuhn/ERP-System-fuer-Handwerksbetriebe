@@ -32,6 +32,9 @@ export interface EmailComposeFormProps {
     };
     /** Customer ID for saving new email addresses */
     kundeId?: number;
+    // For suppliers (Lieferanten)
+    lieferantId?: number;
+    lieferantEmails?: string[];
     initialRecipient?: string;
     initialSubject?: string;
     initialBody?: string;
@@ -136,6 +139,8 @@ export function EmailComposeForm({
     anfrageId,
     anfrage,
     kundeId,
+    lieferantId,
+    lieferantEmails,
     initialRecipient = '',
     initialSubject = '',
     initialBody = '',
@@ -143,8 +148,9 @@ export function EmailComposeForm({
     onSuccess,
     variant = 'default'
 }: EmailComposeFormProps) {
-    // Determine context: projekt or anfrage
+    // Determine context: projekt, anfrage, or lieferant
     const isAnfrageContext = !!anfrageId;
+    const isLieferantContext = !!lieferantId;
     const entityId = projektId || anfrageId;
 
     // State für vom Backend geladene Daten (Emails + Projektdaten für Template)
@@ -186,6 +192,12 @@ export function EmailComposeForm({
     // Merge: Props + Backend (dedupliziert)
     const entityKundenEmails = useMemo(() => {
         const emails: string[] = [];
+        // Lieferant-E-Mails
+        if (lieferantEmails) {
+            lieferantEmails.forEach(e => {
+                if (e && !emails.includes(e)) emails.push(e);
+            });
+        }
         // Projekt-spezifische E-Mails (aus effectiveProjekt)
         if (effectiveProjekt?.kundenEmails) {
             effectiveProjekt.kundenEmails.forEach(e => {
@@ -209,7 +221,7 @@ export function EmailComposeForm({
             if (e && !emails.includes(e)) emails.push(e);
         });
         return emails;
-    }, [effectiveProjekt?.kundenEmails, effectiveProjekt?.kundeDto?.kundenEmails, anfrage?.kundenEmails, fetchedEmails]);
+    }, [lieferantEmails, effectiveProjekt?.kundenEmails, effectiveProjekt?.kundeDto?.kundenEmails, anfrage?.kundenEmails, fetchedEmails]);
 
 
     const [recipient, setRecipient] = useState<string>(initialRecipient || '');
@@ -567,8 +579,9 @@ export function EmailComposeForm({
                 benutzer: currentUser?.displayName || '',
                 frontendUserId: currentUser?.id || null,
                 // Include entity assignment in the DTO
-                projektId: !isAnfrageContext && entityId ? entityId : null,
+                projektId: !isAnfrageContext && !isLieferantContext && entityId ? entityId : null,
                 anfrageId: isAnfrageContext && entityId ? entityId : null,
+                lieferantId: isLieferantContext ? lieferantId : null,
             };
 
             formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
@@ -598,7 +611,7 @@ export function EmailComposeForm({
                 e => e.toLowerCase() === finalRecipient.toLowerCase()
             );
 
-            if (isNewEmail && (kundeId || projektId || anfrageId)) {
+            if (isNewEmail && (kundeId || projektId || anfrageId || lieferantId)) {
                 setNewEmailToSave(finalRecipient);
                 setShowSaveEmailDialog(true);
                 // Don't close yet — wait for save dialog decision
@@ -615,7 +628,7 @@ export function EmailComposeForm({
     };
 
     // Save new email to a specific entity
-    const handleSaveEmail = async (target: 'kunde' | 'projekt' | 'anfrage') => {
+    const handleSaveEmail = async (target: 'kunde' | 'projekt' | 'anfrage' | 'lieferant') => {
         if (!newEmailToSave) return;
         setSavingEmail(true);
         try {
@@ -626,6 +639,8 @@ export function EmailComposeForm({
                 url = `/api/projekte/${projektId}/emails`;
             } else if (target === 'anfrage' && anfrageId) {
                 url = `/api/anfragen/${anfrageId}/emails`;
+            } else if (target === 'lieferant' && lieferantId) {
+                url = `/api/lieferanten/${lieferantId}/emails`;
             }
             if (url) {
                 await fetch(url, {
@@ -661,7 +676,7 @@ export function EmailComposeForm({
                     <div>
                         <h2 className="text-lg font-semibold text-slate-900">Neue E-Mail</h2>
                         <p className="text-sm text-slate-500">
-                            {entityName ? `${isAnfrageContext ? 'Anfrage' : 'Projekt'}: ${entityName}` : 'Freie E-Mail'}
+                            {isLieferantContext ? 'Lieferant-Reklamation' : entityName ? `${isAnfrageContext ? 'Anfrage' : 'Projekt'}: ${entityName}` : 'Freie E-Mail'}
                         </p>
                     </div>
                 </div>
@@ -985,6 +1000,17 @@ export function EmailComposeForm({
                                 >
                                     {savingEmail ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
                                     Als Anfrage-E-Mail speichern
+                                </Button>
+                            )}
+                            {lieferantId && (
+                                <Button
+                                    onClick={() => handleSaveEmail('lieferant')}
+                                    disabled={savingEmail}
+                                    className="w-full bg-rose-600 hover:bg-rose-700 text-white justify-start"
+                                    size="sm"
+                                >
+                                    {savingEmail ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
+                                    Beim Lieferanten speichern
                                 </Button>
                             )}
                             <Button

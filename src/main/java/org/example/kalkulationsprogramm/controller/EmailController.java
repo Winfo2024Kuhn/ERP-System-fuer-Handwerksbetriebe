@@ -1,8 +1,11 @@
 package org.example.kalkulationsprogramm.controller;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -21,6 +24,7 @@ import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyResponse;
 import org.example.kalkulationsprogramm.dto.Email.EmailPreviewRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailSendRequest;
+import org.example.kalkulationsprogramm.dto.Email.ReklamationEmailGenerateRequest;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
@@ -88,6 +92,63 @@ public class EmailController {
         } catch (Exception ex) {
             log.warn("KI-Formulierung fehlgeschlagen", ex);
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+        }
+    }
+
+    @PostMapping("/generate-reklamation")
+    public ResponseEntity<?> generateReklamationEmail(
+            @RequestBody @jakarta.validation.Valid ReklamationEmailGenerateRequest request) {
+        if (request.getBeschreibung() == null || request.getBeschreibung().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Beschreibung darf nicht leer sein");
+        }
+
+        try {
+            // Resolve image paths from URLs
+            List<Path> bildPaths = new ArrayList<>();
+            if (request.getBildUrls() != null) {
+                for (String bildUrl : request.getBildUrls()) {
+                    String filename = bildUrl;
+                    if (filename.contains("/")) {
+                        filename = filename.substring(filename.lastIndexOf('/') + 1);
+                    }
+                    Path possiblePath = findBildPath(filename);
+                    if (possiblePath != null) {
+                        bildPaths.add(possiblePath);
+                    }
+                }
+            }
+
+            String jsonResult = emailAiService.generateReklamationEmail(
+                    request.getBeschreibung(), request.getLieferantName(), bildPaths);
+            return ResponseEntity.ok()
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .body(jsonResult);
+
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.warn("KI Reklamation-Email-Generierung unterbrochen", ex);
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+        } catch (Exception ex) {
+            log.warn("KI Reklamation-Email-Generierung fehlgeschlagen", ex);
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+        }
+    }
+
+    private Path findBildPath(String gespeicherterDateiname) {
+        try {
+            // Search in uploads/lieferanten/*/bilder/ for the file
+            Path uploadsDir = Paths.get("uploads", "lieferanten");
+            if (!java.nio.file.Files.exists(uploadsDir)) return null;
+
+            try (var stream = java.nio.file.Files.walk(uploadsDir, 3)) {
+                return stream
+                        .filter(p -> p.getFileName().toString().equals(gespeicherterDateiname))
+                        .findFirst()
+                        .orElse(null);
+            }
+        } catch (Exception e) {
+            log.warn("Konnte Bild-Pfad nicht auflösen: {}", gespeicherterDateiname, e);
+            return null;
         }
     }
 

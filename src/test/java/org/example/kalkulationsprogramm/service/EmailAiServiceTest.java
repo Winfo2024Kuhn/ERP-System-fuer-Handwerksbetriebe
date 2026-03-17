@@ -1,81 +1,114 @@
-//package org.example.kalkulationsprogramm.service;
-//
-//import com.fasterxml.jackson.databind.ObjectMapper;
-//import org.junit.jupiter.api.Test;
-//
-//import java.lang.reflect.InvocationTargetException;
-//import java.lang.reflect.Method;
-//
-//import static org.junit.jupiter.api.Assertions.*;
-//
-//public class EmailAiServiceTest {
-//
-//    private String callExtract(EmailAiService svc, String json) throws Exception {
-//        Method m = EmailAiService.class.getDeclaredMethod("extractContent", com.fasterxml.jackson.databind.JsonNode.class);
-//        m.setAccessible(true);
-//        return (String) m.invoke(svc, new ObjectMapper().readTree(json));
-//    }
-//
-//    @Test
-//    void extractsFromOllamaChat() throws Exception {
-//        EmailAiService svc = new EmailAiService(new ObjectMapper());
-//        String json = "{\n" +
-//                "  \"message\": { \"role\": \"assistant\", \"content\": \"Hallo Welt\" },\n" +
-//                "  \"done\": true\n" +
-//                "}";
-//        String content = callExtract(svc, json);
-//        assertEquals("Hallo Welt", content);
-//    }
-//
-//    @Test
-//    void extractsFromOllamaGenerate() throws Exception {
-//        EmailAiService svc = new EmailAiService(new ObjectMapper());
-//        String json = "{\n" +
-//                "  \"response\": \"Hallo aus Generate\"\n" +
-//                "}";
-//        String content = callExtract(svc, json);
-//        assertEquals("Hallo aus Generate", content);
-//    }
-//
-//    @Test
-//    void extractsFromOpenAIChoices() throws Exception {
-//        EmailAiService svc = new EmailAiService(new ObjectMapper());
-//        String json = "{\n" +
-//                "  \"choices\": [ { \"message\": { \"content\": \"Hallo OpenAI\" } } ]\n" +
-//                "}";
-//        String content = callExtract(svc, json);
-//        assertEquals("Hallo OpenAI", content);
-//    @Test
-//    void testProcessBeautify_truncatesLongText() throws Exception {
-//        // 1. Setup
-//        EmailAiService service = new EmailAiService(new ObjectMapper());
-//
-//        // Use reflection to set the 'enabled' field to false to prevent real API calls.
-//        java.lang.reflect.Field enabledField = EmailAiService.class.getDeclaredField("enabled");
-//        enabledField.setAccessible(true);
-//        enabledField.set(service, false);
-//
-//        // Create a string longer than the limit (25,000 characters).
-//        int limit = 25_000;
-//        StringBuilder longTextBuilder = new StringBuilder();
-//        for (int i = 0; i < limit + 100; i++) {
-//            longTextBuilder.append("a");
-//        }
-//        String longText = longTextBuilder.toString();
-//        assertTrue(longText.length() > limit);
-//
-//        // 2. Execution
-//        // Use reflection to access the private 'processBeautify' method.
-//        Method processBeautifyMethod = EmailAiService.class.getDeclaredMethod("processBeautify", String.class, String.class);
-//        processBeautifyMethod.setAccessible(true);
-//        String result = (String) processBeautifyMethod.invoke(service, longText, null);
-//
-//        // 3. Assertion
-//        // With 'enabled=false', the method should return the truncated plain text.
-//        // The truncation happens before the sanitizer, and since our input is plain text,
-//        // the result should be the truncated string.
-//        assertEquals(limit, result.length());
-//        assertEquals(longText.substring(0, limit), result);
-//    }
-//}
+package org.example.kalkulationsprogramm.service;
+
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.util.Collections;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+class EmailAiServiceTest {
+
+    private EmailAiService createDisabledService() throws Exception {
+        EmailAiService service = new EmailAiService(new ObjectMapper());
+        Field enabledField = EmailAiService.class.getDeclaredField("enabled");
+        enabledField.setAccessible(true);
+        enabledField.set(service, false);
+        return service;
+    }
+
+    @Nested
+    @DisplayName("generateReklamationEmail")
+    class GenerateReklamation {
+
+        @Test
+        @DisplayName("Null Beschreibung wirft IllegalArgumentException")
+        void nullBeschreibungWirft() throws Exception {
+            EmailAiService service = createDisabledService();
+            // Re-enable to hit validation before API call
+            Field enabledField = EmailAiService.class.getDeclaredField("enabled");
+            enabledField.setAccessible(true);
+            enabledField.set(service, true);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.generateReklamationEmail(null, "Lieferant", Collections.emptyList()));
+        }
+
+        @Test
+        @DisplayName("Leere Beschreibung wirft IllegalArgumentException")
+        void leereBeschreibungWirft() throws Exception {
+            EmailAiService service = createDisabledService();
+            Field enabledField = EmailAiService.class.getDeclaredField("enabled");
+            enabledField.setAccessible(true);
+            enabledField.set(service, true);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.generateReklamationEmail("   ", "Lieferant", Collections.emptyList()));
+        }
+
+        @Test
+        @DisplayName("Deaktivierter Service wirft IOException")
+        void deaktiviertWirftIOException() throws Exception {
+            EmailAiService service = createDisabledService();
+
+            assertThrows(IOException.class,
+                    () -> service.generateReklamationEmail("Ware beschädigt", "Test", Collections.emptyList()));
+        }
+
+        @Test
+        @DisplayName("Null Bildliste wird toleriert")
+        void nullBildlisteWirdToleriert() throws Exception {
+            EmailAiService service = createDisabledService();
+
+            // Should throw IOException (disabled) not NPE
+            assertThrows(IOException.class,
+                    () -> service.generateReklamationEmail("Ware beschädigt", "Test", null));
+        }
+
+        @Test
+        @DisplayName("Leerer Lieferantname wird toleriert")
+        void leererLieferantnameWirdToleriert() throws Exception {
+            EmailAiService service = createDisabledService();
+
+            // Should throw IOException (disabled) not NPE
+            assertThrows(IOException.class,
+                    () -> service.generateReklamationEmail("Ware beschädigt", null, Collections.emptyList()));
+        }
+    }
+
+    @Nested
+    @DisplayName("beautify")
+    class Beautify {
+
+        @Test
+        @DisplayName("Deaktiviert: gibt Originaltext zurück")
+        void deaktiviertGibtOriginalZurueck() throws Exception {
+            EmailAiService service = createDisabledService();
+            String result = service.beautify("Hallo Welt");
+            assertEquals("Hallo Welt", result);
+        }
+
+        @Test
+        @DisplayName("Null-Text gibt null zurück")
+        void nullTextGibtNullZurueck() throws Exception {
+            EmailAiService service = createDisabledService();
+            String result = service.beautify(null);
+            assertNull(result);
+        }
+
+        @Test
+        @DisplayName("Leerer Text gibt Originaltext zurück")
+        void leererTextGibtOriginalZurueck() throws Exception {
+            EmailAiService service = createDisabledService();
+            String result = service.beautify("   ");
+            assertEquals("   ", result);
+        }
+    }
+}
 

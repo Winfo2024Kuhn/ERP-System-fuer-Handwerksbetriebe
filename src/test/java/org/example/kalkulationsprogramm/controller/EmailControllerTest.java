@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Optional;
+
 import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailPreviewRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailSendRequest;
@@ -14,19 +15,19 @@ import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-
-import java.util.Optional;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @WebMvcTest(EmailController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -239,6 +240,117 @@ class EmailControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/email/generate-reklamation")
+    class GenerateReklamation {
+
+        @Test
+        @DisplayName("Erfolgreiche Generierung gibt JSON zurück")
+        void generiereReklamationEmail() throws Exception {
+            given(emailAiService.generateReklamationEmail(any(), any(), any()))
+                    .willReturn("{\"subject\":\"Reklamation Ware\",\"body\":\"<p>Sehr geehrte Damen und Herren...</p>\"}");
+
+            String requestJson = "{\"beschreibung\":\"Ware beschädigt\",\"lieferantName\":\"TestLieferant\",\"bildUrls\":[]}";
+
+            mockMvc.perform(post("/api/email/generate-reklamation")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestJson))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Leere Beschreibung gibt 400 zurück")
+        void leereBeschreibungGibt400() throws Exception {
+            String requestJson = "{\"beschreibung\":\"\",\"lieferantName\":\"Test\"}";
+
+            mockMvc.perform(post("/api/email/generate-reklamation")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestJson))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("AI-Fehler gibt 502 zurück")
+        void aiFehlerGibt502() throws Exception {
+            given(emailAiService.generateReklamationEmail(any(), any(), any()))
+                    .willThrow(new RuntimeException("AI unavailable"));
+
+            String requestJson = "{\"beschreibung\":\"Ware beschädigt\",\"lieferantName\":\"Test\",\"bildUrls\":[]}";
+
+            mockMvc.perform(post("/api/email/generate-reklamation")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestJson))
+                    .andExpect(status().isBadGateway());
+        }
+
+        @Test
+        @DisplayName("SQL Injection in Beschreibung wird als String behandelt")
+        void sqlInjectionInBeschreibung() throws Exception {
+            String sqlPayload = "'; DROP TABLE reklamationen; --";
+            given(emailAiService.generateReklamationEmail(any(), any(), any()))
+                    .willReturn("{\"subject\":\"Reklamation\",\"body\":\"text\"}");
+
+            String requestJson = objectMapper.writeValueAsString(
+                    java.util.Map.of("beschreibung", sqlPayload, "lieferantName", "Test"));
+
+            mockMvc.perform(post("/api/email/generate-reklamation")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestJson))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("XSS in Beschreibung wird als String behandelt")
+        void xssInBeschreibung() throws Exception {
+            String xssPayload = "<script>alert(1)</script>";
+            given(emailAiService.generateReklamationEmail(any(), any(), any()))
+                    .willReturn("{\"subject\":\"Reklamation\",\"body\":\"text\"}");
+
+            String requestJson = objectMapper.writeValueAsString(
+                    java.util.Map.of("beschreibung", xssPayload, "lieferantName", "Test"));
+
+            mockMvc.perform(post("/api/email/generate-reklamation")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestJson))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Überlange Beschreibung gibt 400 zurück")
+        void ueberlangeBeschreibungGibt400() throws Exception {
+            String longText = "A".repeat(10001);
+            String requestJson = objectMapper.writeValueAsString(
+                    java.util.Map.of("beschreibung", longText, "lieferantName", "Test"));
+
+            mockMvc.perform(post("/api/email/generate-reklamation")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestJson))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("XML Content-Type wird abgelehnt")
+        void xmlContentTypeWirdAbgelehnt() throws Exception {
+            mockMvc.perform(post("/api/email/generate-reklamation")
+                            .contentType(MediaType.APPLICATION_XML)
+                            .content("<request />"))
+                    .andExpect(status().isUnsupportedMediaType());
+        }
+
+        @Test
+        @DisplayName("Überlanger Lieferantname gibt 400")
+        void ueberlangerLieferantNameGibt400() throws Exception {
+            String longName = "A".repeat(201);
+            String requestJson = objectMapper.writeValueAsString(
+                    java.util.Map.of("beschreibung", "Test", "lieferantName", longName));
+
+            mockMvc.perform(post("/api/email/generate-reklamation")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestJson))
+                    .andExpect(status().isBadRequest());
         }
     }
 }
