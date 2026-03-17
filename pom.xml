@@ -229,6 +229,7 @@
                         <option>-Dfile.encoding=UTF-8</option>
                     </javaOptions>
                     <type>EXE</type>
+                    <winConsole>true</winConsole>
                     <winDirChooser>true</winDirChooser>
                     <winShortcut>true</winShortcut>
                     <winMenu>true</winMenu>
