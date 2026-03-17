@@ -86,8 +86,11 @@ export interface TiptapEditorRef {
     editor: ReturnType<typeof useEditor> | null;
 }
 
-// Custom Image extension with resizing
+// Custom Image extension with resizing and drag-and-drop repositioning
 const ResizableImage = Image.extend({
+    selectable: true,
+    draggable: true,
+
     addAttributes() {
         return {
             ...this.parent?.(),
@@ -111,173 +114,198 @@ const ResizableImage = Image.extend({
     },
     addNodeView() {
         return ({ node, getPos, editor }) => {
+            // ── Wrapper ──
             const dom = document.createElement('div');
             dom.className = 'tiptap-image-wrapper';
-            dom.style.display = 'inline-block';
-            dom.style.position = 'relative';
             dom.draggable = true;
 
             let currentNode = node;
+            let selected = false;
+            let isResizing = false;
 
-            const updateDOM = () => {
+            // ── Persistent image element ──
+            const img = document.createElement('img');
+            img.className = 'tiptap-image-el';
+            img.draggable = false;
+            dom.appendChild(img);
+
+            // ── Mouse-down: select node, allow native drag to start ──
+            dom.addEventListener('mousedown', () => {
+                if (isResizing) return; // don't interfere with resize handles
+                const pos = typeof getPos === 'function' ? getPos() : undefined;
+                if (pos !== undefined) {
+                    // Do NOT preventDefault so the browser can initiate a native drag
+                    editor.chain().focus().setNodeSelection(pos).run();
+                }
+            });
+
+            // ── Drag start: custom ghost ──
+            dom.addEventListener('dragstart', (e) => {
+                dom.classList.add('tiptap-image-dragging');
+                // Create a nice ghost image
+                const ghost = img.cloneNode(true) as HTMLImageElement;
+                ghost.style.cssText = `width:${img.offsetWidth * 0.6}px;opacity:0.85;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,0.25);position:absolute;top:-9999px;`;
+                document.body.appendChild(ghost);
+                e.dataTransfer?.setDragImage(ghost, ghost.offsetWidth / 2, 20);
+                requestAnimationFrame(() => document.body.removeChild(ghost));
+            });
+
+            dom.addEventListener('dragend', () => {
+                dom.classList.remove('tiptap-image-dragging');
+                dom.classList.add('tiptap-image-dropped');
+                dom.addEventListener('animationend', () => dom.classList.remove('tiptap-image-dropped'), { once: true });
+            });
+
+            // ── Render / update visuals ──
+            const renderDOM = () => {
                 const width = currentNode.attrs.width || 300;
                 const height = currentNode.attrs.height;
-                const pos = typeof getPos === 'function' ? getPos() : undefined;
-                const isSelected = pos !== undefined &&
-                    editor.state.selection.from <= pos + 1 &&
-                    editor.state.selection.to >= pos;
 
-                dom.innerHTML = '';
+                // Remove old handles/buttons (everything after img)
+                while (dom.lastChild && dom.lastChild !== img) {
+                    dom.removeChild(dom.lastChild);
+                }
+
                 dom.style.width = typeof width === 'number' ? `${width}px` : String(width);
-                dom.style.maxWidth = '100%';
-                dom.style.padding = '4px';
-                dom.style.border = isSelected ? '2px dashed #ef4444' : '2px dashed transparent';
-                dom.style.borderRadius = '4px';
+                dom.classList.toggle('tiptap-image-selected', selected);
 
-                const img = document.createElement('img');
                 img.src = currentNode.attrs.src;
                 img.alt = currentNode.attrs.alt || '';
-                img.style.width = '100%';
                 img.style.height = height ? `${height}px` : 'auto';
-                img.style.objectFit = 'contain';
-                img.style.display = 'block';
-                img.draggable = false;
-                dom.appendChild(img);
 
-                if (isSelected) {
-                    const handles = [
-                        { mode: 'tl', top: '-6px', left: '-6px', cursor: 'nwse-resize' },
-                        { mode: 'tr', top: '-6px', right: '-6px', cursor: 'nesw-resize' },
-                        { mode: 'bl', bottom: '-6px', left: '-6px', cursor: 'nesw-resize' },
-                        { mode: 'br', bottom: '-6px', right: '-6px', cursor: 'nwse-resize' },
-                        { mode: 'l', top: '50%', left: '-6px', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                        { mode: 'r', top: '50%', right: '-6px', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                        { mode: 't', top: '-6px', left: '50%', transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                        { mode: 'b', bottom: '-6px', left: '50%', transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                    ] as const;
+                if (!selected) return;
 
-                    handles.forEach(h => {
-                        const handle = document.createElement('span');
-                        handle.style.cssText = `
-              position: absolute;
-              width: 12px;
-              height: 12px;
-              background: white;
-              border: 2px solid #ef4444;
-              border-radius: 50%;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-              z-index: 10;
-              cursor: ${h.cursor};
-              ${'top' in h && h.top ? `top: ${h.top};` : ''}
-              ${'bottom' in h && h.bottom ? `bottom: ${h.bottom};` : ''}
-              ${'left' in h && h.left ? `left: ${h.left};` : ''}
-              ${'right' in h && h.right ? `right: ${h.right};` : ''}
-              ${'transform' in h && h.transform ? `transform: ${h.transform};` : ''}
-            `;
+                // ── Resize handles ──
+                const handles = [
+                    { mode: 'tl', top: '-6px', left: '-6px', cursor: 'nwse-resize' },
+                    { mode: 'tr', top: '-6px', right: '-6px', cursor: 'nesw-resize' },
+                    { mode: 'bl', bottom: '-6px', left: '-6px', cursor: 'nesw-resize' },
+                    { mode: 'br', bottom: '-6px', right: '-6px', cursor: 'nwse-resize' },
+                    { mode: 'l', top: '50%', left: '-6px', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                    { mode: 'r', top: '50%', right: '-6px', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                    { mode: 't', top: '-6px', left: '50%', transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                    { mode: 'b', bottom: '-6px', left: '50%', transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                ] as const;
 
-                        let startX = 0, startY = 0, startW = 0, startH = 0;
+                handles.forEach(h => {
+                    const handle = document.createElement('span');
+                    handle.className = 'tiptap-image-handle';
+                    handle.style.cssText = `cursor:${h.cursor};
+                        ${'top' in h && h.top ? `top:${h.top};` : ''}
+                        ${'bottom' in h && h.bottom ? `bottom:${h.bottom};` : ''}
+                        ${'left' in h && h.left ? `left:${h.left};` : ''}
+                        ${'right' in h && h.right ? `right:${h.right};` : ''}
+                        ${'transform' in h && h.transform ? `transform:${h.transform};` : ''}`;
 
-                        handle.addEventListener('mousedown', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            startX = e.clientX;
-                            startY = e.clientY;
-                            const rect = dom.getBoundingClientRect();
-                            startW = rect.width;
-                            startH = rect.height;
+                    let startX = 0, startY = 0, startW = 0, startH = 0;
 
-                            const onMouseMove = (e: MouseEvent) => {
-                                const dx = e.clientX - startX;
-                                const dy = e.clientY - startY;
-                                const aspect = startW / startH;
-                                let newW = startW, newH = startH;
-                                const min = 50;
-
-                                switch (h.mode) {
-                                    case 'br': case 'tr':
-                                        newW = Math.max(min, startW + dx);
-                                        newH = newW / aspect;
-                                        break;
-                                    case 'bl': case 'tl':
-                                        newW = Math.max(min, startW - dx);
-                                        newH = newW / aspect;
-                                        break;
-                                    case 'r':
-                                        newW = Math.max(min, startW + dx);
-                                        break;
-                                    case 'l':
-                                        newW = Math.max(min, startW - dx);
-                                        break;
-                                    case 'b':
-                                        newH = Math.max(min, startH + dy);
-                                        break;
-                                    case 't':
-                                        newH = Math.max(min, startH - dy);
-                                        break;
-                                }
-
-                                const currentPos = typeof getPos === 'function' ? getPos() : undefined;
-                                if (currentPos !== undefined) {
-                                    editor.chain().focus().setNodeSelection(currentPos).updateAttributes('image', {
-                                        width: Math.round(newW),
-                                        height: Math.round(newH),
-                                    }).run();
-                                }
-                            };
-
-                            const onMouseUp = () => {
-                                document.removeEventListener('mousemove', onMouseMove);
-                                document.removeEventListener('mouseup', onMouseUp);
-                            };
-
-                            document.addEventListener('mousemove', onMouseMove);
-                            document.addEventListener('mouseup', onMouseUp);
-                        });
-
-                        dom.appendChild(handle);
-                    });
-
-                    // Delete button
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.innerHTML = '×';
-                    deleteBtn.style.cssText = `
-            position: absolute;
-            top: -12px;
-            right: -12px;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: #ef4444;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-            z-index: 20;
-          `;
-                    deleteBtn.onclick = (e) => {
+                    handle.addEventListener('mousedown', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        const currentPos = typeof getPos === 'function' ? getPos() : undefined;
-                        if (currentPos !== undefined) {
-                            editor.chain().focus().setNodeSelection(currentPos).deleteSelection().run();
-                        }
-                    };
-                    dom.appendChild(deleteBtn);
-                }
+                        isResizing = true;
+                        dom.draggable = false; // disable drag while resizing
+                        startX = e.clientX;
+                        startY = e.clientY;
+                        const rect = dom.getBoundingClientRect();
+                        startW = rect.width;
+                        startH = rect.height;
+
+                        const onMouseMove = (ev: MouseEvent) => {
+                            const dx = ev.clientX - startX;
+                            const dy = ev.clientY - startY;
+                            const aspect = startW / startH;
+                            let newW = startW, newH = startH;
+                            const min = 50;
+
+                            switch (h.mode) {
+                                case 'br': case 'tr':
+                                    newW = Math.max(min, startW + dx);
+                                    newH = newW / aspect;
+                                    break;
+                                case 'bl': case 'tl':
+                                    newW = Math.max(min, startW - dx);
+                                    newH = newW / aspect;
+                                    break;
+                                case 'r':
+                                    newW = Math.max(min, startW + dx);
+                                    break;
+                                case 'l':
+                                    newW = Math.max(min, startW - dx);
+                                    break;
+                                case 'b':
+                                    newH = Math.max(min, startH + dy);
+                                    break;
+                                case 't':
+                                    newH = Math.max(min, startH - dy);
+                                    break;
+                            }
+
+                            const currentPos = typeof getPos === 'function' ? getPos() : undefined;
+                            if (currentPos !== undefined) {
+                                editor.chain().focus().setNodeSelection(currentPos).updateAttributes('image', {
+                                    width: Math.round(newW),
+                                    height: Math.round(newH),
+                                }).run();
+                            }
+                        };
+
+                        const onMouseUp = () => {
+                            isResizing = false;
+                            dom.draggable = true;
+                            document.removeEventListener('mousemove', onMouseMove);
+                            document.removeEventListener('mouseup', onMouseUp);
+                        };
+
+                        document.addEventListener('mousemove', onMouseMove);
+                        document.addEventListener('mouseup', onMouseUp);
+                    });
+
+                    dom.appendChild(handle);
+                });
+
+                // ── Delete button ──
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'tiptap-image-delete';
+                deleteBtn.innerHTML = '×';
+                deleteBtn.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const currentPos = typeof getPos === 'function' ? getPos() : undefined;
+                    if (currentPos !== undefined) {
+                        editor.commands.deleteRange({ from: currentPos, to: currentPos + currentNode.nodeSize });
+                    }
+                });
+                dom.appendChild(deleteBtn);
             };
 
-            updateDOM();
+            renderDOM();
 
             return {
                 dom,
                 update: (updatedNode) => {
                     if (updatedNode.type.name !== 'image') return false;
                     currentNode = updatedNode;
-                    updateDOM();
+                    renderDOM();
                     return true;
                 },
+                selectNode: () => {
+                    selected = true;
+                    renderDOM();
+                },
+                deselectNode: () => {
+                    selected = false;
+                    renderDOM();
+                },
+                stopEvent: (event: Event) => {
+                    const t = event.type;
+                    // Let keyboard through (Delete/Backspace to remove image)
+                    if (t === 'keydown' || t === 'keyup' || t === 'keypress') return false;
+                    // Let drag/drop through to ProseMirror for repositioning
+                    if (t.startsWith('drag') || t === 'drop') return false;
+                    // We handle mouse events (selection, resize, delete)
+                    return true;
+                },
+                ignoreMutation: () => true,
             };
         };
     },
@@ -865,7 +893,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
             {/* Editor */}
             <div
                 ref={editorContainerRef}
-                className={`${compactMode ? '' : 'border border-slate-200 rounded-lg shadow-inner'} bg-white overflow-hidden`}
+                className={`${compactMode ? '' : 'border border-slate-200 rounded-lg shadow-inner'} bg-white overflow-visible`}
                 onDragOver={(e) => e.preventDefault()}
                 onFocus={onFocus}
             >

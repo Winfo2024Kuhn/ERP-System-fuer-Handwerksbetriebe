@@ -187,6 +187,15 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
 
             if (res.ok) {
                 const data = await res.json()
+
+                // Wenn wir switchen und der Start online erfolgreich war, bedeutet das:
+                // Der Server hat keine aktive Buchung → der Stop wurde verarbeitet.
+                // Verwaiste Offline-Stop-Entries entfernen, damit sie nicht später
+                // die NEUE Buchung stoppen (Race-Condition-Fix).
+                if (isSwitching) {
+                    await OfflineService.removePendingEntriesByType('stop')
+                }
+
                 const session = {
                     id: data.id,
                     projektId: selectedProjekt.id,
