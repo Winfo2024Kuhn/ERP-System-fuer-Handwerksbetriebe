@@ -228,7 +228,6 @@
                         <option>-Xmx512m</option>
                         <option>-Dfile.encoding=UTF-8</option>
                     </javaOptions>
-                    <addModules>ALL-MODULE-PATH</addModules>
                     <type>EXE</type>
                     <winDirChooser>true</winDirChooser>
                     <winShortcut>true</winShortcut>
