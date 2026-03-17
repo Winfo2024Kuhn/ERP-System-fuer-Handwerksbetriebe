@@ -33,7 +33,7 @@ export function installSessionInterceptor(): void {
     ): Promise<Response> {
         const response = await originalFetch(input, init);
 
-        if (response.status === 401) {
+        if (response.status === 401 || response.status === 403) {
             const url =
                 typeof input === 'string'
                     ? input
