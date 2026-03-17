@@ -16,7 +16,7 @@ import { useToast } from '../components/ui/toast';
  * Must be rendered inside <BrowserRouter>, <AuthProvider>, and <ToastProvider>.
  */
 export function SessionGuard() {
-    const { user, logout } = useAuth();
+    const { user, logout, refreshMe } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const toast = useToast();
@@ -51,27 +51,37 @@ export function SessionGuard() {
             handlingRef.current = true;
             const fromPath = locationRef.current;
 
-            logout().finally(() => {
-                toast.warning(
-                    'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.',
-                );
-                navigate('/login', {
-                    replace: true,
-                    state: { from: fromPath, sessionExpired: true },
-                });
-
-                // Reset guards after navigation has settled
-                setTimeout(() => {
+            // Verify that the session is actually gone (not just a role-based 403)
+            refreshMe().then((me) => {
+                if (me) {
+                    // Session is still valid — this was a legitimate 403 (e.g. role mismatch)
                     handlingRef.current = false;
-                    wasAuthenticatedRef.current = false;
-                }, 2_000);
+                    return;
+                }
+
+                // Session truly expired — logout and redirect
+                logout().finally(() => {
+                    toast.warning(
+                        'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.',
+                    );
+                    navigate('/login', {
+                        replace: true,
+                        state: { from: fromPath, sessionExpired: true },
+                    });
+
+                    // Reset guards after navigation has settled
+                    setTimeout(() => {
+                        handlingRef.current = false;
+                        wasAuthenticatedRef.current = false;
+                    }, 2_000);
+                });
             });
         };
 
         window.addEventListener('auth:session-expired', handleSessionExpired);
         return () =>
             window.removeEventListener('auth:session-expired', handleSessionExpired);
-    }, [logout, navigate, toast]);
+    }, [logout, navigate, toast, refreshMe]);
 
     return null;
 }
