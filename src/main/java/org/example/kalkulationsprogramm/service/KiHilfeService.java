@@ -216,12 +216,10 @@ public class KiHilfeService {
     private final ObjectMapper objectMapper;
     private final CodebaseIndexService codebaseIndexService;
     private final LocalRagService localRagService;
+    private final SystemSettingsService systemSettingsService;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
             .build();
-
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
 
     @Value("${ai.ki-hilfe.model:gemini-3-flash-preview}")
     private String model;
@@ -279,7 +277,7 @@ public class KiHilfeService {
      * Chat with optional page context for RAG-enhanced responses.
      */
     public ChatResult chat(List<ChatMessage> messages, PageContext pageContext) throws IOException, InterruptedException {
-        if (geminiApiKey == null || geminiApiKey.isBlank()) {
+        if (systemSettingsService.getGeminiApiKey().isBlank()) {
             throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
         }
 
@@ -343,7 +341,7 @@ public class KiHilfeService {
         log.info("  -> Prompt-Modus: {}", promptMode);
 
         String url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
-                .formatted(model, geminiApiKey);
+                .formatted(model, systemSettingsService.getGeminiApiKey());
 
         ObjectNode requestBody = objectMapper.createObjectNode();
 

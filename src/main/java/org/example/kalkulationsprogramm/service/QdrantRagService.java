@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -36,8 +37,8 @@ public class QdrantRagService {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
+    @Autowired
+    private SystemSettingsService systemSettingsService;
 
     @Value("${ai.rag.qdrant.host:localhost}")
     private String qdrantHost;
@@ -120,7 +121,7 @@ public class QdrantRagService {
      * Embed a query string using Gemini text-embedding-004.
      */
     private List<Double> embedQuery(String query) throws IOException, InterruptedException {
-        String url = GEMINI_EMBED_URL.formatted(geminiApiKey);
+        String url = GEMINI_EMBED_URL.formatted(systemSettingsService.getGeminiApiKey());
 
         ObjectNode requestBody = objectMapper.createObjectNode();
         ObjectNode content = objectMapper.createObjectNode();

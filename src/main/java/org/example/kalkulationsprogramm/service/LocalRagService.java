@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -94,8 +95,8 @@ public class LocalRagService {
     private final CopyOnWriteArrayList<ChunkEntry> vectorStore = new CopyOnWriteArrayList<>();
     private volatile boolean ready = false;
 
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
+    @Autowired
+    private SystemSettingsService systemSettingsService;
 
     @Value("${ai.rag.enabled:false}")
     private boolean ragEnabled;
@@ -302,7 +303,7 @@ public class LocalRagService {
             log.info("Lokales RAG ist deaktiviert (ai.rag.enabled=false)");
             return;
         }
-        if (geminiApiKey == null || geminiApiKey.isBlank()) {
+        if (systemSettingsService.getGeminiApiKey().isBlank()) {
             log.warn("Lokales RAG: Gemini API Key fehlt, RAG deaktiviert");
             ragEnabled = false;
             return;
@@ -618,7 +619,7 @@ public class LocalRagService {
     }
 
     private double[] embedSingle(String text, String taskType) throws IOException, InterruptedException {
-        String url = GEMINI_EMBED_URL.formatted(geminiApiKey);
+        String url = GEMINI_EMBED_URL.formatted(systemSettingsService.getGeminiApiKey());
 
         ObjectNode body = objectMapper.createObjectNode();
         ObjectNode content = objectMapper.createObjectNode();
@@ -651,7 +652,7 @@ public class LocalRagService {
     }
 
     private List<double[]> embedBatch(List<String> texts) throws IOException, InterruptedException {
-        String url = GEMINI_BATCH_EMBED_URL.formatted(geminiApiKey);
+        String url = GEMINI_BATCH_EMBED_URL.formatted(systemSettingsService.getGeminiApiKey());
 
         ObjectNode body = objectMapper.createObjectNode();
         ArrayNode requests = objectMapper.createArrayNode();

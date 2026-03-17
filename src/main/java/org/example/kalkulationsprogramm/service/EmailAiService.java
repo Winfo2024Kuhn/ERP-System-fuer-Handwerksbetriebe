@@ -60,11 +60,10 @@ public class EmailAiService {
             .connectTimeout(Duration.ofSeconds(60))
             .build();
 
+    private final SystemSettingsService systemSettingsService;
+
     @Value("${ai.email.model:gemini-3-flash-preview}")
     private String model;
-
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
 
     @Value("${ai.email.temperature:0.2}")
     private double temperature;
@@ -178,12 +177,12 @@ public class EmailAiService {
 
     private String rufGeminiApiWithImages(String userMessage, List<Path> imagePaths) {
         try {
-            if (geminiApiKey == null || geminiApiKey.isBlank()) {
+            if (systemSettingsService.getGeminiApiKey().isBlank()) {
                 throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
             }
 
             String url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                    model, geminiApiKey);
+                    model, systemSettingsService.getGeminiApiKey());
 
             ObjectNode requestBody = objectMapper.createObjectNode();
 
@@ -269,12 +268,12 @@ public class EmailAiService {
 
     private String rufGeminiApi(String userMessage) {
         try {
-            if (geminiApiKey == null || geminiApiKey.isBlank()) {
+            if (systemSettingsService.getGeminiApiKey().isBlank()) {
                 throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
             }
 
             String url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                    model, geminiApiKey);
+                    model, systemSettingsService.getGeminiApiKey());
 
             ObjectNode requestBody = objectMapper.createObjectNode();
 

@@ -119,10 +119,9 @@ public class PdfAiExtractorService {
     @Value("${ai.pdf.backend:gemini}")
     private String aiBackend;
 
-    // ========== GEMINI API ==========
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
+    private final SystemSettingsService systemSettingsService;
 
+    // ========== GEMINI API ==========
     @Value("${ai.gemini.model.pdf-extractor:gemini-3-flash-preview}")
     private String geminiModel;
 
@@ -178,7 +177,7 @@ public class PdfAiExtractorService {
     private Optional<ZugferdDaten> callGeminiApiWithPdf(String base64Pdf, String systemPrompt) {
         try {
             // API Key Prüfung
-            if (geminiApiKey == null || geminiApiKey.isBlank() || geminiApiKey.equals("DEIN_API_KEY_HIER")) {
+            if (systemSettingsService.getGeminiApiKey().isBlank() || systemSettingsService.getGeminiApiKey().equals("DEIN_API_KEY_HIER")) {
                 log.error("[PdfAI/Gemini] Kein API-Key! Setze in application.properties: ai.gemini.api-key=...");
                 return Optional.empty();
             }
@@ -229,7 +228,7 @@ public class PdfAiExtractorService {
 
             // API URL
             String apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                    geminiModel, geminiApiKey);
+                    geminiModel, systemSettingsService.getGeminiApiKey());
 
             HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
                     .header("Content-Type", "application/json")

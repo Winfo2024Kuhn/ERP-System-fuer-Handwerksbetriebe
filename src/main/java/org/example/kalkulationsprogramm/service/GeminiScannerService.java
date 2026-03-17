@@ -23,12 +23,10 @@ import java.util.Base64;
 public class GeminiScannerService {
 
     private final ObjectMapper objectMapper;
+    private final SystemSettingsService systemSettingsService;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
-
-    @Value("${ai.gemini.api-key}")
-    private String geminiApiKey;
 
     @Value("${ai.gemini.model.scanner:gemini-3-flash-preview}")
     private String geminiModel;
@@ -56,7 +54,7 @@ public class GeminiScannerService {
 
     public String generateFilename(byte[] imageBytes) {
         try {
-            if (geminiApiKey == null || geminiApiKey.isBlank())
+            if (systemSettingsService.getGeminiApiKey().isBlank())
                 return "Scan_" + System.currentTimeMillis();
 
             String base64Image = Base64.getEncoder().encodeToString(imageBytes);
@@ -98,7 +96,7 @@ public class GeminiScannerService {
             // Send
             String body = objectMapper.writeValueAsString(requestBody);
             String apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                    geminiModel, geminiApiKey);
+                    geminiModel, systemSettingsService.getGeminiApiKey());
 
             HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
                     .header("Content-Type", "application/json")
