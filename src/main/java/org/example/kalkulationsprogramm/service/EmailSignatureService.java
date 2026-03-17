@@ -87,9 +87,12 @@ public class EmailSignatureService {
         EmailSignature sig = signatureRepository.findById(signatureId).orElseThrow();
         Path baseDir = Path.of(imageUploadDir).toAbsolutePath().normalize().resolve("signatures").resolve(String.valueOf(signatureId));
         Files.createDirectories(baseDir);
-        String original = Objects.requireNonNullElse(file.getOriginalFilename(), "image");
+        String original = Path.of(Objects.requireNonNullElse(file.getOriginalFilename(), "image")).getFileName().toString();
         String stored = UUID.randomUUID() + "_" + original;
-        Path dst = baseDir.resolve(stored);
+        Path dst = baseDir.resolve(stored).normalize();
+        if (!dst.startsWith(baseDir)) {
+            throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
+        }
         file.transferTo(dst);
         EmailSignatureImage img = new EmailSignatureImage();
         img.setSignature(sig);
