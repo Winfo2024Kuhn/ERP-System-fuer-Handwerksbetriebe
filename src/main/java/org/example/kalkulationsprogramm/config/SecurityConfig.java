@@ -80,9 +80,9 @@ public class SecurityConfig {
         http
                 .securityMatcher("/api/**")
                 .csrf(csrf -> {
+                    // Use CsrfTokenRequestAttributeHandler (instead of XorCsrfTokenRequestAttributeHandler)
+                    // so the raw cookie value is accepted as-is without XOR-masking
                     CsrfTokenRequestAttributeHandler requestHandler = new CsrfTokenRequestAttributeHandler();
-                    // Disable XOR-encoding so the raw cookie value is accepted as-is
-                    requestHandler.setCsrfRequestAttributeName(null);
                     csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(requestHandler)
@@ -143,8 +143,9 @@ public class SecurityConfig {
     public SecurityFilterChain catchAllFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> {
+                    // Use CsrfTokenRequestAttributeHandler (instead of XorCsrfTokenRequestAttributeHandler)
+                    // so the raw cookie value is accepted as-is without XOR-masking
                     CsrfTokenRequestAttributeHandler requestHandler = new CsrfTokenRequestAttributeHandler();
-                    requestHandler.setCsrfRequestAttributeName(null);
                     csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(requestHandler);
