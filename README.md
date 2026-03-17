@@ -245,7 +245,7 @@ graph TB
 | Schicht | Technologie |
 |---------|-------------|
 | **Backend** | Java 23, Spring Boot 3.2.5, JPA/Hibernate, Flyway |
-| **Datenbank** | MariaDB 11 |
+| **Datenbank** | MariaDB 11 – kostenlos, schnell, stabil, vollständig UTF-8-fähig |
 | **Desktop-Frontend** | React 18 + TypeScript + Vite + Tailwind CSS |
 | **Mobile App** | React PWA (Offline-fähig via IndexedDB) |
 | **KI-Assistent** | Google Gemini API (Chat, Vision, Embedding), Google Search Grounding |
@@ -294,7 +294,7 @@ Das Handwerkerprogramm kann auf zwei Arten betrieben werden: **lokal im Firmenne
 | Komponente | Version | Hinweis |
 |------------|---------|---------|
 | Java (JDK) | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
-| MariaDB | 11+ | Datenbank `kalkulationsprogramm_db` anlegen |
+| MariaDB | 11+ | [mariadb.org](https://mariadb.org/download/) – Datenbank `kalkulationsprogramm_db` anlegen |
 | Node.js | 18+ | Nur für Frontend-Build nötig |
 
 ### Backend für Produktion vorbereiten
@@ -334,7 +334,25 @@ export APP_ADMIN_PASS="sicheresPasswort123!"
 
 Ideal, wenn alle Nutzer im **gleichen Netzwerk (LAN/WLAN)** arbeiten – z. B. im Büro oder in der Werkstatt.
 
-#### 1. Datenbank einrichten (MariaDB oder MySQL)
+#### 1. Datenbank einrichten
+
+> **Warum MariaDB?** MariaDB ist kostenlos (GPL), schnell, stabil und wird aktiv weiterentwickelt. Im Vergleich zu PostgreSQL ist die Einrichtung einfacher, und die MySQL-Kompatibilität sorgt für ein riesiges Ökosystem an Tools und Tutorials. Für ein ERP-System dieser Größe ist MariaDB die optimale Wahl.
+
+**Option A: Per Docker (empfohlen – kein manuelles Setup nötig)**
+
+```bash
+# Startet MariaDB 11.4 mit korrekter Konfiguration automatisch
+docker compose up -d mariadb
+
+# Prüfen ob die Datenbank läuft:
+docker compose ps mariadb
+```
+
+Die Datenbank ist dann unter `localhost:3307` erreichbar (User/Passwort: siehe `docker-compose.yml`).
+
+**Option B: Manuell (ohne Docker)**
+
+MariaDB 11+ installieren ([mariadb.org/download](https://mariadb.org/download/)) und dann:
 
 ```sql
 CREATE DATABASE kalkulationsprogramm_db
@@ -342,7 +360,10 @@ CREATE DATABASE kalkulationsprogramm_db
   COLLATE utf8mb4_german2_ci;
 CREATE USER 'erp'@'localhost' IDENTIFIED BY 'DEIN_DB_PASSWORT';
 GRANT ALL PRIVILEGES ON kalkulationsprogramm_db.* TO 'erp'@'localhost';
+FLUSH PRIVILEGES;
 ```
+
+> 💡 **Tipp:** Die Collation `utf8mb4_german2_ci` sorgt für korrekte deutsche Sortierung (ä nach a, ö nach o, etc.).
 
 #### 2. Konfiguration anpassen
 
@@ -352,11 +373,34 @@ Erstelle `src/main/resources/application-local.properties`:
 # MariaDB (Standard)
 spring.datasource.url=jdbc:mariadb://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
 
-# oder MySQL 8+
-# spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+# Wenn per Docker gestartet (Port 3307):
+# spring.datasource.url=jdbc:mariadb://localhost:3307/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
 
 spring.datasource.username=erp
 spring.datasource.password=DEIN_DB_PASSWORT
+```
+
+> ⚠️ **Wichtig:** In der Produktion unbedingt sichere Passwörter verwenden und die Standard-Werte aus `docker-compose.yml` ändern!
+
+#### Troubleshooting
+
+| Problem | Lösung |
+|---------|--------|
+| `Connection refused` auf Port 3306 | MariaDB-Dienst läuft nicht → `sudo systemctl start mariadb` (Linux) oder Dienste-Manager (Windows) |
+| `Access denied for user` | Benutzername/Passwort prüfen, `FLUSH PRIVILEGES` ausführen |
+| `Unknown database` | Datenbank anlegen: `CREATE DATABASE kalkulationsprogramm_db ...` (siehe oben) |
+| Docker: `port already in use` | Port 3307 ist belegt → in `docker-compose.yml` anpassen |
+
+#### Backups
+
+Regelmäßige Backups sind Pflicht! Ein fertiges Backup-Script liegt unter [`deployment/scripts/backup-database.ps1`](deployment/scripts/backup-database.ps1):
+
+```bash
+# Manuelles Backup (Dump)
+mariadb-dump -u erp -p kalkulationsprogramm_db > backup_$(date +%Y%m%d).sql
+
+# Backup wiederherstellen
+mariadb -u erp -p kalkulationsprogramm_db < backup_20260317.sql
 ```
 
 #### 3. Server starten

@@ -13,6 +13,7 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | Spring Boot (Data JPA, Web, Security, Validation, DevTools, Test) | 3.2.5 | Apache License 2.0 | https://spring.io/projects/spring-boot |
 | Mustang Project – Library | 2.18.0 | Apache License 2.0 | https://www.mustangproject.org/ |
 | Mustang Project – Validator | 2.17.0 | Apache License 2.0 | https://www.mustangproject.org/ |
+| MariaDB Connector/J | (managed) | LGPL 2.1 | https://mariadb.com/kb/en/mariadb-connector-j/ |
 | MySQL Connector/J | (managed) | GPL 2.0 mit FOSS Exception | https://dev.mysql.com/downloads/connector/j/ |
 | Project Lombok | 1.18.42 | MIT License | https://projectlombok.org/ |
 | Flyway (Core, MySQL) | (managed) | Apache License 2.0 | https://flywaydb.org/ |
@@ -61,10 +62,10 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | React DOM | ^19.2.0 | MIT License | https://react.dev/ |
 | React Router DOM | ^7.10.1 | MIT License | https://reactrouter.com/ |
 | html5-qrcode | ^2.3.8 | Apache License 2.0 | https://github.com/nicbarker/html5-qrcode |
-| idb | ^8.0.3 | ISC License | https://github.com/nicbarker/html5-qrcode |
+| idb | ^8.0.3 | ISC License | https://github.com/jakearchibald/idb |
 | jsPDF | ^3.0.4 | MIT License | https://github.com/parallax/jsPDF |
 | Lucide React | ^0.556.0 | ISC License | https://lucide.dev/ |
-| react-webcam | ^7.2.0 | MIT License | https://github.com/nicbarker/html5-qrcode |
+| react-webcam | ^7.2.0 | MIT License | https://github.com/mozmorris/react-webcam |
 | Tailwind CSS | ^4.1.17 | MIT License | https://tailwindcss.com/ |
 | vite-plugin-pwa | ^1.2.0 | MIT License | https://vite-pwa-org.netlify.app/ |
 
@@ -108,14 +109,17 @@ clsx, tailwind-merge, Tailwind CSS, Vite, Vitest, jsPDF, react-dropzone, react-w
 > substantial portions of the Software.
 
 ### LGPL 2.1 / MPL 2.0
-Betrifft: OpenPDF
+Betrifft: OpenPDF, MariaDB Connector/J
 
 OpenPDF steht unter der LGPL 2.1 und alternativ der MPL 2.0. Bei Weitergabe als Teil
 dieser Software wird OpenPDF als unveränderte Bibliothek (JAR) eingebunden. Der
 Quellcode von OpenPDF ist verfügbar unter: https://github.com/LibrePDF/OpenPDF
 
-Gemäß LGPL 2.1 §6 hat der Anwender das Recht, die OpenPDF-Bibliothek durch eine eigene,
-kompatible Version zu ersetzen.
+Der MariaDB Connector/J steht unter der LGPL 2.1. Der Quellcode ist verfügbar unter:
+https://github.com/mariadb-corporation/mariadb-connector-j
+
+Gemäß LGPL 2.1 §6 hat der Anwender das Recht, diese Bibliotheken durch eigene,
+kompatible Versionen zu ersetzen.
 
 ### EPL 2.0 / GPL 2.0 mit Classpath Exception
 Betrifft: Jakarta Mail, Jakarta Activation, H2 Database
