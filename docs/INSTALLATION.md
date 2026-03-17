@@ -217,3 +217,213 @@ Ja! Andere Geräte im gleichen Netzwerk erreichen die Anwendung über:
 http://[SERVER-IP]:8080
 ```
 Unter Windows findest du die IP mit `ipconfig`. Stelle sicher, dass Port 8080 in der Windows-Firewall freigegeben ist.
+
+---
+
+## Deployment & Betrieb
+
+Das Handwerkerprogramm kann auf zwei Arten betrieben werden: **lokal im Firmennetzwerk** oder auf einem **Cloud-Server**. Beide Varianten werden hier erklärt.
+
+### Gemeinsame Voraussetzungen
+
+| Komponente | Version | Hinweis |
+|------------|---------|---------|
+| Java (JDK) | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
+| MariaDB | 11+ | Datenbank `kalkulationsprogramm_db` anlegen |
+| Node.js | 18+ | Nur für Frontend-Build nötig |
+
+### Backend für Produktion vorbereiten
+
+```bash
+# 1. JAR bauen (inkl. Tests)
+./mvnw clean package
+
+# 2. Frontend für Produktion bauen
+cd react-pc-frontend && npm install && npm run build
+cd ../react-zeiterfassung && npm install && npm run build
+```
+
+Das fertige JAR liegt unter `target/kalkulationsprogramm-*.jar`.
+
+### Authentifizierung konfigurieren
+
+Die API ist **standardmäßig per HTTP Basic Auth geschützt**. Admin-Zugangsdaten werden über Umgebungsvariablen gesetzt:
+
+```powershell
+# Windows (PowerShell)
+$env:APP_ADMIN_USER = "meinBenutzername"
+$env:APP_ADMIN_PASS = "sicheresPasswort123!"
+```
+
+```bash
+# Linux / macOS
+export APP_ADMIN_USER="meinBenutzername"
+export APP_ADMIN_PASS="sicheresPasswort123!"
+```
+
+> ⚠️ **Wichtig:** Ändere unbedingt die Standard-Zugangsdaten (`admin` / `changeme`) vor dem produktiven Einsatz!
+
+---
+
+### Option A: Lokaler Betrieb (Firmenserver / eigener Rechner)
+
+Ideal, wenn alle Nutzer im **gleichen Netzwerk (LAN/WLAN)** arbeiten – z. B. im Büro oder in der Werkstatt.
+
+#### 1. Datenbank einrichten (MariaDB oder MySQL)
+
+```sql
+CREATE DATABASE kalkulationsprogramm_db
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_german2_ci;
+CREATE USER 'erp'@'localhost' IDENTIFIED BY 'DEIN_DB_PASSWORT';
+GRANT ALL PRIVILEGES ON kalkulationsprogramm_db.* TO 'erp'@'localhost';
+```
+
+#### 2. Konfiguration anpassen
+
+Erstelle `src/main/resources/application-local.properties`:
+
+```properties
+# MariaDB (Standard)
+spring.datasource.url=jdbc:mariadb://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
+
+# oder MySQL 8+
+# spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+
+spring.datasource.username=erp
+spring.datasource.password=DEIN_DB_PASSWORT
+```
+
+#### 3. Server starten
+
+```powershell
+# Umgebungsvariablen setzen
+$env:APP_ADMIN_USER = "admin"
+$env:APP_ADMIN_PASS = "deinSicheresPasswort"
+
+# JAR starten
+java -jar target/kalkulationsprogramm-*.jar --spring.profiles.active=local
+```
+
+#### 4. Zugriff im Netzwerk
+
+| Nutzer | URL |
+|--------|-----|
+| Gleicher Rechner | `http://localhost:8080` |
+| Anderer PC im LAN | `http://192.168.x.x:8080` (IP des Servers) |
+| Zeiterfassung (Handy) | `http://192.168.x.x:8080/zeiterfassung` |
+
+> 💡 **Tipp:** Unter Windows die IP mit `ipconfig` herausfinden. Stelle sicher, dass Port 8080 in der Windows-Firewall freigegeben ist.
+
+---
+
+### Option B: Cloud-Server (VPS / Cloudrechner)
+
+Für den Zugriff **von unterwegs oder von Baustellen** – z. B. auf einem VPS bei Hetzner, Netcup oder DigitalOcean.
+
+> ⚠️ **Sicherheitshinweis:** Einen Server ohne Absicherung ins Internet zu stellen ist gefährlich! Wähle mindestens **eine** der folgenden Absicherungen:
+
+#### Variante 1: VPN mit Tailscale (empfohlen für Einsteiger)
+
+Mit [Tailscale](https://tailscale.com/) wird ein privates Netzwerk aufgebaut – der Server ist **nicht öffentlich** erreichbar, nur über das VPN.
+
+**Auf dem Cloud-Server:**
+```bash
+# Tailscale installieren (Ubuntu/Debian)
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+
+# Handwerkerprogramm starten
+java -jar kalkulationsprogramm-*.jar
+```
+
+**Auf jedem Client (PC, Handy):**
+1. Tailscale App installieren ([tailscale.com/download](https://tailscale.com/download))
+2. Mit dem gleichen Konto anmelden
+3. Zugriff über die Tailscale-IP: `http://100.x.x.x:8080`
+
+**Vorteile:** Einfachste Einrichtung, kein Port öffnen, automatische Verschlüsselung, kostenlos für kleine Teams (bis 100 Geräte).
+
+**Optional – HTTPS innerhalb von Tailscale aktivieren:**
+```bash
+# Auf dem Server: Tailscale HTTPS-Zertifikat anfordern
+sudo tailscale cert mein-server.tail-xxxx.ts.net
+
+# Spring Boot mit HTTPS starten
+java -jar kalkulationsprogramm-*.jar \
+  --server.ssl.certificate=mein-server.tail-xxxx.ts.net.crt \
+  --server.ssl.certificate-private-key=mein-server.tail-xxxx.ts.net.key \
+  --server.port=8443
+```
+
+Dann erreichbar über: `https://mein-server.tail-xxxx.ts.net:8443`
+
+---
+
+#### Variante 2: HTTPS mit Reverse Proxy (für öffentlichen Zugriff)
+
+Wenn der Server **öffentlich erreichbar** sein soll (z. B. für Kunden-Zeiterfassung), nutze einen Reverse Proxy mit automatischem SSL-Zertifikat.
+
+**Mit Caddy (empfohlen – automatisches HTTPS):**
+
+```bash
+# Caddy installieren (Ubuntu/Debian)
+sudo apt install -y caddy
+```
+
+Erstelle `/etc/caddy/Caddyfile`:
+```
+erp.meinefirma.de {
+    reverse_proxy localhost:8080
+}
+```
+
+```bash
+sudo systemctl restart caddy
+```
+
+Caddy holt sich automatisch ein Let's-Encrypt-Zertifikat. Die Anwendung ist dann unter `https://erp.meinefirma.de` erreichbar.
+
+> 📋 **Voraussetzung:** Eine Domain (z. B. `erp.meinefirma.de`) muss per DNS-A-Record auf die Server-IP zeigen.
+
+**Zusätzliche Absicherung für öffentliche Server:**
+- Starkes Admin-Passwort setzen (mind. 16 Zeichen)
+- SSH nur mit Key-Login (Passwort-Login deaktivieren)
+- Firewall: nur Port 80, 443 und SSH offen (`ufw allow 80,443,22/tcp`)
+- Fail2Ban installieren gegen Brute-Force-Angriffe
+- Regelmäßige Datenbank-Backups (siehe `deployment/scripts/backup-database.ps1`)
+
+---
+
+#### Variante 3: Cloudflare Tunnel (kein Port öffnen, kein VPN nötig)
+
+[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) macht den lokalen Server über eine Cloudflare-Domain erreichbar, **ohne Ports zu öffnen**.
+
+```bash
+# cloudflared installieren
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare.gpg
+sudo apt install cloudflared
+
+# Tunnel erstellen und konfigurieren
+cloudflared tunnel login
+cloudflared tunnel create handwerkerprogramm
+cloudflared tunnel route dns handwerkerprogramm erp.meinefirma.de
+
+# Tunnel starten
+cloudflared tunnel --url http://localhost:8080 run handwerkerprogramm
+```
+
+**Vorteile:** Kein Port öffnen, automatisches HTTPS, DDoS-Schutz inklusive, kostenloser Tarif verfügbar.
+
+---
+
+### Übersicht: Welche Variante passt zu mir?
+
+| Kriterium | LAN (lokal) | Tailscale VPN | HTTPS + Reverse Proxy | Cloudflare Tunnel |
+|-----------|:-----------:|:-------------:|:---------------------:|:-----------------:|
+| Einrichtung | ⭐ Einfach | ⭐ Einfach | ⭐⭐ Mittel | ⭐⭐ Mittel |
+| Kosten | Keine | Kostenlos | Domain nötig (~1 €/M.) | Domain nötig |
+| Zugriff von unterwegs | ❌ | ✅ | ✅ | ✅ |
+| Öffentlich erreichbar | ❌ | ❌ | ✅ | ✅ |
+| HTTPS | Nicht nötig | Optional | ✅ Automatisch | ✅ Automatisch |
+| Port öffnen | Nur LAN | Kein Port | Port 80 + 443 | Kein Port |
