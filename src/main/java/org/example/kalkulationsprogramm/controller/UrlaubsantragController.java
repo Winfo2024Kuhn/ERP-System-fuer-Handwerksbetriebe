@@ -90,6 +90,22 @@ public class UrlaubsantragController {
     }
 
     /**
+     * Gibt die verbleibenden Urlaubstage eines Mitarbeiters für ein Jahr zurück.
+     */
+    @GetMapping("/resturlaub")
+    public ResponseEntity<?> getResturlaub(
+            @RequestParam Long mitarbeiterId,
+            @RequestParam(required = false) Integer jahr) {
+        int targetJahr = (jahr != null) ? jahr : java.time.LocalDate.now().getYear();
+        try {
+            int verbleibend = service.getResturlaub(mitarbeiterId, targetJahr);
+            return ResponseEntity.ok(Map.of("verbleibend", verbleibend, "jahr", targetJahr));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * Gibt alle verfügbaren Abwesenheitstypen zurück.
      */
     @GetMapping("/typen")

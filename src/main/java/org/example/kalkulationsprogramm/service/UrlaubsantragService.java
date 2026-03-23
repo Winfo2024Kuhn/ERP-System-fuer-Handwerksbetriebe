@@ -21,6 +21,7 @@ public class UrlaubsantragService {
     private final FeiertagService feiertagService;
     private final ZeitkontoService zeitkontoService;
     private final MonatsSaldoService monatsSaldoService;
+    private final ZeitkontoKorrekturService zeitkontoKorrekturService;
 
     /**
      * Erstellt einen neuen Urlaubsantrag.
@@ -30,6 +31,18 @@ public class UrlaubsantragService {
             Urlaubsantrag.Typ typ) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
+
+        // Urlaubskontingent prüfen (nur für URLAUB-Typ)
+        if (typ == Urlaubsantrag.Typ.URLAUB) {
+            int jahr = von.getYear();
+            int verbleibend = getResturlaub(mitarbeiterId, jahr);
+            long beantragteTage = zaehleArbeitstage(von, bis);
+            if (beantragteTage > verbleibend) {
+                throw new IllegalStateException(
+                        String.format("Nicht genügend Urlaubstage. Verbleibend: %d, Beantragt: %d",
+                                verbleibend, beantragteTage));
+            }
+        }
 
         // Überlappungsprüfung: Keine überschneidenden Anträge erlauben
         List<Urlaubsantrag> ueberlappend = repository.findOverlapping(mitarbeiterId, von, bis);
@@ -194,5 +207,45 @@ public class UrlaubsantragService {
      */
     public List<Urlaubsantrag> getAntraegeByMitarbeiterAndStatus(Long mitarbeiterId, Urlaubsantrag.Status status) {
         return repository.findByMitarbeiterIdAndStatusOrderByVonDatumDesc(mitarbeiterId, status);
+    }
+
+    /**
+     * Berechnet die verbleibenden Urlaubstage eines Mitarbeiters für ein Jahr.
+     * Formel: Jahresanspruch - genommen - geplant + Korrekturen
+     */
+    @Transactional(readOnly = true)
+    public int getResturlaub(Long mitarbeiterId, int jahr) {
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
+                .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
+
+        int jahresUrlaub = mitarbeiter.getJahresUrlaub() != null ? mitarbeiter.getJahresUrlaub() : 30;
+
+        LocalDate jahresanfang = LocalDate.of(jahr, 1, 1);
+        LocalDate jahresende = LocalDate.of(jahr, 12, 31);
+
+        List<Abwesenheit> abwesenheiten = abwesenheitRepository
+                .findByMitarbeiterIdAndDatumBetween(mitarbeiterId, jahresanfang, jahresende);
+
+        long genommen = abwesenheiten.stream()
+                .filter(a -> a.getTyp() == AbwesenheitsTyp.URLAUB)
+                .count();
+
+        BigDecimal korrekturBD = zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(mitarbeiterId, jahr);
+        int korrektur = korrekturBD != null ? korrekturBD.intValue() : 0;
+
+        return Math.max(0, jahresUrlaub - (int) genommen + korrektur);
+    }
+
+    /**
+     * Zählt Arbeitstage (Mo–Fr, ohne Feiertage) in einem Zeitraum.
+     */
+    private long zaehleArbeitstage(LocalDate von, LocalDate bis) {
+        long count = 0;
+        for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
+            if (d.getDayOfWeek() == DayOfWeek.SATURDAY || d.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
+            if (feiertagService.istFeiertag(d)) continue;
+            count++;
+        }
+        return count;
     }
 }
