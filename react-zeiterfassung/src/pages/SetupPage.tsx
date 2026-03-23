@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { QrCode, Smartphone, AlertCircle, Keyboard } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { QrCode, Smartphone, AlertCircle, Keyboard, Camera, X } from 'lucide-react'
+import { Html5Qrcode } from 'html5-qrcode'
 
 interface SetupPageProps {
     error?: string | null
@@ -10,6 +11,73 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
     const [processing, setProcessing] = useState(false)
     const [showManualInput, setShowManualInput] = useState(false)
     const [manualToken, setManualToken] = useState('')
+    const [scanning, setScanning] = useState(false)
+    const [scanError, setScanError] = useState<string | null>(null)
+    const scannerRef = useRef<Html5Qrcode | null>(null)
+
+    useEffect(() => {
+        return () => {
+            stopScanner()
+        }
+    }, [])
+
+    const stopScanner = async () => {
+        if (scannerRef.current) {
+            try {
+                const state = scannerRef.current.getState()
+                // State 2 = SCANNING, state 3 = PAUSED
+                if (state === 2 || state === 3) {
+                    await scannerRef.current.stop()
+                }
+                scannerRef.current.clear()
+            } catch { /* ignore cleanup errors */ }
+            scannerRef.current = null
+        }
+    }
+
+    const startScanner = async () => {
+        setScanError(null)
+        setScanning(true)
+        setShowManualInput(false)
+
+        // Wait for DOM element to be rendered
+        await new Promise(resolve => setTimeout(resolve, 150))
+
+        try {
+            const scanner = new Html5Qrcode('qr-reader')
+            scannerRef.current = scanner
+
+            await scanner.start(
+                { facingMode: 'environment' },
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                (decodedText) => {
+                    // Extract token from URL or use raw value
+                    let token = decodedText.trim()
+                    try {
+                        const url = new URL(decodedText)
+                        const urlToken = url.searchParams.get('token')
+                        if (urlToken) token = urlToken
+                    } catch { /* not a URL, use as-is */ }
+
+                    stopScanner().then(() => {
+                        setScanning(false)
+                        setProcessing(true)
+                        if (onTokenScanned) onTokenScanned(token)
+                    })
+                },
+                () => { /* ignore per-frame decode errors */ }
+            )
+        } catch (err) {
+            console.error('Camera error:', err)
+            setScanning(false)
+            setScanError('Kamera konnte nicht geöffnet werden. Bitte Kamera-Berechtigung erteilen oder Token manuell eingeben.')
+        }
+    }
+
+    const handleStopScanner = async () => {
+        await stopScanner()
+        setScanning(false)
+    }
 
     const handleManualSubmit = () => {
         if (manualToken.trim() && onTokenScanned) {
@@ -27,6 +95,31 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
         )
     }
 
+    if (scanning) {
+        return (
+            <div className="min-h-screen bg-black flex flex-col items-center justify-center">
+                <div className="w-full max-w-sm">
+                    <div className="flex items-center justify-between px-4 py-3">
+                        <p className="text-white font-medium">QR-Code scannen</p>
+                        <button
+                            type="button"
+                            onClick={handleStopScanner}
+                            title="Scanner schließen"
+                            aria-label="Scanner schließen"
+                            className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
+                        >
+                            <X className="w-5 h-5 text-white" />
+                        </button>
+                    </div>
+                    <div id="qr-reader" className="w-full" />
+                    <p className="text-white/60 text-sm text-center mt-4 px-4">
+                        Halte die Kamera auf den QR-Code deines Profils
+                    </p>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
             {/* Logo */}
@@ -37,27 +130,36 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
             <h1 className="text-2xl font-bold text-slate-900 mb-2">Zeiterfassung</h1>
 
             {/* Error Message */}
-            {error && (
+            {(error || scanError) && (
                 <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6 max-w-sm w-full flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
-                    <p className="text-rose-700 text-sm text-left">{error}</p>
+                    <p className="text-rose-700 text-sm text-left">{error || scanError}</p>
                 </div>
             )}
 
             <p className="text-slate-500 mb-8 max-w-xs">
-                Scanne den QR-Code mit deiner Kamera-App oder gib das Token manuell ein.
+                Scanne deinen persönlichen QR-Code oder gib das Token manuell ein.
             </p>
 
-            {/* Manual Input Toggle */}
+            {/* Primary: Scan with camera */}
+            <button
+                type="button"
+                onClick={startScanner}
+                className="w-full max-w-sm bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold py-4 rounded-2xl flex items-center justify-center gap-3 mb-4 shadow-md transition-colors"
+            >
+                <Camera className="w-5 h-5" />
+                Kamera öffnen &amp; QR-Code scannen
+            </button>
+
+            {/* Secondary: Manual Token Input */}
             <button
                 onClick={() => setShowManualInput(!showManualInput)}
-                className="text-slate-500 hover:text-rose-600 text-sm flex items-center gap-2 mb-6 transition-colors"
+                className="text-slate-500 hover:text-rose-600 text-sm flex items-center gap-2 mb-4 transition-colors"
             >
                 <Keyboard className="w-4 h-4" />
                 Token manuell eingeben
             </button>
 
-            {/* Manual Token Input */}
             {showManualInput && (
                 <div className="w-full max-w-sm mb-8">
                     <input
@@ -89,7 +191,7 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
                         </div>
                         <div className="text-left">
                             <p className="text-slate-900 font-medium text-sm">Öffne die Mitarbeiterverwaltung</p>
-                            <p className="text-slate-500 text-xs">Gehe zu deinem Profil</p>
+                            <p className="text-slate-500 text-xs">Gehe zu deinem Profil am PC</p>
                         </div>
                     </div>
 
@@ -98,8 +200,8 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
                             2
                         </div>
                         <div className="text-left">
-                            <p className="text-slate-900 font-medium text-sm">Klicke auf "QR-Code"</p>
-                            <p className="text-slate-500 text-xs">Der QR-Code wird angezeigt</p>
+                            <p className="text-slate-900 font-medium text-sm">Klicke auf "QR-Code anzeigen"</p>
+                            <p className="text-slate-500 text-xs">Der QR-Code wird am Bildschirm angezeigt</p>
                         </div>
                     </div>
 
@@ -108,8 +210,8 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
                             3
                         </div>
                         <div className="text-left">
-                            <p className="text-slate-900 font-medium text-sm">Scanne mit der Kamera-App</p>
-                            <p className="text-slate-500 text-xs">Öffne die Kamera und halte sie auf den QR-Code</p>
+                            <p className="text-slate-900 font-medium text-sm">Tippe auf "Kamera öffnen"</p>
+                            <p className="text-slate-500 text-xs">Halte dein Handy auf den QR-Code</p>
                         </div>
                     </div>
                 </div>

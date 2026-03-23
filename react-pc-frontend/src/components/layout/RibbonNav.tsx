@@ -219,7 +219,7 @@ export function RibbonNavigation() {
             <div className="flex items-center px-4 h-16 border-b border-rose-100 bg-white shadow-sm gap-8">
                 {/* Company Logo */}
                 <div className="flex items-center shrink-0">
-                    <img src="/firmenlogo_icon.png" alt="Company Logo" className="h-10 w-auto object-contain" />
+                    <img src="/firmenlogo_icon.png" alt="Company Logo" className="h-14 w-auto object-contain" />
                 </div>
 
                 {/* Category Tabs */}

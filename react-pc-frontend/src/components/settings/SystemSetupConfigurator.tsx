@@ -99,7 +99,8 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
         } finally {
             setLoading(false);
         }
-    }, [toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         loadSettings();
