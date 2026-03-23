@@ -32,6 +32,12 @@ export interface SyncResult {
     startSynced: boolean // true = at least one 'start' entry was successfully synced
 }
 
+export interface HeuteGearbeitetResult {
+    stunden: number
+    minuten: number
+    fromCache: boolean
+}
+
 const DB_NAME = 'zeiterfassung-db'
 const DB_VERSION = 1
 
@@ -81,6 +87,13 @@ async function acquireSyncLock(): Promise<boolean> {
 }
 
 function releaseSyncLock() {
+    _syncLock = false
+}
+
+// ==================== TEST HELPERS ====================
+// These are exported ONLY for use in test files.
+// Resets sync lock only. Call clearCache/clearPending separately to wipe stores.
+export function _resetForTesting() {
     _syncLock = false
 }
 
@@ -153,6 +166,7 @@ export const OfflineService = {
     async syncAll(): Promise<SyncResult> {
         // Acquire lock - only one sync at a time!
         if (!await acquireSyncLock()) {
+            console.log('🔒 syncAll übersprungen - Lock aktiv')
             return { success: true, pendingSynced: 0, pendingFailed: 0, pendingDiscarded: 0, allPendingCleared: false, startSynced: false }
         }
 
@@ -167,19 +181,19 @@ export const OfflineService = {
             }
 
             // First, sync pending entries
-            const syncResult = await this._syncPendingInternal()
+            const syncResult = await OfflineService._syncPendingInternal()
 
             // Then refresh all cached data (only if server is reachable)
-            const projekte = await this.getProjekte()
+            const projekte = await OfflineService.getProjekte()
             
             const token = localStorage.getItem('zeiterfassung_token') || undefined
             
             await Promise.all([
-                this.getKategorien(),
-                this.getArbeitsgaenge(), // Global
-                this.getArbeitsgaenge(token), // Personal (für Zeiterfassung!)
-                this.getKunden(),
-                this.getLieferanten(),
+                OfflineService.getKategorien(),
+                OfflineService.getArbeitsgaenge(), // Global
+                OfflineService.getArbeitsgaenge(token), // Personal (für Zeiterfassung!)
+                OfflineService.getKunden(),
+                OfflineService.getLieferanten(),
             ])
 
             // Pre-cache categories for EACH project
@@ -188,7 +202,7 @@ export const OfflineService = {
                 const batchSize = 10
                 for (let i = 0; i < projekte.length; i += batchSize) {
                     const batch = projekte.slice(i, i + batchSize) as Array<{ id: number }>
-                    await Promise.all(batch.map((p) => this.getKategorien(p.id)))
+                    await Promise.all(batch.map((p) => OfflineService.getKategorien(p.id)))
                 }
                 console.log('✅ Alle Projekt-Kategorien gecached')
             }
@@ -197,13 +211,18 @@ export const OfflineService = {
             const db = await initDB()
             await db.put('master_data', { key: CACHE_KEYS.lastSync, value: new Date().toISOString() })
 
+            // Re-read the queue after the full sync cycle. New offline entries can be
+            // added while cache refresh is still running, so deriving this purely from
+            // syncResult.failed would incorrectly report the queue as empty.
+            const remainingPending = await OfflineService.getPendingCount()
+
             console.log('✅ Synchronisation abgeschlossen')
             return {
                 success: true,
                 pendingSynced: syncResult.synced,
                 pendingFailed: syncResult.failed,
                 pendingDiscarded: syncResult.discarded,
-                allPendingCleared: syncResult.failed === 0,
+                allPendingCleared: remainingPending === 0,
                 startSynced: syncResult.startSynced,
             }
         } catch (err) {
@@ -321,7 +340,7 @@ export const OfflineService = {
     },
 
     // Heute gearbeitet - cached for offline
-    async getHeuteGearbeitet(token: string): Promise<{ stunden: number; minuten: number }> {
+    async getHeuteGearbeitet(token: string): Promise<HeuteGearbeitetResult> {
         const db = await initDB()
         const cacheKey = `${CACHE_KEYS.heute_gearbeitet}_${token}`
 
@@ -337,7 +356,7 @@ export const OfflineService = {
                 const data = await res.json()
                 // Cache the fresh data
                 await db.put('master_data', { key: cacheKey, value: data })
-                return { stunden: data.stunden || 0, minuten: data.minuten || 0 }
+                return { stunden: data.stunden || 0, minuten: data.minuten || 0, fromCache: false }
             }
         } catch (e) {
             // Network error or timeout - that's fine, use cache
@@ -346,7 +365,11 @@ export const OfflineService = {
 
         // Offline or error - return cached
         const cached = await db.get('master_data', cacheKey)
-        return cached?.value || { stunden: 0, minuten: 0 }
+        return {
+            stunden: cached?.value?.stunden || 0,
+            minuten: cached?.value?.minuten || 0,
+            fromCache: true,
+        }
     },
 
     // Store time entry locally (will sync later)
@@ -374,13 +397,22 @@ export const OfflineService = {
     // Entfernt alle Pending-Entries eines bestimmten Typs (z.B. 'stop').
     // Wird genutzt um verwaiste Offline-Stops zu bereinigen, wenn ein Online-Start
     // beweist, dass der Server den Stop bereits verarbeitet hat.
+    // ATOMIC: Snapshots IDs at read time, only deletes those exact IDs.
+    // This prevents deleting entries that were added AFTER the read.
     async removePendingEntriesByType(type: 'start' | 'stop' | 'pause') {
         const db = await initDB()
         const all = await db.getAll('pending')
-        for (const entry of all) {
-            if (entry.type === type) {
-                await db.delete('pending', entry.id)
-                console.log(`🗑️ Pending ${type}-Entry entfernt (${entry.id.substring(0, 8)})`)
+        // Snapshot: collect IDs to delete BEFORE any async work
+        const idsToDelete = all
+            .filter(entry => entry.type === type)
+            .map(entry => entry.id)
+
+        for (const id of idsToDelete) {
+            // Verify entry still exists before deleting (idempotent)
+            const existing = await db.get('pending', id)
+            if (existing) {
+                await db.delete('pending', id)
+                console.log(`🗑️ Pending ${type}-Entry entfernt (${id.substring(0, 8)})`)
             }
         }
     },
@@ -396,7 +428,7 @@ export const OfflineService = {
             if (!reachable) {
                 return { synced: 0, failed: 0, discarded: 0, skipped: true }
             }
-            return await this._syncPendingInternal()
+            return await OfflineService._syncPendingInternal()
         } finally {
             releaseSyncLock()
         }
@@ -408,7 +440,7 @@ export const OfflineService = {
     // A sync rejection (4xx) means the SERVER rejected an old queued entry - that's not reason
     // to destroy the user's current active booking display.
     async _syncPendingInternal() {
-        const pending = await this.getPendingEntries()
+        const pending = await OfflineService.getPendingEntries()
         if (pending.length === 0) return { synced: 0, failed: 0, discarded: 0, startSynced: false }
 
         console.log(`🔄 Sync: ${pending.length} ausstehende Einträge`)
@@ -419,10 +451,20 @@ export const OfflineService = {
         let startSynced = false
         const db = await initDB()
 
+
         // Sort by originalTime to replay actions in chronological order
         pending.sort((a, b) => new Date(a.originalTime).getTime() - new Date(b.originalTime).getTime())
 
-        for (const entry of pending) {
+        for (let i = 0; i < pending.length; i++) {
+            const entry = pending[i]
+
+            // Verify entry still exists in IDB (another sync might have processed it)
+            const stillExists = await db.get('pending', entry.id)
+            if (!stillExists) {
+                console.log(`⏭️ Entry bereits verarbeitet: ${entry.type} (${entry.id.substring(0, 8)})`)
+                continue
+            }
+
             try {
                 const res = await fetch(`/api/zeiterfassung/${entry.type}`, {
                     method: 'POST',
@@ -454,9 +496,10 @@ export const OfflineService = {
                     failed++
                 }
             } catch {
-                // Network error mid-sync - stop trying remaining entries
-                console.log('📴 Netzwerkfehler während Sync - breche ab')
-                failed += (pending.length - synced - discarded - failed)
+                // Network error mid-sync - count ALL remaining entries as failed and stop
+                const remaining = pending.length - i
+                console.log(`📴 Netzwerkfehler während Sync - ${remaining} verbleibende Einträge werden übersprungen`)
+                failed += remaining
                 break
             }
         }
@@ -476,10 +519,18 @@ export const OfflineService = {
         return entries.length
     },
 
-    // Clear all cached data
+    // Clear all cached master data (projects, categories, etc.)
+    // NOTE: This intentionally does NOT clear pending entries!
+    // Pending entries contain unsent bookings that must survive cache clears.
     async clearCache() {
         const db = await initDB()
         await db.clear('master_data')
+    },
+
+    // Clear all pending entries - USE WITH CAUTION!
+    // Only call this when you are absolutely sure all entries have been synced.
+    async clearPending() {
+        const db = await initDB()
         await db.clear('pending')
     },
 

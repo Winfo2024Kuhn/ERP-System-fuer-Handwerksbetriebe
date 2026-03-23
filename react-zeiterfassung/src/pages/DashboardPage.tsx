@@ -52,6 +52,18 @@ interface DashboardPageProps {
     onSync?: () => void
 }
 
+export function shouldIncludeOfflineCompletedMinutes(fromCache: boolean, pendingCount: number): boolean {
+    return fromCache || pendingCount > 0
+}
+
+export function shouldIncludeCurrentSessionMinutes(
+    fromCache: boolean,
+    pendingCount: number,
+    hasRecentStartSync: boolean,
+): boolean {
+    return fromCache || pendingCount > 0 || hasRecentStartSync
+}
+
 export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncStatus, onSync }: DashboardPageProps) {
     const navigate = useNavigate()
     const [activeSession, setActiveSession] = useState<Session | null>(null)
@@ -88,21 +100,33 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         const token = localStorage.getItem('zeiterfassung_token')
         if (!token) return
 
-        // 1. Get cached server data (from IndexedDB) - this is NON-BLOCKING
-        const cachedData = await OfflineService.getHeuteGearbeitet(token)
-        const cachedMinuten = (cachedData.stunden || 0) * 60 + (cachedData.minuten || 0)
+        // 1. Get server/cached total for today.
+        // Fresh server data already includes a running booking, cached data does not.
+        const heuteData = await OfflineService.getHeuteGearbeitet(token)
+        const serverMinuten = (heuteData.stunden || 0) * 60 + (heuteData.minuten || 0)
 
-        // 2. Get offline completed bookings (tracked locally)
-        const offlineMinuten = await OfflineService.getOfflineHeuteMinuten()
+        const pendingCount = await OfflineService.getPendingCount()
 
-        // 3. Calculate current running session time
+        // 2. Read local session and cooldown state.
         let currentSessionMinuten = 0
         const storedSession = localStorage.getItem('zeiterfassung_active_session')
+        const startSyncedAt = localStorage.getItem('zeiterfassung_start_synced_at')
+        const hasRecentStartSync = Boolean(
+            startSyncedAt && storedSession && Date.now() - parseInt(startSyncedAt, 10) < 15000,
+        )
+
         if (storedSession) {
             try {
                 const session = JSON.parse(storedSession)
-                // Only count work sessions, not pauses
-                if (session.startTime && !isAbwesenheitOderPause(session.typ)) {
+                const includeCurrentSession = shouldIncludeCurrentSessionMinutes(
+                    heuteData.fromCache,
+                    pendingCount,
+                    hasRecentStartSync,
+                )
+
+                // Only count work sessions, not pauses, and only when the local
+                // state is ahead of or replacing the server state.
+                if (includeCurrentSession && session.startTime && !isAbwesenheitOderPause(session.typ)) {
                     const start = new Date(session.startTime)
                     const now = new Date()
                     currentSessionMinuten = Math.floor((now.getTime() - start.getTime()) / 60000)
@@ -110,8 +134,15 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             } catch { /* ignore */ }
         }
 
-        // Total = cached server data + offline bookings + running session
-        const totalMinuten = cachedMinuten + offlineMinuten + currentSessionMinuten
+        // 3. Add locally completed offline bookings only when server data is stale
+        // or when unsynced entries still exist. Otherwise they would be double-counted
+        // immediately after reconnect/sync.
+        const offlineMinuten = shouldIncludeOfflineCompletedMinutes(heuteData.fromCache, pendingCount)
+            ? await OfflineService.getOfflineHeuteMinuten()
+            : 0
+
+        // Total = server/cached total + local-only completed work + local running session
+        const totalMinuten = serverMinuten + offlineMinuten + currentSessionMinuten
         setHeuteStunden(Math.floor(totalMinuten / 60))
         setHeuteMinuten(totalMinuten % 60)
     }
