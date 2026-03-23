@@ -47,7 +47,9 @@ public class SecurityConfig {
     public SecurityFilterChain zeiterfassungFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/zeiterfassung", "/zeiterfassung/**", "/api/zeiterfassung/**", "/api/mitarbeiter/by-token/**",
-                        "/api/urlaub/**", "/api/kalender/mobile/**")
+                        "/api/urlaub/**", "/api/kalender/mobile/**",
+                        "/api/anfragen/**", "/api/angebote/**", "/api/projekte/**",
+                        "/api/dokumente/**", "/api/images/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
@@ -132,7 +134,10 @@ public class SecurityConfig {
                     Map.of("success", false, "message", "Zugriff verweigert.")
                 ))
             )
-            .httpBasic(AbstractHttpConfigurer::disable);
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.sameOrigin())
+            );
 
         return http.build();
     }
@@ -155,6 +160,9 @@ public class SecurityConfig {
                 })
                 .userDetailsService(frontendUserDetailsService)
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .headers(headers -> headers
+                    .frameOptions(frame -> frame.sameOrigin())
+                )
                 .exceptionHandling(ex -> ex
                     .authenticationEntryPoint((request, response, authException) -> writeJson(
                         response,
