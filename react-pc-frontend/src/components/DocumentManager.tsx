@@ -19,6 +19,7 @@ import type { ProjektDokument, DokumentGruppe } from '../types';
 import { DOKUMENT_GRUPPEN } from '../types';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
+import { mergeUploadedDokumente } from '../lib/optimisticUploads';
 
 // Statische Icon-Pfade (relativ zur base URL /react-textbausteine/)
 const BASE_URL = import.meta.env.BASE_URL || '/react-textbausteine/';
@@ -119,11 +120,14 @@ export default function DocumentManager({ projektId, anfrageId, angebotId, class
         : `/api/projekte/${entityId}/dokumente`;
 
     // Dokumente laden
-    const loadDocuments = useCallback(async () => {
+    const loadDocuments = useCallback(async (options?: { preserveLoading?: boolean }) => {
         if (!entityId) {
             setDocuments([]);
             setLoading(false);
             return;
+        }
+        if (!options?.preserveLoading) {
+            setLoading(true);
         }
         try {
             const res = await fetch(apiBasePath);
@@ -133,7 +137,9 @@ export default function DocumentManager({ projektId, anfrageId, angebotId, class
         } catch (err) {
             console.error('Fehler beim Laden der Dokumente:', err);
         } finally {
-            setLoading(false);
+            if (!options?.preserveLoading) {
+                setLoading(false);
+            }
         }
     }, [entityId, apiBasePath]);
 
@@ -211,7 +217,9 @@ export default function DocumentManager({ projektId, anfrageId, angebotId, class
 
             if (!res.ok) throw new Error('Upload fehlgeschlagen');
 
-            await loadDocuments();
+            const uploadedDokumente = await res.json() as ProjektDokument[];
+            setDocuments(prev => mergeUploadedDokumente(prev, uploadedDokumente));
+            void loadDocuments({ preserveLoading: true });
         } catch (err) {
             console.error('Fehler beim Upload:', err);
             toast.error('Fehler beim Hochladen der Dateien');
