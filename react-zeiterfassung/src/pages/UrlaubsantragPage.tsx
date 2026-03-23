@@ -23,6 +23,13 @@ interface Feiertag {
     bezeichnung: string
 }
 
+const STATUS_FILTER_OPTIONS = [
+    { id: 'ALLE', label: 'Alle' },
+    { id: 'OFFEN', label: 'Offen' },
+    { id: 'GENEHMIGT', label: 'Genehmigt' },
+    { id: 'ABGELEHNT', label: 'Abgelehnt' },
+] as const
+
 export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: UrlaubsantragPageProps) {
     const navigate = useNavigate()
 
@@ -456,15 +463,10 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                             </div>
 
                             <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                                {[
-                                    { id: 'ALLE', label: 'Alle' },
-                                    { id: 'OFFEN', label: 'Offen' },
-                                    { id: 'GENEHMIGT', label: 'Genehmigt' },
-                                    { id: 'ABGELEHNT', label: 'Abgelehnt' },
-                                ].map((filter) => (
+                                {STATUS_FILTER_OPTIONS.map((filter) => (
                                     <button
                                         key={filter.id}
-                                        onClick={() => setStatusFilter(filter.id as any)}
+                                        onClick={() => setStatusFilter(filter.id)}
                                         className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-all ${statusFilter === filter.id
                                             ? 'bg-rose-600 text-white border-rose-600'
                                             : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'

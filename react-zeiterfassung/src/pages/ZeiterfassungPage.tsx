@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Play, Loader2, ChevronRight, Briefcase, Layers, Wrench, RefreshCw } from 'lucide-react'
-import { OfflineService } from '../services/OfflineService'
+import { buildBookingRequestPayload, createOperationId, OfflineService } from '../services/OfflineService'
 
 interface Projekt {
     id: number
@@ -30,7 +30,7 @@ interface ZeiterfassungPageProps {
 
 type Step = 'projekt' | 'kategorie' | 'arbeitsgang'
 
-export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
+export default function ZeiterfassungPage({ mitarbeiter: _mitarbeiter }: ZeiterfassungPageProps) {
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
     const isSwitching = searchParams.get('switching') === 'true'
@@ -124,6 +124,8 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
             const oldSessionStr = localStorage.getItem('zeiterfassung_active_session')
             let oldElapsedMinutes = 0
             let wasWorkSession = true
+            const stopTime = new Date().toISOString()
+            const stopOperationId = createOperationId()
 
             if (oldSessionStr) {
                 try {
@@ -143,7 +145,7 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
                 const stopRes = await fetch('/api/zeiterfassung/stop', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token }),
+                    body: JSON.stringify(buildBookingRequestPayload({ token }, stopTime, stopOperationId)),
                     signal: stopController.signal
                 })
                 clearTimeout(stopTimeout)
@@ -154,10 +156,9 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
                 } else {
                     throw new Error('Server error on stop')
                 }
-            } catch (err) {
+            } catch {
                 console.log('Offline/Timeout - speichere Stop-Event lokal')
-                const stopTime = new Date().toISOString()
-                await OfflineService.addPendingEntry('stop', { token }, stopTime)
+                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
                 if (wasWorkSession && oldElapsedMinutes > 0) {
                     await OfflineService.addOfflineWorkedMinutes(oldElapsedMinutes)
                 }
@@ -167,6 +168,9 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
             localStorage.removeItem('zeiterfassung_active_session')
         }
 
+        const startTime = new Date().toISOString()
+        const startOperationId = createOperationId()
+
         try {
             // Online Start Attempt with Timeout
             const controller = new AbortController()
@@ -175,12 +179,12 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
             const res = await fetch('/api/zeiterfassung/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(buildBookingRequestPayload({
                     token,
                     projektId: selectedProjekt.id,
                     arbeitsgangId: selectedArbeitsgang.id,
                     produktkategorieId: selectedKategorie?.id || null
-                }),
+                }, startTime, startOperationId)),
                 signal: controller.signal
             })
             clearTimeout(timeoutId)
@@ -222,13 +226,12 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
                 console.log('Offline oder Timeout - wird später synchronisiert', err)
 
                 // Queue sync job - mit originalem Zeitstempel!
-                const startTime = new Date().toISOString()
-                await OfflineService.addPendingEntry('start', {
+                await OfflineService.addPendingEntryWithOperationId('start', {
                     token,
                     projektId: selectedProjekt.id,
                     arbeitsgangId: selectedArbeitsgang.id,
                     produktkategorieId: selectedKategorie?.id || null
-                }, startTime)
+                }, startTime, startOperationId)
 
                 // Set local active session (fake)
                 const session = {
@@ -302,6 +305,8 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
                 <div className="flex items-center gap-3">
                     <button
                         onClick={handleBack}
+                        aria-label="Zurück"
+                        title="Zurück"
                         className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
@@ -317,6 +322,8 @@ export default function ZeiterfassungPage({ }: ZeiterfassungPageProps) {
                     </div>
                     <button
                         onClick={handleSync}
+                        aria-label="Jetzt synchronisieren"
+                        title="Jetzt synchronisieren"
                         className="ml-auto p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <RefreshCw className={`w-5 h-5 ${loading || isSyncing ? 'animate-sync-spin text-rose-600' : 'text-slate-500'}`} />

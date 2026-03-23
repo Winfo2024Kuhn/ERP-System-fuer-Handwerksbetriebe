@@ -91,6 +91,11 @@ public interface ZeitbuchungRepository extends JpaRepository<Zeitbuchung, Long> 
         Optional<Zeitbuchung> findByIdempotencyKey(String idempotencyKey);
 
         /**
+         * Findet eine Buchung anhand des Stop-Idempotency-Keys.
+         */
+        Optional<Zeitbuchung> findByStopIdempotencyKey(String stopIdempotencyKey);
+
+        /**
          * Prüft ob Zeitbuchungen für eine bestimmte ProjektProduktkategorie existieren.
          */
         boolean existsByProjektProduktkategorieId(Long projektProduktkategorieId);

@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import 'fake-indexeddb/auto'
-import { OfflineService, _resetForTesting } from './OfflineService'
+import {
+    buildBookingRequestPayload,
+    createOperationId,
+    OfflineService,
+    _resetForTesting,
+    _setPendingEntryStatusForTesting,
+} from './OfflineService'
 
 function createMemoryStorage(): Storage {
     const store = new Map<string, string>()
@@ -28,11 +34,11 @@ function createMemoryStorage(): Storage {
 }
 
 // ==================== MOCK HELPERS ====================
-const ok = (body: any = {}) => Promise.resolve({
+const ok = (body: unknown = {}) => Promise.resolve({
     ok: true, status: 200, json: () => Promise.resolve(body),
 } as Response)
 
-const clientError = (status = 409, body: any = { error: 'Conflict' }) => Promise.resolve({
+const clientError = (status = 409, body: unknown = { error: 'Conflict' }) => Promise.resolve({
     ok: false, status, json: () => Promise.resolve(body),
 } as Response)
 
@@ -105,6 +111,27 @@ describe('OfflineService', () => {
             const ts = new Date(entry.originalTime).getTime()
             expect(ts).toBeGreaterThanOrEqual(before - 100)
             expect(ts).toBeLessThanOrEqual(after + 100)
+        })
+
+        it('sollte eine vorgegebene operationId für queued retries beibehalten', async () => {
+            const entry = await OfflineService.addPendingEntryWithOperationId('stop', { token: 'a' }, '2024-06-15T10:00:00Z', 'op-123')
+            expect(entry.id).toBe('op-123')
+            expect(entry.status).toBe('pending')
+            expect(entry.attemptCount).toBe(0)
+        })
+    })
+
+    describe('Operation Helpers', () => {
+        it('createOperationId liefert eine ID', () => {
+            expect(createOperationId()).toBeTruthy()
+        })
+
+        it('buildBookingRequestPayload baut idempotenten Request-Body', () => {
+            expect(buildBookingRequestPayload({ token: 'tok' }, '2024-06-15T10:00:00Z', 'op-1')).toEqual({
+                token: 'tok',
+                originalZeit: '2024-06-15T10:00:00Z',
+                idempotencyKey: 'op-1',
+            })
         })
     })
 
@@ -215,11 +242,16 @@ describe('OfflineService', () => {
 
         it('sollte 5xx als failed zählen und Entry behalten', async () => {
             vi.spyOn(globalThis, 'fetch').mockImplementation(() => serverError())
-            await OfflineService.addPendingEntry('start', { token: 'a' })
+            await OfflineService.addPendingEntryWithOperationId('start', { token: 'a' }, '2024-06-15T10:00:00Z', 'op-500')
 
             const r = await OfflineService._syncPendingInternal()
             expect(r.failed).toBe(1)
-            expect(await OfflineService.getPendingCount()).toBe(1)
+            const pending = await OfflineService.getPendingEntries()
+            expect(pending).toHaveLength(1)
+            expect(pending[0].id).toBe('op-500')
+            expect(pending[0].status).toBe('pending')
+            expect(pending[0].attemptCount).toBe(1)
+            expect(pending[0].lastError).toBe('HTTP 500')
         })
 
         // BUG #2: Netzwerkfehler mid-sync korrekt zählen
@@ -257,7 +289,7 @@ describe('OfflineService', () => {
         })
 
         it('sollte idempotencyKey und originalZeit senden', async () => {
-            let sentBody: any = null
+            let sentBody: Record<string, unknown> | null = null
             vi.spyOn(globalThis, 'fetch').mockImplementation(async (_, init) => {
                 sentBody = JSON.parse((init as RequestInit).body as string)
                 return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
@@ -290,6 +322,17 @@ describe('OfflineService', () => {
             expect(r.discarded).toBe(1)
             expect(r.failed).toBe(1)
             expect(await OfflineService.getPendingCount()).toBe(1)
+        })
+
+        it('sollte inflight-Einträge beim nächsten sync wieder auf pending zurücksetzen', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok())
+            const entry = await OfflineService.addPendingEntryWithOperationId('start', { token: 'a' }, '2024-06-15T10:00:00Z', 'op-inflight')
+            await _setPendingEntryStatusForTesting(entry.id, 'inflight')
+
+            const result = await OfflineService._syncPendingInternal()
+
+            expect(result.synced).toBe(1)
+            expect(await OfflineService.getPendingCount()).toBe(0)
         })
     })
 

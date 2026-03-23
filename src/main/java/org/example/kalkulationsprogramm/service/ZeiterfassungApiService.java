@@ -309,9 +309,28 @@ public class ZeiterfassungApiService {
      *                         Wenn null, wird LocalDateTime.now() verwendet.
      */
     @Transactional
-    public Map<String, Object> stopZeiterfassung(String token, LocalDateTime originalEndeZeit) {
+    public Map<String, Object> stopZeiterfassung(String token, LocalDateTime originalEndeZeit, String idempotencyKey) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)
                 .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<Zeitbuchung> existing = zeitbuchungRepository.findByStopIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                Zeitbuchung b = existing.get();
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("id", b.getId());
+                result.put("projektName", b.getProjekt() != null ? b.getProjekt().getBauvorhaben() : null);
+                result.put("arbeitsgangName",
+                        b.getArbeitsgang() != null ? b.getArbeitsgang().getBeschreibung() : null);
+                result.put("startZeit", b.getStartZeit().toString());
+                result.put("endeZeit", b.getEndeZeit() != null ? b.getEndeZeit().toString() : null);
+                result.put("stunden", b.getAnzahlInStunden());
+                result.put("typ", b.getTyp() != null ? b.getTyp().name() : "ARBEIT");
+                result.put("status", "already_stopped");
+                result.put("idempotent", true);
+                return result;
+            }
+        }
 
         Zeitbuchung buchung = zeitbuchungRepository
                 .findFirstByMitarbeiterIdAndEndeZeitIsNullOrderByStartZeitDesc(mitarbeiter.getId())
@@ -330,6 +349,9 @@ public class ZeiterfassungApiService {
         }
 
         buchung.setEndeZeit(endeZeit);
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            buchung.setStopIdempotencyKey(idempotencyKey);
+        }
 
         // Berechne Stunden
         Duration dauer = Duration.between(buchung.getStartZeit(), buchung.getEndeZeit());
@@ -376,9 +398,23 @@ public class ZeiterfassungApiService {
      *                     Wenn null, wird LocalDateTime.now() verwendet.
      */
     @Transactional
-    public Map<String, Object> startPause(String token, LocalDateTime originalZeit) {
+    public Map<String, Object> startPause(String token, LocalDateTime originalZeit, String idempotencyKey) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)
                 .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                Zeitbuchung b = existing.get();
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("id", b.getId());
+                result.put("startZeit", b.getStartZeit().toString());
+                result.put("typ", b.getTyp() != null ? b.getTyp().name() : "PAUSE");
+                result.put("status", "already_exists");
+                result.put("idempotent", true);
+                return result;
+            }
+        }
 
         // Stoppe aktive Buchung (falls vorhanden)
         Optional<Zeitbuchung> aktiveBuchung = zeitbuchungRepository
@@ -408,6 +444,9 @@ public class ZeiterfassungApiService {
         pauseBuchung.setErfasstAm(LocalDateTime.now());
         pauseBuchung.setErfasstVia(ErfassungsQuelle.MOBILE_APP);
         pauseBuchung.setVersion(1);
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            pauseBuchung.setIdempotencyKey(idempotencyKey);
+        }
 
         Zeitbuchung gespeichert = zeitbuchungRepository.save(pauseBuchung);
 
@@ -786,7 +825,6 @@ public class ZeiterfassungApiService {
         MonatsSaldo monatsSaldo = monatsSaldoService.getOrBerechne(mitarbeiter.getId(), currentYear, currentMonth);
 
         BigDecimal sollStundenMonat = monatsSaldo.getSollStunden();
-        BigDecimal istStundenMonat = monatsSaldo.getIstStunden();
         BigDecimal monatsDifferenz = monatsSaldo.getGesamtIst().subtract(sollStundenMonat);
 
         Map<String, Object> monatData = new LinkedHashMap<>();
@@ -875,20 +913,6 @@ public class ZeiterfassungApiService {
         result.put("jahr", currentYear);
 
         return result;
-    }
-
-    /**
-     * Delegiert an ZeitkontoService - berücksichtigt Feiertage korrekt.
-     */
-    private BigDecimal berechneMonatsSoll(Long mitarbeiterId, int jahr, int monat) {
-        return zeitkontoService.berechneSollstundenFuerMonat(mitarbeiterId, jahr, monat);
-    }
-
-    /**
-     * Delegiert an ZeitkontoService - berücksichtigt Feiertage korrekt.
-     */
-    private BigDecimal berechneMonatsSollBisHeute(Long mitarbeiterId, int jahr, int monat) {
-        return zeitkontoService.berechneSollstundenFuerMonatBisHeute(mitarbeiterId, jahr, monat);
     }
 
     /**

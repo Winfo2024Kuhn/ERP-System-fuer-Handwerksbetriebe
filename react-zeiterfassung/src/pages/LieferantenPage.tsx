@@ -18,6 +18,10 @@ interface Lieferant {
     kundenEmails?: string[]
 }
 
+interface LieferantRaw extends Lieferant {
+    firmenname?: string
+}
+
 interface LieferantenPageProps {
     mitarbeiter: { id: number; name: string } | null
     syncStatus?: 'syncing' | 'done' | 'error'
@@ -26,7 +30,7 @@ interface LieferantenPageProps {
 
 
 
-export default function LieferantenPage({ mitarbeiter: _mitarbeiter, syncStatus, onSync }: LieferantenPageProps) {
+export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageProps) {
     const navigate = useNavigate()
     const [searchParams, setSearchParams] = useSearchParams()
     const [lieferanten, setLieferanten] = useState<Lieferant[]>([])
@@ -35,11 +39,6 @@ export default function LieferantenPage({ mitarbeiter: _mitarbeiter, syncStatus,
     const [selectedLieferant, setSelectedLieferant] = useState<Lieferant | null>(null)
     const [showPhoneModal, setShowPhoneModal] = useState(false)
 
-
-    useEffect(() => {
-        loadLieferanten()
-    }, [])
-
     // URL-based Selection Sync
     useEffect(() => {
         const idParam = searchParams.get('id')
@@ -47,19 +46,27 @@ export default function LieferantenPage({ mitarbeiter: _mitarbeiter, syncStatus,
             const lieferantId = parseInt(idParam, 10)
             const found = lieferanten.find(l => l.id === lieferantId)
             if (found && found.id !== selectedLieferant?.id) {
-                setSelectedLieferant(found)
+                const timeoutId = window.setTimeout(() => {
+                    setSelectedLieferant(found)
+                }, 0)
+
+                return () => window.clearTimeout(timeoutId)
             }
         } else if (!idParam && selectedLieferant) {
-            setSelectedLieferant(null)
+            const timeoutId = window.setTimeout(() => {
+                setSelectedLieferant(null)
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
         }
     }, [searchParams, lieferanten])
 
-    const loadLieferanten = async () => {
+    async function loadLieferanten() {
         setLoading(true)
         try {
             const data = await OfflineService.getLieferanten()
             // Map firmenname to lieferantenname for consistency
-            const mapped = (data as any[]).map(l => ({
+            const mapped = (data as LieferantRaw[]).map(l => ({
                 ...l,
                 lieferantenname: l.lieferantenname || l.firmenname
             })) as Lieferant[]
@@ -70,18 +77,29 @@ export default function LieferantenPage({ mitarbeiter: _mitarbeiter, syncStatus,
         setLoading(false)
     }
 
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            void loadLieferanten()
+        }, 0)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [])
+
     // Server-side search logic
     useEffect(() => {
         if (!searchTerm) {
-            loadLieferanten();
-            return;
+            const timeoutId = window.setTimeout(() => {
+                void loadLieferanten()
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
         }
 
         const delayDebounceFn = setTimeout(async () => {
             if (searchTerm.length >= 2) {
                 setLoading(true);
                 const results = await OfflineService.searchLieferanten(searchTerm);
-                const mapped = (results as any[]).map(l => ({
+                const mapped = (results as LieferantRaw[]).map(l => ({
                     ...l,
                     lieferantenname: l.lieferantenname || l.firmenname
                 })) as Lieferant[]

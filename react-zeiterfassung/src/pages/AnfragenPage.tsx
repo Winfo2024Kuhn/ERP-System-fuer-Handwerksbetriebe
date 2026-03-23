@@ -54,11 +54,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
     const [showPhoneModal, setShowPhoneModal] = useState(false)
     const [showUploadModal, setShowUploadModal] = useState(false)
 
-    useEffect(() => {
-        loadAnfragen()
-    }, [])
-
-    const loadAnfragen = async (searchQuery?: string) => {
+    async function loadAnfragen(searchQuery?: string) {
         setLoading(true)
         try {
             let url = '/api/anfragen?size=15'
@@ -115,38 +111,15 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
         setLoading(false)
     }
 
-    // URL-based Selection Sync
     useEffect(() => {
-        const idParam = searchParams.get('id')
-        if (idParam && anfragen.length > 0) {
-            const anfrageId = parseInt(idParam, 10)
-            const found = anfragen.find(a => a.id === anfrageId)
-            if (found && found.id !== selectedAnfrage?.id) {
-                loadAnfrageDetail(found)
-            }
-        } else if (!idParam && selectedAnfrage) {
-            setSelectedAnfrage(null)
-            setBilder([])
-        }
-    }, [searchParams, anfragen])
+        const timeoutId = window.setTimeout(() => {
+            void loadAnfragen()
+        }, 0)
 
-    // Server-side search logic
-    useEffect(() => {
-        if (!searchTerm) {
-            loadAnfragen();
-            return;
-        }
+        return () => window.clearTimeout(timeoutId)
+    }, [])
 
-        const delayDebounceFn = setTimeout(async () => {
-            if (searchTerm.length >= 2) {
-                await loadAnfragen(searchTerm);
-            }
-        }, 500);
-
-        return () => clearTimeout(delayDebounceFn);
-    }, [searchTerm]);
-
-    const loadAnfrageDetail = async (anfrage: Anfrage) => {
+    async function loadAnfrageDetail(anfrage: Anfrage) {
         setSelectedAnfrage(anfrage)
         setDetailLoading(true)
         setBilder([])
@@ -169,6 +142,48 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
         }
         setDetailLoading(false)
     }
+
+    // URL-based Selection Sync
+    useEffect(() => {
+        const idParam = searchParams.get('id')
+        if (idParam && anfragen.length > 0) {
+            const anfrageId = parseInt(idParam, 10)
+            const found = anfragen.find(a => a.id === anfrageId)
+            if (found && found.id !== selectedAnfrage?.id) {
+                const timeoutId = window.setTimeout(() => {
+                    void loadAnfrageDetail(found)
+                }, 0)
+
+                return () => window.clearTimeout(timeoutId)
+            }
+        } else if (!idParam && selectedAnfrage) {
+            const timeoutId = window.setTimeout(() => {
+                setSelectedAnfrage(null)
+                setBilder([])
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
+        }
+    }, [searchParams, anfragen])
+
+    // Server-side search logic
+    useEffect(() => {
+        if (!searchTerm) {
+            const timeoutId = window.setTimeout(() => {
+                void loadAnfragen()
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
+        }
+
+        const delayDebounceFn = setTimeout(async () => {
+            if (searchTerm.length >= 2) {
+                await loadAnfragen(searchTerm);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchTerm]);
 
     const getAddress = () => {
         // Prefer projekt address, fallback to kunden address

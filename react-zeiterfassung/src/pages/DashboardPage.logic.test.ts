@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
     shouldIncludeCurrentSessionMinutes,
     shouldIncludeOfflineCompletedMinutes,
-} from './DashboardPage'
+} from './DashboardPage.logic'
 
 describe('DashboardPage heute_gearbeitet merge logic', () => {
     it('nutzt offline completed minutes wenn nur Cache verfügbar ist', () => {

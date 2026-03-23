@@ -1,14 +1,21 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.RequiredArgsConstructor;
-import org.example.kalkulationsprogramm.dto.Arbeitsgang.ArbeitsgangResponseDto;
-import org.example.kalkulationsprogramm.service.ZeiterfassungApiService;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+
+import org.example.kalkulationsprogramm.dto.Arbeitsgang.ArbeitsgangResponseDto;
+import org.example.kalkulationsprogramm.service.ZeiterfassungApiService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import lombok.RequiredArgsConstructor;
 
 /**
  * REST API Controller für die Zeiterfassungs-PWA.
@@ -115,7 +122,11 @@ public class ZeiterfassungApiController {
             // Optional: Original-Zeitstempel für Offline-Sync
             LocalDateTime originalZeit = parseOptionalDateTime(body.get("originalZeit"));
 
-            Map<String, Object> result = service.stopZeiterfassung(token, originalZeit);
+            String idempotencyKey = body.get("idempotencyKey") != null
+                    ? body.get("idempotencyKey").toString()
+                    : null;
+
+            Map<String, Object> result = service.stopZeiterfassung(token, originalZeit, idempotencyKey);
             return ResponseEntity.ok(result);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -134,7 +145,11 @@ public class ZeiterfassungApiController {
             // Optional: Original-Zeitstempel für Offline-Sync
             LocalDateTime originalZeit = parseOptionalDateTime(body.get("originalZeit"));
 
-            Map<String, Object> result = service.startPause(token, originalZeit);
+            String idempotencyKey = body.get("idempotencyKey") != null
+                    ? body.get("idempotencyKey").toString()
+                    : null;
+
+            Map<String, Object> result = service.startPause(token, originalZeit, idempotencyKey);
             return ResponseEntity.ok(result);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

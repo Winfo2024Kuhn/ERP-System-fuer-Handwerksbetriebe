@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer } from 'lucide-react'
-import { OfflineService } from '../services/OfflineService'
+import { buildBookingRequestPayload, createOperationId, OfflineService } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
+import { shouldIncludeCurrentSessionMinutes, shouldIncludeOfflineCompletedMinutes } from './DashboardPage.logic'
 
 interface Session {
     projektId: number | null
@@ -38,6 +39,12 @@ interface Arbeitsgang {
     beschreibung: string
 }
 
+interface ProjektSummary {
+    id: number
+    name: string
+    beschreibung?: string | null
+}
+
 interface Mitarbeiter {
     id: number
     name?: string
@@ -52,19 +59,7 @@ interface DashboardPageProps {
     onSync?: () => void
 }
 
-export function shouldIncludeOfflineCompletedMinutes(fromCache: boolean, pendingCount: number): boolean {
-    return fromCache || pendingCount > 0
-}
-
-export function shouldIncludeCurrentSessionMinutes(
-    fromCache: boolean,
-    pendingCount: number,
-    hasRecentStartSync: boolean,
-): boolean {
-    return fromCache || pendingCount > 0 || hasRecentStartSync
-}
-
-export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncStatus, onSync }: DashboardPageProps) {
+export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: DashboardPageProps) {
     const navigate = useNavigate()
     const [activeSession, setActiveSession] = useState<Session | null>(null)
     const [elapsedTime, setElapsedTime] = useState('00:00:00')
@@ -76,7 +71,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
 
     // Checkbox/Switch logic
     const [viewMode, setViewMode] = useState<'activities' | 'projects'>('activities')
-    const [projekte, setProjekte] = useState<any[]>([])
+    const [projekte, setProjekte] = useState<ProjektSummary[]>([])
     const [selectedProjektId, setSelectedProjektId] = useState<number | null>(null)
 
     // Kategorie switch modal
@@ -248,7 +243,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                     setUrlaubsWarnung(null)
                 }
             }
-        } catch (err) {
+        } catch {
             console.log('Urlaubsverfall-Warnung konnte nicht geladen werden')
         }
     }
@@ -312,6 +307,8 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         if (!activeSession) return
 
         const token = localStorage.getItem('zeiterfassung_token')
+        const stopTime = new Date().toISOString()
+        const stopOperationId = createOperationId()
 
         // Calculate elapsed minutes for offline tracking (only for work, not pause)
         const start = new Date(activeSession.startTime)
@@ -326,7 +323,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             const res = await fetch('/api/zeiterfassung/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token }),
+                body: JSON.stringify(buildBookingRequestPayload({ token }, stopTime, stopOperationId)),
                 signal: controller.signal
             })
             clearTimeout(timeoutId)
@@ -339,10 +336,9 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             } else {
                 throw new Error('Server error');
             }
-        } catch (err) {
+        } catch {
             console.log('Offline (oder Timeout) - speichere Stop-Event lokal')
-            const stopTime = new Date().toISOString()
-            await OfflineService.addPendingEntry('stop', { token }, stopTime)
+            await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
             // Track offline worked minutes (only for actual work, not pauses)
             if (isWorkSession && elapsedMinutes > 0) {
                 await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
@@ -360,6 +356,8 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
     const handlePause = async () => {
         const token = localStorage.getItem('zeiterfassung_token')
         if (!token) return
+        const pauseTime = new Date().toISOString()
+        const pauseOperationId = createOperationId()
 
         try {
             const controller = new AbortController()
@@ -368,7 +366,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             const res = await fetch('/api/zeiterfassung/pause', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token }),
+                body: JSON.stringify(buildBookingRequestPayload({ token }, pauseTime, pauseOperationId)),
                 signal: controller.signal
             })
             clearTimeout(timeoutId)
@@ -395,8 +393,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             }
         } catch {
             console.log('Offline - speichere Pause-Event lokal')
-            const pauseTime = new Date().toISOString()
-            await OfflineService.addPendingEntry('pause', { token }, pauseTime)
+            await OfflineService.addPendingEntryWithOperationId('pause', { token }, pauseTime, pauseOperationId)
             // Optimistic UI update for offline pause
             const pauseSession: Session = {
                 projektId: null,
@@ -416,6 +413,8 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
     // Resume from pause - stop the active PAUSE booking, then navigate to start work
     const handleResumeFromPause = async () => {
         const token = localStorage.getItem('zeiterfassung_token')
+        const stopTime = new Date().toISOString()
+        const stopOperationId = createOperationId()
 
         try {
             const controller = new AbortController()
@@ -424,20 +423,18 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             const res = await fetch('/api/zeiterfassung/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token }),
+                body: JSON.stringify(buildBookingRequestPayload({ token }, stopTime, stopOperationId)),
                 signal: controller.signal
             })
             clearTimeout(timeoutId)
 
             if (!res.ok) {
                 console.warn('Stop-Aufruf nicht erfolgreich, speichere für später')
-                const stopTime = new Date().toISOString()
-                await OfflineService.addPendingEntry('stop', { token }, stopTime)
+                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
             }
         } catch {
             console.log('Offline - speichere Stop-Event für Pause lokal')
-            const stopTime = new Date().toISOString()
-            await OfflineService.addPendingEntry('stop', { token }, stopTime)
+            await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
         }
 
         // Clear local pause session and navigate to time tracking
@@ -458,7 +455,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
     const handleOpenArbeitsgangSwitch = async () => {
         const token = localStorage.getItem('zeiterfassung_token') || undefined
         const agData = await OfflineService.getArbeitsgaenge(token) as Arbeitsgang[]
-        const projData = await OfflineService.getProjekte()
+        const projData = await OfflineService.getProjekte() as ProjektSummary[]
 
         setArbeitsgaenge(agData)
         setProjekte(projData)
@@ -493,6 +490,10 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         const now = new Date()
         const elapsedMinutes = Math.floor((now.getTime() - start.getTime()) / 60000)
         const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
+        const stopOperationTime = new Date().toISOString()
+        const stopOperationId = createOperationId()
+        const startOperationTime = new Date().toISOString()
+        const startOperationId = createOperationId()
 
         // stopRes vor try deklarieren, damit im catch geprüft werden kann
         // ob der Stop online bereits erfolgreich war (Race-Condition-Fix)
@@ -506,7 +507,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             stopRes = await fetch('/api/zeiterfassung/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token }),
+                body: JSON.stringify(buildBookingRequestPayload({ token }, stopOperationTime, stopOperationId)),
                 signal: stopController.signal
             })
             clearTimeout(stopTimeout)
@@ -518,12 +519,12 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             const res = await fetch('/api/zeiterfassung/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(buildBookingRequestPayload({
                     token,
                     projektId: activeSession.projektId,
                     arbeitsgangId: activeSession.arbeitsgangId,
                     produktkategorieId: newKategorie.id
-                }),
+                }, startOperationTime, startOperationId)),
                 signal: startController.signal
             })
             clearTimeout(startTimeout)
@@ -547,19 +548,19 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                         await fetch('/api/zeiterfassung/start', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
+                            body: JSON.stringify(buildBookingRequestPayload({
                                 token,
                                 projektId: oldSession.projektId,
                                 arbeitsgangId: oldSession.arbeitsgangId,
                                 produktkategorieId: oldSession.produktkategorieId ?? null
-                            })
+                            }, new Date().toISOString(), createOperationId()))
                         })
                     } catch { /* best effort */ }
                 }
                 localStorage.setItem('zeiterfassung_active_session', JSON.stringify(oldSession))
                 setActiveSession(oldSession as Session)
             }
-        } catch (err) {
+        } catch {
             console.log('Offline - Kategorie-Switch wird lokal gespeichert')
             // Track offline worked minutes
             if (isWorkSession && elapsedMinutes > 0) {
@@ -569,16 +570,15 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             // Nur Stop queuen wenn der online Stop NICHT bereits erfolgreich war.
             // Wenn stopRes.ok, hat der Server den Stop schon verarbeitet - ein erneuter
             // offline Stop würde die NEUE Buchung stoppen (Race-Condition).
-            const switchTime = new Date().toISOString()
             if (!stopRes || !stopRes.ok) {
-                await OfflineService.addPendingEntry('stop', { token }, switchTime)
+                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopOperationTime, stopOperationId)
             }
-            await OfflineService.addPendingEntry('start', {
+            await OfflineService.addPendingEntryWithOperationId('start', {
                 token,
                 projektId: activeSession.projektId,
                 arbeitsgangId: activeSession.arbeitsgangId,
                 produktkategorieId: newKategorie.id
-            }, switchTime)
+            }, startOperationTime, startOperationId)
 
             // Optimistic UI update
             const newSession = {
@@ -610,6 +610,10 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
         const now = new Date()
         const elapsedMinutes = Math.floor((now.getTime() - start.getTime()) / 60000)
         const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
+        const stopOperationTime = new Date().toISOString()
+        const stopOperationId = createOperationId()
+        const startOperationTime = new Date().toISOString()
+        const startOperationId = createOperationId()
 
         // stopRes vor try deklarieren, damit im catch geprüft werden kann
         // ob der Stop online bereits erfolgreich war (Race-Condition-Fix)
@@ -624,7 +628,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             stopRes = await fetch('/api/zeiterfassung/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token }),
+                body: JSON.stringify(buildBookingRequestPayload({ token }, stopOperationTime, stopOperationId)),
                 signal: stopController.signal
             })
             clearTimeout(stopTimeout)
@@ -636,12 +640,12 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             const res = await fetch('/api/zeiterfassung/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(buildBookingRequestPayload({
                     token,
                     projektId: activeSession.projektId,
                     arbeitsgangId: newArbeitsgang.id,
                     produktkategorieId: activeSession.produktkategorieId ?? null
-                }),
+                }, startOperationTime, startOperationId)),
                 signal: startController.signal
             })
             clearTimeout(startTimeout)
@@ -671,12 +675,12 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                         const restoreRes = await fetch('/api/zeiterfassung/start', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
+                            body: JSON.stringify(buildBookingRequestPayload({
                                 token,
                                 projektId: oldSession.projektId,
                                 arbeitsgangId: oldSession.arbeitsgangId,
                                 produktkategorieId: oldSession.produktkategorieId ?? null
-                            })
+                            }, new Date().toISOString(), createOperationId()))
                         })
                         if (restoreRes.ok) {
                             console.log('✅ Alte Buchung wiederhergestellt')
@@ -691,7 +695,7 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
                 localStorage.setItem('zeiterfassung_active_session', JSON.stringify(oldSession))
                 setActiveSession(oldSession as Session)
             }
-        } catch (err) {
+        } catch {
             console.log('Offline (oder Timeout) - Switch wird lokal gespeichert')
             // Track offline worked minutes from the OLD session
             if (isWorkSession && elapsedMinutes > 0) {
@@ -701,16 +705,15 @@ export default function DashboardPage({ mitarbeiter, onLogout: _onLogout, syncSt
             // Nur Stop queuen wenn der online Stop NICHT bereits erfolgreich war.
             // Wenn stopRes.ok, hat der Server den Stop schon verarbeitet - ein erneuter
             // offline Stop würde die NEUE Buchung stoppen (Race-Condition).
-            const switchTime = new Date().toISOString()
             if (!stopRes || !stopRes.ok) {
-                await OfflineService.addPendingEntry('stop', { token }, switchTime)
+                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopOperationTime, stopOperationId)
             }
-            await OfflineService.addPendingEntry('start', {
+            await OfflineService.addPendingEntryWithOperationId('start', {
                 token,
                 projektId: activeSession.projektId,
                 arbeitsgangId: newArbeitsgang.id,
                 produktkategorieId: activeSession.produktkategorieId ?? null
-            }, switchTime)
+            }, startOperationTime, startOperationId)
 
             // Update UI with "Fake" Session (IMMEDIATE optimistic update)
             const newSession = {

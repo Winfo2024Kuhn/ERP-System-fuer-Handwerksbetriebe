@@ -66,17 +66,6 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
 
     const token = localStorage.getItem('zeiterfassung_token') || ''
 
-    useEffect(() => {
-        loadBuchungen()
-    }, [selectedDate])
-
-    // Reload when sync completes
-    useEffect(() => {
-        if (syncStatus === 'done') {
-            loadBuchungen()
-        }
-    }, [syncStatus])
-
     const loadBuchungen = async () => {
         setLoading(true)
         const datum = selectedDate.toISOString().split('T')[0]
@@ -289,6 +278,25 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
             setShowCalendar(false)
         }
     }
+
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            void loadBuchungen()
+        }, 0)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [selectedDate])
+
+    // Reload when sync completes
+    useEffect(() => {
+        if (syncStatus === 'done') {
+            const timeoutId = window.setTimeout(() => {
+                void loadBuchungen()
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
+        }
+    }, [syncStatus])
 
     const goToPreviousDay = () => {
         const newDate = new Date(selectedDate)

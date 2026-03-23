@@ -54,13 +54,7 @@ export default function AngebotNotizenPage() {
     const galleryInputRef = useRef<HTMLInputElement>(null)
     const [selectedNotizForImage, setSelectedNotizForImage] = useState<number | null>(null)
 
-    useEffect(() => {
-        if (angebotId) {
-            loadNotizen()
-        }
-    }, [angebotId])
-
-    const loadNotizen = async () => {
+    async function loadNotizen() {
         setLoading(true)
         try {
             const token = localStorage.getItem('zeiterfassung_token')
@@ -74,6 +68,16 @@ export default function AngebotNotizenPage() {
         }
         setLoading(false)
     }
+
+    useEffect(() => {
+        if (!angebotId) return
+
+        const timeoutId = window.setTimeout(() => {
+            void loadNotizen()
+        }, 0)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [angebotId])
 
     const handleSave = async () => {
         if (!neueNotiz.trim()) return

@@ -60,26 +60,6 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
     const [showPhoneModal, setShowPhoneModal] = useState(false)
     const [showUploadModal, setShowUploadModal] = useState(false)
 
-
-    useEffect(() => {
-        loadProjekte()
-    }, [])
-
-    // URL-based Selection Sync
-    useEffect(() => {
-        const idParam = searchParams.get('id')
-        if (idParam && projekte.length > 0) {
-            const projektId = parseInt(idParam, 10)
-            const found = projekte.find(p => p.id === projektId)
-            if (found && found.id !== selectedProjekt?.id) {
-                loadProjektDetail(found)
-            }
-        } else if (!idParam && selectedProjekt) {
-            setSelectedProjekt(null)
-            setBilder([])
-        }
-    }, [searchParams, projekte]) // Re-run when URL or Data changes
-
     const loadProjekte = async () => {
         setLoading(true)
         try {
@@ -96,8 +76,11 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
     // Server-side search logic
     useEffect(() => {
         if (!searchTerm) {
-            loadProjekte();
-            return;
+            const timeoutId = window.setTimeout(() => {
+                void loadProjekte()
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
         }
 
         const delayDebounceFn = setTimeout(async () => {
@@ -131,6 +114,37 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
         }
         setDetailLoading(false)
     }
+
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            void loadProjekte()
+        }, 0)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [])
+
+    // URL-based Selection Sync
+    useEffect(() => {
+        const idParam = searchParams.get('id')
+        if (idParam && projekte.length > 0) {
+            const projektId = parseInt(idParam, 10)
+            const found = projekte.find(p => p.id === projektId)
+            if (found && found.id !== selectedProjekt?.id) {
+                const timeoutId = window.setTimeout(() => {
+                    void loadProjektDetail(found)
+                }, 0)
+
+                return () => window.clearTimeout(timeoutId)
+            }
+        } else if (!idParam && selectedProjekt) {
+            const timeoutId = window.setTimeout(() => {
+                setSelectedProjekt(null)
+                setBilder([])
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
+        }
+    }, [searchParams, projekte])
 
     // Hilfsfunktion: Projektadresse (Bauvorhaben) bevorzugen, Fallback auf Kundenadresse
     const getAddress = () => {

@@ -11,8 +11,24 @@ interface ZeiterfassungDB extends DBSchema {
     }
     master_data: {
         key: string
-        value: any
+        value: {
+            key: string
+            value: unknown
+        }
     }
+}
+
+interface ProjektCacheEntry {
+    name: string
+    projektNummer?: string
+}
+
+interface LieferantCacheEntry {
+    firmenname: string
+}
+
+interface KundenCacheEntry {
+    name: string
 }
 
 interface PendingEntry {
@@ -21,6 +37,10 @@ interface PendingEntry {
     data: Record<string, unknown>
     timestamp: string
     originalTime: string // ISO-String des tatsächlichen Zeitpunkts (für Offline-Sync)
+    status: 'pending' | 'inflight'
+    attemptCount: number
+    lastAttemptAt?: string
+    lastError?: string
 }
 
 export interface SyncResult {
@@ -36,6 +56,22 @@ export interface HeuteGearbeitetResult {
     stunden: number
     minuten: number
     fromCache: boolean
+}
+
+export function createOperationId() {
+    return generateUUID()
+}
+
+export function buildBookingRequestPayload(
+    data: Record<string, unknown>,
+    originalTime: string,
+    operationId: string,
+) {
+    return {
+        ...data,
+        originalZeit: originalTime,
+        idempotencyKey: operationId,
+    }
 }
 
 const DB_NAME = 'zeiterfassung-db'
@@ -90,11 +126,31 @@ function releaseSyncLock() {
     _syncLock = false
 }
 
+function normalizePendingEntry(entry: PendingEntry): PendingEntry {
+    return {
+        ...entry,
+        status: entry.status ?? 'pending',
+        attemptCount: entry.attemptCount ?? 0,
+        lastAttemptAt: entry.lastAttemptAt,
+        lastError: entry.lastError,
+    }
+}
+
 // ==================== TEST HELPERS ====================
 // These are exported ONLY for use in test files.
 // Resets sync lock only. Call clearCache/clearPending separately to wipe stores.
 export function _resetForTesting() {
     _syncLock = false
+}
+
+export async function _setPendingEntryStatusForTesting(id: string, status: 'pending' | 'inflight') {
+    const db = await initDB()
+    const entry = await db.get('pending', id)
+    if (!entry) return
+    await db.put('pending', {
+        ...normalizePendingEntry(entry),
+        status,
+    })
 }
 
 // ==================== SERVER REACHABILITY ====================
@@ -126,8 +182,9 @@ function generateUUID() {
         }
     }
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
+        const r = Math.random() * 16 | 0
+        const v = c === 'x' ? r : (r & 0x3 | 0x8)
+        return v.toString(16)
     });
 }
 
@@ -150,14 +207,14 @@ async function fetchWithCache<T>(url: string, cacheKey: string): Promise<T[]> {
                 await db.put('master_data', { key: cacheKey, value: data })
                 return Array.isArray(data) ? data : []
             }
-        } catch (e) {
-            console.warn('Network request failed, falling back to cache', e)
+        } catch (error) {
+            console.warn('Network request failed, falling back to cache', error)
         }
     }
 
     // Offline or error - return cached data from IDB
     const cached = await db.get('master_data', cacheKey)
-    return cached?.value || []
+    return (cached?.value as T[] | undefined) || []
 }
 
 export const OfflineService = {
@@ -237,7 +294,7 @@ export const OfflineService = {
     async getLastSyncTime(): Promise<Date | null> {
         const db = await initDB()
         const entry = await db.get('master_data', CACHE_KEYS.lastSync)
-        return entry ? new Date(entry.value) : null
+        return entry ? new Date(entry.value as string) : null
     },
 
     // Fetch with automatic caching - increased limit for time tracking
@@ -251,12 +308,12 @@ export const OfflineService = {
         try {
             const res = await fetch(`/api/zeiterfassung/projekte?search=${encodeURIComponent(query)}`)
             if (res.ok) return await res.json();
-        } catch (e) {
-            console.warn('Search projects failed', e);
+        } catch (error) {
+            console.warn('Search projects failed', error);
         }
         // Fallback to local filter if offline
-        const cached = await this.getProjekte();
-        return cached.filter((p: any) =>
+        const cached = await this.getProjekte() as ProjektCacheEntry[]
+        return cached.filter((p) =>
             p.name.toLowerCase().includes(query.toLowerCase()) ||
             p.projektNummer?.toLowerCase().includes(query.toLowerCase())
         );
@@ -297,11 +354,11 @@ export const OfflineService = {
         try {
             const res = await fetch(`/api/zeiterfassung/lieferanten?search=${encodeURIComponent(query)}`)
             if (res.ok) return await res.json();
-        } catch (e) {
-            console.warn('Search suppliers failed', e);
+        } catch (error) {
+            console.warn('Search suppliers failed', error);
         }
-        const cached = await this.getLieferanten();
-        return cached.filter((l: any) => l.firmenname.toLowerCase().includes(query.toLowerCase()));
+        const cached = await this.getLieferanten() as LieferantCacheEntry[]
+        return cached.filter((l) => l.firmenname.toLowerCase().includes(query.toLowerCase()));
     },
 
     async getKunden() {
@@ -316,12 +373,12 @@ export const OfflineService = {
                     await db.put('master_data', { key: CACHE_KEYS.kunden, value: kunden })
                     return kunden
                 }
-            } catch (e) {
-                console.warn('Fetch customers failed', e)
+            } catch (error) {
+                console.warn('Fetch customers failed', error)
             }
         }
         const cached = await db.get('master_data', CACHE_KEYS.kunden)
-        return cached?.value || []
+        return (cached?.value as KundenCacheEntry[] | undefined) || []
     },
 
     async searchKunden(query: string) {
@@ -332,11 +389,11 @@ export const OfflineService = {
                 const data = await res.json();
                 return data.kunden || data || [];
             }
-        } catch (e) {
-            console.warn('Search customers failed', e);
+        } catch (error) {
+            console.warn('Search customers failed', error);
         }
-        const cached = await this.getKunden();
-        return cached.filter((k: any) => k.name.toLowerCase().includes(query.toLowerCase()));
+        const cached = await this.getKunden() as KundenCacheEntry[]
+        return cached.filter((k) => k.name.toLowerCase().includes(query.toLowerCase()));
     },
 
     // Heute gearbeitet - cached for offline
@@ -358,16 +415,17 @@ export const OfflineService = {
                 await db.put('master_data', { key: cacheKey, value: data })
                 return { stunden: data.stunden || 0, minuten: data.minuten || 0, fromCache: false }
             }
-        } catch (e) {
+        } catch {
             // Network error or timeout - that's fine, use cache
             console.log('📴 Heute gearbeitet: Server nicht erreichbar, nutze Cache')
         }
 
         // Offline or error - return cached
         const cached = await db.get('master_data', cacheKey)
+        const cachedValue = cached?.value as { stunden?: number; minuten?: number } | undefined
         return {
-            stunden: cached?.value?.stunden || 0,
-            minuten: cached?.value?.minuten || 0,
+            stunden: cachedValue?.stunden || 0,
+            minuten: cachedValue?.minuten || 0,
             fromCache: true,
         }
     },
@@ -383,6 +441,29 @@ export const OfflineService = {
             data,
             timestamp: now,
             originalTime: originalTime || now, // Fallback auf jetzt
+            status: 'pending',
+            attemptCount: 0,
+        }
+        await db.put('pending', entry)
+        return entry
+    },
+
+    async addPendingEntryWithOperationId(
+        type: 'start' | 'stop' | 'pause',
+        data: Record<string, unknown>,
+        originalTime: string | undefined,
+        operationId: string,
+    ) {
+        const db = await initDB()
+        const now = new Date().toISOString()
+        const entry: PendingEntry = {
+            id: operationId,
+            type,
+            data,
+            timestamp: now,
+            originalTime: originalTime || now,
+            status: 'pending',
+            attemptCount: 0,
         }
         await db.put('pending', entry)
         return entry
@@ -391,7 +472,22 @@ export const OfflineService = {
 
     async getPendingEntries(): Promise<PendingEntry[]> {
         const db = await initDB()
-        return db.getAll('pending')
+        const entries = await db.getAll('pending')
+        return entries.map(normalizePendingEntry)
+    },
+
+    async _requeueInflightEntries() {
+        const db = await initDB()
+        const entries = (await db.getAll('pending')).map(normalizePendingEntry)
+        for (const entry of entries) {
+            if (entry.status === 'inflight') {
+                await db.put('pending', {
+                    ...entry,
+                    status: 'pending',
+                    lastError: entry.lastError || 'Recovered inflight entry for retry',
+                })
+            }
+        }
     },
 
     // Entfernt alle Pending-Entries eines bestimmten Typs (z.B. 'stop').
@@ -440,6 +536,7 @@ export const OfflineService = {
     // A sync rejection (4xx) means the SERVER rejected an old queued entry - that's not reason
     // to destroy the user's current active booking display.
     async _syncPendingInternal() {
+        await OfflineService._requeueInflightEntries()
         const pending = await OfflineService.getPendingEntries()
         if (pending.length === 0) return { synced: 0, failed: 0, discarded: 0, startSynced: false }
 
@@ -459,21 +556,27 @@ export const OfflineService = {
             const entry = pending[i]
 
             // Verify entry still exists in IDB (another sync might have processed it)
-            const stillExists = await db.get('pending', entry.id)
+            const storedEntry = await db.get('pending', entry.id)
+            const stillExists = storedEntry ? normalizePendingEntry(storedEntry) : null
             if (!stillExists) {
                 console.log(`⏭️ Entry bereits verarbeitet: ${entry.type} (${entry.id.substring(0, 8)})`)
                 continue
             }
 
+            const inflightEntry: PendingEntry = {
+                ...stillExists,
+                status: 'inflight',
+                attemptCount: stillExists.attemptCount + 1,
+                lastAttemptAt: new Date().toISOString(),
+                lastError: undefined,
+            }
+            await db.put('pending', inflightEntry)
+
             try {
                 const res = await fetch(`/api/zeiterfassung/${entry.type}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ...entry.data,
-                        originalZeit: entry.originalTime,
-                        idempotencyKey: entry.id, // Send UUID as idempotency key
-                    }),
+                    body: JSON.stringify(buildBookingRequestPayload(entry.data, entry.originalTime, entry.id)),
                 })
 
                 if (res.ok) {
@@ -493,10 +596,20 @@ export const OfflineService = {
                 } else {
                     // Server error (5xx) - transient, keep for retry
                     console.warn(`🔁 Sync retry later (${res.status}): ${entry.type}`)
+                    await db.put('pending', {
+                        ...inflightEntry,
+                        status: 'pending',
+                        lastError: `HTTP ${res.status}`,
+                    })
                     failed++
                 }
             } catch {
                 // Network error mid-sync - count ALL remaining entries as failed and stop
+                await db.put('pending', {
+                    ...inflightEntry,
+                    status: 'pending',
+                    lastError: 'Network error during sync',
+                })
                 const remaining = pending.length - i
                 console.log(`📴 Netzwerkfehler während Sync - ${remaining} verbleibende Einträge werden übersprungen`)
                 failed += remaining
@@ -542,7 +655,7 @@ export const OfflineService = {
         const today = new Date().toISOString().split('T')[0]
         const currentKey = `${CACHE_KEYS.offline_heute_minuten}_${today}`
         const existing = await db.get('master_data', currentKey)
-        const total = (existing?.value || 0) + minutes
+        const total = ((existing?.value as number | undefined) || 0) + minutes
         await db.put('master_data', { key: currentKey, value: total })
         console.log(`📊 Offline-Minuten gespeichert: +${minutes} (Gesamt heute: ${total})`)
     },
@@ -553,7 +666,7 @@ export const OfflineService = {
         const today = new Date().toISOString().split('T')[0]
         const currentKey = `${CACHE_KEYS.offline_heute_minuten}_${today}`
         const existing = await db.get('master_data', currentKey)
-        return existing?.value || 0
+        return (existing?.value as number | undefined) || 0
     },
 
     // Clear offline minutes after successful sync
@@ -587,6 +700,7 @@ export const OfflineService = {
             // Offline / timeout - use cache
         }
         const cached = await db.get('master_data', cacheKey)
-        return cached?.value || { buchungStartZeit: null, buchungEndeZeit: null }
+        return (cached?.value as { buchungStartZeit: string | null; buchungEndeZeit: string | null } | undefined)
+            || { buchungStartZeit: null, buchungEndeZeit: null }
     },
 }

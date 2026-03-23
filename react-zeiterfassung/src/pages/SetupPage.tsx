@@ -15,12 +15,6 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
     const [scanError, setScanError] = useState<string | null>(null)
     const scannerRef = useRef<Html5Qrcode | null>(null)
 
-    useEffect(() => {
-        return () => {
-            stopScanner()
-        }
-    }, [])
-
     const stopScanner = async () => {
         if (scannerRef.current) {
             try {
@@ -34,6 +28,12 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
             scannerRef.current = null
         }
     }
+
+    useEffect(() => {
+        return () => {
+            stopScanner()
+        }
+    }, [])
 
     const startScanner = async () => {
         setScanError(null)
