@@ -1,6 +1,62 @@
 import { Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import SetupPage from './pages/SetupPage'
+
+// ─── Cookie helpers (iOS PWA: localStorage gets cleared, cookies persist) ───
+const COOKIE_NAME = 'ze_token'
+const COOKIE_MITARBEITER = 'ze_mitarbeiter'
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
+
+function setCookie(name: string, value: string) {
+  const secure = location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=Strict${secure}`
+}
+
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+function deleteCookie(name: string) {
+  document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Strict`
+}
+
+function saveAuth(token: string, mitarbeiterData: object) {
+  localStorage.setItem('zeiterfassung_token', token)
+  localStorage.setItem('zeiterfassung_mitarbeiter', JSON.stringify(mitarbeiterData))
+  setCookie(COOKIE_NAME, token)
+  setCookie(COOKIE_MITARBEITER, JSON.stringify(mitarbeiterData))
+}
+
+function clearAuth() {
+  localStorage.removeItem('zeiterfassung_token')
+  localStorage.removeItem('zeiterfassung_mitarbeiter')
+  deleteCookie(COOKIE_NAME)
+  deleteCookie(COOKIE_MITARBEITER)
+}
+
+function loadAuth(): { token: string; mitarbeiter: object } | null {
+  // Try localStorage first, fall back to cookie (iOS PWA storage loss)
+  let token = localStorage.getItem('zeiterfassung_token')
+  let mitarbeiterStr = localStorage.getItem('zeiterfassung_mitarbeiter')
+
+  if (!token || !mitarbeiterStr) {
+    token = getCookie(COOKIE_NAME)
+    mitarbeiterStr = getCookie(COOKIE_MITARBEITER)
+    if (token && mitarbeiterStr) {
+      // Restore localStorage from cookie
+      localStorage.setItem('zeiterfassung_token', token)
+      localStorage.setItem('zeiterfassung_mitarbeiter', mitarbeiterStr)
+    }
+  }
+
+  if (!token || !mitarbeiterStr) return null
+  try {
+    return { token, mitarbeiter: JSON.parse(mitarbeiterStr) }
+  } catch {
+    return null
+  }
+}
 import DashboardPage from './pages/DashboardPage'
 import ZeiterfassungPage from './pages/ZeiterfassungPage'
 import ProjektePage from './pages/ProjektePage'
@@ -109,23 +165,19 @@ function App() {
       // Auto-login from QR code
       await validateAndStoreToken(urlToken)
     } else {
-      // Check if already logged in (from localStorage)
-      const storedToken = localStorage.getItem('zeiterfassung_token')
-      const storedMitarbeiter = localStorage.getItem('zeiterfassung_mitarbeiter')
+      // Check if already logged in (localStorage or cookie fallback for iOS PWA)
+      const auth = loadAuth()
 
-      if (storedToken && storedMitarbeiter) {
+      if (auth) {
         try {
-          const parsedMitarbeiter = JSON.parse(storedMitarbeiter)
-          setMitarbeiter(parsedMitarbeiter)
+          setMitarbeiter(auth.mitarbeiter as { id: number; name: string; vorname?: string; nachname?: string })
           setIsAuthenticated(true)
           // Sync all data on app start
           syncData()
           // Initialize notifications
-          initializeNotifications(storedToken)
+          initializeNotifications(auth.token)
         } catch {
-          // Invalid stored data, clear it
-          localStorage.removeItem('zeiterfassung_token')
-          localStorage.removeItem('zeiterfassung_mitarbeiter')
+          clearAuth()
         }
       }
     }
@@ -215,9 +267,8 @@ function App() {
 
         const mitarbeiterData = { id: data.id, name: `${data.vorname} ${data.nachname}`, vorname: data.vorname, nachname: data.nachname }
 
-        // Speichere Token und Mitarbeiter
-        localStorage.setItem('zeiterfassung_token', token)
-        localStorage.setItem('zeiterfassung_mitarbeiter', JSON.stringify(mitarbeiterData))
+        // Speichere Token und Mitarbeiter (localStorage + Cookie für iOS PWA)
+        saveAuth(token, mitarbeiterData)
 
         setMitarbeiter(mitarbeiterData)
         setIsAuthenticated(true)
@@ -239,6 +290,7 @@ function App() {
       console.error('Token validation failed:', err)
       // Offline-Modus: Speichere Token trotzdem und versuche später
       localStorage.setItem('zeiterfassung_token', token)
+      setCookie(COOKIE_NAME, token)
       setError('Server nicht erreichbar. Bitte später erneut versuchen.')
     }
   }
@@ -249,8 +301,7 @@ function App() {
       clearInterval(notificationIntervalRef.current)
       notificationIntervalRef.current = null
     }
-    localStorage.removeItem('zeiterfassung_token')
-    localStorage.removeItem('zeiterfassung_mitarbeiter')
+    clearAuth()
     setIsAuthenticated(false)
     setMitarbeiter(null)
   }
