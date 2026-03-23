@@ -506,4 +506,36 @@ describe('OfflineService', () => {
             expect(r).toEqual({ stunden: 2, minuten: 15, fromCache: true })
         })
     })
+
+    describe('getTagesbuchungen', () => {
+        it('sollte Tagesbuchungen online laden und cachen', async () => {
+            const data = [{ id: 1, startMinuten: 480, endeMinuten: 540 }]
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok(data))
+
+            const result = await OfflineService.getTagesbuchungen('tok', '2024-06-15')
+
+            expect(result).toEqual({ buchungen: data, fromCache: false })
+        })
+
+        it('sollte gecachte Tagesbuchungen zurückgeben wenn offline', async () => {
+            const data = [{ id: 7, startMinuten: 600, endeMinuten: 660 }]
+            vi.spyOn(globalThis, 'fetch').mockImplementationOnce(() => ok(data))
+            await OfflineService.getTagesbuchungen('tok', '2024-06-15')
+
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+
+            const result = await OfflineService.getTagesbuchungen('tok', '2024-06-15')
+
+            expect(result).toEqual({ buchungen: data, fromCache: true })
+        })
+
+        it('sollte leere Tagesbuchungen aus Cache-Fallback liefern wenn kein Cache existiert', async () => {
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+
+            const result = await OfflineService.getTagesbuchungen('tok', '2024-06-15')
+
+            expect(result).toEqual({ buchungen: [], fromCache: true })
+        })
+    })
 })
