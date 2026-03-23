@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/app_logo.png" alt="Handwerkerprogramm Logo" width="120" />
+</p>
+
 <h1 align="center">Handwerkerprogramm</h1>
 
 <p align="center">
