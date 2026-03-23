@@ -55,6 +55,7 @@ import { useConfirm } from '../components/ui/confirm-dialog';
 import type { DocBlock } from '../components/document-editor/types';
 import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks } from '../components/TeilrechnungPositionRow';
 import { onDokumentChanged } from '../lib/dokumentChannel';
+import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 
 interface Supplier {
     id: number;
@@ -480,7 +481,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 body: formData
             });
             if (res.ok) {
-                loadNotizen();
+                const bild = await res.json();
+                setNotizen(prev => appendBildToNotiz(prev, notizId, bild));
+                void loadNotizen();
             } else {
                 toast.error('Fehler beim Hochladen des Bildes');
             }
@@ -506,7 +509,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 }
             });
             if (res.ok) {
-                loadNotizen();
+                setNotizen(prev => removeBildFromNotiz(prev, notizId, bildId));
+                void loadNotizen();
             } else {
                 toast.error('Fehler beim Löschen des Bildes');
             }
