@@ -24,10 +24,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-<<<<<<< HEAD
-  "include": ["src"]
-=======
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts", "src/**/*.spec.tsx", "src/setupTests.ts"]
->>>>>>> kalkulationsprogramm/copilot/merge-last-commit-solving-n-1
 }
