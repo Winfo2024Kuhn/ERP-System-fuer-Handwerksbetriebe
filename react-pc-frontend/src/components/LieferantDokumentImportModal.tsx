@@ -11,11 +11,12 @@ import { FileText, Upload, AlertCircle, RefreshCw, Hash, Euro, CheckCircle, Perc
 import { Input } from './ui/input';
 import { Select } from './ui/select-custom';
 import { DatePicker } from './ui/datepicker';
+import type { LieferantDokument } from '../types';
 
 interface LieferantDokumentImportModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSuccess: () => void;
+    onSuccess: (createdDokumente: LieferantDokument[]) => void;
     lieferantId: number | string;
 }
 
@@ -217,6 +218,7 @@ export function LieferantDokumentImportModal({
         setError(null);
         let successCount = 0;
         let errorCount = 0;
+        const createdDokumente: LieferantDokument[] = [];
 
         for (const invoice of invoices) {
             try {
@@ -262,6 +264,8 @@ export function LieferantDokumentImportModal({
                 });
 
                 if (res.ok) {
+                    const created = await res.json() as LieferantDokument;
+                    createdDokumente.push(created);
                     successCount++;
                 } else if (res.status === 409) {
                     // Duplikat - überspringen aber nicht als Fehler zählen
@@ -278,7 +282,7 @@ export function LieferantDokumentImportModal({
         setLoading(false);
 
         if (successCount > 0) {
-            onSuccess();
+            onSuccess(createdDokumente);
             onClose();
         } else if (errorCount > 0) {
             setError(`${errorCount} von ${invoices.length} Rechnungen konnten nicht importiert werden.`);
@@ -331,7 +335,8 @@ export function LieferantDokumentImportModal({
                 throw new Error(errData.message || `Speichern fehlgeschlagen: ${res.statusText}`);
             }
 
-            onSuccess();
+            const created = await res.json() as LieferantDokument;
+            onSuccess([created]);
             onClose();
         } catch (err: any) {
             console.error(err);
@@ -400,6 +405,7 @@ export function LieferantDokumentImportModal({
                                             accept=".pdf,.xml"
                                             onChange={handleFileChange}
                                             disabled={loading}
+                                            aria-label="Dokumentdatei auswählen"
                                         />
                                         {loading ? (
                                             <>

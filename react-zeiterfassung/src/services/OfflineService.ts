@@ -104,6 +104,7 @@ const CACHE_KEYS = {
     heute_gearbeitet: 'heute_gearbeitet', // Today's hours (cached)
     offline_heute_minuten: 'offline_heute_minuten', // Offline tracked minutes (per day)
     buchungszeitfenster: 'buchungszeitfenster', // Booking time window config
+    tagesbuchungen: 'tagesbuchungen', // Daily bookings per employee/date
     lastSync: 'last_sync',
 }
 
@@ -426,6 +427,36 @@ export const OfflineService = {
         return {
             stunden: cachedValue?.stunden || 0,
             minuten: cachedValue?.minuten || 0,
+            fromCache: true,
+        }
+    },
+
+    async getTagesbuchungen(token: string, datum: string): Promise<{ buchungen: Record<string, unknown>[]; fromCache: boolean }> {
+        const db = await initDB()
+        const cacheKey = `${CACHE_KEYS.tagesbuchungen}_${token}_${datum}`
+
+        try {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 2000)
+
+            const res = await fetch(`/api/zeiterfassung/buchungen/${encodeURIComponent(token)}?datum=${encodeURIComponent(datum)}`, {
+                signal: controller.signal,
+            })
+            clearTimeout(timeoutId)
+
+            if (res.ok) {
+                const data = await res.json()
+                const buchungen = Array.isArray(data) ? data : []
+                await db.put('master_data', { key: cacheKey, value: buchungen })
+                return { buchungen, fromCache: false }
+            }
+        } catch {
+            console.log('📴 Tagesbuchungen: Server nicht erreichbar, nutze Cache')
+        }
+
+        const cached = await db.get('master_data', cacheKey)
+        return {
+            buchungen: Array.isArray(cached?.value) ? cached.value as Record<string, unknown>[] : [],
             fromCache: true,
         }
     },

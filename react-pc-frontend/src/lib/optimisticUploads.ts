@@ -5,17 +5,24 @@ type NotizMitBildern<TBild extends { id: number }> = {
     bilder?: TBild[];
 };
 
+export function prependUniqueById<TItem extends { id: number }>(
+    existing: TItem[],
+    incoming: TItem[],
+): TItem[] {
+    if (incoming.length === 0) {
+        return existing;
+    }
+
+    const incomingIds = new Set(incoming.map((item) => item.id));
+    const rest = existing.filter((item) => !incomingIds.has(item.id));
+    return [...incoming, ...rest];
+}
+
 export function mergeUploadedDokumente(
     existing: ProjektDokument[],
     uploaded: ProjektDokument[],
 ): ProjektDokument[] {
-    if (uploaded.length === 0) {
-        return existing;
-    }
-
-    const uploadedIds = new Set(uploaded.map((dokument) => dokument.id));
-    const rest = existing.filter((dokument) => !uploadedIds.has(dokument.id));
-    return [...uploaded, ...rest];
+    return prependUniqueById(existing, uploaded);
 }
 
 export function appendBildToNotiz<

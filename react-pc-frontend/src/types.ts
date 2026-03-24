@@ -155,6 +155,26 @@ export interface LieferantNotiz {
   erstelltAm: string;
 }
 
+export interface LieferantReklamationBild {
+  id: number;
+  url: string;
+  originalDateiname: string;
+}
+
+export interface LieferantReklamation {
+  id: number;
+  lieferantId: number;
+  lieferantName: string;
+  lieferscheinId?: number;
+  lieferscheinNummer?: string;
+  lieferscheinDateiname?: string;
+  erstellerName: string;
+  erstelltAm: string;
+  beschreibung: string;
+  status: string;
+  bilder: LieferantReklamationBild[];
+}
+
 export interface LieferantDetail extends Lieferant {
   statistik?: LieferantStatistik;
   kommunikation?: Kommunikation[];

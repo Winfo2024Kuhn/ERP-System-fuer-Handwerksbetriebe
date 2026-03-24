@@ -8,6 +8,7 @@ import { cn } from "../lib/utils";
 import type { LieferantDokument, LieferantDokumentTyp, LieferantDokumentenKette } from "../types";
 import LieferantDokumentModal from "./LieferantDokumentModal";
 import { LieferantDokumentImportModal } from "./LieferantDokumentImportModal";
+import { prependUniqueById } from "../lib/optimisticUploads";
 
 // Typ-Konfiguration mit Farben
 const DOK_TYP_CONFIG: Record<string, { label: string; color: string; bgColor: string; borderColor: string }> = {
@@ -304,6 +305,7 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
                                 <button
                                     onClick={() => setSearchQuery("")}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                    title="Suche zurücksetzen"
                                 >
                                     <X className="w-4 h-4" />
                                 </button>
@@ -499,8 +501,9 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
                 isOpen={showImportModal}
                 onClose={() => setShowImportModal(false)}
                 lieferantId={lieferantId}
-                onSuccess={() => {
-                    loadDokumente();
+                onSuccess={(createdDokumente) => {
+                    setDokumente(prev => prependUniqueById(prev, createdDokumente));
+                    void loadDokumente();
                 }}
             />
         </div>
@@ -539,6 +542,7 @@ function DokumentenKette({ kette, formatDate, formatCurrency, onSelect }: Dokume
                             )}
                             <button
                                 onClick={() => onSelect(dok)}
+                                title={`Dokument ${dok.geschaeftsdaten?.dokumentNummer || dok.originalDateiname} öffnen`}
                                 className={cn(
                                     "flex flex-col items-center p-3 rounded-lg border-2 min-w-[100px] transition-all hover:shadow-md",
                                     config.bgColor, config.borderColor

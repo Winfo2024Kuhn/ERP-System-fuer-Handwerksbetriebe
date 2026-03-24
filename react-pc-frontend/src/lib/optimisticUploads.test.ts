@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjektDokument } from '../types';
-import { appendBildToNotiz, mergeUploadedDokumente, removeBildFromNotiz } from './optimisticUploads';
+import { appendBildToNotiz, mergeUploadedDokumente, prependUniqueById, removeBildFromNotiz } from './optimisticUploads';
 
 describe('optimisticUploads', () => {
     it('stellt hochgeladene Dokumente sofort voran und entfernt Dubletten', () => {
@@ -55,6 +55,23 @@ describe('optimisticUploads', () => {
                 id: 10,
                 bilder: [{ id: 2, originalDateiname: 'zwei.jpg', url: '/img/zwei.jpg' }],
             },
+        ]);
+    });
+
+    it('stellt generische Elemente ohne Dubletten voran', () => {
+        const existing = [
+            { id: 1, name: 'alt' },
+            { id: 2, name: 'bestehend' },
+        ];
+        const incoming = [
+            { id: 3, name: 'neu' },
+            { id: 2, name: 'aktualisiert' },
+        ];
+
+        expect(prependUniqueById(existing, incoming)).toEqual([
+            { id: 3, name: 'neu' },
+            { id: 2, name: 'aktualisiert' },
+            { id: 1, name: 'alt' },
         ]);
     });
 });
