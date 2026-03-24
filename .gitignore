@@ -31,8 +31,6 @@ build/
 !**/src/test/**/build/
 
 ### VS Code ###
-.vscode/
-.claude/
 
 ### Runtime Data ###
 /uploads
