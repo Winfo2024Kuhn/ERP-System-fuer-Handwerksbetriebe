@@ -36,7 +36,8 @@ public class ZeiterfassungSecurityFilter implements Filter {
             "/api/anfragen",
             "/api/dokumente",
             "/api/images",
-            "/api/kalender/mobile");
+            "/api/kalender/mobile",
+            "/api/abwesenheit");
 
     // Lokale IP-Bereiche die immer Zugriff haben
     private static final List<String> LOCAL_IP_PREFIXES = List.of(

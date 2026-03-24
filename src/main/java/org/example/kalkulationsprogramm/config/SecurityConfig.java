@@ -48,7 +48,10 @@ public class SecurityConfig {
         http
                 .securityMatcher("/zeiterfassung", "/zeiterfassung/**", "/api/zeiterfassung/**", "/api/mitarbeiter/by-token/**",
                         "/api/urlaub/**", "/api/kalender/mobile/**",
-                        "/api/dokumente/**", "/api/images/**")
+                        "/api/dokumente/**", "/api/images/**",
+                        "/api/projekte/**", "/api/anfragen/**", "/api/kunden/**",
+                        "/api/lieferanten/**", "/api/produktkategorien/**", "/api/arbeitsgaenge/**",
+                        "/api/abwesenheit/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
@@ -63,7 +66,7 @@ public class SecurityConfig {
     @Order(2)
     public SecurityFilterChain staticResourcesFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/", "/index.html", "/favicon.ico", "/assets/**",
+                .securityMatcher("/", "/index.html", "/favicon.ico", "/app-icon.png", "/assets/**",
                         "/static/**", "/manifest.json", "/sw.js",
                     "/dokument-editor", "/dokument-editor/**",
                     "/login", "/login/**", "/onboarding", "/onboarding/**",
