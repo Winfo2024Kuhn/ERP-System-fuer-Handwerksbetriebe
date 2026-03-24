@@ -23,25 +23,21 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * Controller für Offene Posten - Eingangsrechnungen von Lieferanten.
- * 
- * Berechtigungslogik:
- * - Abteilung 3 (Büro): Sieht ALLE Eingangsrechnungen, kann genehmigen
- * - Abteilung 2 (Buchhaltung): Sieht NUR genehmigte Rechnungen
- * - Andere Abteilungen: Kein Zugriff
+ *
+ * Berechtigungslogik (konfigurierbar per Abteilungs-Flag in der DB):
+ * - darfRechnungenGenehmigen=true: Sieht ALLE Eingangsrechnungen, kann genehmigen
+ * - darfRechnungenSehen=true: Sieht NUR genehmigte Rechnungen
+ * - Beide Flags false / Kein Token: Kein Zugriff (leere Liste bzw. 403)
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/offene-posten")
 @RequiredArgsConstructor
 public class OffenePostenController {
-
-    private static final Long ABTEILUNG_BUCHHALTUNG = 2L;
-    private static final Long ABTEILUNG_BUERO = 3L;
 
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
@@ -55,11 +51,11 @@ public class OffenePostenController {
 
     /**
      * Gibt alle offenen (unbezahlten) Eingangsrechnungen zurück.
-     * 
-     * Berechtigungslogik:
-     * - Abteilung 3 (Büro): Alle offenen Rechnungen, kann genehmigen
-     * - Abteilung 2 (Buchhaltung): NUR genehmigte Rechnungen
-     * - Andere/Kein Token: Leere Liste
+     *
+     * Berechtigungslogik (konfigurierbar pro Abteilung in der DB):
+     * - darfRechnungenGenehmigen=true: Alle offenen Rechnungen, kann genehmigen
+     * - darfRechnungenSehen=true: NUR genehmigte Rechnungen
+     * - Beides false / Kein Token: Leere Liste
      */
 
     @GetMapping("/eingang")
@@ -67,20 +63,16 @@ public class OffenePostenController {
             @RequestHeader(value = "X-Auth-Token", required = false) String token) {
 
         Mitarbeiter mitarbeiter = mitarbeiterByToken(token);
-        Set<Long> abteilungIds = getAbteilungIds(mitarbeiter);
+        boolean darfGenehmigen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenGenehmigen);
+        boolean darfSehen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenSehen);
 
         List<LieferantGeschaeftsdokument> rechnungen;
-        boolean darfGenehmigen = abteilungIds.contains(ABTEILUNG_BUERO);
-        boolean istBuchhaltung = abteilungIds.contains(ABTEILUNG_BUCHHALTUNG);
 
         if (darfGenehmigen) {
-            // Abteilung 3 (Büro) sieht ALLE offenen Rechnungen
             rechnungen = geschaeftsdokumentRepository.findAllOffeneEingangsrechnungen();
-        } else if (istBuchhaltung) {
-            // Abteilung 2 (Buchhaltung) sieht NUR genehmigte Rechnungen
+        } else if (darfSehen) {
             rechnungen = geschaeftsdokumentRepository.findAllOffeneGenehmigte();
         } else {
-            // Andere Abteilungen oder kein Token: Leere Liste
             rechnungen = List.of();
         }
 
@@ -92,31 +84,27 @@ public class OffenePostenController {
 
     /**
      * Gibt alle Eingangsrechnungen zurück (auch bezahlte).
-     * 
-     * Berechtigungslogik:
-     * - Abteilung 3 (Büro): Alle Rechnungen
-     * - Abteilung 2 (Buchhaltung): NUR genehmigte Rechnungen
-     * - Andere/Kein Token: Leere Liste
+     *
+     * Berechtigungslogik (konfigurierbar pro Abteilung in der DB):
+     * - darfRechnungenGenehmigen=true: Alle Rechnungen
+     * - darfRechnungenSehen=true: NUR genehmigte Rechnungen
+     * - Beides false / Kein Token: Leere Liste
      */
     @GetMapping("/eingang/alle")
     public ResponseEntity<List<EingangsrechnungDto>> getAlleEingangsrechnungen(
             @RequestHeader(value = "X-Auth-Token", required = false) String token) {
 
         Mitarbeiter mitarbeiter = mitarbeiterByToken(token);
-        Set<Long> abteilungIds = getAbteilungIds(mitarbeiter);
+        boolean darfGenehmigen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenGenehmigen);
+        boolean darfSehen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenSehen);
 
         List<LieferantGeschaeftsdokument> rechnungen;
-        boolean darfGenehmigen = abteilungIds.contains(ABTEILUNG_BUERO);
-        boolean istBuchhaltung = abteilungIds.contains(ABTEILUNG_BUCHHALTUNG);
 
         if (darfGenehmigen) {
-            // Abteilung 3 (Büro) sieht ALLE Rechnungen
             rechnungen = geschaeftsdokumentRepository.findAllEingangsrechnungen();
-        } else if (istBuchhaltung) {
-            // Abteilung 2 (Buchhaltung) sieht NUR genehmigte Rechnungen
+        } else if (darfSehen) {
             rechnungen = geschaeftsdokumentRepository.findAllGenehmigte();
         } else {
-            // Andere Abteilungen oder kein Token: Leere Liste
             rechnungen = List.of();
         }
 
@@ -182,13 +170,13 @@ public class OffenePostenController {
         }
 
         geschaeftsdokumentRepository.save(gd);
-        boolean darfGenehmigen = getAbteilungIds(mitarbeiterByToken(token)).contains(ABTEILUNG_BUERO);
+        boolean darfGenehmigen = hatBerechtigung(mitarbeiterByToken(token), Abteilung::getDarfRechnungenGenehmigen);
         return ResponseEntity.ok(toDto(gd, darfGenehmigen));
     }
 
     /**
-     * Setzt den genehmigt-Status einer Eingangsrechnung (für Abteilung 3).
-     * Nur Mitarbeiter aus Abteilung 3 (Büro) dürfen genehmigen.
+     * Setzt den genehmigt-Status einer Eingangsrechnung.
+     * Nur Mitarbeiter mit darfRechnungenGenehmigen dürfen genehmigen.
      */
     @PatchMapping("/eingang/{id}/genehmigen")
     @Transactional
@@ -197,10 +185,8 @@ public class OffenePostenController {
             @RequestBody Map<String, Boolean> body,
             @RequestHeader(value = "X-Auth-Token", required = false) String token) {
 
-        // Berechtigungsprüfung: Nur Abteilung 3 darf genehmigen
         Mitarbeiter mitarbeiter = mitarbeiterByToken(token);
-        Set<Long> abteilungIds = getAbteilungIds(mitarbeiter);
-        boolean darfGenehmigen = abteilungIds.contains(ABTEILUNG_BUERO);
+        boolean darfGenehmigen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenGenehmigen);
 
         if (!darfGenehmigen) {
             return ResponseEntity.status(403).build(); // Forbidden
@@ -357,13 +343,17 @@ public class OffenePostenController {
         return mitarbeiterRepository.findByLoginToken(token).orElse(null);
     }
 
-    private Set<Long> getAbteilungIds(Mitarbeiter mitarbeiter) {
+    /**
+     * Prüft ob der Mitarbeiter mindestens eine Abteilung hat, bei der das
+     * angegebene Flag true ist.
+     */
+    private boolean hatBerechtigung(Mitarbeiter mitarbeiter,
+            java.util.function.Function<Abteilung, Boolean> flagGetter) {
         if (mitarbeiter == null || mitarbeiter.getAbteilungen() == null) {
-            return Set.of();
+            return false;
         }
         return mitarbeiter.getAbteilungen().stream()
-                .map(Abteilung::getId)
-                .collect(Collectors.toSet());
+                .anyMatch(abt -> Boolean.TRUE.equals(flagGetter.apply(abt)));
     }
 
     private EingangsrechnungDto toDto(LieferantGeschaeftsdokument gd, boolean darfGenehmigen) {
@@ -454,7 +444,7 @@ public class OffenePostenController {
         public String pdfUrl;
         public boolean ueberfaellig;
         public boolean genehmigt;
-        public boolean darfGenehmigen; // true wenn Benutzer aus Abteilung 3 (Büro)
+        public boolean darfGenehmigen; // true wenn Abteilung das Flag darfRechnungenGenehmigen hat
 
         // Neu für Gutschriften-Hierarchie
         public String referenzNummer;

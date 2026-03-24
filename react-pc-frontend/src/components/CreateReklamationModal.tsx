@@ -11,12 +11,13 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Search, FileText, Upload, X, Loader2 } from "lucide-react";
 import { useToast } from './ui/toast';
+import type { LieferantReklamation, LieferantReklamationBild } from '../types';
 
 interface CreateReklamationModalProps {
     isOpen: boolean;
     onClose: () => void;
     lieferantId: number;
-    onSuccess: () => void;
+    onSuccess: (reklamation: LieferantReklamation) => void;
 }
 
 interface Lieferschein {
@@ -97,7 +98,8 @@ export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess
 
             if (!createRes.ok) throw new Error("Erstellen fehlgeschlagen");
 
-            const newReklamation = await createRes.json();
+            const newReklamation = await createRes.json() as LieferantReklamation;
+            const uploadedBilder: LieferantReklamationBild[] = [];
 
             // 2. Upload Images
             if (files.length > 0) {
@@ -105,14 +107,23 @@ export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess
                     const formData = new FormData();
                     formData.append("datei", file);
 
-                    await fetch(`/api/reklamationen/${newReklamation.id}/bilder`, {
+                    const uploadRes = await fetch(`/api/reklamationen/${newReklamation.id}/bilder`, {
                         method: "POST",
                         body: formData
                     });
+
+                    if (!uploadRes.ok) {
+                        throw new Error("Bild-Upload fehlgeschlagen");
+                    }
+
+                    uploadedBilder.push(await uploadRes.json() as LieferantReklamationBild);
                 }
             }
 
-            onSuccess();
+            onSuccess({
+                ...newReklamation,
+                bilder: uploadedBilder,
+            });
             onClose();
         } catch (error) {
             console.error(error);
@@ -206,6 +217,7 @@ export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess
                                     <button
                                         onClick={() => removeFile(i)}
                                         className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="Bild entfernen"
                                     >
                                         <X className="h-3 w-3" />
                                     </button>

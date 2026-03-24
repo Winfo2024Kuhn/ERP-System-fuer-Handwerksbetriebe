@@ -54,11 +54,7 @@ export default function AngebotePage({ mitarbeiter, syncStatus, onSync }: Angebo
     const [showPhoneModal, setShowPhoneModal] = useState(false)
     const [showUploadModal, setShowUploadModal] = useState(false)
 
-    useEffect(() => {
-        loadAngebote()
-    }, [])
-
-    const loadAngebote = async (searchQuery?: string) => {
+    async function loadAngebote(searchQuery?: string) {
         setLoading(true)
         try {
             let url = '/api/angebote?size=15'
@@ -115,38 +111,15 @@ export default function AngebotePage({ mitarbeiter, syncStatus, onSync }: Angebo
         setLoading(false)
     }
 
-    // URL-based Selection Sync
     useEffect(() => {
-        const idParam = searchParams.get('id')
-        if (idParam && angebote.length > 0) {
-            const angebotId = parseInt(idParam, 10)
-            const found = angebote.find(a => a.id === angebotId)
-            if (found && found.id !== selectedAngebot?.id) {
-                loadAngebotDetail(found)
-            }
-        } else if (!idParam && selectedAngebot) {
-            setSelectedAngebot(null)
-            setBilder([])
-        }
-    }, [searchParams, angebote])
+        const timeoutId = window.setTimeout(() => {
+            void loadAngebote()
+        }, 0)
 
-    // Server-side search logic
-    useEffect(() => {
-        if (!searchTerm) {
-            loadAngebote();
-            return;
-        }
+        return () => window.clearTimeout(timeoutId)
+    }, [])
 
-        const delayDebounceFn = setTimeout(async () => {
-            if (searchTerm.length >= 2) {
-                await loadAngebote(searchTerm);
-            }
-        }, 500);
-
-        return () => clearTimeout(delayDebounceFn);
-    }, [searchTerm]);
-
-    const loadAngebotDetail = async (angebot: Angebot) => {
+    async function loadAngebotDetail(angebot: Angebot) {
         setSelectedAngebot(angebot)
         setDetailLoading(true)
         setBilder([])
@@ -169,6 +142,48 @@ export default function AngebotePage({ mitarbeiter, syncStatus, onSync }: Angebo
         }
         setDetailLoading(false)
     }
+
+    // URL-based Selection Sync
+    useEffect(() => {
+        const idParam = searchParams.get('id')
+        if (idParam && angebote.length > 0) {
+            const angebotId = parseInt(idParam, 10)
+            const found = angebote.find(a => a.id === angebotId)
+            if (found && found.id !== selectedAngebot?.id) {
+                const timeoutId = window.setTimeout(() => {
+                    void loadAngebotDetail(found)
+                }, 0)
+
+                return () => window.clearTimeout(timeoutId)
+            }
+        } else if (!idParam && selectedAngebot) {
+            const timeoutId = window.setTimeout(() => {
+                setSelectedAngebot(null)
+                setBilder([])
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
+        }
+    }, [searchParams, angebote])
+
+    // Server-side search logic
+    useEffect(() => {
+        if (!searchTerm) {
+            const timeoutId = window.setTimeout(() => {
+                void loadAngebote()
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
+        }
+
+        const delayDebounceFn = setTimeout(async () => {
+            if (searchTerm.length >= 2) {
+                await loadAngebote(searchTerm);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchTerm]);
 
     const getAddress = () => {
         // Prefer projekt address, fallback to kunden address

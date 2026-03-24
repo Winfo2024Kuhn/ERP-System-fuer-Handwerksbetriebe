@@ -105,7 +105,7 @@ interface Feiertag {
     bezeichnung: string
 }
 
-export default function KalenderPage({ mitarbeiter: _mitarbeiter, token, syncStatus, onSync }: KalenderPageProps) {
+export default function KalenderPage({ token, syncStatus, onSync }: KalenderPageProps) {
     const navigate = useNavigate()
     const [eintraege, setEintraege] = useState<KalenderEintrag[]>([])
     const [teamAbwesenheiten, setTeamAbwesenheiten] = useState<TeamAbwesenheit[]>([])

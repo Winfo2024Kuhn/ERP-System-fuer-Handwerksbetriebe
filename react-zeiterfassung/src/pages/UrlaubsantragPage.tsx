@@ -23,6 +23,13 @@ interface Feiertag {
     bezeichnung: string
 }
 
+const STATUS_FILTER_OPTIONS = [
+    { id: 'ALLE', label: 'Alle' },
+    { id: 'OFFEN', label: 'Offen' },
+    { id: 'GENEHMIGT', label: 'Genehmigt' },
+    { id: 'ABGELEHNT', label: 'Abgelehnt' },
+] as const
+
 export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: UrlaubsantragPageProps) {
     const navigate = useNavigate()
 
@@ -37,6 +44,10 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     const [loading, setLoading] = useState(false)
     const [success, setSuccess] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    // Resturlaub State
+    const [resturlaub, setResturlaub] = useState<number | null>(null)
+    const [loadingResturlaub, setLoadingResturlaub] = useState(false)
 
     // Overview State
     const [antraege, setAntraege] = useState<Urlaubsantrag[]>([])
@@ -54,6 +65,52 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
             fetchAntraege()
         }
     }, [activeTab, selectedYear, mitarbeiter])
+
+    // Fetch Resturlaub when typ=URLAUB and mitarbeiter available
+    useEffect(() => {
+        if (mitarbeiter && typ === 'URLAUB') {
+            fetchResturlaub()
+        } else {
+            setResturlaub(null)
+        }
+    }, [mitarbeiter, typ])
+
+    const fetchResturlaub = async () => {
+        if (!mitarbeiter) return
+        setLoadingResturlaub(true)
+        try {
+            const res = await fetch(`/api/urlaub/resturlaub?mitarbeiterId=${mitarbeiter.id}`)
+            if (res.ok) {
+                const data = await res.json()
+                setResturlaub(data.verbleibend)
+            }
+        } catch (err) {
+            console.error('Fehler beim Laden des Resturlaubs:', err)
+        } finally {
+            setLoadingResturlaub(false)
+        }
+    }
+
+    /**
+     * Zählt Arbeitstage (Mo–Fr) zwischen von und bis (inkl.).
+     * Feiertage werden serverseitig abgezogen – hier nur grobe Schätzung.
+     */
+    const zaehleArbeitstage = (vonStr: string, bisStr: string): number => {
+        if (!vonStr || !bisStr) return 0
+        const start = new Date(vonStr)
+        const end = new Date(bisStr)
+        let count = 0
+        const d = new Date(start)
+        while (d <= end) {
+            const day = d.getDay()
+            if (day !== 0 && day !== 6) count++
+            d.setDate(d.getDate() + 1)
+        }
+        return count
+    }
+
+    const beantragteTage = zaehleArbeitstage(von, bis)
+    const ueberschritten = typ === 'URLAUB' && resturlaub !== null && beantragteTage > resturlaub
 
     const fetchAntraege = async () => {
         if (!mitarbeiter) return
@@ -112,6 +169,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
             if (res.ok) {
                 setSuccess(true)
                 setShowFeiertagModal(false)
+                fetchResturlaub() // Resturlaub aktualisieren
                 // Switch to overview after success after a delay
                 setTimeout(() => {
                     setSuccess(false)
@@ -332,6 +390,44 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                 </div>
                             </div>
 
+                            {/* Resturlaub Info / Warning */}
+                            {typ === 'URLAUB' && (
+                                <div className={`flex items-start gap-3 p-3 rounded-xl text-sm ${
+                                    loadingResturlaub
+                                        ? 'bg-slate-50 text-slate-500'
+                                        : ueberschritten
+                                            ? 'bg-red-50 text-red-700 border border-red-200'
+                                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                }`}>
+                                    {loadingResturlaub ? (
+                                        <Loader2 className="w-4 h-4 animate-spin mt-0.5 shrink-0" />
+                                    ) : ueberschritten ? (
+                                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                    ) : (
+                                        <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                                    )}
+                                    <div>
+                                        {loadingResturlaub ? (
+                                            <span>Resturlaub wird geladen…</span>
+                                        ) : resturlaub !== null ? (
+                                            <>
+                                                <span className="font-semibold">
+                                                    {resturlaub} Urlaubstage übrig
+                                                </span>
+                                                {beantragteTage > 0 && (
+                                                    <span className="block mt-0.5">
+                                                        Beantragt: {beantragteTage} Arbeitstag{beantragteTage !== 1 ? 'e' : ''}
+                                                        {ueberschritten && (
+                                                            <span className="font-semibold"> — Nicht genügend Urlaubstage!</span>
+                                                        )}
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            )}
+
                             {error && (
                                 <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl">
                                     {error}
@@ -340,7 +436,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
 
                             <button
                                 type="submit"
-                                disabled={loading}
+                                disabled={loading || ueberschritten}
                                 className="w-full bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98]"
                             >
                                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
@@ -367,15 +463,10 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                             </div>
 
                             <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                                {[
-                                    { id: 'ALLE', label: 'Alle' },
-                                    { id: 'OFFEN', label: 'Offen' },
-                                    { id: 'GENEHMIGT', label: 'Genehmigt' },
-                                    { id: 'ABGELEHNT', label: 'Abgelehnt' },
-                                ].map((filter) => (
+                                {STATUS_FILTER_OPTIONS.map((filter) => (
                                     <button
                                         key={filter.id}
-                                        onClick={() => setStatusFilter(filter.id as any)}
+                                        onClick={() => setStatusFilter(filter.id)}
                                         className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-all ${statusFilter === filter.id
                                             ? 'bg-rose-600 text-white border-rose-600'
                                             : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'

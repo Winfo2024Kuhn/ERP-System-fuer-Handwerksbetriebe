@@ -46,7 +46,7 @@ public class SecurityConfig {
     @Order(1)
     public SecurityFilterChain zeiterfassungFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/zeiterfassung/**", "/api/zeiterfassung/**", "/api/mitarbeiter/by-token/**",
+                .securityMatcher("/zeiterfassung", "/zeiterfassung/**", "/api/zeiterfassung/**", "/api/mitarbeiter/by-token/**",
                         "/api/urlaub/**", "/api/kalender/mobile/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
@@ -55,6 +55,8 @@ public class SecurityConfig {
 
     /**
      * Statische Ressourcen + Health: erlaubt ohne Auth.
+     * Wichtig: /error muss hier stehen, sonst gibt Spring Boot
+     * nach einem internen Fehler (z.B. 404) wieder 401 zurück.
      */
     @Bean
     @Order(2)
@@ -63,7 +65,8 @@ public class SecurityConfig {
                 .securityMatcher("/", "/index.html", "/favicon.ico", "/assets/**",
                         "/static/**", "/manifest.json", "/sw.js",
                     "/dokument-editor", "/dokument-editor/**",
-                    "/login", "/login/**", "/onboarding", "/onboarding/**")
+                    "/login", "/login/**", "/onboarding", "/onboarding/**",
+                    "/error", "/error/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
@@ -129,7 +132,10 @@ public class SecurityConfig {
                     Map.of("success", false, "message", "Zugriff verweigert.")
                 ))
             )
-            .httpBasic(AbstractHttpConfigurer::disable);
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.sameOrigin())
+            );
 
         return http.build();
     }
@@ -152,6 +158,9 @@ public class SecurityConfig {
                 })
                 .userDetailsService(frontendUserDetailsService)
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .headers(headers -> headers
+                    .frameOptions(frame -> frame.sameOrigin())
+                )
                 .exceptionHandling(ex -> ex
                     .authenticationEntryPoint((request, response, authException) -> writeJson(
                         response,

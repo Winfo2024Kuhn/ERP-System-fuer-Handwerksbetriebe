@@ -24,11 +24,21 @@ interface Buchung {
 interface Projekt {
     id: number
     name: string
+    projektNummer?: string
+    kundenName?: string
 }
 
 interface Arbeitsgang {
     id: number
     beschreibung: string
+}
+
+interface PendingEntry {
+    id: string
+    type: 'start' | 'stop' | 'pause'
+    data: Record<string, unknown>
+    timestamp: string
+    originalTime?: string
 }
 
 const formatMinutenToTime = (minuten?: number): string => {
@@ -50,6 +60,24 @@ const formatDauer = (minuten?: number): string => {
 const WOCHENTAGE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
 const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
+const toDateKey = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = `${date.getMonth() + 1}`.padStart(2, '0')
+    const day = `${date.getDate()}`.padStart(2, '0')
+    return `${year}-${month}-${day}`
+}
+
+const getEntryTime = (entry: PendingEntry): Date => new Date(entry.originalTime || entry.timestamp)
+
+const isSameDisplayedBuchung = (left: Buchung, right: Buchung): boolean => {
+    return (left.typ || null) === (right.typ || null)
+        && (left.projektId || null) === (right.projektId || null)
+        && (left.arbeitsgangId || null) === (right.arbeitsgangId || null)
+        && (left.startMinuten || null) === (right.startMinuten || null)
+        && (left.endeMinuten || null) === (right.endeMinuten || null)
+        && (left.dauerMinuten || null) === (right.dauerMinuten || null)
+}
+
 interface TagesbuchungenPageProps {
     syncStatus?: 'syncing' | 'done' | 'error'
     onSync?: () => void
@@ -66,58 +94,30 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
 
     const token = localStorage.getItem('zeiterfassung_token') || ''
 
-    useEffect(() => {
-        loadBuchungen()
-    }, [selectedDate])
-
-    // Reload when sync completes
-    useEffect(() => {
-        if (syncStatus === 'done') {
-            loadBuchungen()
-        }
-    }, [syncStatus])
-
     const loadBuchungen = async () => {
         setLoading(true)
-        const datum = selectedDate.toISOString().split('T')[0]
-        const today = new Date().toISOString().split('T')[0]
+        const datum = toDateKey(selectedDate)
+        const today = toDateKey(new Date())
         
         let serverBuchungen: Buchung[] = []
         let offlineMode = false
-        
-        // Try to fetch from server (with aggressive timeout)
-        try {
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 2000)
-            
-            const res = await fetch(`/api/zeiterfassung/buchungen/${token}?datum=${datum}`, {
-                signal: controller.signal
-            })
-            clearTimeout(timeoutId)
-            
-            if (res.ok) {
-                serverBuchungen = await res.json() || []
+
+        const serverResult = await OfflineService.getTagesbuchungen(token, datum)
+        serverBuchungen = serverResult.buchungen as unknown as Buchung[]
+        offlineMode = serverResult.fromCache
+
+        const pending = await OfflineService.getPendingEntries() as PendingEntry[]
+        const offlineBuchungen = await buildOfflineBuchungen(pending, datum)
+
+        const allBuchungen = [...serverBuchungen]
+        for (const offlineBuchung of offlineBuchungen) {
+            if (!allBuchungen.some(serverBuchung => isSameDisplayedBuchung(serverBuchung, offlineBuchung))) {
+                allBuchungen.push(offlineBuchung)
             }
-        } catch {
-            console.log('📴 Server nicht erreichbar - zeige offline Daten')
-            offlineMode = true
         }
-        
-        // For TODAY: Add pending offline bookings + current active session
+
+        // Also add current active session from localStorage if not already shown
         if (datum === today) {
-            const pending = await OfflineService.getPendingEntries()
-            const offlineBuchungen = await buildOfflineBuchungen(pending)
-            
-            // Merge: Server bookings + offline bookings (avoid duplicates)
-            const allBuchungen = [...serverBuchungen]
-            for (const ob of offlineBuchungen) {
-                // Add offline bookings that aren't already on server
-                if (!serverBuchungen.some(sb => sb.id === ob.id)) {
-                    allBuchungen.push(ob)
-                }
-            }
-            
-            // Also add current active session from localStorage if not already shown
             const storedSession = localStorage.getItem('zeiterfassung_active_session')
             if (storedSession) {
                 try {
@@ -147,93 +147,99 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
                     }
                 } catch { /* ignore */ }
             }
-            
-            // Sort by start time ascending
-            allBuchungen.sort((a, b) => (a.startMinuten || 0) - (b.startMinuten || 0))
-            setBuchungen(allBuchungen)
-        } else {
-            // Also sort server buchungen
-            serverBuchungen.sort((a, b) => (a.startMinuten || 0) - (b.startMinuten || 0))
-            setBuchungen(serverBuchungen)
         }
+
+        allBuchungen.sort((a, b) => (a.startMinuten || 0) - (b.startMinuten || 0))
+        setBuchungen(allBuchungen)
         
         setIsOfflineMode(offlineMode)
         setLoading(false)
     }
 
     // Build buchungen from pending offline entries
-    const buildOfflineBuchungen = async (pending: Array<{ id: string; type: string; data: Record<string, unknown>; timestamp: string }>): Promise<Buchung[]> => {
+    const buildOfflineBuchungen = async (pending: PendingEntry[], datum: string): Promise<Buchung[]> => {
         const buchungen: Buchung[] = []
-        const projekte = await OfflineService.getProjekte() as Projekt[]
-        const arbeitsgaenge = await OfflineService.getArbeitsgaenge() as Arbeitsgang[]
+        const [projekte, tokenArbeitsgaenge, globaleArbeitsgaenge] = await Promise.all([
+            OfflineService.getProjekte() as Promise<Projekt[]>,
+            OfflineService.getArbeitsgaenge(token) as Promise<Arbeitsgang[]>,
+            OfflineService.getArbeitsgaenge() as Promise<Arbeitsgang[]>,
+        ])
+        const arbeitsgaenge = tokenArbeitsgaenge.length > 0 ? tokenArbeitsgaenge : globaleArbeitsgaenge
+        const tageseintraege = pending
+            .filter((entry) => toDateKey(getEntryTime(entry)) === datum)
+            .sort((left, right) => getEntryTime(left).getTime() - getEntryTime(right).getTime())
         
-        // Track start/stop pairs
-        let currentStart: { id: string; data: Record<string, unknown>; timestamp: string } | null = null
-        
-        for (const entry of pending) {
-            if (entry.type === 'start') {
-                currentStart = entry
-            } else if (entry.type === 'stop' && currentStart) {
-                // We have a complete booking
-                const projektId = currentStart.data.projektId as number
-                const arbeitsgangId = currentStart.data.arbeitsgangId as number
-                const projekt = projekte.find(p => p.id === projektId)
-                const arbeitsgang = arbeitsgaenge.find(a => a.id === arbeitsgangId)
-                
-                const startTime = new Date(currentStart.timestamp)
-                const endTime = new Date(entry.timestamp)
-                const startMinuten = startTime.getHours() * 60 + startTime.getMinutes()
-                const endeMinuten = endTime.getHours() * 60 + endTime.getMinutes()
-                const dauerMinuten = Math.floor((endTime.getTime() - startTime.getTime()) / 60000)
-                
-                buchungen.push({
-                    id: `offline-${currentStart.id}`,
-                    startMinuten,
-                    endeMinuten,
-                    dauerMinuten,
-                    projektId,
-                    projektName: projekt?.name || 'Offline Projekt',
-                    arbeitsgangId,
-                    taetigkeit: arbeitsgang?.beschreibung || 'Offline Tätigkeit',
-                    isOffline: true,
-                })
-                currentStart = null
-            } else if (entry.type === 'pause') {
-                // Pause entry
-                const startTime = new Date(entry.timestamp)
-                const startMinuten = startTime.getHours() * 60 + startTime.getMinutes()
-                buchungen.push({
-                    id: `offline-pause-${entry.id}`,
-                    startMinuten,
-                    typ: 'PAUSE',
-                    isOffline: true,
-                })
-            }
-        }
-        
-        // If there's an open start without stop, show as "running"
-        if (currentStart) {
-            const projektId = currentStart.data.projektId as number
-            const arbeitsgangId = currentStart.data.arbeitsgangId as number
+        let currentEntry: PendingEntry | null = null
+
+        const addArbeitsbuchung = (startEntry: PendingEntry, endTime?: Date) => {
+            const projektId = startEntry.data.projektId as number | undefined
+            const arbeitsgangId = startEntry.data.arbeitsgangId as number | undefined
             const projekt = projekte.find(p => p.id === projektId)
             const arbeitsgang = arbeitsgaenge.find(a => a.id === arbeitsgangId)
-            
-            const startTime = new Date(currentStart.timestamp)
-            const now = new Date()
+            const startTime = getEntryTime(startEntry)
             const startMinuten = startTime.getHours() * 60 + startTime.getMinutes()
-            const dauerMinuten = Math.floor((now.getTime() - startTime.getTime()) / 60000)
-            
+            const endeMinuten = endTime ? (endTime.getHours() * 60 + endTime.getMinutes()) : undefined
+            const dauerMinuten = endTime ? Math.max(0, Math.floor((endTime.getTime() - startTime.getTime()) / 60000)) : undefined
+
             buchungen.push({
-                id: `offline-running-${currentStart.id}`,
+                id: `offline-${startEntry.id}`,
                 startMinuten,
+                endeMinuten,
                 dauerMinuten,
                 projektId,
+                projektNummer: projekt?.projektNummer,
                 projektName: projekt?.name || 'Offline Projekt',
+                kundenName: projekt?.kundenName,
                 arbeitsgangId,
                 taetigkeit: arbeitsgang?.beschreibung || 'Offline Tätigkeit',
                 isOffline: true,
-                kommentar: '⏱️ Läuft...',
+                kommentar: endTime ? undefined : 'Läuft...',
             })
+        }
+
+        const addPausebuchung = (pauseEntry: PendingEntry, endTime?: Date) => {
+            const startTime = getEntryTime(pauseEntry)
+            const startMinuten = startTime.getHours() * 60 + startTime.getMinutes()
+            const endeMinuten = endTime ? (endTime.getHours() * 60 + endTime.getMinutes()) : undefined
+            const dauerMinuten = endTime ? Math.max(0, Math.floor((endTime.getTime() - startTime.getTime()) / 60000)) : undefined
+
+            buchungen.push({
+                id: `offline-pause-${pauseEntry.id}`,
+                startMinuten,
+                endeMinuten,
+                dauerMinuten,
+                typ: 'PAUSE',
+                isOffline: true,
+            })
+        }
+        
+        for (const entry of tageseintraege) {
+            if (entry.type === 'start') {
+                currentEntry = entry
+            } else if (entry.type === 'pause') {
+                const pauseStart = getEntryTime(entry)
+                if (currentEntry?.type === 'start') {
+                    addArbeitsbuchung(currentEntry, pauseStart)
+                }
+                currentEntry = entry
+            } else if (entry.type === 'stop' && currentEntry) {
+                const stopTime = getEntryTime(entry)
+                if (currentEntry.type === 'start') {
+                    addArbeitsbuchung(currentEntry, stopTime)
+                } else if (currentEntry.type === 'pause') {
+                    addPausebuchung(currentEntry, stopTime)
+                }
+                currentEntry = null
+            }
+        }
+        
+        if (currentEntry) {
+            const now = datum === toDateKey(new Date()) ? new Date() : undefined
+            if (currentEntry.type === 'start') {
+                addArbeitsbuchung(currentEntry, now)
+            } else if (currentEntry.type === 'pause') {
+                addPausebuchung(currentEntry, now)
+            }
         }
         
         return buchungen
@@ -290,6 +296,25 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
         }
     }
 
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            void loadBuchungen()
+        }, 0)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [selectedDate])
+
+    // Reload when sync completes
+    useEffect(() => {
+        if (syncStatus === 'done') {
+            const timeoutId = window.setTimeout(() => {
+                void loadBuchungen()
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
+        }
+    }, [syncStatus])
+
     const goToPreviousDay = () => {
         const newDate = new Date(selectedDate)
         newDate.setDate(newDate.getDate() - 1)
@@ -311,6 +336,8 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => navigate('/')}
+                        aria-label="Zur Startseite"
+                        title="Zur Startseite"
                         className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
@@ -333,6 +360,8 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
                     )}
                     <button
                         onClick={() => onSync && onSync()}
+                        aria-label="Tagesbuchungen synchronisieren"
+                        title="Tagesbuchungen synchronisieren"
                         className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <RefreshCw className={`w-5 h-5 ${loading || syncStatus === 'syncing' ? 'animate-sync-spin text-rose-600' : 'text-slate-500'}`} />
@@ -345,6 +374,8 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
                 <div className="flex items-center justify-between">
                     <button
                         onClick={goToPreviousDay}
+                        aria-label="Vorheriger Tag"
+                        title="Vorheriger Tag"
                         className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <ChevronLeft className="w-5 h-5 text-slate-600" />
@@ -364,6 +395,8 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
                     <button
                         onClick={goToNextDay}
                         disabled={isToday(selectedDate)}
+                        aria-label="Nächster Tag"
+                        title="Nächster Tag"
                         className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95 disabled:opacity-30"
                     >
                         <ChevronRight className="w-5 h-5 text-slate-600" />
@@ -478,6 +511,8 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
                                     newMonth.setMonth(newMonth.getMonth() - 1)
                                     setCalendarMonth(newMonth)
                                 }}
+                                aria-label="Vorheriger Monat"
+                                title="Vorheriger Monat"
                                 className="p-2 hover:bg-slate-100 rounded-lg"
                             >
                                 <ChevronLeft className="w-5 h-5" />
@@ -491,6 +526,8 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
                                     newMonth.setMonth(newMonth.getMonth() + 1)
                                     setCalendarMonth(newMonth)
                                 }}
+                                aria-label="Nächster Monat"
+                                title="Nächster Monat"
                                 className="p-2 hover:bg-slate-100 rounded-lg"
                             >
                                 <ChevronRight className="w-5 h-5" />

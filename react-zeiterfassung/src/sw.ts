@@ -58,6 +58,10 @@ interface CheckNotificationsMessage {
   token: string
 }
 
+interface PeriodicSyncEvent extends ExtendableEvent {
+  tag: string
+}
+
 const HOUR_24_MS = 24 * 60 * 60 * 1000
 const HOUR_1_MS = 60 * 60 * 1000
 const CHECK_WINDOW_MS = 10 * 60 * 1000 // 10 minute window
@@ -238,9 +242,10 @@ self.addEventListener('message', (event) => {
 
 // ─── Periodic Background Sync (where supported - Chrome/Edge on Android) ───
 // periodicSync is not yet in standard TypeScript defs, so we use addEventListener on self cast
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const swSelf = self as any;
-swSelf.addEventListener('periodicsync', (event: any) => {
+const swSelf = self as ServiceWorkerGlobalScope & {
+  addEventListener(type: 'periodicsync', listener: (event: PeriodicSyncEvent) => void): void
+};
+swSelf.addEventListener('periodicsync', (event: PeriodicSyncEvent) => {
   if (event.tag === 'check-appointments') {
     event.waitUntil((async () => {
       // Read token from IndexedDB since localStorage is not available in SW

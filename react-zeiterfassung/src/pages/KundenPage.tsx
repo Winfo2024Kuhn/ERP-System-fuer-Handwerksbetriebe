@@ -30,10 +30,6 @@ export default function KundenPage({ syncStatus, onSync }: KundenPageProps) {
     const [selectedKunde, setSelectedKunde] = useState<Kunde | null>(null)
     const [showPhoneModal, setShowPhoneModal] = useState(false)
 
-    useEffect(() => {
-        loadKunden()
-    }, [])
-
     // URL-based Selection Sync
     useEffect(() => {
         const idParam = searchParams.get('id')
@@ -41,14 +37,22 @@ export default function KundenPage({ syncStatus, onSync }: KundenPageProps) {
             const kundeId = parseInt(idParam, 10)
             const found = kunden.find(k => k.id === kundeId)
             if (found && found.id !== selectedKunde?.id) {
-                setSelectedKunde(found)
+                const timeoutId = window.setTimeout(() => {
+                    setSelectedKunde(found)
+                }, 0)
+
+                return () => window.clearTimeout(timeoutId)
             }
         } else if (!idParam && selectedKunde) {
-            setSelectedKunde(null)
+            const timeoutId = window.setTimeout(() => {
+                setSelectedKunde(null)
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
         }
     }, [searchParams, kunden])
 
-    const loadKunden = async () => {
+    async function loadKunden() {
         setLoading(true)
         try {
             const data = await OfflineService.getKunden() as Kunde[]
@@ -59,11 +63,22 @@ export default function KundenPage({ syncStatus, onSync }: KundenPageProps) {
         setLoading(false)
     }
 
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            void loadKunden()
+        }, 0)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [])
+
     // Server-side search logic
     useEffect(() => {
         if (!searchTerm) {
-            loadKunden();
-            return;
+            const timeoutId = window.setTimeout(() => {
+                void loadKunden()
+            }, 0)
+
+            return () => window.clearTimeout(timeoutId)
         }
 
         const delayDebounceFn = setTimeout(async () => {

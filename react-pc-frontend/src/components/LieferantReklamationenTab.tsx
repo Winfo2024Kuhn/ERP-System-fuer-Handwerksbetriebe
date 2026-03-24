@@ -6,25 +6,9 @@ import { ImageViewer } from "./ui/image-viewer";
 import { CreateReklamationModal } from "./CreateReklamationModal";
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
+import type { LieferantReklamation } from '../types';
+import { prependUniqueById } from '../lib/optimisticUploads';
 
-
-interface Reklamation {
-    id: number;
-    lieferantId: number;
-    lieferantName: string;
-    lieferscheinId?: number;
-    lieferscheinNummer?: string;
-    lieferscheinDateiname?: string;
-    erstellerName: string;
-    erstelltAm: string;
-    beschreibung: string;
-    status: string;
-    bilder: {
-        id: number;
-        url: string;
-        originalDateiname: string;
-    }[];
-}
 
 interface LieferantReklamationenTabProps {
     lieferantId: number;
@@ -33,7 +17,7 @@ interface LieferantReklamationenTabProps {
 export function LieferantReklamationenTab({ lieferantId }: LieferantReklamationenTabProps) {
     const toast = useToast();
     const confirmDialog = useConfirm();
-    const [reklamationen, setReklamationen] = useState<Reklamation[]>([]);
+    const [reklamationen, setReklamationen] = useState<LieferantReklamation[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Image Viewer State
@@ -60,7 +44,7 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
         setLoading(false);
     };
 
-    const handleImageClick = (rek: Reklamation, clickedIndex: number) => {
+    const handleImageClick = (rek: LieferantReklamation, clickedIndex: number) => {
         const images = rek.bilder.map(b => ({ url: b.url, name: b.originalDateiname }));
         setReklamationBildViewer({ images, startIndex: clickedIndex });
     };
@@ -252,7 +236,10 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
                 isOpen={createModalOpen}
                 onClose={() => setCreateModalOpen(false)}
                 lieferantId={lieferantId}
-                onSuccess={loadData}
+                onSuccess={(reklamation) => {
+                    setReklamationen(prev => prependUniqueById(prev, [reklamation]));
+                    void loadData();
+                }}
             />
         </div>
     );

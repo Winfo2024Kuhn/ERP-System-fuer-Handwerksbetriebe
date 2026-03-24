@@ -20,4 +20,18 @@ public class Abteilung {
 
     @OneToMany(mappedBy = "abteilung", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Arbeitsgang> arbeitsgaenge = new ArrayList<>();
+
+    /**
+     * Darf Eingangsrechnungen sehen und genehmigen (Büro-Rolle).
+     * Wenn true: sieht ALLE offenen Rechnungen und darf genehmigen.
+     */
+    @Column(nullable = false)
+    private Boolean darfRechnungenGenehmigen = false;
+
+    /**
+     * Darf genehmigte Eingangsrechnungen sehen (Buchhaltungs-Rolle).
+     * Wenn true (und darfRechnungenGenehmigen=false): sieht NUR genehmigte Rechnungen.
+     */
+    @Column(nullable = false)
+    private Boolean darfRechnungenSehen = false;
 }

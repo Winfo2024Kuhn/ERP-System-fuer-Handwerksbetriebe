@@ -1,11 +1,22 @@
 package org.example.kalkulationsprogramm.domain;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * Entity für Arbeitszeit-Buchungen.
@@ -98,11 +109,19 @@ public class Zeitbuchung {
     @Column(length = 36, unique = true)
     private String idempotencyKey;
 
+    /** Idempotency-Key für Stop-Operationen auf bestehende Buchungen */
+    @Column(length = 36, unique = true)
+    private String stopIdempotencyKey;
+
     /**
      * Erhöht die Version und setzt Änderungs-Metadaten.
      */
     public void markiereAlsGeaendert(Mitarbeiter bearbeiter) {
-        this.version = (this.version == null ? 1 : this.version) + 1;
+        if (this.version == null) {
+            this.version = 2;
+        } else {
+            this.version = this.version + 1;
+        }
         this.zuletztGeaendertVon = bearbeiter;
         this.zuletztGeaendertAm = LocalDateTime.now();
     }

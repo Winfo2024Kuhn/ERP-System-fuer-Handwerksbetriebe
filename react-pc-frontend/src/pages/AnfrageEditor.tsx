@@ -46,6 +46,7 @@ import { ImageViewer } from "../components/ui/image-viewer";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { onDokumentChanged } from '../lib/dokumentChannel';
+import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 
 // Notizen Interfaces
 interface AnfrageNotizBild {
@@ -1063,7 +1064,9 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 body: formData
             });
             if (res.ok) {
-                loadNotizen();
+                const bild = await res.json();
+                setNotizen(prev => appendBildToNotiz(prev, notizId, bild));
+                void loadNotizen();
             } else {
                 toast.error('Fehler beim Hochladen des Bildes');
             }
@@ -1089,7 +1092,8 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 }
             });
             if (res.ok) {
-                loadNotizen();
+                setNotizen(prev => removeBildFromNotiz(prev, notizId, bildId));
+                void loadNotizen();
             } else {
                 toast.error('Fehler beim Löschen des Bildes');
             }

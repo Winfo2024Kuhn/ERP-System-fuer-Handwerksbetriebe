@@ -1,6 +1,12 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
 import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
@@ -9,24 +15,21 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-
-import static org.mockito.BDDMockito.given;
-import static org.mockito.ArgumentMatchers.any;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @WebMvcTest(OffenePostenController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -56,11 +59,13 @@ class OffenePostenControllerTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.DateiSpeicherService dateiSpeicherService;
 
-    private Mitarbeiter buildMitarbeiterMitAbteilung(Long abteilungId) {
+    private Mitarbeiter buildMitarbeiter(boolean darfGenehmigen, boolean darfSehen) {
         Mitarbeiter m = new Mitarbeiter();
         m.setId(1L);
         Abteilung abt = new Abteilung();
-        abt.setId(abteilungId);
+        abt.setId(1L);
+        abt.setDarfRechnungenGenehmigen(darfGenehmigen);
+        abt.setDarfRechnungenSehen(darfSehen);
         Set<Abteilung> abteilungen = new HashSet<>();
         abteilungen.add(abt);
         m.setAbteilungen(abteilungen);
@@ -86,7 +91,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Abteilung Büro (3) sieht alle offenen Rechnungen")
         void bueroSiehtAlleRechnungen() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
@@ -102,7 +107,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Abteilung Buchhaltung (2) sieht nur genehmigte Rechnungen")
         void buchhaltungSiehtNurGenehmigte() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(2L);
+            Mitarbeiter m = buildMitarbeiter(false, true);
             given(mitarbeiterRepository.findByLoginToken("bh-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findAllOffeneGenehmigte()).willReturn(List.of());
 
@@ -140,7 +145,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Abteilung Büro sieht alle Rechnungen")
         void bueroSiehtAlleRechnungen() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findAllEingangsrechnungen()).willReturn(List.of());
 
@@ -157,7 +162,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Setzt Rechnung als bezahlt")
         void setztAlsBezahlt() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
@@ -186,7 +191,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Skonto wird berechnet wenn innerhalb Frist")
         void skontoBerechnung() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
@@ -211,7 +216,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Büro-Mitarbeiter kann genehmigen")
         void bueroKannGenehmigen() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
@@ -229,7 +234,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Buchhaltung (Abt. 2) darf nicht genehmigen → 403")
         void buchhaltungDarfNichtGenehmigen() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(2L);
+            Mitarbeiter m = buildMitarbeiter(false, true);
             given(mitarbeiterRepository.findByLoginToken("bh-token")).willReturn(Optional.of(m));
 
             mockMvc.perform(patch("/api/offene-posten/eingang/1/genehmigen")
@@ -251,7 +256,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Unbekannte Rechnung gibt 404 (bei berechtigtem Benutzer)")
         void unbekannteRechnungGibt404() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findById(999L)).willReturn(Optional.empty());
 

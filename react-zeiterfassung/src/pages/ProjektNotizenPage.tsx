@@ -41,12 +41,6 @@ export default function ProjektNotizenPage() {
     const galleryInputRef = useRef<HTMLInputElement>(null)
     const [selectedNotizForImage, setSelectedNotizForImage] = useState<number | null>(null)
 
-    useEffect(() => {
-        if (projektId) {
-            loadNotizen()
-        }
-    }, [projektId])
-
     const loadNotizen = async () => {
         setLoading(true)
         try {
@@ -61,6 +55,16 @@ export default function ProjektNotizenPage() {
         }
         setLoading(false)
     }
+
+    useEffect(() => {
+        if (!projektId) return
+
+        const timeoutId = window.setTimeout(() => {
+            void loadNotizen()
+        }, 0)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [projektId])
 
     const handleSave = async () => {
         if (!neueNotiz.trim()) return

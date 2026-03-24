@@ -44,7 +44,7 @@ interface Feiertag {
     bezeichnung: string
 }
 
-export default function SaldenPage({ mitarbeiter: _mitarbeiter, syncStatus, onSync }: SaldenPageProps) {
+export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
     const navigate = useNavigate()
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -98,7 +98,7 @@ export default function SaldenPage({ mitarbeiter: _mitarbeiter, syncStatus, onSy
             } else {
                 setError('Fehler beim Laden der Daten')
             }
-        } catch (err) {
+        } catch {
             setError('Server nicht erreichbar')
         } finally {
             setLoading(false)

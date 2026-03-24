@@ -38,25 +38,38 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose, ima
 
     // Reset state when image changes
     useEffect(() => {
-        setScale(1);
-        setPosition({ x: 0, y: 0 });
-        setImageLoaded(false);
-        setSwipeOffset(0);
+        const timeoutId = window.setTimeout(() => {
+            setScale(1);
+            setPosition({ x: 0, y: 0 });
+            setImageLoaded(false);
+            setSwipeOffset(0);
+        }, 0);
+
+        return () => window.clearTimeout(timeoutId);
     }, [currentIndex, src]);
 
     // Set starting index when opening
     useEffect(() => {
         if (startIndex !== undefined) {
-            setCurrentIndex(startIndex);
+            const timeoutId = window.setTimeout(() => {
+                setCurrentIndex(startIndex);
+            }, 0);
+
+            return () => window.clearTimeout(timeoutId);
         }
     }, [startIndex]);
 
     // Animate in
     useEffect(() => {
         if (src || (images && images.length > 0)) {
-            requestAnimationFrame(() => setFadeIn(true));
+            const frameId = requestAnimationFrame(() => setFadeIn(true));
+            return () => cancelAnimationFrame(frameId);
         } else {
-            setFadeIn(false);
+            const timeoutId = window.setTimeout(() => {
+                setFadeIn(false);
+            }, 0);
+
+            return () => window.clearTimeout(timeoutId);
         }
     }, [src, images]);
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { QrCode, Smartphone, AlertCircle, Camera, X, Keyboard } from 'lucide-react'
+import { QrCode, Smartphone, AlertCircle, Keyboard, Camera, X } from 'lucide-react'
 import { Html5Qrcode } from 'html5-qrcode'
 
 interface SetupPageProps {
@@ -8,24 +8,40 @@ interface SetupPageProps {
 }
 
 export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
-    const [scanning, setScanning] = useState(false)
-    const [scanError, setScanError] = useState<string | null>(null)
     const [processing, setProcessing] = useState(false)
     const [showManualInput, setShowManualInput] = useState(false)
     const [manualToken, setManualToken] = useState('')
+    const [scanning, setScanning] = useState(false)
+    const [scanError, setScanError] = useState<string | null>(null)
     const scannerRef = useRef<Html5Qrcode | null>(null)
+
+    const stopScanner = async () => {
+        if (scannerRef.current) {
+            try {
+                const state = scannerRef.current.getState()
+                // State 2 = SCANNING, state 3 = PAUSED
+                if (state === 2 || state === 3) {
+                    await scannerRef.current.stop()
+                }
+                scannerRef.current.clear()
+            } catch { /* ignore cleanup errors */ }
+            scannerRef.current = null
+        }
+    }
+
+    useEffect(() => {
+        return () => {
+            stopScanner()
+        }
+    }, [])
 
     const startScanner = async () => {
         setScanError(null)
-
-        // Prüfe ob Kamera verfügbar ist
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            setScanError('Kamera wird von diesem Browser nicht unterstützt. Bitte Token manuell eingeben.')
-            setShowManualInput(true)
-            return
-        }
-
         setScanning(true)
+        setShowManualInput(false)
+
+        // Wait for DOM element to be rendered
+        await new Promise(resolve => setTimeout(resolve, 150))
 
         try {
             const scanner = new Html5Qrcode('qr-reader')
@@ -34,65 +50,33 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
             await scanner.start(
                 { facingMode: 'environment' },
                 { fps: 10, qrbox: { width: 250, height: 250 } },
-                (decodedText: string) => {
-                    console.log('QR-Code gescannt:', decodedText)
-                    handleQrResult(decodedText)
+                (decodedText) => {
+                    // Extract token from URL or use raw value
+                    let token = decodedText.trim()
+                    try {
+                        const url = new URL(decodedText)
+                        const urlToken = url.searchParams.get('token')
+                        if (urlToken) token = urlToken
+                    } catch { /* not a URL, use as-is */ }
+
+                    stopScanner().then(() => {
+                        setScanning(false)
+                        setProcessing(true)
+                        if (onTokenScanned) onTokenScanned(token)
+                    })
                 },
-                () => { }
+                () => { /* ignore per-frame decode errors */ }
             )
-        } catch (err: unknown) {
-            console.error('Scanner error:', err)
-
-            // Bessere Fehlermeldungen
-            const errorMessage = err instanceof Error ? err.message : String(err)
-
-            if (errorMessage.includes('NotAllowedError') || errorMessage.includes('Permission')) {
-                setScanError('Kamerazugriff wurde verweigert. Bitte in den Browser-Einstellungen erlauben, oder Token manuell eingeben.')
-            } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('device not found')) {
-                setScanError('Keine Kamera gefunden. Bitte Token manuell eingeben.')
-            } else if (errorMessage.includes('NotSupportedError')) {
-                setScanError('Kamera wird nicht unterstützt. Bitte HTTPS verwenden oder Token manuell eingeben.')
-            } else {
-                setScanError('Kamera konnte nicht gestartet werden. Bitte Token manuell eingeben.')
-            }
-
-            setShowManualInput(true)
+        } catch (err) {
+            console.error('Camera error:', err)
             setScanning(false)
+            setScanError('Kamera konnte nicht geöffnet werden. Bitte Kamera-Berechtigung erteilen oder Token manuell eingeben.')
         }
     }
 
-    const stopScanner = async () => {
-        if (scannerRef.current) {
-            try {
-                await scannerRef.current.stop()
-                scannerRef.current.clear()
-            } catch { }
-            scannerRef.current = null
-        }
-        setScanning(false)
-    }
-
-    const handleQrResult = async (result: string) => {
-        setProcessing(true)
+    const handleStopScanner = async () => {
         await stopScanner()
-
-        try {
-            let token = result
-            if (result.includes('token=')) {
-                const url = new URL(result)
-                token = url.searchParams.get('token') || result
-            }
-
-            if (token && onTokenScanned) {
-                onTokenScanned(token)
-            } else {
-                setScanError('Ungültiger QR-Code. Bitte erneut versuchen.')
-                setProcessing(false)
-            }
-        } catch {
-            setScanError('QR-Code konnte nicht gelesen werden.')
-            setProcessing(false)
-        }
+        setScanning(false)
     }
 
     const handleManualSubmit = () => {
@@ -101,14 +85,6 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
             onTokenScanned(manualToken.trim())
         }
     }
-
-    useEffect(() => {
-        return () => {
-            if (scannerRef.current) {
-                scannerRef.current.stop().catch(() => { })
-            }
-        }
-    }, [])
 
     if (processing) {
         return (
@@ -121,24 +97,23 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
 
     if (scanning) {
         return (
-            <div className="min-h-screen bg-slate-900 flex flex-col">
-                <div className="bg-white px-4 py-4 flex items-center justify-between">
-                    <h1 className="text-slate-900 font-bold text-lg">QR-Code scannen</h1>
-                    <button
-                        onClick={stopScanner}
-                        className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"
-                    >
-                        <X className="w-5 h-5 text-slate-600" />
-                    </button>
-                </div>
-
-                <div className="flex-1 flex items-center justify-center p-4">
-                    <div id="qr-reader" className="w-full max-w-sm rounded-xl overflow-hidden"></div>
-                </div>
-
-                <div className="bg-white p-4 text-center">
-                    <p className="text-slate-600 text-sm">
-                        Halte die Kamera auf den QR-Code in der Mitarbeiterverwaltung
+            <div className="min-h-screen bg-black flex flex-col items-center justify-center">
+                <div className="w-full max-w-sm">
+                    <div className="flex items-center justify-between px-4 py-3">
+                        <p className="text-white font-medium">QR-Code scannen</p>
+                        <button
+                            type="button"
+                            onClick={handleStopScanner}
+                            title="Scanner schließen"
+                            aria-label="Scanner schließen"
+                            className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
+                        >
+                            <X className="w-5 h-5 text-white" />
+                        </button>
+                    </div>
+                    <div id="qr-reader" className="w-full" />
+                    <p className="text-white/60 text-sm text-center mt-4 px-4">
+                        Halte die Kamera auf den QR-Code deines Profils
                     </p>
                 </div>
             </div>
@@ -163,34 +138,35 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
             )}
 
             <p className="text-slate-500 mb-8 max-w-xs">
-                Scanne den QR-Code oder gib das Token manuell ein.
+                Scanne deinen persönlichen QR-Code oder gib das Token manuell ein.
             </p>
 
-            {/* Scan Button */}
+            {/* Primary: Scan with camera */}
             <button
+                type="button"
                 onClick={startScanner}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold py-4 px-8 rounded-xl flex items-center gap-3 transition-colors shadow-sm mb-4"
+                className="w-full max-w-sm bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold py-4 rounded-2xl flex items-center justify-center gap-3 mb-4 shadow-md transition-colors"
             >
-                <Camera className="w-6 h-6" />
-                QR-Code scannen
+                <Camera className="w-5 h-5" />
+                Kamera öffnen &amp; QR-Code scannen
             </button>
 
-            {/* Manual Input Toggle */}
+            {/* Secondary: Manual Token Input */}
             <button
                 onClick={() => setShowManualInput(!showManualInput)}
-                className="text-slate-500 hover:text-rose-600 text-sm flex items-center gap-2 mb-6 transition-colors"
+                className="text-slate-500 hover:text-rose-600 text-sm flex items-center gap-2 mb-4 transition-colors"
             >
                 <Keyboard className="w-4 h-4" />
                 Token manuell eingeben
             </button>
 
-            {/* Manual Token Input */}
             {showManualInput && (
                 <div className="w-full max-w-sm mb-8">
                     <input
                         type="text"
                         value={manualToken}
                         onChange={(e) => setManualToken(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
                         placeholder="Token eingeben..."
                         className="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 mb-3"
                     />
@@ -215,7 +191,7 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
                         </div>
                         <div className="text-left">
                             <p className="text-slate-900 font-medium text-sm">Öffne die Mitarbeiterverwaltung</p>
-                            <p className="text-slate-500 text-xs">Gehe zu deinem Profil</p>
+                            <p className="text-slate-500 text-xs">Gehe zu deinem Profil am PC</p>
                         </div>
                     </div>
 
@@ -224,8 +200,8 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
                             2
                         </div>
                         <div className="text-left">
-                            <p className="text-slate-900 font-medium text-sm">Klicke auf "QR-Code"</p>
-                            <p className="text-slate-500 text-xs">Der QR-Code wird angezeigt</p>
+                            <p className="text-slate-900 font-medium text-sm">Klicke auf "QR-Code anzeigen"</p>
+                            <p className="text-slate-500 text-xs">Der QR-Code wird am Bildschirm angezeigt</p>
                         </div>
                     </div>
 
@@ -234,8 +210,8 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
                             3
                         </div>
                         <div className="text-left">
-                            <p className="text-slate-900 font-medium text-sm">Scanne den QR-Code</p>
-                            <p className="text-slate-500 text-xs">Mit dem Button oben</p>
+                            <p className="text-slate-900 font-medium text-sm">Tippe auf "Kamera öffnen"</p>
+                            <p className="text-slate-500 text-xs">Halte dein Handy auf den QR-Code</p>
                         </div>
                     </div>
                 </div>

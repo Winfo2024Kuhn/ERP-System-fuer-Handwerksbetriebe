@@ -54,13 +54,7 @@ export default function AnfrageNotizenPage() {
     const galleryInputRef = useRef<HTMLInputElement>(null)
     const [selectedNotizForImage, setSelectedNotizForImage] = useState<number | null>(null)
 
-    useEffect(() => {
-        if (anfrageId) {
-            loadNotizen()
-        }
-    }, [anfrageId])
-
-    const loadNotizen = async () => {
+    async function loadNotizen() {
         setLoading(true)
         try {
             const token = localStorage.getItem('zeiterfassung_token')
@@ -74,6 +68,16 @@ export default function AnfrageNotizenPage() {
         }
         setLoading(false)
     }
+
+    useEffect(() => {
+        if (!anfrageId) return
+
+        const timeoutId = window.setTimeout(() => {
+            void loadNotizen()
+        }, 0)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [anfrageId])
 
     const handleSave = async () => {
         if (!neueNotiz.trim()) return
