@@ -91,7 +91,17 @@ public class EmailCleanupService {
             // 1. Vom Server löschen
             emailImportService.deleteEmailFromServer(email);
 
-            // 2. Aus DB löschen
+            // 2. Kind-Emails (Replies) von diesem Parent lösen, um FK-Constraint zu vermeiden
+            List<Email> replies = email.getReplies();
+            if (replies != null && !replies.isEmpty()) {
+                for (Email reply : replies) {
+                    reply.setParentEmail(null);
+                }
+                emailRepository.saveAll(replies);
+                emailRepository.flush();
+            }
+
+            // 3. Aus DB löschen
             emailRepository.delete(email);
             return true;
         } catch (Exception e) {

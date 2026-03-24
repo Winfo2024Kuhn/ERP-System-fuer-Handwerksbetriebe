@@ -111,6 +111,110 @@ if ($oldCommit -eq $newCommit) {
     git log --oneline $oldCommit..$newCommit
 }
 
+# ============================================================================
+# Datenbank-Backup VOR dem Update
+# ============================================================================
+if (-not $SkipBackup) {
+    Write-Host ""
+    Write-Info "Erstelle Datenbank-Backup vor dem Update..."
+    
+    $dbBackupDir = Join-Path $PRODUCTION_PATH "backups\db"
+    if (-not (Test-Path $dbBackupDir)) {
+        New-Item -ItemType Directory -Path $dbBackupDir -Force | Out-Null
+    }
+    
+    # Finde mysqldump / mariadb-dump
+    $dumpTool = $null
+    $dumpSearchPaths = @(
+        "C:\Program Files\MariaDB 11.4\bin\mariadb-dump.exe",
+        "C:\Program Files\MariaDB 11.3\bin\mariadb-dump.exe",
+        "C:\Program Files\MariaDB 10.11\bin\mariadb-dump.exe",
+        "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
+        "C:\Program Files\MySQL\MySQL Server 8.3\bin\mysqldump.exe",
+        "C:\Program Files\MySQL\MySQL Server 9.0\bin\mysqldump.exe"
+    )
+    
+    foreach ($p in $dumpSearchPaths) {
+        if (Test-Path $p) { $dumpTool = $p; break }
+    }
+    
+    # Fallback: im PATH suchen
+    if (-not $dumpTool) {
+        $cmd = Get-Command mysqldump -ErrorAction SilentlyContinue
+        if (-not $cmd) { $cmd = Get-Command mariadb-dump -ErrorAction SilentlyContinue }
+        if ($cmd) { $dumpTool = $cmd.Source }
+    }
+    
+    if ($dumpTool) {
+        # DB-Credentials aus bestehender application.properties oder application-local.properties lesen
+        $dbUser = $null
+        $dbPass = $null
+        $dbHost = "localhost"
+        $dbPort = "3307"
+        $dbName = "kalkulationsprogramm_db"
+        
+        $configDir = Join-Path $PRODUCTION_PATH "config"
+        $propsFiles = @(
+            (Join-Path $configDir "application-local.properties"),
+            (Join-Path $configDir "application.properties")
+        )
+        
+        foreach ($propsFile in $propsFiles) {
+            if ((Test-Path $propsFile) -and (-not $dbUser -or $dbUser -eq "OVERRIDE_IN_LOCAL")) {
+                $content = Get-Content $propsFile -ErrorAction SilentlyContinue
+                foreach ($line in $content) {
+                    if ($line -match '^spring\.datasource\.username=(.+)$') {
+                        $val = $matches[1].Trim()
+                        if ($val -ne 'OVERRIDE_IN_LOCAL' -and $val -notmatch '\$\{') { $dbUser = $val }
+                    }
+                    if ($line -match '^spring\.datasource\.password=(.+)$') {
+                        $val = $matches[1].Trim()
+                        if ($val -ne 'OVERRIDE_IN_LOCAL' -and $val -notmatch '\$\{') { $dbPass = $val }
+                    }
+                    if ($line -match '^spring\.datasource\.url=.*//([^:/]+):(\d+)/([^?]+)') {
+                        $dbHost = $matches[1]; $dbPort = $matches[2]; $dbName = $matches[3]
+                    }
+                }
+            }
+        }
+        
+        if ($dbUser -and $dbPass) {
+            $dbTimestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+            $dbBackupFile = Join-Path $dbBackupDir "${dbName}_${dbTimestamp}.sql"
+            
+            Write-Info "Verwende Dump-Tool: $dumpTool"
+            Write-Info "Sichere Datenbank '$dbName' nach: $dbBackupFile"
+            
+            $env:MYSQL_PWD = $dbPass
+            & $dumpTool --host=$dbHost --port=$dbPort --user=$dbUser --single-transaction --routines --triggers --databases $dbName --result-file=$dbBackupFile 2>&1
+            Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue
+            
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $dbBackupFile)) {
+                $dbBackupSize = [math]::Round((Get-Item $dbBackupFile).Length / 1MB, 2)
+                Write-Success "Datenbank-Backup erstellt: $dbBackupFile ($dbBackupSize MB)"
+                
+                # Alte DB-Backups aufraeumen (behalte die letzten 10)
+                $oldDbBackups = Get-ChildItem $dbBackupDir -Filter "*.sql" |
+                                Sort-Object LastWriteTime -Descending |
+                                Select-Object -Skip 10
+                if ($oldDbBackups) {
+                    $oldDbBackups | Remove-Item -Force
+                    Write-Info "$($oldDbBackups.Count) alte DB-Backups entfernt"
+                }
+            } else {
+                Write-Warning-Custom "Datenbank-Backup fehlgeschlagen (Exit: $LASTEXITCODE) - Update wird trotzdem fortgesetzt"
+            }
+        } else {
+            Write-Warning-Custom "DB-Credentials nicht gefunden - Datenbank-Backup uebersprungen"
+        }
+    } else {
+        Write-Warning-Custom "mysqldump/mariadb-dump nicht gefunden - Datenbank-Backup uebersprungen"
+        Write-Info "Installiere MySQL/MariaDB Client-Tools fuer automatische Backups"
+    }
+} else {
+    Write-Warning-Custom "Datenbank-Backup wird uebersprungen (-SkipBackup)"
+}
+
 # Maven Build
 if (-not $SkipBuild) {
     Write-Host ""
@@ -251,37 +355,41 @@ if ($LASTEXITCODE -eq 0 -or $?) {
 # Kopiere Konfigurations-Dateien
 Write-Host ""
 Write-Info "Kopiere Konfigurations-Dateien..."
-$configSource = Join-Path $REPO_PATH "config"
 $configDest = Join-Path $PRODUCTION_PATH "config"
+$repoResources = Join-Path $REPO_PATH "src\main\resources"
+$repoConfig = Join-Path $REPO_PATH "config"
 
-if (Test-Path $configSource) {
-    # Erstelle config-Verzeichnis falls nicht vorhanden
-    if (-not (Test-Path $configDest)) {
-        New-Item -ItemType Directory -Path $configDest -Force | Out-Null
-    }
-    
-    # Kopiere logback-spring.xml (wird immer aktualisiert)
-    $logbackSource = Join-Path $configSource "logback-spring.xml"
-    if (Test-Path $logbackSource) {
-        Copy-Item $logbackSource $configDest -Force
-        Write-Success "logback-spring.xml kopiert"
-    }
-    
-    # application.properties: Nur kopieren wenn noch keine vorhanden ist
-    $appPropsSource = Join-Path $REPO_PATH "deployment\config\application.properties"
-    $appPropsDest = Join-Path $configDest "application.properties"
-    if (-not (Test-Path $appPropsDest)) {
-        if (Test-Path $appPropsSource) {
-            Copy-Item $appPropsSource $appPropsDest -Force
-            Write-Warning-Custom "application.properties wurde neu erstellt - bitte Werte pruefen!"
-        } else {
-            Write-Warning-Custom "Keine application.properties Vorlage gefunden in: $appPropsSource"
-        }
-    } else {
-        Write-Success "application.properties existiert bereits (wird nicht ueberschrieben)"
-    }
+# Erstelle config-Verzeichnis falls nicht vorhanden
+if (-not (Test-Path $configDest)) {
+    New-Item -ItemType Directory -Path $configDest -Force | Out-Null
+}
+
+# Kopiere logback-spring.xml (wird immer aktualisiert)
+$logbackSource = Join-Path $repoConfig "logback-spring.xml"
+if (Test-Path $logbackSource) {
+    Copy-Item $logbackSource $configDest -Force
+    Write-Success "logback-spring.xml kopiert"
+}
+
+# application.properties: IMMER aus Repo uebernehmen (enthaelt aktuelle Config mit Platzhaltern)
+$appPropsSource = Join-Path $repoResources "application.properties"
+$appPropsDest = Join-Path $configDest "application.properties"
+if (Test-Path $appPropsSource) {
+    Copy-Item $appPropsSource $appPropsDest -Force
+    Write-Success "application.properties aktualisiert aus Repo"
 } else {
-    Write-Warning-Custom "Config Quellverzeichnis nicht gefunden: $configSource"
+    Write-Warning-Custom "application.properties nicht gefunden in: $appPropsSource"
+}
+
+# application-local.properties: IMMER aus Repo uebernehmen (enthaelt Produktions-Secrets)
+$localPropsSource = Join-Path $repoResources "application-local.properties"
+$localPropsDest = Join-Path $configDest "application-local.properties"
+if (Test-Path $localPropsSource) {
+    Copy-Item $localPropsSource $localPropsDest -Force
+    Write-Success "application-local.properties aktualisiert aus Repo"
+} else {
+    Write-Warning-Custom "application-local.properties nicht gefunden in: $localPropsSource"
+    Write-Info "Erstelle diese Datei unter: $localPropsSource"
 }
 
 # Kopiere OpenFile Launcher Setup-Dateien

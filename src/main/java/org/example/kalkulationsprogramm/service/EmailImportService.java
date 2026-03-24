@@ -747,6 +747,10 @@ public class EmailImportService {
 
         String user = System.getenv("IMAP_USER");
         String pass = System.getenv("IMAP_PASSWORD");
+        if (user == null || user.isBlank() || pass == null || pass.isBlank()) {
+            log.debug("[EmailDeletion] IMAP_USER/PASSWORD nicht konfiguriert, überspringe Server-Löschung");
+            return;
+        }
         String host = System.getenv("IMAP_HOST");
         if (host == null || host.isBlank()) {
             host = "secureimap.t-online.de";
