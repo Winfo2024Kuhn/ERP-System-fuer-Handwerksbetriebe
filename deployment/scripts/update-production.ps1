@@ -28,9 +28,8 @@ if (-not $isAdmin) {
 }
 
 # Konfiguration
-$REPO_PATH = "C:\Github\Handwerkerprogramm"
+$REPO_PATH = "C:\Github\ERP-System-fuer-Handwerksbetriebe"
 $PRODUCTION_PATH = "C:\Kalkulationsprogramm"
-$JAR_NAME = "Kalkulationsprogramm-1.0.0.jar"
 $BACKUP_DIR = "$PRODUCTION_PATH\backups"
 
 # Farben fuer Ausgabe
@@ -75,18 +74,18 @@ if ($gitStatus -and -not $Force) {
 
 # Pruefe aktuellen Branch
 $currentBranch = git rev-parse --abbrev-ref HEAD
-if ($currentBranch -ne "master") {
-    Write-Warning-Custom "Du bist nicht auf dem master branch (aktuell: $currentBranch)"
+if ($currentBranch -ne "main") {
+    Write-Warning-Custom "Du bist nicht auf dem main branch (aktuell: $currentBranch)"
     if (-not $Force) {
-        $continue = Read-Host "Zum master branch wechseln? (j/n)"
+        $continue = Read-Host "Zum main branch wechseln? (j/n)"
         if ($continue -eq "j" -or $continue -eq "J") {
-            Write-Info "Wechsle zu master branch..."
-            git checkout master
+            Write-Info "Wechsle zu main branch..."
+            git checkout main
             if ($LASTEXITCODE -ne 0) {
-                Write-Error-Custom "Fehler beim Wechseln zum master branch"
+                Write-Error-Custom "Fehler beim Wechseln zum main branch"
                 exit 1
             }
-            Write-Success "Branch gewechselt zu master"
+            Write-Success "Branch gewechselt zu main"
         } else {
             Write-Info "Update abgebrochen."
             exit 0
@@ -95,11 +94,11 @@ if ($currentBranch -ne "master") {
 }
 
 # Hole neueste Aenderungen
-Write-Info "Hole neueste Aenderungen vom master branch..."
+Write-Info "Hole neueste Aenderungen vom main branch..."
 $oldCommit = git rev-parse HEAD
-git pull origin master
+git pull origin main
 if ($LASTEXITCODE -ne 0) {
-    Write-Error-Custom "Fehler beim Pullen vom master branch"
+    Write-Error-Custom "Fehler beim Pullen vom main branch"
     exit 1
 }
 $newCommit = git rev-parse HEAD
@@ -149,13 +148,21 @@ if (-not $SkipBuild) {
     Write-Warning-Custom "Build wird uebersprungen (-SkipBuild)"
 }
 
-# Finde die gebaute JAR Datei
-$jarPath = Join-Path $REPO_PATH "target\$JAR_NAME"
-if (-not (Test-Path $jarPath)) {
-    Write-Error-Custom "JAR-Datei nicht gefunden: $jarPath"
+# Finde die gebaute JAR Datei dynamisch im target-Verzeichnis
+$targetDir = Join-Path $REPO_PATH "target"
+$jarFile = Get-ChildItem $targetDir -Filter "*.jar" -ErrorAction SilentlyContinue | 
+           Where-Object { $_.Name -notmatch '(-sources|-javadoc|\.original)' } | 
+           Sort-Object LastWriteTime -Descending | 
+           Select-Object -First 1
+
+if (-not $jarFile) {
+    Write-Error-Custom "Keine JAR-Datei im target-Verzeichnis gefunden: $targetDir"
     Write-Info "Bitte pruefe ob der Build erfolgreich war und die JAR erstellt wurde."
     exit 1
 }
+
+$jarPath = $jarFile.FullName
+$JAR_NAME = $jarFile.Name
 
 # Zeige JAR Info
 $jarInfo = Get-Item $jarPath
@@ -188,8 +195,9 @@ if ($tcpConnection) {
 }
 
 # Backup der alten JAR (falls vorhanden)
-$productionJar = Join-Path $PRODUCTION_PATH $JAR_NAME
-if ((Test-Path $productionJar) -and -not $SkipBackup) {
+# Finde existierende JAR-Dateien im Produktionsverzeichnis
+$existingJars = Get-ChildItem $PRODUCTION_PATH -Filter "*.jar" -ErrorAction SilentlyContinue
+if ($existingJars -and -not $SkipBackup) {
     Write-Host ""
     Write-Info "Erstelle Backup der alten JAR-Datei..."
     
@@ -200,10 +208,11 @@ if ((Test-Path $productionJar) -and -not $SkipBackup) {
     
     # Backup mit Timestamp
     $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-    $backupPath = Join-Path $BACKUP_DIR "$JAR_NAME.$timestamp.bak"
-    
-    Copy-Item $productionJar $backupPath
-    Write-Success "Backup erstellt: $backupPath"
+    foreach ($existingJar in $existingJars) {
+        $backupPath = Join-Path $BACKUP_DIR "$($existingJar.Name).$timestamp.bak"
+        Copy-Item $existingJar.FullName $backupPath
+        Write-Success "Backup erstellt: $backupPath"
+    }
     
     # Loesche alte Backups (behalte nur die letzten 5)
     $oldBackups = Get-ChildItem $BACKUP_DIR -Filter "*.bak" | 
@@ -217,15 +226,62 @@ if ((Test-Path $productionJar) -and -not $SkipBackup) {
     Write-Warning-Custom "Backup wird uebersprungen (-SkipBackup)"
 }
 
-# Kopiere neue JAR
+# Entferne alte JAR-Dateien und kopiere neue JAR
 Write-Host ""
 Write-Info "Kopiere neue JAR nach $PRODUCTION_PATH..."
+
+# Loesche alte JAR-Dateien (falls Name sich geaendert hat durch Versionsupdate)
+if ($existingJars) {
+    foreach ($oldJar in $existingJars) {
+        if ($oldJar.Name -ne $JAR_NAME) {
+            Remove-Item $oldJar.FullName -Force
+            Write-Info "Alte JAR entfernt: $($oldJar.Name)"
+        }
+    }
+}
+
 Copy-Item $jarPath $PRODUCTION_PATH -Force
 if ($LASTEXITCODE -eq 0 -or $?) {
     Write-Success "JAR-Datei erfolgreich kopiert"
 } else {
     Write-Error-Custom "Fehler beim Kopieren der JAR-Datei"
     exit 1
+}
+
+# Kopiere Konfigurations-Dateien
+Write-Host ""
+Write-Info "Kopiere Konfigurations-Dateien..."
+$configSource = Join-Path $REPO_PATH "config"
+$configDest = Join-Path $PRODUCTION_PATH "config"
+
+if (Test-Path $configSource) {
+    # Erstelle config-Verzeichnis falls nicht vorhanden
+    if (-not (Test-Path $configDest)) {
+        New-Item -ItemType Directory -Path $configDest -Force | Out-Null
+    }
+    
+    # Kopiere logback-spring.xml (wird immer aktualisiert)
+    $logbackSource = Join-Path $configSource "logback-spring.xml"
+    if (Test-Path $logbackSource) {
+        Copy-Item $logbackSource $configDest -Force
+        Write-Success "logback-spring.xml kopiert"
+    }
+    
+    # application.properties: Nur kopieren wenn noch keine vorhanden ist
+    $appPropsSource = Join-Path $REPO_PATH "deployment\config\application.properties"
+    $appPropsDest = Join-Path $configDest "application.properties"
+    if (-not (Test-Path $appPropsDest)) {
+        if (Test-Path $appPropsSource) {
+            Copy-Item $appPropsSource $appPropsDest -Force
+            Write-Warning-Custom "application.properties wurde neu erstellt - bitte Werte pruefen!"
+        } else {
+            Write-Warning-Custom "Keine application.properties Vorlage gefunden in: $appPropsSource"
+        }
+    } else {
+        Write-Success "application.properties existiert bereits (wird nicht ueberschrieben)"
+    }
+} else {
+    Write-Warning-Custom "Config Quellverzeichnis nicht gefunden: $configSource"
 }
 
 # Kopiere OpenFile Launcher Setup-Dateien
