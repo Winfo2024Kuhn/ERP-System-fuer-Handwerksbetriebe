@@ -50,6 +50,7 @@ export function ZeitkontoKorrekturenModal({
 
     useEffect(() => {
         loadKorrekturen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mitarbeiterId]);
 
     const loadKorrekturen = async () => {
@@ -122,7 +123,7 @@ export function ZeitkontoKorrekturenModal({
                 const errorData = await res.json();
                 setError(errorData.error || 'Fehler beim Speichern');
             }
-        } catch (err) {
+        } catch {
             setError('Netzwerkfehler - bitte erneut versuchen');
         } finally {
             setSaving(false);
@@ -150,7 +151,7 @@ export function ZeitkontoKorrekturenModal({
                 const errorData = await res.json();
                 toast.error(errorData.error || 'Fehler beim Stornieren');
             }
-        } catch (err) {
+        } catch {
             toast.error('Netzwerkfehler');
         }
     };

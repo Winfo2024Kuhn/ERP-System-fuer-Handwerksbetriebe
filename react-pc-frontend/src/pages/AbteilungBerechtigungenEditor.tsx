@@ -29,10 +29,6 @@ export default function AbteilungBerechtigungenEditor() {
     const [saving, setSaving] = useState<number | null>(null);
     const [saveSuccess, setSaveSuccess] = useState<number | null>(null);
 
-    useEffect(() => {
-        loadBerechtigungen();
-    }, []);
-
     const loadBerechtigungen = async () => {
         try {
             const res = await fetch('/api/abteilungen/berechtigungen');
@@ -45,6 +41,11 @@ export default function AbteilungBerechtigungenEditor() {
         }
         setLoading(false);
     };
+
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        loadBerechtigungen();
+    }, []);
 
     const handleToggle = (abteilungId: number, typ: string, field: 'darfSehen' | 'darfScannen') => {
         setBerechtigungen(prev => prev.map(abt => {

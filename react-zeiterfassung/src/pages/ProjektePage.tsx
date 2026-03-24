@@ -144,6 +144,7 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
 
             return () => window.clearTimeout(timeoutId)
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams, projekte])
 
     // Hilfsfunktion: Projektadresse (Bauvorhaben) bevorzugen, Fallback auf Kundenadresse

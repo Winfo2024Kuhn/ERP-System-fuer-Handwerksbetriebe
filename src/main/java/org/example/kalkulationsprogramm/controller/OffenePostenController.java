@@ -1,8 +1,20 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.domain.*;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.example.kalkulationsprogramm.domain.Abteilung;
+import org.example.kalkulationsprogramm.domain.DokumentGruppe;
+import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.ProjektDokument;
+import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
@@ -14,16 +26,20 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.math.BigDecimal;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Controller für Offene Posten - Eingangsrechnungen von Lieferanten.
@@ -367,6 +383,7 @@ public class OffenePostenController {
         dto.bezahlt = Boolean.TRUE.equals(gd.getBezahlt());
         dto.bezahltAm = gd.getBezahltAm();
         dto.bereitsGezahlt = Boolean.TRUE.equals(gd.getBereitsGezahlt());
+        dto.zahlungsart = gd.getZahlungsart();
         dto.genehmigt = Boolean.TRUE.equals(gd.getGenehmigt());
         dto.darfGenehmigen = darfGenehmigen;
 
@@ -440,6 +457,7 @@ public class OffenePostenController {
         public boolean bezahlt;
         public LocalDate bezahltAm;
         public boolean bereitsGezahlt;
+        public String zahlungsart;
         public String dateiname;
         public String pdfUrl;
         public boolean ueberfaellig;

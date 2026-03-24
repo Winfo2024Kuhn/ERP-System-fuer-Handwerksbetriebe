@@ -31,6 +31,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
 
     useEffect(() => {
         loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mietobjektId]);
 
     const loadData = async () => {
@@ -70,11 +71,11 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
             else await MietabrechnungService.updateRaum(editingRoom.id, editingRoom);
             setRoomModalOpen(false);
             loadData();
-        } catch (err) { toast.error('Fehler beim Speichern'); }
+        } catch { toast.error('Fehler beim Speichern'); }
     };
     const deleteRoom = async (id: number) => {
         if (!await confirmDialog({ title: 'Raum löschen', message: 'Raum und alle Verbraucher löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try { await MietabrechnungService.deleteRaum(id); loadData(); } catch (err) { toast.error('Fehler'); }
+        try { await MietabrechnungService.deleteRaum(id); loadData(); } catch { toast.error('Fehler'); }
     };
 
     // --- Consumer Handlers ---
@@ -94,11 +95,11 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
             else await MietabrechnungService.updateVerbraucher(editingConsumer.id, editingConsumer);
             setConsumerModalOpen(false);
             loadData();
-        } catch (err) { toast.error('Fehler'); }
+        } catch { toast.error('Fehler'); }
     };
     const deleteConsumer = async (id: number) => {
         if (!await confirmDialog({ title: 'Verbraucher löschen', message: 'Verbraucher löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try { await MietabrechnungService.deleteVerbraucher(id); loadData(); } catch (err) { toast.error('Fehler'); }
+        try { await MietabrechnungService.deleteVerbraucher(id); loadData(); } catch { toast.error('Fehler'); }
     };
 
     // --- Meter Handlers ---
@@ -121,9 +122,10 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
 
             setMeterModalOpen(false);
             loadData();
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Unbekannt';
             console.error(err);
-            toast.error('Fehler beim Speichern des Zählerstands: ' + (err.message || 'Unbekannt'));
+            toast.error('Fehler beim Speichern des Zählerstands: ' + message);
         }
     };
 
@@ -138,7 +140,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
         try {
             await MietabrechnungService.deleteZaehlerstand(id);
             loadData();
-        } catch (err) { toast.error('Fehler beim Löschen'); }
+        } catch { toast.error('Fehler beim Löschen'); }
     };
 
     return (
@@ -291,7 +293,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                         <form onSubmit={saveConsumer} className="space-y-4">
                             <div className="space-y-2"><Label>Bezeichnung</Label><Input value={editingConsumer.name} onChange={e => setEditingConsumer({ ...editingConsumer, name: e.target.value })} placeholder="z.B. Hauptwasserzähler" required /></div>
                             <div className="space-y-2"><Label>Art</Label>
-                                <Select value={editingConsumer.verbrauchsart} onChange={val => setEditingConsumer({ ...editingConsumer, verbrauchsart: val as any })} options={[{ value: 'WASSER', label: 'Wasser' }, { value: 'STROM', label: 'Strom' }, { value: 'HEIZUNG', label: 'Heizung' }, { value: 'GAS', label: 'Gas' }, { value: 'SONSTIGES', label: 'Sonstiges' }]} />
+                                <Select value={editingConsumer.verbrauchsart} onChange={val => setEditingConsumer({ ...editingConsumer, verbrauchsart: val as Verbraucher['verbrauchsart'] })} options={[{ value: 'WASSER', label: 'Wasser' }, { value: 'STROM', label: 'Strom' }, { value: 'HEIZUNG', label: 'Heizung' }, { value: 'GAS', label: 'Gas' }, { value: 'SONSTIGES', label: 'Sonstiges' }]} />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2"><Label>Einheit</Label><Input value={editingConsumer.einheit} onChange={e => setEditingConsumer({ ...editingConsumer, einheit: e.target.value })} placeholder="m³, kWh..." /></div>

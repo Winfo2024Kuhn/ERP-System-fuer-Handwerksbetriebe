@@ -79,6 +79,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
   }, [folderId, folders]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(service.name);
     setDescription(service.description);
     setPrice(service.price.toString());

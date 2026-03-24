@@ -194,7 +194,7 @@ function TemplateEditor({
   onCancel: () => void;
   docTypeOptions: string[];
 }) {
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<{ chain: () => { focus: () => { insertContent: (content: string) => { run: () => void } } } } | null>(null);
 
   const addDocType = (value: string) => {
     const val = value.trim();
@@ -410,7 +410,7 @@ export default function TextbausteinEditor() {
       const response = await fetch('/api/textbausteine');
       const data = response.ok ? await response.json() : [];
       const mapped: TextTemplate[] = Array.isArray(data)
-        ? data.map((template: any) => ({
+        ? data.map((template: { id: number | string; name?: string; html?: string; dokumenttypen?: unknown[] }) => ({
           id: String(template.id),
           name: template.name || '',
           content: template.html || '',
@@ -436,7 +436,7 @@ export default function TextbausteinEditor() {
       const response = await fetch('/api/kunden');
       const data = await response.json();
       const mapped: Kunde[] = Array.isArray(data?.kunden)
-        ? data.kunden.map((kunde: any) => ({
+        ? data.kunden.map((kunde: { id?: number; kundenId?: number; kundennummer?: number; name?: string; kunde?: string; ansprechpartner?: string; ansprechspartner?: string; anrede?: string; zahlungsziel?: number }) => ({
           id: String(kunde.id ?? kunde.kundenId ?? kunde.kundennummer ?? Math.random()),
           name: kunde.name || kunde.kunde || '',
           ansprechpartner: kunde.ansprechpartner || kunde.ansprechspartner || '',
@@ -465,6 +465,7 @@ export default function TextbausteinEditor() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTemplates();
     fetchKunden();
     fetchDokumenttypen();

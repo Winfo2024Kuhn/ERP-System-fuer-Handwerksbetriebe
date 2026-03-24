@@ -25,6 +25,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose, ima
     // Reset index when startIndex changes
     useEffect(() => {
         if (startIndex !== undefined) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCurrentIndex(startIndex);
         }
     }, [startIndex]);
@@ -32,6 +33,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose, ima
     // Reset index when src changes (single-image mode)
     useEffect(() => {
         if (!images && src) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCurrentIndex(0);
         }
     }, [src, images]);

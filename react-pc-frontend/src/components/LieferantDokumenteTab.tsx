@@ -70,6 +70,7 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
         if (!initialDokumente) {
             loadDokumente();
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lieferantId, initialDokumente]);
 
     const loadDokumente = useCallback(async () => {

@@ -22,7 +22,7 @@ export interface AttachmentProps {
 interface EmailAttachmentCardProps {
     attachment: AttachmentProps;
     emailId?: number; // Optional context
-    email?: any; // Optional context object
+    email?: Record<string, unknown>; // Optional context object
     baseUrl?: string; // Optional override for API base path
 }
 

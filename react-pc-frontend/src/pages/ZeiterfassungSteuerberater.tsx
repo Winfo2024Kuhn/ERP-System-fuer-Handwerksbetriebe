@@ -42,10 +42,6 @@ export default function ZeiterfassungSteuerberater() {
     const [monat, setMonat] = useState(today.getMonth() + 1);
 
     // Load Zeitkonten on mount
-    useEffect(() => {
-        loadZeitkonten();
-    }, []);
-
     const loadZeitkonten = async () => {
         setLoadingZeitkonten(true);
         try {
@@ -58,6 +54,11 @@ export default function ZeiterfassungSteuerberater() {
         }
         setLoadingZeitkonten(false);
     };
+
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        loadZeitkonten();
+    }, []);
 
     const loadStundenDaten = async () => {
         if (zeitkonten.length === 0) return;

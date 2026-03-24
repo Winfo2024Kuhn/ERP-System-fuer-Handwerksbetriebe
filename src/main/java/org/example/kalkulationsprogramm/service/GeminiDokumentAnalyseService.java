@@ -1,21 +1,5 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.domain.*;
-import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
-import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
-import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
@@ -34,6 +18,28 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
+
+import org.example.kalkulationsprogramm.domain.LieferantDokument;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Service zur KI-gestützten Analyse von Lieferanten-Dokumenten.
@@ -157,6 +163,7 @@ public class GeminiDokumentAnalyseService {
                 "bestellnummer": "Unsere Bestellnummer falls erwähnt oder null",
                 "referenzNummer": "Nummer die auf ein VORHERIGES Dokument verweist. PRIORITÄT je nach Dokumenttyp: Bei AB→Anfrages-Nr./Anfrage-Nr. suchen. Bei RECHNUNG/LIEFERSCHEIN→Auftrags-Nr./AB-Nr. suchen. Bei GUTSCHRIFT→Rechnungs-Nr. suchen. Suche nach: 'Ihr Angebot', 'Angebots-Nr.', 'Auftrags-Nr.', 'AB-Nr.', 'Ihre Bestellung', 'Rechnungs-Nr.'",
                 "bereitsGezahlt": true/false,
+                "zahlungsart": "VORAUSKASSE|SEPA_LASTSCHRIFT|KREDITKARTE|PAYPAL|AMAZON_PAY|UEBERWEISUNG|BAR|SONSTIGE|null",
                 "skontoTage": 8 oder null,
                 "skontoProzent": 2.0 oder null,
                 "nettoTage": 30 oder null,
@@ -235,15 +242,30 @@ public class GeminiDokumentAnalyseService {
                 - "buchen wir ab", "buchen ab", "werden abgebucht", "Betrag buchen wir"
                 - "Mandatsreferenz" oder "Gläubiger-ID" vorhanden
                 - Bei automatischen Zahlungsarten ist bereitsGezahlt IMMER true!
-            10. IMMER nach Skonto-Bedingungen suchen! Diese stehen oft klein gedruckt am Dokumentende.
-            11. Wenn zahlungsziel nicht als Datum lesbar, aber nettoTage erkannt: berechne zahlungsziel selbst!
-            12. Wenn das Dokument kein Anfrage/AB/Lieferschein/Rechnung ist --> dokumentTyp="SONSTIG", istGeschaeftsdokument=false
-            13. REFERENZNUMMER EXTRAKTION (SEHR WICHTIG für Dokumenten-Verknüpfung!):
+            10. EXTRAHIERE zahlungsart NUR wenn die Zahlungsart explizit oder eindeutig genannt ist:
+                - "Vorauskasse", "Vorkasse", "prepaid" → zahlungsart="VORAUSKASSE"
+                - "SEPA-Lastschrift", "SEPA-Mandat", "Lastschrifteinzug", "Bankeinzug", "SEPA Direct Debit" → zahlungsart="SEPA_LASTSCHRIFT"
+                - "Kreditkarte", "MasterCard", "VISA" → zahlungsart="KREDITKARTE"
+                - "PayPal" → zahlungsart="PAYPAL"
+                - "Amazon Pay" → zahlungsart="AMAZON_PAY"
+                - "Überweisung", "bitte überweisen" → zahlungsart="UEBERWEISUNG"
+                - "Barzahlung", "bar bezahlt" → zahlungsart="BAR"
+                - Andere explizit genannte Zahlungsart → zahlungsart="SONSTIGE"
+                - Wenn keine eindeutige Zahlungsart erkennbar ist → zahlungsart=null
+            11. SEPA-Lastschrift ist AUSDRÜCKLICH NICHT Vorauskasse.
+                Wenn eine Rechnung per SEPA-Lastschrift bezahlt wird, dann:
+                - bereitsGezahlt = true
+                - zahlungsart = "SEPA_LASTSCHRIFT"
+                - NICHT "VORAUSKASSE"
+            12. IMMER nach Skonto-Bedingungen suchen! Diese stehen oft klein gedruckt am Dokumentende.
+            13. Wenn zahlungsziel nicht als Datum lesbar, aber nettoTage erkannt: berechne zahlungsziel selbst!
+            14. Wenn das Dokument kein Anfrage/AB/Lieferschein/Rechnung ist --> dokumentTyp="SONSTIG", istGeschaeftsdokument=false
+            15. REFERENZNUMMER EXTRAKTION (SEHR WICHTIG für Dokumenten-Verknüpfung!):
                 - Bei AUFTRAGSBESTAETIGUNG: Suche nach "Ihr Anfrage", "Anfrages-Nr.", "Bezug: Anfrage" → das ist die Anfragesnummer
                 - Bei LIEFERSCHEIN: Suche nach "Auftrags-Nr.", "AB-Nr.", "Ihre Bestellung" → das ist die AB-Nummer
                 - Bei RECHNUNG: Suche nach "Auftrags-Nr.", "AB-Nr." (PRIORITÄT!) oder "Lieferschein-Nr." → verweist auf AB oder Lieferschein
                 - Bei GUTSCHRIFT: Suche nach "Rechnungs-Nr.", "zu Rechnung" → verweist auf die Original-Rechnung
-            14. DOKUMENT-GÜLTIGKEIT: Wenn "Abschrift", "Kopie", "Entwurf" oder "Duplikat" irgendwo im Dokument steht, MUSS " (Kopie)" an dokumentTyp angehängt werden.
+            16. DOKUMENT-GÜLTIGKEIT: Wenn "Abschrift", "Kopie", "Entwurf" oder "Duplikat" irgendwo im Dokument steht, MUSS " (Kopie)" an dokumentTyp angehängt werden.
             """;
 
     /**
@@ -304,12 +326,7 @@ public class GeminiDokumentAnalyseService {
     public org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse analyzeFile(
             Path dateiPfad, String originalFilename, boolean useProModel) {
         try {
-            Path normalizedPath = dateiPfad.toAbsolutePath().normalize();
-            if (!Files.exists(normalizedPath)) {
-                log.warn("Datei existiert nicht: {}", normalizedPath);
-                return null;
-            }
-            dateiPfad = normalizedPath;
+            dateiPfad = validiereAnalyseDateiPfad(dateiPfad, true);
             String lower = originalFilename.toLowerCase();
 
             // 1. Versuche ZUGFeRD-Extraktion bei PDF
@@ -322,7 +339,7 @@ public class GeminiDokumentAnalyseService {
 
             // 2. Versuche XML-Extraktion bei XML-Dateien
             if (lower.endsWith(".xml")) {
-                var xmlResult = versucheXmlExtraktionFuerPreview(dateiPfad);
+                var xmlResult = versucheXmlExtraktionFuerPreview(leseXmlDateiSicher(dateiPfad, true));
                 if (xmlResult != null) {
                     return xmlResult;
                 }
@@ -350,9 +367,10 @@ public class GeminiDokumentAnalyseService {
             Path dateiPfad, String originalFilename) {
 
         java.util.List<org.example.kalkulationsprogramm.dto.LieferantDokumentDto.MultiInvoiceAnalyzeResponse> results = new java.util.ArrayList<>();
-        dateiPfad = dateiPfad.toAbsolutePath().normalize();
 
         try {
+            dateiPfad = validiereAnalyseDateiPfad(dateiPfad, true);
+
             // Nur PDFs können mehrere Rechnungen enthalten
             if (!originalFilename.toLowerCase().endsWith(".pdf")) {
                 // Für nicht-PDFs: Normale Analyse
@@ -473,6 +491,7 @@ public class GeminiDokumentAnalyseService {
                     "bestellnummer": "...",
                     "referenzNummer": "...",
                     "bereitsGezahlt": true,
+                                        "zahlungsart": "SEPA_LASTSCHRIFT",
                     "confidence": 0.95
                   }
                 ]
@@ -489,6 +508,11 @@ public class GeminiDokumentAnalyseService {
                 - "Abbuchung erfolgt", "wird abgebucht", "per Lastschrift"
                 - "buchen wir ab", "buchen ab", "Mandatsreferenz", "Gläubiger-ID"
                 - Bei automatischen Zahlungsarten ist bereitsGezahlt IMMER true!
+
+                WICHTIG FÜR "zahlungsart":
+                - SEPA-Lastschrift / Bankeinzug / SEPA Direct Debit -> "SEPA_LASTSCHRIFT"
+                - Vorauskasse / Vorkasse -> "VORAUSKASSE"
+                - SEPA-Lastschrift ist NICHT Vorauskasse
                 """;
     }
 
@@ -683,10 +707,8 @@ public class GeminiDokumentAnalyseService {
      * XML-Extraktion die ein DTO zurückgibt (für Preview).
      */
     private org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse versucheXmlExtraktionFuerPreview(
-            Path dateiPfad) {
+            String xmlContent) {
         try {
-            String xmlContent = Files.readString(dateiPfad, java.nio.charset.StandardCharsets.UTF_8);
-
             if (!xmlContent.contains("Invoice") && !xmlContent.contains("CrossIndustryInvoice")) {
                 return null;
             }
@@ -860,6 +882,9 @@ public class GeminiDokumentAnalyseService {
             if (json.has("bereitsGezahlt") && !json.get("bereitsGezahlt").isNull()) {
                 builder.bereitsGezahlt(json.get("bereitsGezahlt").asBoolean());
             }
+            if (json.has("zahlungsart") && !json.get("zahlungsart").isNull()) {
+                builder.zahlungsart(normalizeZahlungsart(json.get("zahlungsart").asText()));
+            }
 
             // Lieferantendaten
             if (json.has("lieferantName") && !json.get("lieferantName").isNull()) {
@@ -946,10 +971,11 @@ public class GeminiDokumentAnalyseService {
             }
 
             Path dateiPfad = explicitPath != null ? explicitPath : getDateiPfad(freshDokument);
-            if (dateiPfad == null || !Files.exists(dateiPfad)) {
+            if (dateiPfad == null) {
                 log.warn("Konnte Datei nicht finden für Dokument {}", freshDokument.getId());
                 return null;
             }
+            dateiPfad = validiereAnalyseDateiPfad(dateiPfad, explicitPath != null);
 
             String dateiname = freshDokument.getEffektiverDateiname();
             LieferantGeschaeftsdokument geschaeftsdaten = null;
@@ -963,7 +989,10 @@ public class GeminiDokumentAnalyseService {
                     geschaeftsdaten = versucheZugferdExtraktion(dateiPfad, dateiname, freshDokument);
                 } else if (lower.endsWith(".xml")) {
                     // Versuche XML-Extraktion (XRechnung, ZUGFeRD-XML)
-                    geschaeftsdaten = versucheXmlExtraktion(dateiPfad, freshDokument);
+                    geschaeftsdaten = versucheXmlExtraktion(
+                            leseXmlDateiSicher(dateiPfad, explicitPath != null),
+                            freshDokument,
+                            dateiPfad.getFileName().toString());
                 }
             }
 
@@ -1176,15 +1205,28 @@ public class GeminiDokumentAnalyseService {
      */
     private LieferantGeschaeftsdokument versucheXmlExtraktion(Path dateiPfad, LieferantDokument dokument) {
         try {
-            String xmlContent = Files.readString(dateiPfad, StandardCharsets.UTF_8);
+            return versucheXmlExtraktion(
+                    leseXmlDateiSicher(dateiPfad, true),
+                    dokument,
+                    dateiPfad != null ? dateiPfad.getFileName().toString() : "unbekannt");
+        } catch (Exception e) {
+            log.debug("XML-Extraktion fehlgeschlagen für {}: {}",
+                    dateiPfad != null ? dateiPfad.getFileName() : "unbekannt",
+                    e.getMessage());
+            return null;
+        }
+    }
 
+    private LieferantGeschaeftsdokument versucheXmlExtraktion(String xmlContent, LieferantDokument dokument,
+            String dateinameFuerLog) {
+        try {
             // Einfache Prüfung ob es eine Rechnungs-XML ist
             if (!xmlContent.contains("Invoice") && !xmlContent.contains("CrossIndustryInvoice")) {
-                log.debug("XML ist keine Rechnung: {}", dateiPfad.getFileName());
+                log.debug("XML ist keine Rechnung: {}", dateinameFuerLog);
                 return null;
             }
 
-            log.info("XML-Rechnung gefunden: {}", dateiPfad.getFileName());
+            log.info("XML-Rechnung gefunden: {}", dateinameFuerLog);
 
             // Existierendes Geschaeftsdokument wiederverwenden oder neues erstellen
             LieferantGeschaeftsdokument gd = null;
@@ -1279,6 +1321,7 @@ public class GeminiDokumentAnalyseService {
      */
     public LieferantGeschaeftsdokument analyzeAndReturnData(Path dateiPfad, String originalDateiname) {
         try {
+            dateiPfad = validiereAnalyseDateiPfad(dateiPfad, true);
             String lower = originalDateiname != null ? originalDateiname.toLowerCase() : "";
 
             // 1. ZUGFeRD (nur PDFs - XML ist in PDF eingebettet)
@@ -1290,7 +1333,10 @@ public class GeminiDokumentAnalyseService {
 
             // 2. Standalone XML (XRechnung, ZUGFeRD-XML)
             if (lower.endsWith(".xml")) {
-                LieferantGeschaeftsdokument xmlResult = versucheXmlExtraktion(dateiPfad, null);
+                LieferantGeschaeftsdokument xmlResult = versucheXmlExtraktion(
+                        leseXmlDateiSicher(dateiPfad, true),
+                        null,
+                        dateiPfad.getFileName().toString());
                 if (xmlResult != null)
                     return xmlResult;
             }
@@ -1529,50 +1575,89 @@ public class GeminiDokumentAnalyseService {
         Long lieferantId = dokument.getLieferant().getId();
 
         // 1. E-Mail-Attachments: uploads/attachments/ (flat structure - most common)
-        Path pfad = Path.of(uploadPath, "attachments", dateiname);
-        if (Files.exists(pfad)) {
-            log.debug("Datei gefunden unter: {}", pfad);
+        Path pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", dateiname));
+        if (pfad != null) {
             return pfad;
         }
 
         // 2. E-Mail-Attachments: uploads/attachments/lieferanten/{lieferantId}/
-        pfad = Path.of(uploadPath, "attachments", "lieferanten", lieferantId.toString(), dateiname);
-        if (Files.exists(pfad)) {
-            log.debug("Datei gefunden unter: {}", pfad);
+        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", "lieferanten", lieferantId.toString(), dateiname));
+        if (pfad != null) {
             return pfad;
         }
 
         // 3. Manuell hochgeladene Dokumente: uploads/lieferanten/{lieferantId}/
-        pfad = Path.of(uploadPath, "lieferanten", lieferantId.toString(), dateiname);
-        if (Files.exists(pfad)) {
-            log.debug("Datei gefunden unter: {}", pfad);
+        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "lieferanten", lieferantId.toString(), dateiname));
+        if (pfad != null) {
             return pfad;
         }
 
         // 4. Vendor-Invoices: uploads/attachments/vendor-invoices/
-        pfad = Path.of(uploadPath, "attachments", "vendor-invoices", dateiname);
-        if (Files.exists(pfad)) {
-            log.debug("Datei gefunden unter: {}", pfad);
+        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", "vendor-invoices", dateiname));
+        if (pfad != null) {
             return pfad;
         }
 
         // 5. Fallback: uploads/lieferant-emails/
-        pfad = Path.of(uploadPath, "lieferant-emails", dateiname);
-        if (Files.exists(pfad)) {
-            log.debug("Datei gefunden unter: {}", pfad);
+        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "lieferant-emails", dateiname));
+        if (pfad != null) {
             return pfad;
         }
 
         // 6. Fallback: uploads/email/
-        pfad = Path.of(uploadPath, "email", dateiname);
-        if (Files.exists(pfad)) {
-            log.debug("Datei gefunden unter: {}", pfad);
+        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "email", dateiname));
+        if (pfad != null) {
             return pfad;
         }
 
         log.warn("Datei nicht gefunden: {} (geprüft: attachments/, attachments/lieferanten/{}, lieferanten/{})",
                 dateiname, lieferantId, lieferantId);
         return null;
+    }
+
+    private String leseXmlDateiSicher(Path dateiPfad, boolean tempDateienErlaubt) throws java.io.IOException {
+        Path sichererPfad = validiereAnalyseDateiPfad(dateiPfad, tempDateienErlaubt);
+        return Files.readString(sichererPfad, StandardCharsets.UTF_8);
+    }
+
+    private Path validiereAnalyseDateiPfad(Path dateiPfad, boolean tempDateienErlaubt) {
+        Path normalizedPath = dateiPfad.toAbsolutePath().normalize();
+        Path uploadRoot = getUploadRootPath();
+
+        boolean erlaubterPfad = normalizedPath.startsWith(uploadRoot);
+        if (!erlaubterPfad && tempDateienErlaubt) {
+            Path tempRoot = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
+            erlaubterPfad = normalizedPath.startsWith(tempRoot);
+        }
+
+        if (!erlaubterPfad) {
+            throw new SecurityException("Dateizugriff außerhalb der erlaubten Verzeichnisse: " + normalizedPath);
+        }
+
+        if (!Files.isRegularFile(normalizedPath)) {
+            throw new IllegalArgumentException("Datei ist nicht lesbar oder existiert nicht: " + normalizedPath);
+        }
+
+        return normalizedPath;
+    }
+
+    private Path pruefeUploadDateiPfad(Path pfad) {
+        Path normalizedPath = pfad.toAbsolutePath().normalize();
+        Path uploadRoot = getUploadRootPath();
+        if (!normalizedPath.startsWith(uploadRoot)) {
+            log.warn("Verwerfe ungültigen Upload-Pfad außerhalb von {}: {}", uploadRoot, normalizedPath);
+            return null;
+        }
+        if (!Files.isRegularFile(normalizedPath)) {
+            return null;
+        }
+        log.debug("Datei gefunden unter: {}", normalizedPath);
+        return normalizedPath;
+    }
+
+    private Path getUploadRootPath() {
+        String configuredUploadPath = (uploadPath == null || uploadPath.isBlank()) ? "uploads" : uploadPath;
+        return Path.of(configuredUploadPath).toAbsolutePath().normalize();
     }
 
     /**
@@ -2163,6 +2248,9 @@ public class GeminiDokumentAnalyseService {
                     gd.setBezahlt(true); // Wenn bereits gezahlt, setze auch bezahlt-Flag
                 }
             }
+            if (json.has("zahlungsart") && !json.get("zahlungsart").isNull()) {
+                gd.setZahlungsart(normalizeZahlungsart(json.get("zahlungsart").asText()));
+            }
 
             // Confidence
             if (json.has("confidence") && !json.get("confidence").isNull()) {
@@ -2407,6 +2495,29 @@ public class GeminiDokumentAnalyseService {
         }
         String normalized = nummer.replaceAll("[^a-zA-Z0-9]", "").toUpperCase();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String normalizeZahlungsart(String zahlungsart) {
+        if (zahlungsart == null || zahlungsart.isBlank()) {
+            return null;
+        }
+
+        String normalized = zahlungsart.trim().toUpperCase()
+                .replace('-', '_')
+                .replace(' ', '_');
+
+        return switch (normalized) {
+            case "VORAUSKASSE", "VORKASSE", "PREPAID", "PREPAYMENT" -> "VORAUSKASSE";
+            case "SEPA_LASTSCHRIFT", "LASTSCHRIFT", "SEPA", "SEPA_DIRECT_DEBIT", "DIRECT_DEBIT",
+                    "BANKEINZUG", "LASTSCHRIFTEINZUG", "EINZUGSERMACHTIGUNG" -> "SEPA_LASTSCHRIFT";
+            case "KREDITKARTE", "CREDIT_CARD", "MASTERCARD", "VISA" -> "KREDITKARTE";
+            case "PAYPAL" -> "PAYPAL";
+            case "AMAZON_PAY", "AMAZONPAY" -> "AMAZON_PAY";
+            case "UEBERWEISUNG", "ÜBERWEISUNG", "BANK_TRANSFER", "TRANSFER" -> "UEBERWEISUNG";
+            case "BAR", "BARZAHLUNG", "CASH" -> "BAR";
+            case "SONSTIGE", "SONSTIG", "OTHER" -> "SONSTIGE";
+            default -> "SONSTIGE";
+        };
     }
 
     /**

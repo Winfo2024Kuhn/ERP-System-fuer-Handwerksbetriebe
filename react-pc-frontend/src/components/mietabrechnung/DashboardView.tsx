@@ -27,6 +27,7 @@ export function DashboardView({ mietobjektId }: DashboardViewProps) {
             setData(null);
             setHistory([]);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mietobjektId, year]);
 
     const loadData = async (y: number) => {

@@ -1,41 +1,9 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.pdfbox.multipdf.PDFMergerUtility;
-import org.example.kalkulationsprogramm.domain.LieferantDokument;
-import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
-import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
-import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import org.apache.pdfbox.io.RandomAccessReadBuffer;
-import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
-import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
-
-import org.springframework.http.HttpStatus;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-import org.springframework.web.multipart.MultipartFile;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -44,6 +12,38 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+
+import org.apache.pdfbox.io.RandomAccessReadBuffer;
+import org.apache.pdfbox.multipdf.PDFMergerUtility;
+import org.example.kalkulationsprogramm.domain.LieferantDokument;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
+import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
+import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Controller für Rechnungsübersicht - Buchhaltungsansicht aller Rechnungen.
@@ -397,6 +397,7 @@ public class RechnungsuebersichtController {
         dto.betragNetto = gd.getBetragNetto() != null ? gd.getBetragNetto().doubleValue() : null;
         dto.betragBrutto = gd.getBetragBrutto() != null ? gd.getBetragBrutto().doubleValue() : null;
         dto.bezahlt = Boolean.TRUE.equals(gd.getBezahlt());
+        dto.zahlungsart = gd.getZahlungsart();
 
         if (gd.getDokument() != null) {
             dto.dokumentId = gd.getDokument().getId();
@@ -450,6 +451,7 @@ public class RechnungsuebersichtController {
         public Double betragNetto;
         public Double betragBrutto;
         public boolean bezahlt;
+        public String zahlungsart;
         public String originalDateiname;
         public String pdfUrl;
     }
@@ -593,6 +595,7 @@ public class RechnungsuebersichtController {
             geschaeftsdaten.setSkontoProzent(request.getSkontoProzent());
             geschaeftsdaten.setNettoTage(request.getNettoTage());
             geschaeftsdaten.setBereitsGezahlt(request.getBereitsGezahlt());
+            geschaeftsdaten.setZahlungsart(request.getZahlungsart());
             geschaeftsdaten.setAiConfidence(1.0); // Verifiziert
             geschaeftsdaten.setAnalysiertAm(java.time.LocalDateTime.now());
 

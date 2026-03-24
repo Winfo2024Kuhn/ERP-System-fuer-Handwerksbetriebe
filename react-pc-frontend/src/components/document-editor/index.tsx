@@ -6,6 +6,8 @@ import {
     type AusgangsGeschaeftsDokument,
     type AusgangsGeschaeftsDokumentTyp,
     type AusgangsGeschaeftsDokumentErstellen,
+    type AbrechnungspositionDto,
+    type AbrechnungsverlaufDto,
     AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN,
     type FormBlock,
     type FormBlockType
@@ -47,6 +49,23 @@ import { EmailComposeModal } from '../EmailComposeModal';
 import { anredeEnumToText } from '../EmailComposeForm';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { useToast } from '../ui/toast';
+
+interface ImportedGaebBlock {
+    type: string;
+    quantity?: number | string;
+    price?: number | string;
+    content?: string;
+    sectionLabel?: string;
+    children?: ImportedGaebBlock[];
+    [key: string]: unknown;
+}
+
+type PreviewLayoutBlock = FormBlock | (Omit<FormBlock, 'type'> & { type: 'watermark' });
+
+type PdfAbrechnungsverlauf = Pick<AbrechnungsverlaufDto, 'basisdokumentNummer' | 'basisdokumentTyp' | 'basisdokumentBetragNetto'> & {
+    basisdokumentDatum?: string;
+    positionen: Array<Pick<AbrechnungspositionDto, 'dokumentNummer' | 'typ' | 'datum' | 'betragNetto' | 'abschlagsNummer'>>;
+};
 
 /** Inline-editable Rechnungsadresse – changes only the document, not the customer table */
 function RechnungsadresseBlock({
@@ -195,6 +214,9 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [activeEditor, setActiveEditor] = useState<ReturnType<typeof useEditor> | null>(null);
     const [activeEditorId, setActiveEditorId] = useState<string | null>(null);
     const editorRefs = useRef<Record<string, EditorInstance | null>>({});
+    const setEditorRef = useCallback((editorKey: string, editor: EditorInstance | null) => {
+        editorRefs.current[editorKey] = editor;
+    }, []);
 
     // Global Rabatt
     const [globalRabatt, setGlobalRabatt] = useState<number>(0);
@@ -318,9 +340,9 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             });
 
             if (res.ok) {
-                const newBlocks: DocBlock[] = await res.json();
+                const newBlocks: ImportedGaebBlock[] = await res.json();
 
-                const mapBlock = (b: any): DocBlock => ({
+                const mapBlock = (b: ImportedGaebBlock): DocBlock => ({
                     ...b,
                     id: crypto.randomUUID(),
                     type: b.type === 'TEXT' ? 'TEXT' : (b.type === 'SECTION_HEADER' ? 'SECTION_HEADER' : 'SERVICE'),
@@ -329,7 +351,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     content: b.type === 'TEXT' ? (b.content || '') : undefined,
                     sectionLabel: b.type === 'SECTION_HEADER' ? (b.sectionLabel || 'Bauabschnitt') : undefined,
                     children: b.type === 'SECTION_HEADER' && Array.isArray(b.children)
-                        ? b.children.map((child: any) => mapBlock(child))
+                        ? b.children.map((child) => mapBlock(child))
                         : undefined,
                     fontSize: b.type === 'SECTION_HEADER' ? undefined : 10,
                     fett: b.type === 'SECTION_HEADER' ? undefined : false
@@ -424,6 +446,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             }
         };
         loadKontext();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projektId, anfrageId]);
 
     // --- Load Document ---
@@ -584,7 +607,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 const verlauf = await verlaufRes.json();
                                 // Sum of all other non-stornierte invoices (excluding current document)
                                 const andereAbgerechnet = (verlauf.positionen || []).reduce(
-                                    (sum: number, pos: any) => {
+                                    (sum: number, pos: AbrechnungspositionDto) => {
                                         if (pos.id !== data.id && !pos.storniert) {
                                             return sum + (pos.betragNetto || 0);
                                         }
@@ -598,8 +621,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 }
                                 // Detaillierte Positionen speichern für ClosureBlock-Anzeige
                                 const anderePosDetails = (verlauf.positionen || [])
-                                    .filter((pos: any) => pos.id !== data.id && !pos.storniert)
-                                    .map((pos: any) => ({
+                                    .filter((pos: AbrechnungspositionDto) => pos.id !== data.id && !pos.storniert)
+                                    .map((pos: AbrechnungspositionDto) => ({
                                         dokumentNummer: pos.dokumentNummer,
                                         typ: pos.typ,
                                         datum: pos.datum,
@@ -745,6 +768,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         } finally {
             setSaving(false);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, bereitsAbgerechnetDurchAndere, globalRabatt]);
 
     // --- Change Detection ---
@@ -950,7 +974,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             if (!child) return prev;
 
             // Remove from section
-            let newBlocks = prev.map(b => {
+            const newBlocks = prev.map(b => {
                 if (b.id === sectionId && b.children) {
                     return { ...b, children: b.children.filter(c => c.id !== childId) };
                 }
@@ -970,7 +994,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     }, []);
 
     // --- Block Actions ---
-    const addBlock = (type: any, payload?: Partial<DocBlock>) => {
+    const addBlock = (type: DocBlock['type'], payload?: Partial<DocBlock>) => {
         if (isLocked) return;
 
         const allServices = getAllServiceBlocks(blocks);
@@ -1118,6 +1142,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         } finally {
             setPreviewLoading(false);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer, previewUrl]);
 
     // Mark preview as stale when content changes
@@ -1125,6 +1150,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         if (showPreview && previewUrl) {
             setPreviewStale(true);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [blocks, datum, betreff, dokumentTyp]);
 
     // Debounced auto-preview: refresh 2s after last change when preview panel is open
@@ -1138,6 +1164,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         return () => {
             if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
         };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [blocks, datum, betreff, dokumentTyp, showPreview]);
 
     // When preview panel is shown for the first time, trigger an immediate preview
@@ -1147,6 +1174,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             handlePreview();
         }
         prevShowPreview.current = showPreview;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showPreview]);
 
     /** Hilfsfunktion: Dokument buchen und State sofort aktualisieren (GoBD). */
@@ -1220,7 +1248,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
             // Remove watermark for final/booked print
             if (shouldBook) {
-                request.layoutBlocks = request.layoutBlocks.filter((b: any) => b.type !== 'watermark');
+                request.layoutBlocks = request.layoutBlocks.filter((b: PreviewLayoutBlock) => b.type !== 'watermark');
             }
 
             const response = await fetch('/api/dokument-generator/preview', {
@@ -1499,6 +1527,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 page: b.page,
                 x: b.x,
                 y: b.y,
+                z: b.z,
                 width: b.width,
                 height: b.height,
                 content: b.content || '',
@@ -1514,7 +1543,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const createPdfRequest = async (isPreview: boolean) => {
         const { layoutBlocks, backgroundImage, backgroundImagePage2 } = await fetchTemplateData(dokumentTyp);
 
-        const filledLayoutBlocks = layoutBlocks.map(b => {
+        const filledLayoutBlocks: PreviewLayoutBlock[] = layoutBlocks.map(b => {
             const copy = { ...b };
             switch (copy.type) {
                 case 'dokumenttyp':
@@ -1577,7 +1606,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     color: '#e2e8f0',
                     textAlign: 'center'
                 }
-            } as any);
+            });
         }
 
         const contentBlocks = flattenBlocksForPdf(blocks).map(b => ({
@@ -1616,17 +1645,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         };
 
         // Abrechnungsverlauf für Rechnungstypen mit Basisdokument laden
-        let schlusstext = '';
-        let abrechnungsverlauf: any = null;
+        const schlusstext = '';
+        let abrechnungsverlauf: PdfAbrechnungsverlauf | null = null;
         const rechnungsTypen: AusgangsGeschaeftsDokumentTyp[] = ['RECHNUNG', 'TEILRECHNUNG', 'ABSCHLAGSRECHNUNG', 'SCHLUSSRECHNUNG'];
         if (dokument?.vorgaengerId && rechnungsTypen.includes(dokumentTyp)) {
             try {
                 const verlaufRes = await fetch(`/api/ausgangs-dokumente/${dokument.vorgaengerId}/abrechnungsverlauf`);
                 if (verlaufRes.ok) {
-                    const verlauf = await verlaufRes.json();
+                    const verlauf: AbrechnungsverlaufDto & { basisdokumentDatum?: string } = await verlaufRes.json();
                     // Filter out the current document from the Abrechnungsverlauf positions
                     const otherPositions = (verlauf.positionen || []).filter(
-                        (pos: any) => pos.id !== dokument.id && !pos.storniert
+                        (pos: AbrechnungspositionDto) => pos.id !== dokument.id && !pos.storniert
                     );
                     // Always send abrechnungsverlauf when basisdokument exists
                     // (even with 0 other positions, to show Gesamtauftragssumme on first Abschlagsrechnung)
@@ -1636,7 +1665,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             basisdokumentTyp: verlauf.basisdokumentTyp,
                             basisdokumentDatum: verlauf.basisdokumentDatum,
                             basisdokumentBetragNetto: verlauf.basisdokumentBetragNetto,
-                            positionen: otherPositions.map((pos: any) => ({
+                            positionen: otherPositions.map((pos: AbrechnungspositionDto) => ({
                                 dokumentNummer: pos.dokumentNummer,
                                 typ: pos.typ,
                                 datum: pos.datum,
@@ -1851,6 +1880,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                                     isLocked={isLocked}
                                                     isActive={activeEditorId === block.id}
                                                     editorRefs={editorRefs}
+                                                    onEditorReady={setEditorRef}
                                                     onUpdate={updateBlock}
                                                     onRemove={removeBlock}
                                                     onFocus={(id) => setActiveEditorId(id)}
@@ -1865,6 +1895,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                                     isLocked={isLocked}
                                                     isActive={activeEditorId === block.id}
                                                     editorRefs={editorRefs}
+                                                    onEditorReady={setEditorRef}
                                                     onUpdate={updateBlock}
                                                     onRemove={removeBlock}
                                                     onToggleOptional={toggleOptional}

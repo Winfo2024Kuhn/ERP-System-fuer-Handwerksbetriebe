@@ -23,10 +23,6 @@ export default function ZeiterfassungZeitkonten() {
     const [editKonto, setEditKonto] = useState<Zeitkonto | null>(null);
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        loadZeitkonten();
-    }, []);
-
     const loadZeitkonten = async () => {
         setLoading(true);
         try {
@@ -39,6 +35,11 @@ export default function ZeiterfassungZeitkonten() {
         }
         setLoading(false);
     };
+
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        loadZeitkonten();
+    }, []);
 
     const saveZeitkonto = async () => {
         if (!editKonto) return;
@@ -148,7 +149,7 @@ export default function ZeiterfassungZeitkonten() {
                                             step="0.5"
                                             min="0"
                                             max="24"
-                                            value={(editKonto as any)[`${tag}Stunden`]}
+                                            value={(editKonto as unknown as Record<string, number>)[`${tag}Stunden`]}
                                             onChange={(e) => setEditKonto({ ...editKonto, [`${tag}Stunden`]: parseFloat(e.target.value) || 0 })}
                                             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-center"
                                         />

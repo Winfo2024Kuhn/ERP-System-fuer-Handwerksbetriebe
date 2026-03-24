@@ -18,10 +18,6 @@ export default function MietabrechnungEditor() {
     const [selectedId, setSelectedId] = useState<string>('');
     const [view, setView] = useState<'dashboard' | 'stammdaten' | 'parteien' | 'raeume' | 'kostenstellen' | 'kostenpositionen'>('dashboard');
 
-    useEffect(() => {
-        loadMietobjekte();
-    }, []);
-
     const loadMietobjekte = async (selectId?: number) => {
         try {
             const list = await MietabrechnungService.getMietobjekte();
@@ -36,13 +32,18 @@ export default function MietabrechnungEditor() {
         }
     };
 
+    useEffect(() => {
+        loadMietobjekte();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const handleCreate = async () => {
         const name = prompt('Name des neuen Mietobjekts:');
         if (!name) return;
         try {
             const created = await MietabrechnungService.createMietobjekt({ name, strasse: '', plz: '', ort: '' });
             await loadMietobjekte(created.id);
-        } catch (err) {
+        } catch {
             toast.error('Fehler beim Erstellen');
         }
     };
@@ -111,7 +112,7 @@ export default function MietabrechnungEditor() {
                         ].map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setView(tab.id as any)}
+                                onClick={() => setView(tab.id as typeof view)}
                                 className={`
                                     group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200
                                     ${view === tab.id

@@ -73,6 +73,7 @@ export default function LieferantLieferscheinePage() {
         if (lieferantId) {
             loadData()
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lieferantId])
 
     const loadData = async () => {

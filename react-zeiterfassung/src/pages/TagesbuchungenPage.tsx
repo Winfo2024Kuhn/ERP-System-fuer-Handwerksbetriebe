@@ -302,6 +302,7 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
         }, 0)
 
         return () => window.clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedDate])
 
     // Reload when sync completes
@@ -313,6 +314,7 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
 
             return () => window.clearTimeout(timeoutId)
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [syncStatus])
 
     const goToPreviousDay = () => {

@@ -141,41 +141,8 @@ export default function ZeiterfassungKalender() {
         fetch('/api/arbeitsgaenge')
             .then(res => res.json())
             .then(data => setArbeitsgaenge(Array.isArray(data) ? data : []));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    useEffect(() => {
-        if (selectedMitarbeiter) {
-            loadKalender();
-        }
-    }, [selectedMitarbeiter, jahr, monat]);
-
-    const loadKalender = async () => {
-        if (!selectedMitarbeiter) return;
-        setLoading(true);
-        try {
-            const res = await fetch(
-                `/api/zeitverwaltung/kalender?mitarbeiterId=${selectedMitarbeiter}&jahr=${jahr}&monat=${monat}`
-            );
-            const data = await res.json();
-            if (data && typeof data === 'object') {
-                data.tage = Array.isArray(data.tage) ? data.tage : [];
-                data.tage = data.tage.map((tag: KalenderTag) => ({
-                    ...tag,
-                    buchungen: Array.isArray(tag.buchungen) ? tag.buchungen : []
-                }));
-                setKalenderData(data);
-            } else {
-                setKalenderData(null);
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden:', err);
-            setKalenderData(null);
-        }
-        setLoading(false);
-
-        // Jahressaldo laden (für die Gesamtübersicht)
-        loadJahresSaldo();
-    };
 
     const loadJahresSaldo = async () => {
         if (!selectedMitarbeiter) return;
@@ -209,6 +176,41 @@ export default function ZeiterfassungKalender() {
             console.error('Fehler beim Laden des Jahressaldos:', err);
         }
     };
+
+    const loadKalender = async () => {
+        if (!selectedMitarbeiter) return;
+        setLoading(true);
+        try {
+            const res = await fetch(
+                `/api/zeitverwaltung/kalender?mitarbeiterId=${selectedMitarbeiter}&jahr=${jahr}&monat=${monat}`
+            );
+            const data = await res.json();
+            if (data && typeof data === 'object') {
+                data.tage = Array.isArray(data.tage) ? data.tage : [];
+                data.tage = data.tage.map((tag: KalenderTag) => ({
+                    ...tag,
+                    buchungen: Array.isArray(tag.buchungen) ? tag.buchungen : []
+                }));
+                setKalenderData(data);
+            } else {
+                setKalenderData(null);
+            }
+        } catch (err) {
+            console.error('Fehler beim Laden:', err);
+            setKalenderData(null);
+        }
+        setLoading(false);
+
+        // Jahressaldo laden (für die Gesamtübersicht)
+        loadJahresSaldo();
+    };
+
+    useEffect(() => {
+        if (selectedMitarbeiter) {
+            loadKalender();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedMitarbeiter, jahr, monat]);
 
     const handleYearChange = (delta: number) => {
         setJahr(jahr + delta);
@@ -888,7 +890,7 @@ function DayEditorModal({
                 // Strg+V: Füge kopierte Buchung als neue Zeile ein
                 e.preventDefault();
                 if (clipboard) {
-                    const newBooking: any = {
+                    const newBooking: Buchung = {
                         id: -Date.now(),
                         projektId: clipboard.projektId || (projekte.length > 0 ? projekte[0].id : 0),
                         arbeitsgangId: clipboard.arbeitsgangId || (arbeitsgaenge.length > 0 ? arbeitsgaenge[0].id : 0),
@@ -896,7 +898,9 @@ function DayEditorModal({
                         endeZeit: clipboard.endeZeit || '16:00',
                         projektName: '',
                         arbeitsgangName: '',
-                        notiz: clipboard.notiz || ''
+                        notiz: clipboard.notiz || '',
+                        dauerMinuten: null,
+                        dauerFormatiert: null,
                     };
                     setBuchungen(prev => [...prev, newBooking]);
                     setFocusedIndex(buchungen.length);
@@ -906,7 +910,7 @@ function DayEditorModal({
                 e.preventDefault();
                 const buchung = buchungen[focusedIndex];
                 if (buchung) {
-                    const newBooking: any = {
+                    const newBooking: Buchung = {
                         id: -Date.now(),
                         projektId: buchung.projektId,
                         arbeitsgangId: 0, // Tätigkeit leer lassen zum Ändern
@@ -914,7 +918,9 @@ function DayEditorModal({
                         endeZeit: buchung.endeZeit,
                         projektName: '',
                         arbeitsgangName: '',
-                        notiz: ''
+                        notiz: '',
+                        dauerMinuten: null,
+                        dauerFormatiert: null,
                     };
                     setBuchungen(prev => [...prev, newBooking]);
                     setFocusedIndex(buchungen.length);
@@ -928,7 +934,7 @@ function DayEditorModal({
 
     // Add a new empty booking locally
     const handleAddBooking = () => {
-        const newBooking: any = {
+        const newBooking: Buchung = {
             id: -Date.now(), // Temporary negative ID
             projektId: projekte.length > 0 ? projekte[0].id : 0,
             arbeitsgangId: arbeitsgaenge.length > 0 ? arbeitsgaenge[0].id : 0,
@@ -936,23 +942,26 @@ function DayEditorModal({
             endeZeit: '16:00',
             projektName: '',
             arbeitsgangName: '',
-            notiz: ''
+            notiz: '',
+            dauerMinuten: null,
+            dauerFormatiert: null,
         };
         setBuchungen([...buchungen, newBooking]);
     };
 
     // Add a new PAUSE booking locally
     const handleAddPause = () => {
-        const newPause: any = {
+        const newPause: Buchung = {
             id: -Date.now(), // Temporary negative ID
             projektId: -1, // Internes Pause-Projekt
-            arbeitsgangId: null,
             startZeit: '12:00',
             endeZeit: '12:30',
             projektName: '[INTERN] Pause',
             arbeitsgangName: '',
             notiz: 'Pause',
-            typ: 'PAUSE'
+            typ: 'PAUSE',
+            dauerMinuten: null,
+            dauerFormatiert: null,
         };
         setBuchungen([...buchungen, newPause]);
     };
@@ -970,7 +979,7 @@ function DayEditorModal({
         return h * 60 + m;
     };
 
-    const handleUpdateBooking = (id: number, field: string, value: any) => {
+    const handleUpdateBooking = (id: number, field: string, value: string | number | null) => {
         setBuchungen(prev => prev.map(b =>
             b.id === id ? { ...b, [field]: value } : b
         ));
@@ -989,7 +998,7 @@ function DayEditorModal({
 
         const isNew = buchung.id < 0;
 
-        const payload: Record<string, any> = {
+        const payload: Record<string, unknown> = {
             mitarbeiterId: mitarbeiterId,
             projektId: buchung.projektId,
             arbeitsgangId: buchung.arbeitsgangId,

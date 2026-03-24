@@ -85,7 +85,7 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
         fetch('/artikel/werkstoffe/details').then(r => r.json()).then(d => setWerkstoffe(d)).catch(() => {});
     }, []);
 
-    const handleChange = (key: string, value: any) => {
+    const handleChange = (key: string, value: string | number | boolean | null) => {
         setFormData(prev => ({ ...prev, [key]: value }));
     };
 

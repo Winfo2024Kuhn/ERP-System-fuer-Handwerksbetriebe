@@ -21,12 +21,16 @@ interface RabattDialogProps {
 }
 
 export function RabattDialog({ blocks, globalRabatt: initialGlobalRabatt, onApply, onClose }: RabattDialogProps) {
-    const [mode, setMode] = useState<RabattMode>('positionen');
+    const [mode, setMode] = useState<RabattMode>(() => initialGlobalRabatt > 0 ? 'dokument' : 'positionen');
     const [localGlobalRabatt, setLocalGlobalRabatt] = useState(initialGlobalRabatt);
-    const [posDiscounts, setPosDiscounts] = useState<PositionDiscount[]>([]);
-
     const serviceBlocks = useMemo(() => getAllServiceBlocks(blocks), [blocks]);
     const posMap = useMemo(() => buildPositionMap(blocks), [blocks]);
+    const initialPosDiscounts = useMemo(() => serviceBlocks.map(b => ({
+        id: b.id,
+        enabled: (b.discount ?? 0) > 0,
+        discount: b.discount ?? 0,
+    })), [serviceBlocks]);
+    const [posDiscounts, setPosDiscounts] = useState<PositionDiscount[]>(initialPosDiscounts);
 
     // Netto for document-mode preview
     const netto = useMemo(() => {
@@ -39,21 +43,10 @@ export function RabattDialog({ blocks, globalRabatt: initialGlobalRabatt, onAppl
 
     const rabattPreview = localGlobalRabatt > 0 ? netto * (localGlobalRabatt / 100) : 0;
 
-    // Initialize position discounts from existing block data
     useEffect(() => {
-        setPosDiscounts(
-            serviceBlocks.map(b => ({
-                id: b.id,
-                enabled: (b.discount ?? 0) > 0,
-                discount: b.discount ?? 0,
-            }))
-        );
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Detect initial mode: if globalRabatt was set, start on document tab
-    useEffect(() => {
-        if (initialGlobalRabatt > 0) setMode('dokument');
-    }, [initialGlobalRabatt]);
+        const syncDiscounts = window.setTimeout(() => setPosDiscounts(initialPosDiscounts), 0);
+        return () => window.clearTimeout(syncDiscounts);
+    }, [initialPosDiscounts]);
 
     const togglePosition = useCallback((id: string) => {
         setPosDiscounts(prev => prev.map(p =>

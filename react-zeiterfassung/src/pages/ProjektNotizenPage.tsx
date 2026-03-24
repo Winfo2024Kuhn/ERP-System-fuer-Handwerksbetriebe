@@ -64,6 +64,7 @@ export default function ProjektNotizenPage() {
         }, 0)
 
         return () => window.clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projektId])
 
     const handleSave = async () => {

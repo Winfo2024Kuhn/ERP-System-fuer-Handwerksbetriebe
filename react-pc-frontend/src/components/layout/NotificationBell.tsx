@@ -234,7 +234,7 @@ export function NotificationBell() {
         handleNavigate(item.link, item.type);
     };
 
-    const total = data?.totalCount ?? prevCountRef.current ?? 0;
+    const total = data?.totalCount ?? 0;
 
     return (
         <div className="relative" ref={dropdownRef}>

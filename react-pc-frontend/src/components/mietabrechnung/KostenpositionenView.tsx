@@ -29,6 +29,7 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
 
     useEffect(() => {
         loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mietobjektId]);
 
     const loadData = async () => {
@@ -101,10 +102,10 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
             if (editing.id === 0) await MietabrechnungService.createKostenposition(editing.kostenstelleId, editing);
             else await MietabrechnungService.updateKostenposition(editing.id, editing);
             setModalOpen(false); loadData();
-        } catch (err) { toast.error('Fehler'); }
+        } catch { toast.error('Fehler'); }
     };
 
-    const del = async (id: number) => { if (await confirmDialog({ title: 'Löschen', message: 'Möchten Sie diesen Eintrag wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) try { await MietabrechnungService.deleteKostenposition(id); loadData(); } catch (err) { toast.error('Fehler'); } };
+    const del = async (id: number) => { if (await confirmDialog({ title: 'Löschen', message: 'Möchten Sie diesen Eintrag wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) try { await MietabrechnungService.deleteKostenposition(id); loadData(); } catch { toast.error('Fehler'); } };
 
     // Filtering
     const yearNum = Number(filterYear) || null;

@@ -42,12 +42,14 @@ export function KategorieBestaetigenDialog({
 
     useEffect(() => {
         if (ansicht === 'auswaehlen' && kategorien.length === 0) {
-            setLadeKategorien(true);
+            const startLoading = window.setTimeout(() => setLadeKategorien(true), 0);
             fetch('/api/produktkategorien')
                 .then(r => r.json())
                 .then((data: KategorieOption[]) => setKategorien(data.filter(k => k.isLeaf)))
                 .catch(() => setKategorien([]))
                 .finally(() => setLadeKategorien(false));
+
+            return () => window.clearTimeout(startLoading);
         }
     }, [ansicht, kategorien.length]);
 

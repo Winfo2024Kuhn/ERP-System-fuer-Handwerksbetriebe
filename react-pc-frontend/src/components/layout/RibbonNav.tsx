@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
@@ -178,27 +178,27 @@ export function RibbonNavigation() {
             .filter((category) => category.subgroups.length > 0);
     }, [isAdmin]);
 
-    const [activeCategory, setActiveCategory] = useState<string>(NAVIGATION[0].category);
+    const [selectedCategory, setSelectedCategory] = useState<string>(NAVIGATION[0].category);
     const [isExpanded, setIsExpanded] = useState(true);
 
-    // Auto-select category based on current route
-    useEffect(() => {
-        const currentGroup = visibleNavigation.find(group =>
+    const routeCategory = useMemo(() => {
+        return visibleNavigation.find(group =>
             group.subgroups.some(sg => sg.items.some(item => location.pathname.startsWith(item.href)))
         );
-        if (currentGroup) {
-            setActiveCategory(currentGroup.category);
-        }
     }, [location.pathname, visibleNavigation]);
 
-    useEffect(() => {
+    const activeCategory = useMemo(() => {
+        if (routeCategory) {
+            return routeCategory.category;
+        }
         if (visibleNavigation.length === 0) {
-            return;
+            return '';
         }
-        if (!visibleNavigation.some(group => group.category === activeCategory)) {
-            setActiveCategory(visibleNavigation[0].category);
+        if (visibleNavigation.some(group => group.category === selectedCategory)) {
+            return selectedCategory;
         }
-    }, [visibleNavigation, activeCategory]);
+        return visibleNavigation[0].category;
+    }, [routeCategory, selectedCategory, visibleNavigation]);
 
     // User Menu State
     const currentUser = user;
@@ -231,7 +231,7 @@ export function RibbonNavigation() {
                                 if (activeCategory === group.category) {
                                     toggleRibbon();
                                 } else {
-                                    setActiveCategory(group.category);
+                                    setSelectedCategory(group.category);
                                     setIsExpanded(true);
                                 }
                             }}

@@ -388,14 +388,8 @@ function GeminiSection() {
 // ==================== Zeiterfassung Einrichtung ====================
 
 function ZeiterfassungSection() {
-    const [serverUrl, setServerUrl] = useState('');
+    const serverUrl = window.location.origin;
     const [copied, setCopied] = useState(false);
-
-    useEffect(() => {
-        // Aktuelle Server-URL ermitteln
-        const url = window.location.origin;
-        setServerUrl(url);
-    }, []);
 
     const zeiterfassungUrl = `${serverUrl}/zeiterfassung`;
 

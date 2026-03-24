@@ -535,7 +535,7 @@ function MarkdownText({ text, onNavigate }: { text: string; onNavigate: (path: s
         const line = lines[i];
 
         // Detect markdown table: header row | separator row | data rows
-        if (line.includes('|') && i + 1 < lines.length && /^[\s|:\-]+$/.test(lines[i + 1].replace(/[^|:\s-]/g, ''))) {
+        if (line.includes('|') && i + 1 < lines.length && /^[\s|:-]+$/.test(lines[i + 1].replace(/[^|:\s-]/g, ''))) {
             const tableLines: string[] = [];
             let j = i;
             while (j < lines.length && lines[j].includes('|')) {
@@ -618,7 +618,7 @@ function MarkdownText({ text, onNavigate }: { text: string; onNavigate: (path: s
 function formatInline(text: string, onNavigate: (path: string) => void): React.ReactNode {
     const parts: React.ReactNode[] = [];
     // Match: [text](/route), **bold**, `code`, *italic*
-    const regex = /(\[([^\]]+)\]\((\/?[a-z][a-z0-9\-\/]*)\)|\*\*(.+?)\*\*|`(.+?)`|\*(.+?)\*)/g;
+    const regex = /(\[([^\]]+)\]\((\/?[a-z][a-z0-9-/]*)\)|\*\*(.+?)\*\*|`(.+?)`|\*(.+?)\*)/g;
     let lastIndex = 0;
     let match;
 

@@ -166,8 +166,8 @@ export default function LieferantDokumentModal({
             const updated = await res.json();
             onSave?.(updated);
             onClose();
-        } catch (err: any) {
-            setError(err.message || "Ein Fehler ist aufgetreten");
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Ein Fehler ist aufgetreten");
         } finally {
             setLoading(false);
         }

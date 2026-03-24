@@ -208,6 +208,7 @@ const KundenAuswahlView: React.FC<{
 
     useEffect(() => {
         searchKunden();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleSearch = (e: React.FormEvent) => {
@@ -364,8 +365,8 @@ const KundeAnlegenView: React.FC<{
 
             const created = await res.json();
             onSuccess(created);
-        } catch (err: any) {
-            setError(err.message || 'Fehler beim Speichern');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Fehler beim Speichern');
         } finally {
             setSaving(false);
         }
@@ -1250,7 +1251,7 @@ const AngebotDetailView: React.FC<AngebotDetailViewProps> = ({ angebot, onBack, 
             {/* Tab Content: E-Mails */}
             {activeTab === 'emails' && (
                 <EmailsTab
-                    emails={(angebot.emails || []).map((e: any) => ({
+                    emails={(angebot.emails || []).map((e) => ({
                         id: e.id,
                         subject: e.subject,
                         from: e.sender || e.fromAddress,
@@ -1260,7 +1261,7 @@ const AngebotDetailView: React.FC<AngebotDetailViewProps> = ({ angebot, onBack, 
                         bodyPreview: e.body,
                         direction: e.direction as 'IN' | 'OUT',
                         sentAt: e.sentAt,
-                        attachments: e.attachments?.map((att: any) => ({
+                        attachments: e.attachments?.map((att) => ({
                             id: att.id,
                             originalFilename: att.originalFilename,
                             storedFilename: att.storedFilename,
@@ -1297,7 +1298,7 @@ const AngebotDetailView: React.FC<AngebotDetailViewProps> = ({ angebot, onBack, 
                     allowedTypes={['ANGEBOT', 'AUFTRAGSBESTAETIGUNG']}
                     hideRechnungActions={true}
                     onRefresh={loadAusgangsDokumente}
-                    confirmDialog={confirmDialog as any}
+                    confirmDialog={confirmDialog}
                     toast={toast}
                 />
             )}
@@ -1924,7 +1925,7 @@ export default function AngebotEditor() {
             <AngebotErstellenModal
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
-                onSuccess={(_angebotId) => {
+                onSuccess={() => {
                     loadAngebote();
                 }}
             />

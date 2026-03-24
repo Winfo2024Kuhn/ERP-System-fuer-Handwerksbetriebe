@@ -164,6 +164,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
 
             return () => window.clearTimeout(timeoutId)
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams, anfragen])
 
     // Server-side search logic

@@ -146,7 +146,6 @@ export default function EditorCanvas({
         resizingRef.current = null;
         setSnapGuides({ horizontal: [], vertical: [] });
         document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
     }, [handleMouseMove]);
 
     const handleBlockMouseDown = (e: React.MouseEvent, id: string) => {
@@ -157,7 +156,7 @@ export default function EditorCanvas({
         onSelectBlock(id);
         draggingRef.current = { id, startX: e.clientX, startY: e.clientY, origX: item.x, origY: item.y };
         document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('mouseup', handleMouseUp, { once: true });
     };
 
     const handleResizeStart = (e: React.MouseEvent, id: string) => {
@@ -166,7 +165,7 @@ export default function EditorCanvas({
         if (!item) return;
         resizingRef.current = { id, startX: e.clientX, startY: e.clientY, startW: item.width, startH: item.height };
         document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('mouseup', handleMouseUp, { once: true });
     };
 
     const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: (img: string | null) => void) => {

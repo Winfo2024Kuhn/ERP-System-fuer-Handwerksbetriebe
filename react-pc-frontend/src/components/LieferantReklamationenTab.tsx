@@ -26,10 +26,6 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
     // Create Modal State
     const [createModalOpen, setCreateModalOpen] = useState(false);
 
-    useEffect(() => {
-        loadData();
-    }, [lieferantId]);
-
     const loadData = async () => {
         setLoading(true);
         try {
@@ -43,6 +39,11 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
         }
         setLoading(false);
     };
+
+    useEffect(() => {
+        loadData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lieferantId]);
 
     const handleImageClick = (rek: LieferantReklamation, clickedIndex: number) => {
         const images = rek.bilder.map(b => ({ url: b.url, name: b.originalDateiname }));

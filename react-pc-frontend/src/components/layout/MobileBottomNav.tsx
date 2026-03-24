@@ -135,13 +135,17 @@ export function MobileBottomNav() {
 
     // Close sheets when route changes
     useEffect(() => {
-        setShowMoreSheet(false);
-        setActiveSubmenu(null);
+        const resetUi = window.setTimeout(() => {
+            setShowMoreSheet(false);
+            setActiveSubmenu(null);
+        }, 0);
+
+        return () => window.clearTimeout(resetUi);
     }, [location.pathname]);
 
     // Double-tap to show submenu
-    const handleTabTap = (tabHref: string) => {
-        const now = Date.now();
+    const handleTabTap = (tabHref: string, eventTime: number) => {
+        const now = eventTime;
 
         if (lastTap && lastTap.tab === tabHref && now - lastTap.time < 300) {
             // Double-tap: show submenu
@@ -288,7 +292,7 @@ export function MobileBottomNav() {
                                 onClick={(e) => {
                                     if (isActive && hasSubmenu) {
                                         e.preventDefault();
-                                        handleTabTap(tab.href);
+                                        handleTabTap(tab.href, e.timeStamp);
                                     }
                                 }}
                                 className="flex flex-col items-center justify-center flex-1 py-2 relative group"

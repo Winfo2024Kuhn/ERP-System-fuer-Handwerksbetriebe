@@ -1,10 +1,33 @@
 package org.example.kalkulationsprogramm.service;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.domain.*;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.example.kalkulationsprogramm.domain.Abteilung;
+import org.example.kalkulationsprogramm.domain.LieferantDokument;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
-import org.example.kalkulationsprogramm.repository.*;
+import org.example.kalkulationsprogramm.repository.AbteilungDokumentBerechtigungRepository;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -12,14 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
@@ -241,6 +258,7 @@ public class LieferantDokumentService {
                                 gd.setSkontoProzent(analyzeResult.getSkontoProzent());
                                 gd.setNettoTage(analyzeResult.getNettoTage());
                                 gd.setBereitsGezahlt(analyzeResult.getBereitsGezahlt());
+                                gd.setZahlungsart(analyzeResult.getZahlungsart());
                                 gd.setAiConfidence(analyzeResult.getAiConfidence());
                                 gd.setAnalysiertAm(LocalDateTime.now());
 
@@ -395,6 +413,7 @@ public class LieferantDokumentService {
                                         .bezahlt(gd.getBezahlt())
                                         .bezahltAm(gd.getBezahltAm())
                                         .bereitsGezahlt(gd.getBereitsGezahlt())
+                                        .zahlungsart(gd.getZahlungsart())
                                         // Skonto-Konditionen
                                         .skontoTage(gd.getSkontoTage())
                                         .skontoProzent(gd.getSkontoProzent())

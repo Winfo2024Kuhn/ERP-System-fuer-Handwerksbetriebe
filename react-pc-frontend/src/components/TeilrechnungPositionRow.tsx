@@ -1,8 +1,9 @@
+/* eslint-disable react-refresh/only-export-components */
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { DocBlock } from './document-editor/types';
 
-const formatCurrency = (val: number | null | undefined) =>
+const formatCurrencyValue = (val: number | null | undefined) =>
     val !== null && val !== undefined
         ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val)
         : '-';
@@ -66,7 +67,7 @@ export function TeilrechnungPositionRow({ block, selected, expanded, onToggleSel
                         {block.title || stripHtml(block.content || '') || 'Position'}
                     </p>
                     <p className={cn("text-xs mt-0.5", disabled ? "text-slate-300" : "text-slate-400")}>
-                        {block.quantity} {block.unit} × {formatCurrency(block.price || 0)}
+                        {block.quantity} {block.unit} × {formatCurrencyValue(block.price || 0)}
                         {disabled && <span className="ml-2 text-slate-400 italic">– bereits abgerechnet</span>}
                     </p>
                 </div>
@@ -76,7 +77,7 @@ export function TeilrechnungPositionRow({ block, selected, expanded, onToggleSel
                     "text-sm font-semibold whitespace-nowrap",
                     disabled ? "text-slate-300" : selected ? "text-rose-700" : "text-slate-500"
                 )}>
-                    {formatCurrency(lineTotal)}
+                    {formatCurrencyValue(lineTotal)}
                 </span>
             </div>
 
@@ -94,7 +95,7 @@ export function TeilrechnungPositionRow({ block, selected, expanded, onToggleSel
 }
 
 /** Alle SERVICE-Blocks (root + nested) aus einer Block-Liste extrahieren */
-export function getAllServiceBlocks(blocks: DocBlock[]): DocBlock[] {
+function getAllServiceBlocks(blocks: DocBlock[]): DocBlock[] {
     const result: DocBlock[] = [];
     for (const b of blocks) {
         if (b.type === 'SERVICE') result.push(b);
@@ -108,7 +109,7 @@ export function getAllServiceBlocks(blocks: DocBlock[]): DocBlock[] {
 }
 
 /** Blocks filtern: nur ausgewählte SERVICE-Blocks behalten, Sections mit gefilterten Kindern */
-export function filterBlocksBySelectedIds(blocks: DocBlock[], selectedIds: Set<string>): DocBlock[] {
+function filterBlocksBySelectedIds(blocks: DocBlock[], selectedIds: Set<string>): DocBlock[] {
     const result: DocBlock[] = [];
     for (const b of blocks) {
         if (b.type === 'SECTION_HEADER') {
@@ -129,7 +130,7 @@ export function filterBlocksBySelectedIds(blocks: DocBlock[], selectedIds: Set<s
  * Alle Blocks beibehalten, aber bei nicht-ausgewählten SERVICE-Blocks
  * die Beträge auf 0 setzen ("noch nicht abgerechnet").
  */
-export function zeroOutUnselectedBlocks(blocks: DocBlock[], selectedIds: Set<string>): DocBlock[] {
+function zeroOutUnselectedBlocks(blocks: DocBlock[], selectedIds: Set<string>): DocBlock[] {
     const result: DocBlock[] = [];
     for (const b of blocks) {
         if (b.type === 'SECTION_HEADER') {
@@ -152,3 +153,5 @@ export function zeroOutUnselectedBlocks(blocks: DocBlock[], selectedIds: Set<str
     }
     return result;
 }
+
+export { formatCurrencyValue as formatCurrency, getAllServiceBlocks, filterBlocksBySelectedIds, zeroOutUnselectedBlocks };

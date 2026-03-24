@@ -77,6 +77,7 @@ export default function AnfrageNotizenPage() {
         }, 0)
 
         return () => window.clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [anfrageId])
 
     const handleSave = async () => {

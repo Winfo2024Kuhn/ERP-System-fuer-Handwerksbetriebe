@@ -126,7 +126,7 @@ const getCurrentUserMitarbeiterId = (): number | null => {
                 return parsed.mitarbeiterId;
             }
         }
-    } catch (_) { /* ignore */ }
+    } catch { /* ignore */ }
     return null;
 };
 
@@ -175,6 +175,7 @@ export default function TerminKalender() {
     // Lade Kalendereinträge bei Monat-/Jahr-Wechsel
     useEffect(() => {
         loadEintraege();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jahr, monat]);
 
     // Deep-link: navigate to specific date from URL param ?date=2026-03-06
@@ -188,6 +189,7 @@ export default function TerminKalender() {
         setAnsicht('tag');
         setSelectedTag(parsed);
         setSearchParams({}, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
 
     const loadEintraege = async () => {

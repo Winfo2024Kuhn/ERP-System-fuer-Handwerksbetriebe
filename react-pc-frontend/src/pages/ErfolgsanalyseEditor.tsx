@@ -667,7 +667,7 @@ export default function ErfolgsanalyseEditor() {
             y: {
                 beginAtZero: true,
                 ticks: {
-                    callback: (value: any) => formatCurrency(value)
+                    callback: (value: number | string) => formatCurrency(Number(value))
                 }
             },
         },

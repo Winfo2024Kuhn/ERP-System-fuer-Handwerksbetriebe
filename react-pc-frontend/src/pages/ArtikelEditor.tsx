@@ -98,7 +98,7 @@ export default function ArtikelEditor() {
         loadArtikel();
     }, [loadArtikel]);
 
-    const handleFilterChange = (key: string, value: any) => {
+    const handleFilterChange = (key: string, value: string | number) => {
         setFilters((prev) => ({ ...prev, [key]: value }));
     };
 
@@ -351,7 +351,7 @@ export default function ArtikelEditor() {
                                         <td className="px-4 py-3 text-slate-600">{artikel.lieferantenname || '-'}</td>
                                         <td className="px-4 py-3 text-right text-slate-600">{formatKg(artikel.kgProMeter)}</td>
                                         <td className="px-4 py-3 text-right font-medium text-slate-900">
-                                            {formatCurrency(artikel.preis)} <span className="text-xs font-normal text-slate-400">/ {typeof artikel.verrechnungseinheit === 'object' && artikel.verrechnungseinheit !== null ? (artikel.verrechnungseinheit as any).anzeigename || (artikel.verrechnungseinheit as any).name : artikel.verrechnungseinheit}</span>
+                                            {formatCurrency(artikel.preis)} <span className="text-xs font-normal text-slate-400">/ {typeof artikel.verrechnungseinheit === 'object' && artikel.verrechnungseinheit !== null ? (artikel.verrechnungseinheit as { name: string; anzeigename?: string }).anzeigename || (artikel.verrechnungseinheit as { name: string; anzeigename?: string }).name : artikel.verrechnungseinheit}</span>
                                         </td>
                                         <td className="px-4 py-3 text-right text-slate-500 text-xs">{formatDate(artikel.preisDatum)}</td>
                                         <td className="px-4 py-3 text-center">

@@ -184,7 +184,7 @@ export default function DocumentManager({ projektId, anfrageId, angebotId, class
                 const parsed = JSON.parse(stored);
                 return parsed.id || null;
             }
-        } catch (_) { /* ignore */ }
+        } catch { /* ignore */ }
         return null;
     };
 
@@ -746,6 +746,7 @@ function DocumentPreviewModal({ doc, onClose, onOpenExternal, onDownload, allIma
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [onClose, hasPrev, hasNext]);
 
     // Öffnen über Netzwerkpfad

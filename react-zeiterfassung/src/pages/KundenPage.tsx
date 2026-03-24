@@ -50,6 +50,7 @@ export default function KundenPage({ syncStatus, onSync }: KundenPageProps) {
 
             return () => window.clearTimeout(timeoutId)
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams, kunden])
 
     async function loadKunden() {

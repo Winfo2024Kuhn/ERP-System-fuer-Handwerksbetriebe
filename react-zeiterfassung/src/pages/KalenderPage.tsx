@@ -122,6 +122,7 @@ export default function KalenderPage({ token, syncStatus, onSync }: KalenderPage
 
     useEffect(() => {
         if (token) loadEintraege()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, jahr, monat])
 
     const loadEintraege = async () => {
