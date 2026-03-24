@@ -225,7 +225,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
     const toast = useToast();
     const [searchType, setSearchType] = useState<'projekt' | 'anfrage'>('projekt');
     const [searchQuery, setSearchQuery] = useState('');
-    const [results, setResults] = useState<any[]>([]);
+    const [results, setResults] = useState<{ id: number; bauvorhaben?: string; name?: string; kunde?: string }[]>([]);
     const [suggestions, setSuggestions] = useState<{ projekte: EntityOption[], anfragen: EntityOption[] }>({ projekte: [], anfragen: [] });
     const [loading, setLoading] = useState(false);
     const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -287,7 +287,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
         try {
             await onAssign(type, id);
             onClose();
-        } catch (err) {
+        } catch {
             toast.error('Zuordnung fehlgeschlagen');
         } finally {
             setAssigning(false);
@@ -377,7 +377,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
                         ) : results.length === 0 && searchQuery ? (
                             <p className="text-center text-slate-500 py-4">Keine Ergebnisse</p>
                         ) : (
-                            results.map((item) => (
+                            results.map((item: { id: number; bauvorhaben?: string; name?: string; kunde?: string }) => (
                                 <button
                                     key={item.id}
                                     onClick={() => handleSelect(searchType, item.id)}
@@ -428,6 +428,7 @@ export default function EmailCenter() {
     useEffect(() => {
         loadEmails();
         loadStats();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeFolder]);
 
     // Action Hanlders
@@ -567,6 +568,7 @@ export default function EmailCenter() {
                 })
                 .catch(() => { /* email not found, ignore */ });
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [emails, searchParams]);
 
     useEffect(() => {
@@ -574,6 +576,7 @@ export default function EmailCenter() {
             setSelectedEmail(null);
             setSelectedIds(new Set());
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeFolder]);
 
     // Handlers
@@ -689,7 +692,7 @@ export default function EmailCenter() {
                     ? `/api/emails/${id}/permanent`
                     : `/api/emails/${id}`;
                 await fetch(endpoint, { method: 'DELETE' });
-            } catch (err) {
+            } catch {
                 console.error('Delete failed for', id);
             }
         }

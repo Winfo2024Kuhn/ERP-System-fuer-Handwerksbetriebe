@@ -832,6 +832,7 @@ public class LieferantenController {
             geschaeftsdaten.setSkontoProzent(request.getSkontoProzent());
             geschaeftsdaten.setNettoTage(request.getNettoTage());
             geschaeftsdaten.setBereitsGezahlt(request.getBereitsGezahlt());
+            geschaeftsdaten.setZahlungsart(request.getZahlungsart());
             geschaeftsdaten.setAiConfidence(1.0); // Benutzer-verifiziert = 100%
             geschaeftsdaten.setAnalysiertAm(java.time.LocalDateTime.now());
 

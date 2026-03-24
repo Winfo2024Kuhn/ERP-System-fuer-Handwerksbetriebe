@@ -1,14 +1,15 @@
 package org.example.kalkulationsprogramm.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
-
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 
-import org.example.kalkulationsprogramm.domain.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import org.example.kalkulationsprogramm.domain.LieferantDokument;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
@@ -18,14 +19,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.anyString;
 import org.mockito.Mock;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 @ExtendWith(MockitoExtension.class)
 class GeminiDokumentAnalyseServiceTest {
@@ -458,6 +457,58 @@ class GeminiDokumentAnalyseServiceTest {
         }
     }
 
+    @Nested
+    class ZahlungsartParsing {
+
+        @Test
+        void parseJsonToAnalyzeResponse_normalisiert_sepa_lastschrift() throws Exception {
+            String json = """
+                    {
+                      "dokumentTyp": "RECHNUNG",
+                      "dokumentNummer": "RE-2025-001",
+                      "dokumentDatum": "2025-03-15",
+                      "betragBrutto": 119.00,
+                      "bereitsGezahlt": true,
+                      "zahlungsart": "Lastschrift"
+                    }
+                    """;
+
+            com.fasterxml.jackson.databind.ObjectMapper realMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            when(objectMapper.readTree(json)).thenReturn(realMapper.readTree(json));
+
+            var result = invokeParseJsonToAnalyzeResponse(json);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getBereitsGezahlt()).isTrue();
+            assertThat(result.getZahlungsart()).isEqualTo("SEPA_LASTSCHRIFT");
+        }
+
+        @Test
+        void mapJsonToData_setzt_sepa_lastschrift_und_bezahlt_flag() throws Exception {
+            String json = """
+                    {
+                      "istGeschaeftsdokument": true,
+                      "dokumentTyp": "RECHNUNG",
+                      "dokumentNummer": "RE-2025-002",
+                      "dokumentDatum": "2025-03-16",
+                      "betragBrutto": 200.00,
+                      "bereitsGezahlt": true,
+                      "zahlungsart": "SEPA Direct Debit"
+                    }
+                    """;
+
+            com.fasterxml.jackson.databind.ObjectMapper realMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            when(objectMapper.readTree(json)).thenReturn(realMapper.readTree(json));
+
+            LieferantGeschaeftsdokument result = invokeMapJsonToData(json);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getBereitsGezahlt()).isTrue();
+            assertThat(result.getBezahlt()).isTrue();
+            assertThat(result.getZahlungsart()).isEqualTo("SEPA_LASTSCHRIFT");
+        }
+    }
+
     // --- Helper methods to invoke private methods via reflection ---
 
     private LieferantGeschaeftsdokument invokeZugferdExtraktion(Path dateiPfad, String dateiname,
@@ -471,8 +522,24 @@ class GeminiDokumentAnalyseServiceTest {
     private LieferantGeschaeftsdokument invokeXmlExtraktion(Path dateiPfad,
             LieferantDokument dokument) throws Exception {
         Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
-                "versucheXmlExtraktion", Path.class, LieferantDokument.class);
+            "versucheXmlExtraktion", String.class, LieferantDokument.class, String.class);
         method.setAccessible(true);
-        return (LieferantGeschaeftsdokument) method.invoke(service, dateiPfad, dokument);
+        return (LieferantGeschaeftsdokument) method.invoke(service, Files.readString(dateiPfad), dokument,
+            dateiPfad.getFileName().toString());
+        }
+
+        private org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse invokeParseJsonToAnalyzeResponse(
+            String json) throws Exception {
+        Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+            "parseJsonToAnalyzeResponse", String.class);
+        method.setAccessible(true);
+        return (org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse) method.invoke(service, json);
+        }
+
+        private LieferantGeschaeftsdokument invokeMapJsonToData(String json) throws Exception {
+        Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+            "mapJsonToData", String.class);
+        method.setAccessible(true);
+        return (LieferantGeschaeftsdokument) method.invoke(service, json);
     }
 }

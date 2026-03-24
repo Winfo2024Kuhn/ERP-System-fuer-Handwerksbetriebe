@@ -94,6 +94,7 @@ export interface LieferantGeschaeftsdaten {
   bezahlt?: boolean;
   bezahltAm?: string;
   bereitsGezahlt?: boolean;
+  zahlungsart?: string;
   // Skonto-Konditionen
   skontoTage?: number;
   skontoProzent?: number;
@@ -513,12 +514,17 @@ export interface ProjektEmail {
   id: number;
   subject?: string;
   from?: string;           // Backend liefert "from"
+  sender?: string;         // Alias für Kompatibilität
   fromAddress?: string;    // Alias für Kompatibilität
   to?: string;             // Backend liefert "to"
+  recipient?: string;      // Alias für Kompatibilität
+  recipients?: string[];   // Alias für Kompatibilität
   direction: 'IN' | 'OUT';
   receivedDate?: string;
   sentAt?: string;         // Backend liefert "sentAt"
   sentDate?: string;       // Alias für Kompatibilität
+  body?: string;           // Alias für Kompatibilität
+  htmlBody?: string;       // Alias für Kompatibilität
   bodyHtml?: string;       // Backend liefert "bodyHtml"
   bodyPreview?: string;    // Alias für Kompatibilität
   attachments?: ProjektEmailAttachment[];
@@ -610,9 +616,12 @@ export interface AnfrageEmailAttachment {
 export interface AnfrageEmail {
   id: number;
   sender?: string;
+  fromAddress?: string;
+  recipient?: string;
   recipients?: string[];
   subject?: string;
   body?: string;
+  htmlBody?: string;
   sentAt?: string;
   attachments?: AnfrageEmailAttachment[];
   direction?: 'IN' | 'OUT';

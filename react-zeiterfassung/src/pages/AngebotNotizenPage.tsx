@@ -77,6 +77,7 @@ export default function AngebotNotizenPage() {
         }, 0)
 
         return () => window.clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [angebotId])
 
     const handleSave = async () => {

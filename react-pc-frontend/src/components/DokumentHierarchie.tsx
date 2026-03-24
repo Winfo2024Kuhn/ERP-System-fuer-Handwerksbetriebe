@@ -66,7 +66,7 @@ interface DokumentHierarchieProps {
     /** Wenn true, werden Rechnungserstellungs-Aktionen ausgeblendet */
     hideRechnungActions?: boolean;
     onRefresh: () => void;
-    confirmDialog: (opts: { title: string; message: string; variant: string; confirmLabel: string }) => Promise<boolean>;
+    confirmDialog: (opts: { title?: string; message: string; variant?: 'danger' | 'warning' | 'info'; confirmLabel?: string }) => Promise<boolean>;
     toast: { error: (msg: string) => void; success: (msg: string) => void };
 }
 
@@ -256,6 +256,7 @@ export function DokumentHierarchie({
         } finally {
             setRechnungLoading(false);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rechnungBasisDok, rechnungTyp, abschlagsBetrag, berechneterAbschlagNetto, abrechnungsverlauf, editorParam, createPayloadIds, onRefresh, toast, selectedBlockIds, basisDokBlocks]);
 
     // ============ Knoten ein-/ausklappen ============
@@ -321,8 +322,8 @@ export function DokumentHierarchie({
                                     TYP_COLORS[dok.typ] || 'bg-slate-50 text-slate-700 border-slate-200'
                                 )}>
                                     {typConfig?.label || dok.typ}
-                                    {dok.typ === 'ABSCHLAGSRECHNUNG' && (dok as any).abschlagsNummer
-                                        ? ` #${(dok as any).abschlagsNummer}` : ''}
+                                {dok.typ === 'ABSCHLAGSRECHNUNG' && (dok as unknown as { abschlagsNummer?: number }).abschlagsNummer
+                                    ? ` #${(dok as unknown as { abschlagsNummer?: number }).abschlagsNummer}` : ''}
                                 </span>
 
                                 {dok.storniert && (

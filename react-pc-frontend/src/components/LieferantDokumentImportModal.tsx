@@ -43,6 +43,7 @@ interface AnalyzeResponse {
     skontoProzent: number | null;
     nettoTage: number | null;
     bereitsGezahlt: boolean | null;
+    zahlungsart: string | null;
     aiConfidence: number | null;
     analyseQuelle: string | null;
 }
@@ -54,6 +55,18 @@ const DOKUMENT_TYP_OPTIONS = [
     { value: 'LIEFERSCHEIN', label: 'Lieferschein' },
     { value: 'GUTSCHRIFT', label: 'Gutschrift' },
     { value: 'SONSTIG', label: 'Sonstiges' },
+];
+
+const ZAHLUNGSART_OPTIONS = [
+    { value: '', label: 'Nicht erkannt' },
+    { value: 'VORAUSKASSE', label: 'Vorauskasse' },
+    { value: 'SEPA_LASTSCHRIFT', label: 'SEPA-Lastschrift' },
+    { value: 'KREDITKARTE', label: 'Kreditkarte' },
+    { value: 'PAYPAL', label: 'PayPal' },
+    { value: 'AMAZON_PAY', label: 'Amazon Pay' },
+    { value: 'UEBERWEISUNG', label: 'Überweisung' },
+    { value: 'BAR', label: 'Bar' },
+    { value: 'SONSTIGE', label: 'Sonstige' },
 ];
 
 export function LieferantDokumentImportModal({
@@ -82,6 +95,7 @@ export function LieferantDokumentImportModal({
         skontoProzent: '',
         nettoTage: '',
         bereitsGezahlt: false,
+        zahlungsart: '',
     });
 
     const [aiConfidence, setAiConfidence] = useState<number>(0);
@@ -119,8 +133,10 @@ export function LieferantDokumentImportModal({
                 skontoProzent: '',
                 nettoTage: '',
                 bereitsGezahlt: false,
+                zahlungsart: '',
             });
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -192,7 +208,8 @@ export function LieferantDokumentImportModal({
                 skontoTage: firstInvoice.skontoTage ? firstInvoice.skontoTage.toString() : prev.skontoTage,
                 skontoProzent: firstInvoice.skontoProzent ? firstInvoice.skontoProzent.toString() : prev.skontoProzent,
                 nettoTage: firstInvoice.nettoTage ? firstInvoice.nettoTage.toString() : prev.nettoTage,
-                bereitsGezahlt: firstInvoice.bereitsGezahlt || prev.bereitsGezahlt,
+                bereitsGezahlt: firstInvoice.bereitsGezahlt ?? prev.bereitsGezahlt,
+                zahlungsart: firstInvoice.zahlungsart ?? prev.zahlungsart,
             }));
 
             setAiConfidence(firstInvoice.aiConfidence || 0);
@@ -200,7 +217,7 @@ export function LieferantDokumentImportModal({
 
             // Move to edit step
             setStep('edit');
-        } catch (err: any) {
+        } catch (err) {
             console.error(err);
             setError('Fehler beim Analysieren der Datei. Sie können die Daten manuell eingeben.');
             setStep('edit'); // Fallback to edit even if extraction failed
@@ -252,6 +269,7 @@ export function LieferantDokumentImportModal({
                     skontoProzent: invoice.analyzeResponse.skontoProzent,
                     nettoTage: invoice.analyzeResponse.nettoTage,
                     bereitsGezahlt: invoice.analyzeResponse.bereitsGezahlt ?? true, // Amazon = meist Lastschrift
+                    zahlungsart: invoice.analyzeResponse.zahlungsart ?? null,
                 };
 
                 formData.append('metadata', new Blob([JSON.stringify(importPayload)], {
@@ -313,6 +331,7 @@ export function LieferantDokumentImportModal({
             skontoProzent: metadata.skontoProzent ? parseFloat(metadata.skontoProzent.replace(',', '.')) : null,
             nettoTage: metadata.nettoTage ? parseInt(metadata.nettoTage) : null,
             bereitsGezahlt: metadata.bereitsGezahlt,
+            zahlungsart: metadata.zahlungsart || null,
         };
 
         // Append as Blob/JSON for RequestPart
@@ -338,9 +357,9 @@ export function LieferantDokumentImportModal({
             const created = await res.json() as LieferantDokument;
             onSuccess([created]);
             onClose();
-        } catch (err: any) {
+        } catch (err) {
             console.error(err);
-            setError(err.message || 'Ein unbekannter Fehler ist aufgetreten.');
+            setError(err instanceof Error ? err.message : 'Ein unbekannter Fehler ist aufgetreten.');
         } finally {
             setLoading(false);
         }
@@ -551,6 +570,15 @@ export function LieferantDokumentImportModal({
                                             />
                                         </div>
 
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-slate-700">Zahlungsart</label>
+                                            <Select
+                                                value={metadata.zahlungsart}
+                                                onChange={(val) => setMetadata(prev => ({ ...prev, zahlungsart: val }))}
+                                                options={ZAHLUNGSART_OPTIONS}
+                                            />
+                                        </div>
+
                                         {/* Referenznummer */}
                                         <div className="space-y-2">
                                             <label className="text-sm font-medium text-slate-700">Referenznummer</label>
@@ -611,7 +639,7 @@ export function LieferantDokumentImportModal({
                                             />
                                             <div>
                                                 <span className="text-sm font-medium text-slate-700">Bereits bezahlt</span>
-                                                <p className="text-xs text-slate-500">z.B. bei Amazon/Lastschrift-Rechnungen</p>
+                                                <p className="text-xs text-slate-500">z.B. bei Amazon Pay, Kreditkarte oder SEPA-Lastschrift</p>
                                             </div>
                                         </label>
                                     </div>

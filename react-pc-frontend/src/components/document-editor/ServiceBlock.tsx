@@ -15,6 +15,7 @@ interface ServiceBlockProps {
     isLocked: boolean;
     isActive: boolean;
     editorRefs: React.MutableRefObject<Record<string, EditorInstance | null>>;
+    onEditorReady: (editorKey: string, editor: EditorInstance | null) => void;
     onUpdate: (id: string, updates: Partial<DocBlock>) => void;
     onRemove: (id: string) => void;
     onToggleOptional: (id: string, current: boolean | undefined) => void;
@@ -28,6 +29,7 @@ export function ServiceBlock({
     isLocked,
     isActive,
     editorRefs,
+    onEditorReady,
     onUpdate,
     onRemove,
     onToggleOptional,
@@ -164,9 +166,7 @@ export function ServiceBlock({
                             onFocus(block.id);
                             onEditorFocus(editorRefs.current[`${block.id}-desc`]);
                         }}
-                        onEditorReady={(editor) => {
-                            editorRefs.current[`${block.id}-desc`] = editor;
-                        }}
+                        onEditorReady={(editor) => onEditorReady(`${block.id}-desc`, editor)}
                     />
                 </div>
             </div>

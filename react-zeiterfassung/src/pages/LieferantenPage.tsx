@@ -59,6 +59,7 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
 
             return () => window.clearTimeout(timeoutId)
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams, lieferanten])
 
     async function loadLieferanten() {

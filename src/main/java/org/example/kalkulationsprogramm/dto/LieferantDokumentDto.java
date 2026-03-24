@@ -1,16 +1,17 @@
 package org.example.kalkulationsprogramm.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 public class LieferantDokumentDto {
 
@@ -64,6 +65,7 @@ public class LieferantDokumentDto {
         private Boolean bezahlt;
         private LocalDate bezahltAm;
         private Boolean bereitsGezahlt;
+        private String zahlungsart;
         // Skonto-Konditionen
         private Integer skontoTage;
         private BigDecimal skontoProzent;
@@ -142,6 +144,7 @@ public class LieferantDokumentDto {
         private BigDecimal skontoProzent;
         private Integer nettoTage;
         private Boolean bereitsGezahlt; // Wichtig für Amazon/Lastschrift
+        private String zahlungsart;
         private Double aiConfidence;
         private String analyseQuelle; // "ZUGFeRD", "XML", "KI"
 
@@ -173,6 +176,7 @@ public class LieferantDokumentDto {
         private BigDecimal skontoProzent;
         private Integer nettoTage;
         private Boolean bereitsGezahlt; // Wichtig für Amazon/Lastschrift
+        private String zahlungsart;
 
         // Neu: Ausgewählter oder erkannter Lieferant
         private Long lieferantId; // Optional, wenn manuell zugewiesen

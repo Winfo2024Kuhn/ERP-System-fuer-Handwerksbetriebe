@@ -389,7 +389,7 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
             } else {
                 toast.error('Fehler beim Speichern');
             }
-        } catch (e) {
+        } catch {
             toast.error('Netzwerkfehler');
         } finally {
             setSaving(false);

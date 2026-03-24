@@ -91,14 +91,14 @@ const TreeNode: React.FC<TreeNodeProps> = ({ kategorie, allKategorien, level, on
 
 export const ProjektKategorieTreeModal: React.FC<ProjektKategorieTreeModalProps> = ({ projektId, onSelect, onClose }) => {
     const [kategorien, setKategorien] = useState<Kategorie[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(() => !!projektId);
 
     useEffect(() => {
         if (!projektId) {
-            setLoading(false);
             return;
         }
 
+        const startLoading = window.setTimeout(() => setLoading(true), 0);
         fetch(`/api/zeiterfassung/kategorien/${projektId}`)
             .then(res => res.json())
             .then(data => {
@@ -108,6 +108,8 @@ export const ProjektKategorieTreeModal: React.FC<ProjektKategorieTreeModalProps>
             })
             .catch(err => console.error('Fehler beim Laden der Kategorien:', err))
             .finally(() => setLoading(false));
+
+        return () => window.clearTimeout(startLoading);
     }, [projektId]);
 
     // Finde Root-Kategorien (ohne Parent oder Parent nicht in der Liste)

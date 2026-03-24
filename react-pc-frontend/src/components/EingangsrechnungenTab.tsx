@@ -19,6 +19,7 @@ interface Eingangsrechnung {
     bezahlt: boolean;
     bezahltAm: string | null;
     bereitsGezahlt: boolean;
+    zahlungsart: string | null;
     dateiname: string;
     pdfUrl: string;
     ueberfaellig: boolean;
@@ -63,6 +64,29 @@ const formatDate = (isoText: string | undefined | null): string => {
 const formatEuro = (value: number | undefined | null): string => {
     if (value == null || !Number.isFinite(value)) return '–';
     return new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+};
+
+const formatZahlungsartLabel = (zahlungsart: string | null | undefined): string => {
+    switch (zahlungsart) {
+        case 'VORAUSKASSE':
+            return 'Vorauskasse';
+        case 'SEPA_LASTSCHRIFT':
+            return 'SEPA-Lastschrift';
+        case 'KREDITKARTE':
+            return 'Kreditkarte';
+        case 'PAYPAL':
+            return 'PayPal';
+        case 'AMAZON_PAY':
+            return 'Amazon Pay';
+        case 'UEBERWEISUNG':
+            return 'Überweisung';
+        case 'BAR':
+            return 'Bar';
+        case 'SONSTIGE':
+            return 'Sonstige Zahlungsart';
+        default:
+            return 'Bereits bezahlt';
+    }
 };
 
 interface EingangsrechnungenTabProps {
@@ -245,8 +269,8 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
                 <div className="flex items-center gap-2">
                     <span>{item.dokumentNummer || '–'}</span>
                     {item.bereitsGezahlt && !item.bezahlt && (
-                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                            Vorauskasse
+                        <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                            {formatZahlungsartLabel(item.zahlungsart)}
                         </span>
                     )}
                     {item.ueberfaellig && !item.bezahlt && (

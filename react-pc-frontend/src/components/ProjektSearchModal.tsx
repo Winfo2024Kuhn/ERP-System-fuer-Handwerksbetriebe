@@ -56,8 +56,8 @@ export function ProjektSearchModal({
             setProjekte(data);
             // Beim ersten Laden (ohne Query) die Gesamtanzahl merken
             if (!query.trim()) setTotalCount(data.length);
-        } catch (e: any) {
-            if (e.name !== 'AbortError') {
+        } catch (e) {
+            if (!(e instanceof DOMException && e.name === 'AbortError')) {
                 console.error('Projektsuche fehlgeschlagen:', e);
             }
         } finally {

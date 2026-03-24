@@ -39,6 +39,7 @@ export function KostenstelleDetailView({ kostenstelle, onBack }: KostenstelleDet
 
     useEffect(() => {
         loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [kostenstelle.id]);
 
     const loadData = async () => {

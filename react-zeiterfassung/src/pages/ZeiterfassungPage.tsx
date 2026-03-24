@@ -30,7 +30,8 @@ interface ZeiterfassungPageProps {
 
 type Step = 'projekt' | 'kategorie' | 'arbeitsgang'
 
-export default function ZeiterfassungPage({ mitarbeiter: _mitarbeiter }: ZeiterfassungPageProps) {
+export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
+    void props
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
     const isSwitching = searchParams.get('switching') === 'true'
@@ -79,6 +80,7 @@ export default function ZeiterfassungPage({ mitarbeiter: _mitarbeiter }: Zeiterf
         if (selectedProjekt) {
             loadKategorien()
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedProjekt])
 
     // Load Arbeitsgänge when category is selected

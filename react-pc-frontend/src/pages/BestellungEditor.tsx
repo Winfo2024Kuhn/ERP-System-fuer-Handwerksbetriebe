@@ -467,6 +467,7 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                 if (uf.previewUrl) URL.revokeObjectURL(uf.previewUrl);
             });
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     if (!isOpen) return null;

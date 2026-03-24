@@ -40,10 +40,12 @@ export default function Urlaubsantraege() {
             setStatusFilter(statusParam);
             setSearchParams({}, { replace: true });
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
 
     useEffect(() => {
         loadAntraege();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [statusFilter]);
 
     const loadAntraege = async () => {

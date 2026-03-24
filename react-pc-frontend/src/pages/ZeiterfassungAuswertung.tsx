@@ -3,11 +3,34 @@ import { BarChart3, Loader2, Search, X, FileText } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { ProjectSelectModal } from '../components/ProjectSelectModal';
 
+interface AuswertungBuchung {
+    id: number;
+    mitarbeiterName?: string;
+    startDateTime?: string;
+    startZeit?: string;
+    endeZeit?: string;
+    dauerMinuten?: number;
+    notiz?: string;
+}
+
+interface AuswertungTaetigkeit {
+    arbeitsgang?: string;
+    gesamtStunden?: number;
+    anzahlBuchungen?: number;
+    buchungen?: AuswertungBuchung[];
+}
+
+interface Auswertung {
+    gesamtStunden?: number;
+    anzahlBuchungen?: number;
+    taetigkeiten?: AuswertungTaetigkeit[];
+}
+
 export default function ZeiterfassungAuswertung() {
     const [selectedProjekt, setSelectedProjekt] = useState<{ id: number; bauvorhaben: string } | null>(null);
     const [showProjectModal, setShowProjectModal] = useState(false);
 
-    const [auswertung, setAuswertung] = useState<any>(null);
+    const [auswertung, setAuswertung] = useState<Auswertung | null>(null);
     const [loading, setLoading] = useState(false);
 
     const loadAuswertung = async () => {
@@ -105,8 +128,8 @@ export default function ZeiterfassungAuswertung() {
                             </p>
                         </div>
                         <div className="divide-y divide-slate-100">
-                            {auswertung.taetigkeiten?.length > 0 ? (
-                                auswertung.taetigkeiten.map((t: any, i: number) => (
+                            {(auswertung.taetigkeiten?.length ?? 0) > 0 ? (
+                                auswertung.taetigkeiten?.map((t: AuswertungTaetigkeit, i: number) => (
                                     <div key={i} className="p-4">
                                         <div className="flex justify-between items-center mb-2">
                                             <h4 className="font-semibold text-slate-800">{t.arbeitsgang || 'Ohne Tätigkeit'}</h4>
@@ -128,7 +151,7 @@ export default function ZeiterfassungAuswertung() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                                {t.buchungen?.map((b: any) => (
+                                                {t.buchungen?.map((b: AuswertungBuchung) => (
                                                     <tr key={b.id} className="hover:bg-slate-50">
                                                         <td className="p-2">{b.mitarbeiterName}</td>
                                                         <td className="p-2">{b.startDateTime ? new Date(b.startDateTime).toLocaleDateString() : '-'}</td>

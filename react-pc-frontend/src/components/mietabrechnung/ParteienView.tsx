@@ -22,6 +22,7 @@ export function ParteienView({ mietobjektId }: ParteienViewProps) {
 
     useEffect(() => {
         loadParteien();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mietobjektId]);
 
     const loadParteien = async () => {
@@ -65,7 +66,7 @@ export function ParteienView({ mietobjektId }: ParteienViewProps) {
             }
             setIsModalOpen(false);
             loadParteien();
-        } catch (err) {
+        } catch {
             toast.error('Fehler beim Speichern');
         }
     };
@@ -75,7 +76,7 @@ export function ParteienView({ mietobjektId }: ParteienViewProps) {
         try {
             await MietabrechnungService.deletePartei(id);
             loadParteien();
-        } catch (err) {
+        } catch {
             toast.error('Fehler beim Löschen');
         }
     };
@@ -164,7 +165,7 @@ export function ParteienView({ mietobjektId }: ParteienViewProps) {
                                 <Label>Rolle</Label>
                                 <Select
                                     value={editing.rolle}
-                                    onChange={val => setEditing({ ...editing, rolle: val as any })}
+                                    onChange={val => setEditing({ ...editing, rolle: val as Partei['rolle'] })}
                                     options={[
                                         { value: 'MIETER', label: 'Mieter' },
                                         { value: 'EIGENTUEMER', label: 'Eigentümer' }

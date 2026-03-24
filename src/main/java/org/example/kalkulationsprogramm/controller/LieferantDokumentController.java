@@ -1,7 +1,14 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -18,16 +25,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/api/lieferant-dokumente")
@@ -113,6 +121,9 @@ public class LieferantDokumentController {
             if (gdReq.bestellnummer != null) {
                 gd.setBestellnummer(gdReq.bestellnummer);
             }
+            if (gdReq.zahlungsart != null) {
+                gd.setZahlungsart(gdReq.zahlungsart);
+            }
 
             // Zahlungsziel
             if (gdReq.zahlungsziel != null && !gdReq.zahlungsziel.isEmpty()) {
@@ -178,6 +189,7 @@ public class LieferantDokumentController {
         // Referenzen
         public String referenzNummer;
         public String bestellnummer;
+        public String zahlungsart;
 
         // Zahlungsziel
         public String zahlungsziel;

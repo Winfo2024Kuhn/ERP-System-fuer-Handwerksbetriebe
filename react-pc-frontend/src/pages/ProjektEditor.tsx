@@ -36,7 +36,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import type { Projekt, ProjektDetail, ProjektEmail, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, Artikel } from "../types";
+import type { Projekt, ProjektDetail, ProjektEmail, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel } from "../types";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
 import { DetailLayout } from "../components/DetailLayout";
 import { ProjektErstellenModal } from "../components/ProjektErstellenModal";
@@ -368,7 +368,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         if (projekt.id) {
             fetch(`/api/projekte/${projekt.id}/dokumente`)
                 .then(res => res.ok ? res.json() : [])
-                .then((data: any[]) => setDokumenteCount(data.length))
+                .then((data: unknown[]) => setDokumenteCount(data.length))
                 .catch(() => setDokumenteCount(0));
         }
     }, [projekt.id]);
@@ -2426,7 +2426,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                     <span>Gesamtauftragssumme (netto)</span>
                                                                     <span className="font-medium">{formatCurrency(abrechnungsverlauf.basisdokumentBetragNetto)}</span>
                                                                 </div>
-                                                                {abrechnungsverlauf.positionen.filter((p: any) => !p.storniert).map((pos: any) => {
+                                                                {abrechnungsverlauf.positionen.filter((p: AbrechnungspositionDto) => !p.storniert).map((pos: AbrechnungspositionDto) => {
                                                                     const posTypConfig = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === pos.typ);
                                                                     return (
                                                                         <div key={pos.id} className="flex justify-between text-slate-500">
@@ -3171,7 +3171,7 @@ export default function ProjektEditor() {
 
             // Projekte sortieren: offene (nicht abgeschlossene) zuerst
             const sortedProjekte = Array.isArray(data.projekte) ? data.projekte : [];
-            sortedProjekte.sort((a: any, b: any) => {
+            sortedProjekte.sort((a: Projekt, b: Projekt) => {
                 // Offene (abgeschlossen=false) zuerst
                 if (a.abgeschlossen === b.abgeschlossen) return 0;
                 return a.abgeschlossen ? 1 : -1;
@@ -3478,7 +3478,7 @@ export default function ProjektEditor() {
             <ProjektErstellenModal
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
-                onSuccess={(_projektId) => {
+                onSuccess={() => {
                     loadProjekte();
                 }}
             />

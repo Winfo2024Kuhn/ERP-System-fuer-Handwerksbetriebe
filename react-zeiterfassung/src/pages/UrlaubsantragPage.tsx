@@ -64,6 +64,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
         if (activeTab === 'UEBERSICHT' && mitarbeiter) {
             fetchAntraege()
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, selectedYear, mitarbeiter])
 
     // Fetch Resturlaub when typ=URLAUB and mitarbeiter available
@@ -73,6 +74,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
         } else {
             setResturlaub(null)
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mitarbeiter, typ])
 
     const fetchResturlaub = async () => {

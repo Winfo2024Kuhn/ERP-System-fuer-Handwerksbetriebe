@@ -329,8 +329,8 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
 
             const saved = await res.json().catch(() => payload);
             onSave(saved);
-        } catch (err: any) {
-            setError(err.message || 'Speichern fehlgeschlagen.');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen.');
         } finally {
             setSaving(false);
         }

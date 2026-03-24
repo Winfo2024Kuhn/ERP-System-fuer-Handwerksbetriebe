@@ -15,10 +15,6 @@ export default function ZeiterfassungFeiertage() {
     const [feiertage, setFeiertage] = useState<Feiertag[]>([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        loadFeiertage();
-    }, [jahr]);
-
     const loadFeiertage = async () => {
         setLoading(true);
         try {
@@ -31,6 +27,11 @@ export default function ZeiterfassungFeiertage() {
         }
         setLoading(false);
     };
+
+    useEffect(() => {
+        loadFeiertage();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jahr]);
 
     const regenerieren = async () => {
         setLoading(true);

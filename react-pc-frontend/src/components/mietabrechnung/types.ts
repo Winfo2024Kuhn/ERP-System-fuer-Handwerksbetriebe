@@ -53,7 +53,7 @@ export interface Verteilungsschluessel {
     beschreibung?: string;
     typ: 'PROZENTUAL' | 'VERBRAUCH' | 'FLAECHE';
     // parameter?: string; // Removed as it's not in DTO or view usage anymore
-    eintraege?: any[];
+    eintraege?: unknown[];
 }
 
 export interface Kostenstelle {

@@ -180,6 +180,7 @@ export function SectionHeaderBlock({
                                             isLocked={isLocked}
                                             isActive={activeEditorId === child.id}
                                             editorRefs={editorRefs}
+                                            onEditorReady={(key, editor) => { editorRefs.current[key] = editor; }}
                                             onUpdate={(id, updates) => onUpdateChild(block.id, id, updates)}
                                             onRemove={(id) => onRemoveChild(block.id, id)}
                                             onToggleOptional={(id, current) => onToggleChildOptional(block.id, id, current)}

@@ -33,6 +33,7 @@ interface EingangsrechnungDto {
     betragNetto: number | null;
     betragBrutto: number | null;
     bezahlt: boolean;
+    zahlungsart: string | null;
     originalDateiname: string | null;
     pdfUrl: string | null;
 }
@@ -53,6 +54,7 @@ interface AnalyzeResponse {
     skontoProzent: number | null;
     nettoTage: number | null;
     bereitsGezahlt: boolean | null;
+    zahlungsart: string | null;
     aiConfidence: number | null;
     analyseQuelle: string;
     // New fields
@@ -66,6 +68,18 @@ interface LieferantOption {
     id: number;
     name: string;
 }
+
+const ZAHLUNGSART_OPTIONS = [
+    { value: '', label: 'Nicht erkannt' },
+    { value: 'VORAUSKASSE', label: 'Vorauskasse' },
+    { value: 'SEPA_LASTSCHRIFT', label: 'SEPA-Lastschrift' },
+    { value: 'KREDITKARTE', label: 'Kreditkarte' },
+    { value: 'PAYPAL', label: 'PayPal' },
+    { value: 'AMAZON_PAY', label: 'Amazon Pay' },
+    { value: 'UEBERWEISUNG', label: 'Überweisung' },
+    { value: 'BAR', label: 'Bar' },
+    { value: 'SONSTIGE', label: 'Sonstige' },
+];
 
 // Utility functions
 const formatDate = (isoText: string | undefined | null): string => {
@@ -267,10 +281,10 @@ export default function RechnungsuebersichtEditor() {
             fetch('/api/lieferanten') // Uses existing endpoint
                 .then(res => res.json())
                 .then(data => {
-                    const opts = data.map((l: any) => ({
+                    const opts = data.map((l: { id: number; firmenname?: string; lieferantenname?: string }) => ({
                         id: l.id,
                         name: l.firmenname || l.lieferantenname
-                    })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+                    })).sort((a: { id: number; name: string | undefined }, b: { id: number; name: string | undefined }) => (a.name ?? '').localeCompare(b.name ?? ''));
                     setLieferantOptions(opts);
                 })
                 .catch(err => console.error("Could not load suppliers", err));
@@ -472,7 +486,7 @@ export default function RechnungsuebersichtEditor() {
                 const err = await res.json();
                 setFormErrors([err.message || "Speichern fehlgeschlagen"]);
             }
-        } catch (e) {
+        } catch {
             setFormErrors(["Netzwerkfehler beim Speichern"]);
         }
     };
@@ -986,6 +1000,16 @@ export default function RechnungsuebersichtEditor() {
                                                 step="0.01"
                                                 value={analyzedData.betragBrutto || ''}
                                                 onChange={e => setAnalyzedData({ ...analyzedData, betragBrutto: parseFloat(e.target.value) })}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Zahlungsart</label>
+                                            <Select
+                                                value={analyzedData.zahlungsart || ''}
+                                                onChange={val => setAnalyzedData({ ...analyzedData, zahlungsart: val || null })}
+                                                options={ZAHLUNGSART_OPTIONS}
+                                                className="w-full"
                                             />
                                         </div>
 

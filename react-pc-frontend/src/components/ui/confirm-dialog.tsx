@@ -1,10 +1,11 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { AlertTriangle, Trash2, HelpCircle } from 'lucide-react';
 
 // --- Types ---
 type ConfirmVariant = 'danger' | 'warning' | 'info';
 
-interface ConfirmOptions {
+export interface ConfirmOptions {
     title?: string;
     message: string;
     confirmLabel?: string;

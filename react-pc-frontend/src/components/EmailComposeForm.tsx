@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     Loader2, Paperclip, X, Plus, Mail, Upload, Eye, Save
@@ -175,7 +176,7 @@ export function EmailComposeForm({
                         if (data.kundenEmails) data.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
                     }
                 }
-            } catch (err) {
+            } catch {
                 // Fallback auf Props
             }
             if (emails.length > 0) setFetchedEmails(emails);

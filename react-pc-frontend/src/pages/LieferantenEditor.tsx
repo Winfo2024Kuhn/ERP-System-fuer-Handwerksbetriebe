@@ -652,7 +652,7 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
     const [formData, setFormData] = useState<Lieferant>({ ...lieferant });
     const [newEmail, setNewEmail] = useState("");
 
-    const handleChange = (field: keyof Lieferant, value: any) => {
+    const handleChange = (field: keyof Lieferant, value: Lieferant[keyof Lieferant]) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 

@@ -164,6 +164,7 @@ export default function AngebotePage({ mitarbeiter, syncStatus, onSync }: Angebo
 
             return () => window.clearTimeout(timeoutId)
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams, angebote])
 
     // Server-side search logic

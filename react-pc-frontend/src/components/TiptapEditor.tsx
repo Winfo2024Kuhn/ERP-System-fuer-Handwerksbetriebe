@@ -31,6 +31,16 @@ import { Button } from './ui/button';
 // Font Size options (in pt) - begrenzt auf 10-20pt für konsistente PDF-Ausgabe
 const FONT_SIZES = ['10', '11', '12', '14', '16', '18', '20'];
 
+interface FontSizeCommandChain {
+    setMark: (mark: string, attributes: { fontSize: string | null }) => FontSizeCommandChain;
+    removeEmptyTextStyle: () => FontSizeCommandChain;
+    run: () => boolean;
+}
+
+interface FontSizeEditorCommands {
+    setFontSize: (fontSize: string) => boolean;
+}
+
 // Custom FontSize extension
 const FontSize = Extension.create({
     name: 'fontSize',
@@ -62,13 +72,13 @@ const FontSize = Extension.create({
     },
     addCommands() {
         return {
-            setFontSize: (fontSize: string) => ({ chain }: { chain: () => any }) => {
+            setFontSize: (fontSize: string) => ({ chain }: { chain: () => FontSizeCommandChain }) => {
                 return chain().setMark('textStyle', { fontSize }).run();
             },
-            unsetFontSize: () => ({ chain }: { chain: () => any }) => {
+            unsetFontSize: () => ({ chain }: { chain: () => FontSizeCommandChain }) => {
                 return chain().setMark('textStyle', { fontSize: null }).removeEmptyTextStyle().run();
             },
-        } as any;
+        };
     },
 });
 
@@ -421,7 +431,7 @@ export const TiptapToolbar: React.FC<{ editor: ReturnType<typeof useEditor> | nu
                     value=""
                     onChange={(e) => {
                         if (e.target.value) {
-                            (editor.commands as any).setFontSize(`${e.target.value}pt`);
+                            (editor.commands as unknown as FontSizeEditorCommands).setFontSize(`${e.target.value}pt`);
                         }
                     }}
                 >
@@ -757,7 +767,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                             value=""
                             onChange={(e) => {
                                 if (e.target.value) {
-                                    (editor.commands as any).setFontSize(`${e.target.value}pt`);
+                                    (editor.commands as unknown as FontSizeEditorCommands).setFontSize(`${e.target.value}pt`);
                                 }
                             }}
                         >

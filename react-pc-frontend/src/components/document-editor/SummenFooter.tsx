@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { formatCurrency } from './helpers';
 import { Calendar, User, Hash, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -35,12 +35,20 @@ export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, 
     // Inline calendar state (opens upward)
     const [calOpen, setCalOpen] = useState(false);
     const selectedDate = datum ? new Date(datum) : null;
-    const [curMonth, setCurMonth] = useState(() => selectedDate ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1) : new Date());
+    const derivedSelectedMonth = useMemo(() => {
+        if (!datum) return null;
+        const d = new Date(datum);
+        return new Date(d.getFullYear(), d.getMonth(), 1);
+    }, [datum]);
+    const [curMonth, setCurMonth] = useState(() => derivedSelectedMonth ?? new Date());
     const calRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (selectedDate) setCurMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
-    }, [datum]);
+        if (derivedSelectedMonth) {
+            const syncMonth = window.setTimeout(() => setCurMonth(derivedSelectedMonth), 0);
+            return () => window.clearTimeout(syncMonth);
+        }
+    }, [derivedSelectedMonth]);
 
     useEffect(() => {
         const handler = (e: MouseEvent) => {

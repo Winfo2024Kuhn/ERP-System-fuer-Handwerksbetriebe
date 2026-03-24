@@ -55,6 +55,7 @@ export interface EmailsTabProps {
         kunde?: string;
         kundenEmails?: string[];
         kundeDto?: { kundenEmails?: string[] };
+        bezahlt?: boolean;
     };
 
     // Optional: Anfrage detail object for compose modal  
@@ -330,7 +331,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                     isOpen={showComposeModal}
                     onClose={handleComposeClose}
                     projektId={projektId}
-                    projekt={projekt as any}
+                    projekt={projekt as unknown as import('../types').ProjektDetail}
                     anfrageId={anfrageId ?? angebotId}
                     anfrage={anfrage ?? angebot}
                 />

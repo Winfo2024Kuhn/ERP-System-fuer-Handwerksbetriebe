@@ -1,5 +1,19 @@
 import type { DocBlock } from './types';
 
+interface AdresseKundeLike {
+    name?: string;
+    strasse?: string;
+    plz?: string;
+    ort?: string;
+}
+
+interface AnfrageAdresseLike {
+    kundenName?: string;
+    kundenStrasse?: string;
+    kundenPlz?: string;
+    kundenOrt?: string;
+}
+
 export const unitMap: Record<string, string> = {
     'LAUFENDE_METER': 'lfm',
     'QUADRATMETER': 'm²',
@@ -59,7 +73,7 @@ export const extractBoldFromHtml = (html: string): boolean => {
     return /<(strong|b)\b/i.test(html) || /font-weight:\s*(bold|700|800|900)/i.test(html);
 };
 
-export function buildAdresse(kunde: any): string {
+export function buildAdresse(kunde: AdresseKundeLike | null | undefined): string {
     if (!kunde) return '';
     const parts = [];
     if (kunde.name) parts.push(kunde.name);
@@ -68,7 +82,7 @@ export function buildAdresse(kunde: any): string {
     return parts.join('\n');
 }
 
-export function buildAdresseFromAnfrage(anfrage: any): string {
+export function buildAdresseFromAnfrage(anfrage: AnfrageAdresseLike): string {
     const parts = [];
     if (anfrage.kundenName) parts.push(anfrage.kundenName);
     if (anfrage.kundenStrasse) parts.push(anfrage.kundenStrasse);

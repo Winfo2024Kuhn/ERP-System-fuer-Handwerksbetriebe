@@ -97,10 +97,10 @@ const EmailHistory: React.FC<EmailHistoryProps> = ({ kommunikation }) => {
                 if (url) {
                     const res = await fetch(url);
                     if (res.ok) {
-                        const allEmails: any[] = await res.json();
-                        const found = allEmails.find((e: any) => e.id === email.id);
+                        const allEmails: Record<string, unknown>[] = await res.json();
+                        const found = allEmails.find((e: Record<string, unknown>) => e.id === email.id);
                         if (found && found.body) {
-                            setEmailBodies(prev => ({ ...prev, [email.id]: found.body }));
+                            setEmailBodies(prev => ({ ...prev, [email.id]: found.body as string }));
                         } else {
                             setEmailBodies(prev => ({ ...prev, [email.id]: email.snippet || '(Inhalt nicht verfügbar)' }));
                         }
@@ -154,7 +154,7 @@ const EmailHistory: React.FC<EmailHistoryProps> = ({ kommunikation }) => {
                         {['ALL', 'IN', 'OUT'].map(type => (
                             <button
                                 key={type}
-                                onClick={() => setFilterType(type as any)}
+                                onClick={() => setFilterType(type as 'ALL' | 'IN' | 'OUT')}
                                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterType === type
                                     ? 'bg-slate-900 text-white'
                                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -259,7 +259,7 @@ const EmailHistory: React.FC<EmailHistoryProps> = ({ kommunikation }) => {
                                                 Anhänge ({email.attachments.length})
                                             </p>
                                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                                {email.attachments.map((att: any) => (
+                                                {email.attachments.map((att: { id: number; url: string; filename: string }) => (
                                                     <a
                                                         key={att.id}
                                                         href={att.url}

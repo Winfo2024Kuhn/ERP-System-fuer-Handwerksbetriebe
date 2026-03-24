@@ -27,6 +27,7 @@ export function KostenstellenView({ mietobjektId }: KostenstellenViewProps) {
 
     useEffect(() => {
         loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mietobjektId]);
 
     const loadData = async () => {
@@ -54,9 +55,9 @@ export function KostenstellenView({ mietobjektId }: KostenstellenViewProps) {
             if (editCenter.id === 0) await MietabrechnungService.createKostenstelle(mietobjektId, editCenter);
             else await MietabrechnungService.updateKostenstelle(editCenter.id, editCenter);
             setCenterModalOpen(false); loadData();
-        } catch (e) { toast.error('Fehler'); }
+        } catch { toast.error('Fehler'); }
     };
-    const deleteCenter = async (id: number) => { if (await confirmDialog({ title: 'Löschen', message: 'Möchten Sie diesen Eintrag wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) try { await MietabrechnungService.deleteKostenstelle(id); loadData(); } catch (e) { toast.error('Fehler'); } };
+    const deleteCenter = async (id: number) => { if (await confirmDialog({ title: 'Löschen', message: 'Möchten Sie diesen Eintrag wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) try { await MietabrechnungService.deleteKostenstelle(id); loadData(); } catch { toast.error('Fehler'); } };
 
     // --- Key Handlers ---
     const handleNewKey = () => {
@@ -71,9 +72,9 @@ export function KostenstellenView({ mietobjektId }: KostenstellenViewProps) {
             if (editKey.id === 0) await MietabrechnungService.createVerteilungsschluessel(mietobjektId, editKey);
             else await MietabrechnungService.updateVerteilungsschluessel(editKey.id, editKey);
             setKeyModalOpen(false); loadData();
-        } catch (e) { toast.error('Fehler'); }
+        } catch { toast.error('Fehler'); }
     };
-    const deleteKey = async (id: number) => { if (await confirmDialog({ title: 'Löschen', message: 'Möchten Sie diesen Eintrag wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) try { await MietabrechnungService.deleteVerteilungsschluessel(id); loadData(); } catch (e) { toast.error('Fehler'); } };
+    const deleteKey = async (id: number) => { if (await confirmDialog({ title: 'Löschen', message: 'Möchten Sie diesen Eintrag wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) try { await MietabrechnungService.deleteVerteilungsschluessel(id); loadData(); } catch { toast.error('Fehler'); } };
 
     return (
         <div className="space-y-8">
@@ -207,7 +208,7 @@ export function KostenstellenView({ mietobjektId }: KostenstellenViewProps) {
                             <div className="space-y-2"><Label>Bezeichnung</Label><Input value={editKey.name} onChange={e => setEditKey({ ...editKey, name: e.target.value })} required /></div>
                             <div className="space-y-2"><Label>Beschreibung</Label><Input value={editKey.beschreibung || ''} onChange={e => setEditKey({ ...editKey, beschreibung: e.target.value })} /></div>
                             <div className="space-y-2"><Label>Art</Label>
-                                <Select value={editKey.typ} onChange={val => setEditKey({ ...editKey, typ: val as any })} options={[{ value: 'FLAECHE', label: 'Nach Fläche' }, { value: 'VERBRAUCH', label: 'Nach Verbrauch' }, { value: 'PROZENTUAL', label: 'Prozentual' }]} />
+                                <Select value={editKey.typ} onChange={val => setEditKey({ ...editKey, typ: val as Verteilungsschluessel['typ'] })} options={[{ value: 'FLAECHE', label: 'Nach Fläche' }, { value: 'VERBRAUCH', label: 'Nach Verbrauch' }, { value: 'PROZENTUAL', label: 'Prozentual' }]} />
                             </div>
                             <DialogFooter><button type="button" onClick={() => setKeyModalOpen(false)} className="btn-secondary">Abbrechen</button><button type="submit" className="bg-rose-600 text-white hover:bg-rose-700 px-4 py-2 rounded-md font-medium text-sm">Speichern</button></DialogFooter>
                         </form>

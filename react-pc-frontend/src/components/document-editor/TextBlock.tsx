@@ -9,6 +9,7 @@ interface TextBlockProps {
     isLocked: boolean;
     isActive: boolean;
     editorRefs: React.MutableRefObject<Record<string, EditorInstance | null>>;
+    onEditorReady: (editorKey: string, editor: EditorInstance | null) => void;
     onUpdate: (id: string, updates: Partial<DocBlock>) => void;
     onRemove: (id: string) => void;
     onFocus: (blockId: string) => void;
@@ -21,6 +22,7 @@ export function TextBlock({
     isLocked,
     isActive,
     editorRefs,
+    onEditorReady,
     onUpdate,
     onRemove,
     onFocus,
@@ -71,9 +73,7 @@ export function TextBlock({
                             onFocus(block.id);
                             onEditorFocus(editorRefs.current[block.id]);
                         }}
-                        onEditorReady={(editor) => {
-                            editorRefs.current[block.id] = editor;
-                        }}
+                        onEditorReady={(editor) => onEditorReady(block.id, editor)}
                     />
                 </div>
             </div>

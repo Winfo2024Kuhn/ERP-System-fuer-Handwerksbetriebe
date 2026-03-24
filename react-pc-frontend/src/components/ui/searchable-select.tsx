@@ -72,6 +72,7 @@ export function SearchableSelect({
         if (isOpen && onSearch && filteredOptions.length === 0 && !searchTerm) {
             handleAsyncSearch('');
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, onSearch]);
 
     // Filter options based on search term (local mode)

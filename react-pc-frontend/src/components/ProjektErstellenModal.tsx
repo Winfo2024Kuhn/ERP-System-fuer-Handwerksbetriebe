@@ -251,8 +251,8 @@ const KundeAnlegenView: React.FC<{
 
             const created = await res.json();
             onSuccess(created);
-        } catch (err: any) {
-            setError(err.message || 'Fehler beim Speichern');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Fehler beim Speichern');
         } finally {
             setSaving(false);
         }
@@ -864,8 +864,8 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             const result = await res.json();
             onSuccess(isEditMode ? editProjekt!.id : result.id);
             onClose();
-        } catch (err: any) {
-            setError(err.message || 'Fehler beim Speichern');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Fehler beim Speichern');
         } finally {
             setSaving(false);
         }

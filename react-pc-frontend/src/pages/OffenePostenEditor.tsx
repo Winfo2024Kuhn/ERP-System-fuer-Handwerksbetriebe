@@ -181,6 +181,7 @@ export default function OffenePostenEditor() {
             setActiveTab(tabParam);
             setSearchParams({}, { replace: true });
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
 
 

@@ -29,6 +29,7 @@ export function DatePicker({ value, onChange, placeholder = "Datum wählen", cla
         if (selectedDate) {
             setCurrentMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [value]);
 
     useEffect(() => {
