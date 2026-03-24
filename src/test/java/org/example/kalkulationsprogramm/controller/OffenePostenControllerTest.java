@@ -59,17 +59,13 @@ class OffenePostenControllerTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.DateiSpeicherService dateiSpeicherService;
 
-    private Mitarbeiter buildMitarbeiterMitAbteilung(Long abteilungId) {
+    private Mitarbeiter buildMitarbeiter(boolean darfGenehmigen, boolean darfSehen) {
         Mitarbeiter m = new Mitarbeiter();
         m.setId(1L);
         Abteilung abt = new Abteilung();
-        abt.setId(abteilungId);
-        if (abteilungId == 3L) {
-            abt.setDarfRechnungenGenehmigen(true);
-            abt.setDarfRechnungenSehen(true);
-        } else if (abteilungId == 2L) {
-            abt.setDarfRechnungenSehen(true);
-        }
+        abt.setId(1L);
+        abt.setDarfRechnungenGenehmigen(darfGenehmigen);
+        abt.setDarfRechnungenSehen(darfSehen);
         Set<Abteilung> abteilungen = new HashSet<>();
         abteilungen.add(abt);
         m.setAbteilungen(abteilungen);
@@ -95,7 +91,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Abteilung Büro (3) sieht alle offenen Rechnungen")
         void bueroSiehtAlleRechnungen() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
@@ -111,7 +107,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Abteilung Buchhaltung (2) sieht nur genehmigte Rechnungen")
         void buchhaltungSiehtNurGenehmigte() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(2L);
+            Mitarbeiter m = buildMitarbeiter(false, true);
             given(mitarbeiterRepository.findByLoginToken("bh-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findAllOffeneGenehmigte()).willReturn(List.of());
 
@@ -149,7 +145,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Abteilung Büro sieht alle Rechnungen")
         void bueroSiehtAlleRechnungen() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findAllEingangsrechnungen()).willReturn(List.of());
 
@@ -166,7 +162,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Setzt Rechnung als bezahlt")
         void setztAlsBezahlt() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
@@ -195,7 +191,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Skonto wird berechnet wenn innerhalb Frist")
         void skontoBerechnung() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
@@ -220,7 +216,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Büro-Mitarbeiter kann genehmigen")
         void bueroKannGenehmigen() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
@@ -238,7 +234,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Buchhaltung (Abt. 2) darf nicht genehmigen → 403")
         void buchhaltungDarfNichtGenehmigen() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(2L);
+            Mitarbeiter m = buildMitarbeiter(false, true);
             given(mitarbeiterRepository.findByLoginToken("bh-token")).willReturn(Optional.of(m));
 
             mockMvc.perform(patch("/api/offene-posten/eingang/1/genehmigen")
@@ -260,7 +256,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Unbekannte Rechnung gibt 404 (bei berechtigtem Benutzer)")
         void unbekannteRechnungGibt404() throws Exception {
-            Mitarbeiter m = buildMitarbeiterMitAbteilung(3L);
+            Mitarbeiter m = buildMitarbeiter(true, true);
             given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findById(999L)).willReturn(Optional.empty());
 
