@@ -27,11 +27,11 @@ import java.util.stream.Collectors;
 
 /**
  * Controller für Offene Posten - Eingangsrechnungen von Lieferanten.
- * 
- * Berechtigungslogik:
- * - Abteilung 1 (Büro): Sieht ALLE Eingangsrechnungen, kann genehmigen
- * - Abteilung 2 (Werkstatt/Buchhaltung): Sieht NUR genehmigte Rechnungen
- * - Andere Abteilungen: Kein Zugriff
+ *
+ * Berechtigungslogik (konfigurierbar per Abteilungs-Flag in der DB):
+ * - darfRechnungenGenehmigen=true: Sieht ALLE Eingangsrechnungen, kann genehmigen
+ * - darfRechnungenSehen=true: Sieht NUR genehmigte Rechnungen
+ * - Beide Flags false / Kein Token: Kein Zugriff (leere Liste bzw. 403)
  */
 @Slf4j
 @RestController
@@ -444,7 +444,7 @@ public class OffenePostenController {
         public String pdfUrl;
         public boolean ueberfaellig;
         public boolean genehmigt;
-        public boolean darfGenehmigen; // true wenn Benutzer aus Abteilung 1 (Büro)
+        public boolean darfGenehmigen; // true wenn Abteilung das Flag darfRechnungenGenehmigen hat
 
         // Neu für Gutschriften-Hierarchie
         public String referenzNummer;
