@@ -236,6 +236,9 @@ public class OffenePostenController {
             // Temporäre Datei erstellen für Analyse
             String originalFilename = StringUtils.cleanPath(
                     datei.getOriginalFilename() != null ? datei.getOriginalFilename() : "upload.pdf");
+            if (originalFilename.contains("..") || originalFilename.contains("/") || originalFilename.contains("\\")) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Ungültiger Dateiname"));
+            }
             Path tempDir = Files.createTempDirectory("ausgang-analyze-");
             Path tempFile = tempDir.resolve(originalFilename);
             datei.transferTo(tempFile.toFile());

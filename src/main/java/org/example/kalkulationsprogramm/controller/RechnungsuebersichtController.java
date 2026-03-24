@@ -476,6 +476,9 @@ public class RechnungsuebersichtController {
         try {
             // Temporär speichern für Analyse
             String originalFilename = StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()));
+            if (originalFilename.contains("..") || originalFilename.contains("/") || originalFilename.contains("\\")) {
+                return ResponseEntity.badRequest().build();
+            }
             java.nio.file.Path tempDir = Path.of(System.getProperty("java.io.tmpdir"));
             String tempFilename = java.util.UUID.randomUUID() + "_" + originalFilename;
             java.nio.file.Path tempPath = tempDir.resolve(tempFilename);
