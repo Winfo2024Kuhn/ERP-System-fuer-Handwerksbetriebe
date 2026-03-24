@@ -320,7 +320,15 @@ public class GeminiDokumentAnalyseService {
                 }
             }
 
-            // 2. Fallback: KI-Analyse (für PDFs und Bilder)
+            // 2. Versuche XML-Extraktion bei XML-Dateien
+            if (lower.endsWith(".xml")) {
+                var xmlResult = versucheXmlExtraktionFuerPreview(dateiPfad);
+                if (xmlResult != null) {
+                    return xmlResult;
+                }
+            }
+
+            // 3. Fallback: KI-Analyse (für PDFs und Bilder)
             return analysierePerKiFuerPreview(dateiPfad, originalFilename, useProModel);
 
         } catch (Exception e) {
@@ -946,13 +954,16 @@ public class GeminiDokumentAnalyseService {
             String dateiname = freshDokument.getEffektiverDateiname();
             LieferantGeschaeftsdokument geschaeftsdaten = null;
 
-            // 1. Prüfe auf ZUGFeRD-PDF (nur PDFs - XML ist eingebettet)
+            // 1. Prüfe auf ZUGFeRD-PDF oder XML
             if (dateiname != null) {
                 String lower = dateiname.toLowerCase();
 
                 if (lower.endsWith(".pdf")) {
                     // Versuche ZUGFeRD-Extraktion
                     geschaeftsdaten = versucheZugferdExtraktion(dateiPfad, dateiname, freshDokument);
+                } else if (lower.endsWith(".xml")) {
+                    // Versuche XML-Extraktion (XRechnung, ZUGFeRD-XML)
+                    geschaeftsdaten = versucheXmlExtraktion(dateiPfad, freshDokument);
                 }
             }
 
@@ -1097,6 +1108,8 @@ public class GeminiDokumentAnalyseService {
             gd.setBetragBrutto(zugferd.getBetrag());
             gd.setAiConfidence(1.0); // Strukturierte Daten = 100% Confidence
             gd.setAnalysiertAm(LocalDateTime.now());
+            gd.setDatenquelle("ZUGFERD");
+            gd.setVerifiziert(true);
 
             // Erweiterte ZUGFeRD-Felder (Skonto, Netto, Zahlungsziel)
             if (zugferd.getFaelligkeitsdatum() != null) {
@@ -1131,13 +1144,17 @@ public class GeminiDokumentAnalyseService {
                     case "Angebot" -> LieferantDokumentTyp.ANGEBOT;
                     case "Auftragsbestätigung" -> LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG;
                     case "Gutschrift" -> LieferantDokumentTyp.GUTSCHRIFT;
+                    case "Lieferschein" -> LieferantDokumentTyp.LIEFERSCHEIN;
                     default -> null;
                 };
-                // Überschreibe auch SONSTIG (Default-Typ) mit erkanntem Typ
-                if (typ != null && (dokument == null || dokument.getTyp() == null
-                        || dokument.getTyp() == LieferantDokumentTyp.SONSTIG)) {
-                    if (dokument != null)
+                if (typ != null) {
+                    // Setze detectedTyp auf dem Geschäftsdokument (transient)
+                    gd.setDetectedTyp(typ);
+                    // Überschreibe auch SONSTIG (Default-Typ) mit erkanntem Typ
+                    if (dokument != null && (dokument.getTyp() == null
+                            || dokument.getTyp() == LieferantDokumentTyp.SONSTIG)) {
                         dokument.setTyp(typ);
+                    }
                 }
             }
 
@@ -1208,9 +1225,16 @@ public class GeminiDokumentAnalyseService {
                 }
             }
 
-            // Typ auf Rechnung setzen (XML ist meist Rechnung)
-            if (dokument != null && dokument.getTyp() == null) {
-                dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
+            // Dokumenttyp aus XML-Inhalt bestimmen (TypeCode per extractXmlValue, unterstützt Namespace-Prefixe)
+            LieferantDokumentTyp xmlTyp = LieferantDokumentTyp.RECHNUNG;
+            String typeCode = extractXmlValue(xmlContent, "TypeCode", "ram:TypeCode");
+            if ("381".equals(typeCode) || xmlContent.contains("CreditNote")) {
+                xmlTyp = LieferantDokumentTyp.GUTSCHRIFT;
+            }
+            gd.setDetectedTyp(xmlTyp);
+            if (dokument != null && (dokument.getTyp() == null
+                    || dokument.getTyp() == LieferantDokumentTyp.SONSTIG)) {
+                dokument.setTyp(xmlTyp);
             }
 
             return gd.getDokumentNummer() != null || gd.getBetragBrutto() != null ? gd : null;

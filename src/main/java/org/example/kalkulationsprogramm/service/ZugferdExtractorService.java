@@ -19,11 +19,16 @@ public class ZugferdExtractorService {
 
     public ZugferdDaten extract(String pdfPath, String originalFilename) {
         ZugferdDaten data = new ZugferdDaten();
+        // Vorläufig aus Dateiname bestimmen (wird ggf. durch TypeCode überschrieben)
         String name = originalFilename != null ? originalFilename.toLowerCase(Locale.ROOT) : "";
         if (name.contains("auftragsbestätigung") || name.contains("auftragsbestaetigung")) {
             data.setGeschaeftsdokumentart("Auftragsbestätigung");
         } else if (name.contains("angebot")) {
             data.setGeschaeftsdokumentart("Angebot");
+        } else if (name.contains("gutschrift") || name.contains("credit")) {
+            data.setGeschaeftsdokumentart("Gutschrift");
+        } else if (name.contains("lieferschein")) {
+            data.setGeschaeftsdokumentart("Lieferschein");
         } else {
             data.setGeschaeftsdokumentart("Rechnung");
         }
@@ -114,6 +119,17 @@ public class ZugferdExtractorService {
                     }
                 }
 
+                // TypeCode aus XML extrahieren (UNTDID 1001 Dokumenttyp)
+                String typeCode = extractFromXml(rawXml,
+                        "TypeCode>([^<]+)</");
+                if (typeCode != null) {
+                    String erkannteArt = mapTypeCodeToGeschaeftsdokumentart(typeCode.trim());
+                    if (erkannteArt != null) {
+                        data.setGeschaeftsdokumentart(erkannteArt);
+                        log.info("ZUGFeRD TypeCode {} erkannt als: {}", typeCode, erkannteArt);
+                    }
+                }
+
                 // Artikelpositionen aus XML extrahieren (IncludedSupplyChainTradeLineItem)
                 data.setArtikelPositionen(extractLineItems(rawXml));
             }
@@ -198,6 +214,26 @@ public class ZugferdExtractorService {
             return LocalDate.parse(raw.substring(0, 8), DateTimeFormatter.BASIC_ISO_DATE);
         }
         return null;
+    }
+
+    /**
+     * Mappt ZUGFeRD TypeCode (UNTDID 1001) auf Geschäftsdokumentart.
+     * Gängige Codes: 380=Rechnung, 381=Gutschrift, 384=Korrigierte Rechnung,
+     * 389=Eigenrechnung, 261=Lieferschein, 351=Angebot, 231=Auftragsbestätigung.
+     */
+    String mapTypeCodeToGeschaeftsdokumentart(String typeCode) {
+        if (typeCode == null) return null;
+        return switch (typeCode.trim()) {
+            case "380", "384", "389" -> "Rechnung";
+            case "381" -> "Gutschrift";
+            case "351" -> "Angebot";
+            case "231" -> "Auftragsbestätigung";
+            case "261", "270" -> "Lieferschein";
+            default -> {
+                log.debug("Unbekannter ZUGFeRD TypeCode: {}", typeCode);
+                yield null;
+            }
+        };
     }
 
     private String restoreUmlauts(String input) {
