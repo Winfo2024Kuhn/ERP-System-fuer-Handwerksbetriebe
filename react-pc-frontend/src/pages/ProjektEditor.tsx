@@ -2522,9 +2522,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             toast.error('Bitte geben Sie einen gültigen Betrag ein.');
                                             return;
                                         }
-                                        // Abschlag-Eingabemodus und Originalwert speichern
+                                        // Abschlag-Eingabemodus und Originalwert speichern, Blöcke vom Basisdokument übernehmen
                                         positionenJson = JSON.stringify({
-                                            blocks: [],
+                                            blocks: basisDokBlocks,
                                             globalRabatt: 0,
                                             abschlagInfo: {
                                                 modus: abschlagsEingabeModus,
