@@ -405,7 +405,7 @@ export function LieferantDokumentImportModal({
                                             accept=".pdf,.xml"
                                             onChange={handleFileChange}
                                             disabled={loading}
-                                            title="Dokumentdatei auswählen"
+                                            aria-label="Dokumentdatei auswählen"
                                         />
                                         {loading ? (
                                             <>
