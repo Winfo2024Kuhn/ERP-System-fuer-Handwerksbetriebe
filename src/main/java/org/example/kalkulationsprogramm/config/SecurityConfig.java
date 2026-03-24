@@ -47,7 +47,8 @@ public class SecurityConfig {
     public SecurityFilterChain zeiterfassungFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/zeiterfassung", "/zeiterfassung/**", "/api/zeiterfassung/**", "/api/mitarbeiter/by-token/**",
-                        "/api/urlaub/**", "/api/kalender/mobile/**")
+                        "/api/urlaub/**", "/api/kalender/mobile/**",
+                        "/api/dokumente/**", "/api/images/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
