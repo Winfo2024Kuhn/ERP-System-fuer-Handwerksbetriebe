@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
@@ -179,6 +179,7 @@ export function RibbonNavigation() {
     }, [isAdmin]);
 
     const [selectedCategory, setSelectedCategory] = useState<string>(NAVIGATION[0].category);
+    const [userOverride, setUserOverride] = useState(false);
     const [isExpanded, setIsExpanded] = useState(true);
 
     const routeCategory = useMemo(() => {
@@ -187,7 +188,16 @@ export function RibbonNavigation() {
         );
     }, [location.pathname, visibleNavigation]);
 
+    // Reset user override when the route changes (user navigated to a new page)
+    useEffect(() => {
+        setUserOverride(false);
+    }, [location.pathname]);
+
     const activeCategory = useMemo(() => {
+        // User explicitly clicked a tab — honor their selection
+        if (userOverride && visibleNavigation.some(group => group.category === selectedCategory)) {
+            return selectedCategory;
+        }
         if (routeCategory) {
             return routeCategory.category;
         }
@@ -198,7 +208,7 @@ export function RibbonNavigation() {
             return selectedCategory;
         }
         return visibleNavigation[0].category;
-    }, [routeCategory, selectedCategory, visibleNavigation]);
+    }, [routeCategory, selectedCategory, userOverride, visibleNavigation]);
 
     // User Menu State
     const currentUser = user;
@@ -232,6 +242,7 @@ export function RibbonNavigation() {
                                     toggleRibbon();
                                 } else {
                                     setSelectedCategory(group.category);
+                                    setUserOverride(true);
                                     setIsExpanded(true);
                                 }
                             }}
