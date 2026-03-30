@@ -308,7 +308,9 @@ export default function DocumentManager({ projektId, anfrageId, angebotId, class
     // Download - funktioniert für alle Dateitypen
     const handleDownload = (doc: ProjektDokument) => {
         // Fetch als Blob für korrekten Download
-        fetch(doc.url)
+        // download=true sorgt dafür, dass der Server immer die Binärdatei liefert
+        const downloadUrl = doc.url + (doc.url.includes('?') ? '&' : '?') + 'download=true';
+        fetch(downloadUrl)
             .then(res => res.blob())
             .then(blob => {
                 const url = window.URL.createObjectURL(blob);

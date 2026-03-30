@@ -1,19 +1,5 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.AllArgsConstructor;
-import org.example.kalkulationsprogramm.domain.Dokument;
-import org.example.kalkulationsprogramm.dto.OpenExternalResponse;
-import org.example.kalkulationsprogramm.exception.NotFoundException;
-import org.example.kalkulationsprogramm.service.DateiSpeicherService;
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -32,9 +18,23 @@ import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
 
+import org.example.kalkulationsprogramm.domain.Dokument;
+import org.example.kalkulationsprogramm.dto.OpenExternalResponse;
+import org.example.kalkulationsprogramm.exception.NotFoundException;
+import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import lombok.AllArgsConstructor;
 
 @RestController
 @AllArgsConstructor
@@ -69,6 +69,7 @@ public class DateiController {
     @GetMapping("/api/dokumente/{dateiname:.+}")
     public ResponseEntity<?> liefereDokument(@PathVariable String dateiname,
                                              @RequestParam(required = false) String token,
+                                             @RequestParam(required = false, defaultValue = "false") boolean download,
                                              Principal principal) {
         Dokument dokument;
         try {
@@ -83,7 +84,7 @@ public class DateiController {
         boolean isHiCAD = lower.endsWith(".sza") || lower.endsWith(".tcd");
         boolean isExcel = lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".xlsm")
                 || lower.endsWith(".csv") || lower.endsWith(".ods") || lower.endsWith(".xlsb");
-        boolean canOpenExtern = isHiCAD || (isExcel && dateiSpeicherService.liegtInHicadSpeicher(dokument.getGespeicherterDateiname()));
+        boolean canOpenExtern = !download && (isHiCAD || (isExcel && dateiSpeicherService.liegtInHicadSpeicher(dokument.getGespeicherterDateiname())));
         if (canOpenExtern) {
             String pfad = ensureUncPrefix(dateiSpeicherService.holeNetzwerkPfad(dokument.getGespeicherterDateiname()));
             String encPath = encodePathForProtocol(pfad);
@@ -294,6 +295,16 @@ public class DateiController {
                 contentType = "image/webp";
             } else if (name.endsWith(".pdf.html")) {
                 contentType = MediaType.APPLICATION_PDF_VALUE;
+            } else if (name.endsWith(".xlsx")) {
+                contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            } else if (name.endsWith(".xls")) {
+                contentType = "application/vnd.ms-excel";
+            } else if (name.endsWith(".xlsm")) {
+                contentType = "application/vnd.ms-excel.sheet.macroEnabled.12";
+            } else if (name.endsWith(".csv")) {
+                contentType = "text/csv";
+            } else if (name.endsWith(".ods")) {
+                contentType = "application/vnd.oasis.opendocument.spreadsheet";
             }
         }
         return contentType;

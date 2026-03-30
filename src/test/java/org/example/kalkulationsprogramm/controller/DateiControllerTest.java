@@ -1,28 +1,29 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
-import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
+import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.http.MediaType;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DateiController.class)
@@ -159,6 +160,34 @@ class DateiControllerTest {
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "inline;filename=f.txt"));
 
         verify(dateiSpeicherService, never()).holeWindowsLaufwerkPfad(anyString());
+    }
+
+    @org.junit.jupiter.api.Test
+    void downloadParamForcesFileDeliveryForExcelInHicad() throws Exception {
+        String filename = "kalkulation.xlsx";
+        ProjektDokument doc = new ProjektDokument();
+        doc.setGespeicherterDateiname(filename);
+        doc.setOriginalDateiname("Kalkulation.xlsx");
+        when(dateiSpeicherService.ladeDokumentMetadaten(anyString()))
+                .thenReturn(doc);
+        when(dateiSpeicherService.liegtInHicadSpeicher(anyString()))
+                .thenReturn(true);
+        ByteArrayResource resource = new ByteArrayResource("fake-xlsx-content".getBytes()) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        };
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename)).thenReturn(resource);
+
+        mockMvc.perform(get("/api/dokumente/" + filename).param("download", "true"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"Kalkulation.xlsx\""));
+
+        verify(dateiSpeicherService, never()).holeNetzwerkPfad(anyString());
     }
 }
 
