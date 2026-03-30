@@ -7,11 +7,13 @@ $ErrorActionPreference = 'Stop'
 # Erlaubte UNC-Roots (neuer zuerst)
 $AllowedRoots = @(
   '\\THOMAS_PC\CADdrawings'
+  '\\THOMAS_PC\Kalkulationsprogramm\uploads\CADdrawings'
 )
 
 # Alias: alten Root automatisch auf neuen umschreiben
 $RootAliases = @{
-  '\\MARVIN-PC\Zeichnungen' = '\\THOMAS_PC\CADdrawings'
+  '\\MARVIN-PC\Zeichnungen'   = '\\THOMAS_PC\Kalkulationsprogramm\uploads\CADdrawings'
+  '\\THOMAS_PC\CADdrawings'   = '\\THOMAS_PC\Kalkulationsprogramm\uploads\CADdrawings'
 }
 
 # Bevorzugter Laufwerksbuchstabe
