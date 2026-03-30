@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
@@ -179,7 +179,9 @@ export function RibbonNavigation() {
     }, [isAdmin]);
 
     const [selectedCategory, setSelectedCategory] = useState<string>(NAVIGATION[0].category);
-    const [userOverride, setUserOverride] = useState(false);
+    // Track the pathname when the user explicitly clicked a tab.
+    // Override is implicitly reset when the route changes (overridePath != current path).
+    const [overridePath, setOverridePath] = useState<string | null>(null);
     const [isExpanded, setIsExpanded] = useState(true);
 
     const routeCategory = useMemo(() => {
@@ -188,13 +190,9 @@ export function RibbonNavigation() {
         );
     }, [location.pathname, visibleNavigation]);
 
-    // Reset user override when the route changes (user navigated to a new page)
-    useEffect(() => {
-        setUserOverride(false);
-    }, [location.pathname]);
-
     const activeCategory = useMemo(() => {
-        // User explicitly clicked a tab — honor their selection
+        // User explicitly clicked a tab — honor their selection (only for the same route)
+        const userOverride = overridePath === location.pathname;
         if (userOverride && visibleNavigation.some(group => group.category === selectedCategory)) {
             return selectedCategory;
         }
@@ -208,7 +206,7 @@ export function RibbonNavigation() {
             return selectedCategory;
         }
         return visibleNavigation[0].category;
-    }, [routeCategory, selectedCategory, userOverride, visibleNavigation]);
+    }, [routeCategory, selectedCategory, overridePath, location.pathname, visibleNavigation]);
 
     // User Menu State
     const currentUser = user;
@@ -242,7 +240,7 @@ export function RibbonNavigation() {
                                     toggleRibbon();
                                 } else {
                                     setSelectedCategory(group.category);
-                                    setUserOverride(true);
+                                    setOverridePath(location.pathname);
                                     setIsExpanded(true);
                                 }
                             }}

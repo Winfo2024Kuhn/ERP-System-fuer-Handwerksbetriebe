@@ -48,6 +48,9 @@ class OffenePostenControllerTest {
     private MitarbeiterRepository mitarbeiterRepository;
 
     @MockBean
+    private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
+
+    @MockBean
     private org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiDokumentAnalyseService;
 
     @MockBean
