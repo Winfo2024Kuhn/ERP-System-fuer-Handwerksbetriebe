@@ -165,6 +165,18 @@ Der Dokumenteditor ist das Herzstück des Rechnungswesens. Hier entsteht alles �
 
 > Du legst einmal deine Leistungen und Kategorien an – danach stellt sich das Programm von selbst ein: Angebote kalkulieren, Zeiten erfassen, Nachkalkulation auswerten. Alles hängt zusammen.
 
+### 📂 CAD- & Excel-Dateien direkt aus dem Browser öffnen – wie ein gemeinsamer Cloudspeicher
+
+Alle CAD-Zeichnungen und Excel-Dateien werden zentral auf dem Server gespeichert und sind **für alle Mitarbeiter sofort aufrufbar** – egal ob HiCAD, Tenado oder Excel:
+
+- **Zentraler Netzwerkspeicher:** Alle Zeichnungen und Tabellen liegen auf einem gemeinsamen Netzlaufwerk (z. B. `\\Server\CADdrawings`). Jeder PC im Büro kann darauf zugreifen – kein manuelles Kopieren, keine veralteten Versionen
+- **1-Klick-Öffnen aus dem ERP:** Ein Klick auf „Öffnen" im Projekt öffnet die Datei direkt im richtigen Programm – HiCAD, Tenado oder Excel starten automatisch mit der richtigen Datei. Kein Suchen im Datei-Explorer
+- **openfile://-Protokoll:** Das ERP nutzt ein eigenes Protokoll, das der mitgelieferte **OpenFileLauncher** auf jedem PC registriert. Er mappt das Netzlaufwerk automatisch auf den richtigen Laufwerksbuchstaben (z. B. Z:) und übergibt den Pfad dem passenden Programm
+- **Einmal installieren, überall nutzen:** Der Launcher wird einmalig per `INSTALL.bat` auf jedem Arbeits-PC eingerichtet (< 1 Minute). Danach funktioniert das Öffnen auf Knopfdruck – für alle Mitarbeiter gleichzeitig
+- **Automatisches Laufwerk-Mapping:** Ist das Netzlaufwerk bereits verbunden, erkennt der Launcher es automatisch. Ist es noch nicht gemappt, verbindet er es selbstständig im Hintergrund
+
+> Beispiel: Der Projektleiter im Büro klickt in der Projektansicht auf eine Zeichnung – HiCAD öffnet sie direkt. Der Kollege am Nebenschreibtisch sieht dieselbe Datei, weil beide auf denselben zentralen Speicher zugreifen. Wie Google Drive – nur lokal, schnell und ohne Cloud-Abhängigkeit.
+
 ### 🎨 Formular-Designer – eigene Vorlagen wie in Canva
 
 Jede Firma hat ihren eigenen Stil. Im Formular-Designer gestaltest du deine **Dokumentvorlagen pixelgenau** auf einer DIN-A4-Arbeitsfläche:
