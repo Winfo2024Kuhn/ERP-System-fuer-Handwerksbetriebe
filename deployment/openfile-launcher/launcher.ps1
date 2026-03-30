@@ -6,13 +6,12 @@ $ErrorActionPreference = 'Stop'
 
 # Erlaubte UNC-Roots (neuer zuerst)
 $AllowedRoots = @(
-  '\\SERVER_PC\CADdrawings',
-  '\\SERVER_PC\CADdrawings'
+  '\\THOMAS_PC\CADdrawings'
 )
 
 # Alias: alten Root automatisch auf neuen umschreiben
 $RootAliases = @{
-  '\\CLIENT_PC\Zeichnungen' = '\\SERVER_PC\CADdrawings'
+  '\\MARVIN-PC\Zeichnungen' = '\\THOMAS_PC\CADdrawings'
 }
 
 # Bevorzugter Laufwerksbuchstabe
@@ -38,8 +37,14 @@ function L([string]$m){
 function Normalize-UNC([string]$p){
   if (-not $p){ return $p }
   $p = $p -replace '/', '\'
-  $p = [regex]::Replace($p, '\\{2,}', '\')  # Mehrfach-Backslashes reduzieren
-  return $p.TrimEnd('\')
+  # UNC-Praefix (\\) bewahren, nur innere Mehrfach-Backslashes reduzieren
+  $prefix = ''
+  if ($p.StartsWith('\\')){
+    $prefix = '\\'
+    $p = $p.Substring(2)
+  }
+  $p = [regex]::Replace($p, '\\{2,}', '\')
+  return ($prefix + $p).TrimEnd('\')
 }
 
 function Get-MatchingRoot([string]$fullPath, [string[]]$roots){
@@ -70,6 +75,20 @@ function TryOpen-Explorer([string]$path){
   }catch{ L "FAIL explorer.exe: $($_.Exception.Message)"; return $false }
 }
 
+function Try-NetUse([string]$drive, [string]$uncRoot){
+  try {
+    $out = cmd /c ("net use " + $drive + " `"" + $uncRoot + "`" /persistent:no 2>&1")
+    L "net use output: $out"
+    Start-Sleep -Milliseconds 500
+    if (Test-Path -LiteralPath ($drive + '\')){ return $true }
+    L "WARN drive $drive mapped but not accessible"
+    return $false
+  } catch {
+    L "WARN net use $drive failed: $($_.Exception.Message)"
+    return $false
+  }
+}
+
 function Ensure-MappedDrive([string]$uncRoot, [string]$preferred = $PreferredDrive){
   $existing = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.DisplayRoot -and ($_.DisplayRoot -ieq $uncRoot) }
   if ($existing){ L "Reusing map: $($existing.Name): -> $uncRoot"; return ($existing.Name + ':') }
@@ -79,9 +98,7 @@ function Ensure-MappedDrive([string]$uncRoot, [string]$preferred = $PreferredDri
     $used = (Get-PSDrive -PSProvider FileSystem).Name
     if ($used -notcontains $pref){
       L "Map preferred: $preferred -> $uncRoot"
-      cmd /c ("net use " + $preferred + " " + $uncRoot + " /persistent:no") | Out-Null
-      Start-Sleep -Milliseconds 200
-      return $preferred
+      if (Try-NetUse $preferred $uncRoot){ return $preferred }
     } else {
       L "Preferred $preferred already in use"
     }
@@ -92,12 +109,10 @@ function Ensure-MappedDrive([string]$uncRoot, [string]$preferred = $PreferredDri
     if ($used2 -notcontains $c){
       $drive = ($c + ':')
       L "Map fallback: $drive -> $uncRoot"
-      cmd /c ("net use " + $drive + " " + $uncRoot + " /persistent:no") | Out-Null
-      Start-Sleep -Milliseconds 200
-      return $drive
+      if (Try-NetUse $drive $uncRoot){ return $drive }
     }
   }
-  L "ERR No free drive letter"; return $null
+  L "ERR No free drive letter or all mappings failed"; return $null
 }
 
 function Get-OpenCommand([string]$extension){
