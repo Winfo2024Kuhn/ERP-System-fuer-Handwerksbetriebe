@@ -8,8 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
+import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Projekt;
@@ -21,9 +23,11 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -57,6 +61,7 @@ public class OffenePostenController {
 
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
+    private final FrontendUserProfileService frontendUserProfileService;
     private final GeminiDokumentAnalyseService geminiDokumentAnalyseService;
     private final ProjektRepository projektRepository;
     private final ProjektDokumentRepository projektDokumentRepository;
@@ -76,9 +81,10 @@ public class OffenePostenController {
 
     @GetMapping("/eingang")
     public ResponseEntity<List<EingangsrechnungDto>> getOffeneEingangsrechnungen(
-            @RequestHeader(value = "X-Auth-Token", required = false) String token) {
+            @RequestHeader(value = "X-Auth-Token", required = false) String token,
+            Authentication authentication) {
 
-        Mitarbeiter mitarbeiter = mitarbeiterByToken(token);
+        Mitarbeiter mitarbeiter = resolveMitarbeiter(token, authentication);
         boolean darfGenehmigen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenGenehmigen);
         boolean darfSehen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenSehen);
 
@@ -108,9 +114,10 @@ public class OffenePostenController {
      */
     @GetMapping("/eingang/alle")
     public ResponseEntity<List<EingangsrechnungDto>> getAlleEingangsrechnungen(
-            @RequestHeader(value = "X-Auth-Token", required = false) String token) {
+            @RequestHeader(value = "X-Auth-Token", required = false) String token,
+            Authentication authentication) {
 
-        Mitarbeiter mitarbeiter = mitarbeiterByToken(token);
+        Mitarbeiter mitarbeiter = resolveMitarbeiter(token, authentication);
         boolean darfGenehmigen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenGenehmigen);
         boolean darfSehen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenSehen);
 
@@ -139,7 +146,8 @@ public class OffenePostenController {
     public ResponseEntity<EingangsrechnungDto> setBezahltStatus(
             @PathVariable Long id,
             @RequestBody Map<String, Boolean> body,
-            @RequestHeader(value = "X-Auth-Token", required = false) String token) {
+            @RequestHeader(value = "X-Auth-Token", required = false) String token,
+            Authentication authentication) {
 
         LieferantGeschaeftsdokument gd = geschaeftsdokumentRepository.findById(id).orElse(null);
         if (gd == null) {
@@ -186,7 +194,7 @@ public class OffenePostenController {
         }
 
         geschaeftsdokumentRepository.save(gd);
-        boolean darfGenehmigen = hatBerechtigung(mitarbeiterByToken(token), Abteilung::getDarfRechnungenGenehmigen);
+        boolean darfGenehmigen = hatBerechtigung(resolveMitarbeiter(token, authentication), Abteilung::getDarfRechnungenGenehmigen);
         return ResponseEntity.ok(toDto(gd, darfGenehmigen));
     }
 
@@ -199,9 +207,10 @@ public class OffenePostenController {
     public ResponseEntity<EingangsrechnungDto> setGenehmigtStatus(
             @PathVariable Long id,
             @RequestBody Map<String, Boolean> body,
-            @RequestHeader(value = "X-Auth-Token", required = false) String token) {
+            @RequestHeader(value = "X-Auth-Token", required = false) String token,
+            Authentication authentication) {
 
-        Mitarbeiter mitarbeiter = mitarbeiterByToken(token);
+        Mitarbeiter mitarbeiter = resolveMitarbeiter(token, authentication);
         boolean darfGenehmigen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenGenehmigen);
 
         if (!darfGenehmigen) {
@@ -355,11 +364,25 @@ public class OffenePostenController {
 
     // ==================== Hilfsmethoden ====================
 
-    private Mitarbeiter mitarbeiterByToken(String token) {
-        if (!StringUtils.hasText(token)) {
-            return null;
+    /**
+     * Löst den Mitarbeiter auf: zuerst über X-Auth-Token (Legacy),
+     * dann über die Session-Authentifizierung (FrontendUserProfile → Mitarbeiter).
+     */
+    private Mitarbeiter resolveMitarbeiter(String token, Authentication authentication) {
+        // 1. Versuch: Legacy-Token
+        if (StringUtils.hasText(token)) {
+            Mitarbeiter m = mitarbeiterRepository.findByLoginToken(token).orElse(null);
+            if (m != null) return m;
         }
-        return mitarbeiterRepository.findByLoginToken(token).orElse(null);
+
+        // 2. Fallback: Session-basierte Authentifizierung
+        if (authentication != null && authentication.getPrincipal() instanceof FrontendUserPrincipal principal) {
+            return frontendUserProfileService.findById(principal.getId())
+                    .map(FrontendUserProfile::getMitarbeiter)
+                    .orElse(null);
+        }
+
+        return null;
     }
 
     /**

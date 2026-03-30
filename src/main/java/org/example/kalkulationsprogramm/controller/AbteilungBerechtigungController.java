@@ -58,6 +58,8 @@ public class AbteilungBerechtigungController {
                 .abteilungId(abt.getId())
                 .abteilungName(abt.getName())
                 .berechtigungen(typBerechtigungen)
+                .darfRechnungenGenehmigen(Boolean.TRUE.equals(abt.getDarfRechnungenGenehmigen()))
+                .darfRechnungenSehen(Boolean.TRUE.equals(abt.getDarfRechnungenSehen()))
                 .build());
         }
 
@@ -97,6 +99,8 @@ public class AbteilungBerechtigungController {
             .abteilungId(abteilung.getId())
             .abteilungName(abteilung.getName())
             .berechtigungen(typBerechtigungen)
+            .darfRechnungenGenehmigen(Boolean.TRUE.equals(abteilung.getDarfRechnungenGenehmigen()))
+            .darfRechnungenSehen(Boolean.TRUE.equals(abteilung.getDarfRechnungenSehen()))
             .build());
     }
 
@@ -140,6 +144,15 @@ public class AbteilungBerechtigungController {
             berechtigungRepository.deleteAll(toDelete);
             berechtigungRepository.flush();
         }
+
+        // Offene-Posten-Flags aktualisieren
+        if (request.getDarfRechnungenGenehmigen() != null) {
+            abteilung.setDarfRechnungenGenehmigen(request.getDarfRechnungenGenehmigen());
+        }
+        if (request.getDarfRechnungenSehen() != null) {
+            abteilung.setDarfRechnungenSehen(request.getDarfRechnungenSehen());
+        }
+        abteilungRepository.save(abteilung);
 
         // Berechtigungen aktualisieren oder erstellen
         for (AbteilungBerechtigungDto.TypBerechtigung tb : request.getBerechtigungen()) {

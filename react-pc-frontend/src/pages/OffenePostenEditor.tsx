@@ -73,6 +73,8 @@ function DocumentPreviewModal({ doc, onClose }: { doc: PreviewDoc; onClose: () =
         doc.url.includes('/attachments/') ||
         doc.url.endsWith('/pdf');
 
+    const [blobUrl, setBlobUrl] = useState<string | null>(null);
+    const [loadError, setLoadError] = useState(false);
 
     useEffect(() => {
         const handleEsc = (e: KeyboardEvent) => {
@@ -82,9 +84,33 @@ function DocumentPreviewModal({ doc, onClose }: { doc: PreviewDoc; onClose: () =
         return () => window.removeEventListener('keydown', handleEsc);
     }, [onClose]);
 
+    // Fetch PDF as blob to avoid iframe auth/X-Frame-Options issues
+    useEffect(() => {
+        if (!isPdf) return;
+        let revoked = false;
+        fetch(doc.url, { credentials: 'same-origin' })
+            .then(res => {
+                if (!res.ok) throw new Error('Fetch failed');
+                return res.blob();
+            })
+            .then(blob => {
+                if (revoked) return;
+                const url = URL.createObjectURL(blob);
+                setBlobUrl(url);
+            })
+            .catch(() => {
+                if (!revoked) setLoadError(true);
+            });
+        return () => {
+            revoked = true;
+            if (blobUrl) URL.revokeObjectURL(blobUrl);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [doc.url, isPdf]);
+
     const handleDownload = () => {
         const link = document.createElement('a');
-        link.href = doc.url;
+        link.href = blobUrl || doc.url;
         link.download = doc.title;
         document.body.appendChild(link);
         link.click();
@@ -115,7 +141,7 @@ function DocumentPreviewModal({ doc, onClose }: { doc: PreviewDoc; onClose: () =
                         <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => window.open(doc.url, '_blank')}
+                            onClick={() => window.open(blobUrl || doc.url, '_blank')}
                             className="text-slate-500 hover:text-slate-700"
                             title="In neuem Tab öffnen"
                         >
@@ -135,11 +161,31 @@ function DocumentPreviewModal({ doc, onClose }: { doc: PreviewDoc; onClose: () =
                 {/* Content */}
                 <div className="flex-1 overflow-auto bg-slate-100 min-h-[500px]">
                     {isPdf ? (
-                        <iframe
-                            src={doc.url}
-                            className="w-full h-full min-h-[600px]"
-                            title={doc.title}
-                        />
+                        loadError ? (
+                            <div className="flex flex-col items-center justify-center py-12">
+                                <FileText className="w-24 h-24 text-slate-300 mb-6" />
+                                <p className="text-slate-600 text-lg font-medium">PDF konnte nicht geladen werden</p>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => window.open(doc.url, '_blank')}
+                                    className="mt-4"
+                                >
+                                    <ExternalLink className="w-4 h-4 mr-2" />
+                                    In neuem Tab öffnen
+                                </Button>
+                            </div>
+                        ) : blobUrl ? (
+                            <iframe
+                                src={blobUrl}
+                                className="w-full h-full min-h-[600px]"
+                                title={doc.title}
+                            />
+                        ) : (
+                            <div className="flex items-center justify-center min-h-[600px]">
+                                <RefreshCw className="w-8 h-8 text-slate-400 animate-spin" />
+                            </div>
+                        )
                     ) : (
                         <div className="flex flex-col items-center justify-center py-12">
                             <FileText className="w-24 h-24 text-slate-300 mb-6" />

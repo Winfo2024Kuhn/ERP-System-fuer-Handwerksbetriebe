@@ -18,6 +18,8 @@ public class AbteilungBerechtigungDto {
         private Long abteilungId;
         private String abteilungName;
         private List<TypBerechtigung> berechtigungen;
+        private Boolean darfRechnungenGenehmigen;
+        private Boolean darfRechnungenSehen;
     }
 
     @Data
@@ -35,5 +37,7 @@ public class AbteilungBerechtigungDto {
     @AllArgsConstructor
     public static class UpdateRequest {
         private List<TypBerechtigung> berechtigungen;
+        private Boolean darfRechnungenGenehmigen;
+        private Boolean darfRechnungenSehen;
     }
 }

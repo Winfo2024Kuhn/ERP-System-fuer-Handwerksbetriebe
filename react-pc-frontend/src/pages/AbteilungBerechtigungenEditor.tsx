@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Shield, Users, Save, Loader2, Check, Eye, FileText } from 'lucide-react';
+import { Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet } from 'lucide-react';
 
 interface TypBerechtigung {
     typ: string;
@@ -14,6 +14,8 @@ interface AbteilungBerechtigung {
     abteilungId: number;
     abteilungName: string;
     berechtigungen: TypBerechtigung[];
+    darfRechnungenGenehmigen: boolean;
+    darfRechnungenSehen: boolean;
 }
 
 const DOKUMENT_TYP_LABELS: Record<string, string> = {
@@ -69,13 +71,24 @@ export default function AbteilungBerechtigungenEditor() {
         }));
     };
 
+    const handleToggleRechnungsFlag = (abteilungId: number, field: 'darfRechnungenGenehmigen' | 'darfRechnungenSehen') => {
+        setBerechtigungen(prev => prev.map(abt => {
+            if (abt.abteilungId !== abteilungId) return abt;
+            return { ...abt, [field]: !abt[field] };
+        }));
+    };
+
     const handleSave = async (abteilung: AbteilungBerechtigung) => {
         setSaving(abteilung.abteilungId);
         try {
             const res = await fetch(`/api/abteilungen/${abteilung.abteilungId}/berechtigungen`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ berechtigungen: abteilung.berechtigungen })
+                body: JSON.stringify({
+                    berechtigungen: abteilung.berechtigungen,
+                    darfRechnungenGenehmigen: abteilung.darfRechnungenGenehmigen,
+                    darfRechnungenSehen: abteilung.darfRechnungenSehen
+                })
             });
             if (res.ok) {
                 setSaveSuccess(abteilung.abteilungId);
@@ -207,6 +220,48 @@ export default function AbteilungBerechtigungenEditor() {
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+
+                        {/* Offene Posten Berechtigungen */}
+                        <div className="mt-6 pt-4 border-t border-slate-200">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Wallet className="w-4 h-4 text-slate-600" />
+                                <h3 className="font-semibold text-slate-700">Eingangsrechnungen (Offene Posten)</h3>
+                            </div>
+                            <div className="space-y-3">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <button
+                                        onClick={() => handleToggleRechnungsFlag(abt.abteilungId, 'darfRechnungenGenehmigen')}
+                                        className={`w-6 h-6 rounded-md border-2 transition-colors flex-shrink-0 ${
+                                            abt.darfRechnungenGenehmigen
+                                                ? 'bg-green-500 border-green-500'
+                                                : 'bg-white border-slate-300 hover:border-slate-400'
+                                        }`}
+                                    >
+                                        {abt.darfRechnungenGenehmigen && <Check className="w-full h-full text-white p-0.5" />}
+                                    </button>
+                                    <div>
+                                        <span className="text-sm font-medium text-slate-900">Darf Rechnungen genehmigen</span>
+                                        <p className="text-xs text-slate-500">Sieht alle Eingangsrechnungen und kann diese genehmigen</p>
+                                    </div>
+                                </label>
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <button
+                                        onClick={() => handleToggleRechnungsFlag(abt.abteilungId, 'darfRechnungenSehen')}
+                                        className={`w-6 h-6 rounded-md border-2 transition-colors flex-shrink-0 ${
+                                            abt.darfRechnungenSehen
+                                                ? 'bg-green-500 border-green-500'
+                                                : 'bg-white border-slate-300 hover:border-slate-400'
+                                        }`}
+                                    >
+                                        {abt.darfRechnungenSehen && <Check className="w-full h-full text-white p-0.5" />}
+                                    </button>
+                                    <div>
+                                        <span className="text-sm font-medium text-slate-900">Darf genehmigte Rechnungen sehen</span>
+                                        <p className="text-xs text-slate-500">Sieht nur bereits genehmigte Eingangsrechnungen (Buchhaltung)</p>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
                     </Card>
                 ))}
