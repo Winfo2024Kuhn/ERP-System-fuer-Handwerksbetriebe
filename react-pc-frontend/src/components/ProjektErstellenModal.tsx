@@ -1244,10 +1244,10 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                             {/* Produktkategorien */}
                             <div className="border-t border-slate-100 pt-4">
                                 <div className="flex items-center justify-between mb-3">
-                                    <p className="text-sm font-medium text-slate-700">
+                                    <label className="block text-sm font-medium text-slate-700">
                                         <Folder className="w-4 h-4 inline-block mr-1" />
                                         Produktkategorien
-                                    </p>
+                                    </label>
                                     <Button
                                         type="button"
                                         variant="outline"
@@ -1264,7 +1264,17 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                 </div>
 
                                 {selectedCategories.length === 0 ? (
-                                    <p className="text-sm text-slate-400 italic">Keine Kategorien zugewiesen</p>
+                                    <div
+                                        onClick={() => {
+                                            setEditingCategoryIndex(null);
+                                            setShowCategoryModal(true);
+                                        }}
+                                        className="p-4 border-2 border-dashed border-slate-200 rounded-xl text-center cursor-pointer hover:border-rose-300 hover:bg-rose-50/50 transition-colors"
+                                    >
+                                        <Folder className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                                        <p className="text-sm text-slate-500">Keine Kategorien zugewiesen</p>
+                                        <p className="text-xs text-rose-500 mt-1">Klicken um Kategorie hinzuzufügen</p>
+                                    </div>
                                 ) : (
                                     <div className="space-y-2">
                                         {selectedCategories.map((cat, index) => (
