@@ -2,7 +2,7 @@
 # OpenFile Launcher - Automatisches Installations-Skript
 # ====================================================================
 # Dieses Skript installiert den OpenFile Launcher auf einem Client:
-# 1. Kopiert launcher.ps1 nach C:\Program Files (x86)\OpenFileLauncher
+# 1. Kopiert launcher.ps1 nach C:\Program Files\OpenFileLauncher
 # 2. Registriert das openfile:// Schema in der Windows Registry
 #
 # WICHTIG: Muss als Administrator ausgeführt werden!
@@ -40,7 +40,7 @@ if ($MyInvocation.MyCommand.Path) {
     Write-Host ""
 }
 
-$targetDir = "C:\Program Files (x86)\OpenFileLauncher"
+$targetDir = "C:\Program Files\OpenFileLauncher"
 $launcherScript = Join-Path $scriptDir "launcher.ps1"
 
 # Prüfen, ob launcher.ps1 vorhanden ist

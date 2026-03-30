@@ -68,6 +68,12 @@ public class ProduktkategorieController {
         return ResponseEntity.ok(produktkategorieService.findeUnterkategorie(parentId, light));
     }
 
+    @GetMapping("/suche")
+    public ResponseEntity<List<ProduktkategorieResponseDto>> sucheLeafKategorien(
+            @RequestParam("q") String suchbegriff) {
+        return ResponseEntity.ok(produktkategorieService.sucheLeafKategorien(suchbegriff));
+    }
+
     // Kategorie-Daten werden als normale Form-Fields übertragen, Bild optional als
     // Datei
     @PostMapping(consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })

@@ -89,6 +89,14 @@ function Try-NetUse([string]$drive, [string]$uncRoot){
   }
 }
 
+function Get-NetUseMappedRoot([string]$driveLetter){
+  try{
+    $out = (cmd /c ("net use " + $driveLetter + ": 2>&1")) -join "`n"
+    if ($out -match '(?i)Remote[^\s]*\s+(\\\\[^\s\r\n]+)'){ return $matches[1].Trim() }
+  }catch{}
+  return $null
+}
+
 function Ensure-MappedDrive([string]$uncRoot, [string]$preferred = $PreferredDrive){
   $existing = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.DisplayRoot -and ($_.DisplayRoot -ieq $uncRoot) }
   if ($existing){ L "Reusing map: $($existing.Name): -> $uncRoot"; return ($existing.Name + ':') }
@@ -100,7 +108,12 @@ function Ensure-MappedDrive([string]$uncRoot, [string]$preferred = $PreferredDri
       L "Map preferred: $preferred -> $uncRoot"
       if (Try-NetUse $preferred $uncRoot){ return $preferred }
     } else {
-      L "Preferred $preferred already in use"
+      $existingRoot = Get-NetUseMappedRoot $pref
+      if ($existingRoot -and ($existingRoot.TrimEnd('\') -ieq $uncRoot.TrimEnd('\'))){
+        L "Preferred $preferred already mapped to $uncRoot (reusing)"
+        return $preferred
+      }
+      L "Preferred $preferred already in use (root: $existingRoot)"
     }
   }
 
@@ -112,6 +125,16 @@ function Ensure-MappedDrive([string]$uncRoot, [string]$preferred = $PreferredDri
       if (Try-NetUse $drive $uncRoot){ return $drive }
     }
   }
+
+  # Last resort: any in-use drive already pointing to the UNC root
+  foreach($c in @('Z','P','T','Y','X','W','V','U','S','R','Q')){
+    $chkRoot = Get-NetUseMappedRoot $c
+    if ($chkRoot -and ($chkRoot.TrimEnd('\') -ieq $uncRoot.TrimEnd('\'))){
+      L "Found existing map via net use: ${c}: -> $uncRoot (reusing)"
+      return ($c + ':')
+    }
+  }
+
   L "ERR No free drive letter or all mappings failed"; return $null
 }
 
@@ -201,7 +224,7 @@ try {
     $root = $newRoot
     $unc  = (Join-Path ($root + '\') $rel)
   }
-  L "RootExists: " + (Test-Path -LiteralPath $root)
+  L ("RootExists: " + (Test-Path -LiteralPath $root))
 
   # ========= HiCAD (.sza) =========
   if ($ext -eq '.sza'){

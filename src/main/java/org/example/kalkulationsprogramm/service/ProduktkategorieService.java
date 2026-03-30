@@ -80,6 +80,15 @@ public class ProduktkategorieService {
                 .orElseThrow(() -> new RuntimeException("Kategorie mit ID " + id + " nicht gefunden."));
     }
 
+    public List<ProduktkategorieResponseDto> sucheLeafKategorien(String suchbegriff) {
+        if (suchbegriff == null || suchbegriff.isBlank()) {
+            return List.of();
+        }
+        return produktkategorieRepository.sucheLeafKategorienNachBezeichnung(suchbegriff.trim()).stream()
+                .map(produktkategorieMapper::toProduktkategorieResponseDto)
+                .toList();
+    }
+
     @Transactional
     public ProduktkategorieResponseDto erstelleKategorie(ProduktkategorieErstellenDto dto, MultipartFile bild) {
         Produktkategorie neueKategorie = new Produktkategorie();

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, X, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, X, Check, Search } from 'lucide-react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
@@ -137,6 +137,9 @@ export const CategoryMultiSelectModal: React.FC<CategoryMultiSelectModalProps> =
     const [roots, setRoots] = useState<ProduktkategorieDto[]>([]);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState<SelectedCategory[]>(initialSelected);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchResults, setSearchResults] = useState<ProduktkategorieDto[]>([]);
+    const [searching, setSearching] = useState(false);
 
     const selectedIds = new Set(selected.map(s => s.id));
 
@@ -147,6 +150,30 @@ export const CategoryMultiSelectModal: React.FC<CategoryMultiSelectModalProps> =
             .catch(err => console.error(err))
             .finally(() => setLoading(false));
     }, []);
+
+    // Debounced search
+    useEffect(() => {
+        if (!searchTerm.trim()) {
+            setSearchResults([]);
+            setSearching(false);
+            return;
+        }
+        setSearching(true);
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/produktkategorien/suche?q=${encodeURIComponent(searchTerm.trim())}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setSearchResults(Array.isArray(data) ? data : []);
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setSearching(false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
 
     const handleToggle = (id: number, name: string, verrechnungseinheit?: string) => {
         setSelected(prev => {
@@ -176,6 +203,29 @@ export const CategoryMultiSelectModal: React.FC<CategoryMultiSelectModalProps> =
                     </button>
                 </div>
 
+                {/* Search bar */}
+                <div className="px-4 py-3 border-b">
+                    <div className="relative">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="Kategorie suchen..."
+                            className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 text-sm"
+                            autoFocus
+                        />
+                        {searchTerm && (
+                            <button 
+                                onClick={() => setSearchTerm('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 {/* Selected categories chips */}
                 {selected.length > 0 && (
                     <div className="px-4 py-2 border-b bg-slate-50 flex flex-wrap gap-2">
@@ -197,7 +247,42 @@ export const CategoryMultiSelectModal: React.FC<CategoryMultiSelectModalProps> =
                 )}
 
                 <div className="flex-1 overflow-y-auto p-2">
-                    {loading ? (
+                    {/* Search results */}
+                    {searchTerm.trim() ? (
+                        searching ? (
+                            <div className="text-center py-4 text-slate-500 text-sm">Suche...</div>
+                        ) : searchResults.length === 0 ? (
+                            <div className="text-center py-4 text-slate-500 text-sm">Keine Kategorien gefunden</div>
+                        ) : (
+                            <div className="space-y-1">
+                                {searchResults.map(cat => {
+                                    const isSelected = selectedIds.has(Number(cat.id));
+                                    const einheit = typeof cat.verrechnungseinheit === 'object' 
+                                        ? (cat.verrechnungseinheit as any)?.anzeigename || (cat.verrechnungseinheit as any)?.name || ''
+                                        : cat.verrechnungseinheit || '';
+                                    return (
+                                        <div
+                                            key={cat.id}
+                                            onClick={() => handleToggle(Number(cat.id), cat.bezeichnung, String(einheit))}
+                                            className={cn(
+                                                "flex items-center gap-2 px-3 py-2 rounded cursor-pointer text-sm transition-colors",
+                                                isSelected ? "bg-rose-50 text-rose-700" : "hover:bg-slate-50"
+                                            )}
+                                        >
+                                            <Folder className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                                            <div className="flex-1 min-w-0">
+                                                <span className={isSelected ? "font-medium" : ""}>{cat.bezeichnung}</span>
+                                                {cat.pfad && (
+                                                    <span className="text-xs text-slate-400 ml-2">{cat.pfad}</span>
+                                                )}
+                                            </div>
+                                            {isSelected && <Check className="w-4 h-4 text-rose-600 flex-shrink-0" />}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )
+                    ) : loading ? (
                         <div className="text-center py-4 text-slate-500">Lade Kategorien...</div>
                     ) : (
                         roots.map(root => (

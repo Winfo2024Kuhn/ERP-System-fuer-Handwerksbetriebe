@@ -44,6 +44,7 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
@@ -93,6 +94,7 @@ public class ProjektController {
     private final ProjektNotizRepository projektNotizRepository;
     private final ProjektNotizBildRepository projektNotizBildRepository;
     private final ProjektRepository projektRepository;
+    private final ZeitbuchungRepository zeitbuchungRepository;
 
     // Projekte bearbeiten/ erstellen (Multipart mit Dateien)
     // Projekte bearbeiten/ erstellen (Multipart mit Dateien)
@@ -310,6 +312,15 @@ public class ProjektController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
         }
+    }
+
+    @GetMapping("/{projektID}/produktkategorien/{ppkId}/referenziert")
+    public ResponseEntity<Map<String, Object>> pruefeKategorieReferenziert(@PathVariable Long projektID,
+            @PathVariable Long ppkId) {
+        boolean referenziert = zeitbuchungRepository.existsByProjektProduktkategorieId(ppkId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("referenziert", referenziert);
+        return ResponseEntity.ok(result);
     }
 
     @DeleteMapping("/{projektID}")

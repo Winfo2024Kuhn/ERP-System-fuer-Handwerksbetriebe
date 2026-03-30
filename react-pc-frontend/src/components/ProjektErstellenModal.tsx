@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from './ui/button';
-import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder, Euro } from 'lucide-react';
+import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder, Euro, Trash2, RefreshCw } from 'lucide-react';
 import { Select } from './ui/select-custom';
 import { CategoryMultiSelectModal } from './CategoryMultiSelectModal';
 import { EmailListInput } from './EmailListInput';
@@ -1241,7 +1241,101 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* Produktkategorien – werden automatisch aus Dokumenten zugewiesen */}
+                            {/* Produktkategorien */}
+                            <div className="border-t border-slate-100 pt-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <p className="text-sm font-medium text-slate-700">
+                                        <Folder className="w-4 h-4 inline-block mr-1" />
+                                        Produktkategorien
+                                    </p>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                            setEditingCategoryIndex(null);
+                                            setShowCategoryModal(true);
+                                        }}
+                                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    >
+                                        <Plus className="w-4 h-4 mr-1" />
+                                        Kategorie hinzufügen
+                                    </Button>
+                                </div>
+
+                                {selectedCategories.length === 0 ? (
+                                    <p className="text-sm text-slate-400 italic">Keine Kategorien zugewiesen</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {selectedCategories.map((cat, index) => (
+                                            <div key={`${cat.id}-${index}`} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                                <Folder className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-sm font-medium text-slate-900 truncate block">{cat.bezeichnung}</span>
+                                                    {cat.verrechnungseinheit && (
+                                                        <span className="text-xs text-slate-500">{cat.verrechnungseinheit}</span>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    {/* Menge eingeben */}
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        value={cat.menge ?? ''}
+                                                        onChange={e => {
+                                                            const val = e.target.value ? parseFloat(e.target.value) : 0;
+                                                            setSelectedCategories(prev =>
+                                                                prev.map((c, i) => i === index ? { ...c, menge: val } : c)
+                                                            );
+                                                        }}
+                                                        placeholder="Menge"
+                                                        className="w-20 px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                                    />
+                                                    {/* Kategorie ändern */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditingCategoryIndex(index);
+                                                            setShowCategoryModal(true);
+                                                        }}
+                                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                                                        title="Kategorie ändern"
+                                                    >
+                                                        <RefreshCw className="w-4 h-4" />
+                                                    </button>
+                                                    {/* Kategorie entfernen */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            // Prüfe ob die Kategorie referenziert wird (nur bei bestehenden ProjektProduktkategorien)
+                                                            if (cat.projektProduktkategorieId && isEditMode && editProjekt) {
+                                                                try {
+                                                                    const res = await fetch(`/api/projekte/${editProjekt.id}/produktkategorien/${cat.projektProduktkategorieId}/referenziert`);
+                                                                    if (res.ok) {
+                                                                        const data = await res.json();
+                                                                        if (data.referenziert) {
+                                                                            setError('Diese Kategorie kann nicht entfernt werden, da sie durch Zeitbuchungen referenziert wird. Sie können die Kategorie aber ändern.');
+                                                                            return;
+                                                                        }
+                                                                    }
+                                                                } catch (err) {
+                                                                    console.error('Referenz-Check fehlgeschlagen:', err);
+                                                                }
+                                                            }
+                                                            setSelectedCategories(prev => prev.filter((_, i) => i !== index));
+                                                        }}
+                                                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                        title="Kategorie entfernen"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
 
                             {/* E-Mail-Adressen */}
                             <div className="border-t border-slate-100 pt-4">
