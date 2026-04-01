@@ -12,7 +12,6 @@ import {
     CornerDownRight,
     Edit2,
     Euro,
-    ExternalLink,
     File,
     FileText,
     FolderOpen,
@@ -56,6 +55,7 @@ import type { DocBlock } from '../components/document-editor/types';
 import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks } from '../components/TeilrechnungPositionRow';
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 
 interface Supplier {
     id: number;
@@ -250,7 +250,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [emailSearch, setEmailSearch] = useState('');
 
     // PDF Preview Modal State
-    const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+    const [pdfPreviewDoc, setPdfPreviewDoc] = useState<{ url: string; title: string } | null>(null);
 
     // Eingangsrechnungen State
     interface Eingangsrechnung {
@@ -1983,7 +1983,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                 <div className="flex items-center gap-2 justify-end mt-2">
                                                     {er.pdfUrl && (
                                                         <button
-                                                            onClick={() => setPdfPreviewUrl(er.pdfUrl)}
+                                                            onClick={() => setPdfPreviewDoc({ url: er.pdfUrl, title: er.dokumentNummer || 'Eingangsrechnung' })}
                                                             className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
                                                         >
                                                             <File className="w-3 h-3" />
@@ -2697,35 +2697,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             />
 
             {/* PDF Preview Modal */}
-            <Dialog open={!!pdfPreviewUrl} onOpenChange={(open) => !open && setPdfPreviewUrl(null)}>
-                <DialogContent className="max-w-4xl h-[85vh]">
-                    <DialogHeader>
-                        <DialogTitle>PDF Vorschau</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 h-full min-h-0">
-                        {pdfPreviewUrl && (
-                            <iframe
-                                src={pdfPreviewUrl}
-                                className="w-full h-[calc(85vh-100px)] border-0 rounded-lg"
-                                title="PDF Vorschau"
-                            />
-                        )}
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setPdfPreviewUrl(null)}>
-                            Schließen
-                        </Button>
-                        {pdfPreviewUrl && (
-                            <a href={pdfPreviewUrl} target="_blank" rel="noopener noreferrer">
-                                <Button variant="outline">
-                                    <ExternalLink className="w-4 h-4 mr-2" />
-                                    In neuem Tab öffnen
-                                </Button>
-                            </a>
-                        )}
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {pdfPreviewDoc && (
+                <DocumentPreviewModal
+                    doc={pdfPreviewDoc}
+                    onClose={() => setPdfPreviewDoc(null)}
+                />
+            )}
 
             {/* Material Modal */}
             <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
