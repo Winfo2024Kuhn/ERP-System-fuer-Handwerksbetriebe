@@ -3,13 +3,14 @@ import {
   ChevronDown,
   ChevronRight,
   FilePlus,
+  FileText,
   Folder,
   FolderOpen,
   Loader2,
+  Pencil,
   Plus,
   Save,
   Trash2,
-  Type,
   X
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -18,6 +19,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
 import { TiptapEditor } from '../components/TiptapEditor';
+import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
 import { type LeistungsFolder, type LeistungsService, type ProduktkategorieDto } from '../types';
 import { useToast } from '../components/ui/toast';
@@ -399,49 +401,55 @@ interface ServiceListProps {
 const ServiceList: React.FC<ServiceListProps> = ({ services, onEdit, onDelete }) => {
   if (!services.length) {
     return (
-      <Card className="p-10 text-center text-slate-500">
-        <FilePlus className="w-10 h-10 mx-auto mb-3 text-rose-200" />
-        Keine Leistungen in diesem Ordner
-      </Card>
+      <div className="py-8 text-center">
+        <FilePlus className="w-10 h-10 mx-auto mb-2 text-slate-200" />
+        <p className="text-sm text-slate-400">Keine Leistungen in diesem Ordner</p>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {services.map((service) => (
-        <Card
+        <div
           key={service.id}
-          className="p-3 flex items-start justify-between gap-3 hover:border-rose-200 hover:shadow-sm cursor-pointer"
+          className="group p-3 rounded-lg border border-slate-100 bg-white hover:border-rose-200 hover:shadow-sm cursor-pointer transition-all"
           onClick={() => onEdit(service)}
         >
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-rose-50 text-rose-700">
-              <FilePlus className="w-4 h-4" />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex-shrink-0 w-8 h-8 rounded-md bg-rose-50 flex items-center justify-center">
+                <FileText className="w-4 h-4 text-rose-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-900 truncate">{service.name}</p>
+                <p className="text-xs text-slate-500">
+                  {formatPrice(service.price)}
+                  <span className="text-slate-300 mx-1">/</span>
+                  {getUnitShort(service.unit)}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900 truncate">{service.name}</p>
-              <p className="text-sm text-rose-700">
-                {formatPrice(service.price)} <span className="text-slate-400">/</span> <span className="text-slate-600">{getUnitShort(service.unit)}</span>
-              </p>
+            <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                onClick={(e) => { e.stopPropagation(); onEdit(service); }}
+                title="Bearbeiten"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                onClick={(e) => { e.stopPropagation(); onDelete(service.id); }}
+                title="Löschen"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="text-rose-700" onClick={(e) => { e.stopPropagation(); onEdit(service); }}>
-              <Type className="w-4 h-4" /> Bearbeiten
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-rose-700"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(service.id);
-              }}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-        </Card>
+        </div>
       ))}
     </div>
   );
@@ -716,66 +724,77 @@ export const Leistungseditor: React.FC = () => {
       : null;
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">
-        <div>
-          <p className="text-sm font-semibold text-rose-600 uppercase tracking-wide">Textverwaltung</p>
-          <h1 className="text-3xl font-bold text-slate-900">LEISTUNGSEDITOR</h1>
-          <p className="text-slate-500 mt-1">Verwaltung von Leistungen und Beschreibungen nach Kategorien.</p>
+    <PageLayout
+      ribbonCategory="Textverwaltung"
+      title="LEISTUNGSEDITOR"
+      subtitle="Verwaltung von Leistungen und Beschreibungen nach Kategorien."
+      actions={
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-rose-300 text-rose-700 hover:bg-rose-50"
+            onClick={handleEditFolderDescription}
+            disabled={!selectedFolderId}
+          >
+            <FileText className="w-4 h-4" /> Beschreibung
+          </Button>
+          <Button
+            size="sm"
+            className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+            onClick={handleCreateService}
+            disabled={!isSelectedFolderLeaf}
+            title={!isSelectedFolderLeaf ? 'Leistungen nur in unterster Ordnerebene möglich' : undefined}
+          >
+            <Plus className="w-4 h-4" /> Neue Leistung
+          </Button>
         </div>
-      </div>
-      <div className="grid grid-cols-1 xl:grid-cols-[0.9fr_0.9fr_2.2fr] gap-6">
-        <Card className="p-6 border-rose-100 shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">Ordner</p>
-              <h4 className="text-lg font-semibold text-slate-900">Struktur</h4>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-                size="sm"
-                onClick={handleEditFolderDescription}
-                disabled={!selectedFolderId}
-              >
-                <Plus className="w-4 h-4" /> Beschreibung anlegen
-              </Button>
-            </div>
+      }
+    >
+      <div className="grid grid-cols-1 xl:grid-cols-[280px_280px_1fr] gap-6">
+        {/* Column 1: Folder Tree */}
+        <Card className="p-4 border-rose-100 shadow-lg">
+          <div className="mb-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Kategorien</p>
+            <h4 className="text-base font-semibold text-slate-900">Ordnerstruktur</h4>
           </div>
           {loadingFolders ? (
-            <div className="text-slate-500 text-sm py-6">Produktkategorien werden geladen...</div>
+            <div className="flex items-center gap-2 text-slate-500 text-sm py-6">
+              <Loader2 className="w-4 h-4 animate-spin" /> Wird geladen...
+            </div>
           ) : folderError ? (
             <div className="text-red-600 text-sm py-6">{folderError}</div>
           ) : (
-            <FolderTree
-              folders={folders}
-              selectedId={selectedFolderId}
-              onSelect={(id) => setSelectedFolderId(id)}
-              onChildrenLoaded={handleChildrenLoaded}
-            />
+            <div className="max-h-[calc(100vh-300px)] overflow-y-auto pr-1">
+              <FolderTree
+                folders={folders}
+                selectedId={selectedFolderId}
+                onSelect={(id) => setSelectedFolderId(id)}
+                onChildrenLoaded={handleChildrenLoaded}
+              />
+            </div>
           )}
         </Card>
 
-        <Card className="p-6 border-rose-100 shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">Leistungen</p>
-              <h4 className="text-lg font-semibold text-slate-900">Aktuelle Auswahl</h4>
-            </div>
-            <Button
-              className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-              size="sm"
-              onClick={handleCreateService}
-              disabled={!isSelectedFolderLeaf}
-              title={!isSelectedFolderLeaf ? 'Leistungen nur in unterster Ordnerebene möglich' : undefined}
-            >
-              <Plus className="w-4 h-4" /> Neu
-            </Button>
+        {/* Column 2: Service List */}
+        <Card className="p-4 border-rose-100 shadow-lg">
+          <div className="mb-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Leistungen</p>
+            <h4 className="text-base font-semibold text-slate-900 truncate">
+              {selectedFolder?.name || 'Auswählen'}
+              {filteredServices.length > 0 && (
+                <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">
+                  {filteredServices.length}
+                </span>
+              )}
+            </h4>
           </div>
-          <ServiceList services={filteredServices} onEdit={handleEditService} onDelete={handleDeleteService} />
+          <div className="max-h-[calc(100vh-300px)] overflow-y-auto pr-1">
+            <ServiceList services={filteredServices} onEdit={handleEditService} onDelete={handleDeleteService} />
+          </div>
         </Card>
 
+        {/* Column 3: Editor / Detail */}
         <div className="min-h-full">
           {editingFolderId && activeFolder ? (
             <FolderDescriptionForm
@@ -795,13 +814,14 @@ export const Leistungseditor: React.FC = () => {
               onCancel={handleCancelEdit}
             />
           ) : (
-            <Card className="p-10 h-full border-dashed border-slate-200 text-center text-slate-500 shadow-inner">
-              Wählen Sie eine Leistung aus oder erstellen Sie eine neue Leistung.
+            <Card className="p-16 h-full border-dashed border-slate-200 text-center shadow-inner">
+              <FilePlus className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+              <p className="text-slate-500">Wählen Sie eine Leistung aus oder erstellen Sie eine neue.</p>
             </Card>
           )}
         </div>
       </div>
-    </div>
+    </PageLayout>
   );
 };
 
