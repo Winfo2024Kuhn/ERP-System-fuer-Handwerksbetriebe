@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   Save,
+  Search,
   Trash2,
   X
 } from 'lucide-react';
@@ -451,11 +452,21 @@ export const Leistungseditor: React.FC = () => {
   const [folderDescriptions, setFolderDescriptions] = useState<Record<string, string>>({});
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [folderDescriptionDraft, setFolderDescriptionDraft] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredServices = useMemo(
-    () => services.filter((s) => !selectedFolderId || s.folderId === selectedFolderId),
-    [services, selectedFolderId]
-  );
+  const filteredServices = useMemo(() => {
+    let result = services;
+    if (selectedFolderId) {
+      result = result.filter((s) => s.folderId === selectedFolderId);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (s) => s.name.toLowerCase().includes(q) || stripHtml(s.description).toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [services, selectedFolderId, searchQuery]);
 
   const serviceCounts = useMemo(() => {
     const directCounts: Record<string, number> = {};
@@ -796,6 +807,25 @@ export const Leistungseditor: React.FC = () => {
                 </span>
               )}
             </h4>
+          </div>
+          <div className="relative mb-3">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Leistung suchen…"
+              className="w-full pl-8 pr-8 py-1.5 text-sm rounded-lg border border-slate-200 focus:border-rose-300 focus:ring-1 focus:ring-rose-200 outline-none transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
           <div className="max-h-[calc(100vh-300px)] overflow-y-auto pr-1">
             <ServiceList services={filteredServices} onEdit={handleEditService} onDelete={handleDeleteService} />
