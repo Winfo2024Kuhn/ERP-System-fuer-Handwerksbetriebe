@@ -1448,7 +1448,7 @@ public class DateiSpeicherService {
             projekt.setAbgeschlossen(true);
         } else {
             projekt.setBezahlt(false);
-            projekt.setAbgeschlossen(false);
+            // abgeschlossen ist ein manuelles Flag – nicht automatisch zurücksetzen
         }
         projektRepository.save(projekt);
     }
