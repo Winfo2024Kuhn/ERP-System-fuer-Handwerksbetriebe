@@ -455,16 +455,17 @@ export const Leistungseditor: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredServices = useMemo(() => {
+    let result = services;
+    if (selectedFolderId) {
+      result = result.filter((s) => s.folderId === selectedFolderId);
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return services.filter(
+      result = result.filter(
         (s) => s.name.toLowerCase().includes(q) || stripHtml(s.description).toLowerCase().includes(q)
       );
     }
-    if (selectedFolderId) {
-      return services.filter((s) => s.folderId === selectedFolderId);
-    }
-    return services;
+    return result;
   }, [services, selectedFolderId, searchQuery]);
 
   const serviceCounts = useMemo(() => {
