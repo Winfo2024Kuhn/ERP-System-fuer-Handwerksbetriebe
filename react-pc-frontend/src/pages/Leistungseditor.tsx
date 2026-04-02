@@ -509,10 +509,11 @@ export const Leistungseditor: React.FC = () => {
       .then((data) => {
         if (Array.isArray(data)) {
           // Normalize backend response to frontend types (string ids)
-          const normalized = data.map((s: LeistungsService) => ({
+          const normalized = data.map((s: any) => ({
             ...s,
             id: String(s.id),
-            folderId: String(s.folderId)
+            folderId: String(s.folderId),
+            unit: typeof s.unit === 'object' && s.unit?.name ? s.unit.name : (s.unit || '')
           }));
           setServices(normalized);
         } else {
@@ -601,7 +602,10 @@ export const Leistungseditor: React.FC = () => {
         const normalized: LeistungsService = {
           ...savedService,
           id: String(savedService.id),
-          folderId: String(savedService.folderId)
+          folderId: String(savedService.folderId),
+          unit: typeof (savedService as any).unit === 'object' && (savedService as any).unit?.name
+            ? (savedService as any).unit.name
+            : (savedService.unit || '')
         };
         if (isNew) {
           setServices((prev) => [...prev, normalized]);
