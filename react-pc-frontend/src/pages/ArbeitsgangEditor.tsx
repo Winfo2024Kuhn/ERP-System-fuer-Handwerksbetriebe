@@ -6,6 +6,7 @@ import {
     Plus,
     RefreshCw,
     Save,
+    Search,
     Trash2,
     X
 } from 'lucide-react';
@@ -199,11 +200,21 @@ export default function ArbeitsgangEditor() {
     // Modal state
     const [editingArbeitsgang, setEditingArbeitsgang] = useState<Arbeitsgang | null>(null);
 
-    // Filtered arbeitsgaenge for selected abteilung
+    // Search
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Filtered arbeitsgaenge for selected abteilung + search
     const filteredArbeitsgaenge = useMemo(() => {
         if (!selectedAbteilungId) return [];
-        return arbeitsgaenge.filter(a => a.abteilungId === selectedAbteilungId);
-    }, [arbeitsgaenge, selectedAbteilungId]);
+        let filtered = arbeitsgaenge.filter(a => a.abteilungId === selectedAbteilungId);
+        if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase();
+            filtered = filtered.filter(a =>
+                a.beschreibung.toLowerCase().includes(term)
+            );
+        }
+        return filtered;
+    }, [arbeitsgaenge, selectedAbteilungId, searchTerm]);
 
     // Selected abteilung
     const selectedAbteilung = useMemo(() => {
@@ -359,10 +370,23 @@ export default function ArbeitsgangEditor() {
             }
         >
 
+            {/* Search Bar */}
+            <Card className="p-4 border-0 shadow-sm rounded-xl">
+                <div className="relative">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                    <Input
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Arbeitsgänge durchsuchen..."
+                        className="pl-9"
+                    />
+                </div>
+            </Card>
+
             {/* 3-Column Grid */}
             <div className="grid grid-cols-1 xl:grid-cols-[0.9fr_0.9fr_2.2fr] gap-6">
                 {/* Column 1: Abteilungen */}
-                <Card className="p-6 border-rose-100 shadow-lg">
+                <Card className="p-6 border-0 shadow-sm rounded-xl">
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <p className="text-xs uppercase tracking-wide text-slate-500">Abteilungen</p>
@@ -403,7 +427,7 @@ export default function ArbeitsgangEditor() {
                 </Card>
 
                 {/* Column 2: Arbeitsgänge List */}
-                <Card className="p-6 border-rose-100 shadow-lg">
+                <Card className="p-6 border-0 shadow-sm rounded-xl">
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <p className="text-xs uppercase tracking-wide text-slate-500">Arbeitsgänge</p>
@@ -429,7 +453,7 @@ export default function ArbeitsgangEditor() {
                 {/* Column 3: Create Form */}
                 <div className="min-h-full">
                     {selectedAbteilungId ? (
-                        <Card className="border-rose-100 shadow-lg">
+                        <Card className="border-0 shadow-sm rounded-xl">
                             <div className="p-4 space-y-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <div>
@@ -452,11 +476,12 @@ export default function ArbeitsgangEditor() {
                                     />
                                 </div>
 
-                                <div className="rounded-2xl border border-dashed border-slate-300 p-4 bg-slate-50">
+                                <div className="rounded-xl border border-dashed border-slate-300 p-4 bg-slate-50">
                                     <h4 className="text-sm font-semibold text-slate-900 mb-2">Hinweis</h4>
-                                    <p className="text-sm text-slate-600 leading-relaxed">
-                                        Nach dem Erstellen können Sie mit dem Stift-Icon (✏️) den
-                                        Stundensatz für das aktuelle Jahr festlegen.
+                                    <p className="text-sm text-slate-600 leading-relaxed flex items-center gap-1">
+                                        Nach dem Erstellen können Sie mit dem Stift-Icon
+                                        <Pencil className="w-3.5 h-3.5 inline text-rose-600" />
+                                        den Stundensatz für das aktuelle Jahr festlegen.
                                     </p>
                                 </div>
 
@@ -481,7 +506,7 @@ export default function ArbeitsgangEditor() {
                             </div>
                         </Card>
                     ) : (
-                        <Card className="p-10 h-full border-dashed border-slate-200 text-center text-slate-500 shadow-inner">
+                        <Card className="p-10 h-full border-dashed border-slate-200 text-center text-slate-500">
                             Wählen Sie eine Abteilung aus, um einen neuen Arbeitsgang anzulegen.
                         </Card>
                     )}
