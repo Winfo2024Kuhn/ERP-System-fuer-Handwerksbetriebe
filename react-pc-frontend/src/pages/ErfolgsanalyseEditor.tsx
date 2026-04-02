@@ -773,12 +773,12 @@ export default function ErfolgsanalyseEditor() {
 
             {/* KPI Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                <Card className="p-4 border-0 shadow-sm rounded-xl bg-rose-50">
+                <Card className={`p-4 border-0 shadow-sm rounded-xl ${summary.gewinn >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
                     <div className="flex items-center gap-2 mb-1">
-                        <TrendingUp className="w-4 h-4 text-rose-600" />
-                        <p className="text-xs text-rose-600 font-semibold uppercase">Gewinn</p>
+                        <TrendingUp className={`w-4 h-4 ${summary.gewinn >= 0 ? 'text-emerald-600' : 'text-red-600'}`} />
+                        <p className={`text-xs font-semibold uppercase ${summary.gewinn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>Gewinn</p>
                     </div>
-                    <p className="text-lg font-bold text-rose-700">{formatCurrency(summary.gewinn)}</p>
+                    <p className={`text-lg font-bold ${summary.gewinn >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatCurrency(summary.gewinn)}</p>
                 </Card>
                 <Card className="p-4 border-0 shadow-sm rounded-xl">
                     <div className="flex items-center gap-2 mb-1">
@@ -889,7 +889,7 @@ export default function ErfolgsanalyseEditor() {
                                                     <td className="py-3 px-4 font-medium text-slate-900">{kunde.kundenName}</td>
                                                     <td className="py-3 px-4 text-right text-slate-700">{formatCurrency(kunde.umsatz)}</td>
                                                     <td className="py-3 px-4 text-right text-slate-600">{kunde.projektAnzahl}</td>
-                                                    <td className="py-3 px-4 text-right font-semibold text-emerald-600">{formatCurrency(kunde.gewinn)}</td>
+                                                    <td className={`py-3 px-4 text-right font-semibold ${kunde.gewinn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(kunde.gewinn)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
