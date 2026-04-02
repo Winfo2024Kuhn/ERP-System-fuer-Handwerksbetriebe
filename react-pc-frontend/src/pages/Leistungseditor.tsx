@@ -175,22 +175,6 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
           <TiptapEditor value={description} onChange={setDescription} />
         </div>
 
-        <div className="border border-slate-100 rounded-lg p-3 bg-slate-50">
-          <p className="text-slate-700 mb-2">Vorschau:</p>
-          <div className="flex items-baseline gap-2 mb-3">
-            <h4 className="text-slate-900">{name || 'Leistungsname'}</h4>
-            <span className="text-rose-700 font-semibold">{formatPrice(price)}</span>
-            <span className="text-slate-400">/</span>
-            <span className="text-slate-600">{getUnitShort(unit)}</span>
-          </div>
-          <div
-            className="prose prose-sm max-w-none text-slate-800"
-            dangerouslySetInnerHTML={{
-              __html: description?.trim() ? description : '<p class="text-slate-400">Keine Beschreibung</p>'
-            }}
-          />
-        </div>
-
         <div className="flex gap-3 pt-2">
           <Button
             className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
@@ -228,16 +212,6 @@ const FolderDescriptionForm: React.FC<FolderDescriptionFormProps> = ({ folder, f
         <div className="space-y-2">
           <Label>Beschreibung (Rich-Text)</Label>
           <TiptapEditor value={value} onChange={onChange} />
-        </div>
-
-        <div className="border border-slate-100 rounded-lg p-3 bg-slate-50">
-          <p className="text-slate-700 mb-2">Vorschau:</p>
-          <div
-            className="prose prose-sm max-w-none text-slate-800"
-            dangerouslySetInnerHTML={{
-              __html: value?.trim() ? value : '<p class="text-slate-400">Keine Beschreibung hinterlegt.</p>'
-            }}
-          />
         </div>
 
         <div className="flex gap-3 pt-2">
