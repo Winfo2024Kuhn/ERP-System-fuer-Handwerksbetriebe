@@ -63,6 +63,7 @@ interface Supplier {
 }
 
 const PAGE_SIZE = 12;
+const LAGER_ARTIKEL_PAGE_SIZE = 50;
 
 // ==================== DOCUMENT TREE HELPERS ====================
 
@@ -183,10 +184,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [savingMaterial, setSavingMaterial] = useState(false);
     const [lagerArtikel, setLagerArtikel] = useState<Artikel[]>([]);
     const [loadingLagerArtikel, setLoadingLagerArtikel] = useState(false);
+    const [loadingMoreLagerArtikel, setLoadingMoreLagerArtikel] = useState(false);
     const [savingLagerArtikel, setSavingLagerArtikel] = useState(false);
     const [lagerArtikelError, setLagerArtikelError] = useState<string | null>(null);
     const [lagerArtikelSearch, setLagerArtikelSearch] = useState('');
+    const [lagerArtikelPage, setLagerArtikelPage] = useState(0);
+    const [lagerArtikelHasMore, setLagerArtikelHasMore] = useState(false);
     const [selectedLagerArtikelKeys, setSelectedLagerArtikelKeys] = useState<Set<string>>(new Set());
+    const [selectedLagerArtikelData, setSelectedLagerArtikelData] = useState<Record<string, Artikel>>({});
     const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<string, string>>({});
     const [lagerArtikelBeschaffung, setLagerArtikelBeschaffung] = useState<Record<string, 'lager' | 'bestellen'>>({});
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -196,6 +201,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [selectedEmail, setSelectedEmail] = useState<ProjektEmail | null>(null);
 
     const [showDokumentTypDialog, setShowDokumentTypDialog] = useState(false);
+    const lagerArtikelFetchSeq = useRef(0);
 
     // Rechnungserstellung Dialog State
     const [showRechnungDialog, setShowRechnungDialog] = useState(false);
@@ -622,90 +628,106 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     const resetLagerArtikelSelection = () => {
         setSelectedLagerArtikelKeys(new Set());
+        setSelectedLagerArtikelData({});
         setLagerArtikelMengen({});
         setLagerArtikelBeschaffung({});
         setLagerArtikelSearch('');
+        setLagerArtikelPage(0);
+        setLagerArtikelHasMore(false);
+        setLagerArtikelError(null);
     };
 
-    const loadLagerArtikel = useCallback(async () => {
-        setLoadingLagerArtikel(true);
+    const normalizeLagerArtikelRows = useCallback((rows: Artikel[]) => {
+        const pricedRows = rows.filter(a => a.preis !== undefined && a.preis !== null && !!a.lieferantId);
+        const uniqueRows = new Map<string, Artikel>();
+        for (const artikel of pricedRows) {
+            const key = getLagerArtikelKey(artikel);
+            if (!uniqueRows.has(key)) {
+                uniqueRows.set(key, artikel);
+            }
+        }
+        return Array.from(uniqueRows.values());
+    }, []);
+
+    const loadLagerArtikel = useCallback(async ({ page, append, query }: { page: number; append: boolean; query: string }) => {
+        const fetchId = ++lagerArtikelFetchSeq.current;
+
+        if (append) {
+            setLoadingMoreLagerArtikel(true);
+        } else {
+            setLoadingLagerArtikel(true);
+        }
+
         setLagerArtikelError(null);
         try {
-            const pageSize = 50;
-            let page = 0;
-            let guard = 0;
-            let allRows: Artikel[] = [];
-            let total = 0;
-
-            while (guard < 500) {
-                const params = new URLSearchParams();
-                params.set('page', String(page));
-                params.set('size', String(pageSize));
-                params.set('sort', 'produktname');
-                params.set('dir', 'asc');
-
-                const res = await fetch(`/api/artikel?${params.toString()}`);
-                if (!res.ok) throw new Error('Artikel konnten nicht geladen werden');
-
-                const data = await res.json();
-                const list: Artikel[] = Array.isArray(data?.artikel) ? data.artikel : [];
-                allRows = allRows.concat(list);
-
-                total = typeof data?.gesamt === 'number' ? data.gesamt : allRows.length;
-                if (list.length === 0 || (page + 1) * pageSize >= total) break;
-
-                page += 1;
-                guard += 1;
+            const params = new URLSearchParams();
+            params.set('page', String(page));
+            params.set('size', String(LAGER_ARTIKEL_PAGE_SIZE));
+            params.set('sort', 'produktname');
+            params.set('dir', 'asc');
+            if (query) {
+                params.set('q', query);
             }
 
-            const pricedRows = allRows.filter(a => a.preis !== undefined && a.preis !== null && !!a.lieferantId);
-            const uniqueRows = new Map<string, Artikel>();
-            for (const artikel of pricedRows) {
-                const key = getLagerArtikelKey(artikel);
-                if (!uniqueRows.has(key)) {
-                    uniqueRows.set(key, artikel);
+            const res = await fetch(`/api/artikel?${params.toString()}`);
+            if (!res.ok) throw new Error('Artikel konnten nicht geladen werden');
+
+            const data = await res.json();
+            if (fetchId !== lagerArtikelFetchSeq.current) {
+                return;
+            }
+
+            const list: Artikel[] = Array.isArray(data?.artikel) ? data.artikel : [];
+            const normalized = normalizeLagerArtikelRows(list);
+
+            setLagerArtikel(prev => {
+                if (!append) {
+                    return normalized;
                 }
-            }
-
-            const sorted = Array.from(uniqueRows.values()).sort((a, b) => {
-                const aName = a.produktname || '';
-                const bName = b.produktname || '';
-                return aName.localeCompare(bName, 'de-DE');
+                const merged = new Map<string, Artikel>(prev.map(item => [getLagerArtikelKey(item), item]));
+                for (const artikel of normalized) {
+                    merged.set(getLagerArtikelKey(artikel), artikel);
+                }
+                return Array.from(merged.values());
             });
 
-            setLagerArtikel(sorted);
+            const gesamt = typeof data?.gesamt === 'number' ? data.gesamt : 0;
+            const aktuelleSeite = typeof data?.seite === 'number' ? data.seite : page;
+            const seitenGroesse = typeof data?.seitenGroesse === 'number' ? data.seitenGroesse : LAGER_ARTIKEL_PAGE_SIZE;
+
+            setLagerArtikelPage(aktuelleSeite);
+            setLagerArtikelHasMore((aktuelleSeite + 1) * seitenGroesse < gesamt);
         } catch (error) {
             console.error('Fehler beim Laden der Lagerartikel:', error);
-            setLagerArtikel([]);
+            if (!append) {
+                setLagerArtikel([]);
+                setLagerArtikelHasMore(false);
+            }
             setLagerArtikelError('Lagerartikel konnten nicht geladen werden.');
         } finally {
-            setLoadingLagerArtikel(false);
+            if (fetchId === lagerArtikelFetchSeq.current) {
+                setLoadingLagerArtikel(false);
+                setLoadingMoreLagerArtikel(false);
+            }
         }
-    }, []);
+    }, [normalizeLagerArtikelRows]);
 
     useEffect(() => {
         if (!showLagerArtikelModal) return;
-        loadLagerArtikel();
-    }, [showLagerArtikelModal, loadLagerArtikel]);
+        const query = lagerArtikelSearch.trim();
+        const timer = setTimeout(() => {
+            loadLagerArtikel({ page: 0, append: false, query });
+        }, 300);
 
-    const filteredLagerArtikel = useMemo(() => {
-        const query = lagerArtikelSearch.trim().toLowerCase();
-        if (!query) return lagerArtikel;
+        return () => clearTimeout(timer);
+    }, [showLagerArtikelModal, lagerArtikelSearch, loadLagerArtikel]);
 
-        return lagerArtikel.filter((artikel) => {
-            const fields = [
-                artikel.externeArtikelnummer,
-                artikel.produktname,
-                artikel.produkttext,
-                artikel.lieferantenname,
-                artikel.werkstoffName,
-                artikel.kategoriePfad,
-            ]
-                .filter(Boolean)
-                .map(v => String(v).toLowerCase());
-            return fields.some(f => f.includes(query));
-        });
-    }, [lagerArtikel, lagerArtikelSearch]);
+    const handleLoadMoreLagerArtikel = async () => {
+        if (loadingLagerArtikel || loadingMoreLagerArtikel || !lagerArtikelHasMore) {
+            return;
+        }
+        await loadLagerArtikel({ page: lagerArtikelPage + 1, append: true, query: lagerArtikelSearch.trim() });
+    };
 
     const handleToggleLagerArtikel = (artikel: Artikel, checked: boolean) => {
         const key = getLagerArtikelKey(artikel);
@@ -724,11 +746,18 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 if (prev[key]) return prev;
                 return { ...prev, [key]: '1' };
             });
+            setSelectedLagerArtikelData(prev => ({ ...prev, [key]: artikel }));
             setLagerArtikelBeschaffung(prev => {
                 if (prev[key]) return prev;
                 return { ...prev, [key]: 'lager' };
             });
         } else {
+            setSelectedLagerArtikelData(prev => {
+                if (!prev[key]) return prev;
+                const next = { ...prev };
+                delete next[key];
+                return next;
+            });
             setLagerArtikelBeschaffung(prev => {
                 if (!prev[key]) return prev;
                 const next = { ...prev };
@@ -749,6 +778,16 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 next.add(key);
             } else {
                 next.delete(key);
+            }
+            return next;
+        });
+
+        setSelectedLagerArtikelData(prev => {
+            const next = { ...prev };
+            if (!Number.isNaN(parsed) && parsed > 0) {
+                next[key] = artikel;
+            } else {
+                delete next[key];
             }
             return next;
         });
@@ -777,10 +816,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             return;
         }
 
-        const payload = lagerArtikel
-            .filter(artikel => selectedLagerArtikelKeys.has(getLagerArtikelKey(artikel)))
-            .map(artikel => {
-                const key = getLagerArtikelKey(artikel);
+        const payload = Array.from(selectedLagerArtikelKeys)
+            .map((key) => {
+                const artikel = selectedLagerArtikelData[key];
+                if (!artikel) return null;
                 const rawMenge = (lagerArtikelMengen[key] || '1').replace(',', '.');
                 const menge = parseFloat(rawMenge);
                 return {
@@ -791,7 +830,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     einheit: mapEinheitForBackend(artikel.verrechnungseinheit),
                     ausLager: (lagerArtikelBeschaffung[key] ?? 'lager') === 'lager',
                 };
-            });
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null);
+
+        if (payload.length === 0) {
+            toast.error('Die gewählten Artikel sind nicht mehr verfügbar. Bitte erneut auswählen.');
+            return;
+        }
 
         if (payload.some(p => Number.isNaN(p.menge) || p.menge <= 0)) {
             toast.error('Bitte geben Sie für alle gewählten Artikel eine Menge größer als 0 ein.');
@@ -2789,7 +2834,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 onChange={(e) => setLagerArtikelSearch(e.target.value)}
                             />
                         </div>
-                        <Button variant="outline" onClick={loadLagerArtikel} disabled={loadingLagerArtikel || savingLagerArtikel}>
+                        <Button
+                            variant="outline"
+                            onClick={() => loadLagerArtikel({ page: 0, append: false, query: lagerArtikelSearch.trim() })}
+                            disabled={loadingLagerArtikel || savingLagerArtikel}
+                        >
                             <RefreshCw className={cn('w-4 h-4 mr-2', loadingLagerArtikel && 'animate-spin')} /> Neu laden
                         </Button>
                     </div>
@@ -2797,7 +2846,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     <div className="text-xs text-slate-500">
                         {loadingLagerArtikel
                             ? 'Artikel werden geladen...'
-                            : `${filteredLagerArtikel.length} von ${lagerArtikel.length} Artikeln mit Lieferantenpreis`}
+                            : `${lagerArtikel.length} Artikel mit Lieferantenpreis geladen${lagerArtikelHasMore ? ' (weitere verfügbar)' : ''}`}
                     </div>
 
                     {lagerArtikelError && (
@@ -2821,7 +2870,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredLagerArtikel.map((artikel) => {
+                                    {lagerArtikel.map((artikel) => {
                                         const key = getLagerArtikelKey(artikel);
                                         const checked = selectedLagerArtikelKeys.has(key);
                                         const beschaffung = lagerArtikelBeschaffung[key] || 'lager';
@@ -2878,9 +2927,22 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 </tbody>
                             </table>
 
-                            {!loadingLagerArtikel && filteredLagerArtikel.length === 0 && (
+                            {!loadingLagerArtikel && lagerArtikel.length === 0 && (
                                 <div className="text-center text-slate-500 py-10">
                                     Keine Artikel mit Lieferantenpreis gefunden.
+                                </div>
+                            )}
+
+                            {lagerArtikelHasMore && (
+                                <div className="flex justify-center py-4 border-t border-slate-100 bg-white">
+                                    <Button
+                                        variant="outline"
+                                        onClick={handleLoadMoreLagerArtikel}
+                                        disabled={loadingMoreLagerArtikel || loadingLagerArtikel || savingLagerArtikel}
+                                    >
+                                        <RefreshCw className={cn('w-4 h-4 mr-2', (loadingMoreLagerArtikel || loadingLagerArtikel) && 'animate-spin')} />
+                                        {loadingMoreLagerArtikel ? 'Lade weitere Artikel...' : 'Weitere Artikel laden'}
+                                    </Button>
                                 </div>
                             )}
                         </div>

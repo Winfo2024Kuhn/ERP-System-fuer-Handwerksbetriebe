@@ -49,7 +49,7 @@ public class LeistungMapper {
             Produktkategorie kat = produktkategorieRepository.findById(dto.getFolderId())
                     .orElse(null);
             leistung.setKategorie(kat);
-            // Verrechnungseinheit automatisch von Produktkategorie übernehmen, wenn nicht explizit gesetzt
+            // Verrechnungseinheit automatisch von Produktkategorie uebernehmen, wenn nicht explizit gesetzt
             if (dto.getUnit() != null) {
                 leistung.setEinheit(dto.getUnit());
             } else if (kat != null) {
