@@ -9,7 +9,7 @@
 param(
     [string]$JarPath = "C:\Kalkulationsprogramm\Kalkulationsprogramm.jar",
     [int]$ServerPort = 8080,
-    [string]$LogDir = "E:\Kalkulationsprogramm\Logs",
+    [string]$LogDir = "C:\Kalkulationsprogramm\Logs",
     [int]$HealthCheckTimeout = 120  # Sekunden
 )
 
