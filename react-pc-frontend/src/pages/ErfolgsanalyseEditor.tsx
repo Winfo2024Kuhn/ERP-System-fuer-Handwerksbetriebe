@@ -747,7 +747,7 @@ export default function ErfolgsanalyseEditor() {
                         <label className="block text-sm font-medium text-slate-600 mb-1">Geschäftsjahr</label>
                         <YearPicker value={jahr} onChange={setJahr} />
                     </div>
-                    <div>
+                    <div className="w-44">
                         <label className="block text-sm font-medium text-slate-600 mb-1">Monat</label>
                         <Select
                             value={monat}
