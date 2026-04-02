@@ -233,9 +233,10 @@ interface FolderTreeNodeProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onChildrenLoaded: (parentId: string, children: LeistungsFolder[], descriptions: Record<string, string>) => void;
+  serviceCounts: Record<string, number>;
 }
 
-const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({ folder, level, selectedId, onSelect, onChildrenLoaded }) => {
+const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({ folder, level, selectedId, onSelect, onChildrenLoaded, serviceCounts }) => {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<LeistungsFolder[]>([]);
   const [loading, setLoading] = useState(false);
@@ -311,6 +312,11 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({ folder, level, selected
           )}
           {expanded ? <FolderOpen className="w-4 h-4 text-rose-600" /> : <Folder className="w-4 h-4 text-rose-600" />}
           <span className="text-sm font-semibold text-slate-900 truncate">{folder.name}</span>
+          {(serviceCounts[folder.id] ?? 0) > 0 && (
+            <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 flex-shrink-0">
+              {serviceCounts[folder.id]}
+            </span>
+          )}
         </div>
       </div>
       {expanded && children.length > 0 && (
@@ -323,6 +329,7 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({ folder, level, selected
               selectedId={selectedId}
               onSelect={onSelect}
               onChildrenLoaded={onChildrenLoaded}
+              serviceCounts={serviceCounts}
             />
           ))}
         </div>
@@ -336,9 +343,10 @@ interface FolderTreeProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onChildrenLoaded: (parentId: string, children: LeistungsFolder[], descriptions: Record<string, string>) => void;
+  serviceCounts: Record<string, number>;
 }
 
-const FolderTree: React.FC<FolderTreeProps> = ({ folders, selectedId, onSelect, onChildrenLoaded }) => {
+const FolderTree: React.FC<FolderTreeProps> = ({ folders, selectedId, onSelect, onChildrenLoaded, serviceCounts }) => {
   const roots = folders.filter((f) => f.parentId === null);
 
   if (!roots.length) {
@@ -360,6 +368,7 @@ const FolderTree: React.FC<FolderTreeProps> = ({ folders, selectedId, onSelect, 
           selectedId={selectedId}
           onSelect={onSelect}
           onChildrenLoaded={onChildrenLoaded}
+          serviceCounts={serviceCounts}
         />
       ))}
     </div>
@@ -447,6 +456,26 @@ export const Leistungseditor: React.FC = () => {
     () => services.filter((s) => !selectedFolderId || s.folderId === selectedFolderId),
     [services, selectedFolderId]
   );
+
+  const serviceCounts = useMemo(() => {
+    const directCounts: Record<string, number> = {};
+    for (const s of services) {
+      directCounts[s.folderId] = (directCounts[s.folderId] || 0) + 1;
+    }
+    const totalCounts: Record<string, number> = {};
+    const getCount = (folderId: string): number => {
+      if (totalCounts[folderId] !== undefined) return totalCounts[folderId];
+      const childFolders = folders.filter((f) => f.parentId === folderId);
+      let count = directCounts[folderId] || 0;
+      for (const child of childFolders) {
+        count += getCount(child.id);
+      }
+      totalCounts[folderId] = count;
+      return count;
+    };
+    for (const f of folders) getCount(f.id);
+    return totalCounts;
+  }, [services, folders]);
 
   const ensureSelection = useCallback(
     (nextFolders: LeistungsFolder[]) => {
@@ -749,6 +778,7 @@ export const Leistungseditor: React.FC = () => {
                 selectedId={selectedFolderId}
                 onSelect={(id) => setSelectedFolderId(id)}
                 onChildrenLoaded={handleChildrenLoaded}
+                serviceCounts={serviceCounts}
               />
             </div>
           )}
