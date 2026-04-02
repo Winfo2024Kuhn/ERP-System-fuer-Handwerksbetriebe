@@ -63,7 +63,7 @@ interface Supplier {
 }
 
 const PAGE_SIZE = 12;
-const LAGER_ARTIKEL_PAGE_SIZE = 50;
+const LAGER_ARTIKEL_PAGE_SIZE = 15;
 
 // ==================== DOCUMENT TREE HELPERS ====================
 
@@ -184,12 +184,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [savingMaterial, setSavingMaterial] = useState(false);
     const [lagerArtikel, setLagerArtikel] = useState<Artikel[]>([]);
     const [loadingLagerArtikel, setLoadingLagerArtikel] = useState(false);
-    const [loadingMoreLagerArtikel, setLoadingMoreLagerArtikel] = useState(false);
     const [savingLagerArtikel, setSavingLagerArtikel] = useState(false);
     const [lagerArtikelError, setLagerArtikelError] = useState<string | null>(null);
     const [lagerArtikelSearch, setLagerArtikelSearch] = useState('');
     const [lagerArtikelPage, setLagerArtikelPage] = useState(0);
-    const [lagerArtikelHasMore, setLagerArtikelHasMore] = useState(false);
+    const [lagerArtikelGesamt, setLagerArtikelGesamt] = useState(0);
     const [selectedLagerArtikelKeys, setSelectedLagerArtikelKeys] = useState<Set<string>>(new Set());
     const [selectedLagerArtikelData, setSelectedLagerArtikelData] = useState<Record<string, Artikel>>({});
     const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<string, string>>({});
@@ -633,30 +632,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         setLagerArtikelBeschaffung({});
         setLagerArtikelSearch('');
         setLagerArtikelPage(0);
-        setLagerArtikelHasMore(false);
+        setLagerArtikelGesamt(0);
         setLagerArtikelError(null);
     };
 
-    const normalizeLagerArtikelRows = useCallback((rows: Artikel[]) => {
-        const pricedRows = rows.filter(a => a.preis !== undefined && a.preis !== null && !!a.lieferantId);
-        const uniqueRows = new Map<string, Artikel>();
-        for (const artikel of pricedRows) {
-            const key = getLagerArtikelKey(artikel);
-            if (!uniqueRows.has(key)) {
-                uniqueRows.set(key, artikel);
-            }
-        }
-        return Array.from(uniqueRows.values());
-    }, []);
-
-    const loadLagerArtikel = useCallback(async ({ page, append, query }: { page: number; append: boolean; query: string }) => {
+    const loadLagerArtikel = useCallback(async ({ page, query }: { page: number; query: string }) => {
         const fetchId = ++lagerArtikelFetchSeq.current;
 
-        if (append) {
-            setLoadingMoreLagerArtikel(true);
-        } else {
-            setLoadingLagerArtikel(true);
-        }
+        setLoadingLagerArtikel(true);
 
         setLagerArtikelError(null);
         try {
@@ -665,6 +648,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             params.set('size', String(LAGER_ARTIKEL_PAGE_SIZE));
             params.set('sort', 'produktname');
             params.set('dir', 'asc');
+            params.set('nurMitLieferantenpreis', 'true');
             if (query) {
                 params.set('q', query);
             }
@@ -678,56 +662,50 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             }
 
             const list: Artikel[] = Array.isArray(data?.artikel) ? data.artikel : [];
-            const normalized = normalizeLagerArtikelRows(list);
-
-            setLagerArtikel(prev => {
-                if (!append) {
-                    return normalized;
-                }
-                const merged = new Map<string, Artikel>(prev.map(item => [getLagerArtikelKey(item), item]));
-                for (const artikel of normalized) {
-                    merged.set(getLagerArtikelKey(artikel), artikel);
-                }
-                return Array.from(merged.values());
-            });
+            setLagerArtikel(list);
 
             const gesamt = typeof data?.gesamt === 'number' ? data.gesamt : 0;
             const aktuelleSeite = typeof data?.seite === 'number' ? data.seite : page;
-            const seitenGroesse = typeof data?.seitenGroesse === 'number' ? data.seitenGroesse : LAGER_ARTIKEL_PAGE_SIZE;
 
             setLagerArtikelPage(aktuelleSeite);
-            setLagerArtikelHasMore((aktuelleSeite + 1) * seitenGroesse < gesamt);
+            setLagerArtikelGesamt(gesamt);
         } catch (error) {
             console.error('Fehler beim Laden der Lagerartikel:', error);
-            if (!append) {
-                setLagerArtikel([]);
-                setLagerArtikelHasMore(false);
-            }
+            setLagerArtikel([]);
+            setLagerArtikelGesamt(0);
             setLagerArtikelError('Lagerartikel konnten nicht geladen werden.');
         } finally {
             if (fetchId === lagerArtikelFetchSeq.current) {
                 setLoadingLagerArtikel(false);
-                setLoadingMoreLagerArtikel(false);
             }
         }
-    }, [normalizeLagerArtikelRows]);
+    }, []);
+
+    useEffect(() => {
+        if (!showLagerArtikelModal) return;
+        setLagerArtikelPage(0);
+    }, [showLagerArtikelModal, lagerArtikelSearch]);
 
     useEffect(() => {
         if (!showLagerArtikelModal) return;
         const query = lagerArtikelSearch.trim();
         const timer = setTimeout(() => {
-            loadLagerArtikel({ page: 0, append: false, query });
+            loadLagerArtikel({ page: lagerArtikelPage, query });
         }, 300);
 
         return () => clearTimeout(timer);
-    }, [showLagerArtikelModal, lagerArtikelSearch, loadLagerArtikel]);
+    }, [showLagerArtikelModal, lagerArtikelSearch, lagerArtikelPage, loadLagerArtikel]);
 
-    const handleLoadMoreLagerArtikel = async () => {
-        if (loadingLagerArtikel || loadingMoreLagerArtikel || !lagerArtikelHasMore) {
-            return;
-        }
-        await loadLagerArtikel({ page: lagerArtikelPage + 1, append: true, query: lagerArtikelSearch.trim() });
-    };
+    const lagerArtikelTotalPages = Math.max(1, Math.ceil(lagerArtikelGesamt / LAGER_ARTIKEL_PAGE_SIZE));
+
+    const lagerArtikelStatusText = useMemo(() => {
+        if (loadingLagerArtikel) return 'Artikel werden geladen...';
+        if (lagerArtikelGesamt === 0) return 'Keine Artikel gefunden.';
+
+        const start = lagerArtikelPage * LAGER_ARTIKEL_PAGE_SIZE + 1;
+        const end = Math.min(start + lagerArtikel.length - 1, lagerArtikelGesamt);
+        return `Zeige ${start}-${end} von ${lagerArtikelGesamt} Artikeln`;
+    }, [loadingLagerArtikel, lagerArtikelGesamt, lagerArtikelPage, lagerArtikel.length]);
 
     const handleToggleLagerArtikel = (artikel: Artikel, checked: boolean) => {
         const key = getLagerArtikelKey(artikel);
@@ -2836,18 +2814,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         </div>
                         <Button
                             variant="outline"
-                            onClick={() => loadLagerArtikel({ page: 0, append: false, query: lagerArtikelSearch.trim() })}
+                            onClick={() => loadLagerArtikel({ page: lagerArtikelPage, query: lagerArtikelSearch.trim() })}
                             disabled={loadingLagerArtikel || savingLagerArtikel}
                         >
                             <RefreshCw className={cn('w-4 h-4 mr-2', loadingLagerArtikel && 'animate-spin')} /> Neu laden
                         </Button>
                     </div>
 
-                    <div className="text-xs text-slate-500">
-                        {loadingLagerArtikel
-                            ? 'Artikel werden geladen...'
-                            : `${lagerArtikel.length} Artikel mit Lieferantenpreis geladen${lagerArtikelHasMore ? ' (weitere verfügbar)' : ''}`}
-                    </div>
+                    <div className="text-xs text-slate-500">{lagerArtikelStatusText}</div>
 
                     {lagerArtikelError && (
                         <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
@@ -2932,19 +2906,28 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                     Keine Artikel mit Lieferantenpreis gefunden.
                                 </div>
                             )}
+                        </div>
+                    </div>
 
-                            {lagerArtikelHasMore && (
-                                <div className="flex justify-center py-4 border-t border-slate-100 bg-white">
-                                    <Button
-                                        variant="outline"
-                                        onClick={handleLoadMoreLagerArtikel}
-                                        disabled={loadingMoreLagerArtikel || loadingLagerArtikel || savingLagerArtikel}
-                                    >
-                                        <RefreshCw className={cn('w-4 h-4 mr-2', (loadingMoreLagerArtikel || loadingLagerArtikel) && 'animate-spin')} />
-                                        {loadingMoreLagerArtikel ? 'Lade weitere Artikel...' : 'Weitere Artikel laden'}
-                                    </Button>
-                                </div>
-                            )}
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs text-slate-500">Seite {lagerArtikelPage + 1} von {lagerArtikelTotalPages}</p>
+                        <div className="flex gap-2 justify-end">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={loadingLagerArtikel || lagerArtikelPage === 0}
+                                onClick={() => setLagerArtikelPage((p) => Math.max(0, p - 1))}
+                            >
+                                <ChevronLeft className="w-4 h-4 mr-1" /> zurück
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={loadingLagerArtikel || lagerArtikelPage >= lagerArtikelTotalPages - 1}
+                                onClick={() => setLagerArtikelPage((p) => p + 1)}
+                            >
+                                Weiter <ChevronRight className="w-4 h-4 ml-1" />
+                            </Button>
                         </div>
                     </div>
 

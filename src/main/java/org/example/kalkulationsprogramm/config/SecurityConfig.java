@@ -13,10 +13,14 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 
@@ -95,6 +99,8 @@ public class SecurityConfig {
                         .csrfTokenRequestHandler(requestHandler)
                         .ignoringRequestMatchers("/api/auth/login", "/api/auth/logout");
                 })
+            // Force the CSRF cookie to be set on every response (Spring Security 6 deferred token fix)
+            .addFilterAfter(new CsrfCookieFilter(), org.springframework.security.web.csrf.CsrfFilter.class)
             .userDetailsService(frontendUserDetailsService)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/bootstrap-status").permitAll()
@@ -184,4 +190,24 @@ public class SecurityConfig {
             response.setStatus(status);
         }
         }
+
+    /**
+     * Forces the CSRF token to be loaded on every response so the XSRF-TOKEN
+     * cookie is always set. Spring Security 6 uses deferred CSRF tokens by default,
+     * which means the cookie might not be set until a state-changing request is made.
+     * Without this filter, the first PATCH/PUT/POST/DELETE can fail with 403.
+     */
+    private static class CsrfCookieFilter extends org.springframework.web.filter.OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+                throws ServletException, IOException {
+            CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+            if (csrfToken != null) {
+                // Accessing the token value forces the deferred token to be generated
+                // and the cookie to be written in the response
+                csrfToken.getToken();
+            }
+            filterChain.doFilter(request, response);
+        }
+    }
 }

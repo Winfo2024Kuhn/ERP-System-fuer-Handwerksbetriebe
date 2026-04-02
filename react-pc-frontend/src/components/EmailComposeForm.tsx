@@ -1,13 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-    Loader2, Paperclip, X, Plus, Mail, Upload, Eye, Save
+    Loader2, Paperclip, X, Plus, Mail, Upload, Eye, Save, Send, FileText
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { PdfCanvasViewer } from './ui/PdfCanvasViewer';
 import { AiButton } from './ui/ai-button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Select } from './ui/select-custom';
 import type { ProjektDetail, ProjektDokument } from '../types';
 import { EmailRecipientInput } from './EmailRecipientInput';
 
@@ -116,6 +117,11 @@ const formatBetrag = (betrag: number | undefined): string => {
     return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(betrag);
 };
 
+const deriveOrderRecipientName = (subject: string): string => {
+    const match = subject.match(/^Bestellanfrage:\s*(.+)$/i);
+    return match?.[1]?.trim() || '';
+};
+
 // Anrede-Enum in korrekten Anredetext umwandeln (ohne Name - wird vom Backend separat hinzugefügt)
 export const anredeEnumToText = (anrede: string | undefined): string => {
     if (!anrede) return 'Sehr geehrte Damen und Herren';
@@ -151,6 +157,8 @@ export function EmailComposeForm({
     // State für vom Backend geladene Daten (Emails + Projektdaten für Template)
     const [fetchedEmails, setFetchedEmails] = useState<string[]>([]);
     const [fetchedProjekt, setFetchedProjekt] = useState<ProjektDetail | null>(null);
+    const [fromAddresses, setFromAddresses] = useState<string[]>([]);
+    const [fromAddress, setFromAddress] = useState('');
 
     // Effektives Projekt: Prop oder vom Backend geladenes Projekt
     const effectiveProjekt = projekt || fetchedProjekt;
@@ -212,7 +220,6 @@ export function EmailComposeForm({
         return emails;
     }, [effectiveProjekt?.kundenEmails, effectiveProjekt?.kundeDto?.kundenEmails, anfrage?.kundenEmails, fetchedEmails]);
 
-
     const [recipient, setRecipient] = useState<string>(initialRecipient || '');
     const [subject, setSubject] = useState<string>(initialSubject || '');
     const [body, setBody] = useState<string>(initialBody || '');
@@ -255,6 +262,35 @@ export function EmailComposeForm({
         return emails;
     }, [entityKundenEmails]);
 
+    const isBestellungContext = (initialSubject || subject).trim().toLowerCase().startsWith('bestellanfrage:');
+    const orderRecipientName = deriveOrderRecipientName(initialSubject || subject);
+    const dialogTitle = isBestellungContext && orderRecipientName
+        ? `Bestellung an ${orderRecipientName} senden`
+        : 'Neue E-Mail';
+    const dialogSubtitle = entityName
+        ? `${isAnfrageContext ? 'Anfrage' : 'Projekt'}: ${entityName}`
+        : isBestellungContext && orderRecipientName
+            ? 'Bestellanfrage mit E-Mail-Versand vorbereiten'
+            : 'E-Mail verfassen und Anhänge verwalten';
+    const hasInitialAttachments = !!(initialAttachments && initialAttachments.length > 0);
+    const initialAttachmentLabel = hasInitialAttachments
+        ? initialAttachments!.length === 1
+            ? initialAttachments![0].name
+            : `${initialAttachments!.length} Dateien automatisch angehängt`
+        : '';
+    const firstPdfAttachment = uploadedFiles.find(file => file.file.type === 'application/pdf');
+    const fromAddressOptions = useMemo(
+        () => fromAddresses.map(address => ({ value: address, label: address })),
+        [fromAddresses]
+    );
+    const dokumentOptions = useMemo(
+        () => emailDokumente.map(dok => ({
+            value: String(dok.id),
+            label: `${dok.geschaeftsdokumentart ? `[${dok.geschaeftsdokumentart}] ` : ''}${dok.originalDateiname}${dok.rechnungsnummer ? ` (${dok.rechnungsnummer})` : ''}`,
+        })),
+        [emailDokumente]
+    );
+
     // Handle recipient change
     const handleRecipientChange = (val: string) => {
         setRecipient(val);
@@ -285,6 +321,23 @@ export function EmailComposeForm({
             console.error('Signatur konnte nicht geladen werden:', err);
         }
         return '';
+    }, []);
+
+    const loadFromAddresses = useCallback(async () => {
+        try {
+            const res = await fetch('/api/email/from-addresses');
+            if (!res.ok) return;
+            const data = await res.json();
+            const addresses = Array.isArray(data)
+                ? data.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+                : [];
+            setFromAddresses(addresses);
+            if (addresses.length > 0) {
+                setFromAddress(prev => prev || addresses[0]);
+            }
+        } catch (err) {
+            console.error('Absender-Adressen konnten nicht geladen werden:', err);
+        }
     }, []);
 
     // E-Mail-Dokumente laden (für Projekte UND Anfragen)
@@ -400,6 +453,7 @@ export function EmailComposeForm({
         }
 
         loadEmailDokumente();
+        loadFromAddresses();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -559,7 +613,7 @@ export function EmailComposeForm({
             const formData = new FormData();
 
             const dtoPayload = {
-                sender: 'bauschlosserei-kuhn@t-online.de',
+                sender: fromAddress || 'bauschlosserei-kuhn@t-online.de',
                 recipients: [finalRecipient],
                 cc: ccRecipients.filter(c => c.trim().length > 0),
                 subject: subject.trim(),
@@ -652,33 +706,33 @@ export function EmailComposeForm({
     };
 
     return (
-        <div className="flex flex-col h-full bg-white">
+        <div className="flex flex-col h-full bg-slate-50">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-rose-50 flex-shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center">
+            <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-200 bg-rose-50 flex-shrink-0">
+                <div className="flex min-w-0 items-center gap-3">
+                    <div className="w-11 h-11 rounded-full bg-white border border-rose-200 flex items-center justify-center shadow-sm">
                         <Mail className="w-5 h-5 text-rose-600" />
                     </div>
-                    <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Neue E-Mail</h2>
-                        <p className="text-sm text-slate-500">
-                            {entityName ? `${isAnfrageContext ? 'Anfrage' : 'Projekt'}: ${entityName}` : 'Freie E-Mail'}
+                    <div className="min-w-0">
+                        <h2 className="text-lg font-semibold text-slate-900 truncate">{dialogTitle}</h2>
+                        <p className="text-sm text-slate-500 truncate">
+                            {dialogSubtitle}
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                     {variant === 'modal' && (
                         <>
-                            <Button variant="ghost" onClick={onClose} disabled={sending}>
+                            <Button variant="ghost" onClick={onClose} disabled={sending} className="hidden sm:inline-flex">
                                 Abbrechen
                             </Button>
                             <Button
                                 onClick={handleSend}
-                                disabled={sending}
+                                disabled={sending || !recipient.trim() || !subject.trim()}
                                 className="bg-rose-600 hover:bg-rose-700 text-white"
                             >
-                                {sending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                                Senden
+                                {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                                {sending ? 'Wird gesendet...' : 'E-Mail senden'}
                             </Button>
                         </>
                     )}
@@ -686,6 +740,7 @@ export function EmailComposeForm({
                         variant="ghost"
                         size="sm"
                         onClick={onClose}
+                        aria-label="Fenster schließen"
                         className="text-slate-500 hover:text-slate-700"
                     >
                         <X className="w-5 h-5" />
@@ -701,121 +756,179 @@ export function EmailComposeForm({
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-6">
-                    <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                            <Label>Empfänger</Label>
-                            {!showCc && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2"
-                                    onClick={() => setShowCc(true)}
-                                >
-                                    + CC
-                                </Button>
-                            )}
-                        </div>
-                        <EmailRecipientInput
-                            value={recipient}
-                            onChange={handleRecipientChange}
-                            suggestions={availableEmails}
-                            placeholder="Name, Firma oder E-Mail eingeben..."
-                        />
-                    </div>
-
-                    {/* CC Section */}
-                    {showCc && (
-                        <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                            <Label>CC Empfänger</Label>
-                            <div className="space-y-2">
-                                {ccRecipients.map((cc, idx) => (
-                                    <EmailRecipientInput
-                                        key={idx}
-                                        value={cc}
-                                        onChange={(val) => {
-                                            const newCcs = [...ccRecipients];
-                                            newCcs[idx] = val;
-                                            setCcRecipients(newCcs);
-                                        }}
-                                        onRemove={() => {
-                                            const newCcs = [...ccRecipients];
-                                            newCcs.splice(idx, 1);
-                                            setCcRecipients(newCcs);
-                                            if (newCcs.length === 0) setShowCc(false);
-                                        }}
-                                        suggestions={availableEmails}
-                                        placeholder="CC Empfänger..."
-                                    />
-                                ))}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setCcRecipients([...ccRecipients, ''])}
-                                    className="text-xs"
-                                >
-                                    <Plus className="w-3 h-3 mr-1" />
-                                    CC hinzufügen
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Betreff */}
-                    <div className="space-y-2">
-                        <Label htmlFor="subject">Betreff</Label>
-                        <Input
-                            id="subject"
-                            value={subject}
-                            onChange={(e) => setSubject(e.target.value)}
-                            placeholder="Betreff eingeben..."
-                            className="font-medium"
-                        />
-                    </div>
-
-                    {/* Dokument Auswahl - für Projekt UND Anfrage Kontext (ausgeblendet wenn initialAttachments vorhanden) */}
-                    {entityId && !(initialAttachments && initialAttachments.length > 0) && (
-                        <div className="space-y-2">
-                            <Label className="flex items-center gap-2 text-slate-700">
-                                <Paperclip className="w-4 h-4" />
-                                Dokument aus {isAnfrageContext ? 'Anfrage' : 'Projekt'} anhängen
-                            </Label>
-                            <div className="flex gap-2">
-                                <select
-                                    value={selectedDokument?.id || ''}
-                                    onChange={(e) => handleDokumentSelect(e.target.value)}
-                                    disabled={loadingDokumente}
-                                    className="flex-1 h-10 px-3 border border-slate-200 rounded-lg bg-white focus:border-rose-300 focus:ring-1 focus:ring-rose-200 outline-none disabled:opacity-50"
-                                >
-                                    <option value="">Kein Dokument</option>
-                                    {emailDokumente.map((dok) => (
-                                        <option key={dok.id} value={dok.id}>
-                                            {dok.geschaeftsdokumentart ? `[${dok.geschaeftsdokumentart}] ` : ''}
-                                            {dok.originalDateiname}
-                                            {dok.rechnungsnummer ? ` (${dok.rechnungsnummer})` : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                                {selectedDokument && (
+                <div className="mx-auto w-full max-w-5xl space-y-5">
+                    {hasInitialAttachments && (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="text-sm font-semibold text-rose-700 flex items-center gap-2">
+                                        <Paperclip className="w-4 h-4" />
+                                        Automatisch angehängt
+                                    </p>
+                                    <p className="mt-1 text-sm text-rose-700/90 break-words">{initialAttachmentLabel}</p>
+                                </div>
+                                {firstPdfAttachment && (
                                     <Button
                                         type="button"
                                         variant="outline"
                                         size="sm"
                                         onClick={() => {
-                                            // Öffne PDF-Vorschau über den korrekten Endpoint
-                                            const filename = selectedDokument.gespeicherterDateiname || selectedDokument.originalDateiname;
-                                            const previewUrl = `/api/dokumente/${encodeURIComponent(filename)}`;
-                                            setPdfPreviewUrl(previewUrl);
+                                            const url = URL.createObjectURL(firstPdfAttachment.file);
+                                            setPdfPreviewUrl(url);
                                         }}
-                                        title="Dokument ansehen"
-                                        className="h-10 px-3"
+                                        className="border-rose-300 text-rose-700 hover:bg-white"
                                     >
-                                        <Eye className="w-4 h-4" />
+                                        <Eye className="w-4 h-4 mr-2" />
+                                        PDF-Vorschau öffnen
                                     </Button>
                                 )}
                             </div>
                         </div>
                     )}
+
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                        <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3">
+                            <p className="text-sm font-semibold text-slate-900">E-Mail-Details</p>
+                            <p className="text-xs text-slate-500 mt-1">Empfänger, Absender und Betreff in einer kompakten Übersicht.</p>
+                        </div>
+
+                        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2 md:col-span-2">
+                                <div className="flex items-center justify-between gap-3">
+                                    <Label>Empfänger *</Label>
+                                    {!showCc && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="min-h-11 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3"
+                                            onClick={() => setShowCc(true)}
+                                        >
+                                            + CC hinzufügen
+                                        </Button>
+                                    )}
+                                </div>
+                                <EmailRecipientInput
+                                    value={recipient}
+                                    onChange={handleRecipientChange}
+                                    suggestions={availableEmails}
+                                    placeholder="Name, Firma oder E-Mail eingeben"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="subject">Betreff</Label>
+                                <Input
+                                    id="subject"
+                                    value={subject}
+                                    onChange={(e) => setSubject(e.target.value)}
+                                    placeholder="Betreff eingeben"
+                                    className="font-medium"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Von</Label>
+                                <Select
+                                    options={fromAddressOptions}
+                                    value={fromAddress}
+                                    onChange={setFromAddress}
+                                    placeholder="Absender wählen"
+                                    disabled={fromAddressOptions.length === 0}
+                                />
+                            </div>
+
+                            {/* CC Section */}
+                            {showCc && (
+                                <div className="space-y-2 md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <Label>CC</Label>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                                setShowCc(false);
+                                                setCcRecipients([]);
+                                            }}
+                                            className="text-xs text-slate-500 hover:text-slate-700"
+                                        >
+                                            Keine
+                                        </Button>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {ccRecipients.map((cc, idx) => (
+                                            <EmailRecipientInput
+                                                key={idx}
+                                                value={cc}
+                                                onChange={(val) => {
+                                                    const newCcs = [...ccRecipients];
+                                                    newCcs[idx] = val;
+                                                    setCcRecipients(newCcs);
+                                                }}
+                                                onRemove={() => {
+                                                    const newCcs = [...ccRecipients];
+                                                    newCcs.splice(idx, 1);
+                                                    setCcRecipients(newCcs);
+                                                    if (newCcs.length === 0) setShowCc(false);
+                                                }}
+                                                suggestions={availableEmails}
+                                                placeholder="CC Empfänger hinzufügen"
+                                            />
+                                        ))}
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setCcRecipients([...ccRecipients, ''])}
+                                            className="text-xs min-h-11"
+                                        >
+                                            <Plus className="w-3 h-3 mr-1" />
+                                            CC hinzufügen
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Dokument Auswahl - für Projekt UND Anfrage Kontext (ausgeblendet wenn initialAttachments vorhanden) */}
+                            {entityId && !hasInitialAttachments && (
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label className="flex items-center gap-2 text-slate-700">
+                                        <FileText className="w-4 h-4" />
+                                        Dokument aus {isAnfrageContext ? 'Anfrage' : 'Projekt'} anhängen
+                                    </Label>
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                        <div className="flex-1">
+                                            <Select
+                                                options={[{ value: '', label: 'Kein Dokument' }, ...dokumentOptions]}
+                                                value={selectedDokument ? String(selectedDokument.id) : ''}
+                                                onChange={handleDokumentSelect}
+                                                placeholder={loadingDokumente ? 'Dokumente werden geladen...' : 'Dokument wählen'}
+                                                disabled={loadingDokumente}
+                                            />
+                                        </div>
+                                        {selectedDokument && (
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                    const filename = selectedDokument.gespeicherterDateiname || selectedDokument.originalDateiname;
+                                                    const previewUrl = `/api/dokumente/${encodeURIComponent(filename)}`;
+                                                    setPdfPreviewUrl(previewUrl);
+                                                }}
+                                                title="Dokument ansehen"
+                                                className="min-h-11 px-4"
+                                            >
+                                                <Eye className="w-4 h-4 mr-2" />
+                                                Vorschau
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
 
                     {/* PDF Preview Modal */}
                     {pdfPreviewUrl && (
@@ -827,6 +940,7 @@ export function EmailComposeForm({
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => setPdfPreviewUrl(null)}
+                                        aria-label="Vorschau schließen"
                                     >
                                         <X className="w-5 h-5" />
                                     </Button>
@@ -841,77 +955,97 @@ export function EmailComposeForm({
                         </div>
                     )}
 
-                    {/* File Upload Area - Immer sichtbar */}
-                    <div className="space-y-2">
-                        <Label className="flex items-center gap-2 text-slate-700">
-                            <Upload className="w-4 h-4" />
-                            Anhänge
-                        </Label>
-                        <div
-                            onDrop={handleDrop}
-                            onDragOver={handleDragOver}
-                            className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center hover:border-rose-400 hover:bg-rose-50/50 transition-colors cursor-pointer"
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            <p className="text-sm text-slate-600">
-                                Dateien hier ablegen oder klicken
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                        <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3">
+                            <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                                <Upload className="w-4 h-4 text-rose-600" />
+                                Anhänge
                             </p>
+                            <p className="text-xs text-slate-500 mt-1">Zusätzliche Dateien per Klick oder Drag & Drop anhängen.</p>
                         </div>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            multiple
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e.target.files)}
-                        />
-
-                        {/* List uploaded files */}
-                        {uploadedFiles.length > 0 && (
-                            <div className="space-y-2 mt-2">
-                                {uploadedFiles.map((uf, idx) => (
-                                    <div key={idx} className="p-2 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
-                                        <span className="text-sm truncate">{uf.file.name}</span>
-                                        <div className="flex items-center gap-1">
-                                            {uf.file.type === 'application/pdf' && (
-                                                <Button variant="ghost" size="sm" onClick={() => {
-                                                    const url = URL.createObjectURL(uf.file);
-                                                    setPdfPreviewUrl(url);
-                                                }} title="Vorschau">
-                                                    <Eye className="w-4 h-4" />
-                                                </Button>
-                                            )}
-                                            <Button variant="ghost" size="sm" onClick={() => {
-                                                const newFiles = [...uploadedFiles];
-                                                newFiles.splice(idx, 1);
-                                                setUploadedFiles(newFiles);
-                                            }}>
-                                                <X className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
+                        <div className="p-5 space-y-3">
+                            <div
+                                onDrop={handleDrop}
+                                onDragOver={handleDragOver}
+                                className="border-2 border-dashed border-slate-300 rounded-xl p-5 text-center hover:border-rose-400 hover:bg-rose-50/50 transition-colors cursor-pointer"
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+                                <p className="text-sm font-medium text-slate-700">Dateien hier ablegen oder klicken</p>
+                                <p className="text-xs text-slate-500 mt-1">PDFs, Bilder und weitere Dokumente werden direkt als Anhang hinzugefügt.</p>
                             </div>
-                        )}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                multiple
+                                className="hidden"
+                                onChange={(e) => handleFileUpload(e.target.files)}
+                            />
+
+                            {uploadedFiles.length > 0 && (
+                                <div className="space-y-2 mt-2">
+                                    {uploadedFiles.map((uf, idx) => (
+                                        <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <span className="text-sm font-medium text-slate-700 block truncate">{uf.file.name}</span>
+                                                <span className="text-xs text-slate-500">{Math.max(1, Math.round(uf.file.size / 1024))} KB</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                {uf.file.type === 'application/pdf' && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            const url = URL.createObjectURL(uf.file);
+                                                            setPdfPreviewUrl(url);
+                                                        }}
+                                                        title="Vorschau"
+                                                        aria-label={`Vorschau für ${uf.file.name}`}
+                                                    >
+                                                        <Eye className="w-4 h-4" />
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        const newFiles = [...uploadedFiles];
+                                                        newFiles.splice(idx, 1);
+                                                        setUploadedFiles(newFiles);
+                                                    }}
+                                                    aria-label={`${uf.file.name} entfernen`}
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Text Editor */}
-                    <div className="space-y-2 flex-1 flex flex-col min-h-[300px]">
-                        <Label>Nachricht</Label>
-                        <div className="flex-1 border border-slate-200 rounded-lg overflow-hidden flex flex-col">
-                            {/* Toolbar placeholder */}
-                            <div className="bg-slate-50 p-2 border-b border-slate-200 flex gap-2">
-                                <AiButton
-                                    onClick={handleBeautify}
-                                    isLoading={beautifying}
-                                    label="KI-Optimierung"
-                                />
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-[320px]">
+                        <div className="border-b border-slate-200 bg-slate-50 px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <Label className="text-slate-900">Nachricht</Label>
+                                <p className="text-xs text-slate-500 mt-1">Formulieren, überarbeiten und anschließend direkt versenden.</p>
                             </div>
+                            <AiButton
+                                onClick={handleBeautify}
+                                isLoading={beautifying}
+                                label="KI-Optimierung"
+                            />
+                        </div>
+                        <div className="flex-1 p-4 bg-white">
                             <div
                                 ref={editorRef}
-                                className="flex-1 p-4 outline-none overflow-auto"
+                                className="h-full min-h-[240px] rounded-xl border border-slate-200 p-4 outline-none overflow-auto focus-within:border-rose-300"
                                 contentEditable
                                 suppressContentEditableWarning
-                                style={{ minHeight: '200px' }}
                             />
                         </div>
                     </div>
@@ -927,11 +1061,11 @@ export function EmailComposeForm({
                     </Button>
                     <Button
                         onClick={handleSend}
-                        disabled={sending}
+                        disabled={sending || !recipient.trim() || !subject.trim()}
                         className="bg-rose-600 hover:bg-rose-700 text-white"
                     >
-                        {sending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                        Senden
+                        {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                        {sending ? 'Wird gesendet...' : 'E-Mail senden'}
                     </Button>
                 </div>
             )}

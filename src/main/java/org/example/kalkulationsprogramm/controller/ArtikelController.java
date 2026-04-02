@@ -170,6 +170,7 @@ public class ArtikelController {
             @RequestParam(value = "produktlinie", required = false) String produktlinie,
             @RequestParam(value = "werkstoff", required = false) String werkstoff,
             @RequestParam(value = "kategorieId", required = false) Integer kategorieId,
+            @RequestParam(value = "nurMitLieferantenpreis", defaultValue = "false") boolean nurMitLieferantenpreis,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "50") int size,
             @RequestParam(value = "sort", defaultValue = "produktname") String sort,
@@ -178,7 +179,7 @@ public class ArtikelController {
         int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         List<Integer> kategorieIds = kategorieService.findeKategorieUndUnterkategorieIds(kategorieId);
         Specification<Artikel> specification = buildArtikelSpecification(query, lieferant, produktlinie, werkstoff,
-                kategorieId, kategorieIds);
+            kategorieId, kategorieIds, nurMitLieferantenpreis);
         Page<Artikel> result = artikelService.suche(specification,
                 PageRequest.of(pageIndex, pageSize, buildSort(sort, direction)));
 
@@ -293,7 +294,8 @@ public class ArtikelController {
             String produktlinie,
             String werkstoff,
             Integer kategorieId,
-            List<Integer> kategorieIds) {
+            List<Integer> kategorieIds,
+            boolean nurMitLieferantenpreis) {
         Specification<Artikel> specification = Specification.where((root, cq, cb) -> cb.conjunction());
 
         if (StringUtils.hasText(query)) {
@@ -354,6 +356,19 @@ public class ArtikelController {
                 specification = specification
                         .and((root, cq, cb) -> root.join("kategorie", JoinType.LEFT).get("id").in(kategorieIds));
             }
+        }
+
+        if (nurMitLieferantenpreis) {
+            specification = specification.and((root, cq, cb) -> {
+                Subquery<Long> preisSubquery = cq.subquery(Long.class);
+                Root<LieferantenArtikelPreise> subRoot = preisSubquery.from(LieferantenArtikelPreise.class);
+                preisSubquery.select(cb.literal(1L));
+                preisSubquery.where(
+                        cb.equal(subRoot.get("artikel"), root),
+                        cb.isNotNull(subRoot.get("preis")),
+                        cb.isNotNull(subRoot.get("lieferant")));
+                return cb.exists(preisSubquery);
+            });
         }
 
         return specification;
