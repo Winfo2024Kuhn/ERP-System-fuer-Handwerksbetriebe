@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom';
 import {
+    ArrowDown,
+    ArrowUp,
+    ArrowUpDown,
     BarChart3,
     Calendar,
     ChevronDown,
@@ -9,6 +12,7 @@ import {
     Filter,
     Loader2,
     MapPin,
+    Package,
     RefreshCw,
     TrendingUp,
     Users,
@@ -18,6 +22,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Select } from '../components/ui/select-custom';
+import { PageLayout } from '../components/layout/PageLayout';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -349,10 +354,17 @@ function YearPicker({ value, onChange, minYear = 2015, maxYear = new Date().getF
     );
 }
 
+type KundenSortField = 'kundenName' | 'umsatz' | 'projektAnzahl' | 'gewinn';
+type SortDirection = 'asc' | 'desc';
+
 export default function ErfolgsanalyseEditor() {
     // Filter State
     const [jahr, setJahr] = useState(new Date().getFullYear());
     const [monat, setMonat] = useState('');
+
+    // Sorting State for Top 10 Kunden
+    const [kundenSortField, setKundenSortField] = useState<KundenSortField>('umsatz');
+    const [kundenSortDir, setKundenSortDir] = useState<SortDirection>('desc');
 
     // Data State
     const [loading, setLoading] = useState(false);
@@ -633,6 +645,41 @@ export default function ErfolgsanalyseEditor() {
         };
     }, [lieferantPerformance]);
 
+    // Sortierte Top-Kunden
+    const sortedTopKunden = useMemo(() => {
+        if (!statistiken?.topKunden) return [];
+        const sorted = [...statistiken.topKunden].sort((a, b) => {
+            let valA: number | string = 0;
+            let valB: number | string = 0;
+            switch (kundenSortField) {
+                case 'kundenName': valA = a.kundenName.toLowerCase(); valB = b.kundenName.toLowerCase(); break;
+                case 'umsatz': valA = a.umsatz; valB = b.umsatz; break;
+                case 'projektAnzahl': valA = a.projektAnzahl; valB = b.projektAnzahl; break;
+                case 'gewinn': valA = a.gewinn; valB = b.gewinn; break;
+            }
+            if (valA < valB) return kundenSortDir === 'asc' ? -1 : 1;
+            if (valA > valB) return kundenSortDir === 'asc' ? 1 : -1;
+            return 0;
+        });
+        return sorted.slice(0, 10);
+    }, [statistiken, kundenSortField, kundenSortDir]);
+
+    const toggleKundenSort = (field: KundenSortField) => {
+        if (kundenSortField === field) {
+            setKundenSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setKundenSortField(field);
+            setKundenSortDir('desc');
+        }
+    };
+
+    const SortIcon = ({ field }: { field: KundenSortField }) => {
+        if (kundenSortField !== field) return <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />;
+        return kundenSortDir === 'asc'
+            ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" />
+            : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />;
+    };
+
     const handleFilter = () => {
         loadData();
     };
@@ -682,52 +729,26 @@ export default function ErfolgsanalyseEditor() {
     };
 
     return (
-        <div className="space-y-8">
-            {/* Header with gradient accent */}
-            <div className="animate-fadeInUp">
-                <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end">
+        <PageLayout
+            ribbonCategory="Controlling"
+            title="Erfolgsanalyse"
+            subtitle={`Geschäftsentwicklung im Überblick für ${jahr}`}
+            actions={
+                <Button onClick={loadData} variant="outline" size="sm" className="border-rose-300 text-rose-700 hover:bg-rose-50" disabled={loading}>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                    Aktualisieren
+                </Button>
+            }
+        >
+            {/* Filter Bar */}
+            <Card className="p-4 border-0 shadow-sm rounded-xl">
+                <div className="flex flex-wrap items-end gap-4">
                     <div>
-                        <p className="text-sm font-semibold text-rose-600 uppercase tracking-wider">Controlling</p>
-                        <h1 className="text-4xl font-black text-slate-900 tracking-tight">ERFOLGSANALYSE</h1>
-                        <p className="text-slate-500 mt-2 text-lg">Geschäftsentwicklung im Überblick für <span className="font-semibold text-rose-600">{jahr}</span></p>
-                    </div>
-                    <div className="flex gap-3">
-                        <Button onClick={loadData} variant="outline" size="sm" className="border-rose-200 text-rose-700 hover:bg-rose-50 shadow-sm hover:shadow transition-all" disabled={loading}>
-                            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                            Aktualisieren
-                        </Button>
-                    </div>
-                </div>
-                {/* Gradient accent line */}
-                <div className="mt-4 h-1 w-32 bg-gradient-to-r from-rose-500 to-rose-300 rounded-full" />
-            </div>
-
-            {/* Filter Card */}
-            <Card className="p-6 border-0 shadow-xl rounded-2xl bg-white animate-fadeInUp delay-1">
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-gradient-to-br from-rose-500 to-rose-600 rounded-xl shadow-lg">
-                            <Filter className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                            <h3 className="text-xl font-bold text-slate-900">Geschäftsjahr steuern</h3>
-                            <p className="text-sm text-slate-500">
-                                Filtere nach Periode, Kunde oder Kategorie
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-                    {/* Jahr mit Kalender-Picker */}
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Geschäftsjahr</label>
+                        <label className="block text-sm font-medium text-slate-600 mb-1">Geschäftsjahr</label>
                         <YearPicker value={jahr} onChange={setJahr} />
                     </div>
-
-                    {/* Monat */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Monat</label>
+                        <label className="block text-sm font-medium text-slate-600 mb-1">Monat</label>
                         <Select
                             value={monat}
                             onChange={(value) => setMonat(value)}
@@ -738,105 +759,69 @@ export default function ErfolgsanalyseEditor() {
                             placeholder="Monat wählen"
                         />
                     </div>
-
-                    {/* Buttons */}
-                    <div className="flex gap-2 items-end">
-                        <Button onClick={handleFilter} className="flex-1 bg-rose-600 text-white hover:bg-rose-700">
+                    <div className="flex gap-2">
+                        <Button onClick={handleFilter} size="sm" className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700">
                             <Filter className="w-4 h-4 mr-1" />
                             Filtern
                         </Button>
-                        <Button onClick={handleReset} variant="outline" className="flex-1">
+                        <Button onClick={handleReset} variant="outline" size="sm">
                             Reset
                         </Button>
                     </div>
                 </div>
             </Card>
 
-            {/* Summary Cards - Premium Layout */}
-            <div className="animate-fadeInUp delay-2">
-                {/* Hero Gewinn Card */}
-                <div className="flex justify-center mb-6">
-                    <Card className="px-8 py-6 border-0 shadow-2xl bg-gradient-to-br from-rose-500 via-rose-600 to-rose-700 rounded-2xl hero-card-glow animate-scaleIn delay-2 stat-card-hover">
-                        <div className="text-center">
-                            <div className="inline-flex items-center justify-center w-12 h-12 bg-white/20 rounded-xl mb-3">
-                                <TrendingUp className="w-6 h-6 text-white" />
-                            </div>
-                            <p className="text-sm text-rose-100 uppercase tracking-wider font-medium">Gesamtgewinn</p>
-                            <p className="text-4xl font-black text-white mt-1 tracking-tight">{formatCurrency(summary.gewinn)}</p>
-                            <p className="text-xs text-rose-200 mt-2">Netto nach Abzug aller Kosten</p>
-                        </div>
-                    </Card>
-                </div>
-
-                {/* Secondary KPI Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                    <Card className="p-5 border-0 shadow-lg bg-white rounded-xl stat-card-hover animate-fadeInUp delay-3">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-emerald-50 rounded-lg">
-                                <Wallet className="w-5 h-5 text-emerald-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">Brutto</p>
-                                <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.brutto)}</p>
-                            </div>
-                        </div>
-                    </Card>
-                    <Card className="p-5 border-0 shadow-lg bg-white rounded-xl stat-card-hover animate-fadeInUp delay-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-blue-50 rounded-lg">
-                                <BarChart3 className="w-5 h-5 text-blue-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">MwSt</p>
-                                <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.mwst)}</p>
-                            </div>
-                        </div>
-                    </Card>
-                    <Card className="p-5 border-0 shadow-lg bg-white rounded-xl stat-card-hover animate-fadeInUp delay-5">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-violet-50 rounded-lg">
-                                <TrendingUp className="w-5 h-5 text-violet-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">Netto</p>
-                                <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.netto)}</p>
-                            </div>
-                        </div>
-                    </Card>
-                    <Card className="p-5 border-0 shadow-lg bg-white rounded-xl stat-card-hover animate-fadeInUp delay-5">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-amber-50 rounded-lg">
-                                <MapPin className="w-5 h-5 text-amber-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">Material</p>
-                                <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.material)}</p>
-                            </div>
-                        </div>
-                    </Card>
-                    <Card className="p-5 border-0 shadow-lg bg-white rounded-xl stat-card-hover animate-fadeInUp delay-6">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-cyan-50 rounded-lg">
-                                <Users className="w-5 h-5 text-cyan-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">Arbeit + Fixkosten</p>
-                                <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.arbeit)}</p>
-                            </div>
-                        </div>
-                    </Card>
-                    <Card className="p-5 border-0 shadow-lg bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl stat-card-hover animate-fadeInUp delay-7">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-red-50 rounded-lg">
-                                <Wallet className="w-5 h-5 text-red-500" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">Kosten</p>
-                                <p className="text-lg font-bold text-red-600">{formatCurrency(summary.kosten)}</p>
-                            </div>
-                        </div>
-                    </Card>
-                </div>
+            {/* KPI Summary Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                <Card className="p-4 border-0 shadow-sm rounded-xl bg-rose-50">
+                    <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp className="w-4 h-4 text-rose-600" />
+                        <p className="text-xs text-rose-600 font-semibold uppercase">Gewinn</p>
+                    </div>
+                    <p className="text-lg font-bold text-rose-700">{formatCurrency(summary.gewinn)}</p>
+                </Card>
+                <Card className="p-4 border-0 shadow-sm rounded-xl">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Wallet className="w-4 h-4 text-emerald-600" />
+                        <p className="text-xs text-slate-500 font-semibold uppercase">Brutto</p>
+                    </div>
+                    <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.brutto)}</p>
+                </Card>
+                <Card className="p-4 border-0 shadow-sm rounded-xl">
+                    <div className="flex items-center gap-2 mb-1">
+                        <BarChart3 className="w-4 h-4 text-blue-600" />
+                        <p className="text-xs text-slate-500 font-semibold uppercase">Netto</p>
+                    </div>
+                    <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.netto)}</p>
+                </Card>
+                <Card className="p-4 border-0 shadow-sm rounded-xl">
+                    <div className="flex items-center gap-2 mb-1">
+                        <BarChart3 className="w-4 h-4 text-violet-600" />
+                        <p className="text-xs text-slate-500 font-semibold uppercase">MwSt</p>
+                    </div>
+                    <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.mwst)}</p>
+                </Card>
+                <Card className="p-4 border-0 shadow-sm rounded-xl">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Package className="w-4 h-4 text-amber-600" />
+                        <p className="text-xs text-slate-500 font-semibold uppercase">Material</p>
+                    </div>
+                    <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.material)}</p>
+                </Card>
+                <Card className="p-4 border-0 shadow-sm rounded-xl">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Users className="w-4 h-4 text-cyan-600" />
+                        <p className="text-xs text-slate-500 font-semibold uppercase">Arbeit</p>
+                    </div>
+                    <p className="text-lg font-bold text-slate-900">{formatCurrency(summary.arbeit)}</p>
+                </Card>
+                <Card className="p-4 border-0 shadow-sm rounded-xl">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Wallet className="w-4 h-4 text-red-500" />
+                        <p className="text-xs text-slate-500 font-semibold uppercase">Kosten</p>
+                    </div>
+                    <p className="text-lg font-bold text-red-600">{formatCurrency(summary.kosten)}</p>
+                </Card>
             </div>
 
             {/* Loading Indicator */}
@@ -848,64 +833,78 @@ export default function ErfolgsanalyseEditor() {
 
             {!loading && (
                 <>
-                    {/* Main Analytics Sections */}
-                    <div className="flex flex-col gap-8">
+                    <div className="flex flex-col gap-6">
 
                         {/* 1. Top 10 Kunden */}
-                        {statistiken?.topKunden && statistiken.topKunden.length > 0 && (
-                            <section className="animate-fadeInUp delay-3">
-                                <Card className="p-6 border-0 shadow-xl bg-white rounded-2xl chart-card overflow-hidden">
-                                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-                                        <div className="p-2 bg-rose-50 rounded-lg">
-                                            <Users className="w-6 h-6 text-rose-600" />
-                                        </div>
-                                        <h3 className="text-xl font-bold text-slate-900">TOP 10 KUNDEN ({jahr})</h3>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full">
-                                            <thead>
-                                                <tr className="border-b border-slate-200">
-                                                    <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Rang</th>
-                                                    <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Kunde</th>
-                                                    <th className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Umsatz</th>
-                                                    <th className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Projekte</th>
-                                                    <th className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Gewinn</th>
+                        {sortedTopKunden.length > 0 && (
+                            <Card className="p-6 border-0 shadow-sm rounded-xl overflow-hidden">
+                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <Users className="w-5 h-5 text-rose-600" />
+                                    <h3 className="text-lg font-bold text-slate-900">Top 10 Kunden ({jahr})</h3>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full">
+                                        <thead>
+                                            <tr className="border-b border-slate-200">
+                                                <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase w-16">#</th>
+                                                <th
+                                                    className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
+                                                    onClick={() => toggleKundenSort('kundenName')}
+                                                >
+                                                    <span className="inline-flex items-center gap-1">Kunde <SortIcon field="kundenName" /></span>
+                                                </th>
+                                                <th
+                                                    className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
+                                                    onClick={() => toggleKundenSort('umsatz')}
+                                                >
+                                                    <span className="inline-flex items-center gap-1 justify-end">Umsatz <SortIcon field="umsatz" /></span>
+                                                </th>
+                                                <th
+                                                    className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
+                                                    onClick={() => toggleKundenSort('projektAnzahl')}
+                                                >
+                                                    <span className="inline-flex items-center gap-1 justify-end">Projekte <SortIcon field="projektAnzahl" /></span>
+                                                </th>
+                                                <th
+                                                    className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
+                                                    onClick={() => toggleKundenSort('gewinn')}
+                                                >
+                                                    <span className="inline-flex items-center gap-1 justify-end">Gewinn <SortIcon field="gewinn" /></span>
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {sortedTopKunden.map((kunde, idx) => (
+                                                <tr key={`${kunde.kundenName}-${idx}`} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                                    <td className="py-3 px-4">
+                                                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                                                            idx === 0 ? 'bg-amber-100 text-amber-700' :
+                                                            idx === 1 ? 'bg-slate-200 text-slate-700' :
+                                                            idx === 2 ? 'bg-orange-100 text-orange-700' :
+                                                            'bg-slate-100 text-slate-600'
+                                                        }`}>
+                                                            {idx + 1}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4 font-medium text-slate-900">{kunde.kundenName}</td>
+                                                    <td className="py-3 px-4 text-right text-slate-700">{formatCurrency(kunde.umsatz)}</td>
+                                                    <td className="py-3 px-4 text-right text-slate-600">{kunde.projektAnzahl}</td>
+                                                    <td className="py-3 px-4 text-right font-semibold text-emerald-600">{formatCurrency(kunde.gewinn)}</td>
                                                 </tr>
-                                            </thead>
-                                            <tbody>
-                                                {statistiken.topKunden.slice(0, 10).map((kunde, idx) => (
-                                                    <tr key={`${kunde.kundenName}-${idx}`} className="border-b border-slate-100 premium-table-row">
-                                                        <td className="py-3 px-4">
-                                                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${idx === 0 ? 'bg-amber-100 text-amber-700' :
-                                                                idx === 1 ? 'bg-slate-200 text-slate-700' :
-                                                                    idx === 2 ? 'bg-orange-100 text-orange-700' :
-                                                                        'bg-slate-100 text-slate-600'
-                                                                }`}>
-                                                                {idx + 1}
-                                                            </span>
-                                                        </td>
-                                                        <td className="py-3 px-4 font-semibold text-slate-900">{kunde.kundenName}</td>
-                                                        <td className="py-3 px-4 text-right text-slate-700 font-medium">{formatCurrency(kunde.umsatz)}</td>
-                                                        <td className="py-3 px-4 text-right text-slate-600">{kunde.projektAnzahl}</td>
-                                                        <td className="py-3 px-4 text-right font-bold text-emerald-600">{formatCurrency(kunde.gewinn)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </Card>
-                            </section>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </Card>
                         )}
 
                         {/* 2. Trends & Geographie */}
-                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-fadeInUp delay-4">
+                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                             {/* Line Chart */}
-                            <Card className="p-6 border-0 shadow-xl bg-white rounded-2xl xl:col-span-2 chart-card">
-                                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-                                    <div className="p-2 bg-rose-50 rounded-lg">
-                                        <TrendingUp className="w-6 h-6 text-rose-600" />
-                                    </div>
-                                    <h2 className="text-xl font-bold text-slate-900">ENTWICKLUNG: UMSATZ & GEWINN</h2>
+                            <Card className="p-6 border-0 shadow-sm rounded-xl xl:col-span-2">
+                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <TrendingUp className="w-5 h-5 text-rose-600" />
+                                    <h2 className="text-lg font-bold text-slate-900">Entwicklung: Umsatz & Gewinn</h2>
                                 </div>
                                 <div className="h-[400px] w-full relative">
                                     {verlaufChartData ? (
@@ -926,12 +925,10 @@ export default function ErfolgsanalyseEditor() {
                             </Card>
 
                             {/* Orte Doughnut */}
-                            <Card className="p-6 border-0 shadow-xl bg-white rounded-2xl chart-card">
-                                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-                                    <div className="p-2 bg-rose-50 rounded-lg">
-                                        <MapPin className="w-6 h-6 text-rose-600" />
-                                    </div>
-                                    <h2 className="text-xl font-bold text-slate-900">REGIONALE VERTEILUNG</h2>
+                            <Card className="p-6 border-0 shadow-sm rounded-xl">
+                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <MapPin className="w-5 h-5 text-rose-600" />
+                                    <h2 className="text-lg font-bold text-slate-900">Regionale Verteilung</h2>
                                 </div>
                                 <div className="h-[400px] w-full relative">
                                     {ortChartData ? (
@@ -953,14 +950,12 @@ export default function ErfolgsanalyseEditor() {
                         </div>
 
                         {/* 3. Lieferanten Analyse */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeInUp delay-5">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {/* Year Stats Bar */}
-                            <Card className="p-6 border-0 shadow-xl bg-white rounded-2xl chart-card">
-                                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-                                    <div className="p-2 bg-amber-50 rounded-lg">
-                                        <Wallet className="w-6 h-6 text-amber-600" />
-                                    </div>
-                                    <h2 className="text-xl font-bold text-slate-900">LIEFERANTENKOSTEN (HISTORIE)</h2>
+                            <Card className="p-6 border-0 shadow-sm rounded-xl">
+                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <Wallet className="w-5 h-5 text-amber-600" />
+                                    <h2 className="text-lg font-bold text-slate-900">Lieferantenkosten (Historie)</h2>
                                 </div>
                                 <div className="h-[350px] w-full relative">
                                     {lieferantenJahreChartData ? (
@@ -1003,12 +998,10 @@ export default function ErfolgsanalyseEditor() {
                             </Card>
 
                             {/* Top Lieferanten Bar */}
-                            <Card className="p-6 border-0 shadow-xl bg-white rounded-2xl chart-card">
-                                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-                                    <div className="p-2 bg-violet-50 rounded-lg">
-                                        <BarChart3 className="w-6 h-6 text-violet-600" />
-                                    </div>
-                                    <h2 className="text-xl font-bold text-slate-900">TOP 10 LIEFERANTEN</h2>
+                            <Card className="p-6 border-0 shadow-sm rounded-xl">
+                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <BarChart3 className="w-5 h-5 text-violet-600" />
+                                    <h2 className="text-lg font-bold text-slate-900">Top 10 Lieferanten</h2>
                                 </div>
                                 <div className="h-[350px] w-full relative">
                                     {lieferantPerfChartData ? (
@@ -1030,17 +1023,12 @@ export default function ErfolgsanalyseEditor() {
                         </div>
 
                         {/* 4. Konversion & Kategorien */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeInUp delay-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             {/* Conversion Rate */}
-                            <Card className="p-6 border-0 shadow-xl bg-gradient-to-br from-rose-50 via-white to-rose-50 rounded-2xl chart-card overflow-hidden relative">
-                                <div className="absolute inset-0 bg-gradient-to-br from-rose-500/5 to-transparent pointer-events-none" />
-                                <div className="relative">
-                                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-rose-100">
-                                        <div className="p-2 bg-rose-100 rounded-lg">
-                                            <RefreshCw className="w-6 h-6 text-rose-600" />
-                                        </div>
-                                        <h2 className="text-xl font-bold text-slate-900">KONVERSIONSRATE</h2>
-                                    </div>
+                            <Card className="p-6 border-0 shadow-sm rounded-xl overflow-hidden">
+                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <RefreshCw className="w-5 h-5 text-rose-600" />
+                                    <h2 className="text-lg font-bold text-slate-900">Konversionsrate</h2>
                                 </div>
                                 <div className="h-48 relative">
                                     {konversionChartData ? (
@@ -1061,11 +1049,11 @@ export default function ErfolgsanalyseEditor() {
                                     )}
                                 </div>
                                 {statistiken?.konversion && (
-                                    <div className="mt-8 text-center bg-white/50 p-4 rounded-2xl border border-rose-100">
-                                        <p className="text-4xl font-black text-rose-600">
+                                    <div className="mt-6 text-center p-3 rounded-xl bg-rose-50">
+                                        <p className="text-3xl font-bold text-rose-600">
                                             {formatPercent(statistiken.konversion.conversionRate)}
                                         </p>
-                                        <p className="text-sm font-semibold text-slate-500 mt-1 uppercase tracking-wider">
+                                        <p className="text-sm text-slate-500 mt-1">
                                             {statistiken.konversion.anfragenZuProjekt} von {statistiken.konversion.anfragenGesamt} Projekten
                                         </p>
                                     </div>
@@ -1073,12 +1061,10 @@ export default function ErfolgsanalyseEditor() {
                             </Card>
 
                             {/* Category Performance */}
-                            <Card className="p-6 border-0 shadow-xl bg-white rounded-2xl lg:col-span-2 chart-card">
-                                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-                                    <div className="p-2 bg-emerald-50 rounded-lg">
-                                        <BarChart3 className="w-6 h-6 text-emerald-600" />
-                                    </div>
-                                    <h2 className="text-xl font-bold text-slate-900">KATEGORIE-PERFORMANCE</h2>
+                            <Card className="p-6 border-0 shadow-sm rounded-xl lg:col-span-2">
+                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <BarChart3 className="w-5 h-5 text-emerald-600" />
+                                    <h2 className="text-lg font-bold text-slate-900">Kategorie-Performance</h2>
                                 </div>
                                 <div className="h-[280px] w-full relative">
                                     {kategorieChartData ? (
@@ -1104,7 +1090,7 @@ export default function ErfolgsanalyseEditor() {
 
                 </>
             )}
-        </div>
+        </PageLayout>
     );
 }
 
