@@ -1,12 +1,13 @@
 package org.example.kalkulationsprogramm.mapper;
 
-import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Leistung;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungCreateDto;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungDto;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.springframework.stereotype.Component;
+
+import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
@@ -43,14 +44,20 @@ public class LeistungMapper {
         leistung.setBezeichnung(dto.getName());
         leistung.setBeschreibung(dto.getDescription());
         leistung.setPreis(dto.getPrice());
-        leistung.setEinheit(dto.getUnit());
 
         if (dto.getFolderId() != null) {
             Produktkategorie kat = produktkategorieRepository.findById(dto.getFolderId())
                     .orElse(null);
             leistung.setKategorie(kat);
+            // Verrechnungseinheit automatisch von Produktkategorie übernehmen, wenn nicht explizit gesetzt
+            if (dto.getUnit() != null) {
+                leistung.setEinheit(dto.getUnit());
+            } else if (kat != null) {
+                leistung.setEinheit(kat.getVerrechnungseinheit());
+            }
         } else {
             leistung.setKategorie(null);
+            leistung.setEinheit(dto.getUnit());
         }
     }
 }
