@@ -49,10 +49,10 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
                         """)
         List<Projekt> searchByBauvorhabenOrKundeOrEmail(@Param("query") String query);
 
-        @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.zeitbuchungen JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id IN :kategorieIds")
+        @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.zeitbuchungen JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id IN :kategorieIds AND p.abgeschlossen = true")
         List<Projekt> findByProduktkategorieIds(@Param("kategorieIds") List<Long> kategorieIds);
 
-        @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.zeitbuchungen JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id IN :kategorieIds AND p.abschlussdatum BETWEEN :start AND :end")
+        @Query("SELECT DISTINCT p FROM Projekt p LEFT JOIN FETCH p.zeitbuchungen JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id IN :kategorieIds AND p.abgeschlossen = true AND p.abschlussdatum BETWEEN :start AND :end")
         List<Projekt> findByProduktkategorieIdsAndAbschlussdatumBetween(@Param("kategorieIds") List<Long> kategorieIds,
                         @Param("start") LocalDate start, @Param("end") LocalDate end);
 

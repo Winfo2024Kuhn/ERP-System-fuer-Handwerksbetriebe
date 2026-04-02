@@ -15,4 +15,7 @@ public class ProduktkategorieAnalyseDto {
     private String verrechnungseinheit;
     private List<ProjektAnalyseDto> projekte;
     private List<ArbeitsgangAnalyseDto> arbeitsgangAnalysen;
+    private int datenpunkte;
+    private double rQuadrat;
+    private double residualStdAbweichung;
 }

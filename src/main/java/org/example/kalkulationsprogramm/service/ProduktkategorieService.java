@@ -215,18 +215,11 @@ public class ProduktkategorieService {
         int datenpunkte = 0;
 
         for (var projekt : projekte) {
-            ProjektAnalyseDto dto = new ProjektAnalyseDto();
-            dto.setId(projekt.getId());
-            dto.setProjektname(projekt.getBauvorhaben());
-            dto.setAuftragsnummer(projekt.getAuftragsnummer());
-            dto.setKunde(projekt.getKunde());
-            dto.setBildUrl(projekt.getBildUrl());
             double einheiten = projekt.getProjektProduktkategorien().stream()
                     .filter(ppk -> kategorieIds.contains(ppk.getProduktkategorie().getId()))
                     .map(ppk -> ppk.getMenge())
                     .mapToDouble(java.math.BigDecimal::doubleValue)
                     .sum();
-            dto.setMasseinheit(einheiten);
 
             java.util.Map<Long, ProjektArbeitsgangAnalyseDto> projektAgMap = new java.util.HashMap<>();
             double projektStunden = 0;
@@ -257,15 +250,26 @@ public class ProduktkategorieService {
                 globalAgg.einheiten += einheiten;
             }
 
+            // Projekte ohne Zeiterfassung werden nicht angezeigt und nicht berechnet
+            if (projektStunden <= 0) {
+                continue;
+            }
+
+            ProjektAnalyseDto dto = new ProjektAnalyseDto();
+            dto.setId(projekt.getId());
+            dto.setProjektname(projekt.getBauvorhaben());
+            dto.setAuftragsnummer(projekt.getAuftragsnummer());
+            dto.setKunde(projekt.getKunde());
+            dto.setBildUrl(projekt.getBildUrl());
+            dto.setMasseinheit(einheiten);
+
             projektAgMap.values()
                     .forEach(a -> a.setStundenProEinheit(einheiten != 0 ? a.getStundenProEinheit() / einheiten : 0));
             dto.setArbeitsgaenge(new java.util.ArrayList<>(projektAgMap.values()));
             dto.setZeitGesamt(projektStunden);
             projektDtos.add(dto);
 
-            boolean hatZeiterfassung = projektStunden > 0;
-            boolean hatEinheiten = einheiten > 0;
-            if (hatZeiterfassung && hatEinheiten) {
+            if (einheiten > 0) {
                 gesamtStundenMitZeiten += projektStunden;
                 gesamtEinheitenMitZeiten += einheiten;
                 sumXMitZeiten += einheiten;
@@ -302,14 +306,38 @@ public class ProduktkategorieService {
             fixzeit = 0;
         }
 
+        // R² und Residual-Standardabweichung berechnen
+        double rQuadrat = 0;
+        double residualStdAbweichung = 0;
+        if (n >= 2) {
+            double yMean = sumYMitZeiten / n;
+            double ssTot = 0;
+            double ssRes = 0;
+            double sumResiduals2 = 0;
+            for (var dto : projektDtos) {
+                if (dto.getMasseinheit() <= 0) continue;
+                double yHat = fixzeit + steigung * dto.getMasseinheit();
+                double residual = dto.getZeitGesamt() - yHat;
+                ssTot += Math.pow(dto.getZeitGesamt() - yMean, 2);
+                ssRes += residual * residual;
+                sumResiduals2 += residual * residual;
+            }
+            rQuadrat = ssTot != 0 ? 1.0 - (ssRes / ssTot) : 0;
+            if (rQuadrat < 0) rQuadrat = 0;
+            residualStdAbweichung = Math.sqrt(sumResiduals2 / (n - 2));
+        }
+
         ProduktkategorieAnalyseDto analyseDto = new ProduktkategorieAnalyseDto();
-        analyseDto.setProjektAnzahl(projekte.size());
+        analyseDto.setProjektAnzahl(projektDtos.size());
         analyseDto.setDurchschnittlicheZeit(durchschnitt);
         analyseDto.setFixzeit(fixzeit);
         analyseDto.setSteigung(steigung);
         analyseDto.setVerrechnungseinheit(startKategorie.getVerrechnungseinheit().getAnzeigename());
         analyseDto.setProjekte(projektDtos);
         analyseDto.setArbeitsgangAnalysen(arbeitsgangAnalysen);
+        analyseDto.setDatenpunkte(n);
+        analyseDto.setRQuadrat(rQuadrat);
+        analyseDto.setResidualStdAbweichung(residualStdAbweichung);
         return analyseDto;
     }
 
