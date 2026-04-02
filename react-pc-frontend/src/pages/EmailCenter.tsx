@@ -22,7 +22,11 @@ import {
     PenSquare,
     HelpCircle,
     ShieldAlert,
-    Settings
+    Settings,
+    Star,
+    Package,
+    Reply,
+    Newspaper
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -90,7 +94,6 @@ interface EmailItem {
     lieferantId?: number;
 }
 
-// Folder Types
 // Folder Types
 type FolderType = 'inbox' | 'sent' | 'trash' | 'spam' | 'newsletter' | 'projects' | 'offers' | 'suppliers' | 'unassigned' | 'inquiries';
 
@@ -160,7 +163,7 @@ function EmailAttachmentCard({ attachment, email, onPreview }: {
     return (
         <div
             onClick={handlePreview}
-            className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors group cursor-pointer"
+            className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition-all duration-200 group cursor-pointer"
         >
             {isImage ? (
                 <img
@@ -169,11 +172,15 @@ function EmailAttachmentCard({ attachment, email, onPreview }: {
                     className="w-10 h-10 object-cover rounded"
                 />
             ) : iconSrc === 'pdf' ? (
-                <File className="w-10 h-10 text-red-500" />
+                <div className="w-10 h-10 rounded bg-red-50 flex items-center justify-center">
+                    <File className="w-5 h-5 text-red-500" />
+                </div>
             ) : iconSrc ? (
                 <img src={iconSrc} alt={filename} className="w-10 h-10 object-contain" />
             ) : (
-                <File className="w-10 h-10 text-slate-400" />
+                <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center">
+                    <File className="w-5 h-5 text-slate-400" />
+                </div>
             )}
             <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-700 truncate">{filename}</p>
@@ -354,7 +361,10 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
                                         {item.anfrageNummer && <span className="text-rose-600 mr-2">{item.anfrageNummer}</span>}
                                         {item.name}
                                     </p>
-                                    <p className="text-xs text-rose-600">⭐ Empfohlen</p>
+                                    <p className="text-xs text-rose-600 flex items-center gap-1">
+                                        <Star className="w-3 h-3 fill-rose-500 text-rose-500" />
+                                        Empfohlen
+                                    </p>
                                 </button>
                             ))}
                         </div>
@@ -911,8 +921,8 @@ export default function EmailCenter() {
                                 </h2>
                                 <div className="flex items-center gap-3 text-sm text-slate-600">
                                     <div className={cn(
-                                        "w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm",
-                                        selectedEmail.direction === 'IN' ? "bg-blue-500" : "bg-emerald-500"
+                                        "w-9 h-9 rounded-full flex items-center justify-center text-white font-medium text-sm shadow-sm",
+                                        selectedEmail.direction === 'IN' ? "bg-rose-500" : "bg-emerald-500"
                                     )}>
                                         {getDisplayName(selectedEmail).charAt(0).toUpperCase()}
                                     </div>
@@ -939,12 +949,12 @@ export default function EmailCenter() {
                             </div>
 
                             {/* Actions */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={handleBlockSender}
-                                    className="text-slate-500 hover:text-red-600"
+                                    className="text-slate-500 hover:text-red-600 hover:bg-red-50"
                                     title="Absender sperren"
                                 >
                                     <ShieldAlert className="w-4 h-4" />
@@ -953,17 +963,17 @@ export default function EmailCenter() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleReply(selectedEmail)}
-                                    className="gap-1 text-slate-600"
+                                    className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
                                 >
-                                    <Send className="w-4 h-4 rotate-180" /> Antworten
+                                    <Reply className="w-4 h-4" /> Antworten
                                 </Button>
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => setShowAssignModal(true)}
-                                    className="border-slate-300"
+                                    className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
                                 >
-                                    <FolderPlus className="w-4 h-4 mr-1" />
+                                    <FolderPlus className="w-4 h-4" />
                                     Zuordnen
                                 </Button>
                                 <Button
@@ -1010,10 +1020,14 @@ export default function EmailCenter() {
         }
 
         return (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
-                <Mail className="w-16 h-16 mb-4" />
-                <p className="text-lg">Wählen Sie eine E-Mail aus</p>
-                <p className="text-sm">um die Vorschau zu sehen</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
+                <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center">
+                    <Mail className="w-10 h-10 text-slate-300" />
+                </div>
+                <div className="text-center">
+                    <p className="text-base font-medium text-slate-500">Keine E-Mail ausgewählt</p>
+                    <p className="text-sm text-slate-400 mt-1">Wählen Sie eine E-Mail aus der Liste</p>
+                </div>
             </div>
         );
     };
@@ -1024,6 +1038,12 @@ export default function EmailCenter() {
             <div className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
                 {/* Header */}
                 <div className="p-4 border-b border-slate-200 space-y-2">
+                    <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center">
+                            <Mail className="w-4 h-4 text-rose-600" />
+                        </div>
+                        <h2 className="font-bold text-slate-900 text-sm">E-Mail Center</h2>
+                    </div>
                     <Button
                         onClick={handleComposeNew}
                         className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm gap-2"
@@ -1048,16 +1068,21 @@ export default function EmailCenter() {
                     <button
                         onClick={() => setActiveFolder('inbox')}
                         className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                             activeFolder === 'inbox'
-                                ? "bg-rose-50 text-rose-700"
-                                : "text-slate-700 hover:bg-slate-100"
+                                ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                : "text-slate-700 hover:bg-slate-50"
                         )}
                     >
                         <Inbox className="w-4 h-4" />
                         <span className="flex-1 text-left">Posteingang</span>
                         {folderCounts.inbox > 0 && (
-                            <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">
+                            <span className={cn(
+                                "text-xs font-semibold px-2 py-0.5 rounded-full min-w-[1.25rem] text-center",
+                                activeFolder === 'inbox'
+                                    ? "bg-rose-200 text-rose-800"
+                                    : "bg-rose-100 text-rose-700"
+                            )}>
                                 {folderCounts.inbox}
                             </span>
                         )}
@@ -1066,16 +1091,16 @@ export default function EmailCenter() {
                     <button
                         onClick={() => setActiveFolder('sent')}
                         className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                             activeFolder === 'sent'
-                                ? "bg-rose-50 text-rose-700"
-                                : "text-slate-700 hover:bg-slate-100"
+                                ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                : "text-slate-700 hover:bg-slate-50"
                         )}
                     >
                         <Send className="w-4 h-4" />
                         <span className="flex-1 text-left">Gesendet</span>
                         {folderCounts.sent > 0 && (
-                            <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">
+                            <span className="text-xs text-slate-500 tabular-nums">
                                 {folderCounts.sent}
                             </span>
                         )}
@@ -1084,10 +1109,10 @@ export default function EmailCenter() {
                     <div className="h-px bg-slate-100 my-2" />
 
                     {/* Filter Folders */}
-                    <div className="px-3 py-1 flex items-center justify-between">
-                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ordner</span>
-                        <button onClick={() => setExpandedFilters(!expandedFilters)}>
-                            {expandedFilters ? <ChevronDown className="w-3 h-3 text-slate-400" /> : <ChevronRight className="w-3 h-3 text-slate-400" />}
+                    <div className="px-3 py-1.5 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zugeordnet</span>
+                        <button onClick={() => setExpandedFilters(!expandedFilters)} className="cursor-pointer p-0.5 rounded hover:bg-slate-100 transition-colors">
+                            {expandedFilters ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
                         </button>
                     </div>
 
@@ -1096,16 +1121,16 @@ export default function EmailCenter() {
                             <button
                                 onClick={() => setActiveFolder('unassigned')}
                                 className={cn(
-                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                                     activeFolder === 'unassigned'
-                                        ? "bg-rose-50 text-rose-700"
-                                        : "text-slate-700 hover:bg-slate-100"
+                                        ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                        : "text-slate-700 hover:bg-slate-50"
                                 )}
                             >
                                 <AlertCircle className="w-4 h-4" />
                                 <span className="flex-1 text-left">Nicht zugeordnet</span>
                                 {folderCounts.unassigned > 0 && (
-                                    <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">
+                                    <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full">
                                         {folderCounts.unassigned}
                                     </span>
                                 )}
@@ -1114,16 +1139,16 @@ export default function EmailCenter() {
                             <button
                                 onClick={() => setActiveFolder('inquiries')}
                                 className={cn(
-                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                                     activeFolder === 'inquiries'
-                                        ? "bg-rose-50 text-rose-700"
-                                        : "text-slate-700 hover:bg-slate-100"
+                                        ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                        : "text-slate-700 hover:bg-slate-50"
                                 )}
                             >
                                 <HelpCircle className="w-4 h-4" />
                                 <span className="flex-1 text-left">Anfragen</span>
                                 {folderCounts.inquiries > 0 && (
-                                    <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
+                                    <span className="bg-rose-100 text-rose-700 text-xs font-semibold px-2 py-0.5 rounded-full">
                                         {folderCounts.inquiries}
                                     </span>
                                 )}
@@ -1134,16 +1159,16 @@ export default function EmailCenter() {
                             <button
                                 onClick={() => setActiveFolder('projects')}
                                 className={cn(
-                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                                     activeFolder === 'projects'
-                                        ? "bg-rose-50 text-rose-700"
-                                        : "text-slate-700 hover:bg-slate-100"
+                                        ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                        : "text-slate-700 hover:bg-slate-50"
                                 )}
                             >
                                 <Briefcase className="w-4 h-4" />
                                 <span className="flex-1 text-left">Projekte</span>
                                 {folderCounts.projects > 0 && (
-                                    <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">
+                                    <span className="text-xs text-slate-500 tabular-nums">
                                         {folderCounts.projects}
                                     </span>
                                 )}
@@ -1152,16 +1177,16 @@ export default function EmailCenter() {
                             <button
                                 onClick={() => setActiveFolder('offers')}
                                 className={cn(
-                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                                     activeFolder === 'offers'
-                                        ? "bg-rose-50 text-rose-700"
-                                        : "text-slate-700 hover:bg-slate-100"
+                                        ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                        : "text-slate-700 hover:bg-slate-50"
                                 )}
                             >
                                 <FileText className="w-4 h-4" />
-                                <span className="flex-1 text-left">Anfragen</span>
+                                <span className="flex-1 text-left">Angebote</span>
                                 {folderCounts.offers > 0 && (
-                                    <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">
+                                    <span className="text-xs text-slate-500 tabular-nums">
                                         {folderCounts.offers}
                                     </span>
                                 )}
@@ -1170,16 +1195,16 @@ export default function EmailCenter() {
                             <button
                                 onClick={() => setActiveFolder('suppliers')}
                                 className={cn(
-                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                                     activeFolder === 'suppliers'
-                                        ? "bg-rose-50 text-rose-700"
-                                        : "text-slate-700 hover:bg-slate-100"
+                                        ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                        : "text-slate-700 hover:bg-slate-50"
                                 )}
                             >
-                                <Briefcase className="w-4 h-4" />
+                                <Package className="w-4 h-4" />
                                 <span className="flex-1 text-left">Lieferanten</span>
                                 {folderCounts.suppliers > 0 && (
-                                    <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full">
+                                    <span className="text-xs text-slate-500 tabular-nums">
                                         {folderCounts.suppliers}
                                     </span>
                                 )}
@@ -1192,16 +1217,16 @@ export default function EmailCenter() {
                     <button
                         onClick={() => setActiveFolder('trash')}
                         className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                             activeFolder === 'trash'
-                                ? "bg-rose-50 text-rose-700"
-                                : "text-slate-700 hover:bg-slate-100"
+                                ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                : "text-slate-700 hover:bg-slate-50"
                         )}
                     >
                         <Trash2 className="w-4 h-4" />
                         <span className="flex-1 text-left">Papierkorb</span>
                         {folderCounts.trash > 0 && (
-                            <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">
+                            <span className="text-xs text-slate-500 tabular-nums">
                                 {folderCounts.trash}
                             </span>
                         )}
@@ -1210,16 +1235,16 @@ export default function EmailCenter() {
                     <button
                         onClick={() => setActiveFolder('spam')}
                         className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                             activeFolder === 'spam'
-                                ? "bg-rose-50 text-rose-700"
-                                : "text-slate-700 hover:bg-slate-100"
+                                ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                : "text-slate-700 hover:bg-slate-50"
                         )}
                     >
-                        <AlertCircle className="w-4 h-4" />
+                        <ShieldAlert className="w-4 h-4" />
                         <span className="flex-1 text-left">Spam</span>
                         {folderCounts.spam > 0 && (
-                            <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">
+                            <span className="text-xs text-slate-500 tabular-nums">
                                 {folderCounts.spam}
                             </span>
                         )}
@@ -1228,16 +1253,16 @@ export default function EmailCenter() {
                     <button
                         onClick={() => setActiveFolder('newsletter')}
                         className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                             activeFolder === 'newsletter'
-                                ? "bg-rose-50 text-rose-700"
-                                : "text-slate-700 hover:bg-slate-100"
+                                ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                : "text-slate-700 hover:bg-slate-50"
                         )}
                     >
-                        <Mail className="w-4 h-4" />
+                        <Newspaper className="w-4 h-4" />
                         <span className="flex-1 text-left">Newsletter</span>
                         {folderCounts.newsletter > 0 && (
-                            <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
+                            <span className="text-xs text-slate-500 tabular-nums">
                                 {folderCounts.newsletter}
                             </span>
                         )}
@@ -1249,10 +1274,10 @@ export default function EmailCenter() {
                     <button
                         onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
                         className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                             showSettings
-                                ? "bg-rose-50 text-rose-700"
-                                : "text-slate-700 hover:bg-slate-100"
+                                ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                : "text-slate-700 hover:bg-slate-50"
                         )}
                     >
                         <Settings className="w-4 h-4" />
@@ -1264,12 +1289,12 @@ export default function EmailCenter() {
             {/* Middle List - Email List */}
             <div className="w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
                 {/* Search */}
-                <div className="p-4 border-b border-slate-200">
+                <div className="p-3 border-b border-slate-200">
                     <div className="relative">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <Input
-                            placeholder="Suchen..."
-                            className="pl-9 bg-slate-50 border-slate-200"
+                            placeholder="E-Mails durchsuchen..."
+                            className="pl-9 bg-slate-50 border-slate-200 focus:bg-white focus:border-rose-300 focus:ring-rose-200 transition-colors"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
@@ -1279,14 +1304,17 @@ export default function EmailCenter() {
                 {/* List */}
                 <div className="flex-1 overflow-y-auto">
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center h-48 text-slate-500 gap-2">
-                            <RefreshCw className="w-6 h-6 animate-spin" />
-                            <p className="text-sm">Lade E-Mails...</p>
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-3">
+                            <RefreshCw className="w-6 h-6 animate-spin text-rose-400" />
+                            <p className="text-sm font-medium">Lade E-Mails...</p>
                         </div>
                     ) : filteredEmails.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-                            <Mail className="w-12 h-12 mb-2 opacity-20" />
-                            <p className="text-sm">Keine E-Mails gefunden</p>
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
+                            <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
+                                <Mail className="w-7 h-7 text-slate-300" />
+                            </div>
+                            <p className="text-sm font-medium text-slate-500">Keine E-Mails</p>
+                            <p className="text-xs text-slate-400">In diesem Ordner ist nichts vorhanden</p>
                         </div>
                     ) : (
                         <div className="divide-y divide-slate-100">
@@ -1295,12 +1323,12 @@ export default function EmailCenter() {
                                     key={email.id}
                                     onClick={(e) => handleEmailClick(e, email)}
                                     className={cn(
-                                        "p-4 cursor-pointer hover:bg-slate-50 transition-colors border-l-4",
+                                        "px-4 py-3 cursor-pointer transition-all duration-150 border-l-[3px]",
                                         selectedIds.has(email.id)
-                                            ? "bg-rose-50 border-l-rose-500"
+                                            ? "bg-rose-50/80 border-l-rose-500"
                                             : email.isRead
-                                                ? "bg-white border-l-transparent"
-                                                : "bg-white border-l-blue-500"
+                                                ? "bg-white border-l-transparent hover:bg-slate-50"
+                                                : "bg-white border-l-rose-400 hover:bg-rose-50/30"
                                     )}
                                 >
                                     <div className="flex items-start justify-between gap-2 mb-1">
@@ -1346,8 +1374,11 @@ export default function EmailCenter() {
                 </div>
 
                 {/* Footer Status */}
-                <div className="p-2 border-t border-slate-200 text-xs text-slate-400 text-center">
-                    {filteredEmails.length} Nachrichten {selectedIds.size > 0 && `(${selectedIds.size} ausgewählt)`}
+                <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+                    <span>{filteredEmails.length} {filteredEmails.length === 1 ? 'Nachricht' : 'Nachrichten'}</span>
+                    {selectedIds.size > 0 && (
+                        <span className="text-rose-600 font-medium">{selectedIds.size} ausgewählt</span>
+                    )}
                 </div>
             </div>
 
