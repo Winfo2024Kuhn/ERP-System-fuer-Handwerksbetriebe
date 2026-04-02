@@ -35,6 +35,7 @@ export default function LieferantDokumentModal({
     const [showPdf, setShowPdf] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -77,9 +78,31 @@ export default function LieferantDokumentModal({
         }
     }, [dokument]);
 
-    if (!isOpen || !dokument) return null;
+    // Lade PDF als Blob um X-Frame-Options externer URLs zu umgehen
+    useEffect(() => {
+        if (!isOpen || !dokument || !showPdf) {
+            setPdfBlobUrl(null);
+            return;
+        }
+        const controller = new AbortController();
+        let currentUrl: string | null = null;
 
-    const pdfUrl = dokument.url || `/api/lieferanten/${lieferantId}/dokumente/${dokument.id}/download`;
+        fetch(`/api/lieferanten/${lieferantId}/dokumente/${dokument.id}/download`, { signal: controller.signal })
+            .then(res => res.blob())
+            .then(blob => {
+                currentUrl = URL.createObjectURL(blob);
+                setPdfBlobUrl(currentUrl);
+            })
+            .catch(() => { /* AbortError bei Cleanup ignorieren */ });
+
+        return () => {
+            controller.abort();
+            if (currentUrl) URL.revokeObjectURL(currentUrl);
+            setPdfBlobUrl(null);
+        };
+    }, [dokument?.id, lieferantId, isOpen, showPdf]);
+
+    if (!isOpen || !dokument) return null;
     const confidence = dokument.geschaeftsdaten?.aiConfidence;
 
     // Typspezifische Feldanzeige
@@ -229,11 +252,18 @@ export default function LieferantDokumentModal({
                         {/* PDF Viewer - Links */}
                         {showPdf && (
                             <div className="flex-1 bg-slate-800 min-w-0 flex flex-col">
-                                <iframe
-                                    src={pdfUrl}
-                                    className="w-full h-full border-0"
-                                    title="PDF Vorschau"
-                                />
+                                {pdfBlobUrl ? (
+                                    <iframe
+                                        src={pdfBlobUrl}
+                                        className="w-full h-full border-0"
+                                        title="PDF Vorschau"
+                                    />
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-white text-sm">
+                                        <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-3" />
+                                        PDF wird geladen...
+                                    </div>
+                                )}
                             </div>
                         )}
 

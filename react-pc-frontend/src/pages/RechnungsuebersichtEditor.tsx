@@ -4,8 +4,9 @@ import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { Input } from '../components/ui/input';
 import { PageLayout } from '../components/layout/PageLayout';
-import { RefreshCw, FileText, Download, X, ExternalLink, ArrowUpRight, Building2, Check, Printer, Search, Upload, Wallet, Clock, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, FileText, X, ArrowUpRight, Building2, Check, Printer, Search, Upload, Wallet, Clock, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
+import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPreviewModal';
 
 // API Types
 interface AusgangsrechnungDto {
@@ -116,151 +117,6 @@ const monthOptions = [
     { value: '11', label: 'November' },
     { value: '12', label: 'Dezember' },
 ];
-
-// Document Preview Modal
-interface PreviewDoc {
-    url: string;
-    title: string;
-}
-
-function DocumentPreviewModal({ doc, onClose }: { doc: PreviewDoc; onClose: () => void }) {
-    const isPdf = doc.url.toLowerCase().includes('.pdf') ||
-        doc.url.includes('/dokumente/') ||
-        doc.url.includes('/attachments/') ||
-        doc.url.includes('/download');
-
-    const [blobUrl, setBlobUrl] = useState<string | null>(null);
-    const [loadError, setLoadError] = useState(false);
-
-    useEffect(() => {
-        const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleEsc);
-        return () => window.removeEventListener('keydown', handleEsc);
-    }, [onClose]);
-
-    // Fetch PDF as blob to avoid iframe auth/X-Frame-Options issues
-    useEffect(() => {
-        if (!isPdf) return;
-        let revoked = false;
-        fetch(doc.url, { credentials: 'same-origin' })
-            .then(res => {
-                if (!res.ok) throw new Error('Fetch failed');
-                return res.blob();
-            })
-            .then(blob => {
-                if (revoked) return;
-                const url = URL.createObjectURL(blob);
-                setBlobUrl(url);
-            })
-            .catch(() => {
-                if (!revoked) setLoadError(true);
-            });
-        return () => {
-            revoked = true;
-            if (blobUrl) URL.revokeObjectURL(blobUrl);
-        };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [doc.url, isPdf]);
-
-    const handleDownload = () => {
-        const link = document.createElement('a');
-        link.href = blobUrl || doc.url;
-        link.download = doc.title;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col"
-                onClick={e => e.stopPropagation()}
-            >
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-                    <h3 className="font-semibold text-slate-900 truncate">{doc.title}</h3>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleDownload}
-                            className="text-slate-500 hover:text-slate-700"
-                            title="Herunterladen"
-                        >
-                            <Download className="w-4 h-4" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => window.open(blobUrl || doc.url, '_blank')}
-                            className="text-slate-500 hover:text-slate-700"
-                            title="In neuem Tab öffnen"
-                        >
-                            <ExternalLink className="w-4 h-4" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={onClose}
-                            className="text-slate-500 hover:text-slate-700"
-                        >
-                            <X className="w-5 h-5" />
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 overflow-auto bg-slate-100 min-h-[500px]">
-                    {isPdf ? (
-                        loadError ? (
-                            <div className="flex flex-col items-center justify-center py-12">
-                                <FileText className="w-24 h-24 text-slate-300 mb-6" />
-                                <p className="text-slate-600 text-lg font-medium">PDF konnte nicht geladen werden</p>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => window.open(doc.url, '_blank')}
-                                    className="mt-4"
-                                >
-                                    <ExternalLink className="w-4 h-4 mr-2" />
-                                    In neuem Tab öffnen
-                                </Button>
-                            </div>
-                        ) : blobUrl ? (
-                            <iframe
-                                src={blobUrl}
-                                className="w-full h-full min-h-[600px]"
-                                title={doc.title}
-                            />
-                        ) : (
-                            <div className="flex items-center justify-center min-h-[600px]">
-                                <RefreshCw className="w-8 h-8 text-slate-400 animate-spin" />
-                            </div>
-                        )
-                    ) : (
-                        <div className="flex flex-col items-center justify-center py-12">
-                            <FileText className="w-24 h-24 text-slate-300 mb-6" />
-                            <p className="text-slate-600 text-lg font-medium">{doc.title}</p>
-                            <p className="text-slate-400 mt-2">Vorschau nicht verfügbar</p>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleDownload}
-                                className="mt-4"
-                            >
-                                <Download className="w-4 h-4 mr-2" />
-                                Herunterladen
-                            </Button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
 
 export default function RechnungsuebersichtEditor() {
     const toast = useToast();
