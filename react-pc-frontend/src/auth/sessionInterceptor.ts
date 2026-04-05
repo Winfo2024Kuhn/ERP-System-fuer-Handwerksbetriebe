@@ -33,7 +33,10 @@ export function installSessionInterceptor(): void {
     ): Promise<Response> {
         const response = await originalFetch(input, init);
 
-        if (response.status === 401 || response.status === 403) {
+        // Only treat 401 (Unauthorized) as session expired.
+        // 403 (Forbidden) can be a legitimate permission denial (e.g. Abteilung check)
+        // and should NOT trigger a session-expired redirect.
+        if (response.status === 401) {
             const url =
                 typeof input === 'string'
                     ? input

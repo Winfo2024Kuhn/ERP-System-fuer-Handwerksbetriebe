@@ -63,6 +63,7 @@ interface Supplier {
 }
 
 const PAGE_SIZE = 12;
+const LAGER_ARTIKEL_PAGE_SIZE = 15;
 
 // ==================== DOCUMENT TREE HELPERS ====================
 
@@ -186,7 +187,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [savingLagerArtikel, setSavingLagerArtikel] = useState(false);
     const [lagerArtikelError, setLagerArtikelError] = useState<string | null>(null);
     const [lagerArtikelSearch, setLagerArtikelSearch] = useState('');
+    const [lagerArtikelPage, setLagerArtikelPage] = useState(0);
+    const [lagerArtikelGesamt, setLagerArtikelGesamt] = useState(0);
     const [selectedLagerArtikelKeys, setSelectedLagerArtikelKeys] = useState<Set<string>>(new Set());
+    const [selectedLagerArtikelData, setSelectedLagerArtikelData] = useState<Record<string, Artikel>>({});
     const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<string, string>>({});
     const [lagerArtikelBeschaffung, setLagerArtikelBeschaffung] = useState<Record<string, 'lager' | 'bestellen'>>({});
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -196,6 +200,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [selectedEmail, setSelectedEmail] = useState<ProjektEmail | null>(null);
 
     const [showDokumentTypDialog, setShowDokumentTypDialog] = useState(false);
+    const lagerArtikelFetchSeq = useRef(0);
 
     // Rechnungserstellung Dialog State
     const [showRechnungDialog, setShowRechnungDialog] = useState(false);
@@ -622,90 +627,85 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     const resetLagerArtikelSelection = () => {
         setSelectedLagerArtikelKeys(new Set());
+        setSelectedLagerArtikelData({});
         setLagerArtikelMengen({});
         setLagerArtikelBeschaffung({});
         setLagerArtikelSearch('');
+        setLagerArtikelPage(0);
+        setLagerArtikelGesamt(0);
+        setLagerArtikelError(null);
     };
 
-    const loadLagerArtikel = useCallback(async () => {
+    const loadLagerArtikel = useCallback(async ({ page, query }: { page: number; query: string }) => {
+        const fetchId = ++lagerArtikelFetchSeq.current;
+
         setLoadingLagerArtikel(true);
+
         setLagerArtikelError(null);
         try {
-            const pageSize = 50;
-            let page = 0;
-            let guard = 0;
-            let allRows: Artikel[] = [];
-            let total = 0;
-
-            while (guard < 500) {
-                const params = new URLSearchParams();
-                params.set('page', String(page));
-                params.set('size', String(pageSize));
-                params.set('sort', 'produktname');
-                params.set('dir', 'asc');
-
-                const res = await fetch(`/api/artikel?${params.toString()}`);
-                if (!res.ok) throw new Error('Artikel konnten nicht geladen werden');
-
-                const data = await res.json();
-                const list: Artikel[] = Array.isArray(data?.artikel) ? data.artikel : [];
-                allRows = allRows.concat(list);
-
-                total = typeof data?.gesamt === 'number' ? data.gesamt : allRows.length;
-                if (list.length === 0 || (page + 1) * pageSize >= total) break;
-
-                page += 1;
-                guard += 1;
+            const params = new URLSearchParams();
+            params.set('page', String(page));
+            params.set('size', String(LAGER_ARTIKEL_PAGE_SIZE));
+            params.set('sort', 'produktname');
+            params.set('dir', 'asc');
+            params.set('nurMitLieferantenpreis', 'true');
+            if (query) {
+                params.set('q', query);
             }
 
-            const pricedRows = allRows.filter(a => a.preis !== undefined && a.preis !== null && !!a.lieferantId);
-            const uniqueRows = new Map<string, Artikel>();
-            for (const artikel of pricedRows) {
-                const key = getLagerArtikelKey(artikel);
-                if (!uniqueRows.has(key)) {
-                    uniqueRows.set(key, artikel);
-                }
+            const res = await fetch(`/api/artikel?${params.toString()}`);
+            if (!res.ok) throw new Error('Artikel konnten nicht geladen werden');
+
+            const data = await res.json();
+            if (fetchId !== lagerArtikelFetchSeq.current) {
+                return;
             }
 
-            const sorted = Array.from(uniqueRows.values()).sort((a, b) => {
-                const aName = a.produktname || '';
-                const bName = b.produktname || '';
-                return aName.localeCompare(bName, 'de-DE');
-            });
+            const list: Artikel[] = Array.isArray(data?.artikel) ? data.artikel : [];
+            setLagerArtikel(list);
 
-            setLagerArtikel(sorted);
+            const gesamt = typeof data?.gesamt === 'number' ? data.gesamt : 0;
+            const aktuelleSeite = typeof data?.seite === 'number' ? data.seite : page;
+
+            setLagerArtikelPage(aktuelleSeite);
+            setLagerArtikelGesamt(gesamt);
         } catch (error) {
             console.error('Fehler beim Laden der Lagerartikel:', error);
             setLagerArtikel([]);
+            setLagerArtikelGesamt(0);
             setLagerArtikelError('Lagerartikel konnten nicht geladen werden.');
         } finally {
-            setLoadingLagerArtikel(false);
+            if (fetchId === lagerArtikelFetchSeq.current) {
+                setLoadingLagerArtikel(false);
+            }
         }
     }, []);
 
     useEffect(() => {
         if (!showLagerArtikelModal) return;
-        loadLagerArtikel();
-    }, [showLagerArtikelModal, loadLagerArtikel]);
+        setLagerArtikelPage(0);
+    }, [showLagerArtikelModal, lagerArtikelSearch]);
 
-    const filteredLagerArtikel = useMemo(() => {
-        const query = lagerArtikelSearch.trim().toLowerCase();
-        if (!query) return lagerArtikel;
+    useEffect(() => {
+        if (!showLagerArtikelModal) return;
+        const query = lagerArtikelSearch.trim();
+        const timer = setTimeout(() => {
+            loadLagerArtikel({ page: lagerArtikelPage, query });
+        }, 300);
 
-        return lagerArtikel.filter((artikel) => {
-            const fields = [
-                artikel.externeArtikelnummer,
-                artikel.produktname,
-                artikel.produkttext,
-                artikel.lieferantenname,
-                artikel.werkstoffName,
-                artikel.kategoriePfad,
-            ]
-                .filter(Boolean)
-                .map(v => String(v).toLowerCase());
-            return fields.some(f => f.includes(query));
-        });
-    }, [lagerArtikel, lagerArtikelSearch]);
+        return () => clearTimeout(timer);
+    }, [showLagerArtikelModal, lagerArtikelSearch, lagerArtikelPage, loadLagerArtikel]);
+
+    const lagerArtikelTotalPages = Math.max(1, Math.ceil(lagerArtikelGesamt / LAGER_ARTIKEL_PAGE_SIZE));
+
+    const lagerArtikelStatusText = useMemo(() => {
+        if (loadingLagerArtikel) return 'Artikel werden geladen...';
+        if (lagerArtikelGesamt === 0) return 'Keine Artikel gefunden.';
+
+        const start = lagerArtikelPage * LAGER_ARTIKEL_PAGE_SIZE + 1;
+        const end = Math.min(start + lagerArtikel.length - 1, lagerArtikelGesamt);
+        return `Zeige ${start}-${end} von ${lagerArtikelGesamt} Artikeln`;
+    }, [loadingLagerArtikel, lagerArtikelGesamt, lagerArtikelPage, lagerArtikel.length]);
 
     const handleToggleLagerArtikel = (artikel: Artikel, checked: boolean) => {
         const key = getLagerArtikelKey(artikel);
@@ -724,11 +724,18 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 if (prev[key]) return prev;
                 return { ...prev, [key]: '1' };
             });
+            setSelectedLagerArtikelData(prev => ({ ...prev, [key]: artikel }));
             setLagerArtikelBeschaffung(prev => {
                 if (prev[key]) return prev;
                 return { ...prev, [key]: 'lager' };
             });
         } else {
+            setSelectedLagerArtikelData(prev => {
+                if (!prev[key]) return prev;
+                const next = { ...prev };
+                delete next[key];
+                return next;
+            });
             setLagerArtikelBeschaffung(prev => {
                 if (!prev[key]) return prev;
                 const next = { ...prev };
@@ -749,6 +756,16 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 next.add(key);
             } else {
                 next.delete(key);
+            }
+            return next;
+        });
+
+        setSelectedLagerArtikelData(prev => {
+            const next = { ...prev };
+            if (!Number.isNaN(parsed) && parsed > 0) {
+                next[key] = artikel;
+            } else {
+                delete next[key];
             }
             return next;
         });
@@ -777,10 +794,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             return;
         }
 
-        const payload = lagerArtikel
-            .filter(artikel => selectedLagerArtikelKeys.has(getLagerArtikelKey(artikel)))
-            .map(artikel => {
-                const key = getLagerArtikelKey(artikel);
+        const payload = Array.from(selectedLagerArtikelKeys)
+            .map((key) => {
+                const artikel = selectedLagerArtikelData[key];
+                if (!artikel) return null;
                 const rawMenge = (lagerArtikelMengen[key] || '1').replace(',', '.');
                 const menge = parseFloat(rawMenge);
                 return {
@@ -791,7 +808,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     einheit: mapEinheitForBackend(artikel.verrechnungseinheit),
                     ausLager: (lagerArtikelBeschaffung[key] ?? 'lager') === 'lager',
                 };
-            });
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null);
+
+        if (payload.length === 0) {
+            toast.error('Die gewählten Artikel sind nicht mehr verfügbar. Bitte erneut auswählen.');
+            return;
+        }
 
         if (payload.some(p => Number.isNaN(p.menge) || p.menge <= 0)) {
             toast.error('Bitte geben Sie für alle gewählten Artikel eine Menge größer als 0 ein.');
@@ -2789,16 +2812,16 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 onChange={(e) => setLagerArtikelSearch(e.target.value)}
                             />
                         </div>
-                        <Button variant="outline" onClick={loadLagerArtikel} disabled={loadingLagerArtikel || savingLagerArtikel}>
+                        <Button
+                            variant="outline"
+                            onClick={() => loadLagerArtikel({ page: lagerArtikelPage, query: lagerArtikelSearch.trim() })}
+                            disabled={loadingLagerArtikel || savingLagerArtikel}
+                        >
                             <RefreshCw className={cn('w-4 h-4 mr-2', loadingLagerArtikel && 'animate-spin')} /> Neu laden
                         </Button>
                     </div>
 
-                    <div className="text-xs text-slate-500">
-                        {loadingLagerArtikel
-                            ? 'Artikel werden geladen...'
-                            : `${filteredLagerArtikel.length} von ${lagerArtikel.length} Artikeln mit Lieferantenpreis`}
-                    </div>
+                    <div className="text-xs text-slate-500">{lagerArtikelStatusText}</div>
 
                     {lagerArtikelError && (
                         <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
@@ -2821,7 +2844,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredLagerArtikel.map((artikel) => {
+                                    {lagerArtikel.map((artikel) => {
                                         const key = getLagerArtikelKey(artikel);
                                         const checked = selectedLagerArtikelKeys.has(key);
                                         const beschaffung = lagerArtikelBeschaffung[key] || 'lager';
@@ -2878,11 +2901,33 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 </tbody>
                             </table>
 
-                            {!loadingLagerArtikel && filteredLagerArtikel.length === 0 && (
+                            {!loadingLagerArtikel && lagerArtikel.length === 0 && (
                                 <div className="text-center text-slate-500 py-10">
                                     Keine Artikel mit Lieferantenpreis gefunden.
                                 </div>
                             )}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs text-slate-500">Seite {lagerArtikelPage + 1} von {lagerArtikelTotalPages}</p>
+                        <div className="flex gap-2 justify-end">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={loadingLagerArtikel || lagerArtikelPage === 0}
+                                onClick={() => setLagerArtikelPage((p) => Math.max(0, p - 1))}
+                            >
+                                <ChevronLeft className="w-4 h-4 mr-1" /> zurück
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={loadingLagerArtikel || lagerArtikelPage >= lagerArtikelTotalPages - 1}
+                                onClick={() => setLagerArtikelPage((p) => p + 1)}
+                            >
+                                Weiter <ChevronRight className="w-4 h-4 ml-1" />
+                            </Button>
                         </div>
                     </div>
 

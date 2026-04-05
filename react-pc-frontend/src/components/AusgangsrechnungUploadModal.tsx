@@ -262,7 +262,7 @@ export function AusgangsrechnungUploadModal({
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-            <DialogContent className={`${showPdfPreview && pdfUrl ? 'sm:max-w-6xl' : 'sm:max-w-lg'} max-h-[90vh] overflow-hidden flex flex-col`}>
+            <DialogContent className={`${showPdfPreview && pdfUrl ? 'sm:max-w-6xl' : 'sm:max-w-xl'} max-h-[90vh] overflow-hidden flex flex-col`}>
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <FileText className="w-5 h-5 text-rose-600" />
