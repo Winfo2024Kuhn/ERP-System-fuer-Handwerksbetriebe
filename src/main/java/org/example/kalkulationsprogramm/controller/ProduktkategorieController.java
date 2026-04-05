@@ -33,8 +33,9 @@ public class ProduktkategorieController {
 
     // ... GET-Methoden bleiben unverändert ...
     @GetMapping
-    public ResponseEntity<List<ProduktkategorieResponseDto>> getAlleKategorien() {
-        return ResponseEntity.ok(produktkategorieService.findeAlleKategorien());
+    public ResponseEntity<List<ProduktkategorieResponseDto>> getAlleKategorien(
+            @RequestParam(value = "light", required = false, defaultValue = "false") boolean light) {
+        return ResponseEntity.ok(produktkategorieService.findeAlleKategorien(light));
     }
 
     @GetMapping("/haupt")

@@ -15,5 +15,6 @@ public class ProduktkategorieResponseDto {
     private String pfad;
     private boolean isLeaf;
     private Long projektAnzahl;
+    private Long parentId;
 
 }

@@ -47,12 +47,15 @@ public class ProduktkategorieService {
                 .toList();
     }
 
-    public List<ProduktkategorieResponseDto> findeAlleKategorien() {
-        Map<Long, Long> counts = berechneProjektAnzahlen();
-        return this.produktkategorieRepository.findAll().stream()
+    public List<ProduktkategorieResponseDto> findeAlleKategorien(boolean light) {
+        Map<Long, Long> counts = light ? Map.of() : berechneProjektAnzahlen();
+        // Alle ParentIds in einem separaten Query – kein Collection-Load für isLeaf nötig
+        Set<Long> parentIds = new HashSet<>(produktkategorieRepository.findAllParentIds());
+        // JOIN FETCH auf uebergeordneteKategorie – kein N+1 bei bauePfad/parentId
+        return produktkategorieRepository.findAllWithParent().stream()
                 .map(kat -> {
-                    ProduktkategorieResponseDto dto = this.produktkategorieMapper.toProduktkategorieResponseDto(kat);
-                    dto.setProjektAnzahl(counts.getOrDefault(kat.getId(), 0L));
+                    ProduktkategorieResponseDto dto = produktkategorieMapper.toProduktkategorieResponseDtoWithLeaf(kat, !parentIds.contains(kat.getId()));
+                    if (!light) dto.setProjektAnzahl(counts.getOrDefault(kat.getId(), 0L));
                     return dto;
                 })
                 .toList();

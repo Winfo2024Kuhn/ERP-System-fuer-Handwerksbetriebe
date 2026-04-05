@@ -14,6 +14,14 @@ public class ProduktkategorieMapper {
         if (produktkategorie == null) {
             return null;
         }
+        boolean isLeaf = produktkategorie.getUnterkategorien() == null || produktkategorie.getUnterkategorien().isEmpty();
+        return toProduktkategorieResponseDtoWithLeaf(produktkategorie, isLeaf);
+    }
+
+    public ProduktkategorieResponseDto toProduktkategorieResponseDtoWithLeaf(Produktkategorie produktkategorie, boolean isLeaf) {
+        if (produktkategorie == null) {
+            return null;
+        }
         ProduktkategorieResponseDto dto = new ProduktkategorieResponseDto();
         dto.setId(produktkategorie.getId());
         dto.setBezeichnung(produktkategorie.getBezeichnung());
@@ -26,8 +34,9 @@ public class ProduktkategorieMapper {
         }
         dto.setBildUrl(bildUrl);
 
-        dto.setLeaf(produktkategorie.getUnterkategorien() == null || produktkategorie.getUnterkategorien().isEmpty());
+        dto.setLeaf(isLeaf);
         dto.setPfad(bauePfad(produktkategorie));
+        dto.setParentId(produktkategorie.getUebergeordneteKategorie() != null ? produktkategorie.getUebergeordneteKategorie().getId() : null);
         return dto;
     }
 

@@ -208,6 +208,7 @@ export interface ProduktkategorieDto {
   beschreibung?: string;
   pfad?: string;
   leaf?: boolean;
+  parentId?: number | null;
   verrechnungseinheit?: Verrechnungseinheit;
 }
 

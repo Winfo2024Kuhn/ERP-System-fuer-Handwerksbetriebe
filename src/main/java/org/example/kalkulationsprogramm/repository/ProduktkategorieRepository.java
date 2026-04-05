@@ -19,6 +19,14 @@ public interface ProduktkategorieRepository extends JpaRepository<Produktkategor
     @EntityGraph(attributePaths = {"unterkategorien"})
     List<Produktkategorie> findByUebergeordneteKategorieId(Long parentId);
 
+    // Lädt alle Kategorien mit Parent in einer Query (kein N+1 bei bauePfad / parentId)
+    @Query("SELECT k FROM Produktkategorie k LEFT JOIN FETCH k.uebergeordneteKategorie")
+    List<Produktkategorie> findAllWithParent();
+
+    // Liefert alle IDs, die als Parent referenziert werden (zur isLeaf-Berechnung ohne Collection-Load)
+    @Query("SELECT k.uebergeordneteKategorie.id FROM Produktkategorie k WHERE k.uebergeordneteKategorie IS NOT NULL")
+    List<Long> findAllParentIds();
+
     // Sucht Leaf-Kategorien (ohne Unterkategorien) nach Bezeichnung
     @Query("SELECT pk FROM Produktkategorie pk WHERE pk.unterkategorien IS EMPTY AND LOWER(pk.bezeichnung) LIKE LOWER(CONCAT('%', :suchbegriff, '%'))")
     List<Produktkategorie> sucheLeafKategorienNachBezeichnung(@Param("suchbegriff") String suchbegriff);
