@@ -13,6 +13,17 @@ param(
     [int]$HealthCheckTimeout = 120  # Sekunden
 )
 
+# JAR automatisch erkennen wenn Standardpfad nicht existiert (z.B. versionierter Dateiname)
+if (-not (Test-Path $JarPath)) {
+    $deployDir = Split-Path $JarPath -Parent
+    $foundJar = Get-ChildItem $deployDir -Filter "*.jar" -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 1
+    if ($foundJar) {
+        $JarPath = $foundJar.FullName
+    }
+}
+
 # Zeitstempel für Log
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $logFileName = "server_start_${timestamp}.log"
@@ -165,17 +176,13 @@ Write-Log "Starte Server..."
 Write-Log "Befehl: java -jar $JarPath"
 
 try {
-    # Erstelle separaten PowerShell-Prozess für den Server
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $javaExe
-    $startInfo.Arguments = "-jar `"$JarPath`""
-    $startInfo.WorkingDirectory = Split-Path $JarPath -Parent
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $false  # Server-Fenster anzeigen
-    $startInfo.RedirectStandardOutput = $false
-    $startInfo.RedirectStandardError = $false
-    
-    $process = [System.Diagnostics.Process]::Start($startInfo)
+    # Start-Process mit UseShellExecute (Standard) entkoppelt Java vollständig von diesem Skript.
+    # Der Java-Prozess läuft weiter, auch wenn dieses PowerShell-Fenster geschlossen wird.
+    $process = Start-Process -FilePath $javaExe `
+        -ArgumentList "-jar `"$JarPath`"" `
+        -WorkingDirectory (Split-Path $JarPath -Parent) `
+        -WindowStyle Hidden `
+        -PassThru
     
     if ($process) {
         Write-Log "Server-Prozess gestartet (PID: $($process.Id))"
