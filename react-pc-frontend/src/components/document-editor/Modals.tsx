@@ -574,7 +574,71 @@ export function LeistungPickerModal({
         });
     }, []);
 
-    // Gefilterte Leistungen: Suche hat Vorrang, dann Kategoriefilter
+    // Rekursiv alle Unterkategorien eines Knotens laden (für Filterung)
+    const loadDescendants = useCallback(async (parentId: number) => {
+        const loaded = new Set<number>();
+        const queue = [parentId];
+        const allNew: KategorieNode[] = [];
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (loaded.has(current)) continue;
+            loaded.add(current);
+            try {
+                const res = await fetch(`/api/produktkategorien/${current}/unterkategorien?light=true`);
+                if (!res.ok) continue;
+                const data: ProduktkategorieDto[] = await res.json();
+                const childNodes: KategorieNode[] = (Array.isArray(data) ? data : []).map(cat => ({
+                    id: Number(cat.id),
+                    bezeichnung: cat.bezeichnung || cat.pfad || 'Kategorie',
+                    isLeaf: cat.leaf ?? true,
+                    parentId: current,
+                }));
+                allNew.push(...childNodes);
+                for (const child of childNodes) {
+                    if (!child.isLeaf) queue.push(child.id);
+                }
+            } catch { /* ignore */ }
+        }
+        if (allNew.length > 0) {
+            setAlleKategorien(prev => {
+                const existingIds = new Set(prev.map(k => k.id));
+                const newOnes = allNew.filter(c => !existingIds.has(c.id));
+                return newOnes.length ? [...prev, ...newOnes] : prev;
+            });
+        }
+    }, []);
+
+    // Beim Auswählen einer Kategorie: Unterkategorien vorladen
+    const handleKategorieSelect = useCallback((id: number) => {
+        setSelectedKategorieId(id);
+        setSearch('');
+        // Prüfe ob Kinder schon geladen
+        const node = alleKategorien.find(k => k.id === id);
+        if (node && !node.isLeaf) {
+            const hasChildrenLoaded = alleKategorien.some(k => k.parentId === id);
+            if (!hasChildrenLoaded) {
+                loadDescendants(id);
+            }
+        }
+    }, [alleKategorien, loadDescendants]);
+
+    // Alle Nachfahren-IDs einer Kategorie sammeln (inkl. der Kategorie selbst)
+    const getDescendantIds = useCallback((parentId: number): Set<number> => {
+        const ids = new Set<number>([parentId]);
+        const queue = [parentId];
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            for (const k of alleKategorien) {
+                if (k.parentId === current && !ids.has(k.id)) {
+                    ids.add(k.id);
+                    queue.push(k.id);
+                }
+            }
+        }
+        return ids;
+    }, [alleKategorien]);
+
+    // Gefilterte Leistungen: Suche hat Vorrang, dann Kategoriefilter (inkl. Unterkategorien)
     const filtered = useMemo(() => {
         if (search) {
             const q = search.toLowerCase();
@@ -583,10 +647,11 @@ export function LeistungPickerModal({
             );
         }
         if (selectedKategorieId !== null) {
-            return leistungen.filter(l => l.folderId === selectedKategorieId);
+            const ids = getDescendantIds(selectedKategorieId);
+            return leistungen.filter(l => l.folderId != null && ids.has(l.folderId));
         }
         return leistungen;
-    }, [leistungen, search, selectedKategorieId]);
+    }, [leistungen, search, selectedKategorieId, getDescendantIds]);
 
     const selectedKategorieName = useMemo(
         () => alleKategorien.find(k => k.id === selectedKategorieId)?.bezeichnung ?? null,
@@ -672,7 +737,7 @@ export function LeistungPickerModal({
                                 key={root.id}
                                 node={root}
                                 selectedId={search ? null : selectedKategorieId}
-                                onSelect={id => { setSelectedKategorieId(id); setSearch(''); }}
+                                onSelect={handleKategorieSelect}
                                 onChildrenLoaded={handleChildrenLoaded}
                             />
                         ))}
