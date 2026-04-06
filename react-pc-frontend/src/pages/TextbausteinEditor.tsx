@@ -31,7 +31,14 @@ const PLACEHOLDERS = [
   { token: '{{Anrede}}', label: 'Anrede' },
   { token: '{{Kundenname}}', label: 'Kundenname' },
   { token: '{{Ansprechpartner}}', label: 'Ansprechpartner' },
-  { token: '{{Zahlungsziel}}', label: 'Zahlungsziel' }
+  { token: '{{KUNDENNUMMER}}', label: 'Kundennummer' },
+  { token: '{{KUNDENADRESSE}}', label: 'Kundenadresse' },
+  { token: '{{DATUM}}', label: 'Datum' },
+  { token: '{{Zahlungsziel}}', label: 'Zahlungsziel' },
+  { token: '{{BAUVORHABEN}}', label: 'Bauvorhaben' },
+  { token: '{{DOKUMENTNUMMER}}', label: 'Dokumentnummer' },
+  { token: '{{PROJEKTNUMMER}}', label: 'Projektnummer' },
+  { token: '{{DOKUMENTTYP}}', label: 'Dokumenttyp' }
 ];
 
 const ANREDE_LABELS: Record<string, string> = {
@@ -106,13 +113,30 @@ function formatAnrede(value: string | null | undefined) {
   return ANREDE_LABELS[key] || value;
 }
 
+function formatAdresse(kunde: Kunde | null) {
+  if (!kunde) return null;
+  const plzOrt = [kunde.plz, kunde.ort].filter(Boolean).join(' ');
+  const parts = [kunde.strasse, plzOrt].filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
 function replacePlaceholders(html: string, kunde: Kunde | null, days: number) {
+  const ansprechpartner = kunde?.ansprechpartner?.trim() || kunde?.ansprechspartner?.trim() || null;
   const replacements: Record<string, string | null> = {
     '{{Anrede}}': formatAnrede(kunde?.anrede) || null,
     '{{Kundenname}}': kunde?.name?.trim() || null,
-    '{{Ansprechpartner}}': kunde?.ansprechpartner?.trim() || kunde?.ansprechspartner?.trim() || null,
-    '{{ANSPRECHPARTNER}}': kunde?.ansprechpartner?.trim() || kunde?.ansprechspartner?.trim() || null,
-    '{{Zahlungsziel}}': formatDate(addDays(new Date(), days)) || null
+    '{{KUNDENNAME}}': kunde?.name?.trim() || null,
+    '{{Ansprechpartner}}': ansprechpartner,
+    '{{ANSPRECHPARTNER}}': ansprechpartner,
+    '{{KUNDENNUMMER}}': kunde?.kundennummer?.trim() || null,
+    '{{KUNDENADRESSE}}': formatAdresse(kunde),
+    '{{DATUM}}': formatDate(new Date()),
+    '{{Zahlungsziel}}': formatDate(addDays(new Date(), days)) || null,
+    '{{BAUVORHABEN}}': null,
+    '{{DOKUMENTNUMMER}}': null,
+    '{{PROJEKTNUMMER}}': null,
+    '{{SEITENZAHL}}': null,
+    '{{DOKUMENTTYP}}': null
   };
 
   let result = html || '';
