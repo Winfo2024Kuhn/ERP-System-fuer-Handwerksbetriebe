@@ -36,13 +36,13 @@ function HoverPreview({ text, visible, anchorRect }: { text: string; visible: bo
 
     return (
         <div
-            className="fixed z-[100] bg-white border border-slate-200 shadow-xl rounded-xl p-3 text-xs text-slate-600 leading-relaxed overflow-y-auto pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+            className="fixed z-[100] bg-white border border-slate-200 shadow-xl rounded-xl p-3 text-xs text-slate-600 leading-relaxed overflow-hidden pointer-events-none animate-in fade-in zoom-in-95 duration-150"
             style={{ top, left, maxHeight, width: Math.min(400, window.innerWidth - left - 24) }}
         >
             <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold text-rose-500 uppercase tracking-wide">
                 <Eye className="w-3 h-3" /> Vorschau
             </div>
-            <div className="whitespace-pre-wrap break-words">{plain}</div>
+            <div className="whitespace-pre-wrap break-words line-clamp-[12]">{plain}</div>
         </div>
     );
 }
