@@ -1,10 +1,51 @@
-import { AlertTriangle, Search, FileText, Wrench, Clock, X, Plus, Printer, Star, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { AlertTriangle, Search, FileText, Wrench, Clock, X, Plus, Printer, Star, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2, Eye } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto } from './types';
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from '../../types';
 import type { AusgangsGeschaeftsDokumentTyp, ProduktkategorieDto } from '../../types';
 import { cn } from '../../lib/utils';
+
+/** Strips HTML tags from a string */
+function stripHtml(html: string): string {
+    let text = html;
+    let prev: string;
+    do { prev = text; text = text.replace(/<[^>]*>/g, ''); } while (text !== prev);
+    return text.trim();
+}
+
+/** Hover preview tooltip for picker items */
+function HoverPreview({ text, visible, anchorRect }: { text: string; visible: boolean; anchorRect: DOMRect | null }) {
+    if (!visible || !text || !anchorRect) return null;
+
+    const plain = stripHtml(text);
+    if (!plain) return null;
+
+    const viewportH = window.innerHeight;
+    const spaceBelow = viewportH - anchorRect.bottom;
+    const spaceAbove = anchorRect.top;
+    let top: number, maxHeight: number;
+    if (spaceBelow >= 120 || spaceBelow >= spaceAbove) {
+        top = anchorRect.bottom + 6;
+        maxHeight = Math.min(spaceBelow - 16, 250);
+    } else {
+        maxHeight = Math.min(spaceAbove - 16, 250);
+        top = Math.max(8, anchorRect.top - 6 - maxHeight);
+    }
+    const left = anchorRect.left;
+
+    return (
+        <div
+            className="fixed z-[100] bg-white border border-slate-200 shadow-xl rounded-xl p-3 text-xs text-slate-600 leading-relaxed overflow-y-auto pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+            style={{ top, left, maxHeight, width: Math.min(400, window.innerWidth - left - 24) }}
+        >
+            <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold text-rose-500 uppercase tracking-wide">
+                <Eye className="w-3 h-3" /> Vorschau
+            </div>
+            <div className="whitespace-pre-wrap break-words">{plain}</div>
+        </div>
+    );
+}
 
 /** Export Warning Modal */
 export function ExportWarningModal({
@@ -268,11 +309,16 @@ export function TextbausteinPickerModal({
     }, [textbausteine, search, dokumentTyp, dokumentTypLabel]);
 
     const totalCount = matching.length + rest.length;
+    const [hoveredTb, setHoveredTb] = useState<{ id: number; rect: DOMRect } | null>(null);
+    const hoveredTbData = hoveredTb ? [...matching, ...rest].find(tb => tb.id === hoveredTb.id) : null;
+    const hoveredTbText = hoveredTbData?.html || hoveredTbData?.beschreibung || '';
 
     const renderItem = (tb: TextbausteinApiDto, isRecommended: boolean) => (
         <button
             key={tb.id}
             onClick={() => onSelect(tb)}
+            onMouseEnter={(e) => setHoveredTb({ id: tb.id, rect: e.currentTarget.getBoundingClientRect() })}
+            onMouseLeave={() => setHoveredTb(null)}
             className={`w-full group p-3 text-left rounded-xl transition-all duration-150 ${
                 isRecommended
                     ? 'bg-rose-50/60 hover:bg-rose-50 border border-rose-200 hover:border-rose-300'
@@ -301,7 +347,7 @@ export function TextbausteinPickerModal({
                     </span>
                     {tb.beschreibung && (
                         <span className="text-xs text-slate-400 block truncate mt-0.5">
-                            {(() => { let t = tb.beschreibung; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 80); })()}
+                            {stripHtml(tb.beschreibung).slice(0, 80)}
                         </span>
                     )}
                 </div>
@@ -366,6 +412,7 @@ export function TextbausteinPickerModal({
                     </>
                 )}
             </div>
+            <HoverPreview text={hoveredTbText} visible={hoveredTb !== null} anchorRect={hoveredTb?.rect ?? null} />
         </PickerModal>
     );
 }
@@ -546,6 +593,10 @@ export function LeistungPickerModal({
         [alleKategorien, selectedKategorieId]
     );
 
+    const [hoveredLeistung, setHoveredLeistung] = useState<{ id: number; rect: DOMRect } | null>(null);
+    const hoveredLeistungData = hoveredLeistung ? filtered.find(l => l.id === hoveredLeistung.id) : null;
+    const hoveredLeistungText = hoveredLeistungData?.description || '';
+
     return (
         <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center">
             <div
@@ -646,6 +697,8 @@ export function LeistungPickerModal({
                                 key={l.id}
                                 type="button"
                                 onClick={() => onSelect(l)}
+                                onMouseEnter={(e) => setHoveredLeistung({ id: l.id, rect: e.currentTarget.getBoundingClientRect() })}
+                                onMouseLeave={() => setHoveredLeistung(null)}
                                 className="w-full group p-3 text-left bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition-all duration-150"
                             >
                                 <div className="flex items-center justify-between gap-3">
@@ -655,7 +708,7 @@ export function LeistungPickerModal({
                                         </span>
                                         {l.description && (
                                             <span className="text-xs text-slate-400 block truncate mt-0.5">
-                                                {(() => { let t = l.description; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 80); })()}
+                                                {stripHtml(l.description).slice(0, 80)}
                                             </span>
                                         )}
                                         {search && l.kategoriePfad && (
@@ -670,6 +723,7 @@ export function LeistungPickerModal({
                         ))}
                     </div>
                 </div>
+                <HoverPreview text={hoveredLeistungText} visible={hoveredLeistung !== null} anchorRect={hoveredLeistung?.rect ?? null} />
             </div>
         </div>
     );

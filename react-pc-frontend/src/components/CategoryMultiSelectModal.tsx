@@ -257,8 +257,8 @@ export const CategoryMultiSelectModal: React.FC<CategoryMultiSelectModalProps> =
                             <div className="space-y-1">
                                 {searchResults.map(cat => {
                                     const isSelected = selectedIds.has(Number(cat.id));
-                                    const einheit = typeof cat.verrechnungseinheit === 'object' 
-                                        ? (cat.verrechnungseinheit as any)?.anzeigename || (cat.verrechnungseinheit as any)?.name || ''
+                                    const einheit = typeof cat.verrechnungseinheit === 'object' && cat.verrechnungseinheit
+                                        ? cat.verrechnungseinheit.anzeigename || cat.verrechnungseinheit.name || ''
                                         : cat.verrechnungseinheit || '';
                                     return (
                                         <div

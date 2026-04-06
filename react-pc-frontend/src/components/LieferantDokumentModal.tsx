@@ -100,7 +100,7 @@ export default function LieferantDokumentModal({
             if (currentUrl) URL.revokeObjectURL(currentUrl);
             setPdfBlobUrl(null);
         };
-    }, [dokument?.id, lieferantId, isOpen, showPdf]);
+    }, [dokument?.id, dokument, lieferantId, isOpen, showPdf]);
 
     if (!isOpen || !dokument) return null;
     const confidence = dokument.geschaeftsdaten?.aiConfidence;

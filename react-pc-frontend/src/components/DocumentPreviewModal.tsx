@@ -49,8 +49,7 @@ export default function DocumentPreviewModal({ doc, onClose }: { doc: PreviewDoc
         if (!isPdf) return;
         const controller = new AbortController();
         let currentUrl: string | null = null;
-
-        setLoadError(false);
+        let didCancel = false;
 
         fetch(doc.url, { signal: controller.signal, credentials: 'same-origin' })
             .then(res => {
@@ -64,15 +63,17 @@ export default function DocumentPreviewModal({ doc, onClose }: { doc: PreviewDoc
                 setBlobUrl(currentUrl);
             })
             .catch(() => {
-                if (!controller.signal.aborted) {
+                if (!controller.signal.aborted && !didCancel) {
                     setLoadError(true);
                 }
             });
 
         return () => {
+            didCancel = true;
             controller.abort();
             if (currentUrl) URL.revokeObjectURL(currentUrl);
             setBlobUrl(null);
+            setLoadError(false);
         };
     }, [doc.url, isPdf]);
 
