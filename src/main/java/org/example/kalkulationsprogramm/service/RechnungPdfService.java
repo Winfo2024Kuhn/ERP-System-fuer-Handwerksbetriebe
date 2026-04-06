@@ -770,22 +770,15 @@ public class RechnungPdfService {
         descCell.setHorizontalAlignment(Element.ALIGN_LEFT);
         descCell.setVerticalAlignment(Element.ALIGN_TOP);
         
-        // Titel (fett)
-        String descText = block.beschreibung();
-        if (isAlternative) {
-            descText = "Alternativ: " + descText;
-        }
-        Paragraph titleParagraph = new Paragraph(descText, currentLabelFont);
-        titleParagraph.setLeading(currentLabelFont.getSize() * 1.3f);
-        descCell.addElement(titleParagraph);
-        
-        // Beschreibung direkt darunter in derselben Zelle
+        // Bezeichnung und Beschreibung:
+        // Wenn beschreibungHtml vorhanden ist, nur diese rendern (enthält bereits alle Infos).
+        // Bezeichnung wird in dem Fall weggelassen, um Dopplung zu vermeiden.
         if (hasDescription) {
-            // Kleiner Abstand zwischen Titel und Beschreibung
-            Paragraph spacer = new Paragraph(" ");
-            spacer.setLeading(3f);
-            descCell.addElement(spacer);
-            
+            if (isAlternative) {
+                Paragraph altHint = new Paragraph("Alternativ:", currentLabelFont);
+                altHint.setLeading(currentLabelFont.getSize() * 1.3f);
+                descCell.addElement(altHint);
+            }
             try {
                 java.util.List<com.lowagie.text.Element> elements = parseHtmlToElements(block.beschreibungHtml(), textColor);
                 for (com.lowagie.text.Element el : elements) {
@@ -796,6 +789,15 @@ public class RechnungPdfService {
                 String plainText = stripHtmlForFallback(block.beschreibungHtml());
                 descCell.addElement(new Phrase(plainText, currentTextFont));
             }
+        } else {
+            // Kein beschreibungHtml: nur Titel (bezeichnung) anzeigen
+            String descText = block.beschreibung();
+            if (isAlternative) {
+                descText = "Alternativ: " + descText;
+            }
+            Paragraph titleParagraph = new Paragraph(descText, currentLabelFont);
+            titleParagraph.setLeading(currentLabelFont.getSize() * 1.3f);
+            descCell.addElement(titleParagraph);
         }
         
         table.addCell(descCell);
@@ -993,9 +995,15 @@ public class RechnungPdfService {
         // Track ob Bold durch ein Tag geändert wurde (um Block-Default zu respektieren)
         java.util.Deque<Boolean> boldStack = new java.util.ArrayDeque<>();
 
-        for (String part : parts) {
-            part = part.trim();
-            if (part.isEmpty()) continue;
+        for (String originalPart : parts) {
+            String part = originalPart.trim();
+            if (part.isEmpty()) {
+                // Leerzeichen zwischen Tags beibehalten (z.B. zwischen </strong> und Text)
+                if (originalPart.contains(" ") || originalPart.contains("\u00a0")) {
+                    addRichChunk(currentParagraph, " ", currentFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
+                }
+                continue;
+            }
 
             if (part.startsWith("<")) {
                 String tag = part.toLowerCase();
@@ -1181,8 +1189,8 @@ public class RechnungPdfService {
                     }
                 }
             } else {
-                // Text-Content: prüfe auf Bild-Platzhalter
-                String text = part
+                // Text-Content: originalPart verwenden um Leerzeichen zu erhalten
+                String text = originalPart
                         .replace("&nbsp;", " ")
                         .replace("&quot;", "\"")
                         .replace("&#39;", "'")
