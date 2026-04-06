@@ -1231,7 +1231,9 @@ public class AusgangsGeschaeftsDokumentService {
             projekt.setAbgeschlossen(true);
         } else {
             projekt.setBezahlt(false);
-            // abgeschlossen ist ein manuelles Flag – nicht automatisch zurücksetzen
+            if (!keineOffenenPosten) {
+                projekt.setAbgeschlossen(false);
+            }
         }
 
         projektRepository.save(projekt);
