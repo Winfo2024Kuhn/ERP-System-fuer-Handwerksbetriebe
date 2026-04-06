@@ -31,6 +31,11 @@ description: Schritt-für-Schritt Workflow für Bugfixes im ERP-System.
 - Test, der den Bug reproduziert und jetzt grün ist
 - Testname beschreibt das Problem: z.B. `gibtFehlerZurueckWennDatumNullIst()`
 - Nur Dummy-Daten in Tests (`test@example.com`, `Max Mustermann`)
+- **Backend:** JUnit-Test in passender Schicht (`@WebMvcTest`, `@ExtendWith(MockitoExtension.class)`)
+- **Frontend:** Vitest-Test als `*.test.tsx` neben der Quell-Datei
+  - Utility-/Pure-Functions (z.B. `replacePlaceholders`) direkt mit `import` testen
+  - Komponenten mit `@testing-library/react` rendern und DOM-Ausgabe prüfen
+  - Mindestens: Bug-Szenario (vorher fail) + Happy-Path (muss grün bleiben)
 
 ## 5. Qualitätssicherung
 - [ ] `./mvnw test` – alle Tests grün (inkl. neuer Regressionstest)
