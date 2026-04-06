@@ -41,6 +41,7 @@ public class TextbausteinController {
             Map.entry("{{DATUM}}", "Heutiges Datum"),
             Map.entry("{{SEITENZAHL}}", "Seitenangabe"),
             Map.entry("{{DOKUMENTTYP}}", "Dokumenttyp (z. B. Rechnung)"),
+            Map.entry("{{ZAHLUNGSZIEL}}", "Zahlungsziel als Datum"),
             Map.entry("{{ZAHLUNGSZIEL_TAGE}}", "Zahlungsziel des Kunden in Tagen"),
             Map.entry("{{BEZUGSDOKUMENTNUMMER}}", "Dokumentnummer des Bezugsdokuments (Vorgänger)"),
             Map.entry("{{BEZUGSDOKUMENTDATUM}}", "Datum des Bezugsdokuments (Vorgänger)"),
