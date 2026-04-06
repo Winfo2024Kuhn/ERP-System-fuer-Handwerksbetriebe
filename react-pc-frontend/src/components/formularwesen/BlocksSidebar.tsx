@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Layers, GripVertical, Clipboard } from 'lucide-react';
+import { Type, Table2, Image, ChevronDown, ChevronRight, Clipboard, Check } from 'lucide-react';
 import type { FormBlock, FormBlockType } from '../../types';
-import { BLOCK_CATEGORIES, BLOCK_LABELS, BLOCK_ICONS, PLACEHOLDER_MAP, uid, SIZE_DEFAULTS, STYLE_DEFAULTS, DEFAULT_TABLE_COLUMNS } from './constants';
+import { PLACEHOLDER_MAP, uid, SIZE_DEFAULTS, STYLE_DEFAULTS, DEFAULT_TABLE_COLUMNS } from './constants';
 
 interface BlocksSidebarProps {
     items: FormBlock[];
@@ -12,20 +12,31 @@ interface BlocksSidebarProps {
     onInsertPlaceholder: (placeholder: string) => void;
 }
 
-/** Left sidebar — block palette + placeholder chips + layers */
-export default function BlocksSidebar({ items, selectedId, activePage, onSelectBlock, onAddBlock, onInsertPlaceholder }: BlocksSidebarProps) {
-    const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(() => {
-        const initial: Record<string, boolean> = {};
-        BLOCK_CATEGORIES.forEach(c => { initial[c.label] = true; });
-        return initial;
-    });
-    const [showPlaceholders, setShowPlaceholders] = useState(true);
-    const [showLayers, setShowLayers] = useState(true);
-    const [copiedPlaceholder, setCopiedPlaceholder] = useState<string | null>(null);
+const ADD_BLOCKS: { type: FormBlockType; label: string; description: string; icon: React.ReactNode }[] = [
+    {
+        type: 'text',
+        label: 'Freitext',
+        description: 'Freier Textblock mit Platzhalter-Unterstützung',
+        icon: <Type className="w-5 h-5" />
+    },
+    {
+        type: 'table',
+        label: 'Leistungstabelle',
+        description: 'Tabelle mit Positionen, Mengen und Preisen',
+        icon: <Table2 className="w-5 h-5" />
+    },
+    {
+        type: 'logo',
+        label: 'Logo / Bild',
+        description: 'Firmenlogo oder Bild einfügen',
+        icon: <Image className="w-5 h-5" />
+    }
+];
 
-    const toggleCategory = (label: string) => {
-        setExpandedCategories(prev => ({ ...prev, [label]: !prev[label] }));
-    };
+/** Left sidebar — simplified: Freitext, Leistungen, Logo + Platzhalter */
+export default function BlocksSidebar({ items, selectedId, activePage, onAddBlock, onInsertPlaceholder }: BlocksSidebarProps) {
+    const [showPlaceholders, setShowPlaceholders] = useState(true);
+    const [copiedPlaceholder, setCopiedPlaceholder] = useState<string | null>(null);
 
     const handleAddBlock = (type: FormBlockType) => {
         const defaults = SIZE_DEFAULTS[type] || { width: 200, height: 80 };
@@ -46,7 +57,7 @@ export default function BlocksSidebar({ items, selectedId, activePage, onSelectB
     };
 
     const selectedItem = items.find(i => i.id === selectedId) || null;
-    const canInsert = selectedItem && selectedItem.type !== 'table';
+    const canInsert = selectedItem && selectedItem.type !== 'table' && selectedItem.type !== 'logo';
 
     const handlePlaceholderClick = (ph: string) => {
         if (canInsert) {
@@ -69,44 +80,31 @@ export default function BlocksSidebar({ items, selectedId, activePage, onSelectB
                 <p className="text-[11px] text-slate-400 mt-0.5">Klicke um einen Baustein hinzuzufügen</p>
             </div>
 
-            {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {/* Block Categories */}
-                {BLOCK_CATEGORIES.map(category => (
-                    <div key={category.label}>
+
+                {/* Block-Buttons */}
+                <div className="space-y-1.5">
+                    {ADD_BLOCKS.map(({ type, label, description, icon }) => (
                         <button
-                            onClick={() => toggleCategory(category.label)}
-                            className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                            key={type}
+                            onClick={() => handleAddBlock(type)}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 text-left bg-slate-50 border border-slate-200 rounded-xl hover:border-rose-400 hover:bg-rose-50 hover:text-rose-700 transition-all duration-150 group cursor-pointer"
                         >
-                            {expandedCategories[category.label]
-                                ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                                : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                            }
-                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{category.label}</span>
+                            <span className="w-8 h-8 flex-shrink-0 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 group-hover:border-rose-300 group-hover:text-rose-600 transition-colors">
+                                {icon}
+                            </span>
+                            <span className="min-w-0">
+                                <span className="block text-xs font-semibold text-slate-700 group-hover:text-rose-700">{label}</span>
+                                <span className="block text-[10px] text-slate-400 leading-tight truncate">{description}</span>
+                            </span>
                         </button>
-                        {expandedCategories[category.label] && (
-                            <div className="grid grid-cols-2 gap-1.5 mt-1 pl-1">
-                                {category.types.map(type => (
-                                    <button
-                                        key={type}
-                                        onClick={() => handleAddBlock(type)}
-                                        className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-lg hover:border-rose-400 hover:bg-rose-50 hover:text-rose-700 transition-all duration-150 group"
-                                    >
-                                        <span className="w-6 h-6 flex-shrink-0 flex items-center justify-center text-[11px] bg-white border border-slate-200 rounded-md group-hover:border-rose-300 group-hover:bg-rose-50 transition-colors">
-                                            {BLOCK_ICONS[type]}
-                                        </span>
-                                        <span className="truncate">{BLOCK_LABELS[type]}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                ))}
+                    ))}
+                </div>
 
                 {/* Divider */}
                 <div className="border-t border-slate-100" />
 
-                {/* Placeholders */}
+                {/* Platzhalter */}
                 <div>
                     <button
                         onClick={() => setShowPlaceholders(!showPlaceholders)}
@@ -119,72 +117,39 @@ export default function BlocksSidebar({ items, selectedId, activePage, onSelectB
                         <Clipboard className="w-3.5 h-3.5 text-slate-400" />
                         <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Platzhalter</span>
                     </button>
+
                     {showPlaceholders && (
                         <div className="mt-1.5 pl-1">
                             <p className="text-[10px] text-slate-400 mb-2 px-1">
                                 {canInsert
-                                    ? '✓ Textblock ausgewählt — Klicke zum Einfügen'
-                                    : 'Wähle zuerst einen Textblock aus'
+                                    ? <span className="text-rose-500 font-medium">Textblock aktiv — Klicke zum Einfügen</span>
+                                    : 'Wähle einen Textblock aus oder kopiere in Zwischenablage'
                                 }
                             </p>
                             <div className="flex flex-wrap gap-1">
-                                {Object.keys(PLACEHOLDER_MAP).map(ph => (
-                                    <button
-                                        key={ph}
-                                        onClick={() => handlePlaceholderClick(ph)}
-                                        disabled={!canInsert}
-                                        className={`px-2 py-1 text-[10px] font-mono rounded-md transition-all duration-150 ${copiedPlaceholder === ph
-                                            ? 'bg-green-100 text-green-700 border border-green-300'
-                                            : canInsert
-                                                ? 'bg-slate-100 text-slate-600 border border-transparent hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 cursor-pointer'
-                                                : 'bg-slate-50 text-slate-300 border border-transparent cursor-not-allowed'
+                                {Object.keys(PLACEHOLDER_MAP).map(ph => {
+                                    const isCopied = copiedPlaceholder === ph;
+                                    return (
+                                        <button
+                                            key={ph}
+                                            onClick={() => handlePlaceholderClick(ph)}
+                                            title={canInsert ? `Einfügen: ${ph}` : `Kopieren: ${ph}`}
+                                            className={`px-2 py-1 text-[10px] font-mono rounded-md transition-all duration-150 cursor-pointer ${
+                                                isCopied
+                                                    ? 'bg-green-100 text-green-700 border border-green-300'
+                                                    : canInsert
+                                                        ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                                                        : 'bg-slate-100 text-slate-600 border border-transparent hover:bg-slate-200'
                                             }`}
-                                        title={canInsert ? `Klicke zum Einfügen: ${ph}` : 'Wähle zuerst einen Textblock'}
-                                    >
-                                        {copiedPlaceholder === ph ? '✓ Eingefügt' : ph.replace(/[{}]/g, '')}
-                                    </button>
-                                ))}
+                                        >
+                                            {isCopied
+                                                ? <span className="flex items-center gap-1"><Check className="w-3 h-3 inline" /> OK</span>
+                                                : ph.replace(/[{}]/g, '')
+                                            }
+                                        </button>
+                                    );
+                                })}
                             </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Divider */}
-                <div className="border-t border-slate-100" />
-
-                {/* Layers Panel */}
-                <div>
-                    <button
-                        onClick={() => setShowLayers(!showLayers)}
-                        className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-                    >
-                        {showLayers
-                            ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                            : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                        }
-                        <Layers className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ebenen</span>
-                        <span className="ml-auto text-[10px] text-slate-400 bg-slate-100 rounded-full px-1.5 py-0.5">{items.length}</span>
-                    </button>
-                    {showLayers && (
-                        <div className="mt-1.5 space-y-0.5 max-h-48 overflow-y-auto">
-                            {items.sort((a, b) => b.z - a.z).map(item => (
-                                <button
-                                    key={item.id}
-                                    onClick={() => onSelectBlock(item.id, item.page)}
-                                    className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg transition-all duration-100 ${selectedId === item.id
-                                        ? 'bg-rose-50 border border-rose-300 text-rose-700 font-medium'
-                                        : 'hover:bg-slate-50 text-slate-600 border border-transparent'
-                                        }`}
-                                >
-                                    <GripVertical className="w-3 h-3 text-slate-300 flex-shrink-0" />
-                                    <span className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] bg-slate-100 rounded text-slate-500">
-                                        {BLOCK_ICONS[item.type]}
-                                    </span>
-                                    <span className="flex-1 truncate text-left">{BLOCK_LABELS[item.type]}</span>
-                                    <span className="text-[10px] text-slate-400 flex-shrink-0">S{item.page}</span>
-                                </button>
-                            ))}
                         </div>
                     )}
                 </div>
