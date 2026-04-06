@@ -50,6 +50,7 @@ export interface KontextDaten {
     ansprechpartner?: string;
     bezugsdokument?: string;
     bezugsdokumentTyp?: string;
+    bezugsdokumentDatum?: string;
     kundenEmails?: string[];
     zahlungsziel?: number;
 }

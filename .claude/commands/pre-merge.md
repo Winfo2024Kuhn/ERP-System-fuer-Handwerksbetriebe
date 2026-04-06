@@ -26,7 +26,7 @@ Alle Punkte müssen erfüllt sein, bevor ein PR gemergt wird.
 
 ```bash
 ./mvnw clean package -DskipTests   # Kompiliert ohne Fehler?
-./mvnw test                         # Alle Tests grün?
+./mvnw.cmd test 2>&1 | tail -40
 ```
 
 - [ ] Kompilierung erfolgreich

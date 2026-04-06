@@ -29,16 +29,19 @@ import { useToast } from '../components/ui/toast';
 
 const PLACEHOLDERS = [
   { token: '{{Anrede}}', label: 'Anrede' },
-  { token: '{{Kundenname}}', label: 'Kundenname' },
-  { token: '{{Ansprechpartner}}', label: 'Ansprechpartner' },
+  { token: '{{KUNDENNAME}}', label: 'Kundenname' },
+  { token: '{{Ansprechpartner}}', label: 'Ansprechpartner (Kunde)' },
   { token: '{{KUNDENNUMMER}}', label: 'Kundennummer' },
   { token: '{{KUNDENADRESSE}}', label: 'Kundenadresse' },
-  { token: '{{DATUM}}', label: 'Datum' },
-  { token: '{{Zahlungsziel}}', label: 'Zahlungsziel' },
+  { token: '{{DATUM}}', label: 'Datum (heute)' },
+  { token: '{{ZAHLUNGSZIEL_TAGE}}', label: 'Zahlungsziel (Tage)' },
   { token: '{{BAUVORHABEN}}', label: 'Bauvorhaben' },
   { token: '{{DOKUMENTNUMMER}}', label: 'Dokumentnummer' },
   { token: '{{PROJEKTNUMMER}}', label: 'Projektnummer' },
-  { token: '{{DOKUMENTTYP}}', label: 'Dokumenttyp' }
+  { token: '{{DOKUMENTTYP}}', label: 'Dokumenttyp' },
+  { token: '{{BEZUGSDOKUMENTNUMMER}}', label: 'Bezugsdok. Nummer' },
+  { token: '{{BEZUGSDOKUMENTDATUM}}', label: 'Bezugsdok. Datum' },
+  { token: '{{BEZUGSDOKUMENTTYP}}', label: 'Bezugsdok. Typ' },
 ];
 
 const ANREDE_LABELS: Record<string, string> = {
@@ -132,11 +135,15 @@ function replacePlaceholders(html: string, kunde: Kunde | null, days: number) {
     '{{KUNDENADRESSE}}': formatAdresse(kunde),
     '{{DATUM}}': formatDate(new Date()),
     '{{Zahlungsziel}}': formatDate(addDays(new Date(), days)) || null,
+    '{{ZAHLUNGSZIEL_TAGE}}': days ? String(days) : null,
     '{{BAUVORHABEN}}': null,
     '{{DOKUMENTNUMMER}}': null,
     '{{PROJEKTNUMMER}}': null,
     '{{SEITENZAHL}}': null,
-    '{{DOKUMENTTYP}}': null
+    '{{DOKUMENTTYP}}': null,
+    '{{BEZUGSDOKUMENTNUMMER}}': null,
+    '{{BEZUGSDOKUMENTDATUM}}': null,
+    '{{BEZUGSDOKUMENTTYP}}': null
   };
 
   let result = html || '';
@@ -702,7 +709,7 @@ export default function TextbausteinEditor() {
     const q = searchQuery.toLowerCase();
     return templates.filter((tpl) =>
       tpl.name.toLowerCase().includes(q) ||
-      (tpl.docTypes || []).some((dt) => dt.toLowerCase().includes(q))
+      stripHtml(tpl.content).toLowerCase().includes(q)
     );
   }, [templates, searchQuery]);
 

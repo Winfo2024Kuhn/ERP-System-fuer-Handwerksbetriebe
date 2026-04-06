@@ -34,13 +34,17 @@ public class TextbausteinController {
             Map.entry("{{PROJEKTNUMMER}}", "Projektnummer"),
             Map.entry("{{Anrede}}", "Anrede des Kunden"),
             Map.entry("{{KUNDENNAME}}", "Kundenname"),
-            Map.entry("{{Ansprechpartner}}", "Ansprechpartner"),
+            Map.entry("{{Ansprechpartner}}", "Ansprechpartner des Kunden"),
             Map.entry("{{KUNDENNUMMER}}", "Kundennummer"),
             Map.entry("{{KUNDENADRESSE}}", "Kundenadresse mehrzeilig"),
             Map.entry("{{BAUVORHABEN}}", "Bauvorhaben / Projektname"),
             Map.entry("{{DATUM}}", "Heutiges Datum"),
             Map.entry("{{SEITENZAHL}}", "Seitenangabe"),
-            Map.entry("{{DOKUMENTTYP}}", "Dokumenttyp (z. B. Rechnung)")
+            Map.entry("{{DOKUMENTTYP}}", "Dokumenttyp (z. B. Rechnung)"),
+            Map.entry("{{ZAHLUNGSZIEL_TAGE}}", "Zahlungsziel des Kunden in Tagen"),
+            Map.entry("{{BEZUGSDOKUMENTNUMMER}}", "Dokumentnummer des Bezugsdokuments (Vorgänger)"),
+            Map.entry("{{BEZUGSDOKUMENTDATUM}}", "Datum des Bezugsdokuments (Vorgänger)"),
+            Map.entry("{{BEZUGSDOKUMENTTYP}}", "Typ des Bezugsdokuments (z. B. Angebot)")
     );
 
     @GetMapping

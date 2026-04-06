@@ -303,12 +303,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             'BEZUGSDOKUMENT': kontextDaten.bezugsdokument || '',
             'BEZUGSDOKUMENTNUMMER': kontextDaten.bezugsdokument || '',
             'BEZUGSDOKUMENTTYP': kontextDaten.bezugsdokumentTyp || '',
+            'BEZUGSDOKUMENTDATUM': kontextDaten.bezugsdokumentDatum || '',
             'ZAHLUNGSZIEL': (() => {
                 const days = kontextDaten.zahlungsziel ?? 8;
                 const d = datum ? new Date(datum) : new Date();
                 d.setDate(d.getDate() + days);
                 return d.toLocaleDateString('de-DE');
-            })()
+            })(),
+            'ZAHLUNGSZIEL_TAGE': String(kontextDaten.zahlungsziel ?? 8)
         };
 
         return text.replace(/\{\{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*\}\}/g, (match, key) => {
@@ -549,10 +551,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             .then(vorgaenger => {
                                 if (vorgaenger) {
                                     const typLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === vorgaenger.typ)?.label || vorgaenger.typ;
+                                    const vorgaengerDatum = vorgaenger.datum
+                                        ? new Date(vorgaenger.datum).toLocaleDateString('de-DE')
+                                        : '';
                                     setKontextDaten(prev => ({
                                         ...prev,
                                         bezugsdokumentTyp: typLabel,
-                                        bezugsdokument: prev.bezugsdokument || vorgaenger.dokumentNummer
+                                        bezugsdokument: prev.bezugsdokument || vorgaenger.dokumentNummer,
+                                        bezugsdokumentDatum: vorgaengerDatum
                                     }));
                                 }
                             })
@@ -1641,7 +1647,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             kundennummer: kontextDaten.kundennummer || '',
             bezugsdokument: kontextDaten.bezugsdokument || '',
             projektnummer: kontextDaten.projektnummer || '',
-            bauvorhaben: kontextDaten.projektBauvorhaben || betreff || ''
+            bauvorhaben: kontextDaten.projektBauvorhaben || betreff || '',
+            bezugsdokumentTyp: kontextDaten.bezugsdokumentTyp || '',
+            bezugsdokumentDatum: kontextDaten.bezugsdokumentDatum || '',
+            zahlungszielTage: kontextDaten.zahlungsziel ?? null
         };
 
         // Abrechnungsverlauf für Rechnungstypen mit Basisdokument laden

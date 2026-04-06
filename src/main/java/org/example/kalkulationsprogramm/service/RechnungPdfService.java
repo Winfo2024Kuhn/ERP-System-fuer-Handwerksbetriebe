@@ -210,7 +210,18 @@ public class RechnungPdfService {
             String dokumentTyp,
             String bezugsdokument,
             String projektnummer,
-            String bauvorhaben) {
+            String bauvorhaben,
+            String bezugsdokumentTyp,
+            String bezugsdokumentDatum,
+            Integer zahlungszielTage) {
+
+        /** Abwärtskompatibel: ohne die neuen Felder */
+        public KopfdatenDto(String rechnungsnummer, LocalDate rechnungsDatum, LocalDate leistungsDatum,
+                            String kundenName, String kundenAdresse, String betreff, String kundennummer,
+                            String dokumentTyp, String bezugsdokument, String projektnummer, String bauvorhaben) {
+            this(rechnungsnummer, rechnungsDatum, leistungsDatum, kundenName, kundenAdresse, betreff,
+                    kundennummer, dokumentTyp, bezugsdokument, projektnummer, bauvorhaben, null, null, null);
+        }
     }
 
     // ======================= FONTS =======================
@@ -2483,9 +2494,13 @@ public class RechnungPdfService {
         placeholders.put("DOKUMENTTYP",          nullSafe(kopf.dokumentTyp()));
         placeholders.put("BEZUGSDOKUMENT",       nullSafe(kopf.bezugsdokument()));
         placeholders.put("BEZUGSDOKUMENTNUMMER", nullSafe(kopf.bezugsdokument()));
+        placeholders.put("BEZUGSDOKUMENTTYP",    nullSafe(kopf.bezugsdokumentTyp()));
+        placeholders.put("BEZUGSDOKUMENTDATUM",  nullSafe(kopf.bezugsdokumentDatum()));
         placeholders.put("PROJEKTNUMMER",        nullSafe(kopf.projektnummer()));
         placeholders.put("BAUVORHABEN",          nullSafe(kopf.bauvorhaben()));
         placeholders.put("BETREFF",              nullSafe(kopf.betreff()));
+        placeholders.put("ZAHLUNGSZIEL_TAGE",    kopf.zahlungszielTage() != null ? String.valueOf(kopf.zahlungszielTage()) : "");
+        placeholders.put("ANSPRECHPARTNER",      ""); // Kunden-Ansprechpartner – wird ggf. vom Frontend befüllt
 
         String result = text;
         for (var entry : placeholders.entrySet()) {

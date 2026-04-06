@@ -91,7 +91,10 @@ public class DokumentGeneratorController {
             String kundennummer,
             String bezugsdokument,
             String projektnummer,
-            String bauvorhaben) {
+            String bauvorhaben,
+            String bezugsdokumentTyp,
+            String bezugsdokumentDatum,
+            Integer zahlungszielTage) {
     }
 
     public record FormBlockRequest(
@@ -170,7 +173,10 @@ public class DokumentGeneratorController {
                     dokumentTypLabel,
                     request.kopfdaten().bezugsdokument(),
                     request.kopfdaten().projektnummer(),
-                    request.kopfdaten().bauvorhaben());
+                    request.kopfdaten().bauvorhaben(),
+                    request.kopfdaten().bezugsdokumentTyp(),
+                    request.kopfdaten().bezugsdokumentDatum(),
+                    request.kopfdaten().zahlungszielTage());
 
             // 3. Content-Blöcke in originaler Reihenfolge konvertieren (TEXT + SERVICE
             // gemischt)
