@@ -1,12 +1,14 @@
 package org.example.kalkulationsprogramm.service;
 
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.Security;
+import java.security.interfaces.ECPublicKey;
+import java.util.Base64;
+
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
-
-import java.security.*;
-import java.security.interfaces.ECPublicKey;
-import java.util.Base64;
 
 /**
  * Utility to generate VAPID key pair for Web Push notifications.

@@ -1,6 +1,5 @@
 package org.example.kalkulationsprogramm.service;
 
-import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.PrivateKey;
