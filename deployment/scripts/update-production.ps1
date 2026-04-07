@@ -392,6 +392,20 @@ if (Test-Path $localPropsSource) {
     Write-Info "Erstelle diese Datei unter: $localPropsSource"
 }
 
+# RAG-Cache kopieren (damit KI-Hilfe auf dem Server funktioniert)
+Write-Host ""
+Write-Info "Kopiere RAG-Cache fuer KI-Hilfe..."
+$ragCacheSource = Join-Path $REPO_PATH ".rag-cache.json"
+$ragCacheDest = Join-Path $PRODUCTION_PATH ".rag-cache.json"
+if (Test-Path $ragCacheSource) {
+    $ragSize = [math]::Round((Get-Item $ragCacheSource).Length / 1MB, 2)
+    Copy-Item $ragCacheSource $ragCacheDest -Force
+    Write-Success "RAG-Cache kopiert ($ragSize MB) - KI-Hilfe ist aktiv"
+} else {
+    Write-Warning-Custom "RAG-Cache nicht gefunden: $ragCacheSource"
+    Write-Info "Starte die App einmal lokal (mvnw spring-boot:run) um den Cache zu generieren"
+}
+
 # Kopiere OpenFile Launcher Setup-Dateien
 Write-Host ""
 Write-Info "Kopiere OpenFile Launcher Setup-Dateien..."

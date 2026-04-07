@@ -324,6 +324,26 @@ public class LocalRagService {
             List<RawChunk> rawChunks = chunkCodebase(root);
             log.info("RAG-Index: {} Chunks aus Codebase extrahiert", rawChunks.size());
 
+            // Cache-only mode: no source files on disk but cache exists (e.g. deployed server)
+            if (rawChunks.isEmpty() && !cache.isEmpty()) {
+                log.info("RAG-Index: Kein Quellcode gefunden, lade {} Eintraege direkt aus Cache (Server-Modus)", cache.size());
+                List<ChunkEntry> cachedEntries = new ArrayList<>();
+                for (CachedChunk c : cache.values()) {
+                    if (c.vector() != null && !c.vector().isEmpty()) {
+                        cachedEntries.add(new ChunkEntry(
+                                c.content(), c.filePath(), c.category(),
+                                c.chunkType(), c.name(), c.contentHash(),
+                                c.vector().stream().mapToDouble(Double::doubleValue).toArray()
+                        ));
+                    }
+                }
+                vectorStore.clear();
+                vectorStore.addAll(cachedEntries);
+                ready = true;
+                log.info("RAG-Index FERTIG (Cache-Modus): {} Chunks geladen, bereit fuer Anfragen", vectorStore.size());
+                return;
+            }
+
             // Determine which chunks need embedding (new or changed)
             List<RawChunk> needsEmbedding = new ArrayList<>();
             List<ChunkEntry> reusedEntries = new ArrayList<>();
