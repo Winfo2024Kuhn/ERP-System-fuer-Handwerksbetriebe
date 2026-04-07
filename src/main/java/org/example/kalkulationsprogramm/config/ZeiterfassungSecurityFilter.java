@@ -37,6 +37,7 @@ public class ZeiterfassungSecurityFilter implements Filter {
             "/api/dokumente",
             "/api/images",
             "/api/kalender/mobile",
+            "/api/push",
             "/api/abwesenheit");
 
     // Lokale IP-Bereiche die immer Zugriff haben

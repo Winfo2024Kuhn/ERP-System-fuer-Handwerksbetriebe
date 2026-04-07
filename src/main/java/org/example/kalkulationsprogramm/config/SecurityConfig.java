@@ -52,6 +52,7 @@ public class SecurityConfig {
         http
                 .securityMatcher("/zeiterfassung", "/zeiterfassung/**", "/api/zeiterfassung/**", "/api/mitarbeiter/by-token/**",
                         "/api/urlaub/**", "/api/kalender/mobile/**",
+                        "/api/push/**",
                         "/api/dokumente/**", "/api/images/**",
                         "/api/projekte/**", "/api/anfragen/**", "/api/kunden/**",
                         "/api/lieferanten/**", "/api/produktkategorien/**", "/api/arbeitsgaenge/**",
