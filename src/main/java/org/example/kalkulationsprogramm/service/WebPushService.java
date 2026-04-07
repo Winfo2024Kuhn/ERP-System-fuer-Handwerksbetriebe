@@ -1,10 +1,27 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import nl.martijndwars.webpush.Notification;
-import nl.martijndwars.webpush.PushService;
+import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.Security;
+import java.security.interfaces.ECPublicKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
@@ -17,15 +34,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import jakarta.annotation.PostConstruct;
-import java.security.GeneralSecurityException;
-import java.security.Security;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import nl.martijndwars.webpush.Notification;
+import nl.martijndwars.webpush.PushService;
 
 @Slf4j
 @Service
@@ -50,6 +65,7 @@ public class WebPushService {
     private String baseUrl;
 
     private PushService pushService;
+    private String rawVapidPublicKey; // Uncompressed EC point, base64url – for browser PushManager
 
     // Track sent notifications to avoid duplicates (key: "appointmentId_type")
     private final Set<String> sentNotifications = Collections.synchronizedSet(new HashSet<>());
@@ -65,10 +81,30 @@ public class WebPushService {
 
         try {
             Security.addProvider(new BouncyCastleProvider());
-            pushService = new PushService(vapidPublicKey, vapidPrivateKey, vapidSubject);
+
+            byte[] pubBytes = Base64.getUrlDecoder().decode(vapidPublicKey);
+            byte[] privBytes = Base64.getUrlDecoder().decode(vapidPrivateKey);
+
+            KeyFactory kf = KeyFactory.getInstance("EC", "BC");
+            PublicKey publicKey = kf.generatePublic(new X509EncodedKeySpec(pubBytes));
+            PrivateKey privateKey = kf.generatePrivate(new PKCS8EncodedKeySpec(privBytes));
+            KeyPair keyPair = new KeyPair(publicKey, privateKey);
+
+            // Extract raw uncompressed EC point (65 bytes: 0x04 || x || y) for browser API
+            ECPublicKey ecPub = (ECPublicKey) publicKey;
+            byte[] x = ecPub.getW().getAffineX().toByteArray();
+            byte[] y = ecPub.getW().getAffineY().toByteArray();
+            byte[] rawPoint = new byte[65];
+            rawPoint[0] = 0x04;
+            // Copy x and y, right-aligned in 32-byte fields (skip leading 0x00 sign byte if present)
+            System.arraycopy(x, Math.max(0, x.length - 32), rawPoint, 1 + Math.max(0, 32 - x.length), Math.min(32, x.length));
+            System.arraycopy(y, Math.max(0, y.length - 32), rawPoint, 33 + Math.max(0, 32 - y.length), Math.min(32, y.length));
+            rawVapidPublicKey = Base64.getUrlEncoder().withoutPadding().encodeToString(rawPoint);
+
+            pushService = new PushService(keyPair, vapidSubject);
             log.info("Web Push Service initialized with VAPID keys");
-        } catch (GeneralSecurityException e) {
-            log.error("Failed to initialize Web Push Service: {}", e.getMessage());
+        } catch (Exception e) {
+            log.error("Failed to initialize Web Push Service: {}", e.getMessage(), e);
         }
     }
 
@@ -77,7 +113,7 @@ public class WebPushService {
     }
 
     public String getVapidPublicKey() {
-        return vapidPublicKey;
+        return rawVapidPublicKey;
     }
 
     /**

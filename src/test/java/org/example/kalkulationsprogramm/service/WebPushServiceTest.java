@@ -107,16 +107,16 @@ class WebPushServiceTest {
     class GetVapidPublicKey {
 
         @Test
-        @DisplayName("Gibt leeren String zurück wenn nicht konfiguriert")
-        void gibtLeerenKeyZurueck() {
-            assertEquals("", webPushService.getVapidPublicKey());
+        @DisplayName("Gibt null zurück wenn nicht initialisiert")
+        void gibtNullZurueckOhneInit() {
+            assertEquals(null, webPushService.getVapidPublicKey());
         }
 
         @Test
-        @DisplayName("Gibt konfigurierten Key zurück")
-        void gibtKonfiguriertenKeyZurueck() {
-            ReflectionTestUtils.setField(webPushService, "vapidPublicKey", "test-public-key");
-            assertEquals("test-public-key", webPushService.getVapidPublicKey());
+        @DisplayName("Gibt raw public key zurück nach Setzen")
+        void gibtRawKeyZurueck() {
+            ReflectionTestUtils.setField(webPushService, "rawVapidPublicKey", "raw-test-key");
+            assertEquals("raw-test-key", webPushService.getVapidPublicKey());
         }
     }
 
