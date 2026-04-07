@@ -653,9 +653,12 @@ public class ZeitverwaltungController {
     public ResponseEntity<org.springframework.core.io.Resource> getProjektAuswertungPdf(
             @PathVariable Long projektId,
             @RequestParam(required = false) LocalDate von,
-            @RequestParam(required = false) LocalDate bis) {
+            @RequestParam(required = false) LocalDate bis,
+            @RequestParam(required = false, defaultValue = "datum") String sortField,
+            @RequestParam(required = false, defaultValue = "asc") String sortDir,
+            @RequestParam(required = false, defaultValue = "arbeitsgang") String groupBy) {
 
-        java.nio.file.Path pdfPath = projektAuswertungPdfService.generatePdf(projektId, von, bis);
+        java.nio.file.Path pdfPath = projektAuswertungPdfService.generatePdf(projektId, von, bis, sortField, sortDir, groupBy);
 
         try {
             org.springframework.core.io.UrlResource resource = new org.springframework.core.io.UrlResource(
@@ -777,18 +780,24 @@ public class ZeitverwaltungController {
 
         // Produktkategorie
         if (b.getProjektProduktkategorie() != null && b.getProjektProduktkategorie().getProduktkategorie() != null) {
-            map.put("produktkategorieId", b.getProjektProduktkategorie().getProduktkategorie().getId());
-            map.put("produktkategorieName", b.getProjektProduktkategorie().getProduktkategorie().getBezeichnung());
+            org.example.kalkulationsprogramm.domain.Produktkategorie kat = b.getProjektProduktkategorie().getProduktkategorie();
+            map.put("produktkategorieId", kat.getId());
+            map.put("produktkategorieName", kat.getBezeichnung());
+            map.put("produktkategoriePfad", buildKategoriePfad(kat));
         } else {
             map.put("produktkategorieId", null);
             map.put("produktkategorieName", null);
+            map.put("produktkategoriePfad", null);
         }
 
-        // Mitarbeiter Name
+        // Mitarbeiter Name + Qualifikation
         if (b.getMitarbeiter() != null) {
             map.put("mitarbeiterName", b.getMitarbeiter().getVorname() + " " + b.getMitarbeiter().getNachname());
+            map.put("qualifikationName", b.getMitarbeiter().getQualifikation() != null
+                    ? b.getMitarbeiter().getQualifikation().getBezeichnung() : null);
         } else {
             map.put("mitarbeiterName", "Unbekannt");
+            map.put("qualifikationName", null);
         }
 
         // Return TIME ONLY (HH:mm) for frontend 'time' inputs
@@ -814,6 +823,17 @@ public class ZeitverwaltungController {
         map.put("typ", b.getTyp() != null ? b.getTyp().name() : "ARBEIT");
 
         return map;
+    }
+
+    private String buildKategoriePfad(org.example.kalkulationsprogramm.domain.Produktkategorie kategorie) {
+        if (kategorie == null) return null;
+        java.util.Deque<String> parts = new java.util.ArrayDeque<>();
+        org.example.kalkulationsprogramm.domain.Produktkategorie current = kategorie;
+        while (current != null) {
+            parts.addFirst(current.getBezeichnung());
+            current = current.getUebergeordneteKategorie();
+        }
+        return String.join("/", parts);
     }
 
     // ==================== MonatsSaldo Cache ====================
