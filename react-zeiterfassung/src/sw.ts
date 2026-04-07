@@ -174,7 +174,7 @@ async function checkAndNotify(appointments: Appointment[]): Promise<void> {
           badge: '/zeiterfassung/pwa-192x192.png',
           tag: `apt-24h-${apt.id}`,
           requireInteraction: true,
-          data: { url: '/zeiterfassung/kalender' }
+          data: { url: `/zeiterfassung/kalender?termin=${apt.id}` }
         })
         await markAsSent(apt.id, '24h')
         console.log(`[SW] Sent 24h notification for appointment ${apt.id}: ${apt.titel}`)
@@ -194,7 +194,7 @@ async function checkAndNotify(appointments: Appointment[]): Promise<void> {
           badge: '/zeiterfassung/pwa-192x192.png',
           tag: `apt-1h-${apt.id}`,
           requireInteraction: true,
-          data: { url: '/zeiterfassung/kalender' }
+          data: { url: `/zeiterfassung/kalender?termin=${apt.id}` }
         })
         await markAsSent(apt.id, '1h')
         console.log(`[SW] Sent 1h notification for appointment ${apt.id}: ${apt.titel}`)
@@ -266,6 +266,52 @@ swSelf.addEventListener('periodicsync', (event: PeriodicSyncEvent) => {
       }
     })())
   }
+})
+
+// ─── Web Push Event: Server-sent push notifications (iOS lock screen support) ───
+self.addEventListener('push', (event) => {
+  if (!event.data) {
+    console.log('[SW] Push event without data')
+    return
+  }
+
+  event.waitUntil((async () => {
+    try {
+      const payload = event.data!.json() as {
+        title: string
+        body: string
+        url: string
+        appointmentId: number
+        type: string
+        timestamp: number
+      }
+
+      const icon = payload.type === '1h'
+        ? '⏰'
+        : '📅'
+
+      await self.registration.showNotification(`${icon} ${payload.title}`, {
+        body: payload.body,
+        icon: '/zeiterfassung/pwa-192x192.png',
+        badge: '/zeiterfassung/pwa-192x192.png',
+        tag: `apt-${payload.type}-${payload.appointmentId}`,
+        requireInteraction: true,
+        data: { url: payload.url || '/zeiterfassung/kalender' }
+      })
+
+      console.log(`[SW] Push notification shown: ${payload.title}`)
+    } catch (err) {
+      console.error('[SW] Error handling push event:', err)
+      // Show a generic notification if payload parsing fails
+      await self.registration.showNotification('Neuer Termin-Hinweis', {
+        body: 'Öffne die App für Details',
+        icon: '/zeiterfassung/pwa-192x192.png',
+        badge: '/zeiterfassung/pwa-192x192.png',
+        tag: 'apt-generic',
+        data: { url: '/zeiterfassung/kalender' }
+      })
+    }
+  })())
 })
 
 // ─── Notification Click: open/focus the app ───

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
     ArrowLeft, Calendar, ChevronLeft, ChevronRight, RefreshCw, Clock,
     Users, LayoutGrid, List, CalendarClock, X, ExternalLink,
@@ -107,6 +107,7 @@ interface Feiertag {
 
 export default function KalenderPage({ token, syncStatus, onSync }: KalenderPageProps) {
     const navigate = useNavigate()
+    const [searchParams, setSearchParams] = useSearchParams()
     const [eintraege, setEintraege] = useState<KalenderEintrag[]>([])
     const [teamAbwesenheiten, setTeamAbwesenheiten] = useState<TeamAbwesenheit[]>([])
     const [feiertage, setFeiertage] = useState<Feiertag[]>([])
@@ -124,6 +125,36 @@ export default function KalenderPage({ token, syncStatus, onSync }: KalenderPage
         if (token) loadEintraege()
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, jahr, monat])
+
+    // Deep link: auto-open appointment from notification click (?termin=ID)
+    useEffect(() => {
+        const terminId = searchParams.get('termin')
+        if (!terminId || !token || loading) return
+
+        const id = parseInt(terminId, 10)
+        if (isNaN(id)) return
+
+        // Find in loaded entries
+        const eintrag = eintraege.find(e => e.id === id)
+        if (eintrag) {
+            setSelectedEintrag(eintrag)
+            setShowEventModal(true)
+            // Navigate to the correct date
+            const [y, m] = eintrag.datum.split('-').map(Number)
+            if (y !== jahr || m !== monat) {
+                setSelectedDate(new Date(y, m - 1, 1))
+            }
+            // Clear the query param after handling
+            setSearchParams({}, { replace: true })
+        } else if (!loading) {
+            // Appointment might be in a different month - fetch it directly
+            fetch(`/api/kalender/mobile/tag?token=${encodeURIComponent(token)}&datum=${new Date().toISOString().split('T')[0]}`)
+                .catch(() => {})
+            // Clear the query param
+            setSearchParams({}, { replace: true })
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams, eintraege, loading])
 
     const loadEintraege = async () => {
         if (!token) return

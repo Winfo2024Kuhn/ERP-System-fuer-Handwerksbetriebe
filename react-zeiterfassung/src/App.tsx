@@ -186,7 +186,8 @@ function App() {
   }
 
   // Initialize push notifications for appointment reminders
-  // Uses Service Worker registration.showNotification() for lock screen support
+  // Uses Web Push API (VAPID) for iOS lock screen support,
+  // falls back to SW message-based polling for other browsers
   const initializeNotifications = async (token: string) => {
     // Request permission
     const granted = await NotificationService.requestPermission()
@@ -194,12 +195,21 @@ function App() {
       console.log('Notification permission granted')
       // Store token for Service Worker periodic background sync
       await NotificationService.storeTokenForSW(token)
-      // Register periodic background sync (where supported)
+
+      // Try Web Push subscription (required for iOS lock screen notifications)
+      const pushSubscribed = await NotificationService.subscribeToPush(token)
+      if (pushSubscribed) {
+        console.log('Web Push subscription active - server will send notifications')
+      } else {
+        console.log('Web Push not available - using fallback polling')
+      }
+
+      // Register periodic background sync (Android Chrome/Edge)
       await NotificationService.registerPeriodicSync()
-      // Check immediately via Service Worker
+      // Check immediately via Service Worker (fallback)
       NotificationService.loadAndCheck(token)
       // Set up periodic check every 5 minutes as fallback
-      // (for browsers that don't support periodic background sync)
+      // (for browsers that don't support Web Push or periodic background sync)
       if (notificationIntervalRef.current) {
         clearInterval(notificationIntervalRef.current)
       }

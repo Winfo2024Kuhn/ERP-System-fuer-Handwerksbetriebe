@@ -1,19 +1,35 @@
 /**
  * NotificationService - Manages push notifications for appointment reminders
  * 
- * Uses Service Worker registration.showNotification() for lock screen support.
- * The Service Worker handles the actual notification display, allowing
- * notifications to appear even when the app is in the background or the
- * screen is locked.
+ * Uses Web Push API (VAPID) for true server-sent push notifications.
+ * This enables lock screen notifications on iOS (16.4+) and Android,
+ * even when the app is closed or the screen is locked.
  * 
- * Sends notifications:
+ * The server sends push messages:
  * - 24 hours before an appointment
  * - 1 hour before an appointment
+ * 
+ * Fallback: If Web Push is not available, uses SW message-based
+ * polling (works when app is in foreground).
  */
 
 // IndexedDB name used by the service worker for tracking sent notifications
 const SENT_DB_NAME = 'sw-notifications'
 const SENT_STORE_NAME = 'sent'
+
+/**
+ * Convert a URL-safe base64 VAPID key to a Uint8Array for PushManager.subscribe()
+ */
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+    const rawData = window.atob(base64)
+    const outputArray = new Uint8Array(rawData.length)
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i)
+    }
+    return outputArray
+}
 
 export const NotificationService = {
     /**
@@ -21,6 +37,13 @@ export const NotificationService = {
      */
     isSupported(): boolean {
         return 'Notification' in window && 'serviceWorker' in navigator
+    },
+
+    /**
+     * Check if Web Push (PushManager) is supported
+     */
+    isPushSupported(): boolean {
+        return 'PushManager' in window && 'serviceWorker' in navigator
     },
 
     /**
@@ -60,6 +83,71 @@ export const NotificationService = {
     },
 
     /**
+     * Subscribe to Web Push notifications via the Push API.
+     * This is required for iOS lock screen notifications.
+     * The subscription is sent to the server which will use it
+     * to send push messages for calendar reminders.
+     */
+    async subscribeToPush(token: string): Promise<boolean> {
+        if (!this.isPushSupported()) {
+            console.log('[Push] PushManager not supported')
+            return false
+        }
+
+        try {
+            // 1. Get VAPID public key from server
+            const vapidRes = await fetch(`/api/push/vapid-key?token=${encodeURIComponent(token)}`)
+            if (!vapidRes.ok) {
+                console.log('[Push] Failed to get VAPID key:', vapidRes.status)
+                return false
+            }
+            const { publicKey, enabled } = await vapidRes.json()
+            if (enabled === 'false' || !publicKey) {
+                console.log('[Push] Web Push not enabled on server')
+                return false
+            }
+
+            // 2. Subscribe via PushManager
+            const registration = await navigator.serviceWorker.ready
+            let subscription = await registration.pushManager.getSubscription()
+
+            if (!subscription) {
+                const applicationServerKey = urlBase64ToUint8Array(publicKey)
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: applicationServerKey.buffer as ArrayBuffer
+                })
+                console.log('[Push] New push subscription created')
+            } else {
+                console.log('[Push] Existing push subscription found')
+            }
+
+            // 3. Send subscription to server
+            const subJson = subscription.toJSON()
+            const res = await fetch(`/api/push/subscribe?token=${encodeURIComponent(token)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    endpoint: subJson.endpoint,
+                    p256dh: subJson.keys?.p256dh || '',
+                    auth: subJson.keys?.auth || ''
+                })
+            })
+
+            if (res.ok) {
+                console.log('[Push] Subscription sent to server successfully')
+                return true
+            } else {
+                console.warn('[Push] Server rejected subscription:', res.status)
+                return false
+            }
+        } catch (err) {
+            console.error('[Push] Error subscribing to push:', err)
+            return false
+        }
+    },
+
+    /**
      * Store token in IndexedDB so the Service Worker can access it
      * for periodic background sync (localStorage is not available in SW).
      */
@@ -94,7 +182,7 @@ export const NotificationService = {
     /**
      * Register for Periodic Background Sync if available.
      * This allows the Service Worker to check for appointments
-     * even when the app is closed.
+     * even when the app is closed (Android Chrome/Edge only).
      */
     async registerPeriodicSync(): Promise<void> {
         try {
@@ -122,10 +210,6 @@ export const NotificationService = {
 
     /**
      * Called after a Lieferschein was successfully uploaded from the mobile app.
-     * Stores the token so the Service Worker stays up-to-date and triggers
-     * an immediate appointment-notification check.
-     * The PC desktop picks up the new Lieferschein via its polling interval
-     * (≤60 s) without any extra push needed.
      */
     async onLieferscheinUploaded(token: string): Promise<void> {
         await this.storeTokenForSW(token)
@@ -134,8 +218,6 @@ export const NotificationService = {
 
     /**
      * Called after a Reklamation was successfully created from the mobile app.
-     * Same pattern as onLieferscheinUploaded – the PC notification bell
-     * detects the new open Reklamation on its next poll cycle.
      */
     async onReklamationCreated(token: string): Promise<void> {
         await this.storeTokenForSW(token)
@@ -144,9 +226,8 @@ export const NotificationService = {
 
     /**
      * Send a message to the Service Worker to check appointments
-     * and show notifications via registration.showNotification().
-     * This delegates the actual notification display to the SW,
-     * which works on the lock screen.
+     * and show notifications. This is a fallback for browsers
+     * that don't support the Push API (works when app is open).
      */
     async loadAndCheck(token: string): Promise<void> {
         if (!token || !this.isSupported() || Notification.permission !== 'granted') {
