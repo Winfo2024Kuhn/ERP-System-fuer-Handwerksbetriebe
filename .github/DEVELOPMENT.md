@@ -735,23 +735,24 @@ Auf jedem PC, der Dateien direkt öffnen soll:
 
 Kein Neustart nötig. Ab sofort öffnen sich Excel- und HiCAD-Dateien per Klick direkt im Programm.
 
-### 3. `launcher.ps1` – erlaubte Netzwerkpfade
+### 3. `launcher.ps1` – erlaubte Netzwerkpfade (config.json)
 
-Die Datei `deployment/openfile-launcher/launcher.ps1` enthält eine Whitelist erlaubter UNC-Roots:
+Der Launcher liest die erlaubten UNC-Roots **dynamisch** aus `C:\Program Files\OpenFileLauncher\config.json`. Diese Datei wird von `Setup-Freigabe.ps1` automatisch aus `hicad.network-url` generiert — `launcher.ps1` selbst muss nie manuell bearbeitet werden.
 
-```powershell
-$AllowedRoots = @(
-  '\\<RECHNERNAME>\ERP-Uploads\CADdrawings'
-)
+```json
+{
+  "allowedRoots": ["\\\\<RECHNERNAME>\\ERP-Uploads\\CADdrawings"],
+  "rootAliases": {}
+}
 ```
 
-**Wichtig:** Wird der Servername oder Freigabename geändert, muss `AllowedRoots` aktualisiert und der Launcher auf allen Clients neu installiert werden (`Setup-Freigabe.ps1` als Admin ausführen).
+**Pfad ändern:** Nur `hicad.network-url` in `application-local.properties` anpassen, dann `Setup-Freigabe.ps1` als Admin ausführen — `config.json` wird neu generiert und der Launcher automatisch aktualisiert.
 
 ### Troubleshooting
 
 | Problem | Ursache | Lösung |
 |---------|---------|--------|
-| Datei wird heruntergeladen statt geöffnet | `hicad.network-url` nicht gesetzt oder kein UNC-Pfad | `application-local.properties` prüfen, Backend neu starten |
-| Launcher öffnet sich nicht | `openfile://`-Protokoll nicht registriert | OpenFileLauncher auf dem Client neu installieren |
-| „Pfad nicht gefunden" im Launcher | UNC-Root nicht in `AllowedRoots` | `launcher.ps1` aktualisieren + Setup-Skript als Admin ausführen |
+| Datei wird heruntergeladen statt geöffnet | `hicad.network-url` nicht gesetzt oder kein UNC-Pfad | `application-local.properties` prüfen (Java-Escaping: `\\\\SERVER\\Share`), Backend neu starten |
+| Launcher öffnet sich nicht | `openfile://`-Protokoll nicht registriert | OpenFileLauncher auf dem Client neu installieren (`INSTALL.bat` als Admin) |
+| „Pfad nicht gefunden" im Launcher | `config.json` fehlt oder falsche `allowedRoots` | `Setup-Freigabe.ps1` als Admin auf dem Serverrechner ausführen, dann `config.json` auf Client-PCs verteilen |
 | Freigabe nicht erreichbar | Windows-Firewall blockiert SMB | Firewall-Regel für Port 445 prüfen oder Freigabe auf dem Server kontrollieren |
