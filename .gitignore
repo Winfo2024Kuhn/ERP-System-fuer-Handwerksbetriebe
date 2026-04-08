@@ -64,3 +64,4 @@ src/main/resources/keystore.p12
 
 ### Misc ###
 package-lock.json
+.claude/fix_zeitbuchungen.py
