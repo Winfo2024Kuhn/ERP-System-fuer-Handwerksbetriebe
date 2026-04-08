@@ -189,6 +189,30 @@ class ProjektAuswertungPdfServiceTest {
             assertThat(service.resolveGroupKey(b, "unbekannt"))
                     .isEqualTo("Sonstiges");
         }
+
+        @Test
+        @DisplayName("groupBy=produktkategorie mit Kategorie → Kategoriepfad")
+        void gruppierungProduktkategorieVorhanden() {
+            Produktkategorie root = kategorie("Geländer", null);
+            Produktkategorie kind = kategorie("Edelstahl", root);
+
+            ProjektProduktkategorie ppk = new ProjektProduktkategorie();
+            ppk.setProduktkategorie(kind);
+
+            Zeitbuchung b = new Zeitbuchung();
+            b.setProjektProduktkategorie(ppk);
+
+            assertThat(service.resolveGroupKey(b, "produktkategorie"))
+                    .isEqualTo("Geländer/Edelstahl");
+        }
+
+        @Test
+        @DisplayName("groupBy=produktkategorie ohne Kategorie → Fallback")
+        void gruppierungProduktkategorieFehlend() {
+            Zeitbuchung b = new Zeitbuchung();
+            assertThat(service.resolveGroupKey(b, "produktkategorie"))
+                    .isEqualTo("Keine Kategorie");
+        }
     }
 
     // ─── groupByLabel ────────────────────────────────────────────────────────
@@ -197,11 +221,12 @@ class ProjektAuswertungPdfServiceTest {
     @DisplayName("groupByLabel")
     class GroupByLabelTests {
 
-        @Test void arbeitsgang()   { assertThat(service.groupByLabel("arbeitsgang")).isEqualTo("Arbeitsgang"); }
-        @Test void qualifikation() { assertThat(service.groupByLabel("qualifikation")).isEqualTo("Qualifikation"); }
-        @Test void mitarbeiter()   { assertThat(service.groupByLabel("mitarbeiter")).isEqualTo("Mitarbeiter"); }
-        @Test void datum()         { assertThat(service.groupByLabel("datum")).isEqualTo("Datum"); }
-        @Test void fallback()      { assertThat(service.groupByLabel("xyz")).isEqualTo("Arbeitsgang"); }
+        @Test void arbeitsgang()      { assertThat(service.groupByLabel("arbeitsgang")).isEqualTo("Arbeitsgang"); }
+        @Test void qualifikation()    { assertThat(service.groupByLabel("qualifikation")).isEqualTo("Qualifikation"); }
+        @Test void mitarbeiter()      { assertThat(service.groupByLabel("mitarbeiter")).isEqualTo("Mitarbeiter"); }
+        @Test void datum()            { assertThat(service.groupByLabel("datum")).isEqualTo("Datum"); }
+        @Test void produktkategorie() { assertThat(service.groupByLabel("produktkategorie")).isEqualTo("Produktkategorie"); }
+        @Test void fallback()         { assertThat(service.groupByLabel("xyz")).isEqualTo("Arbeitsgang"); }
     }
 
     // ─── buildComparator ────────────────────────────────────────────────────
