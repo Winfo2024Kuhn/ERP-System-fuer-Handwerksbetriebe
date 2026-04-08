@@ -1,5 +1,6 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
 import { X, Search, Building2, User, Briefcase, FileText, Mail, Loader2 } from 'lucide-react';
@@ -134,6 +135,25 @@ export function EmailRecipientInput({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Dropdown-Position berechnen (Portal braucht fixed-Koordinaten via CSS-Custom-Properties)
+    useEffect(() => {
+        if (!isOpen || !wrapperRef.current) return;
+        const el = wrapperRef.current;
+        const updatePosition = () => {
+            const rect = el.getBoundingClientRect();
+            el.style.setProperty('--dropdown-top', `${rect.bottom + 4}px`);
+            el.style.setProperty('--dropdown-left', `${rect.left}px`);
+            el.style.setProperty('--dropdown-width', `${rect.width}px`);
+        };
+        updatePosition();
+        window.addEventListener('scroll', updatePosition, true);
+        window.addEventListener('resize', updatePosition);
+        return () => {
+            window.removeEventListener('scroll', updatePosition, true);
+            window.removeEventListener('resize', updatePosition);
+        };
+    }, [isOpen]);
+
     // Reset highlight when items change
     useEffect(() => {
         setHighlightIdx(-1);
@@ -211,9 +231,9 @@ export function EmailRecipientInput({
                 )}
             </div>
 
-            {/* Premium Dropdown */}
-            {showDropdown && (
-                <div className="absolute z-[70] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-auto animate-in fade-in zoom-in-95 duration-150">
+            {/* Premium Dropdown – via Portal gerendert, damit overflow:hidden der Eltern nicht abschneidet */}
+            {showDropdown && createPortal(
+                <div className="email-recipient-dropdown bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-auto animate-in fade-in zoom-in-95 duration-150">
                     {/* Verknüpfte E-Mail-Adressen (immer sichtbar wenn vorhanden) */}
                     {linkedEmails.length > 0 && (
                         <>
@@ -353,7 +373,8 @@ export function EmailRecipientInput({
                             </p>
                         </div>
                     )}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
