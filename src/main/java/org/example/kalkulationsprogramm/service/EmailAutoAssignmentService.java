@@ -23,6 +23,7 @@ public class EmailAutoAssignmentService {
     private final LieferantenRepository lieferantenRepository;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
+    private final EmailKiClassificationService emailKiClassificationService;
 
     /**
      * Versucht eine Email automatisch zuzuordnen.
@@ -111,9 +112,13 @@ public class EmailAutoAssignmentService {
             return assignToSingleMatch(email, matchingProjekte, matchingAnfragen, "Zeitfenster-Match");
         }
 
-        // 2b. Mehrere Matches im Zeitfenster → Schlagwortsuche
+        // 2b. Mehrere Matches im Zeitfenster → Schlagwortsuche, dann KI-Fallback
         if (totalMatches > 1) {
             if (tryAssignByKeywords(email, matchingProjekte, matchingAnfragen)) {
+                return true;
+            }
+            // KI-Fallback: Wenn Schlagwörter nicht reichen, KI fragen
+            if (tryAssignByKi(email, matchingProjekte, matchingAnfragen)) {
                 return true;
             }
         }
@@ -131,7 +136,11 @@ public class EmailAutoAssignmentService {
             }
             
             if (globalMatches > 1) {
-                return tryAssignByKeywords(email, allProjekte, allAnfragen);
+                if (tryAssignByKeywords(email, allProjekte, allAnfragen)) {
+                    return true;
+                }
+                // KI-Fallback für globale Matches
+                return tryAssignByKi(email, allProjekte, allAnfragen);
             }
         }
 
@@ -241,6 +250,52 @@ public class EmailAutoAssignmentService {
                 .collect(Collectors.toList());
 
         return result;
+    }
+
+    /**
+     * KI-basierte Zuordnung als Fallback wenn Schlagwortsuche nicht greift.
+     * Ollama bekommt alle Kandidaten mit Email-Verlauf und entscheidet.
+     */
+    @Transactional
+    public boolean tryAssignByKi(Email email, List<Projekt> projekte, List<Anfrage> anfragen) {
+        try {
+            EmailKiClassificationService.ClassificationResult result =
+                    emailKiClassificationService.classify(email, projekte, anfragen);
+
+            if (!result.isAssigned()) {
+                log.info("[AutoAssign] KI konnte Email {} nicht zuordnen: {}", email.getId(), result.reason());
+                return false;
+            }
+
+            if (result.zuordnungTyp() == EmailZuordnungTyp.PROJEKT) {
+                Optional<Projekt> match = projekte.stream()
+                        .filter(p -> p.getId().equals(result.entityId()))
+                        .findFirst();
+                if (match.isPresent()) {
+                    email.assignToProjekt(match.get());
+                    emailRepository.save(email);
+                    log.info("[AutoAssign] Email {} → Projekt {} (KI-Zuordnung, confidence={}, reason={})",
+                            email.getId(), match.get().getBauvorhaben(), result.confidence(), result.reason());
+                    return true;
+                }
+            } else if (result.zuordnungTyp() == EmailZuordnungTyp.ANFRAGE) {
+                Optional<Anfrage> match = anfragen.stream()
+                        .filter(a -> a.getId().equals(result.entityId()))
+                        .findFirst();
+                if (match.isPresent()) {
+                    email.assignToAnfrage(match.get());
+                    emailRepository.save(email);
+                    log.info("[AutoAssign] Email {} → Anfrage {} (KI-Zuordnung, confidence={}, reason={})",
+                            email.getId(), match.get().getBauvorhaben(), result.confidence(), result.reason());
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (Exception e) {
+            log.warn("[AutoAssign] KI-Zuordnung fehlgeschlagen für Email {}: {}", email.getId(), e.getMessage());
+            return false;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
