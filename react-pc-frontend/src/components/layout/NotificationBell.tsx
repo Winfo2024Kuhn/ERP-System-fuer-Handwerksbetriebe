@@ -72,12 +72,15 @@ const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string
 };
 
 // ── Dismissal helpers ────────────────────────────────────────────────────
+// Dismissals speichern den Stand zum Zeitpunkt des Klicks.
+// Eine Kategorie bleibt ausgeblendet bis ihr Count *höher* wird als beim Dismiss.
+// Items bleiben ausgeblendet bis zur nächsten Seiten-Sitzung (sessionStorage).
 
-const DISMISSAL_KEY = 'notification_dismissals';
+const DISMISSAL_KEY = 'notification_dismissals_v2';
 
 interface Dismissals {
-    categories: Record<string, number>; // type → timestamp
-    items: Record<string, number>;      // "type-title" → timestamp
+    // type → count beim Dismiss (nicht timestamp!)
+    categories: Record<string, number>;
 }
 
 function loadDismissals(): Dismissals {
@@ -85,44 +88,47 @@ function loadDismissals(): Dismissals {
         const raw = localStorage.getItem(DISMISSAL_KEY);
         if (raw) return JSON.parse(raw);
     } catch { /* ignore */ }
-    return { categories: {}, items: {} };
+    return { categories: {} };
 }
 
 function saveDismissals(d: Dismissals) {
     localStorage.setItem(DISMISSAL_KEY, JSON.stringify(d));
 }
 
-function dismissCategory(type: string) {
+function dismissCategory(type: string, count: number) {
     const d = loadDismissals();
-    d.categories[type] = Date.now();
+    d.categories[type] = count;
     saveDismissals(d);
 }
 
 function dismissItem(type: string, title: string) {
-    const d = loadDismissals();
-    d.items[`${type}::${title}`] = Date.now();
-    saveDismissals(d);
+    // Items nur für diese Sitzung ausblenden (SessionStorage)
+    try {
+        const raw = sessionStorage.getItem('notification_dismissed_items') || '[]';
+        const items: string[] = JSON.parse(raw);
+        const key = `${type}::${title}`;
+        if (!items.includes(key)) { items.push(key); sessionStorage.setItem('notification_dismissed_items', JSON.stringify(items)); }
+    } catch { /* ignore */ }
 }
 
 function filterDismissed(data: NotificationSummary): NotificationSummary {
     const d = loadDismissals();
-    const now = Date.now();
-    const MAX_AGE = 5 * 60 * 1000; // 5 minutes — after that, re-show if still present
 
-    // Clean up expired dismissals
-    let changed = false;
-    for (const key of Object.keys(d.categories)) {
-        if (now - d.categories[key] > MAX_AGE) { delete d.categories[key]; changed = true; }
-    }
-    for (const key of Object.keys(d.items)) {
-        if (now - d.items[key] > MAX_AGE) { delete d.items[key]; changed = true; }
-    }
-    if (changed) saveDismissals(d);
+    // Kategorie einblenden sobald count > dismissedCount (echte neue Einträge)
+    const categories = data.categories.filter(c => {
+        const dismissedCount = d.categories[c.type];
+        if (dismissedCount === undefined) return true;  // nie dismissed
+        return c.count > dismissedCount;                // neue dazugekommen
+    });
 
-    const categories = data.categories.filter(c => !d.categories[c.type]);
-    const recentItems = data.recentItems.filter(item => !d.items[`${item.type}::${item.title}`]);
+    // Items: sitzungsbasiert ausblenden
+    let dismissedItems: string[] = [];
+    try {
+        dismissedItems = JSON.parse(sessionStorage.getItem('notification_dismissed_items') || '[]');
+    } catch { /* ignore */ }
+    const recentItems = data.recentItems.filter(item => !dismissedItems.includes(`${item.type}::${item.title}`));
+
     const totalCount = categories.reduce((sum, c) => sum + c.count, 0);
-
     return { totalCount, categories, recentItems };
 }
 
@@ -221,7 +227,7 @@ export function NotificationBell() {
     };
 
     const handleCategoryClick = (cat: CategoryDto) => {
-        dismissCategory(cat.type);
+        dismissCategory(cat.type, cat.count);
         // Immediately update local display
         if (rawData) setData(filterDismissed(rawData));
         handleNavigate(cat.link, cat.type);

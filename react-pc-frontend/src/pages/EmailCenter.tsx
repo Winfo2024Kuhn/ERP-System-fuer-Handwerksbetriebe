@@ -31,7 +31,8 @@ import {
     Newspaper,
     Globe,
     X,
-    CheckSquare
+    CheckSquare,
+    MailCheck
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -871,6 +872,28 @@ export default function EmailCenter() {
         }
     };
 
+    const handleMarkAllRead = async () => {
+        const unreadCount = emails.filter(e => !e.isRead).length;
+        if (unreadCount === 0) { toast.info("Alle E-Mails bereits gelesen"); return; }
+
+        // Optimistic: alle lokal auf gelesen setzen
+        setEmails(prev => prev.map(e => ({ ...e, isRead: true })));
+
+        try {
+            const res = await fetch(`/api/emails/mark-all-read?folder=${encodeURIComponent(activeFolder)}`, { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                toast.success(`${data.updated} E-Mail${data.updated !== 1 ? 's' : ''} als gelesen markiert`);
+                loadStats();
+            } else {
+                throw new Error('Fehler');
+            }
+        } catch {
+            toast.error("Fehler beim Markieren als gelesen");
+            refreshEmailsSilently();
+        }
+    };
+
     const handleScanAssignments = async () => {
         if (!await confirmDialog({ title: "E-Mails erneut prüfen", message: "Alle unzugeordneten E-Mails im Posteingang erneut prüfen?\nDies kann einen Moment dauern.", variant: "info", confirmLabel: "Prüfen" })) return;
 
@@ -1542,6 +1565,22 @@ export default function EmailCenter() {
 
             {/* Middle List - Email List */}
             <div className="w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+                {/* Ordner-Header mit "Alle gelesen"-Button */}
+                {!isGlobalSearch && activeFolder !== 'sent' && emails.some(e => !e.isRead) && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                        <span className="text-xs text-slate-500 font-medium">
+                            {emails.filter(e => !e.isRead).length} ungelesen
+                        </span>
+                        <button
+                            onClick={handleMarkAllRead}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
+                            title="Alle als gelesen markieren"
+                        >
+                            <MailCheck className="w-3.5 h-3.5" />
+                            Alle gelesen
+                        </button>
+                    </div>
+                )}
                 {/* Search */}
                 <div className="p-3 border-b border-slate-200 space-y-2">
                     <div className="relative">

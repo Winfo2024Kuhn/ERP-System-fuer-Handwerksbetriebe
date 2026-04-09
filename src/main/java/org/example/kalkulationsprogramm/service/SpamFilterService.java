@@ -80,39 +80,133 @@ public class SpamFilterService {
      * Gewichtung: 15-30 Punkte je nach Keyword.
      */
     private static final List<SpamKeyword> SPAM_KEYWORDS = List.of(
-            // Gewinnspiele / Betrug
+            // ─────────────────────────────────────────────────────────
+            // GEWINNSPIELE / BETRUG (DE + EN)
+            // ─────────────────────────────────────────────────────────
             new SpamKeyword("gewinnspiel", 30),
+            new SpamKeyword("sie haben gewonnen", 45),
             new SpamKeyword("gewonnen", 25),
+            new SpamKeyword("herzlichen glückwunsch", 20),
             new SpamKeyword("winner", 25),
             new SpamKeyword("congratulations you won", 40),
             new SpamKeyword("lottery", 35),
+            new SpamKeyword("lotterie", 35),
+            new SpamKeyword("geldpreis", 40),
+            new SpamKeyword("preisgeld", 35),
+            new SpamKeyword("sofortgewinn", 40),
+            new SpamKeyword("gratis iphone", 50),
+            new SpamKeyword("kostenlos iphone", 45),
+            new SpamKeyword("gutschein geschenkt", 30),
+            new SpamKeyword("amazon gutschein", 25),
 
-            // Pharma-Spam
+            // ─────────────────────────────────────────────────────────
+            // PHARMA-SPAM (DE + EN)
+            // ─────────────────────────────────────────────────────────
             new SpamKeyword("viagra", 50),
             new SpamKeyword("cialis", 50),
             new SpamKeyword("pharmacy", 30),
+            new SpamKeyword("apotheke online", 30),
+            new SpamKeyword("online apotheke", 30),
+            new SpamKeyword("rezeptfrei", 35),
+            new SpamKeyword("ohne rezept", 35),
             new SpamKeyword("medication", 20),
+            new SpamKeyword("pills", 25),
+            new SpamKeyword("tabletten bestellen", 30),
+            new SpamKeyword("potenzmittel", 50),
+            new SpamKeyword("abnehmpillen", 40),
+            new SpamKeyword("diätpillen", 40),
+            new SpamKeyword("weight loss pill", 35),
 
-            // Casino / Glücksspiel
+            // ─────────────────────────────────────────────────────────
+            // CASINO / GLÜCKSSPIEL (DE + EN)
+            // ─────────────────────────────────────────────────────────
             new SpamKeyword("casino", 35),
+            new SpamKeyword("online casino", 45),
             new SpamKeyword("jackpot", 30),
             new SpamKeyword("bet now", 35),
+            new SpamKeyword("jetzt wetten", 35),
+            new SpamKeyword("freispiele", 35),
+            new SpamKeyword("free spins", 35),
+            new SpamKeyword("spielautomaten", 40),
+            new SpamKeyword("slot machine", 35),
+            new SpamKeyword("sportwetten bonus", 40),
+            new SpamKeyword("einzahlungsbonus", 35),
+            new SpamKeyword("poker bonus", 30),
 
-            // Finanz-Spam
+            // ─────────────────────────────────────────────────────────
+            // FINANZ-SPAM / KRYPTO-BETRUG (DE + EN)
+            // ─────────────────────────────────────────────────────────
             new SpamKeyword("bitcoin opportunity", 35),
             new SpamKeyword("investment opportunity", 25),
             new SpamKeyword("make money fast", 40),
+            new SpamKeyword("schnell geld verdienen", 40),
             new SpamKeyword("earn extra cash", 30),
             new SpamKeyword("millionaire", 25),
+            new SpamKeyword("millionär werden", 35),
+            new SpamKeyword("krypto geheimtipp", 45),
+            new SpamKeyword("crypto profit", 40),
+            new SpamKeyword("trading bot", 35),
+            new SpamKeyword("trading signal", 30),
+            new SpamKeyword("passives einkommen", 25),
+            new SpamKeyword("finanzielle freiheit", 20),
+            new SpamKeyword("rendite garantiert", 45),
+            new SpamKeyword("guaranteed return", 40),
+            new SpamKeyword("forex signal", 35),
+            new SpamKeyword("binary option", 40),
+            new SpamKeyword("pyramid scheme", 50),
+            new SpamKeyword("schneeballsystem", 50),
+            new SpamKeyword("network marketing einkommen", 30),
+            new SpamKeyword("double your money", 45),
+            new SpamKeyword("geld verdoppeln", 45),
+            new SpamKeyword("sofort auszahlung", 30),
+            new SpamKeyword("nft opportunity", 30),
 
-            // Phishing
+            // ─────────────────────────────────────────────────────────
+            // PHISHING (DE + EN)
+            // ─────────────────────────────────────────────────────────
             new SpamKeyword("verify your account", 30),
+            new SpamKeyword("konto verifizieren", 30),
+            new SpamKeyword("konto bestätigen", 25),
             new SpamKeyword("account suspended", 30),
+            new SpamKeyword("konto gesperrt", 30),
+            new SpamKeyword("konto eingeschränkt", 25),
+            new SpamKeyword("zugang gesperrt", 30),
             new SpamKeyword("urgent action required", 25),
+            new SpamKeyword("sofortige maßnahme erforderlich", 30),
+            new SpamKeyword("dringende sicherheitswarnung", 30),
             new SpamKeyword("password expired", 30),
+            new SpamKeyword("passwort abgelaufen", 30),
+            new SpamKeyword("passwort zurücksetzen", 20),
             new SpamKeyword("confirm your identity", 25),
+            new SpamKeyword("identität bestätigen", 25),
+            new SpamKeyword("ungewöhnliche aktivität", 25),
+            new SpamKeyword("unusual activity", 25),
+            new SpamKeyword("suspicious login", 30),
+            new SpamKeyword("verdächtiger zugriff", 30),
+            new SpamKeyword("sicherheitsüberprüfung", 20),
+            new SpamKeyword("ihr paket konnte nicht zugestellt", 25),
+            new SpamKeyword("zollgebühren bezahlen", 35),
+            new SpamKeyword("dhl express sendung", 20),
+            new SpamKeyword("zahlung fehlgeschlagen klicken", 35),
+            new SpamKeyword("letzte warnung", 25),
+            new SpamKeyword("final warning", 25),
 
-            // Allgemein verdächtig
+            // ─────────────────────────────────────────────────────────
+            // FAKE-RECHNUNGEN / CEO-FRAUD
+            // ─────────────────────────────────────────────────────────
+            new SpamKeyword("überfällige zahlung", 20),
+            new SpamKeyword("inkasso androhung", 30),
+            new SpamKeyword("gerichtliche schritte", 20),
+            new SpamKeyword("mahnbescheid erhalten", 25),
+            new SpamKeyword("anwaltliche mahnung", 20),
+            new SpamKeyword("dringende überweisung", 35),
+            new SpamKeyword("bitte sofort überweisen", 30),
+            new SpamKeyword("wire transfer urgent", 35),
+            new SpamKeyword("vertrauliche überweisung", 40),
+
+            // ─────────────────────────────────────────────────────────
+            // ALLGEMEIN VERDÄCHTIG / MARKETING-SPAM
+            // ─────────────────────────────────────────────────────────
             new SpamKeyword("free gift", 25),
             new SpamKeyword("limited time offer", 20),
             new SpamKeyword("act now", 15),
@@ -120,18 +214,152 @@ public class SpamFilterService {
             new SpamKeyword("exclusive deal", 15),
             new SpamKeyword("cloud-speicher", 40),
             new SpamKeyword("cloudspeicher", 40),
-            new SpamKeyword("aktion erforderlich", 40));
+            new SpamKeyword("aktion erforderlich", 40),
+            new SpamKeyword("klicken sie hier sofort", 25),
+            new SpamKeyword("nur noch heute", 15),
+            new SpamKeyword("angebot läuft ab", 15),
+            new SpamKeyword("100% kostenlos", 25),
+            new SpamKeyword("100% gratis", 25),
+            new SpamKeyword("kein risiko", 15),
+            new SpamKeyword("unglaubliches angebot", 20),
+            new SpamKeyword("sonderaktion exklusiv", 20),
+
+            // ─────────────────────────────────────────────────────────
+            // DEUTSCHE VULGÄR- / BELEIDIGUNGSSPAM
+            // ─────────────────────────────────────────────────────────
+            new SpamKeyword("prostituierte", 50),
+            new SpamKeyword("nutten", 50),
+            new SpamKeyword("fotze", 50),
+            new SpamKeyword("fotzen", 50),
+            new SpamKeyword("arschloch", 40),
+            new SpamKeyword("wichser", 45),
+            new SpamKeyword("hurensohn", 50),
+            new SpamKeyword("ficken", 50),
+            new SpamKeyword("fick dich", 50),
+            new SpamKeyword("hure", 50),
+            new SpamKeyword("schlampe", 45),
+            new SpamKeyword("missgeburt", 45),
+            new SpamKeyword("behindert du", 40),
+            new SpamKeyword("schwuchtel", 45),
+            new SpamKeyword("dreckige sau", 45),
+
+            // ─────────────────────────────────────────────────────────
+            // ADULT / PORNO-SPAM (DE + EN)
+            // ─────────────────────────────────────────────────────────
+            new SpamKeyword("porno", 50),
+            new SpamKeyword("porn", 50),
+            new SpamKeyword("xxx", 50),
+            new SpamKeyword("sex webcam", 40),
+            new SpamKeyword("live cam girl", 45),
+            new SpamKeyword("nacktbilder", 40),
+            new SpamKeyword("nacktfotos", 40),
+            new SpamKeyword("naked", 40),
+            new SpamKeyword("sex tape", 40),
+            new SpamKeyword("hookup", 35),
+            new SpamKeyword("dating hot", 35),
+            new SpamKeyword("heiße singles", 40),
+            new SpamKeyword("hot singles", 40),
+            new SpamKeyword("erotik kontakte", 40),
+            new SpamKeyword("sex treffen", 45),
+            new SpamKeyword("sextreffen", 45),
+            new SpamKeyword("sexkontakte", 45),
+            new SpamKeyword("escort service", 40),
+            new SpamKeyword("erotische massage", 35),
+            new SpamKeyword("onlyfans leak", 45),
+            new SpamKeyword("adult content", 35),
+            new SpamKeyword("adult dating", 40),
+            new SpamKeyword("camgirl", 40),
+
+            // ─────────────────────────────────────────────────────────
+            // DROGEN / ILLEGALES (DE + EN)
+            // ─────────────────────────────────────────────────────────
+            new SpamKeyword("koks", 40),
+            new SpamKeyword("kokain", 40),
+            new SpamKeyword("heroin", 40),
+            new SpamKeyword("crystal meth", 50),
+            new SpamKeyword("ecstasy bestellen", 50),
+            new SpamKeyword("drogen kaufen", 50),
+            new SpamKeyword("drogen bestellen", 50),
+            new SpamKeyword("darknet", 35),
+            new SpamKeyword("dark web", 35),
+            new SpamKeyword("waffen kaufen", 50),
+            new SpamKeyword("buy guns", 50),
+            new SpamKeyword("ausweis fälschen", 50),
+            new SpamKeyword("fake passport", 50),
+            new SpamKeyword("gefälschte dokumente", 50),
+            new SpamKeyword("counterfeit", 35),
+
+            // ─────────────────────────────────────────────────────────
+            // DROHUNGEN / TERROR
+            // ─────────────────────────────────────────────────────────
+            new SpamKeyword("bombendrohung", 100),
+            new SpamKeyword("bomben", 35),
+            new SpamKeyword("terroranschlag", 50),
+            new SpamKeyword("ich bringe dich um", 100),
+            new SpamKeyword("ich werde dich töten", 100),
+            new SpamKeyword("amoklauf", 50),
+            new SpamKeyword("sprengstoff", 50),
+
+            // ─────────────────────────────────────────────────────────
+            // ERPRESSUNG / SEXTORTION (DE + EN)
+            // ─────────────────────────────────────────────────────────
+            new SpamKeyword("i hacked your", 50),
+            new SpamKeyword("ich habe dich gehackt", 50),
+            new SpamKeyword("ich habe ihren computer", 50),
+            new SpamKeyword("i have your password", 50),
+            new SpamKeyword("ich kenne ihr passwort", 50),
+            new SpamKeyword("webcam aufnahme", 50),
+            new SpamKeyword("webcam video von ihnen", 50),
+            new SpamKeyword("kompromittierende aufnahmen", 50),
+            new SpamKeyword("kompromittierendes material", 50),
+            new SpamKeyword("bitcoin wallet", 35),
+            new SpamKeyword("zahlen sie bitcoin", 50),
+            new SpamKeyword("pay bitcoin", 45),
+            new SpamKeyword("ransom", 45),
+            new SpamKeyword("lösegeld", 45),
+            new SpamKeyword("loesegeld", 45),
+            new SpamKeyword("verschlüsselt ihre dateien", 50),
+            new SpamKeyword("encrypted your files", 50),
+            new SpamKeyword("48 stunden zeit", 35),
+            new SpamKeyword("24 hours to pay", 35),
+            new SpamKeyword("an ihre kontakte senden", 40),
+            new SpamKeyword("send to your contacts", 40),
+
+            // ─────────────────────────────────────────────────────────
+            // HANDWERKSBETRIEB-SPEZIFISCH: Fake-Einträge / Branchenbuch
+            // ─────────────────────────────────────────────────────────
+            new SpamKeyword("branchenbuch eintrag", 30),
+            new SpamKeyword("firmenverzeichnis aktualisieren", 30),
+            new SpamKeyword("gewerbeauskunft", 30),
+            new SpamKeyword("handelsregister aktualisierung", 30),
+            new SpamKeyword("firmenregistrierung pflicht", 35),
+            new SpamKeyword("eintrag kostenpflichtig", 35),
+            new SpamKeyword("datenschutzgrundverordnung verstoß", 25),
+            new SpamKeyword("dsgvo abmahnung", 30),
+            new SpamKeyword("impressum abmahnung", 25),
+            new SpamKeyword("domainregistrierung ablauf", 30),
+            new SpamKeyword("ihre domain läuft ab", 30),
+            new SpamKeyword("domain expiration", 30),
+            new SpamKeyword("seo optimierung garantie", 30),
+            new SpamKeyword("erste seite bei google garantiert", 40),
+            new SpamKeyword("google platzierung kaufen", 35));
 
     /**
      * Verdächtige Absender-Domains.
      */
     private static final Set<String> BLOCKED_DOMAINS = Set.of(
-            "bit.ly",
-            "tinyurl.com",
-            "temp-mail.org",
-            "guerrillamail.com",
-            "mailinator.com",
-            "10minutemail.com");
+            // URL-Shortener (verschleiern Ziel)
+            "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd",
+            "buff.ly", "adf.ly", "shorte.st", "cutt.ly",
+            // Wegwerf-Mail-Dienste
+            "temp-mail.org", "guerrillamail.com", "mailinator.com",
+            "10minutemail.com", "throwaway.email", "tempail.com",
+            "yopmail.com", "trashmail.com", "sharklasers.com",
+            "guerrillamailblock.com", "grr.la", "dispostable.com",
+            "fakeinbox.com", "tempinbox.com", "maildrop.cc",
+            "getairmail.com", "mohmal.com", "burnermail.io",
+            // Bekannte Spam-Domains
+            "spam4.me", "spamgourmet.com", "bugmenot.com");
 
     /**
      * Patterns für verdächtige Absender-Adressen.
@@ -141,14 +369,25 @@ public class SpamFilterService {
             Pattern.compile(".*no-reply@.*", Pattern.CASE_INSENSITIVE),
             Pattern.compile(".*donotreply@.*", Pattern.CASE_INSENSITIVE),
             Pattern.compile(".*mailer-daemon@.*", Pattern.CASE_INSENSITIVE),
-            Pattern.compile(".*[0-9]{5,}@.*") // Viele Zahlen in der Adresse
+            Pattern.compile(".*[0-9]{5,}@.*"),      // Viele Zahlen vor dem @
+            Pattern.compile(".*@.*[0-9]{4,}\\..*"),  // Viele Zahlen in der Domain
+            Pattern.compile(".*[a-z]{15,}@.*")       // Extrem langer lokaler Teil (generiert)
     );
 
     /**
-     * Gefährliche Dateiendungen (Ausführbare Dateien).
+     * Gefährliche Dateiendungen (Ausführbare Dateien + Makro-Dokumente).
      */
     private static final List<String> DANGEROUS_EXTENSIONS = List.of(
-            "exe", "bat", "cmd", "com", "scr", "js", "vbs", "jar", "msi", "sh", "ps1");
+            // Ausführbare Dateien
+            "exe", "bat", "cmd", "com", "scr", "pif", "cpl",
+            // Skripte
+            "js", "vbs", "wsf", "wsh", "ps1", "sh",
+            // Installer / Archive mit Code
+            "jar", "msi", "msp", "mst",
+            // Office-Makros (häufig für Malware)
+            "docm", "xlsm", "pptm", "dotm", "xltm",
+            // Andere gefährliche Formate
+            "hta", "inf", "reg", "rgs", "sct", "lnk", "iso", "img");
 
     // ═══════════════════════════════════════════════════════════════
     // SPAM-ANALYSE

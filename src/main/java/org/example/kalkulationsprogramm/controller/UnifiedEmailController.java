@@ -710,6 +710,31 @@ public class UnifiedEmailController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Alle E-Mails eines Ordners auf gelesen setzen. */
+    @PostMapping("/mark-all-read")
+    @Transactional
+    public ResponseEntity<Map<String, Integer>> markAllRead(@RequestParam String folder) {
+        List<Email> emails = switch (folder) {
+            case "inbox"      -> emailRepository.findInboxFiltered();
+            case "spam"       -> emailRepository.findSpam();
+            case "newsletter" -> emailRepository.findNewsletter();
+            case "unassigned" -> emailRepository.findUnassigned();
+            case "sent"       -> java.util.Collections.emptyList();
+            default           -> java.util.Collections.emptyList();
+        };
+
+        int count = 0;
+        for (Email email : emails) {
+            if (!email.isRead()) {
+                email.setRead(true);
+                if (email.getFirstViewedAt() == null) email.setFirstViewedAt(LocalDateTime.now());
+                count++;
+            }
+        }
+        if (count > 0) emailRepository.saveAll(emails);
+        return ResponseEntity.ok(Map.of("updated", count));
+    }
+
     @PostMapping("/{id}/mark-read")
     @Transactional
     public ResponseEntity<Void> markAsRead(@PathVariable Long id) {
