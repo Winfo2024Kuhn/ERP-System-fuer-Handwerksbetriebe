@@ -286,10 +286,11 @@ public class SpamBayesService {
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * Importiert Trainingsdaten aus CSV/TSV (UCI SMS Spam Collection oder Kaggle-Format).
+     * Importiert Trainingsdaten aus CSV/TSV (UCI SMS Spam Collection, Kaggle- oder HuggingFace-Format).
      * Unterstützt:
      * - Tab-separiert: "ham\tNachrichtentext" (UCI-Format, kein Header)
      * - Komma-separiert: "ham,Nachrichtentext" oder "v1,v2" Header (Kaggle-Format)
+     * - HuggingFace-Format: "text,labels" Header mit Werten "spam"/"not_spam" (Label hinten)
      * 
      * Optimiert: Sammelt alle Token-Counts im RAM und schreibt dann batch-weise in die DB.
      *
@@ -309,6 +310,7 @@ public class SpamBayesService {
             String line;
             boolean firstLine = true;
             Boolean tabSeparated = null; // Auto-detect
+            boolean labelLast = false;  // HuggingFace-Format: text,labels
 
             while ((line = reader.readLine()) != null) {
                 if (line.isBlank()) continue;
@@ -317,7 +319,13 @@ public class SpamBayesService {
                 if (firstLine) {
                     firstLine = false;
                     tabSeparated = line.contains("\t");
-                    if (line.toLowerCase().contains("v1") || line.toLowerCase().contains("label")) {
+                    String headerLower = line.toLowerCase();
+                    // HuggingFace-Format: "text,labels" (Text zuerst, Label hinten)
+                    if (headerLower.startsWith("text,") && headerLower.contains("label")) {
+                        labelLast = true;
+                        continue;
+                    }
+                    if (headerLower.contains("v1") || headerLower.contains("label")) {
                         continue;
                     }
                 }
@@ -334,8 +342,23 @@ public class SpamBayesService {
 
                 if (parts.length < 2) continue;
 
-                String label = parts[0].trim().toLowerCase();
-                String text = parts[1].trim();
+                String label;
+                String text;
+
+                if (labelLast) {
+                    // HuggingFace-Format: text,...,label (letztes Feld = Label)
+                    label = parts[parts.length - 1].trim().toLowerCase();
+                    // Alle Felder vor dem Label als Text zusammenfügen (falls Kommas im Text)
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < parts.length - 1; i++) {
+                        if (i > 0) sb.append(',');
+                        sb.append(parts[i]);
+                    }
+                    text = sb.toString().trim();
+                } else {
+                    label = parts[0].trim().toLowerCase();
+                    text = parts[1].trim();
+                }
 
                 if (text.isEmpty()) continue;
 
@@ -343,7 +366,7 @@ public class SpamBayesService {
                 if ("spam".equals(label)) {
                     isSpam = true;
                     spamCount++;
-                } else if ("ham".equals(label)) {
+                } else if ("ham".equals(label) || "not_spam".equals(label)) {
                     isSpam = false;
                     hamCount++;
                 } else {

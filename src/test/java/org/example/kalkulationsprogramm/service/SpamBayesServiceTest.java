@@ -416,6 +416,24 @@ class SpamBayesServiceTest {
             assertThat(result[0]).isEqualTo(0);
             assertThat(result[1]).isEqualTo(0);
         }
+
+        @Test
+        void erkenntHuggingFaceFormat() throws IOException {
+            // HuggingFace-Format: text,labels Header mit not_spam/spam
+            String csv = "text,labels\n"
+                       + "\"Hallo, wie geht es dir?\",not_spam\n"
+                       + "Kostenlos downloaden jetzt!,spam\n"
+                       + "Guten Morgen zusammen,not_spam\n"
+                       + "Schnell reich werden!,spam\n"
+                       + "Investiere jetzt und werde Millionär,spam\n";
+
+            InputStream stream = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
+
+            int[] result = service.bootstrapFromCsv(stream);
+
+            assertThat(result[0]).as("Spam-Count").isEqualTo(3);
+            assertThat(result[1]).as("Ham-Count").isEqualTo(2);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
