@@ -45,6 +45,7 @@ export function EmailRecipientInput({
     const [highlightIdx, setHighlightIdx] = useState(-1);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
@@ -135,20 +136,24 @@ export function EmailRecipientInput({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Dropdown-Position berechnen (Portal braucht fixed-Koordinaten via CSS-Custom-Properties)
+    // Dropdown-Position berechnen (Portal braucht fixed-Koordinaten als inline styles)
     useEffect(() => {
         if (!isOpen || !wrapperRef.current) return;
         const el = wrapperRef.current;
         const updatePosition = () => {
+            const dd = dropdownRef.current;
+            if (!dd) return;
             const rect = el.getBoundingClientRect();
-            el.style.setProperty('--dropdown-top', `${rect.bottom + 4}px`);
-            el.style.setProperty('--dropdown-left', `${rect.left}px`);
-            el.style.setProperty('--dropdown-width', `${rect.width}px`);
+            dd.style.top = `${rect.bottom + 4}px`;
+            dd.style.left = `${rect.left}px`;
+            dd.style.width = `${rect.width}px`;
         };
-        updatePosition();
+        // Initial + bei jedem Render mit kleinem Delay für Portal-Mount
+        const raf = requestAnimationFrame(updatePosition);
         window.addEventListener('scroll', updatePosition, true);
         window.addEventListener('resize', updatePosition);
         return () => {
+            cancelAnimationFrame(raf);
             window.removeEventListener('scroll', updatePosition, true);
             window.removeEventListener('resize', updatePosition);
         };
@@ -233,7 +238,7 @@ export function EmailRecipientInput({
 
             {/* Premium Dropdown – via Portal gerendert, damit overflow:hidden der Eltern nicht abschneidet */}
             {showDropdown && createPortal(
-                <div className="email-recipient-dropdown bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-auto animate-in fade-in zoom-in-95 duration-150">
+                <div ref={dropdownRef} className="email-recipient-dropdown bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-auto animate-in fade-in zoom-in-95 duration-150">
                     {/* Verknüpfte E-Mail-Adressen (immer sichtbar wenn vorhanden) */}
                     {linkedEmails.length > 0 && (
                         <>

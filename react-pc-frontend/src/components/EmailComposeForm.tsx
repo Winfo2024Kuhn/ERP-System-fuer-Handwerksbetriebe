@@ -148,7 +148,6 @@ export function EmailComposeForm({
     initialBody = '',
     initialAttachments,
     onSuccess,
-    variant = 'default'
 }: EmailComposeFormProps) {
     // Determine context: projekt or anfrage
     const isAnfrageContext = !!anfrageId;
@@ -721,21 +720,6 @@ export function EmailComposeForm({
                     </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    {variant === 'modal' && (
-                        <>
-                            <Button variant="ghost" onClick={onClose} disabled={sending} className="hidden sm:inline-flex">
-                                Abbrechen
-                            </Button>
-                            <Button
-                                onClick={handleSend}
-                                disabled={sending || !recipient.trim() || !subject.trim()}
-                                className="bg-rose-600 hover:bg-rose-700 text-white"
-                            >
-                                {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                                {sending ? 'Wird gesendet...' : 'E-Mail senden'}
-                            </Button>
-                        </>
-                    )}
                     <Button
                         variant="ghost"
                         size="sm"
@@ -1053,22 +1037,20 @@ export function EmailComposeForm({
                 </div>
             </div>
 
-            {/* Footer - Only show if variant is default */}
-            {variant !== 'modal' && (
-                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 flex-shrink-0 relative z-10">
-                    <Button variant="outline" onClick={onClose} disabled={sending}>
-                        Abbrechen
-                    </Button>
-                    <Button
-                        onClick={handleSend}
-                        disabled={sending || !recipient.trim() || !subject.trim()}
-                        className="bg-rose-600 hover:bg-rose-700 text-white"
-                    >
-                        {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                        {sending ? 'Wird gesendet...' : 'E-Mail senden'}
-                    </Button>
-                </div>
-            )}
+            {/* Footer – immer sichtbar, damit "E-Mail senden" nie verdeckt wird */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 flex-shrink-0 relative z-10">
+                <Button variant="outline" onClick={onClose} disabled={sending}>
+                    Abbrechen
+                </Button>
+                <Button
+                    onClick={handleSend}
+                    disabled={sending || !recipient.trim() || !subject.trim()}
+                    className="bg-rose-600 hover:bg-rose-700 text-white"
+                >
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                    {sending ? 'Wird gesendet...' : 'E-Mail senden'}
+                </Button>
+            </div>
 
             {/* Save Email Dialog */}
             {showSaveEmailDialog && (

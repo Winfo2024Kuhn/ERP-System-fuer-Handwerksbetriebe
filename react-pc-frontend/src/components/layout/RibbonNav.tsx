@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
-    FileText, Home, Layers, List, Mail, Package, Settings,
+    FileText, Gem, Home, Layers, List, Mail, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
     Calendar, CalendarDays, Plane, Shield
 } from 'lucide-react';
@@ -256,8 +256,18 @@ export function RibbonNavigation() {
                     ))}
                 </div>
 
+                {/* KI-Hilfe Button */}
+                <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('ki-hilfe-open'))}
+                    className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
+                    title="KI-Hilfe öffnen"
+                >
+                    <Gem className="w-4 h-4" />
+                    <span className="text-sm font-medium hidden lg:inline">KI-Hilfe</span>
+                </button>
+
                 {/* Notification Bell */}
-                <div className="flex items-center ml-2">
+                <div className="flex items-center ml-1">
                     <NotificationBell />
                 </div>
 
