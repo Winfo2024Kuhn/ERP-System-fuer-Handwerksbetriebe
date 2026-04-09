@@ -82,9 +82,7 @@ describe('EmailRecipientInput', () => {
             json: async () => sampleContacts,
         });
 
-        const { rerender } = render(
-            <EmailRecipientInput value="ma" onChange={vi.fn()} />
-        );
+        render(<EmailRecipientInput value="ma" onChange={vi.fn()} />);
 
         // Fokus setzen damit isOpen=true
         const input = screen.getByPlaceholderText('E-Mail eingeben...');
@@ -171,6 +169,39 @@ describe('EmailRecipientInput', () => {
 
         await user.click(screen.getByText('stamm@example.com'));
         expect(onChange).toHaveBeenCalledWith('stamm@example.com');
+    });
+
+    it('überträgt E-Mail ins Textfeld nach Auswahl aus Dropdown (Regression: mousedown-Bug)', async () => {
+        // Bug: mousedown auf <li> schloss das Dropdown bevor click feuerte →
+        // handleSelect wurde nie aufgerufen → onChange blieb aus
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const onChange = vi.fn();
+
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => sampleContacts,
+        });
+
+        renderInput({
+            value: 'mar',
+            onChange,
+            suggestions: [],
+        });
+
+        const input = screen.getByPlaceholderText('E-Mail eingeben...');
+        await act(async () => { input.focus(); });
+        await act(async () => { vi.advanceTimersByTime(300); });
+
+        await waitFor(() => {
+            expect(screen.getByText('max@example.com')).toBeInTheDocument();
+        });
+
+        // Simuliert mousedown gefolgt von click (wie echter Klick im Browser)
+        const item = screen.getByText('max@example.com');
+        await user.pointer([{ target: item, keys: '[MouseLeft>]' }]);
+        await user.pointer([{ target: item, keys: '[/MouseLeft]' }]);
+
+        expect(onChange).toHaveBeenCalledWith('max@example.com');
     });
 
     it('zeigt "Keine Kontakte gefunden" bei leeren Ergebnissen', async () => {

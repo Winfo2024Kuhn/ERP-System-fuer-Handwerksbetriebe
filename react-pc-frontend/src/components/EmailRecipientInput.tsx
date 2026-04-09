@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
@@ -142,7 +142,8 @@ export function EmailRecipientInput({
     const showDropdown = isOpen && (linkedEmails.length > 0 || displayItems.length > 0 || loading || (value && value.length >= 2));
 
     // Dropdown-Position berechnen (Portal braucht fixed-Koordinaten als inline styles)
-    useEffect(() => {
+    // useLayoutEffect: läuft synchron nach DOM-Commit, vor Browser-Paint → kein Flicker
+    useLayoutEffect(() => {
         if (!showDropdown || !wrapperRef.current) return;
         const el = wrapperRef.current;
         const updatePosition = () => {
@@ -153,12 +154,10 @@ export function EmailRecipientInput({
             dd.style.left = `${rect.left}px`;
             dd.style.width = `${rect.width}px`;
         };
-        // Initial + bei jedem Render mit kleinem Delay für Portal-Mount
-        const raf = requestAnimationFrame(updatePosition);
+        updatePosition();
         window.addEventListener('scroll', updatePosition, true);
         window.addEventListener('resize', updatePosition);
         return () => {
-            cancelAnimationFrame(raf);
             window.removeEventListener('scroll', updatePosition, true);
             window.removeEventListener('resize', updatePosition);
         };
@@ -258,6 +257,7 @@ export function EmailRecipientInput({
                                     return (
                                         <li
                                             key={'linked_' + email}
+                                            onMouseDown={(e) => e.preventDefault()}
                                             onClick={() => handleSelect(email)}
                                             onMouseEnter={() => setHighlightIdx(idx)}
                                             className={cn(
@@ -304,6 +304,7 @@ export function EmailRecipientInput({
                                         return (
                                             <li
                                                 key={c.id + '_' + c.email}
+                                                onMouseDown={(e) => e.preventDefault()}
                                                 onClick={() => handleSelect(c.email)}
                                                 onMouseEnter={() => setHighlightIdx(globalIdx)}
                                                 className={cn(
@@ -337,6 +338,7 @@ export function EmailRecipientInput({
                                         return (
                                             <li
                                                 key={'email_' + item.email}
+                                                onMouseDown={(e) => e.preventDefault()}
                                                 onClick={() => handleSelect(item.email)}
                                                 onMouseEnter={() => setHighlightIdx(globalIdx)}
                                                 className={cn(
