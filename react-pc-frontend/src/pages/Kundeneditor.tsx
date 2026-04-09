@@ -525,10 +525,8 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
 
 interface FilterState {
     q: string;
-    name: string;
     nummer: string;
     ort: string;
-    email: string;
     typ: string;
 }
 
@@ -550,7 +548,7 @@ export const Kundeneditor: React.FC = () => {
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
     const [loading, setLoading] = useState(false);
-    const [filters, setFilters] = useState<FilterState>({ q: '', name: '', nummer: '', ort: '', email: '', typ: '' });
+    const [filters, setFilters] = useState<FilterState>({ q: '', nummer: '', ort: '', typ: '' });
     const [editingKunde, setEditingKunde] = useState<KundeDetail | null>(null);
     const [isCreating, setIsCreating] = useState(false);
 
@@ -621,7 +619,7 @@ export const Kundeneditor: React.FC = () => {
     };
 
     const handleResetFilters = () => {
-        setFilters({ q: '', name: '', nummer: '', ort: '', email: '', typ: '' });
+        setFilters({ q: '', nummer: '', ort: '', typ: '' });
         setPage(0);
     };
 
@@ -736,14 +734,10 @@ export const Kundeneditor: React.FC = () => {
 
             {/* Filter - volle Breite */}
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100">
-                <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Freitext</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, Nummer, Straße..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Kundenname</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Exakte Bezeichnung" value={filters.name} onChange={e => handleFilterChange('name', e.target.value)} />
+                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, E-Mail, Nummer, Straße..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Kundennummer</label>
@@ -752,10 +746,6 @@ export const Kundeneditor: React.FC = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Ort</label>
                         <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Ort" value={filters.ort} onChange={e => handleFilterChange('ort', e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">E-Mail</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="E-Mail-Adresse" value={filters.email} onChange={e => handleFilterChange('email', e.target.value)} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Typ</label>
