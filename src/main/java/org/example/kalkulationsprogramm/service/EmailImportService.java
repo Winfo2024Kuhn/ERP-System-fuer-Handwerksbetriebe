@@ -532,6 +532,9 @@ public class EmailImportService {
                         email.getId(), e.getMessage(), e);
             }
         }
+
+        // Spam-Score und Zuordnungs-Änderungen persistieren
+        emailRepository.save(email);
     }
 
     /**
