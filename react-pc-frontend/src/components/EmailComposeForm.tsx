@@ -708,14 +708,14 @@ export function EmailComposeForm({
     return (
         <div className="flex flex-col h-full bg-slate-50">
             {/* Header */}
-            <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-200 bg-rose-50 flex-shrink-0">
-                <div className="flex min-w-0 items-center gap-3">
-                    <div className="w-11 h-11 rounded-full bg-white border border-rose-200 flex items-center justify-center shadow-sm">
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-rose-50 flex-shrink-0">
+                <div className="flex min-w-0 items-center gap-3 flex-1">
+                    <div className="w-11 h-11 rounded-full bg-white border border-rose-200 flex items-center justify-center shadow-sm flex-shrink-0">
                         <Mail className="w-5 h-5 text-rose-600" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 overflow-hidden">
                         <h2 className="text-lg font-semibold text-slate-900 truncate">{dialogTitle}</h2>
-                        <p className="text-sm text-slate-500 truncate">
+                        <p className="text-sm text-slate-500 truncate hidden sm:block">
                             {dialogSubtitle}
                         </p>
                     </div>
@@ -1055,7 +1055,7 @@ export function EmailComposeForm({
 
             {/* Footer - Only show if variant is default */}
             {variant !== 'modal' && (
-                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 flex-shrink-0">
+                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 flex-shrink-0 relative z-10">
                     <Button variant="outline" onClick={onClose} disabled={sending}>
                         Abbrechen
                     </Button>
