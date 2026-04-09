@@ -539,7 +539,6 @@ public class EmailImportService {
                 email.setSpam(false);
                 email.setNewsletter(false);
                 email.setSpamScore(0);
-                emailRepository.save(email);
                 log.info("[EmailImport] Spam/Newsletter-Flags bereinigt für Lieferanten-Email {}", email.getId());
             }
 
