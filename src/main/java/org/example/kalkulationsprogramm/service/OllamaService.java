@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -26,24 +27,25 @@ public class OllamaService {
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final String ollamaBaseUrl;
+    private final String defaultModel;
+    private final int timeoutSeconds;
+    private final boolean enabled;
 
-    @Value("${ai.ollama.url:http://localhost:11434}")
-    private String ollamaBaseUrl;
-
-    @Value("${ai.ollama.model:gemma4:e4b}")
-    private String defaultModel;
-
-    @Value("${ai.ollama.timeout:120}")
-    private int timeoutSeconds;
-
-    @Value("${ai.ollama.enabled:true}")
-    private boolean enabled;
-
-    public OllamaService(ObjectMapper objectMapper) {
+    @Autowired
+    public OllamaService(ObjectMapper objectMapper,
+                         @Value("${ai.ollama.url:http://localhost:11434}") String ollamaBaseUrl,
+                         @Value("${ai.ollama.model:qwen3:8b}") String defaultModel,
+                         @Value("${ai.ollama.timeout:120}") int timeoutSeconds,
+                         @Value("${ai.ollama.enabled:true}") boolean enabled) {
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+        this.ollamaBaseUrl = ollamaBaseUrl;
+        this.defaultModel = defaultModel;
+        this.timeoutSeconds = timeoutSeconds;
+        this.enabled = enabled;
     }
 
     // Für Tests: Constructor mit allen Abhängigkeiten
