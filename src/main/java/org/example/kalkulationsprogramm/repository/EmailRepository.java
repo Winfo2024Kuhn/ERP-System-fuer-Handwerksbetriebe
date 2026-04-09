@@ -445,13 +445,13 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Durchsucht alle Emails nach Betreff, Absender oder Empfänger.
    * Gibt maximal 50 Ergebnisse zurück, sortiert nach Datum absteigend.
    */
-  @Query("""
-      SELECT e FROM Email e
+  @Query(value = """
+      SELECT * FROM email e
       WHERE (LOWER(e.subject) LIKE LOWER(CONCAT('%', :query, '%'))
-          OR LOWER(e.fromAddress) LIKE LOWER(CONCAT('%', :query, '%'))
+          OR LOWER(e.from_address) LIKE LOWER(CONCAT('%', :query, '%'))
           OR LOWER(e.recipient) LIKE LOWER(CONCAT('%', :query, '%'))
           OR LOWER(e.body) LIKE LOWER(CONCAT('%', :query, '%')))
-      ORDER BY e.sentAt DESC
-      """)
+      ORDER BY e.sent_at DESC
+      """, nativeQuery = true)
   List<Email> searchGlobal(@Param("query") String query);
 }
