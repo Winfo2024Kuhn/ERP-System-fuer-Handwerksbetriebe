@@ -1,9 +1,11 @@
 package org.example.kalkulationsprogramm.dto.Email;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import lombok.Data;
 
 /**
  * Unified Email Response DTO für das neue Email-System.
@@ -42,6 +44,9 @@ public class UnifiedEmailDto {
     private String anfrageName;
     private Long lieferantId;
     private String lieferantName;
+
+    // Spam
+    private Integer spamScore;
 
     // Anhänge
     private List<AttachmentDto> attachments;

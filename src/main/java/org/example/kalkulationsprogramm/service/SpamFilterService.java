@@ -1,23 +1,28 @@
 package org.example.kalkulationsprogramm.service;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.domain.Email;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.springframework.stereotype.Service;
-
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.springframework.stereotype.Service;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 /**
- * Einfacher, regelbasierter Spam-Filter für E-Mails.
- * 
+ * Hybrid Spam-Filter: Regelbasiert + Naive Bayes ML.
+ *
  * Berechnet einen Spam-Score (0-100) basierend auf:
- * - Keyword-Blacklist im Betreff/Body
- * - Absender-Domain-Blacklist
- * - Verdächtige Muster
- * 
+ * - Keyword-Blacklist im Betreff/Body (Regeln)
+ * - Absender-Domain-Blacklist (Regeln)
+ * - Verdächtige Muster (Regeln)
+ * - Naive Bayes Klassifikator (ML, lernt aus User-Feedback)
+ *
+ * Ensemble: 40% Regel-Score + 60% Bayes-Score (wenn Modell bereit).
+ * Cold-Start: 100% Regel-Score bis genug Trainingsbeispiele vorhanden.
+ *
  * Whitelist (kein Spam):
  * - Rechnungs-Emails mit PDF/XML Attachment
  * - Emails von bekannten Lieferanten
@@ -29,6 +34,7 @@ public class SpamFilterService {
 
     private final LieferantenRepository lieferantenRepository;
     private final org.example.kalkulationsprogramm.repository.EmailBlacklistRepository emailBlacklistRepository;
+    private final SpamBayesService spamBayesService;
 
     // ... (rest of configuration)
 
@@ -40,6 +46,11 @@ public class SpamFilterService {
      * Ab diesem Score wird eine Email als Spam markiert.
      */
     private static final int SPAM_THRESHOLD = 50;
+
+    /**
+     * Ab diesem Score wird eine Email automatisch in Spam verschoben (ohne User-Eingriff).
+     */
+    private static final int AUTO_SPAM_THRESHOLD = 90;
 
     /**
      * Keywords die auf Newsletter hinweisen - KEIN Spam, nur Kategorie.
@@ -177,14 +188,35 @@ public class SpamFilterService {
             }
         }
 
-        // 2. Spam Check
-        int score = calculateSpamScore(email);
-        email.setSpamScore(score);
-        email.setSpam(score >= SPAM_THRESHOLD);
+        // 2. Spam Check (Regel-basiert)
+        int ruleScore = calculateSpamScore(email);
+
+        // 3. Bayes ML-Score (wenn Modell bereit)
+        double bayesProb = -1.0;
+        if (spamBayesService.isModelReady()) {
+            java.util.Set<String> tokens = spamBayesService.tokenize(email);
+            bayesProb = spamBayesService.predict(tokens);
+            email.setBayesScore(bayesProb >= 0 ? bayesProb : null);
+        }
+
+        // 4. Ensemble: Regel + Bayes kombinieren
+        int finalScore;
+        if (bayesProb < 0) {
+            // Cold-Start: nur Regel-Score
+            finalScore = ruleScore;
+        } else {
+            // Ensemble: 40% Regeln, 60% Bayes
+            int bayesScore = (int) (bayesProb * 100);
+            finalScore = (int) (ruleScore * 0.4 + bayesScore * 0.6);
+        }
+
+        email.setSpamScore(finalScore);
+        email.setSpam(finalScore >= AUTO_SPAM_THRESHOLD);
 
         if (email.isSpam()) {
-            log.debug("[SpamFilter] Email als Spam markiert: score={}, subject='{}'",
-                    score, email.getSubject());
+            log.info("[SpamFilter] Email automatisch als Spam verschoben (Score ≥ {}%): finalScore={} (rule={}, bayes={}), subject='{}'",
+                    AUTO_SPAM_THRESHOLD, finalScore, ruleScore, bayesProb >= 0 ? String.format("%.2f", bayesProb) : "n/a",
+                    email.getSubject());
         }
     }
 

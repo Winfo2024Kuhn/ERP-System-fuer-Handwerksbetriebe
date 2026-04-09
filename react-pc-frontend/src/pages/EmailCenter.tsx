@@ -22,6 +22,8 @@ import {
     PenSquare,
     HelpCircle,
     ShieldAlert,
+    ShieldCheck,
+    ShieldX,
     Settings,
     Star,
     Package,
@@ -88,6 +90,7 @@ interface EmailItem {
     lieferantName?: string;
     isRead?: boolean;
     recipient?: string;
+    spamScore?: number;
     // Assignment IDs
     projektId?: number;
     anfrageId?: number;
@@ -746,6 +749,42 @@ export default function EmailCenter() {
         }
     };
 
+    const handleMarkSpam = async () => {
+        if (!selectedEmail) return;
+        try {
+            const res = await fetch(`/api/emails/${selectedEmail.id}/mark-spam`, { method: 'POST' });
+            if (res.ok) {
+                toast.info("Als Spam markiert – Modell lernt dazu");
+                loadEmails();
+                loadStats();
+                setSelectedEmail(null);
+            } else {
+                toast.error("Fehler beim Markieren als Spam");
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error("Fehler beim Markieren als Spam");
+        }
+    };
+
+    const handleMarkNotSpam = async () => {
+        if (!selectedEmail) return;
+        try {
+            const res = await fetch(`/api/emails/${selectedEmail.id}/mark-not-spam`, { method: 'POST' });
+            if (res.ok) {
+                toast.info("Kein Spam – zurück im Posteingang");
+                loadEmails();
+                loadStats();
+                setSelectedEmail(null);
+            } else {
+                toast.error("Fehler beim Markieren als Nicht-Spam");
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error("Fehler beim Markieren als Nicht-Spam");
+        }
+    };
+
     const handleScanAssignments = async () => {
         if (!await confirmDialog({ title: "E-Mails erneut prüfen", message: "Alle unzugeordneten E-Mails im Posteingang erneut prüfen?\nDies kann einen Moment dauern.", variant: "info", confirmLabel: "Prüfen" })) return;
 
@@ -950,6 +989,27 @@ export default function EmailCenter() {
 
                             {/* Actions */}
                             <div className="flex items-center gap-1.5">
+                                {activeFolder === 'spam' ? (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleMarkNotSpam}
+                                        className="text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
+                                        title="Kein Spam"
+                                    >
+                                        <ShieldCheck className="w-4 h-4" />
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleMarkSpam}
+                                        className="text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                        title="Als Spam markieren"
+                                    >
+                                        <ShieldX className="w-4 h-4" />
+                                    </Button>
+                                )}
                                 <Button
                                     variant="ghost"
                                     size="sm"
@@ -1358,6 +1418,17 @@ export default function EmailCenter() {
                                             <div className="flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                                                 <Paperclip className="w-3 h-3" />
                                                 {email.attachments.length}
+                                            </div>
+                                        )}
+                                        {email.spamScore != null && email.spamScore > 0 && (
+                                            <div className={cn(
+                                                "flex items-center gap-1 text-xs px-1.5 py-0.5 rounded",
+                                                email.spamScore >= 90 ? "text-red-700 bg-red-100 border border-red-200 font-semibold" :
+                                                email.spamScore >= 50 ? "text-orange-700 bg-orange-50 border border-orange-200" :
+                                                "text-slate-500 bg-slate-50 border border-slate-200"
+                                            )}>
+                                                <ShieldAlert className="w-3 h-3" />
+                                                {email.spamScore}% Spam
                                             </div>
                                         )}
                                         {email.zuordnungTyp && email.zuordnungTyp !== 'KEINE' && (

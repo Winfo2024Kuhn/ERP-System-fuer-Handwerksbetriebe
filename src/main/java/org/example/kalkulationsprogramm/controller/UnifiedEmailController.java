@@ -1,14 +1,19 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailBlacklistEntry;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
-
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
@@ -28,23 +33,26 @@ import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.EmailAutoAssignmentService;
 import org.example.kalkulationsprogramm.service.EmailImportService;
 import org.example.kalkulationsprogramm.service.InquiryDetectionService;
+import org.example.kalkulationsprogramm.service.SpamBayesService;
 import org.example.kalkulationsprogramm.service.SpamFilterService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Unified Email API Controller.
@@ -71,6 +79,7 @@ public class UnifiedEmailController {
     private final AnfrageDokumentRepository anfrageDokumentRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final ContactService contactService;
+    private final SpamBayesService spamBayesService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -216,6 +225,78 @@ public class UnifiedEmailController {
         emailRepository.saveAll(existingEmails);
 
         return ResponseEntity.ok("Sender blocked and " + count + " emails moved to spam.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SPAM ML-FEEDBACK (Supervised Learning)
+    // ═══════════════════════════════════════════════════════════════
+
+    @PostMapping("/{emailId}/mark-spam")
+    @Transactional
+    public ResponseEntity<String> markAsSpam(@PathVariable Long emailId) {
+        Email email = emailRepository.findById(emailId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Email not found"));
+
+        email.setUserSpamVerdict("SPAM");
+        email.setSpam(true);
+        email.setSpamScore(100);
+        emailRepository.save(email);
+
+        spamBayesService.train(email, true);
+
+        log.info("[SpamML] Email {} als Spam markiert (User-Feedback), subject='{}'",
+                emailId, email.getSubject());
+        return ResponseEntity.ok("Email als Spam markiert und Modell trainiert.");
+    }
+
+    @PostMapping("/{emailId}/mark-not-spam")
+    @Transactional
+    public ResponseEntity<String> markAsNotSpam(@PathVariable Long emailId) {
+        Email email = emailRepository.findById(emailId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Email not found"));
+
+        email.setUserSpamVerdict("HAM");
+        email.setSpam(false);
+        email.setNewsletter(false);
+        email.setSpamScore(0);
+        emailRepository.save(email);
+
+        spamBayesService.train(email, false);
+
+        log.info("[SpamML] Email {} als Nicht-Spam markiert (User-Feedback), subject='{}'",
+                emailId, email.getSubject());
+        return ResponseEntity.ok("Email als kein Spam markiert und Modell trainiert.");
+    }
+
+    @PostMapping("/spam-model/bootstrap")
+    public ResponseEntity<Map<String, Object>> bootstrapSpamModel(
+            @RequestParam("file") MultipartFile file) {
+        try {
+            int[] result = spamBayesService.bootstrapFromCsv(file.getInputStream());
+            return ResponseEntity.ok(Map.of(
+                    "message", "Modell mit " + (result[0] + result[1]) + " Datensätzen trainiert.",
+                    "spamImported", result[0],
+                    "hamImported", result[1],
+                    "modelReady", spamBayesService.isModelReady()
+            ));
+        } catch (Exception e) {
+            log.error("[SpamML] Fehler beim CSV-Bootstrap", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Fehler beim Import: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/spam-model/stats")
+    public ResponseEntity<Map<String, Object>> getSpamModelStats() {
+        return ResponseEntity.ok(Map.of(
+                "totalSpam", spamBayesService.getTotalSpam(),
+                "totalHam", spamBayesService.getTotalHam(),
+                "vocabularySize", spamBayesService.getVocabularySize(),
+                "modelReady", spamBayesService.isModelReady(),
+                "minTrainingSamples", 20
+        ));
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1124,6 +1205,7 @@ public class UnifiedEmailController {
         dto.setRead(email.isRead()); // Use actual isRead field from entity
         dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
+        dto.setSpamScore(email.getSpamScore());
 
         // Zuordnungs-Info
         if (email.getProjekt() != null) {
