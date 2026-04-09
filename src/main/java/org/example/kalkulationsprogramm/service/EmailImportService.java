@@ -1,27 +1,48 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.sun.mail.imap.IMAPFolder;
-import jakarta.mail.*;
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeBodyPart;
-import jakarta.mail.internet.MimeMessage;
-import jakarta.mail.internet.MimeMultipart;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.domain.*;
-import org.example.kalkulationsprogramm.repository.*;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.UUID;
+
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.EmailProcessingStatus;
+import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
+import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
+import org.example.kalkulationsprogramm.repository.EmailRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.sun.mail.imap.IMAPFolder;
+
+import jakarta.mail.Address;
+import jakarta.mail.BodyPart;
+import jakarta.mail.FetchProfile;
+import jakarta.mail.Flags;
+import jakarta.mail.Folder;
+import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
+import jakarta.mail.Part;
+import jakarta.mail.Session;
+import jakarta.mail.Store;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeBodyPart;
+import jakarta.mail.internet.MimeMultipart;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Service für den Import von E-Mails aus IMAP in die neue unified
