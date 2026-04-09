@@ -262,6 +262,11 @@ const KundenAuswahlView: React.FC<{
                                 <div>
                                     <p className="font-medium text-slate-900">{kunde.name}</p>
                                     <p className="text-sm text-slate-500">{kunde.kundennummer}</p>
+                                    {(kunde.strasse || kunde.ort) && (
+                                        <p className="text-xs text-slate-400">
+                                            {[kunde.strasse, [kunde.plz, kunde.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
+                                        </p>
+                                    )}
                                 </div>
                                 <Check className="w-5 h-5 text-rose-600 opacity-0 group-hover:opacity-100" />
                             </div>
@@ -298,6 +303,7 @@ const KundeAnlegenView: React.FC<{
 }> = ({ onSuccess, onBack }) => {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [kundennummerError, setKundennummerError] = useState<string | null>(null);
     const [autoKundennummer, setAutoKundennummer] = useState(true);
     const [formData, setFormData] = useState({
         name: '',
@@ -361,7 +367,12 @@ const KundeAnlegenView: React.FC<{
 
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.message || 'Kunde konnte nicht angelegt werden');
+                const msg = errData.message || errData.detail || 'Kunde konnte nicht angelegt werden';
+                if (res.status === 409) {
+                    setKundennummerError(msg);
+                    return;
+                }
+                throw new Error(msg);
             }
 
             const created = await res.json();
@@ -426,11 +437,17 @@ const KundeAnlegenView: React.FC<{
                         <input
                             type="text"
                             value={formData.kundennummer}
-                            onChange={e => setFormData(prev => ({ ...prev, kundennummer: e.target.value }))}
+                            onChange={e => {
+                                setFormData(prev => ({ ...prev, kundennummer: e.target.value }));
+                                setKundennummerError(null);
+                            }}
                             placeholder={autoKundennummer ? 'Wird automatisch vergeben' : 'z.B. K-1234'}
                             disabled={autoKundennummer}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-50 disabled:text-slate-400"
+                            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-50 disabled:text-slate-400 ${kundennummerError ? 'border-rose-500 bg-rose-50' : 'border-slate-200'}`}
                         />
+                        {kundennummerError && (
+                            <p className="mt-1 text-xs text-rose-600">{kundennummerError}</p>
+                        )}
                     </div>
                 </div>
 
@@ -693,7 +710,7 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-rose-50">
                     <h2 className="text-lg font-semibold text-slate-900">
-                        {isEditMode ? 'Anfrage bearbeiten' : 'Neues Anfrage anlegen'}
+                        {isEditMode ? 'Anfrage bearbeiten' : 'Neue Anfrage anlegen'}
                     </h2>
                     <Button variant="ghost" size="sm" onClick={onClose}>
                         <X className="w-5 h-5" />
@@ -1844,7 +1861,7 @@ export default function AnfrageEditor() {
                 <>
                     <Button size="sm" onClick={() => setShowCreateModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
                         <Plus className="w-4 h-4 mr-2" />
-                        Neues Anfrage
+                        Neue Anfrage
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => loadAnfragen()}>
                         <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
