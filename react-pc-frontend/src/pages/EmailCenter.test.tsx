@@ -196,6 +196,135 @@ describe('EmailCenter', () => {
         });
     });
 
+    describe('AssignModal – Manuelle Suche (Zuordnung)', () => {
+        it('ruft /api/projekte/suche auf bei Projekt-Suche', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const projektResults = [
+                { id: 10, bauvorhaben: 'BV Riedel Höchberg', kunde: 'Riedel GmbH', auftragsnummer: '2026-003', abgeschlossen: false }
+            ];
+            fetchMock = mockFetchResponses({
+                '/api/emails/1/possible-assignments': { projekte: [], anfragen: [] },
+            });
+            // Also handle the search endpoint
+            const originalMock = fetchMock;
+            global.fetch = vi.fn((url: string, options?: RequestInit) => {
+                if (typeof url === 'string' && url.startsWith('/api/projekte/suche?q=')) {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(projektResults) });
+                }
+                return originalMock(url, options);
+            }) as unknown as typeof fetch;
+
+            renderEmailCenter();
+            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
+
+            // Select email to show detail pane
+            await user.click(screen.getByText('Angebot für Treppe'));
+            await waitFor(() => expect(screen.getByRole('button', { name: /Zuordnen/ })).toBeInTheDocument());
+
+            // Open assign modal
+            await user.click(screen.getByRole('button', { name: /Zuordnen/ }));
+            await waitFor(() => expect(screen.getByText('E-Mail zuordnen')).toBeInTheDocument());
+
+            // Type in manual search
+            const searchInput = screen.getByPlaceholderText('Projekt suchen...');
+            await user.type(searchInput, 'riedel');
+
+            // Advance debounce timer
+            await act(async () => { vi.advanceTimersByTime(400); });
+
+            // Should call correct endpoint
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.stringContaining('/api/projekte/suche?q=riedel')
+                );
+            });
+
+            // Should show result
+            await waitFor(() => {
+                expect(screen.getByText('BV Riedel Höchberg')).toBeInTheDocument();
+                expect(screen.getByText('Riedel GmbH')).toBeInTheDocument();
+            });
+        });
+
+        it('ruft /api/anfragen auf bei Anfrage-Suche', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const anfrageResults = [
+                { id: 20, bauvorhaben: 'Geländer Müller', kundenName: 'Müller Bau', anfragesnummer: 'ANF-2026-005' }
+            ];
+            fetchMock = mockFetchResponses({
+                '/api/emails/1/possible-assignments': { projekte: [], anfragen: [] },
+            });
+            const originalMock = fetchMock;
+            global.fetch = vi.fn((url: string, options?: RequestInit) => {
+                if (typeof url === 'string' && url.startsWith('/api/anfragen?q=')) {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(anfrageResults) });
+                }
+                return originalMock(url, options);
+            }) as unknown as typeof fetch;
+
+            renderEmailCenter();
+            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
+
+            await user.click(screen.getByText('Angebot für Treppe'));
+            await waitFor(() => expect(screen.getByRole('button', { name: /Zuordnen/ })).toBeInTheDocument());
+
+            await user.click(screen.getByRole('button', { name: /Zuordnen/ }));
+            await waitFor(() => expect(screen.getByText('E-Mail zuordnen')).toBeInTheDocument());
+
+            // Switch to Anfrage tab (inside the modal, find by exact text match)
+            const allButtons = screen.getAllByRole('button');
+            const anfrageTab = allButtons.find(btn => {
+                const text = btn.textContent || '';
+                return text.includes('Anfrage') && !text.includes('Anfragen');
+            });
+            await user.click(anfrageTab!);
+
+            // Type search
+            const searchInput = screen.getByPlaceholderText('Anfrage suchen...');
+            await user.type(searchInput, 'müller');
+
+            await act(async () => { vi.advanceTimersByTime(400); });
+
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.stringContaining('/api/anfragen?q=m')
+                );
+            });
+
+            // Should show result with kundenName displayed
+            await waitFor(() => {
+                expect(screen.getByText('Geländer Müller')).toBeInTheDocument();
+                expect(screen.getByText('Müller Bau')).toBeInTheDocument();
+                expect(screen.getByText('ANF-2026-005')).toBeInTheDocument();
+            });
+        });
+
+        it('zeigt keine Ergebnisse bei leerem Suchfeld', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            fetchMock = mockFetchResponses({
+                '/api/emails/1/possible-assignments': { projekte: [], anfragen: [] },
+            });
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderEmailCenter();
+            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
+
+            await user.click(screen.getByText('Angebot für Treppe'));
+            await waitFor(() => expect(screen.getByRole('button', { name: /Zuordnen/ })).toBeInTheDocument());
+
+            await user.click(screen.getByRole('button', { name: /Zuordnen/ }));
+            await waitFor(() => expect(screen.getByText('E-Mail zuordnen')).toBeInTheDocument());
+
+            // Don't type anything – no search API call should be made
+            await act(async () => { vi.advanceTimersByTime(400); });
+
+            const searchCalls = fetchMock.mock.calls.filter(
+                (call: [string, ...unknown[]]) => typeof call[0] === 'string' && (call[0].includes('/api/projekte/suche') || call[0].includes('/api/anfragen?q='))
+            );
+            expect(searchCalls).toHaveLength(0);
+        });
+    });
+
     describe('Optimistic Updates', () => {
         it('entfernt E-Mail sofort aus Liste bei Spam-Markierung', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

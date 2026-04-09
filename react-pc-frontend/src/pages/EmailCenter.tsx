@@ -279,8 +279,8 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
         setLoading(true);
         try {
             const endpoint = searchType === 'projekt'
-                ? `/api/projekte/search?q=${encodeURIComponent(searchQuery)}`
-                : `/api/anfragen/search?q=${encodeURIComponent(searchQuery)}`;
+                ? `/api/projekte/suche?q=${encodeURIComponent(searchQuery)}`
+                : `/api/anfragen?q=${encodeURIComponent(searchQuery)}`;
             const res = await fetch(endpoint);
             if (res.ok) {
                 setResults(await res.json());
@@ -395,15 +395,16 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
                         ) : results.length === 0 && searchQuery ? (
                             <p className="text-center text-slate-500 py-4">Keine Ergebnisse</p>
                         ) : (
-                            results.map((item: { id: number; bauvorhaben?: string; name?: string; kunde?: string }) => (
+                            results.map((item: { id: number; bauvorhaben?: string; name?: string; kunde?: string; kundenName?: string; anfragesnummer?: string }) => (
                                 <button
                                     key={item.id}
                                     onClick={() => handleSelect(searchType, item.id)}
                                     disabled={assigning}
                                     className="w-full text-left p-3 rounded-lg hover:bg-rose-50 transition-colors border border-slate-200"
                                 >
-                                    <p className="font-medium text-slate-900">{item.bauvorhaben || item.name}</p>
-                                    {item.kunde && <p className="text-sm text-slate-500">{item.kunde}</p>}
+                                    <p className="font-medium text-slate-900">{item.bauvorhaben || item.name || item.kundenName}</p>
+                                    {(item.kunde || item.kundenName) && <p className="text-sm text-slate-500">{item.kunde || item.kundenName}</p>}
+                                    {item.anfragesnummer && <p className="text-xs text-slate-400">{item.anfragesnummer}</p>}
                                 </button>
                             ))
                         )}

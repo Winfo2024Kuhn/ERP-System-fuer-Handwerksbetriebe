@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailBlacklistEntry;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
+import org.example.kalkulationsprogramm.dto.ContactDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AngebotRepository;
@@ -291,6 +292,94 @@ class UnifiedEmailControllerTest {
                     .andExpect(status().isOk());
 
             verify(emailRepository).save(email);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // CONTACT SEARCH
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("GET /api/emails/contacts")
+    class ContactSearch {
+
+        @Test
+        @DisplayName("Kontaktsuche liefert Ergebnisse")
+        void searchContactsReturnsResults() throws Exception {
+            List<ContactDto> contacts = List.of(
+                    ContactDto.builder()
+                            .id("KUNDE_1").name("Max Mustermann")
+                            .email("max@example.com").type("KUNDE").context("K-001")
+                            .build(),
+                    ContactDto.builder()
+                            .id("LIEFERANT_2").name("Muster GmbH")
+                            .email("info@muster-gmbh.example.com").type("LIEFERANT").context("Stahl")
+                            .build());
+
+            given(contactService.searchContacts("muster")).willReturn(contacts);
+
+            mockMvc.perform(get("/api/emails/contacts").param("q", "muster"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$").isArray())
+                    .andExpect(jsonPath("$.length()").value(2))
+                    .andExpect(jsonPath("$[0].name").value("Max Mustermann"))
+                    .andExpect(jsonPath("$[0].email").value("max@example.com"))
+                    .andExpect(jsonPath("$[0].type").value("KUNDE"))
+                    .andExpect(jsonPath("$[0].context").value("K-001"))
+                    .andExpect(jsonPath("$[1].name").value("Muster GmbH"))
+                    .andExpect(jsonPath("$[1].type").value("LIEFERANT"));
+        }
+
+        @Test
+        @DisplayName("Leere Suche liefert leere Liste")
+        void searchContactsEmptyQuery() throws Exception {
+            given(contactService.searchContacts("x")).willReturn(Collections.emptyList());
+
+            mockMvc.perform(get("/api/emails/contacts").param("q", "x"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$").isArray())
+                    .andExpect(jsonPath("$.length()").value(0));
+        }
+
+        @Test
+        @DisplayName("Fehlender q-Parameter liefert 400")
+        void searchContactsMissingParam() throws Exception {
+            mockMvc.perform(get("/api/emails/contacts"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Sonderzeichen im Suchbegriff werden korrekt weitergeleitet")
+        void searchContactsSpecialChars() throws Exception {
+            given(contactService.searchContacts("müller & söhne")).willReturn(Collections.emptyList());
+
+            mockMvc.perform(get("/api/emails/contacts").param("q", "müller & söhne"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$").isArray());
+
+            verify(contactService).searchContacts("müller & söhne");
+        }
+
+        @Test
+        @DisplayName("Kontaktsuche gibt alle Felder korrekt zurück")
+        void searchContactsAllFields() throws Exception {
+            ContactDto contact = ContactDto.builder()
+                    .id("PROJEKT_42")
+                    .name("Bauherr Test")
+                    .email("bauherr@example.com")
+                    .type("PROJEKT")
+                    .context("Neubau Musterstraße 1")
+                    .build();
+
+            given(contactService.searchContacts("Bauherr")).willReturn(List.of(contact));
+
+            mockMvc.perform(get("/api/emails/contacts").param("q", "Bauherr"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].id").value("PROJEKT_42"))
+                    .andExpect(jsonPath("$[0].name").value("Bauherr Test"))
+                    .andExpect(jsonPath("$[0].email").value("bauherr@example.com"))
+                    .andExpect(jsonPath("$[0].type").value("PROJEKT"))
+                    .andExpect(jsonPath("$[0].context").value("Neubau Musterstraße 1"));
         }
     }
 }
