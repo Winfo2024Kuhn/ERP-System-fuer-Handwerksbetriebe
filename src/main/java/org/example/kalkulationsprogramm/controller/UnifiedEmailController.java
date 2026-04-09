@@ -231,6 +231,20 @@ public class UnifiedEmailController {
     // SPAM ML-FEEDBACK (Supervised Learning)
     // ═══════════════════════════════════════════════════════════════
 
+    /**
+     * Implizites Ham-Training: Wenn ein User eine Email zuordnet oder beantwortet,
+     * ist das ein starkes Signal, dass die Email kein Spam ist.
+     */
+    private void trainImplicitHam(Email email) {
+        if (email.getUserSpamVerdict() != null) return; // User hat schon explizit entschieden
+        if (spamBayesService.isModelReady()) {
+            spamBayesService.train(email, false);
+            email.setUserSpamVerdict("HAM_IMPLICIT");
+            log.debug("[SpamML] Implizites Ham-Training für Email {}, subject='{}'",
+                    email.getId(), email.getSubject());
+        }
+    }
+
     @PostMapping("/{emailId}/mark-spam")
     @Transactional
     public ResponseEntity<String> markAsSpam(@PathVariable Long emailId) {
@@ -296,6 +310,25 @@ public class UnifiedEmailController {
                 "vocabularySize", spamBayesService.getVocabularySize(),
                 "modelReady", spamBayesService.isModelReady(),
                 "minTrainingSamples", 20
+        ));
+    }
+
+    @PostMapping("/spam-model/rescore")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> rescoreAllEmails() {
+        if (!spamBayesService.isModelReady()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Spam-Modell noch nicht trainiert."));
+        }
+        List<Email> allEmails = emailRepository.findAll();
+        int rescored = 0;
+        for (Email email : allEmails) {
+            spamFilterService.analyzeAndMarkSpam(email);
+            emailRepository.save(email);
+            rescored++;
+        }
+        return ResponseEntity.ok(Map.of(
+                "message", rescored + " Emails neu bewertet.",
+                "rescored", rescored
         ));
     }
 
@@ -545,6 +578,7 @@ public class UnifiedEmailController {
             return ResponseEntity.notFound().build();
         }
         email.assignToProjekt(projekt);
+        trainImplicitHam(email);
         emailRepository.save(email);
         return ResponseEntity.ok(toDto(email));
     }
@@ -560,6 +594,7 @@ public class UnifiedEmailController {
             return ResponseEntity.notFound().build();
         }
         email.assignToAnfrage(anfrage);
+        trainImplicitHam(email);
         emailRepository.save(email);
         return ResponseEntity.ok(toDto(email));
     }
@@ -575,6 +610,7 @@ public class UnifiedEmailController {
             return ResponseEntity.notFound().build();
         }
         email.assignToLieferant(lieferant);
+        trainImplicitHam(email);
         emailRepository.save(email);
         return ResponseEntity.ok(toDto(email));
     }
@@ -1142,6 +1178,10 @@ public class UnifiedEmailController {
             }
 
             emailRepository.save(email);
+
+            // Implizites Ham-Training: Wer antwortet, bestätigt, dass die Email kein Spam ist
+            trainImplicitHam(parentEmail);
+            emailRepository.save(parentEmail);
 
             // Attachments speichern
             if (attachments != null) {
