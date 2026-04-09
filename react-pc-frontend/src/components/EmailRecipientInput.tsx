@@ -125,10 +125,13 @@ export function EmailRecipientInput({
         };
     }, [value, searchContacts]);
 
-    // Click outside → close
+    // Click outside → close (must also check portal dropdown)
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            const insideWrapper = wrapperRef.current?.contains(target);
+            const insideDropdown = dropdownRef.current?.contains(target);
+            if (!insideWrapper && !insideDropdown) {
                 setIsOpen(false);
             }
         };
@@ -136,9 +139,11 @@ export function EmailRecipientInput({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    const showDropdown = isOpen && (linkedEmails.length > 0 || displayItems.length > 0 || loading || (value && value.length >= 2));
+
     // Dropdown-Position berechnen (Portal braucht fixed-Koordinaten als inline styles)
     useEffect(() => {
-        if (!isOpen || !wrapperRef.current) return;
+        if (!showDropdown || !wrapperRef.current) return;
         const el = wrapperRef.current;
         const updatePosition = () => {
             const dd = dropdownRef.current;
@@ -157,7 +162,7 @@ export function EmailRecipientInput({
             window.removeEventListener('scroll', updatePosition, true);
             window.removeEventListener('resize', updatePosition);
         };
-    }, [isOpen]);
+    }, [showDropdown]);
 
     // Reset highlight when items change
     useEffect(() => {
@@ -195,8 +200,6 @@ export function EmailRecipientInput({
             setIsOpen(false);
         }
     };
-
-    const showDropdown = isOpen && (linkedEmails.length > 0 || displayItems.length > 0 || loading || (value && value.length >= 2));
 
     return (
         <div className={cn("relative", className)} ref={wrapperRef}>
