@@ -430,4 +430,22 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   @Query("SELECT COUNT(e) FROM Email e WHERE e.isSpam = true AND e.deletedAt IS NULL AND e.isRead = false")
   long countSpamUnread();
+
+  // ═══════════════════════════════════════════════════════════════
+  // GLOBALE SUCHE
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Durchsucht alle Emails nach Betreff, Absender oder Empfänger.
+   * Gibt maximal 50 Ergebnisse zurück, sortiert nach Datum absteigend.
+   */
+  @Query("""
+      SELECT e FROM Email e
+      WHERE (LOWER(e.subject) LIKE LOWER(CONCAT('%', :query, '%'))
+          OR LOWER(e.fromAddress) LIKE LOWER(CONCAT('%', :query, '%'))
+          OR LOWER(e.recipient) LIKE LOWER(CONCAT('%', :query, '%'))
+          OR LOWER(e.body) LIKE LOWER(CONCAT('%', :query, '%')))
+      ORDER BY e.sentAt DESC
+      """)
+  List<Email> searchGlobal(@Param("query") String query);
 }

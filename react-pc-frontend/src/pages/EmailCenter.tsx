@@ -1095,18 +1095,21 @@ export default function EmailCenter() {
     return (
         <div className="flex bg-slate-100 overflow-hidden -m-8 h-[calc(100%+4rem)] w-[calc(100%+4rem)]">
             {/* Left Sidebar - Folders */}
-            <div className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+            <div className="w-64 bg-slate-50/80 border-r border-slate-200/80 flex flex-col flex-shrink-0">
                 {/* Header */}
-                <div className="p-4 border-b border-slate-200 space-y-2">
-                    <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center">
-                            <Mail className="w-4 h-4 text-rose-600" />
+                <div className="p-4 border-b border-slate-200/80 bg-white space-y-3">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 flex items-center justify-center shadow-sm shadow-rose-200">
+                            <Mail className="w-4.5 h-4.5 text-white" />
                         </div>
-                        <h2 className="font-bold text-slate-900 text-sm">E-Mail Center</h2>
+                        <div>
+                            <h2 className="font-bold text-slate-900 text-sm leading-tight">E-Mail Center</h2>
+                            <p className="text-[10px] text-slate-400 leading-tight">Postfach verwalten</p>
+                        </div>
                     </div>
                     <Button
                         onClick={handleComposeNew}
-                        className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm gap-2"
+                        className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-200/50 gap-2 h-10 font-semibold"
                     >
                         <PenSquare className="w-4 h-4" />
                         Neue E-Mail
@@ -1114,7 +1117,7 @@ export default function EmailCenter() {
                     <Button
                         variant="outline"
                         onClick={handleScanAssignments}
-                        className="w-full gap-2 text-slate-600 border-slate-300 hover:bg-slate-50"
+                        className="w-full gap-2 text-slate-600 border-slate-200 hover:bg-white hover:border-rose-200 hover:text-rose-600 transition-colors"
                         title="Erneute Prüfung der Zuordnung aller Mails im Posteingang"
                     >
                         <RefreshCw className="w-4 h-4" />
@@ -1123,7 +1126,7 @@ export default function EmailCenter() {
                 </div>
 
                 {/* Folders */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                <div className="flex-1 overflow-y-auto p-2.5 space-y-0.5">
                     {/* Main Folders */}
                     <button
                         onClick={() => setActiveFolder('inbox')}

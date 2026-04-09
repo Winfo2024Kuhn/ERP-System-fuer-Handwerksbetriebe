@@ -452,6 +452,24 @@ public class UnifiedEmailController {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // GLOBALE SUCHE
+    // ═══════════════════════════════════════════════════════════════
+
+    @GetMapping("/search")
+    @Transactional(readOnly = true)
+    public List<UnifiedEmailDto> searchEmails(
+            @RequestParam("q") String query,
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        if (query == null || query.trim().length() < 2) {
+            return List.of();
+        }
+        return emailRepository.searchGlobal(query.trim()).stream()
+                .limit(limit)
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // POSTEINGANG / GESENDET / PAPIERKORB
     // ═══════════════════════════════════════════════════════════════
 

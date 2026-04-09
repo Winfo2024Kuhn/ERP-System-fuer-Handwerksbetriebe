@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.springframework.stereotype.Service;
 
@@ -158,6 +159,14 @@ public class SpamFilterService {
      * Setzt auch isSpam und isNewsletter.
      */
     public void analyzeAndMarkSpam(Email email) {
+        // Ausgehende Emails sind niemals Spam
+        if (email.getDirection() == EmailDirection.OUT) {
+            email.setSpam(false);
+            email.setNewsletter(false);
+            email.setSpamScore(0);
+            return;
+        }
+
         // WICHTIG: Zugeordnete Emails dürfen niemals als Spam oder Newsletter markiert
         // werden
         if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null) {
