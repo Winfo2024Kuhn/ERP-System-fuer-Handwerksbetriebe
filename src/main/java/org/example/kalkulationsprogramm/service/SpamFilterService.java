@@ -51,7 +51,7 @@ public class SpamFilterService {
     /**
      * Ab diesem Score wird eine Email automatisch in Spam verschoben (ohne User-Eingriff).
      */
-    private static final int AUTO_SPAM_THRESHOLD = 90;
+    private static final int AUTO_SPAM_THRESHOLD = 85;
 
     /**
      * Keywords die auf Newsletter hinweisen - KEIN Spam, nur Kategorie.

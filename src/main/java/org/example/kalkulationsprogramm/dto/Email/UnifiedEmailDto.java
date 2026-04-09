@@ -59,5 +59,6 @@ public class UnifiedEmailDto {
         private String mimeType;
         private Long fileSize;
         private String contentId;
+        private boolean inline;
     }
 }

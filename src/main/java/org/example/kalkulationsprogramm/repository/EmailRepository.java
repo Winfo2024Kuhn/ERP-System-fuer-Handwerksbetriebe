@@ -1,13 +1,19 @@
 package org.example.kalkulationsprogramm.repository;
 
-import org.example.kalkulationsprogramm.domain.*;
+import java.util.List;
+import java.util.Optional;
+
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.EmailProcessingStatus;
+import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.Projekt;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
-import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface EmailRepository extends JpaRepository<Email, Long> {

@@ -28,7 +28,10 @@ import {
     Star,
     Package,
     Reply,
-    Newspaper
+    Newspaper,
+    Globe,
+    X,
+    CheckSquare
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -69,6 +72,7 @@ interface EmailAttachment {
     url?: string;
     type?: string;
     contentId?: string;
+    inline?: boolean;
 }
 
 interface EmailItem {
@@ -419,6 +423,9 @@ export default function EmailCenter() {
     // activeFilter removed
     const [emails, setEmails] = useState<EmailItem[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [isGlobalSearch, setIsGlobalSearch] = useState(false);
+    const [globalSearchResults, setGlobalSearchResults] = useState<EmailItem[]>([]);
+    const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
     const [loading, setLoading] = useState(false);
     const [selectedEmail, setSelectedEmail] = useState<EmailItem | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -464,7 +471,8 @@ export default function EmailCenter() {
     const handleComposeSuccess = () => {
         setIsComposing(false);
         setReplyToEmail(null);
-        loadEmails();
+        // Reload in background without resetting scroll/selection
+        refreshEmailsSilently();
         loadStats();
     };
 
@@ -539,10 +547,58 @@ export default function EmailCenter() {
         }
     }, []);
 
+    // Silent refresh: merges new emails without resetting scroll position or selection
+    const refreshEmailsSilently = useCallback(async () => {
+        try {
+            const endpointMap: Record<string, string> = {
+                'inbox': '/api/emails/inbox',
+                'sent': '/api/emails/sent',
+                'trash': '/api/emails/trash',
+                'spam': '/api/emails/spam',
+                'newsletter': '/api/emails/newsletter',
+                'projects': '/api/emails/projects',
+                'offers': '/api/emails/offers',
+                'suppliers': '/api/emails/suppliers',
+                'unassigned': '/api/emails/unassigned',
+                'inquiries': '/api/emails/inquiries'
+            };
+            const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
+            const res = await fetch(endpoint);
+            if (res.ok) {
+                let data = await res.json();
+                if (!Array.isArray(data)) data = [];
+
+                if (activeFolder === 'spam' || activeFolder === 'newsletter') {
+                    data = data.filter((email: EmailItem) => {
+                        const hasAssignment =
+                            (email.zuordnungTyp && email.zuordnungTyp !== 'KEINE') ||
+                            email.projektId ||
+                            email.anfrageId ||
+                            email.lieferantId;
+                        return !hasAssignment;
+                    });
+                }
+
+                setEmails(data);
+            }
+        } catch (err) {
+            console.error('Silent refresh failed', err);
+        }
+    }, [activeFolder]);
+
     useEffect(() => {
         loadEmails();
         loadStats();
     }, [loadEmails, loadStats]);
+
+    // Auto-poll for new emails every 30 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            refreshEmailsSilently();
+            loadStats();
+        }, 30000);
+        return () => clearInterval(interval);
+    }, [refreshEmailsSilently, loadStats]);
 
     // Deep-link: auto-select email from URL param ?emailId=123
     useEffect(() => {
@@ -715,73 +771,103 @@ export default function EmailCenter() {
     };
 
     const handleAssign = async (type: 'projekt' | 'anfrage', targetId: number) => {
-        if (!selectedEmail) return;
+        const idsToAssign = selectedIds.size > 1 ? Array.from(selectedIds) : (selectedEmail ? [selectedEmail.id] : []);
+        if (idsToAssign.length === 0) return;
 
-        const url = type === 'projekt'
-            ? `/api/emails/${selectedEmail.id}/assign/${targetId}`
-            : `/api/emails/${selectedEmail.id}/assign/anfrage/${targetId}`;
+        for (const emailId of idsToAssign) {
+            const url = type === 'projekt'
+                ? `/api/emails/${emailId}/assign/${targetId}`
+                : `/api/emails/${emailId}/assign/anfrage/${targetId}`;
+            const res = await fetch(url, { method: 'POST' });
+            if (!res.ok) throw new Error('Failed to assign');
+        }
 
-        const res = await fetch(url, { method: 'POST' });
-        if (!res.ok) throw new Error('Failed to assign');
-
-        setEmails(prev => prev.filter(e => e.id !== selectedEmail.id));
+        const assignedSet = new Set(idsToAssign);
+        setEmails(prev => prev.filter(e => !assignedSet.has(e.id)));
+        setSelectedIds(new Set());
         setSelectedEmail(null);
+        loadStats();
     };
 
-    const handleBlockSender = async () => {
-        if (!selectedEmail) return;
-        if (!await confirmDialog({ title: "Absender sperren", message: `Möchten Sie den Absender "${selectedEmail.fromAddress}" wirklich sperren?\nAlle E-Mails dieses Absenders werden in Spam verschoben.`, variant: "danger", confirmLabel: "Sperren" })) return;
+    const handleBlockSender = async (emailIds?: number[]) => {
+        const ids = emailIds || (selectedEmail ? [selectedEmail.id] : []);
+        if (ids.length === 0) return;
+
+        const count = ids.length;
+        const message = count === 1
+            ? `Möchten Sie den Absender "${selectedEmail?.fromAddress}" wirklich sperren?\nAlle E-Mails dieses Absenders werden in Spam verschoben.`
+            : `Möchten Sie die Absender von ${count} E-Mails sperren?\nAlle E-Mails dieser Absender werden in Spam verschoben.`;
+        if (!await confirmDialog({ title: "Absender sperren", message, variant: "danger", confirmLabel: "Sperren" })) return;
+
+        // Optimistic: remove from list immediately
+        const idsSet = new Set(ids);
+        setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
+        setSelectedIds(new Set());
+        setSelectedEmail(null);
 
         try {
-            const res = await fetch(`/api/emails/${selectedEmail.id}/block-sender`, { method: 'POST' });
-            if (res.ok) {
-                const msg = await res.text();
-                toast.info(msg);
-                loadEmails();
-                loadStats();
-                setSelectedEmail(null);
-            } else {
-                toast.error("Fehler beim Sperren des Absenders");
+            let successCount = 0;
+            for (const id of ids) {
+                const res = await fetch(`/api/emails/${id}/block-sender`, { method: 'POST' });
+                if (res.ok) successCount++;
             }
+            toast.info(successCount === 1 ? "Absender gesperrt" : `${successCount} Absender gesperrt`);
+            loadStats();
         } catch (err) {
             console.error(err);
-            toast.error("Fehler beim Sperren des Absenders");
+            toast.error("Fehler beim Sperren");
+            // Rollback: reload on failure
+            refreshEmailsSilently();
         }
     };
 
-    const handleMarkSpam = async () => {
-        if (!selectedEmail) return;
+    const handleMarkSpam = async (emailIds?: number[]) => {
+        const ids = emailIds || (selectedEmail ? [selectedEmail.id] : []);
+        if (ids.length === 0) return;
+
+        // Optimistic: remove from list immediately
+        const idsSet = new Set(ids);
+        setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
+        setSelectedIds(new Set());
+        setSelectedEmail(null);
+
         try {
-            const res = await fetch(`/api/emails/${selectedEmail.id}/mark-spam`, { method: 'POST' });
-            if (res.ok) {
-                toast.info("Als Spam markiert – Modell lernt dazu");
-                loadEmails();
-                loadStats();
-                setSelectedEmail(null);
-            } else {
-                toast.error("Fehler beim Markieren als Spam");
+            let successCount = 0;
+            for (const id of ids) {
+                const res = await fetch(`/api/emails/${id}/mark-spam`, { method: 'POST' });
+                if (res.ok) successCount++;
             }
+            toast.info(successCount === 1 ? "Als Spam markiert – Modell lernt dazu" : `${successCount} E-Mails als Spam markiert`);
+            loadStats();
         } catch (err) {
             console.error(err);
             toast.error("Fehler beim Markieren als Spam");
+            refreshEmailsSilently();
         }
     };
 
-    const handleMarkNotSpam = async () => {
-        if (!selectedEmail) return;
+    const handleMarkNotSpam = async (emailIds?: number[]) => {
+        const ids = emailIds || (selectedEmail ? [selectedEmail.id] : []);
+        if (ids.length === 0) return;
+
+        // Optimistic: remove from list immediately
+        const idsSet = new Set(ids);
+        setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
+        setSelectedIds(new Set());
+        setSelectedEmail(null);
+
         try {
-            const res = await fetch(`/api/emails/${selectedEmail.id}/mark-not-spam`, { method: 'POST' });
-            if (res.ok) {
-                toast.info("Kein Spam – zurück im Posteingang");
-                loadEmails();
-                loadStats();
-                setSelectedEmail(null);
-            } else {
-                toast.error("Fehler beim Markieren als Nicht-Spam");
+            let successCount = 0;
+            for (const id of ids) {
+                const res = await fetch(`/api/emails/${id}/mark-not-spam`, { method: 'POST' });
+                if (res.ok) successCount++;
             }
+            toast.info(successCount === 1 ? "Kein Spam – zurück im Posteingang" : `${successCount} E-Mails als Nicht-Spam markiert`);
+            loadStats();
         } catch (err) {
             console.error(err);
             toast.error("Fehler beim Markieren als Nicht-Spam");
+            refreshEmailsSilently();
         }
     };
 
@@ -794,7 +880,7 @@ export default function EmailCenter() {
             if (res.ok) {
                 const data = await res.json();
                 toast.info(data.message);
-                loadEmails();
+                refreshEmailsSilently();
                 loadStats();
             } else {
                 toast.error("Fehler beim Scan");
@@ -862,11 +948,39 @@ export default function EmailCenter() {
 
     const visibleAttachments = useMemo(() => {
         if (!selectedEmail) return [];
-        return (selectedEmail.attachments || []).filter(att => !att.contentId);
+        return (selectedEmail.attachments || []).filter(att => !att.inline);
     }, [selectedEmail]);
+
+    // Global search with debounce
+    useEffect(() => {
+        if (!isGlobalSearch || !searchQuery.trim() || searchQuery.trim().length < 2) {
+            setGlobalSearchResults([]);
+            setGlobalSearchLoading(false);
+            return;
+        }
+        setGlobalSearchLoading(true);
+        const timeout = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setGlobalSearchResults(Array.isArray(data) ? data : []);
+                } else {
+                    setGlobalSearchResults([]);
+                }
+            } catch (err) {
+                console.error('Global search failed:', err);
+                setGlobalSearchResults([]);
+            } finally {
+                setGlobalSearchLoading(false);
+            }
+        }, 350);
+        return () => clearTimeout(timeout);
+    }, [isGlobalSearch, searchQuery]);
 
     // Filter emails by search
     const filteredEmails = useMemo(() => {
+        if (isGlobalSearch) return globalSearchResults;
         if (!searchQuery.trim()) return emails;
         const q = searchQuery.toLowerCase();
         return emails.filter(e =>
@@ -874,7 +988,7 @@ export default function EmailCenter() {
             e.fromAddress?.toLowerCase().includes(q) ||
             getSenderName(e).toLowerCase().includes(q)
         );
-    }, [emails, searchQuery]);
+    }, [emails, searchQuery, isGlobalSearch, globalSearchResults]);
 
     // Right Pane Content Logic
     const renderRightPane = () => {
@@ -948,6 +1062,83 @@ export default function EmailCenter() {
             );
         }
 
+        // Multi-select bulk actions
+        if (selectedIds.size > 1) {
+            const bulkIds = Array.from(selectedIds);
+            return (
+                <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+                    <div className="w-20 h-20 rounded-2xl bg-rose-50 flex items-center justify-center">
+                        <CheckSquare className="w-10 h-10 text-rose-400" />
+                    </div>
+                    <div className="text-center">
+                        <p className="text-2xl font-bold text-slate-900">{selectedIds.size} E-Mails ausgewählt</p>
+                        <p className="text-sm text-slate-500 mt-1">Wählen Sie eine Aktion für die ausgewählten E-Mails</p>
+                    </div>
+
+                    <div className="flex flex-col gap-2 w-full max-w-xs">
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowAssignModal(true)}
+                            className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                        >
+                            <FolderPlus className="w-4 h-4" />
+                            Zuordnen ({selectedIds.size})
+                        </Button>
+
+                        {activeFolder === 'spam' ? (
+                            <Button
+                                variant="outline"
+                                onClick={() => handleMarkNotSpam(bulkIds)}
+                                className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300"
+                            >
+                                <ShieldCheck className="w-4 h-4" />
+                                Kein Spam ({selectedIds.size})
+                            </Button>
+                        ) : (
+                            <Button
+                                variant="outline"
+                                onClick={() => handleMarkSpam(bulkIds)}
+                                className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                            >
+                                <ShieldX className="w-4 h-4" />
+                                Als Spam markieren ({selectedIds.size})
+                            </Button>
+                        )}
+
+                        <Button
+                            variant="outline"
+                            onClick={() => handleBlockSender(bulkIds)}
+                            className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                        >
+                            <ShieldAlert className="w-4 h-4" />
+                            Absender sperren ({selectedIds.size})
+                        </Button>
+
+                        <div className="h-px bg-slate-200 my-1" />
+
+                        <Button
+                            variant="outline"
+                            onClick={(e) => handleDelete(e)}
+                            className="w-full gap-2 justify-start h-11 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            Löschen ({selectedIds.size})
+                        </Button>
+                    </div>
+
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { setSelectedIds(new Set()); setSelectedEmail(null); }}
+                        className="text-slate-500 hover:text-slate-700 mt-2"
+                    >
+                        <X className="w-4 h-4 mr-1" />
+                        Auswahl aufheben
+                    </Button>
+                </div>
+            );
+        }
+
         if (selectedEmail) {
             return (
                 <>
@@ -993,7 +1184,7 @@ export default function EmailCenter() {
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={handleMarkNotSpam}
+                                        onClick={() => handleMarkNotSpam()}
                                         className="text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
                                         title="Kein Spam"
                                     >
@@ -1003,7 +1194,7 @@ export default function EmailCenter() {
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={handleMarkSpam}
+                                        onClick={() => handleMarkSpam()}
                                         className="text-slate-500 hover:text-red-600 hover:bg-red-50"
                                         title="Als Spam markieren"
                                     >
@@ -1013,7 +1204,7 @@ export default function EmailCenter() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={handleBlockSender}
+                                    onClick={() => handleBlockSender()}
                                     className="text-slate-500 hover:text-red-600 hover:bg-red-50"
                                     title="Absender sperren"
                                 >
@@ -1352,21 +1543,74 @@ export default function EmailCenter() {
             {/* Middle List - Email List */}
             <div className="w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
                 {/* Search */}
-                <div className="p-3 border-b border-slate-200">
+                <div className="p-3 border-b border-slate-200 space-y-2">
                     <div className="relative">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        {isGlobalSearch ? (
+                            <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-rose-500" />
+                        ) : (
+                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        )}
                         <Input
-                            placeholder="E-Mails durchsuchen..."
-                            className="pl-9 bg-slate-50 border-slate-200 focus:bg-white focus:border-rose-300 focus:ring-rose-200 transition-colors"
+                            placeholder={isGlobalSearch ? "Globale Suche (alle Ordner)..." : "In diesem Ordner suchen..."}
+                            className={cn(
+                                "pl-9 pr-9 border-slate-200 focus:border-rose-300 focus:ring-rose-200 transition-colors",
+                                isGlobalSearch ? "bg-rose-50/50 border-rose-200" : "bg-slate-50 focus:bg-white"
+                            )}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
+                        {searchQuery && (
+                            <button
+                                onClick={() => { setSearchQuery(''); setGlobalSearchResults([]); }}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => { setIsGlobalSearch(false); setGlobalSearchResults([]); }}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer",
+                                !isGlobalSearch
+                                    ? "bg-slate-100 text-slate-800 shadow-sm"
+                                    : "text-slate-500 hover:bg-slate-50"
+                            )}
+                        >
+                            <Search className="w-3 h-3" />
+                            Ordner
+                        </button>
+                        <button
+                            onClick={() => setIsGlobalSearch(true)}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer",
+                                isGlobalSearch
+                                    ? "bg-rose-100 text-rose-700 shadow-sm"
+                                    : "text-slate-500 hover:bg-slate-50"
+                            )}
+                        >
+                            <Globe className="w-3 h-3" />
+                            Alle Ordner
+                        </button>
                     </div>
                 </div>
 
+                {/* Global search info banner */}
+                {isGlobalSearch && (
+                    <div className="px-3 py-2 bg-rose-50 border-b border-rose-100 text-xs text-rose-600 flex items-center gap-2">
+                        <Globe className="w-3.5 h-3.5 flex-shrink-0" />
+                        {searchQuery.trim().length < 2
+                            ? "Mindestens 2 Zeichen eingeben..."
+                            : globalSearchLoading
+                                ? "Suche läuft..."
+                                : `${filteredEmails.length} Ergebnis${filteredEmails.length !== 1 ? 'se' : ''} gefunden`}
+                    </div>
+                )}
+
                 {/* List */}
                 <div className="flex-1 overflow-y-auto">
-                    {loading ? (
+                    {(loading || (isGlobalSearch && globalSearchLoading)) ? (
                         <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-3">
                             <RefreshCw className="w-6 h-6 animate-spin text-rose-400" />
                             <p className="text-sm font-medium">Lade E-Mails...</p>
@@ -1374,10 +1618,18 @@ export default function EmailCenter() {
                     ) : filteredEmails.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
                             <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
-                                <Mail className="w-7 h-7 text-slate-300" />
+                                {isGlobalSearch ? <Globe className="w-7 h-7 text-slate-300" /> : <Mail className="w-7 h-7 text-slate-300" />}
                             </div>
-                            <p className="text-sm font-medium text-slate-500">Keine E-Mails</p>
-                            <p className="text-xs text-slate-400">In diesem Ordner ist nichts vorhanden</p>
+                            <p className="text-sm font-medium text-slate-500">
+                                {isGlobalSearch
+                                    ? (searchQuery.trim().length < 2 ? 'Suchbegriff eingeben' : 'Keine Treffer')
+                                    : 'Keine E-Mails'}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                                {isGlobalSearch
+                                    ? 'Suche in Betreff, Absender und Inhalt'
+                                    : 'In diesem Ordner ist nichts vorhanden'}
+                            </p>
                         </div>
                     ) : (
                         <div className="divide-y divide-slate-100">
@@ -1449,7 +1701,10 @@ export default function EmailCenter() {
 
                 {/* Footer Status */}
                 <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
-                    <span>{filteredEmails.length} {filteredEmails.length === 1 ? 'Nachricht' : 'Nachrichten'}</span>
+                    <span>
+                        {isGlobalSearch && <Globe className="w-3 h-3 inline mr-1 text-rose-500" />}
+                        {filteredEmails.length} {filteredEmails.length === 1 ? 'Nachricht' : 'Nachrichten'}
+                    </span>
                     {selectedIds.size > 0 && (
                         <span className="text-rose-600 font-medium">{selectedIds.size} ausgewählt</span>
                     )}
