@@ -117,6 +117,27 @@ function collapseQuotes(doc: Document, onHeightChange: () => void): void {
         }
     }
 
+    // ── Eigene email-quote Klasse (aus unserem Compose) ─────────────────────
+    const ownQuotes = doc.querySelectorAll('.email-quote');
+    if (ownQuotes.length > 0) {
+        for (const q of Array.from(ownQuotes)) {
+            // "Am ... schrieb:" Zeile VOR dem Quote auch verstecken
+            let prev: Node | null = q.previousSibling;
+            while (prev && prev.nodeType === 3 && (prev.textContent || '').trim() === '') {
+                prev = prev.previousSibling;
+            }
+            if (prev && prev.nodeType === 1) {
+                const text = ((prev as Element).textContent || '').trim();
+                if (/^(Am |On |Von:|From:)/i.test(text) || /schrieb.*:|wrote.*:/i.test(text)) {
+                    hideGroup([prev as Element, q]);
+                    continue;
+                }
+            }
+            hideGroup([q]);
+        }
+        return;
+    }
+
     // ── Standard-Selektoren (Gmail, Yahoo, blockquote, Apple Mail) ───────────
     const quoteSelectors = [
         'blockquote',
@@ -137,19 +158,81 @@ function collapseQuotes(doc: Document, onHeightChange: () => void): void {
         } catch { /* ignore invalid selectors */ }
     }
 
-    for (const quote of found) {
-        // Optionale Zeile VOR dem Quote verstecken ("Am ... schrieb:", "On ... wrote:")
-        let prev: Node | null = quote.previousSibling;
-        while (prev && prev.nodeType === 3 && (prev.textContent || '').trim() === '') {
-            prev = prev.previousSibling;
+    if (found.length > 0) {
+        for (const quote of found) {
+            // Optionale Zeile VOR dem Quote verstecken ("Am ... schrieb:", "On ... wrote:")
+            let prev: Node | null = quote.previousSibling;
+            while (prev && prev.nodeType === 3 && (prev.textContent || '').trim() === '') {
+                prev = prev.previousSibling;
+            }
+            if (prev && prev.nodeType === 1) {
+                const text = ((prev as Element).textContent || '').trim();
+                if (/^(Am |On |Von:|From:|De:|Le )/i.test(text) || text.length < 120) {
+                    (prev as HTMLElement).style.display = 'none';
+                }
+            }
+            hideGroup([quote]);
         }
-        if (prev && prev.nodeType === 1) {
-            const text = ((prev as Element).textContent || '').trim();
-            if (/^(Am |On |Von:|From:|De:|Le )/i.test(text) || text.length < 120) {
-                (prev as HTMLElement).style.display = 'none';
+        return;
+    }
+
+    // ── Textmuster-Erkennung (Klartext-Clients: t-online, Thunderbird etc.) ─
+    // Diese Clients markieren Zitate nicht mit HTML-Elementen, sondern fügen
+    // den Nachrichtenverlauf als Fließtext ein. Wir suchen nach typischen
+    // Trennmustern und verstecken alles ab dort.
+
+    const body = doc.body;
+    if (!body) return;
+    const walker = doc.createTreeWalker(body, NodeFilter.SHOW_ELEMENT, null);
+    let node: Node | null = walker.currentNode;
+    while (node) {
+        if (node.nodeType === 1) {
+            const el = node as HTMLElement;
+            const text = (el.textContent || '').trim();
+            const ownText = getOwnText(el).trim();
+
+            // "-------- Ursprüngliche Nachricht --------" oder "---- Original Message ----"
+            if (/^-{3,}\s*(Urspr|Original|Weitergeleitete|Forwarded)/i.test(ownText)) {
+                collectFromElement(el);
+                return;
+            }
+
+            // "Am DD.MM.YYYY um HH:MM schrieb ...:" (t-online, Thunderbird)
+            if (/^Am\s+\d{1,2}\.\d{1,2}\.\d{2,4}\s+um\s+\d{1,2}:\d{2}\s+schrieb\b/i.test(ownText)) {
+                collectFromElement(el);
+                return;
+            }
+
+            // "On ... wrote:" (English equivalent)
+            if (/^On\s+.+wrote\s*:/i.test(ownText) && ownText.length < 300) {
+                collectFromElement(el);
+                return;
+            }
+
+            // "Von: ... Gesendet: ... An: ... Betreff: ..." block without border-top
+            if (/Von:.*Gesendet:.*An:.*Betreff:/is.test(text) && text.length < 600) {
+                collectFromElement(el);
+                return;
             }
         }
-        hideGroup([quote]);
+        node = walker.nextNode();
+    }
+
+    // Hilfsfunktion: eigenen Textinhalt eines Elements (ohne Kinder)
+    function getOwnText(el: HTMLElement): string {
+        let t = '';
+        el.childNodes.forEach(c => {
+            if (c.nodeType === 3) t += c.textContent || '';
+        });
+        return t;
+    }
+
+    // Hilfsfunktion: Element + alle folgenden Geschwister verstecken
+    function collectFromElement(startEl: HTMLElement): void {
+        const group: Element[] = [startEl];
+        let nxt = startEl.nextElementSibling;
+        while (nxt) { group.push(nxt); nxt = nxt.nextElementSibling; }
+        hideGroup(group);
     }
 }
 
