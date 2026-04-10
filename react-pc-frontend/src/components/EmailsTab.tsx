@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Mail, Search, Paperclip, Plus, Reply, MessageSquare, X, ArrowLeft } from 'lucide-react';
+import { Mail, Search, Paperclip, Plus, Reply, MessagesSquare, X, ArrowLeft } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { EmailComposeModal } from './EmailComposeModal';
@@ -528,54 +528,69 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
             {/* ─── Thread list (roots only) ─────────────────── */}
             {filteredEmails.length > 0 ? (
                 <div className="space-y-3">
-                    {filteredEmails.map((email) => (
-                        <div
-                            key={email.id}
-                            className="bg-white rounded-xl border border-slate-200 hover:border-rose-300 hover:shadow-md transition-all cursor-pointer group"
-                            onClick={() => handleEmailClick(email)}
-                        >
-                            <div className="p-4">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                <span className={cn(
-                                                    "text-xs font-medium px-2 py-0.5 rounded-full",
-                                                    email.direction === 'IN' ? "bg-blue-50 text-blue-700" : "bg-green-50 text-green-700"
-                                                )}>
-                                                    {email.direction === 'IN' ? 'Eingang' : 'Ausgang'}
-                                                </span>
-                                                <span className="text-xs text-slate-500">{formatDate(email)}</span>
-                                                {email._replyCount > 0 && (
-                                                    <span
-                                                        className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200"
-                                                        title={`${email._replyCount + 1} Nachrichten in diesem Thread`}
-                                                    >
-                                                        <MessageSquare className="w-3 h-3" />
-                                                        {email._replyCount + 1}
+                    {filteredEmails.map((email) => {
+                        const isThread = email._replyCount > 0;
+                        return (
+                            <div
+                                key={email.id}
+                                className={cn(
+                                    "rounded-xl border transition-all cursor-pointer group relative overflow-hidden",
+                                    isThread
+                                        ? "bg-white border-rose-200 hover:border-rose-400 hover:shadow-md shadow-sm"
+                                        : "bg-white border-slate-200 hover:border-rose-300 hover:shadow-md"
+                                )}
+                                onClick={() => handleEmailClick(email)}
+                            >
+                                {/* Linker Akzent-Balken für Threads */}
+                                {isThread && (
+                                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-400" />
+                                )}
+                                <div className={cn("p-4", isThread && "pl-5")}>
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                                    <span className={cn(
+                                                        "text-xs font-medium px-2 py-0.5 rounded-full",
+                                                        email.direction === 'IN' ? "bg-blue-50 text-blue-700" : "bg-green-50 text-green-700"
+                                                    )}>
+                                                        {email.direction === 'IN' ? 'Eingang' : 'Ausgang'}
                                                     </span>
+                                                    {isThread && (
+                                                        <span
+                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-600 text-white shadow-sm"
+                                                            title={`${email._replyCount + 1} Nachrichten in diesem Thread`}
+                                                        >
+                                                            <MessagesSquare className="w-3 h-3" />
+                                                            {email._replyCount + 1} Nachrichten
+                                                        </span>
+                                                    )}
+                                                    <span className="text-xs text-slate-400">{formatDate(email)}</span>
+                                                </div>
+                                                <h4 className="font-medium text-slate-900 truncate">{email.subject || '(kein Betreff)'}</h4>
+                                                <p className="text-sm text-slate-500 truncate">
+                                                    {email.direction === 'IN' ? 'Von: ' : 'An: '}
+                                                    {email.from || email.fromAddress || email.sender || 'Unbekannt'}
+                                                </p>
+                                                {(email.bodyHtml || email.bodyPreview || email.body) && (
+                                                    <p className="text-sm text-slate-400 mt-1 line-clamp-2">{getTextPreview(email)}</p>
                                                 )}
                                             </div>
-                                            <h4 className="font-medium text-slate-900 truncate">{email.subject || '(kein Betreff)'}</h4>
-                                            <p className="text-sm text-slate-500 truncate">
-                                                {email.direction === 'IN' ? 'Von: ' : 'An: '}
-                                                {email.from || email.fromAddress || email.sender || 'Unbekannt'}
-                                            </p>
-                                            {(email.bodyHtml || email.bodyPreview || email.body) && (
-                                                <p className="text-sm text-slate-400 mt-1 line-clamp-2">{getTextPreview(email)}</p>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-2 shrink-0">
+                                            {isThread
+                                                ? <MessagesSquare className="w-5 h-5 text-rose-300 group-hover:text-rose-500 transition-colors" />
+                                                : <Mail className="w-5 h-5 text-slate-300 group-hover:text-rose-400 transition-colors" />
+                                            }
+                                            {email.attachments && email.attachments.filter(a => !a.inline).length > 0 && (
+                                                <Paperclip className="w-4 h-4 text-slate-400" />
                                             )}
                                         </div>
                                     </div>
-                                    <div className="flex flex-col items-end gap-2">
-                                        <Mail className="w-5 h-5 text-slate-300 group-hover:text-rose-400 transition-colors" />
-                                        {email.attachments && email.attachments.filter(a => !a.inline).length > 0 && (
-                                            <Paperclip className="w-4 h-4 text-slate-400" />
-                                        )}
-                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-500">

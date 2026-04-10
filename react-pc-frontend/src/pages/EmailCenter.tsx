@@ -1774,7 +1774,7 @@ export default function EmailCenter() {
                                         {/* Thread-Badge: zeigt Anzahl Nachrichten im Thread */}
                                         {email.replyCount != null && email.replyCount > 0 && (
                                             <div
-                                                className="flex items-center gap-1 text-xs text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200"
+                                                className="flex items-center gap-1 text-xs font-semibold text-white bg-rose-600 px-2 py-0.5 rounded-full shadow-sm"
                                                 title={`${email.replyCount + 1} Nachrichten in diesem Thread`}
                                             >
                                                 <MessagesSquare className="w-3 h-3" />
@@ -1824,7 +1824,7 @@ export default function EmailCenter() {
                         <button
                             onClick={handleBackfillThreads}
                             title="Thread-Verknüpfungen rückwirkend aufbauen"
-                            className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                            className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                         >
                             <DatabaseZap className="w-3.5 h-3.5" />
                             Threads
