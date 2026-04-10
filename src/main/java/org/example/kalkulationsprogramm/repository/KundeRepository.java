@@ -1,13 +1,13 @@
 package org.example.kalkulationsprogramm.repository;
 
+import java.util.List;
+import java.util.Optional;
+
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-
-import java.util.List;
-import java.util.Optional;
 
 public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecificationExecutor<Kunde>
 {
@@ -25,4 +25,10 @@ public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecific
            "OR LOWER(k.kundennummer) LIKE LOWER(CONCAT('%', :query, '%')) " +
            "OR LOWER(e) LIKE LOWER(CONCAT('%', :query, '%'))")
     List<Kunde> searchByNameOrAnsprechpartnerOrEmail(@Param("query") String query);
+
+    /**
+     * Prüft ob eine E-Mail-Adresse bei einem Kunden hinterlegt ist.
+     */
+    @Query("SELECT COUNT(k) > 0 FROM Kunde k JOIN k.kundenEmails e WHERE LOWER(e) = LOWER(:email)")
+    boolean existsByKundenEmail(@Param("email") String email);
 }

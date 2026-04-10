@@ -6,7 +6,10 @@ import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
+import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -34,6 +37,9 @@ import lombok.extern.slf4j.Slf4j;
 public class SpamFilterService {
 
     private final LieferantenRepository lieferantenRepository;
+    private final KundeRepository kundeRepository;
+    private final AnfrageRepository anfrageRepository;
+    private final ProjektRepository projektRepository;
     private final org.example.kalkulationsprogramm.repository.EmailBlacklistRepository emailBlacklistRepository;
     private final SpamBayesService spamBayesService;
 
@@ -429,6 +435,17 @@ public class SpamFilterService {
             return;
         }
 
+        // WICHTIG: Emails von bekannten Kunden (Kunde, Projekt, Anfrage)
+        // dürfen NIEMALS als Spam markiert werden.
+        if (email.getFromAddress() != null && isFromKnownKunde(email.getFromAddress())) {
+            email.setSpam(false);
+            email.setNewsletter(false);
+            email.setSpamScore(0);
+            log.debug("[SpamFilter] Email von bekanntem Kunden übersprungen: from='{}', subject='{}'",
+                    email.getFromAddress(), email.getSubject());
+            return;
+        }
+
         // 1. Newsletter Check (falls noch nicht via Header erkannt)
         if (!email.isNewsletter()) {
             if (checkForNewsletter(email)) {
@@ -705,6 +722,41 @@ public class SpamFilterService {
         }
 
         return false;
+    }
+
+    /**
+     * Prüft ob die Absender-Adresse zu einem bekannten Kunden gehört.
+     * Sucht in den Kunden-, Projekt- und Anfrage-Email-Tabellen.
+     */
+    private boolean isFromKnownKunde(String fromAddress) {
+        if (fromAddress == null || fromAddress.isBlank()) {
+            return false;
+        }
+
+        // Extrahiere reine Email-Adresse falls Format "Name <email@domain.com>"
+        String emailAddr = fromAddress;
+        if (fromAddress.contains("<") && fromAddress.contains(">")) {
+            int start = fromAddress.indexOf('<') + 1;
+            int end = fromAddress.indexOf('>');
+            if (start < end) {
+                emailAddr = fromAddress.substring(start, end);
+            }
+        }
+
+        String normalized = emailAddr.toLowerCase().trim();
+
+        // 1. Kunde-Emails prüfen
+        if (kundeRepository.existsByKundenEmail(normalized)) {
+            return true;
+        }
+
+        // 2. Projekt-Kunden-Emails prüfen
+        if (!projektRepository.findByKundenEmail(normalized).isEmpty()) {
+            return true;
+        }
+
+        // 3. Anfrage-Kunden-Emails prüfen
+        return !anfrageRepository.findByKundenEmail(normalized).isEmpty();
     }
 
     /**
