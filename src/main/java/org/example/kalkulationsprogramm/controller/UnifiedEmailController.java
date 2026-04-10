@@ -432,7 +432,7 @@ public class UnifiedEmailController {
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findUnassigned().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -445,7 +445,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getInquiryEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findPotentialInquiries().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -458,7 +458,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getNewProjektEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.PROJEKT).stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -467,7 +467,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getNewAnfrageEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.ANFRAGE).stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -477,7 +477,7 @@ public class UnifiedEmailController {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.LIEFERANT).stream()
                 .filter(e -> e.getDeletedAt() == null)
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -495,7 +495,7 @@ public class UnifiedEmailController {
         }
         return emailRepository.searchGlobal(query.trim()).stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -514,7 +514,7 @@ public class UnifiedEmailController {
         return emailRepository.findInboxFiltered().stream()
                 .filter(e -> !unassignedIds.contains(e.getId())) // Exclude "Nicht zugeordnet"
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -524,7 +524,7 @@ public class UnifiedEmailController {
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findProjectEmails().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -533,7 +533,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getOfferFolderEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findAnfrageEmails().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -543,7 +543,7 @@ public class UnifiedEmailController {
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findLieferantEmails().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -553,7 +553,7 @@ public class UnifiedEmailController {
         return emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
                 .filter(e -> e.getDeletedAt() == null)
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -562,7 +562,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getTrashEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -571,7 +571,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getSpamEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findSpam().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -580,7 +580,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getNewsletterEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findNewsletter().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -1339,6 +1339,70 @@ public class UnifiedEmailController {
     // MAPPER
     // ═══════════════════════════════════════════════════════════════
 
+    /**
+     * Lightweight DTO for list endpoints – excludes htmlBody and trims body to 200 chars.
+     * Skips expensive CID-rewriting; only returns attachment metadata.
+     */
+    private UnifiedEmailDto toListDto(Email email) {
+        UnifiedEmailDto dto = new UnifiedEmailDto();
+        dto.setId(email.getId());
+        dto.setFromAddress(email.getFromAddress());
+        dto.setRecipient(email.getRecipient());
+        dto.setSubject(email.getSubject());
+
+        // Trim body for preview (list only needs ~200 chars)
+        String body = email.getBody();
+        if (body != null && body.length() > 200) {
+            body = body.substring(0, 200);
+        }
+        dto.setBody(body);
+        // htmlBody deliberately omitted for list performance
+
+        dto.setSentAt(email.getSentAt());
+        dto.setRead(email.isRead());
+        dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
+        dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
+        dto.setSpamScore(email.getSpamScore());
+
+        // Zuordnungs-Info
+        if (email.getProjekt() != null) {
+            dto.setProjektId(email.getProjekt().getId());
+            dto.setProjektName(email.getProjekt().getBauvorhaben());
+        }
+        if (email.getAnfrage() != null) {
+            dto.setAnfrageId(email.getAnfrage().getId());
+            dto.setAnfrageName(email.getAnfrage().getBauvorhaben());
+        }
+        if (email.getLieferant() != null) {
+            dto.setLieferantId(email.getLieferant().getId());
+            dto.setLieferantName(email.getLieferant().getLieferantenname());
+        }
+
+        // Thread
+        if (email.getParentEmail() != null) {
+            dto.setParentEmailId(email.getParentEmail().getId());
+        }
+        dto.setReplyCount(countAllReplies(email));
+
+        // Attachments – metadata only, no CID rewriting
+        dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
+        if (email.getAttachments() != null && !email.getAttachments().isEmpty()) {
+            dto.setAttachments(email.getAttachments().stream().map(att -> {
+                UnifiedEmailDto.AttachmentDto attDto = new UnifiedEmailDto.AttachmentDto();
+                attDto.setId(att.getId());
+                attDto.setOriginalFilename(att.getOriginalFilename());
+                attDto.setMimeType(att.getMimeType());
+                attDto.setFileSize(att.getSizeBytes());
+                attDto.setContentId(att.getContentId());
+                attDto.setInline(Boolean.TRUE.equals(att.getInlineAttachment()));
+                return attDto;
+            }).collect(Collectors.toList()));
+        }
+
+        return dto;
+    }
+
+    /** Full DTO with htmlBody + CID-rewriting – for detail/thread views only. */
     private UnifiedEmailDto toDto(Email email) {
         UnifiedEmailDto dto = new UnifiedEmailDto();
         dto.setId(email.getId());

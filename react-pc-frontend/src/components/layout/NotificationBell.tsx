@@ -221,7 +221,7 @@ export function NotificationBell() {
         setOpen(false);
         // Mark email as read when clicking on any email notification
         if (type === 'EMAIL' || type?.startsWith('EMAILS_')) {
-            const match = link.match(/emailId=(\d+)/);
+            const match = link.match(/\/emails\/\w+\/(\d+)/);
             if (match) {
                 fetch(`/api/emails/${match[1]}/mark-read`, { method: 'POST' })
                     .then(() => fetchNotifications())

@@ -129,7 +129,7 @@ const NAVIGATION: NavCategory[] = [
             {
                 label: 'E-Mail',
                 items: [
-                    { name: 'E-Mail Center', href: '/emails', icon: Mail },
+                    { name: 'E-Mail Center', href: '/emails/inbox', icon: Mail },
                 ]
             },
 

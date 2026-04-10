@@ -86,7 +86,7 @@ public class NotificationController {
                                                                                 ? e.getFromAddress()
                                                                                 : "Unbekannt"),
                                                                 e.getSentAt() != null ? e.getSentAt().toString() : "",
-                                                                "/emails?folder=inbox&emailId=" + e.getId())));
+                                                                "/emails/inbox/" + e.getId())));
                         }
                 } catch (Exception ignored) {
                         /* Email service may not be available */ }
@@ -483,7 +483,7 @@ public class NotificationController {
                         List<Email> unread = allEmails.stream().filter(e -> !e.isRead()).toList();
                         if (unread.isEmpty()) return;
                         categories.add(new CategoryDto(type, label, unread.size(), "Mail",
-                                        "/emails?folder=" + folder));
+                                        "/emails/" + folder));
                         unread.stream()
                                         .sorted(Comparator.comparing(Email::getSentAt,
                                                         Comparator.nullsLast(Comparator.reverseOrder())))
@@ -494,7 +494,7 @@ public class NotificationController {
                                                         "Von: " + (e.getFromAddress() != null ? e.getFromAddress()
                                                                         : "Unbekannt"),
                                                         e.getSentAt() != null ? e.getSentAt().toString() : "",
-                                                        "/emails?folder=" + folder + "&emailId=" + e.getId())));
+                                                        "/emails/" + folder + "/" + e.getId())));
                 } catch (Exception ignored) {
                 }
         }

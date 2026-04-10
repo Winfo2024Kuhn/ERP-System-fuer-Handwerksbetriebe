@@ -1,7 +1,7 @@
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ToastProvider } from '../components/ui/toast';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import EmailCenter from './EmailCenter';
@@ -68,12 +68,15 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
     });
 }
 
-function renderEmailCenter() {
+function renderEmailCenter(folder = 'inbox') {
     return render(
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[`/emails/${folder}`]}>
             <ConfirmProvider>
                 <ToastProvider>
-                    <EmailCenter />
+                    <Routes>
+                        <Route path="/emails/:folder" element={<EmailCenter />} />
+                        <Route path="/emails/:folder/:emailId" element={<EmailCenter />} />
+                    </Routes>
                 </ToastProvider>
             </ConfirmProvider>
         </MemoryRouter>

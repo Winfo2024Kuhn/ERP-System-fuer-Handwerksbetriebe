@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import {
     Mail,
@@ -327,13 +327,25 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
 }
 
 // Main EmailCenter Component
+const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'trash', 'spam', 'newsletter', 'projects', 'offers', 'suppliers', 'unassigned', 'inquiries'];
+
 export default function EmailCenter() {
     const toast = useToast();
     const confirmDialog = useConfirm();
-    const [searchParams, setSearchParams] = useSearchParams();
+    const { folder: folderParam, emailId: emailIdParam } = useParams<{ folder?: string; emailId?: string }>();
+    const navigate = useNavigate();
+
+    // Derive activeFolder from URL param
+    const activeFolder: FolderType = VALID_FOLDERS.includes(folderParam as FolderType)
+        ? (folderParam as FolderType)
+        : 'inbox';
+
+    // Navigate helper: updates URL (which drives activeFolder)
+    const setActiveFolder = useCallback((folder: FolderType) => {
+        navigate(`/emails/${folder}`, { replace: false });
+    }, [navigate]);
+
     // State
-    const [activeFolder, setActiveFolder] = useState<FolderType>('inbox');
-    // activeFilter removed
     const [emails, setEmails] = useState<EmailItem[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [isGlobalSearch, setIsGlobalSearch] = useState(false);
@@ -343,6 +355,24 @@ export default function EmailCenter() {
     const [selectedEmail, setSelectedEmail] = useState<EmailItem | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const lastSelectedIdRef = useRef<number | null>(null);
+
+    // Folder cache: stale-while-revalidate – show cached data instantly, refresh in background
+    const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; timestamp: number }>>(new Map());
+    // Ref to guard against stale async responses when switching folders quickly
+    const activeFolderRef = useRef<FolderType>(activeFolder);
+    activeFolderRef.current = activeFolder;
+
+    // Sync URL when selectedEmail changes (deselection clears emailId from URL)
+    const prevSelectedRef = useRef<number | null>(null);
+    useEffect(() => {
+        const currentId = selectedEmail?.id ?? null;
+        if (prevSelectedRef.current !== currentId) {
+            prevSelectedRef.current = currentId;
+            if (currentId === null && emailIdParam) {
+                navigate(`/emails/${activeFolder}`, { replace: true });
+            }
+        }
+    }, [selectedEmail, activeFolder, emailIdParam, navigate]);
 
     // Composition State
     const [isComposing, setIsComposing] = useState(false);
@@ -380,14 +410,7 @@ export default function EmailCenter() {
             .finally(() => setThreadLoading(false));
     }, [selectedEmail?.id]);
 
-    // Initial load
-    useEffect(() => {
-        loadEmails();
-        loadStats();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeFolder]);
-
-    // Action Hanlders
+    // Action Handlers
     const handleComposeNew = () => {
         setSelectedEmail(null);
         setReplyToEmail(null);
@@ -415,25 +438,42 @@ export default function EmailCenter() {
         loadStats();
     };
 
-    // Load emails based on folder and filter
+    // Load emails based on folder and filter – stale-while-revalidate
     const loadEmails = useCallback(async () => {
-        setLoading(true);
-        try {
-            const endpointMap: Record<string, string> = {
-                'inbox': '/api/emails/inbox',
-                'sent': '/api/emails/sent',
-                'trash': '/api/emails/trash',
-                'spam': '/api/emails/spam',
-                'newsletter': '/api/emails/newsletter',
-                'projects': '/api/emails/projects',
-                'offers': '/api/emails/offers',
-                'suppliers': '/api/emails/suppliers',
-                'unassigned': '/api/emails/unassigned',
-                'inquiries': '/api/emails/inquiries'
-            };
-            const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
+        const folderAtCallTime = activeFolder;
+        const endpointMap: Record<string, string> = {
+            'inbox': '/api/emails/inbox',
+            'sent': '/api/emails/sent',
+            'trash': '/api/emails/trash',
+            'spam': '/api/emails/spam',
+            'newsletter': '/api/emails/newsletter',
+            'projects': '/api/emails/projects',
+            'offers': '/api/emails/offers',
+            'suppliers': '/api/emails/suppliers',
+            'unassigned': '/api/emails/unassigned',
+            'inquiries': '/api/emails/inquiries'
+        };
+        const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
 
+        // Show cached data instantly if available
+        const cached = folderCacheRef.current.get(activeFolder);
+        if (cached) {
+            setEmails(cached.emails);
+            // Only show loading spinner if cache is older than 2 minutes
+            const isStale = Date.now() - cached.timestamp > 120_000;
+            if (!isStale) {
+                // Fresh enough – still revalidate silently
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
+        } else {
+            setLoading(true);
+        }
+
+        try {
             const res = await fetch(endpoint);
+            if (activeFolderRef.current !== folderAtCallTime) return; // folder changed, discard stale response
             if (res.ok) {
                 let data = await res.json();
                 if (!Array.isArray(data)) data = [];
@@ -451,12 +491,13 @@ export default function EmailCenter() {
                 }
 
                 setEmails(data);
+                folderCacheRef.current.set(activeFolder, { emails: data, timestamp: Date.now() });
             } else {
-                setEmails([]);
+                if (!cached) setEmails([]);
             }
         } catch (err) {
             console.error('Failed to load emails', err);
-            setEmails([]);
+            if (!cached) setEmails([]);
         } finally {
             setLoading(false);
         }
@@ -503,6 +544,7 @@ export default function EmailCenter() {
             };
             const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
             const res = await fetch(endpoint);
+            if (activeFolderRef.current !== activeFolder) return; // folder changed, discard stale response
             if (res.ok) {
                 let data = await res.json();
                 if (!Array.isArray(data)) data = [];
@@ -519,12 +561,14 @@ export default function EmailCenter() {
                 }
 
                 setEmails(data);
+                folderCacheRef.current.set(activeFolder, { emails: data, timestamp: Date.now() });
             }
         } catch (err) {
             console.error('Silent refresh failed', err);
         }
     }, [activeFolder]);
 
+    // Load emails + stats when folder changes (single effect, no duplicates)
     useEffect(() => {
         loadEmails();
         loadStats();
@@ -539,20 +583,8 @@ export default function EmailCenter() {
         return () => clearInterval(interval);
     }, [refreshEmailsSilently, loadStats]);
 
-    // Deep-link: Ordner wechseln bei URL-Param ?folder=X (z.B. aus NotificationBell)
+    // Deep-link: auto-select email from URL param /emails/:folder/:emailId
     useEffect(() => {
-        const folderParam = searchParams.get('folder');
-        if (!folderParam) return;
-        const validFolders: FolderType[] = ['inbox', 'sent', 'trash', 'spam', 'newsletter', 'projects', 'offers', 'suppliers', 'unassigned', 'inquiries'];
-        if (validFolders.includes(folderParam as FolderType) && folderParam !== activeFolder) {
-            setActiveFolder(folderParam as FolderType);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchParams]);
-
-    // Deep-link: auto-select email from URL param ?emailId=123
-    useEffect(() => {
-        const emailIdParam = searchParams.get('emailId');
         if (!emailIdParam || emails.length === 0) return;
         const emailId = Number(emailIdParam);
         if (isNaN(emailId)) return;
@@ -569,8 +601,6 @@ export default function EmailCenter() {
                     })
                     .catch(err => console.error('Failed to mark as read:', err));
             }
-            // Clear URL param after selecting
-            setSearchParams({}, { replace: true });
         } else {
             // Email not in current folder - try fetching it directly
             fetch(`/api/emails/${emailId}`)
@@ -583,12 +613,11 @@ export default function EmailCenter() {
                             .then(() => loadStats())
                             .catch(err => console.error('Failed to mark as read:', err));
                     }
-                    setSearchParams({}, { replace: true });
                 })
                 .catch(() => { /* email not found, ignore */ });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [emails, searchParams]);
+    }, [emails, emailIdParam]);
 
     useEffect(() => {
         if (!isComposing) {
@@ -649,6 +678,10 @@ export default function EmailCenter() {
 
         if (newSelected.has(id)) {
             setSelectedEmail(email);
+            // Update URL to reflect selected email (single-select only)
+            if (newSelected.size === 1) {
+                navigate(`/emails/${activeFolder}/${id}`, { replace: true });
+            }
             // Mark as read if not already read
             if (!email.isRead) {
                 fetch(`/api/emails/${id}/mark-read`, { method: 'POST' })
@@ -717,6 +750,7 @@ export default function EmailCenter() {
         }
 
         // Stats aktualisieren nach Löschung
+        folderCacheRef.current.clear();
         loadStats();
     };
 
@@ -736,6 +770,7 @@ export default function EmailCenter() {
         setEmails(prev => prev.filter(e => !assignedSet.has(e.id)));
         setSelectedIds(new Set());
         setSelectedEmail(null);
+        folderCacheRef.current.clear();
         loadStats();
     };
 
@@ -788,6 +823,7 @@ export default function EmailCenter() {
                 if (res.ok) successCount++;
             }
             toast.info(successCount === 1 ? "Als Spam markiert – Modell lernt dazu" : `${successCount} E-Mails als Spam markiert`);
+            folderCacheRef.current.clear();
             loadStats();
         } catch (err) {
             console.error(err);
@@ -813,6 +849,7 @@ export default function EmailCenter() {
                 if (res.ok) successCount++;
             }
             toast.info(successCount === 1 ? "Kein Spam – zurück im Posteingang" : `${successCount} E-Mails als Nicht-Spam markiert`);
+            folderCacheRef.current.clear();
             loadStats();
         } catch (err) {
             console.error(err);
@@ -833,6 +870,7 @@ export default function EmailCenter() {
             if (res.ok) {
                 const data = await res.json();
                 toast.success(`${data.updated} E-Mail${data.updated !== 1 ? 's' : ''} als gelesen markiert`);
+                folderCacheRef.current.delete(activeFolder);
                 loadStats();
             } else {
                 throw new Error('Fehler');
@@ -1384,11 +1422,6 @@ export default function EmailCenter() {
                     >
                         <Send className="w-4 h-4" />
                         <span className="flex-1 text-left">Gesendet</span>
-                        {folderCounts.sent > 0 && (
-                            <span className="text-xs text-slate-500 tabular-nums">
-                                {folderCounts.sent}
-                            </span>
-                        )}
                     </button>
 
                     <div className="h-px bg-slate-100 my-2" />
@@ -1658,9 +1691,18 @@ export default function EmailCenter() {
                 {/* List */}
                 <div className="flex-1 overflow-y-auto">
                     {(loading || (isGlobalSearch && globalSearchLoading)) ? (
-                        <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-3">
-                            <RefreshCw className="w-6 h-6 animate-spin text-rose-400" />
-                            <p className="text-sm font-medium">Lade E-Mails...</p>
+                        <div className="divide-y divide-slate-100 animate-pulse">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                                <div key={i} className="px-4 py-3 border-l-[3px] border-l-transparent">
+                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                        <div className="h-4 bg-slate-200 rounded w-32" />
+                                        <div className="h-3 bg-slate-100 rounded w-16" />
+                                    </div>
+                                    <div className="h-4 bg-slate-200 rounded w-3/4 mb-1" />
+                                    <div className="h-3 bg-slate-100 rounded w-full" />
+                                    <div className="h-3 bg-slate-100 rounded w-2/3 mt-1" />
+                                </div>
+                            ))}
                         </div>
                     ) : filteredEmails.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
