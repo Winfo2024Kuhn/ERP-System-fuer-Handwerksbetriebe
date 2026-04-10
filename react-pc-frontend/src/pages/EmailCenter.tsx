@@ -933,6 +933,47 @@ export default function EmailCenter() {
         }
     };
 
+    // Helper: Regex-Zeichen escapen
+    function escapeRegex(str: string): string {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // Ermittelt IDs der Attachments, die als Inline-Bild in der HTML referenziert werden
+    // (via Content-ID oder Dateiname im cid:-Verweis). Wird sowohl für die
+    // HTML-Vorschau (CID-Ersetzung) als auch für die Anhangs-Liste benötigt.
+    const inlineAttachmentIds = useMemo(() => {
+        const ids = new Set<number>();
+        if (!selectedEmail?.attachments) return ids;
+        const rawHtml = selectedEmail.htmlBody || '';
+        selectedEmail.attachments.forEach(att => {
+            if (att.id == null) return;
+            // 1. Explizit als inline markiert (Content-Disposition: inline)
+            if (att.inline) {
+                ids.add(att.id);
+                return;
+            }
+            // 2. Content-ID wird im HTML als cid:... referenziert
+            if (att.contentId) {
+                const cleanCid = att.contentId.replace(/[<>]/g, '');
+                const cidPattern = new RegExp(`cid:${escapeRegex(cleanCid)}`, 'i');
+                if (cidPattern.test(rawHtml)) {
+                    ids.add(att.id);
+                    return;
+                }
+            }
+            // 3. Fallback: Dateiname als cid:-Referenz im HTML (z.B. cid:image003.jpg@...)
+            const filename = att.originalFilename || att.filename || att.storedFilename;
+            if (filename) {
+                const baseName = filename.replace(/\.[^.]+$/, '');
+                const filenamePattern = new RegExp(`cid:${escapeRegex(baseName)}`, 'i');
+                if (filenamePattern.test(rawHtml)) {
+                    ids.add(att.id);
+                }
+            }
+        });
+        return ids;
+    }, [selectedEmail]);
+
     // Process HTML for preview
     const processedHtml = useMemo(() => {
         if (!selectedEmail) return '';
@@ -962,18 +1003,22 @@ export default function EmailCenter() {
         // 3. Verbleibende CID-Referenzen durch Platzhalter ersetzen (verhindert broken images)
         html = html.replace(/src=["']cid:[^"']+["']/gi, 'src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none"');
 
+        // 4. Outlook-Platzhalter "Das Bild wurde vom Absender entfernt." entfernen.
+        // Outlook fügt diesen Text anstelle entfernter Inline-Bilder in Antworten ein
+        // und zerstört damit die Darstellung von Signatur-Tabellen.
+        html = html.replace(/Das Bild wurde vom Absender entfernt\.?/gi, '');
+        html = html.replace(/The sender has removed the image\.?/gi, '');
+
         return html;
     }, [selectedEmail]);
 
-    // Helper: Regex-Zeichen escapen
-    function escapeRegex(str: string): string {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-
     const visibleAttachments = useMemo(() => {
         if (!selectedEmail) return [];
-        return (selectedEmail.attachments || []).filter(att => !att.inline);
-    }, [selectedEmail]);
+        return (selectedEmail.attachments || []).filter(att => {
+            if (att.id != null && inlineAttachmentIds.has(att.id)) return false;
+            return true;
+        });
+    }, [selectedEmail, inlineAttachmentIds]);
 
     // Global search with debounce
     useEffect(() => {
@@ -1789,31 +1834,29 @@ export default function EmailCenter() {
                 onOpenChange={(open) => !open && setPreviewAttachment(null)}
             >
                 <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] flex flex-col">
-                    <DialogHeader className="shrink-0">
-                        <DialogTitle className="flex items-center justify-between">
-                            <span className="truncate">{previewAttachment?.name}</span>
-                            <div className="flex gap-2">
-                                <Button variant="outline" size="sm" onClick={() => {
-                                    if (previewAttachment?.url) {
-                                        const a = document.createElement('a');
-                                        a.href = previewAttachment.url;
-                                        a.download = previewAttachment.name;
-                                        a.click();
-                                    }
-                                }}>
-                                    <Download className="w-4 h-4 mr-1" /> Download
-                                </Button>
-                            </div>
+                    <DialogHeader className="shrink-0 pr-10">
+                        <DialogTitle className="flex items-center gap-3">
+                            <span className="truncate flex-1">{previewAttachment?.name}</span>
+                            <Button variant="outline" size="sm" onClick={() => {
+                                if (previewAttachment?.url) {
+                                    const a = document.createElement('a');
+                                    a.href = previewAttachment.url;
+                                    a.download = previewAttachment.name;
+                                    a.click();
+                                }
+                            }}>
+                                <Download className="w-4 h-4 mr-1" /> Download
+                            </Button>
                         </DialogTitle>
                     </DialogHeader>
-                    <div className="flex-1 bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center p-2 border border-slate-200 min-h-0">
+                    <div className="flex-1 min-h-0 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
                         {previewAttachment?.type === 'pdf' ? (
                             <PdfCanvasViewer
                                 url={previewAttachment.url}
-                                className="w-full h-full min-h-[80vh] overflow-y-auto overflow-x-hidden"
+                                className="w-full h-full overflow-y-auto overflow-x-hidden"
                             />
                         ) : (
-                            <div className="text-center text-slate-500">
+                            <div className="flex items-center justify-center h-full text-center text-slate-500">
                                 <File className="w-16 h-16 mx-auto mb-4" />
                                 <p>Keine Vorschau verfügbar</p>
                             </div>
