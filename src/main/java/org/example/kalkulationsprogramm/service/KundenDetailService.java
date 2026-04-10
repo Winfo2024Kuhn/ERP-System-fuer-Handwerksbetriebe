@@ -281,6 +281,8 @@ public class KundenDetailService {
         dto.setSnippet(buildSnippet(email.getHtmlBody(), email.getBody()));
         dto.setBody(extractPlainText(email.getHtmlBody(), email.getBody()));
         dto.setAttachments(mapAttachments(email.getAttachments(), referenzTyp, referenzId, email.getId()));
+        dto.setParentEmailId(email.getParentEmail() != null ? email.getParentEmail().getId() : null);
+        dto.setReplyCount(email.getReplies() != null ? email.getReplies().size() : 0);
         return dto;
     }
 

@@ -1239,6 +1239,10 @@ ProjektManagementService {
             if (ed.getBodyHtml() == null)
                 ed.setBodyHtml(e.getRawBody());
 
+            // Thread-Info
+            ed.setParentEmailId(e.getParentEmail() != null ? e.getParentEmail().getId() : null);
+            ed.setReplyCount(e.getReplies() != null ? e.getReplies().size() : 0);
+
             if (e.getAttachments() != null) {
                 final Long emailId = e.getId();
                 ed.setAttachments(e.getAttachments().stream().map(att -> {

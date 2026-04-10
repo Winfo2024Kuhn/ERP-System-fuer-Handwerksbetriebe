@@ -177,6 +177,10 @@ public class LieferantenDetailService {
         dto.setSentAt(email.getSentAt());
         dto.setBodyHtml(email.getHtmlBody() != null ? email.getHtmlBody() : email.getBody());
 
+        // Thread-Info
+        dto.setParentEmailId(email.getParentEmail() != null ? email.getParentEmail().getId() : null);
+        dto.setReplyCount(email.getReplies() != null ? email.getReplies().size() : 0);
+
         if (email.getAttachments() != null) {
             final Long emailId = email.getId();
             dto.setAttachments(email.getAttachments().stream()
