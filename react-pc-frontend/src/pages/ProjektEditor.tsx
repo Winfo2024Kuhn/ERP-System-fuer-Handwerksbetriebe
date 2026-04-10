@@ -1460,7 +1460,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <EmailsTab
                     emails={(projekt.emails || []).map(e => ({
                         ...e,
-                        parentEmailId: e.parentId,
+                        parentEmailId: e.parentEmailId ?? e.parentId,
                     }))}
                     projektId={projekt.id}
                     entityName={projekt.bauvorhaben}

@@ -633,6 +633,8 @@ export interface AnfrageEmail {
   attachments?: AnfrageEmailAttachment[];
   direction?: 'IN' | 'OUT';
   parentId?: number;
+  parentEmailId?: number;
+  replyCount?: number;
   replies?: AnfrageEmail[];
   benutzer?: string;
   frontendUserId?: number;
