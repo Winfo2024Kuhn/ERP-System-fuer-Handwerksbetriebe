@@ -417,8 +417,16 @@ export default function EmailCenter() {
         setIsComposing(true);
     };
 
-    const handleReply = (email: EmailItem, replyId?: number) => {
-        setReplyToEmail(email);
+    const handleReply = async (email: EmailItem, replyId?: number) => {
+        // List DTO has truncated body/no htmlBody – fetch full email for quote
+        let fullEmail = email;
+        if (!email.htmlBody) {
+            try {
+                const res = await fetch(`/api/emails/${email.id}`);
+                if (res.ok) fullEmail = await res.json();
+            } catch { /* use truncated version as fallback */ }
+        }
+        setReplyToEmail(fullEmail);
         setReplyToEmailId(replyId ?? email.id);
         setIsComposing(true);
     };
@@ -682,6 +690,11 @@ export default function EmailCenter() {
             if (newSelected.size === 1) {
                 navigate(`/emails/${activeFolder}/${id}`, { replace: true });
             }
+            // Fetch full email detail (list DTO has truncated body/no htmlBody)
+            fetch(`/api/emails/${id}`)
+                .then(r => { if (r.ok) return r.json(); throw new Error(); })
+                .then((full: EmailItem) => setSelectedEmail(prev => prev?.id === id ? full : prev))
+                .catch(() => { /* keep list version as fallback */ });
             // Mark as read if not already read
             if (!email.isRead) {
                 fetch(`/api/emails/${id}/mark-read`, { method: 'POST' })
