@@ -347,6 +347,8 @@ export default function EmailCenter() {
     // Composition State
     const [isComposing, setIsComposing] = useState(false);
     const [replyToEmail, setReplyToEmail] = useState<EmailItem | null>(null);
+    /** ID der Email, auf die geantwortet wird (für Thread-Verknüpfung im Backend) */
+    const [replyToEmailId, setReplyToEmailId] = useState<number | undefined>(undefined);
 
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [folderCounts, setFolderCounts] = useState({
@@ -392,19 +394,22 @@ export default function EmailCenter() {
         setIsComposing(true);
     };
 
-    const handleReply = (email: EmailItem) => {
+    const handleReply = (email: EmailItem, replyId?: number) => {
         setReplyToEmail(email);
+        setReplyToEmailId(replyId ?? email.id);
         setIsComposing(true);
     };
 
     const handleComposeClose = () => {
         setIsComposing(false);
         setReplyToEmail(null);
+        setReplyToEmailId(undefined);
     };
 
     const handleComposeSuccess = () => {
         setIsComposing(false);
         setReplyToEmail(null);
+        setReplyToEmailId(undefined);
         // Reload in background without resetting scroll/selection
         refreshEmailsSilently();
         loadStats();
@@ -1019,35 +1024,35 @@ export default function EmailCenter() {
         }
 
         if (isComposing) {
-            // Determine initial props for reply
             let initialRecipient = '';
             let initialSubject = '';
-            let initialBody = '';
+            let replyQuote: string | undefined;
 
             if (replyToEmail) {
                 const senderName = getSenderName(replyToEmail);
-                const senderEmailPattern = /<(.+)>/;
-                const match = replyToEmail.fromAddress?.match(senderEmailPattern);
+                const match = replyToEmail.fromAddress?.match(/<(.+)>/);
                 const senderEmail = match ? match[1] : (replyToEmail.fromAddress || '');
 
                 initialRecipient = senderEmail ? `"${senderName}" <${senderEmail}>` : senderName;
                 initialSubject = replyToEmail.subject?.startsWith('Re:') ? replyToEmail.subject : `Re: ${replyToEmail.subject || ''}`;
 
-                // Quote body
-                const date = new Date(replyToEmail.sentAt || '').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + new Date(replyToEmail.sentAt || '').toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                // Sanitize content to avoid breaking the editor/page
+                // Zitat aufbauen – Quote separat, Signatur wird in EmailComposeForm dazwischen gesetzt
+                const date = new Date(replyToEmail.sentAt || '').toLocaleDateString('de-DE', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                }) + ', ' + new Date(replyToEmail.sentAt || '').toLocaleTimeString('de-DE', {
+                    hour: '2-digit', minute: '2-digit',
+                }) + ' Uhr';
+
                 let cleanBody = replyToEmail.htmlBody || replyToEmail.body || '';
                 try {
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(cleanBody, 'text/html');
                     doc.querySelectorAll('script, style, link').forEach(el => el.remove());
                     cleanBody = doc.body.innerHTML;
-                } catch (e) {
-                    console.error('Failed to sanitize email body', e);
-                }
+                } catch { /* ignore */ }
 
-                initialBody = `<p><br></p><div class="email-quote" style="border-left: 1px solid #ccc; padding-left: 1rem; color: #666;">
-                    <p>Am ${date} schrieb ${senderName}:</p>
+                replyQuote = `<div class="email-quote" style="border-left:3px solid #e2e8f0;padding-left:1rem;color:#64748b;margin-top:0.5rem">
+                    <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">Am ${date} schrieb ${senderName}:</p>
                     ${cleanBody}
                 </div>`;
             }
@@ -1058,7 +1063,8 @@ export default function EmailCenter() {
                     onSuccess={handleComposeSuccess}
                     initialRecipient={initialRecipient}
                     initialSubject={initialSubject}
-                    initialBody={initialBody}
+                    replyQuote={replyQuote}
+                    replyEmailId={replyToEmailId}
                     projektId={replyToEmail?.projektId}
                     anfrageId={replyToEmail?.anfrageId}
                 />
@@ -1256,6 +1262,24 @@ export default function EmailCenter() {
                         <EmailThreadView
                             thread={thread}
                             onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
+                            onReply={(entry) => {
+                                // Thread-Eintrag → replyToEmail (mit Kontext aus selectedEmail)
+                                const replyItem: EmailItem = {
+                                    id: entry.id,
+                                    type: selectedEmail.type,
+                                    subject: entry.subject ?? selectedEmail.subject,
+                                    fromAddress: entry.fromAddress ?? selectedEmail.fromAddress,
+                                    recipient: entry.recipient ?? selectedEmail.recipient,
+                                    sentAt: entry.sentAt ?? selectedEmail.sentAt,
+                                    body: entry.snippet,
+                                    htmlBody: entry.htmlBody ?? undefined,
+                                    direction: (entry.direction as 'IN' | 'OUT') ?? selectedEmail.direction,
+                                    projektId: selectedEmail.projektId,
+                                    anfrageId: selectedEmail.anfrageId,
+                                    lieferantId: selectedEmail.lieferantId,
+                                };
+                                handleReply(replyItem, entry.id);
+                            }}
                         />
                     ) : (
                         <div className="flex-1 overflow-auto p-6">

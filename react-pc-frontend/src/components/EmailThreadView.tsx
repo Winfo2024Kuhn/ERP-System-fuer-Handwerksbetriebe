@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Paperclip, File, ChevronDown, ChevronUp } from 'lucide-react';
+import { Paperclip, File, ChevronDown, ChevronUp, Reply } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { EmailContentFrame } from './EmailContentFrame';
 
@@ -180,9 +180,10 @@ interface BubbleProps {
     showSenderName: boolean;
     isLast: boolean;
     onPreview?: (url: string, type: 'image' | 'pdf', name: string) => void;
+    onReply?: (entry: EmailThreadEntry) => void;
 }
 
-function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPreview }: BubbleProps) {
+function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPreview, onReply }: BubbleProps) {
     const [expanded, setExpanded] = useState(isFocused);
     const bubbleRef = useRef<HTMLDivElement>(null);
     const isOut = entry.direction === 'OUT';
@@ -286,6 +287,20 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                         </div>
                     </div>
                 )}
+
+                {/* Antworten-Button */}
+                {onReply && (
+                    <div className="px-5 pb-3 flex justify-end">
+                        <button
+                            onClick={() => onReply(entry)}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium
+                                       text-slate-500 hover:text-rose-600 transition-colors"
+                        >
+                            <Reply className="w-3.5 h-3.5" />
+                            Antworten
+                        </button>
+                    </div>
+                )}
             </div>
         );
     }
@@ -366,9 +381,10 @@ interface EmailThreadViewProps {
     thread: EmailThread;
     loading?: boolean;
     onPreview?: (url: string, type: 'image' | 'pdf', name: string) => void;
+    onReply?: (entry: EmailThreadEntry) => void;
 }
 
-export function EmailThreadView({ thread, loading, onPreview }: EmailThreadViewProps) {
+export function EmailThreadView({ thread, loading, onPreview, onReply }: EmailThreadViewProps) {
     // Thread-übergreifende Anhang-Dedup über originalFilename:sizeBytes
     const seenAttachments = new Set<string>();
     const emails = thread.emails.map(entry => ({
@@ -409,6 +425,7 @@ export function EmailThreadView({ thread, loading, onPreview }: EmailThreadViewP
                             showSenderName={showAvatar}
                             isLast={isLast}
                             onPreview={onPreview}
+                            onReply={onReply}
                         />
                     </React.Fragment>
                 );

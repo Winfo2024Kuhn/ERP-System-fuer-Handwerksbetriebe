@@ -37,6 +37,10 @@ export interface EmailComposeFormProps {
     initialRecipient?: string;
     initialSubject?: string;
     initialBody?: string;
+    /** Zitat-Block für Antworten – wird NACH der Signatur eingefügt (richtige Reihenfolge: Text → Signatur → Zitat) */
+    replyQuote?: string;
+    /** ID der Email, auf die geantwortet wird – nutzt /{replyEmailId}/reply statt /send */
+    replyEmailId?: number;
     /** Pre-attached files (e.g. generated PDF from DocumentEditor) */
     initialAttachments?: File[];
     onSuccess?: () => void;
@@ -146,6 +150,8 @@ export function EmailComposeForm({
     initialRecipient = '',
     initialSubject = '',
     initialBody = '',
+    replyQuote,
+    replyEmailId,
     initialAttachments,
     onSuccess,
 }: EmailComposeFormProps) {
@@ -429,13 +435,27 @@ export function EmailComposeForm({
 
     // Initialisierung - nur einmal beim Mount
     useEffect(() => {
-        if (!initialBody) {
-            // Signatur laden wenn body leer
+        if (replyQuote) {
+            // Antwort-Modus: Schreibbereich → Signatur → Zitat
             loadSignature().then(sig => {
-                // Für BEIDE Kontexte: Nur Signatur initial setzen, Template wird bei Dokument-Auswahl geladen
+                const content = `<p><br></p>${sig}<br>${replyQuote}`;
+                setBody(content);
+                if (editorRef.current) {
+                    editorRef.current.innerHTML = content;
+                    // Cursor an den Anfang setzen
+                    const range = document.createRange();
+                    const sel = window.getSelection();
+                    range.setStart(editorRef.current, 0);
+                    range.collapse(true);
+                    sel?.removeAllRanges();
+                    sel?.addRange(range);
+                }
+            });
+        } else if (!initialBody) {
+            // Neue E-Mail: nur Signatur
+            loadSignature().then(sig => {
                 const initialContent = `<p><br></p>${sig}`;
                 setBody(initialContent);
-                // Setze Editor-Inhalt via ref (nicht via dangerouslySetInnerHTML bei Re-Render)
                 if (editorRef.current) {
                     editorRef.current.innerHTML = initialContent;
                 }
@@ -635,8 +655,10 @@ export function EmailComposeForm({
                 formData.append('attachments', uf.file);
             });
 
-            // Always use the unified send endpoint - assignment handled via DTO payload
-            const apiUrl = '/api/emails/send';
+            // Bei Antworten den Reply-Endpoint nutzen (setzt parentEmail + In-Reply-To Header)
+            const apiUrl = replyEmailId
+                ? `/api/emails/${replyEmailId}/reply`
+                : '/api/emails/send';
 
             const res = await fetch(apiUrl, {
                 method: 'POST',
