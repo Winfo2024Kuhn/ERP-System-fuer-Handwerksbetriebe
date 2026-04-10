@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -9,8 +10,11 @@ import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
+import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -24,6 +28,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class SpamFilterServiceTest {
 
     @Mock private LieferantenRepository lieferantenRepository;
+    @Mock private KundeRepository kundeRepository;
+    @Mock private AnfrageRepository anfrageRepository;
+    @Mock private ProjektRepository projektRepository;
     @Mock private EmailBlacklistRepository emailBlacklistRepository;
     @Mock private SpamBayesService spamBayesService;
 
@@ -31,7 +38,7 @@ class SpamFilterServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SpamFilterService(lieferantenRepository, emailBlacklistRepository, spamBayesService);
+        service = new SpamFilterService(lieferantenRepository, kundeRepository, anfrageRepository, projektRepository, emailBlacklistRepository, spamBayesService);
     }
 
     private Email erstelleEmail(String fromAddress, String subject, String body) {
@@ -485,6 +492,77 @@ class SpamFilterServiceTest {
             Email email = erstelleEmail("noreply@wuerth.com", "DRINGEND Angebot!", "Act now!");
             when(lieferantenRepository.findByEmail("noreply@wuerth.com")).thenReturn(Optional.empty());
             when(lieferantenRepository.existsByEmailDomain("wuerth.com")).thenReturn(true);
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamScore()).isEqualTo(0);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Bekannte Kunden-Emails werden nicht als Spam markiert
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class BekannteKundenEmails {
+
+        @Test
+        void emailVonKundeWirdNichtAlsSpamMarkiert() {
+            Email email = erstelleEmail("kunde@example.com", "DRINGEND Angebot!", "Act now! Limited time offer!");
+            when(kundeRepository.existsByKundenEmail("kunde@example.com")).thenReturn(true);
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.isNewsletter()).isFalse();
+            assertThat(email.getSpamScore()).isEqualTo(0);
+        }
+
+        @Test
+        void emailVonProjektKundeWirdNichtAlsSpamMarkiert() {
+            Email email = erstelleEmail("projekt-kunde@example.com", "Casino Jackpot!", "Lottery winner");
+            when(kundeRepository.existsByKundenEmail("projekt-kunde@example.com")).thenReturn(false);
+            when(projektRepository.findByKundenEmail("projekt-kunde@example.com")).thenReturn(List.of(new Projekt()));
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.isNewsletter()).isFalse();
+            assertThat(email.getSpamScore()).isEqualTo(0);
+        }
+
+        @Test
+        void emailVonAnfrageKundeWirdNichtAlsSpamMarkiert() {
+            Email email = erstelleEmail("anfrage-kunde@example.com", "Buy Viagra Casino!", "Free gift lottery");
+            when(kundeRepository.existsByKundenEmail("anfrage-kunde@example.com")).thenReturn(false);
+            when(projektRepository.findByKundenEmail("anfrage-kunde@example.com")).thenReturn(List.of());
+            when(anfrageRepository.findByKundenEmail("anfrage-kunde@example.com")).thenReturn(List.of(new org.example.kalkulationsprogramm.domain.Anfrage()));
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.isNewsletter()).isFalse();
+            assertThat(email.getSpamScore()).isEqualTo(0);
+        }
+
+        @Test
+        void emailVonUnbekanntemAbsenderBleibtSpam() {
+            Email email = erstelleEmail("unknown@spam.com", "Buy Viagra Casino!", "Free gift lottery");
+            when(kundeRepository.existsByKundenEmail("unknown@spam.com")).thenReturn(false);
+            when(projektRepository.findByKundenEmail("unknown@spam.com")).thenReturn(List.of());
+            when(anfrageRepository.findByKundenEmail("unknown@spam.com")).thenReturn(List.of());
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamScore()).isGreaterThan(0);
+        }
+
+        @Test
+        void emailMitNameKlammerFormatWirdErkannt() {
+            Email email = erstelleEmail("Max Mustermann <kunde@example.com>", "DRINGEND!", "Act now!");
+            email.setSenderDomain("example.com");
+            when(kundeRepository.existsByKundenEmail("kunde@example.com")).thenReturn(true);
 
             service.analyzeAndMarkSpam(email);
 
