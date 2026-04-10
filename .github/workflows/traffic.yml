@@ -34,13 +34,10 @@ jobs:
             ACC_UNIQ_CLONES=$(jq '.total_unique_clones // 0' "$DATA_FILE")
             LAST_VIEW_TS=$(jq -r '.last_view_timestamp // "1970-01-01T00:00:00Z"' "$DATA_FILE")
             LAST_CLONE_TS=$(jq -r '.last_clone_timestamp // "1970-01-01T00:00:00Z"' "$DATA_FILE")
-            STARS=$(jq '.stars // 0' "$DATA_FILE")
-            FORKS=$(jq '.forks // 0' "$DATA_FILE")
           else
             ACC_VIEWS=0; ACC_UNIQ_VIEWS=0; ACC_CLONES=0; ACC_UNIQ_CLONES=0
             LAST_VIEW_TS="1970-01-01T00:00:00Z"
             LAST_CLONE_TS="1970-01-01T00:00:00Z"
-            STARS=0; FORKS=0
           fi
 
           # Views-Daten der letzten 14 Tage abrufen
@@ -48,29 +45,31 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/traffic/views?per=day")
+          echo "Views API Antwort: $VIEWS_JSON"
 
-          # Nur neue Einträge (nach last_view_timestamp) addieren
+          # Nur neue Einträge addieren (.views? // [] verhindert Fehler bei API-Fehlern)
           NEW_VIEWS=$(echo "$VIEWS_JSON" | jq --arg last "$LAST_VIEW_TS" '
-            [ .views[] | select(.timestamp > $last) ] |
+            [ (.views? // [])[] | select(.timestamp > $last) ] |
             { count: (map(.count) | add // 0), uniques: (map(.uniques) | add // 0) }
           ')
-          ADD_VIEWS=$(echo "$NEW_VIEWS" | jq '.count')
-          ADD_UNIQ_VIEWS=$(echo "$NEW_VIEWS" | jq '.uniques')
-          LATEST_VIEW_TS=$(echo "$VIEWS_JSON" | jq -r '[ .views[].timestamp ] | sort | last // "1970-01-01T00:00:00Z"')
+          ADD_VIEWS=$(echo "$NEW_VIEWS" | jq '.count // 0')
+          ADD_UNIQ_VIEWS=$(echo "$NEW_VIEWS" | jq '.uniques // 0')
+          LATEST_VIEW_TS=$(echo "$VIEWS_JSON" | jq -r '[ (.views? // [])[] | .timestamp ] | sort | last // "1970-01-01T00:00:00Z"')
 
           # Clones-Daten der letzten 14 Tage abrufen
           CLONES_JSON=$(curl -s \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/traffic/clones?per=day")
+          echo "Clones API Antwort: $CLONES_JSON"
 
           NEW_CLONES=$(echo "$CLONES_JSON" | jq --arg last "$LAST_CLONE_TS" '
-            [ .clones[] | select(.timestamp > $last) ] |
+            [ (.clones? // [])[] | select(.timestamp > $last) ] |
             { count: (map(.count) | add // 0), uniques: (map(.uniques) | add // 0) }
           ')
-          ADD_CLONES=$(echo "$NEW_CLONES" | jq '.count')
-          ADD_UNIQ_CLONES=$(echo "$NEW_CLONES" | jq '.uniques')
-          LATEST_CLONE_TS=$(echo "$CLONES_JSON" | jq -r '[ .clones[].timestamp ] | sort | last // "1970-01-01T00:00:00Z"')
+          ADD_CLONES=$(echo "$NEW_CLONES" | jq '.count // 0')
+          ADD_UNIQ_CLONES=$(echo "$NEW_CLONES" | jq '.uniques // 0')
+          LATEST_CLONE_TS=$(echo "$CLONES_JSON" | jq -r '[ (.clones? // [])[] | .timestamp ] | sort | last // "1970-01-01T00:00:00Z"')
 
           # Repo-Metadaten (Stars, Forks) abrufen
           REPO_JSON=$(curl -s \
