@@ -41,6 +41,7 @@ import jakarta.mail.Store;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMultipart;
+import jakarta.mail.internet.MimeUtility;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -445,7 +446,7 @@ public class EmailImportService {
             if (Part.ATTACHMENT.equalsIgnoreCase(disposition) ||
                     Part.INLINE.equalsIgnoreCase(disposition)) {
 
-                String filename = part.getFileName();
+                String filename = decodeFilename(part.getFileName());
                 if (filename != null) {
                     saveAttachment(part, email, Part.INLINE.equalsIgnoreCase(disposition));
                 }
@@ -467,7 +468,7 @@ public class EmailImportService {
     private void saveAttachment(BodyPart part, Email email, boolean inline)
             throws MessagingException, IOException {
 
-        String originalFilename = part.getFileName();
+        String originalFilename = decodeFilename(part.getFileName());
         String storedFilename = UUID.randomUUID().toString() + "_" + sanitizeFilename(originalFilename);
 
         // Verzeichnis: Flat Structure (User Request)
@@ -501,6 +502,21 @@ public class EmailImportService {
 
         email.addAttachment(attachment);
         attachmentRepository.save(attachment);
+    }
+
+    /**
+     * Dekodiert MIME encoded-word Dateinamen (RFC 2047), z.B.
+     * {@code =?iso-8859-1?Q?Stahltr=E4ger.pdf?=} → {@code Stahlträger.pdf}.
+     * Gibt den Originalstring zurück wenn die Dekodierung fehlschlägt.
+     */
+    private String decodeFilename(String filename) {
+        if (filename == null) return null;
+        try {
+            return MimeUtility.decodeText(filename);
+        } catch (Exception e) {
+            log.debug("MIME filename decoding failed for '{}': {}", filename, e.getMessage());
+            return filename;
+        }
     }
 
     private String sanitizeFilename(String filename) {
