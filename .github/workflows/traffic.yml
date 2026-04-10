@@ -13,8 +13,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repository auschecken
+      - name: traffic-data Branch auschecken
         uses: actions/checkout@v4
+        with:
+          ref: traffic-data
 
       - name: Traffic-Daten abrufen und akkumulieren
         env:
@@ -23,8 +25,7 @@ jobs:
         run: |
           set -e
 
-          DATA_FILE=".github/traffic/data.json"
-          mkdir -p .github/traffic
+          DATA_FILE="data.json"
 
           # Vorhandene akkumulierte Daten laden (oder Startwerte setzen)
           if [ -f "$DATA_FILE" ]; then
@@ -45,7 +46,7 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/traffic/views?per=day")
-          echo "Views API Antwort: $VIEWS_JSON"
+          echo "Views API: $VIEWS_JSON"
 
           # Nur neue Einträge addieren (.views? // [] verhindert Fehler bei API-Fehlern)
           NEW_VIEWS=$(echo "$VIEWS_JSON" | jq --arg last "$LAST_VIEW_TS" '
@@ -61,7 +62,7 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/traffic/clones?per=day")
-          echo "Clones API Antwort: $CLONES_JSON"
+          echo "Clones API: $CLONES_JSON"
 
           NEW_CLONES=$(echo "$CLONES_JSON" | jq --arg last "$LAST_CLONE_TS" '
             [ (.clones? // [])[] | select(.timestamp > $last) ] |
@@ -126,10 +127,10 @@ jobs:
           echo "Gesamt-Clones: $TOTAL_CLONES (unique: $TOTAL_UNIQ_CLONES)"
           echo "Stars: $STARS | Forks: $FORKS | Watchers: $WATCHERS"
 
-      - name: Daten committen
+      - name: Daten auf traffic-data Branch committen und pushen
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add .github/traffic/data.json
+          git add data.json
           git diff --staged --quiet || git commit -m "chore(traffic): täglich aktualisierte Besuchsstatistiken [skip ci]"
-          git push
+          git push origin traffic-data
