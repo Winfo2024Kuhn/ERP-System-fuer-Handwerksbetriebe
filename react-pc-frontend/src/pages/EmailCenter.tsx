@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import {
@@ -18,7 +18,6 @@ import {
     ChevronDown,
     ChevronRight,
     File,
-    Eye,
     PenSquare,
     HelpCircle,
     ShieldAlert,
@@ -32,49 +31,40 @@ import {
     Globe,
     X,
     CheckSquare,
-    MailCheck
+    MailCheck,
+    MessagesSquare,
+    DatabaseZap
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { EmailComposeForm } from '../components/EmailComposeForm';
-import { EmailContentFrame } from '../components/EmailContentFrame';
 import EmailSettings from '../components/EmailSettings';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { EmailThreadView } from '../components/EmailThreadView';
+import type { EmailThread } from '../components/EmailThreadView';
 
-// Statische Icon-Pfade für spezielle Dateitypen
-const BASE_URL = '/react-textbausteine/';
-const ICON_TENADO = `${BASE_URL}tenado_logo.jpg`;
-const ICON_EXCEL = `${BASE_URL}excel_image.jpg`;
-const ICON_HICAD = `${BASE_URL}hicad_logo.png`;
 
-const getAttachmentIcon = (filename: string): string | null => {
-    const lower = filename?.toLowerCase() || '';
-    if (lower.endsWith('.pdf')) return 'pdf';
-    if (lower.endsWith('.tcd')) return ICON_TENADO;
-    if (lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.xlsm')) return ICON_EXCEL;
-    if (lower.endsWith('.sza')) return ICON_HICAD;
-    return null;
-};
-
-const isImageAttachment = (filename: string): boolean => {
-    const lower = filename?.toLowerCase() || '';
-    return /\.(jpg|jpeg|png|gif|webp|bmp)$/.test(lower);
-};
-
+/** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
 interface EmailAttachment {
-    id?: number;
-    filename?: string;
+    id: number;
     originalFilename?: string;
+    filename?: string;
     storedFilename?: string;
-    url?: string;
-    type?: string;
+    mimeType?: string;
+    fileSize?: number;
     contentId?: string;
     inline?: boolean;
 }
+
+/** Prüft ob ein Dateiname auf ein gängiges Bildformat hindeutet. */
+function isImageAttachment(filename: string): boolean {
+    return /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(filename);
+}
+
 
 interface EmailItem {
     id: number;
@@ -100,6 +90,9 @@ interface EmailItem {
     projektId?: number;
     anfrageId?: number;
     lieferantId?: number;
+    // Thread-Informationen
+    parentEmailId?: number;   // null/undefined = Thread-Wurzel
+    replyCount?: number;      // Anzahl direkter Antworten
 }
 
 // Folder Types
@@ -136,88 +129,6 @@ const getDisplayName = (email: EmailItem) => {
     return getSenderName(email);
 };
 
-// Email Attachment Card Component
-function EmailAttachmentCard({ attachment, email, onPreview }: {
-    attachment: EmailAttachment,
-    email: EmailItem,
-    onPreview: (url: string, type: 'image' | 'pdf', name: string) => void
-}) {
-    const filename = attachment.originalFilename || attachment.filename || attachment.storedFilename || 'Datei';
-    const iconSrc = getAttachmentIcon(filename);
-    const isImage = isImageAttachment(filename);
-    const downloadUrl = `/api/emails/${email.id}/attachments/${attachment.id}`;
-
-    const handleDownload = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = filename;
-        a.click();
-    };
-
-    const handlePreview = () => {
-        if (isImage) {
-            onPreview(downloadUrl, 'image', filename);
-        } else if (iconSrc === 'pdf') {
-            onPreview(downloadUrl, 'pdf', filename);
-        } else {
-            const a = document.createElement('a');
-            a.href = downloadUrl;
-            a.download = filename;
-            a.click();
-        }
-    };
-
-    return (
-        <div
-            onClick={handlePreview}
-            className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition-all duration-200 group cursor-pointer"
-        >
-            {isImage ? (
-                <img
-                    src={downloadUrl}
-                    alt={filename}
-                    className="w-10 h-10 object-cover rounded"
-                />
-            ) : iconSrc === 'pdf' ? (
-                <div className="w-10 h-10 rounded bg-red-50 flex items-center justify-center">
-                    <File className="w-5 h-5 text-red-500" />
-                </div>
-            ) : iconSrc ? (
-                <img src={iconSrc} alt={filename} className="w-10 h-10 object-contain" />
-            ) : (
-                <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center">
-                    <File className="w-5 h-5 text-slate-400" />
-                </div>
-            )}
-            <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-700 truncate">{filename}</p>
-            </div>
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {(isImage || iconSrc === 'pdf') && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handlePreview(); }}
-                        className="h-8 w-8 p-0 text-slate-500 hover:text-rose-600"
-                        title="Vorschau"
-                    >
-                        <Eye className="w-4 h-4" />
-                    </Button>
-                )}
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleDownload}
-                    className="h-8 w-8 p-0 text-slate-500 hover:text-rose-600"
-                    title="Download"
-                >
-                    <Download className="w-4 h-4" />
-                </Button>
-            </div>
-        </div>
-    );
-}
 
 // Assignment Modal Component
 interface AssignModalProps {
@@ -445,6 +356,27 @@ export default function EmailCenter() {
     const [expandedFilters, setExpandedFilters] = useState(true);
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
     const [showSettings, setShowSettings] = useState(false);
+
+    // Thread-State für Konversationsverlauf
+    const [thread, setThread] = useState<EmailThread | null>(null);
+    const [threadLoading, setThreadLoading] = useState(false);
+
+    // Thread laden wenn eine E-Mail selektiert wird
+    useEffect(() => {
+        if (!selectedEmail) {
+            setThread(null);
+            return;
+        }
+        setThreadLoading(true);
+        fetch(`/api/emails/${selectedEmail.id}/thread`)
+            .then(r => {
+                if (!r.ok) throw new Error('Thread not found');
+                return r.json();
+            })
+            .then((data: EmailThread) => setThread(data))
+            .catch(() => setThread(null))
+            .finally(() => setThreadLoading(false));
+    }, [selectedEmail?.id]);
 
     // Initial load
     useEffect(() => {
@@ -895,6 +827,33 @@ export default function EmailCenter() {
         }
     };
 
+    const handleBackfillThreads = async () => {
+        if (!await confirmDialog({
+            title: "Thread-Verknüpfungen rückwirkend aufbauen",
+            message: "Alle gespeicherten E-Mails werden anhand von Message-ID / In-Reply-To / References rückwirkend zu Threads verknüpft.\nDies kann bei vielen E-Mails einen Moment dauern.",
+            variant: "info",
+            confirmLabel: "Starten"
+        })) return;
+
+        setLoading(true);
+        try {
+            const res = await fetch('/api/emails/backfill-parents', { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                toast.success(data.message || `${data.updatedCount} E-Mails verknüpft`);
+                loadEmails();
+                loadStats();
+            } else {
+                toast.error('Fehler beim Backfill');
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error('Fehler beim Backfill');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleScanAssignments = async () => {
         if (!await confirmDialog({ title: "E-Mails erneut prüfen", message: "Alle unzugeordneten E-Mails im Posteingang erneut prüfen?\nDies kann einen Moment dauern.", variant: "info", confirmLabel: "Prüfen" })) return;
 
@@ -974,43 +933,6 @@ export default function EmailCenter() {
         return ids;
     }, [selectedEmail]);
 
-    // Process HTML for preview
-    const processedHtml = useMemo(() => {
-        if (!selectedEmail) return '';
-        let html = selectedEmail.htmlBody || selectedEmail.body || '<p class="text-slate-400 italic">Kein Inhalt</p>';
-
-        // CID-Bilder durch echte URLs ersetzen
-        if (selectedEmail.attachments) {
-            selectedEmail.attachments.forEach(att => {
-                const filename = att.originalFilename || att.filename || att.storedFilename;
-                const url = `/api/emails/${selectedEmail.id}/attachments/${att.id}`;
-
-                // 1. ContentId matching (mit und ohne < >)
-                if (att.contentId) {
-                    const cleanCid = att.contentId.replace(/[<>]/g, '');
-                    html = html.replace(new RegExp(`src=["']cid:${escapeRegex(cleanCid)}["']`, 'gi'), `src="${url}"`);
-                    html = html.replace(new RegExp(`src=["']cid:${escapeRegex(att.contentId)}["']`, 'gi'), `src="${url}"`);
-                }
-
-                // 2. Fallback: Filename im CID (z.B. cid:image003.jpg@01DC2C56.D1072BF0)
-                if (filename) {
-                    const baseName = filename.replace(/\.[^.]+$/, ''); // ohne Extension
-                    html = html.replace(new RegExp(`src=["']cid:${escapeRegex(baseName)}[^"']*["']`, 'gi'), `src="${url}"`);
-                }
-            });
-        }
-
-        // 3. Verbleibende CID-Referenzen durch Platzhalter ersetzen (verhindert broken images)
-        html = html.replace(/src=["']cid:[^"']+["']/gi, 'src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none"');
-
-        // 4. Outlook-Platzhalter "Das Bild wurde vom Absender entfernt." entfernen.
-        // Outlook fügt diesen Text anstelle entfernter Inline-Bilder in Antworten ein
-        // und zerstört damit die Darstellung von Signatur-Tabellen.
-        html = html.replace(/Das Bild wurde vom Absender entfernt\.?/gi, '');
-        html = html.replace(/The sender has removed the image\.?/gi, '');
-
-        return html;
-    }, [selectedEmail]);
 
     const visibleAttachments = useMemo(() => {
         if (!selectedEmail) return [];
@@ -1048,15 +970,27 @@ export default function EmailCenter() {
     }, [isGlobalSearch, searchQuery]);
 
     // Filter emails by search
+    // Bei Ordner-Ansicht nur Thread-Wurzeln anzeigen (parentEmailId == null),
+    // damit Antworten nicht doppelt in der Liste erscheinen.
+    // Bei globaler Suche werden alle Treffer gezeigt (Nutzer sucht gezielt nach
+    // einer bestimmten Nachricht).
     const filteredEmails = useMemo(() => {
-        if (isGlobalSearch) return globalSearchResults;
-        if (!searchQuery.trim()) return emails;
-        const q = searchQuery.toLowerCase();
-        return emails.filter(e =>
-            e.subject?.toLowerCase().includes(q) ||
-            e.fromAddress?.toLowerCase().includes(q) ||
-            getSenderName(e).toLowerCase().includes(q)
-        );
+        let base: EmailItem[];
+        if (isGlobalSearch) {
+            base = globalSearchResults;
+        } else if (!searchQuery.trim()) {
+            base = emails.filter(e => !e.parentEmailId);
+        } else {
+            const q = searchQuery.toLowerCase();
+            base = emails.filter(e =>
+                !e.parentEmailId && (
+                    e.subject?.toLowerCase().includes(q) ||
+                    e.fromAddress?.toLowerCase().includes(q) ||
+                    getSenderName(e).toLowerCase().includes(q)
+                )
+            );
+        }
+        return base;
     }, [emails, searchQuery, isGlobalSearch, globalSearchResults]);
 
     // Right Pane Content Logic
@@ -1308,33 +1242,26 @@ export default function EmailCenter() {
                         </div>
                     </div>
 
-                    {/* Body */}
-                    <div className="flex-1 overflow-auto p-6">
-                        <EmailContentFrame
-                            html={processedHtml}
-                            className="bg-white"
-                        />
-
-                        {/* Attachments */}
-                        {visibleAttachments.length > 0 && (
-                            <div className="mt-6 pt-6 border-t border-slate-200">
-                                <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                                    <Paperclip className="w-4 h-4" />
-                                    Anhänge ({visibleAttachments.length})
-                                </h3>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {visibleAttachments.map((att, idx) => (
-                                        <EmailAttachmentCard
-                                            key={att.id || idx}
-                                            attachment={att}
-                                            email={selectedEmail}
-                                            onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
-                                        />
-                                    ))}
+                    {/* Thread-Verlauf */}
+                    {threadLoading ? (
+                        <div className="flex-1 overflow-auto bg-slate-50 px-6 py-6 space-y-2">
+                            {[false, true, false].map((right, i) => (
+                                <div key={i} className={`flex items-end gap-2 mb-2 ${right ? 'flex-row-reverse' : ''}`}>
+                                    <div className="w-8 h-8 rounded-full bg-slate-200 animate-pulse shrink-0" />
+                                    <div className={`animate-pulse bg-slate-200 rounded-2xl h-16 ${right ? 'rounded-br-sm w-56' : 'rounded-bl-sm w-64'}`} />
                                 </div>
-                            </div>
-                        )}
-                    </div>
+                            ))}
+                        </div>
+                    ) : thread ? (
+                        <EmailThreadView
+                            thread={thread}
+                            onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
+                        />
+                    ) : (
+                        <div className="flex-1 overflow-auto p-6">
+                            <p className="text-sm text-slate-400 italic">Thread konnte nicht geladen werden.</p>
+                        </div>
+                    )}
                 </>
             );
         }
@@ -1753,7 +1680,17 @@ export default function EmailCenter() {
                                     </p>
 
                                     {/* Badges */}
-                                    <div className="flex gap-2 mt-2">
+                                    <div className="flex gap-2 mt-2 flex-wrap">
+                                        {/* Thread-Badge: zeigt Anzahl Nachrichten im Thread */}
+                                        {email.replyCount != null && email.replyCount > 0 && (
+                                            <div
+                                                className="flex items-center gap-1 text-xs text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200"
+                                                title={`${email.replyCount + 1} Nachrichten in diesem Thread`}
+                                            >
+                                                <MessagesSquare className="w-3 h-3" />
+                                                {email.replyCount + 1} Nachrichten
+                                            </div>
+                                        )}
                                         {email.attachments && email.attachments.length > 0 && (
                                             <div className="flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                                                 <Paperclip className="w-3 h-3" />
@@ -1785,14 +1722,24 @@ export default function EmailCenter() {
                 </div>
 
                 {/* Footer Status */}
-                <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+                <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between gap-2">
                     <span>
                         {isGlobalSearch && <Globe className="w-3 h-3 inline mr-1 text-rose-500" />}
                         {filteredEmails.length} {filteredEmails.length === 1 ? 'Nachricht' : 'Nachrichten'}
                     </span>
-                    {selectedIds.size > 0 && (
-                        <span className="text-rose-600 font-medium">{selectedIds.size} ausgewählt</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {selectedIds.size > 0 && (
+                            <span className="text-rose-600 font-medium">{selectedIds.size} ausgewählt</span>
+                        )}
+                        <button
+                            onClick={handleBackfillThreads}
+                            title="Thread-Verknüpfungen rückwirkend aufbauen"
+                            className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                        >
+                            <DatabaseZap className="w-3.5 h-3.5" />
+                            Threads
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -1867,3 +1814,5 @@ export default function EmailCenter() {
         </div>
     );
 }
+
+

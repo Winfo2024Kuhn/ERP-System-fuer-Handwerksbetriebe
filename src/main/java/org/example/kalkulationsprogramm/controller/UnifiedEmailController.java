@@ -21,6 +21,7 @@ import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.dto.ContactDto;
 import org.example.kalkulationsprogramm.dto.Email.UnifiedEmailDto;
+import org.example.kalkulationsprogramm.dto.EmailThreadDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
@@ -34,6 +35,7 @@ import org.example.kalkulationsprogramm.service.ContactService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.EmailAutoAssignmentService;
 import org.example.kalkulationsprogramm.service.EmailImportService;
+import org.example.kalkulationsprogramm.service.EmailThreadService;
 import org.example.kalkulationsprogramm.service.InquiryDetectionService;
 import org.example.kalkulationsprogramm.service.SpamBayesService;
 import org.example.kalkulationsprogramm.service.SpamFilterService;
@@ -83,6 +85,7 @@ public class UnifiedEmailController {
     private final DateiSpeicherService dateiSpeicherService;
     private final ContactService contactService;
     private final SpamBayesService spamBayesService;
+    private final EmailThreadService emailThreadService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -592,6 +595,22 @@ public class UnifiedEmailController {
                 .map(this::toDto)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Liefert den vollstaendigen E-Mail-Thread fuer eine gegebene E-Mail-ID.
+     * Die angeklickte E-Mail ist als focusedEmailId markiert und wird im Frontend
+     * auto-expandiert und hervorgehoben.
+     *
+     * @param emailId ID der fokussierten E-Mail
+     * @return EmailThreadDto mit chronologisch sortierten Eintraegen
+     */
+    @GetMapping("/{emailId}/thread")
+    @Transactional(readOnly = true)
+    public ResponseEntity<EmailThreadDto> getEmailThread(@PathVariable Long emailId) {
+        log.debug("Thread requested for emailId={}", emailId);
+        EmailThreadDto thread = emailThreadService.loadThreadFor(emailId);
+        return ResponseEntity.ok(thread);
     }
 
     @GetMapping("/{id}/mark-viewed")
@@ -1331,6 +1350,12 @@ public class UnifiedEmailController {
             dto.setLieferantName(email.getLieferant().getLieferantenname());
         }
 
+        // Thread-Informationen
+        if (email.getParentEmail() != null) {
+            dto.setParentEmailId(email.getParentEmail().getId());
+        }
+        dto.setReplyCount(countAllReplies(email));
+
         // Attachments
         dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
         if (email.getAttachments() != null && !email.getAttachments().isEmpty()) {
@@ -1364,5 +1389,15 @@ public class UnifiedEmailController {
         }
 
         return dto;
+    }
+
+    /** Zählt rekursiv alle Nachfolger-Emails (Kinder, Kindeskinder, …). */
+    private int countAllReplies(Email email) {
+        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
+        int count = email.getReplies().size();
+        for (org.example.kalkulationsprogramm.domain.Email reply : email.getReplies()) {
+            count += countAllReplies(reply);
+        }
+        return count;
     }
 }

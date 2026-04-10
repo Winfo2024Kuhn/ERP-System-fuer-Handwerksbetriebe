@@ -18,10 +18,13 @@ import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.dto.EmailThreadDto;
+import org.example.kalkulationsprogramm.dto.EmailThreadEntryDto;
 import org.example.kalkulationsprogramm.service.ContactService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.EmailAutoAssignmentService;
 import org.example.kalkulationsprogramm.service.EmailImportService;
+import org.example.kalkulationsprogramm.service.EmailThreadService;
 import org.example.kalkulationsprogramm.service.InquiryDetectionService;
 import org.example.kalkulationsprogramm.service.SpamBayesService;
 import org.example.kalkulationsprogramm.service.SpamFilterService;
@@ -69,6 +72,7 @@ class UnifiedEmailControllerTest {
     @MockBean private DateiSpeicherService dateiSpeicherService;
     @MockBean private ContactService contactService;
     @MockBean private SpamBayesService spamBayesService;
+    @MockBean private EmailThreadService emailThreadService;
 
     private Email createTestEmail(Long id, String subject, String from) {
         Email email = new Email();
@@ -380,6 +384,152 @@ class UnifiedEmailControllerTest {
                     .andExpect(jsonPath("$[0].email").value("bauherr@example.com"))
                     .andExpect(jsonPath("$[0].type").value("PROJEKT"))
                     .andExpect(jsonPath("$[0].context").value("Neubau Musterstraße 1"));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // THREAD-ENDPOINT
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("GET /api/emails/{emailId}/thread")
+    class GetThread {
+
+        /** Erstellt ein minimales EmailThreadEntryDto für Tests. */
+        private EmailThreadEntryDto makeEntry(long id, String subject, String direction) {
+            EmailThreadEntryDto e = new EmailThreadEntryDto();
+            e.setId(id);
+            e.setSubject(subject);
+            e.setFromAddress("max.mustermann@example.com");
+            e.setRecipient("handwerk@example.com");
+            e.setSentAt("2026-03-10T09:14:00");
+            e.setDirection(direction);
+            e.setSnippet("Hallo, ich hätte Interesse an einem Angebot für die Sanierung…");
+            e.setAttachments(Collections.emptyList());
+            return e;
+        }
+
+        @Test
+        @DisplayName("Happy-Path: Thread mit zwei Einträgen zurückgeben")
+        void getThread_happyPath() throws Exception {
+            EmailThreadDto dto = new EmailThreadDto();
+            dto.setRootEmailId(1L);
+            dto.setFocusedEmailId(2L);
+            dto.setEmails(List.of(
+                    makeEntry(1L, "Anfrage Sanierung Bad", "IN"),
+                    makeEntry(2L, "Re: Anfrage Sanierung Bad", "OUT")
+            ));
+
+            given(emailThreadService.loadThreadFor(2L)).willReturn(dto);
+
+            mockMvc.perform(get("/api/emails/2/thread"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.rootEmailId").value(1))
+                    .andExpect(jsonPath("$.focusedEmailId").value(2))
+                    .andExpect(jsonPath("$.emails").isArray())
+                    .andExpect(jsonPath("$.emails.length()").value(2))
+                    .andExpect(jsonPath("$.emails[0].subject").value("Anfrage Sanierung Bad"))
+                    .andExpect(jsonPath("$.emails[0].direction").value("IN"))
+                    .andExpect(jsonPath("$.emails[1].subject").value("Re: Anfrage Sanierung Bad"))
+                    .andExpect(jsonPath("$.emails[1].direction").value("OUT"));
+        }
+
+        @Test
+        @DisplayName("Single-Email-Thread: Thread mit genau einem Eintrag")
+        void getThread_singleEmail() throws Exception {
+            EmailThreadDto dto = new EmailThreadDto();
+            dto.setRootEmailId(5L);
+            dto.setFocusedEmailId(5L);
+            dto.setEmails(List.of(makeEntry(5L, "Einzelnachricht", "IN")));
+
+            given(emailThreadService.loadThreadFor(5L)).willReturn(dto);
+
+            mockMvc.perform(get("/api/emails/5/thread"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.emails.length()").value(1))
+                    .andExpect(jsonPath("$.rootEmailId").value(5))
+                    .andExpect(jsonPath("$.focusedEmailId").value(5));
+        }
+
+        @Test
+        @DisplayName("Nicht existierende E-Mail gibt 404")
+        void getThread_notFound() throws Exception {
+            given(emailThreadService.loadThreadFor(999L))
+                    .willThrow(new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.NOT_FOUND, "Email not found: 999"));
+
+            mockMvc.perform(get("/api/emails/999/thread"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("Thread enthält Anhang-Informationen")
+        void getThread_withAttachments() throws Exception {
+            EmailThreadEntryDto.AttachmentDto att = new EmailThreadEntryDto.AttachmentDto();
+            att.setId(10L);
+            att.setOriginalFilename("angebot.pdf");
+            att.setMimeType("application/pdf");
+            att.setSizeBytes(145_000L);
+            att.setInline(false);
+
+            EmailThreadEntryDto entry = makeEntry(1L, "Angebot Sanierung", "OUT");
+            entry.setAttachments(List.of(att));
+
+            EmailThreadDto dto = new EmailThreadDto();
+            dto.setRootEmailId(1L);
+            dto.setFocusedEmailId(1L);
+            dto.setEmails(List.of(entry));
+
+            given(emailThreadService.loadThreadFor(1L)).willReturn(dto);
+
+            mockMvc.perform(get("/api/emails/1/thread"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.emails[0].attachments[0].originalFilename").value("angebot.pdf"))
+                    .andExpect(jsonPath("$.emails[0].attachments[0].mimeType").value("application/pdf"))
+                    .andExpect(jsonPath("$.emails[0].attachments[0].sizeBytes").value(145000));
+        }
+
+        @Test
+        @DisplayName("Ungültige ID (negativ) gibt 404")
+        void getThread_negativeId() throws Exception {
+            given(emailThreadService.loadThreadFor(-1L))
+                    .willThrow(new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.NOT_FOUND, "Email not found: -1"));
+
+            mockMvc.perform(get("/api/emails/-1/thread"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // BACKFILL-PARENTS
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("POST /api/emails/backfill-parents")
+    class BackfillParents {
+
+        @Test
+        @DisplayName("Backfill verknüpft Emails und gibt Anzahl zurück")
+        void backfillSuccess() throws Exception {
+            given(emailImportService.backfillParentEmails()).willReturn(42);
+
+            mockMvc.perform(post("/api/emails/backfill-parents"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.updatedCount").value(42))
+                    .andExpect(jsonPath("$.message").value(
+                            org.hamcrest.Matchers.containsString("42")));
+        }
+
+        @Test
+        @DisplayName("Backfill ohne Treffer gibt 0 zurück")
+        void backfillNoUpdates() throws Exception {
+            given(emailImportService.backfillParentEmails()).willReturn(0);
+
+            mockMvc.perform(post("/api/emails/backfill-parents"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.updatedCount").value(0));
         }
     }
 }

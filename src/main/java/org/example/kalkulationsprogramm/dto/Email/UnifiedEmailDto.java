@@ -48,6 +48,12 @@ public class UnifiedEmailDto {
     // Spam
     private Integer spamScore;
 
+    // Thread-Informationen
+    /** ID der übergeordneten E-Mail; null für Thread-Wurzeln (Root-Emails). */
+    private Long parentEmailId;
+    /** Anzahl direkter Antworten auf diese E-Mail. 0 = keine Antworten vorhanden. */
+    private int replyCount;
+
     // Anhänge
     private List<AttachmentDto> attachments;
     private boolean hasAttachments;
