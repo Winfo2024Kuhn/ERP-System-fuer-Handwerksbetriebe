@@ -1,10 +1,11 @@
 package org.example.kalkulationsprogramm.dto.Kunde;
 
-import lombok.Getter;
-import lombok.Setter;
+import java.time.LocalDateTime;
+
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 
-import java.time.LocalDateTime;
+import lombok.Getter;
+import lombok.Setter;
 
 @Getter
 @Setter
@@ -21,4 +22,8 @@ public class KundeKommunikationDto {
     private String snippet;
     private String body;
     private java.util.List<KundeEmailAttachmentDto> attachments;
+
+    // Thread-Unterstützung
+    private Long parentEmailId;
+    private int replyCount;
 }
