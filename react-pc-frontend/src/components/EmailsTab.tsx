@@ -189,7 +189,11 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
         return roots.map(root => ({
             ...root,
-            _replyCount: (replyCounts.get(root.id) || 0) + countReplies(root),
+            // Prefer server-provided replyCount (counts full thread chain regardless of entity assignment).
+            // Fall back to client-side flat-list traversal for older endpoints that don't send replyCount.
+            _replyCount: (root.replyCount != null && root.replyCount > 0)
+                ? root.replyCount
+                : (replyCounts.get(root.id) || 0) + countReplies(root),
         }));
     }, [emails]);
 

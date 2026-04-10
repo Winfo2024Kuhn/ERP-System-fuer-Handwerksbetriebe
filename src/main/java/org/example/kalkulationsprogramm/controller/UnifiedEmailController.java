@@ -1382,7 +1382,7 @@ public class UnifiedEmailController {
         if (email.getParentEmail() != null) {
             dto.setParentEmailId(email.getParentEmail().getId());
         }
-        dto.setReplyCount(countAllReplies(email));
+        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
 
         // Attachments – metadata only, no CID rewriting
         dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
@@ -1438,7 +1438,7 @@ public class UnifiedEmailController {
         if (email.getParentEmail() != null) {
             dto.setParentEmailId(email.getParentEmail().getId());
         }
-        dto.setReplyCount(countAllReplies(email));
+        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
 
         // Attachments
         dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
@@ -1481,6 +1481,19 @@ public class UnifiedEmailController {
         int count = email.getReplies().size();
         for (org.example.kalkulationsprogramm.domain.Email reply : email.getReplies()) {
             count += countAllReplies(reply);
+        }
+        return count;
+    }
+
+    /** Zählt alle Vorfahren (Eltern, Großeltern, …) bis zur Thread-Wurzel. */
+    private int countAncestors(Email email) {
+        int count = 0;
+        java.util.Set<Long> visited = new java.util.HashSet<>();
+        Email current = email.getParentEmail();
+        while (current != null && !visited.contains(current.getId())) {
+            visited.add(current.getId());
+            count++;
+            current = current.getParentEmail();
         }
         return count;
     }

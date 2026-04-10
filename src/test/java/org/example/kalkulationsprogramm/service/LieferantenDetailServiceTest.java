@@ -129,7 +129,7 @@ class LieferantenDetailServiceTest {
             ProjektEmailDto replyDto = emails.stream()
                     .filter(e -> e.getId().equals(101L)).findFirst().orElseThrow();
             assertThat(replyDto.getParentEmailId()).isEqualTo(100L);
-            assertThat(replyDto.getReplyCount()).isEqualTo(0);
+            assertThat(replyDto.getReplyCount()).isEqualTo(1); // 1 Vorfahre (parentEmail) + 0 Nachfolger = Gesamtthread 2
         }
 
         @Test
