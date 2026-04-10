@@ -29,7 +29,7 @@
   <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_clones&label=Unique+Cloners&color=0891b2&logo=git&logoColor=white" alt="Unique Cloners" />
 </p>
 
-<p align="center">
+<div align="center">
 
 | Metric | Value |
 |--------|-------|
@@ -40,7 +40,7 @@
 | 📥 Total Clones (cumulative) | ![Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_clones&label=&color=7c3aed) |
 | 🧑‍💻 Unique Cloners (cumulative) | ![Unique Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_clones&label=&color=0891b2) |
 
-</p>
+</div>
 
 <p align="center">
   ⭐ <strong>Gefällt dir das Projekt? Ein Stern hilft dabei, dass mehr Handwerksbetriebe dieses Tool finden!</strong>
