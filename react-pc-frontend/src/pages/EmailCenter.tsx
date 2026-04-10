@@ -539,6 +539,17 @@ export default function EmailCenter() {
         return () => clearInterval(interval);
     }, [refreshEmailsSilently, loadStats]);
 
+    // Deep-link: Ordner wechseln bei URL-Param ?folder=X (z.B. aus NotificationBell)
+    useEffect(() => {
+        const folderParam = searchParams.get('folder');
+        if (!folderParam) return;
+        const validFolders: FolderType[] = ['inbox', 'sent', 'trash', 'spam', 'newsletter', 'projects', 'offers', 'suppliers', 'unassigned', 'inquiries'];
+        if (validFolders.includes(folderParam as FolderType) && folderParam !== activeFolder) {
+            setActiveFolder(folderParam as FolderType);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
+
     // Deep-link: auto-select email from URL param ?emailId=123
     useEffect(() => {
         const emailIdParam = searchParams.get('emailId');

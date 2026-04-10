@@ -753,6 +753,11 @@ public class UnifiedEmailController {
             case "spam"       -> emailRepository.findSpam();
             case "newsletter" -> emailRepository.findNewsletter();
             case "unassigned" -> emailRepository.findUnassigned();
+            case "inquiries"  -> emailRepository.findPotentialInquiries();
+            case "projects"   -> emailRepository.findProjectEmails();
+            case "offers"     -> emailRepository.findAnfrageEmails();
+            case "suppliers"  -> emailRepository.findLieferantEmails();
+            case "trash"      -> emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc();
             case "sent"       -> java.util.Collections.emptyList();
             default           -> java.util.Collections.emptyList();
         };

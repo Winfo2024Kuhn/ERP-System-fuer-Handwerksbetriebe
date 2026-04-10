@@ -45,6 +45,11 @@ const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> 
     TERMINE: { bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200' },
     LIEFERSCHEINE: { bg: 'bg-cyan-50', text: 'text-cyan-600', border: 'border-cyan-200' },
     REKLAMATIONEN: { bg: 'bg-pink-50', text: 'text-pink-600', border: 'border-pink-200' },
+    EMAILS_PROJECTS: { bg: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-200' },
+    EMAILS_OFFERS: { bg: 'bg-teal-50', text: 'text-teal-600', border: 'border-teal-200' },
+    EMAILS_SUPPLIERS: { bg: 'bg-lime-50', text: 'text-lime-600', border: 'border-lime-200' },
+    EMAILS_SPAM: { bg: 'bg-yellow-50', text: 'text-yellow-600', border: 'border-yellow-200' },
+    EMAILS_NEWSLETTER: { bg: 'bg-sky-50', text: 'text-sky-600', border: 'border-sky-200' },
 };
 
 const RECENT_TYPE_COLORS: Record<string, string> = {
@@ -214,8 +219,8 @@ export function NotificationBell() {
 
     const handleNavigate = (link: string, type?: string) => {
         setOpen(false);
-        // Mark email as read when clicking on an email notification
-        if (type === 'EMAIL') {
+        // Mark email as read when clicking on any email notification
+        if (type === 'EMAIL' || type?.startsWith('EMAILS_')) {
             const match = link.match(/emailId=(\d+)/);
             if (match) {
                 fetch(`/api/emails/${match[1]}/mark-read`, { method: 'POST' })
