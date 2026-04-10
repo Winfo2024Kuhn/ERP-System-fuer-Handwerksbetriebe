@@ -1261,6 +1261,7 @@ const AngebotDetailView: React.FC<AngebotDetailViewProps> = ({ angebot, onBack, 
                         bodyPreview: e.body,
                         direction: e.direction as 'IN' | 'OUT',
                         sentAt: e.sentAt,
+                        parentEmailId: e.parentId,
                         attachments: e.attachments?.map((att) => ({
                             id: att.id,
                             originalFilename: att.originalFilename,

@@ -22,7 +22,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { type KundeDetail } from '../types';
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
-import EmailHistory from '../components/EmailHistory';
+import { EmailsTab } from '../components/EmailsTab';
 import { DetailLayout } from '../components/DetailLayout';
 import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
@@ -55,8 +55,6 @@ const EMPTY_KUNDE: KundeDetail = {
 
 
 // GoogleMapsEmbed imported from components
-
-// EmailHistory imported from components
 
 // ==================== DETAIL VIEW ====================
 
@@ -127,18 +125,31 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
 
     const mainContent = (
         <>
-            <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                    <Mail className="w-5 h-5 text-rose-500" />
-                    E-Mail-Verlauf
-                </h2>
-                <span className="text-sm text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
-                    {kunde.kommunikation?.length || 0} Nachrichten
-                </span>
-            </div>
             <div className="flex-1 min-h-0 relative">
                 <div className="absolute inset-0 overflow-y-auto pr-2">
-                    <EmailHistory kommunikation={kunde.kommunikation || []} />
+                    <EmailsTab
+                        emails={(kunde.kommunikation || []).map(k => ({
+                            id: k.id,
+                            subject: k.subject,
+                            fromAddress: k.absender,
+                            to: k.empfaenger,
+                            bodyPreview: k.snippet,
+                            bodyHtml: k.body,
+                            direction: k.direction,
+                            sentAt: k.zeitpunkt,
+                            attachments: (k.attachments || []).map(a => ({
+                                id: a.id,
+                                originalFilename: a.filename,
+                                filename: a.filename,
+                                url: a.url,
+                            })),
+                            parentEmailId: k.parentEmailId,
+                            replyCount: k.replyCount,
+                        }))}
+                        kundeId={kunde.id}
+                        showComposeButton={false}
+                        showReplyButton={false}
+                    />
                 </div>
             </div>
         </>

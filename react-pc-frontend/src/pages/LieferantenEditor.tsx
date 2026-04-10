@@ -171,6 +171,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                             entityName={lieferant.lieferantenname}
                             kundenEmail={lieferant.kundenEmails?.[0]}
                             showComposeButton={false}
+                            showReplyButton={false}
                         />
                     </div>
                 )}
