@@ -921,6 +921,32 @@ export default function EmailCenter() {
         }
     };
 
+    const handleBackfillAttachmentFilenames = async () => {
+        if (!await confirmDialog({
+            title: "Anhang-Dateinamen reparieren",
+            message: "Alle MIME-kodierten Dateinamen (z.B. =?iso-8859-1?Q?...?=) werden in der Datenbank in lesbare Namen umgewandelt.\nDies ist einmalig nötig und dauert einen Moment.",
+            variant: "info",
+            confirmLabel: "Reparieren"
+        })) return;
+
+        setLoading(true);
+        try {
+            const res = await fetch('/api/emails/admin/backfill-attachment-filenames', { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                toast.success(`${data.updated} Anhang-Dateinamen repariert`);
+                loadEmails();
+            } else {
+                toast.error('Fehler bei der Reparatur');
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error('Fehler bei der Reparatur');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleScanAssignments = async () => {
         if (!await confirmDialog({ title: "E-Mails erneut prüfen", message: "Alle unzugeordneten E-Mails im Posteingang erneut prüfen?\nDies kann einen Moment dauern.", variant: "info", confirmLabel: "Prüfen" })) return;
 
@@ -1828,6 +1854,14 @@ export default function EmailCenter() {
                         >
                             <DatabaseZap className="w-3.5 h-3.5" />
                             Threads
+                        </button>
+                        <button
+                            onClick={handleBackfillAttachmentFilenames}
+                            title="MIME-kodierte Anhang-Dateinamen reparieren (=?iso-8859-1?Q?...?=)"
+                            className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        >
+                            <Paperclip className="w-3.5 h-3.5" />
+                            Dateinamen
                         </button>
                     </div>
                 </div>

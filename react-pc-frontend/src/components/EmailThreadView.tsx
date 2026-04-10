@@ -91,6 +91,45 @@ function getDayString(sentAt?: string): string {
     return sentAt ? sentAt.split('T')[0] : '';
 }
 
+/**
+ * Dekodiert RFC 2047 Encoded-Words in Dateinamen / Subjects.
+ * Beispiel: =?iso-8859-1?Q?Balkenlage_mit_Stahltr=E4ger_HEB240.pdf?=
+ *        → "Balkenlage mit Stahlträger HEB240.pdf"
+ */
+function decodeMimeWord(str: string): string {
+    if (!str || !str.includes('=?')) return str;
+    return str
+        .replace(/=\?([^?]+)\?([BQbq])\?([^?]*)\?=/g, (_match, charset: string, encoding: string, text: string) => {
+            try {
+                let bytes: Uint8Array;
+                if (encoding.toUpperCase() === 'B') {
+                    const binary = atob(text);
+                    bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                } else {
+                    // Q-Encoding: _ → Leerzeichen, =XX → Byte im angegebenen Charset
+                    const result: number[] = [];
+                    for (let i = 0; i < text.length; i++) {
+                        if (text[i] === '_') {
+                            result.push(0x20);
+                        } else if (text[i] === '=' && i + 2 < text.length) {
+                            result.push(parseInt(text.slice(i + 1, i + 3), 16));
+                            i += 2;
+                        } else {
+                            result.push(text.charCodeAt(i));
+                        }
+                    }
+                    bytes = new Uint8Array(result);
+                }
+                return new TextDecoder(charset).decode(bytes);
+            } catch {
+                return _match;
+            }
+        })
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 // ─────────────────────────────────────────────────────────────────
 // EmailAttachmentChip
 // ─────────────────────────────────────────────────────────────────
@@ -102,7 +141,7 @@ interface EmailAttachmentChipProps {
 }
 
 function EmailAttachmentChip({ attachment, emailId, onPreview }: EmailAttachmentChipProps) {
-    const filename = attachment.originalFilename || 'Datei';
+    const filename = decodeMimeWord(attachment.originalFilename || 'Datei');
     const downloadUrl = `/api/emails/${emailId}/attachments/${attachment.id}`;
     const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(filename);
     const isPdf = /\.pdf$/i.test(filename);
