@@ -798,8 +798,8 @@ export function EmailComposeForm({
                             <p className="text-xs text-slate-500 mt-1">Empfänger, Absender und Betreff in einer kompakten Übersicht.</p>
                         </div>
 
-                        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2 md:col-span-2">
+                        <div className="p-5 flex flex-col gap-4">
+                            <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-3">
                                     <Label>Empfänger *</Label>
                                     {!showCc && (
@@ -808,7 +808,7 @@ export function EmailComposeForm({
                                             variant="ghost"
                                             size="sm"
                                             className="min-h-11 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3"
-                                            onClick={() => setShowCc(true)}
+                                            onClick={() => { setShowCc(true); setCcRecipients(['']); }}
                                         >
                                             + CC hinzufügen
                                         </Button>
@@ -819,17 +819,7 @@ export function EmailComposeForm({
                                     onChange={handleRecipientChange}
                                     suggestions={availableEmails}
                                     placeholder="Name, Firma oder E-Mail eingeben"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="subject">Betreff</Label>
-                                <Input
-                                    id="subject"
-                                    value={subject}
-                                    onChange={(e) => setSubject(e.target.value)}
-                                    placeholder="Betreff eingeben"
-                                    className="font-medium"
+                                    readOnly={!!replyEmailId}
                                 />
                             </div>
 
@@ -844,9 +834,20 @@ export function EmailComposeForm({
                                 />
                             </div>
 
+                            <div className="space-y-2">
+                                <Label htmlFor="subject">Betreff</Label>
+                                <Input
+                                    id="subject"
+                                    value={subject}
+                                    onChange={(e) => setSubject(e.target.value)}
+                                    placeholder="Betreff eingeben"
+                                    className="font-medium"
+                                />
+                            </div>
+
                             {/* CC Section */}
                             {showCc && (
-                                <div className="space-y-2 md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
                                     <div className="flex items-center justify-between gap-3">
                                         <Label>CC</Label>
                                         <Button
@@ -898,7 +899,7 @@ export function EmailComposeForm({
 
                             {/* Dokument Auswahl - für Projekt UND Anfrage Kontext (ausgeblendet wenn initialAttachments vorhanden) */}
                             {entityId && !hasInitialAttachments && (
-                                <div className="space-y-2 md:col-span-2">
+                                <div className="space-y-2">
                                     <Label className="flex items-center gap-2 text-slate-700">
                                         <FileText className="w-4 h-4" />
                                         Dokument aus {isAnfrageContext ? 'Anfrage' : 'Projekt'} anhängen

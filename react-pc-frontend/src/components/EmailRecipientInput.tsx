@@ -22,6 +22,7 @@ export interface EmailRecipientInputProps {
     label?: string;
     onRemove?: () => void;
     className?: string;
+    readOnly?: boolean;
 }
 
 const TYPE_CONFIG: Record<string, { label: string; icon: typeof User; color: string; bg: string }> = {
@@ -37,7 +38,8 @@ export function EmailRecipientInput({
     suggestions = [],
     placeholder = 'E-Mail eingeben...',
     onRemove,
-    className
+    className,
+    readOnly = false
 }: EmailRecipientInputProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [contacts, setContacts] = useState<ContactDto[]>([]);
@@ -209,15 +211,18 @@ export function EmailRecipientInput({
                         ref={inputRef}
                         value={value}
                         onChange={(e) => {
+                            if (readOnly) return;
                             onChange(e.target.value);
                             setIsOpen(true);
                         }}
-                        onFocus={() => setIsOpen(true)}
+                        onFocus={() => { if (!readOnly) setIsOpen(true); }}
                         onKeyDown={handleKeyDown}
                         placeholder={placeholder}
+                        readOnly={readOnly}
                         className={cn(
                             "w-full pl-9 pr-8",
-                            isOpen && "ring-2 ring-rose-200 border-rose-300"
+                            readOnly ? "bg-slate-50 text-slate-500 cursor-default" : "",
+                            !readOnly && isOpen && "ring-2 ring-rose-200 border-rose-300"
                         )}
                     />
                     {loading && (
