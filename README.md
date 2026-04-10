@@ -19,16 +19,6 @@
   <img src="https://img.shields.io/badge/Lizenz-MIT-green" alt="Lizenz" />
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/github/stars/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&logo=github&label=Stars&color=f59e0b" alt="GitHub Stars" />
-  <img src="https://img.shields.io/github/forks/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&logo=github&label=Forks&color=6366f1" alt="GitHub Forks" />
-  <img src="https://img.shields.io/github/watchers/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&logo=github&label=Watchers&color=0ea5e9" alt="GitHub Watchers" />
-  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_views&label=Total+Views&color=dc2626&logo=googlechrome&logoColor=white" alt="Total Views" />
-  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_views&label=Unique+Visitors&color=16a34a&logo=googlechrome&logoColor=white" alt="Unique Visitors" />
-  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_clones&label=Total+Clones&color=7c3aed&logo=git&logoColor=white" alt="Total Clones" />
-  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_clones&label=Unique+Cloners&color=0891b2&logo=git&logoColor=white" alt="Unique Cloners" />
-</p>
-
 <div align="center">
 
 | Metric | Value |
