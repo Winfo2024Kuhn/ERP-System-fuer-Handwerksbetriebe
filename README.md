@@ -23,10 +23,23 @@
   <img src="https://img.shields.io/github/stars/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&logo=github&label=Stars&color=f59e0b" alt="GitHub Stars" />
   <img src="https://img.shields.io/github/forks/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&logo=github&label=Forks&color=6366f1" alt="GitHub Forks" />
   <img src="https://img.shields.io/github/watchers/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&logo=github&label=Watchers&color=0ea5e9" alt="GitHub Watchers" />
-  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_views&label=Gesamt-Aufrufe&color=dc2626&logo=googlechrome&logoColor=white" alt="Gesamt-Aufrufe" />
-  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_views&label=Unique+Besucher&color=16a34a&logo=googlechrome&logoColor=white" alt="Unique Besucher" />
-  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_clones&label=Gesamt-Clones&color=7c3aed&logo=git&logoColor=white" alt="Gesamt-Clones" />
-  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_clones&label=Unique+Clones&color=0891b2&logo=git&logoColor=white" alt="Unique Clones" />
+  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_views&label=Total+Views&color=dc2626&logo=googlechrome&logoColor=white" alt="Total Views" />
+  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_views&label=Unique+Visitors&color=16a34a&logo=googlechrome&logoColor=white" alt="Unique Visitors" />
+  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_clones&label=Total+Clones&color=7c3aed&logo=git&logoColor=white" alt="Total Clones" />
+  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_clones&label=Unique+Cloners&color=0891b2&logo=git&logoColor=white" alt="Unique Cloners" />
+</p>
+
+<p align="center">
+
+| Metric | Value |
+|--------|-------|
+| ⭐ Stars | ![Stars](https://img.shields.io/github/stars/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=f59e0b) |
+| 🍴 Forks | ![Forks](https://img.shields.io/github/forks/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=6366f1) |
+| 👁️ Total Views (cumulative) | ![Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_views&label=&color=dc2626) |
+| 👤 Unique Visitors (cumulative) | ![Unique Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_views&label=&color=16a34a) |
+| 📥 Total Clones (cumulative) | ![Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_clones&label=&color=7c3aed) |
+| 🧑‍💻 Unique Cloners (cumulative) | ![Unique Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_clones&label=&color=0891b2) |
+
 </p>
 
 <p align="center">
@@ -392,29 +405,6 @@ Architektur-Diagramme (draw.io) liegen in [`docs/Dokumentation/`](docs/Dokumenta
 | Mobile-Seiten (PWA) | 18 |
 | Dokumentationen | 7 |
 | Architektur-Diagramme | 7 |
-
----
-
-## 📈 Repo-Statistiken
-
-> Die Zahlen werden täglich durch einen GitHub-Actions-Workflow aktualisiert (Traffic API + kumulierte Speicherung).
-
-<p align="center">
-
-| Metrik | Wert |
-|--------|------|
-| ⭐ Stars | ![Stars](https://img.shields.io/github/stars/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=f59e0b) |
-| 🍴 Forks | ![Forks](https://img.shields.io/github/forks/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=6366f1) |
-| 👁️ Gesamt-Aufrufe (kumuliert) | ![Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_views&label=&color=dc2626) |
-| 👤 Unique Besucher (kumuliert) | ![Unique Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_views&label=&color=16a34a) |
-| 📥 Gesamt-Clones (kumuliert) | ![Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_clones&label=&color=7c3aed) |
-| 🧑‍💻 Unique Kloner (kumuliert) | ![Unique Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_clones&label=&color=0891b2) |
-
-</p>
-
-### Star-Verlauf
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe&type=Date)](https://star-history.com/#Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe&Date)
 
 ---
 
