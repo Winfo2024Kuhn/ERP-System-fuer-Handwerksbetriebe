@@ -613,6 +613,21 @@ public class UnifiedEmailController {
         return ResponseEntity.ok(thread);
     }
 
+    /**
+     * Einmaliger Backfill: Dekodiert alle EmailAttachment-Dateinamen in der DB,
+     * die noch als MIME encoded-word vorliegen (=?iso-8859-1?Q?...?=).
+     * Idempotent – bereits dekodierte Namen werden nicht erneut angefasst.
+     */
+    @PostMapping("/admin/backfill-attachment-filenames")
+    public ResponseEntity<Map<String, Object>> backfillAttachmentFilenames() {
+        log.info("Backfill attachment filenames gestartet");
+        int updated = emailImportService.backfillAttachmentFilenames();
+        return ResponseEntity.ok(Map.of(
+                "status", "ok",
+                "updated", updated
+        ));
+    }
+
     @GetMapping("/{id}/mark-viewed")
     @Transactional
     public ResponseEntity<Void> markAsViewed(@PathVariable Long id) {

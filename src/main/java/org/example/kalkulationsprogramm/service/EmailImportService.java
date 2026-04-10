@@ -505,6 +505,32 @@ public class EmailImportService {
     }
 
     /**
+     * Backfill: Dekodiert alle EmailAttachment-Einträge in der DB, deren
+     * originalFilename noch MIME encoded-word Strings enthält (=?...?=).
+     *
+     * @return Anzahl der aktualisierten Datensätze
+     */
+    @Transactional
+    public int backfillAttachmentFilenames() {
+        List<EmailAttachment> all = attachmentRepository.findAll();
+        int updated = 0;
+        for (EmailAttachment att : all) {
+            String raw = att.getOriginalFilename();
+            if (raw != null && raw.contains("=?")) {
+                String decoded = decodeFilename(raw);
+                if (!decoded.equals(raw)) {
+                    att.setOriginalFilename(decoded);
+                    attachmentRepository.save(att);
+                    updated++;
+                    log.debug("Backfill: '{}' → '{}'", raw, decoded);
+                }
+            }
+        }
+        log.info("Backfill attachment filenames: {} von {} Einträgen aktualisiert", updated, all.size());
+        return updated;
+    }
+
+    /**
      * Dekodiert MIME encoded-word Dateinamen (RFC 2047), z.B.
      * {@code =?iso-8859-1?Q?Stahltr=E4ger.pdf?=} → {@code Stahlträger.pdf}.
      * Gibt den Originalstring zurück wenn die Dekodierung fehlschlägt.
