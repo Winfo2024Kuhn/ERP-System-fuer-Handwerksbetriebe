@@ -9,8 +9,10 @@ import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
+import org.example.kalkulationsprogramm.domain.EmailDraft;
 import org.example.kalkulationsprogramm.dto.EmailThreadDto;
 import org.example.kalkulationsprogramm.dto.EmailThreadEntryDto;
+import org.example.kalkulationsprogramm.repository.EmailDraftRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.util.InlineAttachmentUtil;
 import org.springframework.http.HttpStatus;
@@ -37,6 +39,7 @@ public class EmailThreadService {
     private static final int SNIPPET_MAX_LENGTH = 120;
 
     private final EmailRepository emailRepository;
+    private final EmailDraftRepository emailDraftRepository;
 
     // ═══════════════════════════════════════════════════════════════
     // PUBLIC API
@@ -61,6 +64,21 @@ public class EmailThreadService {
         List<EmailThreadEntryDto> entries = allInThread.stream()
                 .map(this::toEntryDto)
                 .collect(Collectors.toList());
+
+        // Entwürfe die an E-Mails im Thread gekoppelt sind, als letzte Einträge anhängen
+        Set<Long> threadEmailIds = allInThread.stream()
+                .map(Email::getId)
+                .collect(Collectors.toSet());
+        List<EmailDraft> threadDrafts = emailDraftRepository.findByReplyEmailIdIn(threadEmailIds);
+        threadDrafts.sort((left, right) -> {
+            if (left.getUpdatedAt() == null && right.getUpdatedAt() == null) return 0;
+            if (left.getUpdatedAt() == null) return -1;
+            if (right.getUpdatedAt() == null) return 1;
+            return left.getUpdatedAt().compareTo(right.getUpdatedAt());
+        });
+        for (EmailDraft draft : threadDrafts) {
+            entries.add(toDraftEntryDto(draft));
+        }
 
         EmailThreadDto dto = new EmailThreadDto();
         dto.setRootEmailId(root.getId());
@@ -299,5 +317,40 @@ public class EmailThreadService {
         }
         String result = real.toString().strip();
         return result.isEmpty() ? "[Weitergeleitet]" : result;
+    }
+
+    /**
+     * Wandelt einen gespeicherten Entwurf in einen Thread-Eintrag um.
+     * Wird am Ende des Threads angezeigt (wie bei Gmail).
+     */
+    private EmailThreadEntryDto toDraftEntryDto(EmailDraft draft) {
+        EmailThreadEntryDto dto = new EmailThreadEntryDto();
+        dto.setId(draft.getId());
+        dto.setDraftId(draft.getId());
+        dto.setDraft(true);
+        dto.setSubject(draft.getSubject());
+        dto.setFromAddress(draft.getFromAddress());
+        dto.setRecipient(draft.getRecipient());
+        dto.setSentAt(draft.getUpdatedAt() != null ? draft.getUpdatedAt().format(ISO_FORMATTER) : null);
+        dto.setDirection("OUT");
+
+        // Snippet aus Draft-Body erstellen
+        String body = draft.getBody();
+        if (body != null && !body.isBlank()) {
+            String text = body
+                    .replaceAll("(?si)<style[^>]*>.*?</style>", " ")
+                    .replaceAll("<[^>]+>", "")
+                    .replace("&nbsp;", " ")
+                    .replaceAll("\\s+", " ")
+                    .strip();
+            dto.setSnippet(text.length() > SNIPPET_MAX_LENGTH
+                    ? text.substring(0, SNIPPET_MAX_LENGTH) + "…"
+                    : text);
+        } else {
+            dto.setSnippet("[Entwurf]");
+        }
+        dto.setHtmlBody(body);
+        dto.setAttachments(List.of());
+        return dto;
     }
 }

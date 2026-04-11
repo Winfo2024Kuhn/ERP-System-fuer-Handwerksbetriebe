@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Paperclip, File, ChevronDown, ChevronUp, Reply } from 'lucide-react';
+import { Paperclip, File, ChevronDown, ChevronUp, Reply, FileEdit, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { EmailContentFrame } from './EmailContentFrame';
 
@@ -24,6 +24,8 @@ export interface EmailThreadEntry {
     sentAt?: string;
     direction: 'IN' | 'OUT';
     forwarded?: boolean;
+    isDraft?: boolean;
+    draftId?: number;
     snippet?: string;
     htmlBody?: string;
     attachments: ThreadAttachment[];
@@ -413,6 +415,89 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
 }
 
 // ─────────────────────────────────────────────────────────────────
+// DraftThreadBubble – Entwurf inline im Thread (Gmail-Stil)
+// ─────────────────────────────────────────────────────────────────
+
+interface DraftBubbleProps {
+    entry: EmailThreadEntry;
+    onOpenDraft?: (entry: EmailThreadEntry) => void;
+    onDeleteDraft?: (draftId: number) => void;
+}
+
+function DraftThreadBubble({ entry, onOpenDraft, onDeleteDraft }: DraftBubbleProps) {
+    const toName = extractDisplayName(entry.recipient);
+    const hasContent = entry.snippet && entry.snippet !== '[Entwurf]';
+
+    return (
+        <div className="flex items-end gap-2 flex-row-reverse mb-2">
+            {/* Avatar */}
+            <div className="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center
+                            text-xs font-semibold shadow-sm shrink-0">
+                <FileEdit className="w-3.5 h-3.5" />
+            </div>
+
+            {/* Draft Card */}
+            <div className="flex flex-col items-end max-w-[72%] gap-1">
+                <div className="flex items-center gap-1 text-[10px] text-amber-600/70 tabular-nums">
+                    <span>{formatTime(entry.sentAt)}</span>
+                    {onDeleteDraft && entry.draftId && (
+                        <button
+                            type="button"
+                            onClick={() => onDeleteDraft(entry.draftId!)}
+                            className="p-0.5 rounded hover:bg-amber-200/80 text-amber-500 hover:text-rose-600 transition-colors"
+                            title="Entwurf löschen"
+                        >
+                            <Trash2 className="w-3 h-3" />
+                        </button>
+                    )}
+                </div>
+                <button
+                    type="button"
+                    onClick={() => onOpenDraft?.(entry)}
+                    className="w-full text-left rounded-2xl rounded-br-none px-4 py-3 cursor-pointer
+                               border-2 border-dashed border-amber-300 bg-amber-50/80
+                               hover:bg-amber-100/80 hover:border-amber-400
+                               transition-all duration-200 shadow-sm
+                               focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                >
+                    {/* Draft Badge */}
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+                                         bg-amber-200/80 text-amber-800 text-[10px] font-bold uppercase tracking-wide">
+                            <FileEdit className="w-2.5 h-2.5" />
+                            Entwurf
+                        </span>
+                        <span className="text-[10px] font-medium text-amber-700/80">Nicht gesendet</span>
+                    </div>
+
+                    {/* Recipient */}
+                    {entry.recipient && (
+                        <p className="text-xs text-amber-700/80 mb-1">
+                            <span className="text-amber-600/60">An:</span> {toName}
+                        </p>
+                    )}
+
+                    {/* Subject */}
+                    {entry.subject && (
+                        <p className="text-xs font-medium text-slate-700 mb-0.5 truncate">
+                            {entry.subject}
+                        </p>
+                    )}
+
+                    {/* Preview */}
+                    <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
+                        {hasContent
+                            ? entry.snippet
+                            : <span className="italic text-amber-600/70">Klicken zum Bearbeiten…</span>
+                        }
+                    </p>
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────
 // EmailThreadView – Haupt-Komponente
 // ─────────────────────────────────────────────────────────────────
 
@@ -421,9 +506,11 @@ interface EmailThreadViewProps {
     loading?: boolean;
     onPreview?: (url: string, type: 'image' | 'pdf', name: string) => void;
     onReply?: (entry: EmailThreadEntry) => void;
+    onOpenDraft?: (entry: EmailThreadEntry) => void;
+    onDeleteDraft?: (draftId: number) => void;
 }
 
-export function EmailThreadView({ thread, loading, onPreview, onReply }: EmailThreadViewProps) {
+export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDraft, onDeleteDraft }: EmailThreadViewProps) {
     // Thread-übergreifende Anhang-Dedup über originalFilename:sizeBytes
     const seenAttachments = new Set<string>();
     const emails = thread.emails.map(entry => ({
@@ -435,6 +522,10 @@ export function EmailThreadView({ thread, loading, onPreview, onReply }: EmailTh
             return true;
         }),
     }));
+
+    // Entwürfe separat herausfiltern – sie werden am Ende des Threads angezeigt
+    const regularEmails = emails.filter(e => !e.isDraft);
+    const draftEntries = emails.filter(e => e.isDraft);
 
     if (loading) {
         return (
@@ -448,11 +539,11 @@ export function EmailThreadView({ thread, loading, onPreview, onReply }: EmailTh
 
     return (
         <div className="flex-1 overflow-auto bg-slate-50 px-5 py-5">
-            {emails.map((entry, idx) => {
-                const prev = idx > 0 ? emails[idx - 1] : null;
+            {regularEmails.map((entry, idx) => {
+                const prev = idx > 0 ? regularEmails[idx - 1] : null;
                 const showDaySeparator = !prev || getDayString(entry.sentAt) !== getDayString(prev.sentAt);
                 const showAvatar = !prev || prev.fromAddress !== entry.fromAddress || prev.direction !== entry.direction;
-                const isLast = idx === emails.length - 1;
+                const isLast = idx === regularEmails.length - 1 && draftEntries.length === 0;
 
                 return (
                     <React.Fragment key={entry.id}>
@@ -469,6 +560,27 @@ export function EmailThreadView({ thread, loading, onPreview, onReply }: EmailTh
                     </React.Fragment>
                 );
             })}
+
+            {/* Entwürfe am Ende des Threads, visuell abgesetzt */}
+            {draftEntries.length > 0 && (
+                <>
+                    <div className="flex items-center gap-3 my-4">
+                        <div className="flex-1 border-t border-dashed border-amber-300" />
+                        <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-widest">
+                            Entwürfe
+                        </span>
+                        <div className="flex-1 border-t border-dashed border-amber-300" />
+                    </div>
+                    {draftEntries.map(draft => (
+                        <DraftThreadBubble
+                            key={`draft-${draft.draftId}`}
+                            entry={draft}
+                            onOpenDraft={onOpenDraft}
+                            onDeleteDraft={onDeleteDraft}
+                        />
+                    ))}
+                </>
+            )}
         </div>
     );
 }

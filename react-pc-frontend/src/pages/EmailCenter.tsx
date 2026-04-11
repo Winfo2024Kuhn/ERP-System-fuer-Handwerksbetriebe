@@ -19,6 +19,7 @@ import {
     ChevronRight,
     File,
     PenSquare,
+    FileEdit,
     ShieldAlert,
     ShieldCheck,
     ShieldX,
@@ -112,7 +113,7 @@ interface EmailItem {
 }
 
 // Folder Types
-type FolderType = 'inbox' | 'sent' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'unassigned';
+type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'unassigned';
 
 
 
@@ -343,7 +344,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
 }
 
 // Main EmailCenter Component
-const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'unassigned'];
+const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'unassigned'];
 
 // ─────────────────────────────────────────────────────────────
 // DnD helper components (Drag & Drop für Ordner-Verschieben)
@@ -493,7 +494,7 @@ export default function EmailCenter() {
 
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [folderCounts, setFolderCounts] = useState({
-        inbox: 0, sent: 0, trash: 0, spam: 0, newsletter: 0,
+        inbox: 0, sent: 0, drafts: 0, trash: 0, spam: 0, newsletter: 0,
         starred: 0, projects: 0, offers: 0, suppliers: 0, unassigned: 0
     });
     const [expandedFilters, setExpandedFilters] = useState(true);
@@ -501,6 +502,12 @@ export default function EmailCenter() {
     const [showSettings, setShowSettings] = useState(false);
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
     const [forwardEmail, setForwardEmail] = useState<EmailItem | null>(null);
+
+    // Drafts
+    interface DraftItem { id: number; recipient?: string; cc?: string; subject?: string; body?: string; fromAddress?: string; replyEmailId?: number; projektId?: number; anfrageId?: number; updatedAt?: string; }
+    const [drafts, setDrafts] = useState<DraftItem[]>([]);
+    const [activeDraftId, setActiveDraftId] = useState<number | undefined>(undefined);
+    const [activeDraft, setActiveDraft] = useState<DraftItem | null>(null);
 
     // Thread-State für Konversationsverlauf
     const [thread, setThread] = useState<EmailThread | null>(null);
@@ -527,6 +534,10 @@ export default function EmailCenter() {
     const handleComposeNew = () => {
         setSelectedEmail(null);
         setReplyToEmail(null);
+        setReplyToEmailId(undefined);
+        setForwardEmail(null);
+        setActiveDraftId(undefined);
+        setActiveDraft(null);
         setIsComposing(true);
     };
 
@@ -542,6 +553,8 @@ export default function EmailCenter() {
         setReplyToEmail(fullEmail);
         setReplyToEmailId(replyId ?? email.id);
         setForwardEmail(null);
+        setActiveDraftId(undefined);
+        setActiveDraft(null);
         setIsComposing(true);
     };
 
@@ -556,6 +569,8 @@ export default function EmailCenter() {
         setReplyToEmail(null);
         setReplyToEmailId(undefined);
         setForwardEmail(fullEmail);
+        setActiveDraftId(undefined);
+        setActiveDraft(null);
         setIsComposing(true);
     };
 
@@ -585,6 +600,11 @@ export default function EmailCenter() {
         setReplyToEmail(null);
         setReplyToEmailId(undefined);
         setForwardEmail(null);
+        setActiveDraftId(undefined);
+        setActiveDraft(null);
+        // Refresh drafts and stats so draft count updates
+        loadDrafts();
+        loadStats();
     };
 
     const handleComposeSuccess = () => {
@@ -592,14 +612,58 @@ export default function EmailCenter() {
         setReplyToEmail(null);
         setReplyToEmailId(undefined);
         setForwardEmail(null);
+        setActiveDraftId(undefined);
+        setActiveDraft(null);
         // Reload in background without resetting scroll/selection
         refreshEmailsSilently();
+        loadDrafts();
         loadStats();
+    };
+
+    // Drafts laden
+    const loadDrafts = useCallback(async () => {
+        try {
+            const res = await fetch('/api/emails/drafts');
+            if (res.ok) {
+                setDrafts(await res.json());
+            }
+        } catch (err) {
+            console.error('Failed to load drafts', err);
+        }
+    }, []);
+
+    // Draft öffnen = Compose-Form mit Draft-Daten
+    const handleOpenDraft = (draft: DraftItem) => {
+        setSelectedEmail(null);
+        setReplyToEmail(null);
+        setReplyToEmailId(draft.replyEmailId || undefined);
+        setForwardEmail(null);
+        setActiveDraftId(draft.id);
+        setActiveDraft(draft);
+        setIsComposing(true);
+    };
+
+    // Draft löschen
+    const handleDeleteDraft = async (draftId: number, e?: React.MouseEvent) => {
+        if (e) { e.stopPropagation(); e.preventDefault(); }
+        try {
+            await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
+            setDrafts(prev => prev.filter(d => d.id !== draftId));
+            loadStats();
+        } catch {
+            toast.error('Entwurf konnte nicht gelöscht werden');
+        }
     };
 
     // Load emails based on folder and filter – stale-while-revalidate
     const loadEmails = useCallback(async () => {
         const folderAtCallTime = activeFolder;
+        if (activeFolder === 'drafts') {
+            setEmails([]);
+            setLoading(false);
+            return;
+        }
+
         const endpointMap: Record<string, string> = {
             'inbox': '/api/emails/inbox',
             'sent': '/api/emails/sent',
@@ -665,12 +729,21 @@ export default function EmailCenter() {
     // Load stats for folder counts
     const loadStats = useCallback(async () => {
         try {
-            const res = await fetch('/api/emails/stats');
-            if (res.ok) {
-                const stats = await res.json();
+            const [statsRes, draftRes] = await Promise.all([
+                fetch('/api/emails/stats'),
+                fetch('/api/emails/drafts/count')
+            ]);
+            let draftCount = 0;
+            if (draftRes.ok) {
+                const draftData = await draftRes.json();
+                draftCount = draftData.count || 0;
+            }
+            if (statsRes.ok) {
+                const stats = await statsRes.json();
                 setFolderCounts({
                     inbox: stats.inboxCount || 0,
                     sent: stats.sentCount || 0,
+                    drafts: draftCount,
                     trash: stats.trashCount || 0,
                     spam: stats.spamCount || 0,
                     newsletter: stats.newsletterCount || 0,
@@ -689,6 +762,11 @@ export default function EmailCenter() {
     // Silent refresh: merges new emails without resetting scroll position or selection
     const refreshEmailsSilently = useCallback(async () => {
         try {
+            if (activeFolder === 'drafts') {
+                await loadDrafts();
+                return;
+            }
+
             const endpointMap: Record<string, string> = {
                 'inbox': '/api/emails/inbox',
                 'sent': '/api/emails/sent',
@@ -725,22 +803,25 @@ export default function EmailCenter() {
         } catch (err) {
             console.error('Silent refresh failed', err);
         }
-    }, [activeFolder]);
+    }, [activeFolder, loadDrafts]);
 
     // Load emails + stats when folder changes (single effect, no duplicates)
+    // Drafts werden immer geladen, damit das Entwurf-Badge in allen Ordnern sichtbar ist
     useEffect(() => {
         loadEmails();
         loadStats();
-    }, [loadEmails, loadStats]);
+        loadDrafts();
+    }, [loadEmails, loadStats, loadDrafts, activeFolder]);
 
     // Auto-poll for new emails every 30 seconds
     useEffect(() => {
         const interval = setInterval(() => {
             refreshEmailsSilently();
             loadStats();
+            loadDrafts();
         }, 30000);
         return () => clearInterval(interval);
-    }, [refreshEmailsSilently, loadStats]);
+    }, [refreshEmailsSilently, loadStats, loadDrafts]);
 
     // Deep-link: auto-select email from URL param /emails/:folder/:emailId
     useEffect(() => {
@@ -786,6 +867,7 @@ export default function EmailCenter() {
         if (!isComposing) {
             setSelectedEmail(null);
             setSelectedIds(new Set());
+            lastSelectedIdRef.current = null;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeFolder]);
@@ -793,12 +875,9 @@ export default function EmailCenter() {
     // Handlers
     const handleEmailClick = async (e: React.MouseEvent, email: EmailItem) => {
         if (isComposing) {
-            if (await confirmDialog({ title: 'Entwurf verwerfen', message: 'Möchten Sie den Entwurf verwerfen?', variant: 'warning', confirmLabel: 'Verwerfen' })) {
-                setIsComposing(false);
-                setReplyToEmail(null);
-            } else {
-                return;
-            }
+            // Entwurf wird automatisch gespeichert – kein Bestätigungsdialog nötig
+            setIsComposing(false);
+            setReplyToEmail(null);
         }
 
         if (e.ctrlKey || e.metaKey || e.shiftKey) {
@@ -812,6 +891,7 @@ export default function EmailCenter() {
         if (e.ctrlKey || e.metaKey) {
             if (newSelected.has(id)) {
                 newSelected.delete(id);
+                if (newSelected.size === 0) lastSelectedIdRef.current = null;
             } else {
                 newSelected.add(id);
                 lastSelectedIdRef.current = id;
@@ -1343,6 +1423,36 @@ export default function EmailCenter() {
         });
     }, [emails, searchQuery, isGlobalSearch, globalSearchResults, sortOrder]);
 
+    const filteredDrafts = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        const base = !q
+            ? drafts
+            : drafts.filter(draft =>
+                draft.subject?.toLowerCase().includes(q) ||
+                draft.recipient?.toLowerCase().includes(q) ||
+                draft.fromAddress?.toLowerCase().includes(q) ||
+                draft.body?.replace(/<[^>]*>/g, ' ').toLowerCase().includes(q)
+            );
+
+        return [...base].sort((a, b) => {
+            const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+            const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+    }, [drafts, searchQuery, sortOrder]);
+
+    // Set von E-Mail-IDs, zu denen ein Entwurf existiert (replyEmailId → draftId)
+    const draftsByEmailId = useMemo(() => {
+        const map = new Map<number, DraftItem>();
+        for (const d of drafts) {
+            if (d.replyEmailId) map.set(d.replyEmailId, d);
+        }
+        return map;
+    }, [drafts]);
+
+    const isDraftFolderView = activeFolder === 'drafts' && !isGlobalSearch;
+    const visibleItemCount = isDraftFolderView ? filteredDrafts.length : filteredEmails.length;
+
     // Right Pane Content Logic
     const renderRightPane = () => {
         // Settings View
@@ -1369,10 +1479,10 @@ export default function EmailCenter() {
         }
 
         if (isComposing) {
-            let initialRecipient = '';
-            let initialSubject = '';
+            let initialRecipient = activeDraft?.recipient || '';
+            let initialSubject = activeDraft?.subject || '';
             let replyQuote: string | undefined;
-            let initialBody: string | undefined;
+            const initialBody: string | undefined = activeDraft?.body;
 
             if (forwardEmail) {
                 // Forward mode – empty recipient, Fwd: prefix, original body as quote
@@ -1395,7 +1505,9 @@ export default function EmailCenter() {
                     cleanBody = doc.body.innerHTML;
                 } catch { /* ignore */ }
 
-                initialBody = `<br/><div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:1rem;color:#64748b">
+                // replyQuote verwenden (nicht initialBody), damit EmailComposeForm
+                // die korrekte Reihenfolge: [leer] → [Signatur] → [Zitat] erzeugt
+                replyQuote = `<div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:1rem;color:#64748b">
                     <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">---------- Weitergeleitete Nachricht ----------<br/>
                     Von: ${senderName} &lt;${forwardEmail.fromAddress || ''}&gt;<br/>
                     Datum: ${date}<br/>
@@ -1440,9 +1552,10 @@ export default function EmailCenter() {
                     initialSubject={initialSubject}
                     initialBody={initialBody}
                     replyQuote={replyQuote}
+                    draftId={activeDraftId}
                     replyEmailId={replyToEmailId}
-                    projektId={(replyToEmail ?? forwardEmail)?.projektId}
-                    anfrageId={(replyToEmail ?? forwardEmail)?.anfrageId}
+                    projektId={activeDraft?.projektId ?? (replyToEmail ?? forwardEmail)?.projektId}
+                    anfrageId={activeDraft?.anfrageId ?? (replyToEmail ?? forwardEmail)?.anfrageId}
                 />
             );
         }
@@ -1545,7 +1658,7 @@ export default function EmailCenter() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => { setSelectedIds(new Set()); setSelectedEmail(null); }}
+                        onClick={() => { setSelectedIds(new Set()); setSelectedEmail(null); lastSelectedIdRef.current = null; }}
                         className="text-slate-500 hover:text-slate-700 mt-2"
                     >
                         <X className="w-4 h-4 mr-1" />
@@ -1780,6 +1893,30 @@ export default function EmailCenter() {
                                 };
                                 handleReply(replyItem, entry.id);
                             }}
+                            onOpenDraft={(entry) => {
+                                if (entry.draftId) {
+                                    const existingDraft = drafts.find(draft => draft.id === entry.draftId);
+                                    const draft: DraftItem = existingDraft ?? {
+                                        id: entry.draftId,
+                                        recipient: entry.recipient ?? undefined,
+                                        subject: entry.subject ?? undefined,
+                                        body: entry.htmlBody ?? undefined,
+                                        fromAddress: entry.fromAddress ?? undefined,
+                                        replyEmailId: selectedEmail?.id,
+                                    };
+                                    handleOpenDraft(draft);
+                                }
+                            }}
+                            onDeleteDraft={async (draftId) => {
+                                await handleDeleteDraft(draftId);
+                                // Thread neu laden damit der Entwurf verschwindet
+                                if (selectedEmail?.id) {
+                                    try {
+                                        const res = await fetch(`/api/emails/${selectedEmail.id}/thread`);
+                                        if (res.ok) setThread(await res.json());
+                                    } catch { /* ignorieren */ }
+                                }
+                            }}
                         />
                     ) : (
                         <div className="flex-1 overflow-auto p-6">
@@ -1895,6 +2032,16 @@ export default function EmailCenter() {
                         label="Gesendet"
                         isActive={activeFolder === 'sent'}
                         onClick={() => setActiveFolder('sent')}
+                        droppable={false}
+                        dragActive={dragActiveEmail !== null}
+                    />
+                    <DroppableFolderButton
+                        folderId="drafts"
+                        icon={FileEdit}
+                        label="Entwürfe"
+                        count={folderCounts.drafts}
+                        isActive={activeFolder === 'drafts'}
+                        onClick={() => setActiveFolder('drafts')}
                         droppable={false}
                         dragActive={dragActiveEmail !== null}
                     />
@@ -2078,7 +2225,7 @@ export default function EmailCenter() {
                             ? "Mindestens 2 Zeichen eingeben..."
                             : globalSearchLoading
                                 ? "Suche läuft..."
-                                : `${filteredEmails.length} Ergebnis${filteredEmails.length !== 1 ? 'se' : ''} gefunden`}
+                                : `${visibleItemCount} Ergebnis${visibleItemCount !== 1 ? 'se' : ''} gefunden`}
                     </div>
                 )}
 
@@ -2098,25 +2245,68 @@ export default function EmailCenter() {
                                 </div>
                             ))}
                         </div>
-                    ) : filteredEmails.length === 0 ? (
+                    ) : visibleItemCount === 0 ? (
                         <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
                             <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
-                                {isGlobalSearch ? <Globe className="w-7 h-7 text-slate-300" /> : <Mail className="w-7 h-7 text-slate-300" />}
+                                {isGlobalSearch ? <Globe className="w-7 h-7 text-slate-300" /> : isDraftFolderView ? <FileEdit className="w-7 h-7 text-slate-300" /> : <Mail className="w-7 h-7 text-slate-300" />}
                             </div>
                             <p className="text-sm font-medium text-slate-500">
                                 {isGlobalSearch
                                     ? (searchQuery.trim().length < 2 ? 'Suchbegriff eingeben' : 'Keine Treffer')
-                                    : 'Keine E-Mails'}
+                                    : isDraftFolderView ? 'Keine Entwürfe' : 'Keine E-Mails'}
                             </p>
                             <p className="text-xs text-slate-400">
                                 {isGlobalSearch
                                     ? 'Suche in Betreff, Absender und Inhalt'
-                                    : 'In diesem Ordner ist nichts vorhanden'}
+                                    : isDraftFolderView ? 'Entwürfe erscheinen hier sofort nach dem automatischen Speichern' : 'In diesem Ordner ist nichts vorhanden'}
                             </p>
                         </div>
                     ) : (
                         <div className="divide-y divide-slate-100">
-                            {filteredEmails.map(email => (
+                            {isDraftFolderView ? filteredDrafts.map(draft => (
+                                <div
+                                    key={draft.id}
+                                    onClick={() => handleOpenDraft(draft)}
+                                    className="px-4 py-3 cursor-pointer transition-all duration-150 border-l-[3px] bg-amber-50/50 border-l-amber-400 hover:bg-amber-50"
+                                >
+                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                        <p className="text-sm font-semibold text-slate-800 truncate">
+                                            {draft.recipient?.trim() || 'Kein Empfänger'}
+                                        </p>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                                onClick={(e) => handleDeleteDraft(draft.id, e)}
+                                                className="p-0.5 rounded hover:bg-red-50 transition-colors cursor-pointer"
+                                                title="Entwurf löschen"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5 text-slate-300 hover:text-red-500" />
+                                            </button>
+                                            <span className="text-xs text-slate-400 whitespace-nowrap">
+                                                {formatDate(draft.updatedAt)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <p className="text-sm mb-1 truncate font-medium text-slate-700">
+                                        {draft.subject || '(Kein Betreff)'}
+                                    </p>
+                                    <p className="text-xs text-slate-400 line-clamp-2">
+                                        {(draft.body || '...').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 150)}
+                                    </p>
+
+                                    <div className="flex gap-2 mt-2 flex-wrap">
+                                        <div className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                                            <FileEdit className="w-3 h-3" />
+                                            Entwurf
+                                        </div>
+                                        {draft.replyEmailId && (
+                                            <div className="flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                                <MessagesSquare className="w-3 h-3" />
+                                                Mit Thread verknüpft
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )) : filteredEmails.map(email => (
                                 <DraggableEmailWrapper key={email.id} emailId={email.id}>
                                 <div
                                     onClick={(e) => handleEmailClick(e, email)}
@@ -2197,6 +2387,20 @@ export default function EmailCenter() {
                                                 {email.zuordnungTyp}
                                             </div>
                                         )}
+                                        {draftsByEmailId.has(email.id) && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const draft = draftsByEmailId.get(email.id)!;
+                                                    handleOpenDraft(draft);
+                                                }}
+                                                className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 hover:bg-amber-200 transition-colors cursor-pointer"
+                                                title="Entwurf öffnen"
+                                            >
+                                                <FileEdit className="w-3 h-3" />
+                                                Entwurf
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                                 </DraggableEmailWrapper>
@@ -2209,28 +2413,32 @@ export default function EmailCenter() {
                 <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between gap-2">
                     <span>
                         {isGlobalSearch && <Globe className="w-3 h-3 inline mr-1 text-rose-500" />}
-                        {filteredEmails.length} {filteredEmails.length === 1 ? 'Nachricht' : 'Nachrichten'}
+                        {visibleItemCount} {visibleItemCount === 1 ? (isDraftFolderView ? 'Entwurf' : 'Nachricht') : (isDraftFolderView ? 'Entwürfe' : 'Nachrichten')}
                     </span>
                     <div className="flex items-center gap-2">
-                        {selectedIds.size > 0 && (
+                        {!isDraftFolderView && selectedIds.size > 0 && (
                             <span className="text-rose-600 font-medium">{selectedIds.size} ausgewählt</span>
                         )}
-                        <button
-                            onClick={handleBackfillThreads}
-                            title="Thread-Verknüpfungen rückwirkend aufbauen"
-                            className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        >
-                            <DatabaseZap className="w-3.5 h-3.5" />
-                            Threads
-                        </button>
-                        <button
-                            onClick={handleBackfillAttachmentFilenames}
-                            title="MIME-kodierte Anhang-Dateinamen reparieren (=?iso-8859-1?Q?...?=)"
-                            className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        >
-                            <Paperclip className="w-3.5 h-3.5" />
-                            Dateinamen
-                        </button>
+                        {!isDraftFolderView && (
+                            <>
+                                <button
+                                    onClick={handleBackfillThreads}
+                                    title="Thread-Verknüpfungen rückwirkend aufbauen"
+                                    className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                >
+                                    <DatabaseZap className="w-3.5 h-3.5" />
+                                    Threads
+                                </button>
+                                <button
+                                    onClick={handleBackfillAttachmentFilenames}
+                                    title="MIME-kodierte Anhang-Dateinamen reparieren (=?iso-8859-1?Q?...?=)"
+                                    className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                >
+                                    <Paperclip className="w-3.5 h-3.5" />
+                                    Dateinamen
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

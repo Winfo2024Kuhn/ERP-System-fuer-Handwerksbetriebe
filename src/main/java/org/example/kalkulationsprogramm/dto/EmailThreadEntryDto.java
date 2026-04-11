@@ -2,6 +2,8 @@ package org.example.kalkulationsprogramm.dto;
 
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import lombok.Data;
 
 /**
@@ -18,6 +20,9 @@ public class EmailThreadEntryDto {
     private String snippet;         // erste ~120 Zeichen des body für kollabierte Ansicht
     private String htmlBody;        // vollständiger HTML-Body (mit rewritten CID-URLs) für expandierte Ansicht
     private boolean forwarded;      // true wenn die E-Mail eine Weiterleitung ist (Fwd:/WG:)
+    @JsonProperty("isDraft")
+    private boolean isDraft;        // true wenn dies ein gespeicherter Entwurf ist
+    private Long draftId;           // ID des EmailDraft (nur wenn isDraft=true)
     private List<AttachmentDto> attachments;
 
     @Data

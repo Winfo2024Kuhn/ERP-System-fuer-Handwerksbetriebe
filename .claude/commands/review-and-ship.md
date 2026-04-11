@@ -92,6 +92,7 @@ git diff main...HEAD --name-only -- "src/main/resources/db/migration/"
 ### 2d. Test-Coverage-Check
 - Neue Service-Methoden ohne Tests?
 - Neue Controller-Endpoints ohne Happy-Path und Fehlerfall-Test?
+- Mindestens 80% Branch-Coverage im Coverage-Report erreicht?
 - Tests mit echten Personendaten?
 
 ### 2e. Dokumentations-Check

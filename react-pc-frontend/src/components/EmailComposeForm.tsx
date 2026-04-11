@@ -45,6 +45,8 @@ export interface EmailComposeFormProps {
     initialAttachments?: File[];
     onSuccess?: () => void;
     variant?: 'default' | 'modal';
+    /** Existing draft ID to resume editing */
+    draftId?: number;
 }
 
 interface SignatureResponse {
@@ -154,6 +156,7 @@ export function EmailComposeForm({
     replyEmailId,
     initialAttachments,
     onSuccess,
+    draftId: initialDraftId,
 }: EmailComposeFormProps) {
     // Determine context: projekt or anfrage
     const isAnfrageContext = !!anfrageId;
@@ -233,6 +236,11 @@ export function EmailComposeForm({
     const [beautifying, setBeautifying] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Draft auto-save
+    const [draftId, setDraftId] = useState<number | null>(initialDraftId ?? null);
+    const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [draftSaving, setDraftSaving] = useState(false);
+
     // CC State
     const [ccRecipients, setCcRecipients] = useState<string[]>([]);
     const [showCc, setShowCc] = useState(false);
@@ -301,7 +309,72 @@ export function EmailComposeForm({
         setRecipient(val);
     };
 
-    // Signatur laden
+    // ═══════════════════════════════════════════════════════════════
+    // DRAFT AUTO-SAVE (2s Debounce)
+    // ═══════════════════════════════════════════════════════════════
+    const saveDraft = useCallback(async () => {
+        const currentBody = editorRef.current?.innerHTML || body;
+        // Nur speichern wenn mindestens Empfänger, Betreff oder Body vorhanden
+        if (!recipient.trim() && !subject.trim() && !currentBody.trim()) return;
+
+        const draftData = {
+            recipient: recipient.trim(),
+            cc: ccRecipients.filter(c => c.trim()).join(', '),
+            subject: subject.trim(),
+            body: currentBody,
+            fromAddress: fromAddress || null,
+            replyEmailId: replyEmailId || null,
+            projektId: !isAnfrageContext && entityId ? entityId : null,
+            anfrageId: isAnfrageContext && entityId ? entityId : null,
+        };
+
+        try {
+            setDraftSaving(true);
+            if (draftId) {
+                await fetch(`/api/emails/drafts/${draftId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(draftData),
+                });
+            } else {
+                const res = await fetch('/api/emails/drafts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(draftData),
+                });
+                if (res.ok) {
+                    const saved = await res.json();
+                    setDraftId(saved.id);
+                }
+            }
+        } catch (err) {
+            console.warn('Draft auto-save fehlgeschlagen:', err);
+        } finally {
+            setDraftSaving(false);
+        }
+    }, [recipient, subject, body, ccRecipients, fromAddress, replyEmailId, entityId, isAnfrageContext, draftId]);
+
+    // Debounced auto-save: bei jeder relevanten Änderung wird nach 2s gespeichert
+    useEffect(() => {
+        if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+        draftSaveTimer.current = setTimeout(() => {
+            saveDraft();
+        }, 2000);
+        return () => {
+            if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+        };
+    }, [saveDraft]);
+
+    // Draft löschen (nach Send oder wenn User Entwurf verwirft)
+    const deleteDraft = useCallback(async () => {
+        if (!draftId) return;
+        try {
+            await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
+            setDraftId(null);
+        } catch (err) {
+            console.warn('Draft löschen fehlgeschlagen:', err);
+        }
+    }, [draftId]);
     const loadSignature = useCallback(async () => {
         try {
             const currentUser = getCurrentFrontendUser();
@@ -595,8 +668,8 @@ export function EmailComposeForm({
                 ? suggestion
                 : suggestion.split(/\n{2,}/).filter(Boolean).map((p: string) => `<p>${p}</p>`).join('');
 
-            // 4. Alles wieder zusammensetzen: Optimierter Text + Zitat + Signatur
-            const newContent = `${htmlSuggestion}${quoteHtml ? '<br>' + quoteHtml : ''}${sigHtml || signature}`;
+            // 4. Alles wieder zusammensetzen: Optimierter Text + Signatur + Zitat
+            const newContent = `${htmlSuggestion}${sigHtml || signature}${quoteHtml ? '<br>' + quoteHtml : ''}`;
             setBody(newContent);
             if (editorRef.current) {
                 editorRef.current.innerHTML = newContent;
@@ -668,6 +741,9 @@ export function EmailComposeForm({
             if (!res.ok) {
                 throw new Error('E-Mail senden fehlgeschlagen');
             }
+
+            // Draft nach erfolgreichem Senden löschen
+            await deleteDraft();
 
             // Check if the recipient email is new (not in known emails)
             const isNewEmail = finalRecipient && !availableEmails.some(
@@ -1053,6 +1129,7 @@ export function EmailComposeForm({
                                 className="h-full min-h-[240px] rounded-xl border border-slate-200 p-4 outline-none overflow-auto focus-within:border-rose-300"
                                 contentEditable
                                 suppressContentEditableWarning
+                                onInput={() => setBody(editorRef.current?.innerHTML || '')}
                             />
                         </div>
                     </div>
@@ -1061,18 +1138,23 @@ export function EmailComposeForm({
             </div>
 
             {/* Footer – immer sichtbar, damit "E-Mail senden" nie verdeckt wird */}
-            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 flex-shrink-0 relative z-10">
-                <Button variant="outline" onClick={onClose} disabled={sending}>
-                    Abbrechen
-                </Button>
-                <Button
-                    onClick={handleSend}
-                    disabled={sending || !recipient.trim() || !subject.trim()}
-                    className="bg-rose-600 hover:bg-rose-700 text-white"
-                >
-                    {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                    {sending ? 'Wird gesendet...' : 'E-Mail senden'}
-                </Button>
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between flex-shrink-0 relative z-10">
+                <span className="text-xs text-slate-400">
+                    {draftSaving ? 'Entwurf wird gespeichert…' : draftId ? 'Entwurf gespeichert' : ''}
+                </span>
+                <div className="flex gap-3">
+                    <Button variant="outline" onClick={onClose} disabled={sending}>
+                        Schließen
+                    </Button>
+                    <Button
+                        onClick={handleSend}
+                        disabled={sending || !recipient.trim() || !subject.trim()}
+                        className="bg-rose-600 hover:bg-rose-700 text-white"
+                    >
+                        {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                        {sending ? 'Wird gesendet...' : 'E-Mail senden'}
+                    </Button>
+                </div>
             </div>
 
             {/* Save Email Dialog */}

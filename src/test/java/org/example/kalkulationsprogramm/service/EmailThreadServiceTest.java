@@ -12,6 +12,7 @@ import java.util.Optional;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.dto.EmailThreadDto;
+import org.example.kalkulationsprogramm.repository.EmailDraftRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +38,9 @@ class EmailThreadServiceTest {
 
     @Mock
     private EmailRepository emailRepository;
+
+    @Mock
+    private EmailDraftRepository emailDraftRepository;
 
     @InjectMocks
     private EmailThreadService service;
