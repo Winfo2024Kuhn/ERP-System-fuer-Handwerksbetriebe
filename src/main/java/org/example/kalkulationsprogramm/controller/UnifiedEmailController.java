@@ -48,6 +48,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -742,6 +743,70 @@ public class UnifiedEmailController {
         emailRepository.delete(email);
         log.info("Email {} permanent gelöscht", id);
         return ResponseEntity.noContent().build();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // MOVE TO FOLDER (Drag & Drop / Button / Wiederherstellen)
+    // ═══════════════════════════════════════════════════════════════
+
+    public record MoveToFolderRequest(List<Long> ids, String targetFolder) {}
+
+    /**
+     * Verschiebt eine oder mehrere E-Mails in einen Ordner.
+     * Gültige Ziele: inbox, trash, spam, newsletter.
+     * - inbox: Wiederherstellen (aus Papierkorb/Spam/Newsletter zurück in den Posteingang)
+     * - trash: Soft-Delete (Papierkorb)
+     * - spam: Als Spam markieren + Bayes-Training
+     * - newsletter: Als Newsletter markieren
+     */
+    @PostMapping("/bulk/move-to-folder")
+    @Transactional
+    public ResponseEntity<Map<String, Integer>> moveToFolder(@RequestBody MoveToFolderRequest req) {
+        if (req == null || req.ids() == null || req.targetFolder() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ids und targetFolder sind Pflicht");
+        }
+
+        String target = req.targetFolder();
+        if (!Set.of("inbox", "trash", "spam", "newsletter").contains(target)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Ungültiger targetFolder: " + target);
+        }
+
+        List<Email> emails = emailRepository.findAllById(req.ids());
+        int moved = 0;
+        for (Email email : emails) {
+            switch (target) {
+                case "inbox" -> {
+                    email.setDeletedAt(null);
+                    email.setSpam(false);
+                    email.setNewsletter(false);
+                    email.setUserSpamVerdict("HAM");
+                    email.setSpamScore(0);
+                    if (spamBayesService.isModelReady()) {
+                        spamBayesService.train(email, false);
+                    }
+                }
+                case "trash" -> email.setDeletedAt(LocalDateTime.now());
+                case "spam" -> {
+                    email.setDeletedAt(null);
+                    email.setSpam(true);
+                    email.setUserSpamVerdict("SPAM");
+                    email.setSpamScore(100);
+                    spamBayesService.train(email, true);
+                }
+                case "newsletter" -> {
+                    email.setDeletedAt(null);
+                    email.setSpam(false);
+                    email.setNewsletter(true);
+                }
+            }
+            moved++;
+        }
+        if (moved > 0) {
+            emailRepository.saveAll(emails);
+        }
+        log.info("Bulk move-to-folder: {} Mails nach '{}' verschoben", moved, target);
+        return ResponseEntity.ok(Map.of("moved", moved));
     }
 
     /** Alle E-Mails eines Ordners auf gelesen setzen. */
