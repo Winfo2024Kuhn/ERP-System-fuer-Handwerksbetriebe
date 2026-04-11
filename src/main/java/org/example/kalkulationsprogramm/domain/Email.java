@@ -140,6 +140,9 @@ public class Email {
     @Column(nullable = false)
     private boolean isRead = false;
 
+    @Column(nullable = false)
+    private boolean isStarred = false;
+
     // ═══════════════════════════════════════════════════════════════
     // ZUORDNUNG (exklusiv: nur 1 darf gesetzt sein!)
     // ═══════════════════════════════════════════════════════════════

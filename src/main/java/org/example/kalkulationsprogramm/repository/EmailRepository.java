@@ -438,6 +438,16 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   long countSpamUnread();
 
   // ═══════════════════════════════════════════════════════════════
+  // STARRED / MARKIERT
+  // ═══════════════════════════════════════════════════════════════
+
+  @Query("SELECT e FROM Email e WHERE e.isStarred = true AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  List<Email> findStarred();
+
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.isStarred = true AND e.deletedAt IS NULL AND e.isRead = false")
+  long countStarredUnread();
+
+  // ═══════════════════════════════════════════════════════════════
   // GLOBALE SUCHE
   // ═══════════════════════════════════════════════════════════════
 

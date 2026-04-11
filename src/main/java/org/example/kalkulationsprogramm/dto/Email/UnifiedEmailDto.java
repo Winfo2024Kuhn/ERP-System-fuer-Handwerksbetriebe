@@ -33,6 +33,9 @@ public class UnifiedEmailDto {
     @JsonProperty("isRead")
     private boolean isRead; // Computed: firstViewedAt != null
 
+    @JsonProperty("isStarred")
+    private boolean isStarred;
+
     // Metadaten
     private String direction; // IN, OUT
     private String zuordnungTyp; // KEINE, PROJEKT, ANFRAGE, LIEFERANT

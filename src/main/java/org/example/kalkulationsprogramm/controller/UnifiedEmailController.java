@@ -585,6 +585,15 @@ public class UnifiedEmailController {
                 .collect(Collectors.toList());
     }
 
+    @GetMapping("/starred")
+    @Transactional(readOnly = true)
+    public List<UnifiedEmailDto> getStarredEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findStarred().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // EINZELNE EMAIL
     // ═══════════════════════════════════════════════════════════════
@@ -817,6 +826,7 @@ public class UnifiedEmailController {
             case "inbox"      -> emailRepository.findInboxFiltered();
             case "spam"       -> emailRepository.findSpam();
             case "newsletter" -> emailRepository.findNewsletter();
+            case "starred"    -> emailRepository.findStarred();
             case "unassigned" -> emailRepository.findUnassigned();
             case "inquiries"  -> emailRepository.findPotentialInquiries();
             case "projects"   -> emailRepository.findProjectEmails();
@@ -856,6 +866,79 @@ public class UnifiedEmailController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/{id}/toggle-star")
+    @Transactional
+    public ResponseEntity<Map<String, Boolean>> toggleStar(@PathVariable Long id) {
+        Email email = emailRepository.findById(id).orElse(null);
+        if (email == null) {
+            return ResponseEntity.notFound().build();
+        }
+        email.setStarred(!email.isStarred());
+        emailRepository.save(email);
+        return ResponseEntity.ok(Map.of("isStarred", email.isStarred()));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ANHÄNGE – ZIP DOWNLOAD
+    // ═══════════════════════════════════════════════════════════════
+
+    @GetMapping("/{emailId}/attachments/download-all")
+    public ResponseEntity<byte[]> downloadAllAttachments(@PathVariable Long emailId) {
+        Email email = emailRepository.findById(emailId).orElse(null);
+        if (email == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (email.getAttachments() == null || email.getAttachments().isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos);
+            java.nio.file.Path baseDir = Path.of(mailAttachmentDir).toAbsolutePath().normalize();
+
+            for (EmailAttachment att : email.getAttachments()) {
+                // Skip inline images
+                if (Boolean.TRUE.equals(att.getInlineAttachment())) continue;
+
+                java.nio.file.Path path = baseDir.resolve(att.getStoredFilename()).normalize();
+                if (!path.startsWith(baseDir)) {
+                    log.warn("Path traversal attempt blocked for attachment: {}", att.getStoredFilename());
+                    continue;
+                }
+                if (!java.nio.file.Files.exists(path)) {
+                    path = baseDir.resolve(String.valueOf(emailId)).resolve(att.getStoredFilename()).normalize();
+                }
+                if (!path.startsWith(baseDir) || !java.nio.file.Files.exists(path)) {
+                    path = baseDir.resolve("attachments").resolve(String.valueOf(emailId)).resolve(att.getStoredFilename()).normalize();
+                }
+                if (!path.startsWith(baseDir) || !java.nio.file.Files.exists(path)) {
+                    log.warn("Attachment file not found for zip: {}", att.getStoredFilename());
+                    continue;
+                }
+
+                // Sanitize zip entry name to prevent zip-slip
+                String filename = att.getOriginalFilename() != null ? att.getOriginalFilename() : att.getStoredFilename();
+                filename = Path.of(filename).getFileName().toString();
+                zos.putNextEntry(new java.util.zip.ZipEntry(filename));
+                java.nio.file.Files.copy(path, zos);
+                zos.closeEntry();
+            }
+            zos.finish();
+            zos.close();
+
+            String zipName = "Anhaenge_" + (email.getSubject() != null ? email.getSubject().replaceAll("[^a-zA-Z0-9äöüÄÖÜß_-]", "_").substring(0, Math.min(email.getSubject().length(), 40)) : emailId) + ".zip";
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + zipName + "\"")
+                    .body(baos.toByteArray());
+        } catch (Exception e) {
+            log.error("Fehler beim Erstellen des ZIP-Archivs", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // STATISTIKEN
     // ═══════════════════════════════════════════════════════════════
@@ -891,6 +974,7 @@ public class UnifiedEmailController {
 
         stats.setUnassignedCount(emailRepository.countUnassigned());
         stats.setInquiriesCount(emailRepository.countPotentialInquiries());
+        stats.setStarredCount(emailRepository.countStarredUnread());
 
         return stats;
     }
@@ -1425,6 +1509,7 @@ public class UnifiedEmailController {
 
         dto.setSentAt(email.getSentAt());
         dto.setRead(email.isRead());
+        dto.setStarred(email.isStarred());
         dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
         dto.setSpamScore(email.getSpamScore());
@@ -1481,6 +1566,7 @@ public class UnifiedEmailController {
         dto.setSentAt(email.getSentAt());
         dto.setFirstViewedAt(email.getFirstViewedAt());
         dto.setRead(email.isRead()); // Use actual isRead field from entity
+        dto.setStarred(email.isStarred());
         dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
         dto.setSpamScore(email.getSpamScore());

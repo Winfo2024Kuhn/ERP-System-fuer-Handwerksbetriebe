@@ -26,6 +26,7 @@ import {
     Star,
     Package,
     Reply,
+    Forward,
     Newspaper,
     Globe,
     X,
@@ -34,7 +35,9 @@ import {
     MessagesSquare,
     DatabaseZap,
     RotateCcw,
-    FolderInput
+    FolderInput,
+    ArrowDownAZ,
+    ArrowUpAZ
 } from 'lucide-react';
 import {
     DndContext,
@@ -105,10 +108,11 @@ interface EmailItem {
     // Thread-Informationen
     parentEmailId?: number;   // null/undefined = Thread-Wurzel
     replyCount?: number;      // Anzahl direkter Antworten
+    isStarred?: boolean;
 }
 
 // Folder Types
-type FolderType = 'inbox' | 'sent' | 'trash' | 'spam' | 'newsletter' | 'projects' | 'offers' | 'suppliers' | 'unassigned';
+type FolderType = 'inbox' | 'sent' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'unassigned';
 
 
 
@@ -339,7 +343,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
 }
 
 // Main EmailCenter Component
-const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'trash', 'spam', 'newsletter', 'projects', 'offers', 'suppliers', 'unassigned'];
+const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'unassigned'];
 
 // ─────────────────────────────────────────────────────────────
 // DnD helper components (Drag & Drop für Ordner-Verschieben)
@@ -490,11 +494,13 @@ export default function EmailCenter() {
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [folderCounts, setFolderCounts] = useState({
         inbox: 0, sent: 0, trash: 0, spam: 0, newsletter: 0,
-        projects: 0, offers: 0, suppliers: 0, unassigned: 0
+        starred: 0, projects: 0, offers: 0, suppliers: 0, unassigned: 0
     });
     const [expandedFilters, setExpandedFilters] = useState(true);
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
     const [showSettings, setShowSettings] = useState(false);
+    const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+    const [forwardEmail, setForwardEmail] = useState<EmailItem | null>(null);
 
     // Thread-State für Konversationsverlauf
     const [thread, setThread] = useState<EmailThread | null>(null);
@@ -535,19 +541,57 @@ export default function EmailCenter() {
         }
         setReplyToEmail(fullEmail);
         setReplyToEmailId(replyId ?? email.id);
+        setForwardEmail(null);
         setIsComposing(true);
+    };
+
+    const handleForward = async (email: EmailItem) => {
+        let fullEmail = email;
+        if (!email.htmlBody) {
+            try {
+                const res = await fetch(`/api/emails/${email.id}`);
+                if (res.ok) fullEmail = await res.json();
+            } catch { /* use truncated version as fallback */ }
+        }
+        setReplyToEmail(null);
+        setReplyToEmailId(undefined);
+        setForwardEmail(fullEmail);
+        setIsComposing(true);
+    };
+
+    const handleToggleStar = async (emailId: number, e?: React.MouseEvent) => {
+        if (e) { e.stopPropagation(); e.preventDefault(); }
+        // Optimistic update
+        setEmails(prev => prev.map(em => em.id === emailId ? { ...em, isStarred: !em.isStarred } : em));
+        if (selectedEmail?.id === emailId) {
+            setSelectedEmail(prev => prev ? { ...prev, isStarred: !prev.isStarred } : prev);
+        }
+        try {
+            const res = await fetch(`/api/emails/${emailId}/toggle-star`, { method: 'POST' });
+            if (!res.ok) throw new Error();
+            loadStats();
+        } catch {
+            // Revert on error
+            setEmails(prev => prev.map(em => em.id === emailId ? { ...em, isStarred: !em.isStarred } : em));
+            if (selectedEmail?.id === emailId) {
+                setSelectedEmail(prev => prev ? { ...prev, isStarred: !prev.isStarred } : prev);
+            }
+            toast.error('Stern konnte nicht gesetzt werden');
+        }
     };
 
     const handleComposeClose = () => {
         setIsComposing(false);
         setReplyToEmail(null);
         setReplyToEmailId(undefined);
+        setForwardEmail(null);
     };
 
     const handleComposeSuccess = () => {
         setIsComposing(false);
         setReplyToEmail(null);
         setReplyToEmailId(undefined);
+        setForwardEmail(null);
         // Reload in background without resetting scroll/selection
         refreshEmailsSilently();
         loadStats();
@@ -562,6 +606,7 @@ export default function EmailCenter() {
             'trash': '/api/emails/trash',
             'spam': '/api/emails/spam',
             'newsletter': '/api/emails/newsletter',
+            'starred': '/api/emails/starred',
             'projects': '/api/emails/projects',
             'offers': '/api/emails/offers',
             'suppliers': '/api/emails/suppliers',
@@ -629,6 +674,7 @@ export default function EmailCenter() {
                     trash: stats.trashCount || 0,
                     spam: stats.spamCount || 0,
                     newsletter: stats.newsletterCount || 0,
+                    starred: stats.starredCount || 0,
                     unassigned: stats.unassignedCount || 0,
                     projects: stats.projectCount || 0,
                     offers: stats.offerCount || 0,
@@ -649,6 +695,7 @@ export default function EmailCenter() {
                 'trash': '/api/emails/trash',
                 'spam': '/api/emails/spam',
                 'newsletter': '/api/emails/newsletter',
+                'starred': '/api/emails/starred',
                 'projects': '/api/emails/projects',
                 'offers': '/api/emails/offers',
                 'suppliers': '/api/emails/suppliers',
@@ -1288,8 +1335,13 @@ export default function EmailCenter() {
                 )
             );
         }
-        return base;
-    }, [emails, searchQuery, isGlobalSearch, globalSearchResults]);
+        // Sort by date
+        return [...base].sort((a, b) => {
+            const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+            const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+    }, [emails, searchQuery, isGlobalSearch, globalSearchResults, sortOrder]);
 
     // Right Pane Content Logic
     const renderRightPane = () => {
@@ -1320,8 +1372,38 @@ export default function EmailCenter() {
             let initialRecipient = '';
             let initialSubject = '';
             let replyQuote: string | undefined;
+            let initialBody: string | undefined;
 
-            if (replyToEmail) {
+            if (forwardEmail) {
+                // Forward mode – empty recipient, Fwd: prefix, original body as quote
+                initialSubject = forwardEmail.subject?.startsWith('Fwd:') || forwardEmail.subject?.startsWith('WG:')
+                    ? forwardEmail.subject
+                    : `Fwd: ${forwardEmail.subject || ''}`;
+
+                const senderName = getSenderName(forwardEmail);
+                const date = new Date(forwardEmail.sentAt || '').toLocaleDateString('de-DE', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                }) + ', ' + new Date(forwardEmail.sentAt || '').toLocaleTimeString('de-DE', {
+                    hour: '2-digit', minute: '2-digit',
+                }) + ' Uhr';
+
+                let cleanBody = forwardEmail.htmlBody || forwardEmail.body || '';
+                try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(cleanBody, 'text/html');
+                    doc.querySelectorAll('script, style, link').forEach(el => el.remove());
+                    cleanBody = doc.body.innerHTML;
+                } catch { /* ignore */ }
+
+                initialBody = `<br/><div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:1rem;color:#64748b">
+                    <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">---------- Weitergeleitete Nachricht ----------<br/>
+                    Von: ${senderName} &lt;${forwardEmail.fromAddress || ''}&gt;<br/>
+                    Datum: ${date}<br/>
+                    Betreff: ${forwardEmail.subject || ''}<br/>
+                    An: ${forwardEmail.recipient || ''}</p>
+                    ${cleanBody}
+                </div>`;
+            } else if (replyToEmail) {
                 const senderName = getSenderName(replyToEmail);
                 const match = replyToEmail.fromAddress?.match(/<(.+)>/);
                 const senderEmail = match ? match[1] : (replyToEmail.fromAddress || '');
@@ -1356,10 +1438,11 @@ export default function EmailCenter() {
                     onSuccess={handleComposeSuccess}
                     initialRecipient={initialRecipient}
                     initialSubject={initialSubject}
+                    initialBody={initialBody}
                     replyQuote={replyQuote}
                     replyEmailId={replyToEmailId}
-                    projektId={replyToEmail?.projektId}
-                    anfrageId={replyToEmail?.anfrageId}
+                    projektId={(replyToEmail ?? forwardEmail)?.projektId}
+                    anfrageId={(replyToEmail ?? forwardEmail)?.anfrageId}
                 />
             );
         }
@@ -1596,6 +1679,20 @@ export default function EmailCenter() {
                                     <ShieldAlert className="w-4 h-4" />
                                 </Button>
                                 <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => handleToggleStar(selectedEmail.id, e)}
+                                    className={cn(
+                                        "transition-colors",
+                                        selectedEmail.isStarred
+                                            ? "text-amber-500 hover:text-amber-600 hover:bg-amber-50"
+                                            : "text-slate-400 hover:text-amber-500 hover:bg-amber-50"
+                                    )}
+                                    title={selectedEmail.isStarred ? 'Markierung entfernen' : 'Markieren'}
+                                >
+                                    <Star className={cn("w-4 h-4", selectedEmail.isStarred && "fill-amber-400")} />
+                                </Button>
+                                <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleReply(selectedEmail)}
@@ -1603,6 +1700,32 @@ export default function EmailCenter() {
                                 >
                                     <Reply className="w-4 h-4" /> Antworten
                                 </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleForward(selectedEmail)}
+                                    className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                                >
+                                    <Forward className="w-4 h-4" /> Weiterleiten
+                                </Button>
+                                {/* Download all attachments as ZIP */}
+                                {selectedEmail.attachments && selectedEmail.attachments.filter(a => !a.inline).length > 1 && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            const a = document.createElement('a');
+                                            a.href = `/api/emails/${selectedEmail.id}/attachments/download-all`;
+                                            a.download = '';
+                                            a.click();
+                                        }}
+                                        className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1.5"
+                                        title="Alle Anhänge als ZIP herunterladen"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        <span className="text-xs">ZIP</span>
+                                    </Button>
+                                )}
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -1775,6 +1898,17 @@ export default function EmailCenter() {
                         droppable={false}
                         dragActive={dragActiveEmail !== null}
                     />
+                    <DroppableFolderButton
+                        folderId="starred"
+                        icon={Star}
+                        label="Markiert"
+                        count={folderCounts.starred}
+                        isActive={activeFolder === 'starred'}
+                        onClick={() => setActiveFolder('starred')}
+                        droppable={false}
+                        dragActive={dragActiveEmail !== null}
+                        countVariant="amber"
+                    />
 
                     <div className="h-px bg-slate-200 my-2.5" />
 
@@ -1922,6 +2056,17 @@ export default function EmailCenter() {
                             <Globe className="w-3 h-3" />
                             Alle Ordner
                         </button>
+                        {/* Sort toggle */}
+                        <button
+                            onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                            className={cn(
+                                "flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer shrink-0",
+                                "text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                            )}
+                            title={sortOrder === 'desc' ? 'Neueste zuerst – klicken für Älteste zuerst' : 'Älteste zuerst – klicken für Neueste zuerst'}
+                        >
+                            {sortOrder === 'desc' ? <ArrowDownAZ className="w-3.5 h-3.5" /> : <ArrowUpAZ className="w-3.5 h-3.5" />}
+                        </button>
                     </div>
                 </div>
 
@@ -1991,9 +2136,21 @@ export default function EmailCenter() {
                                         )}>
                                             {getDisplayName(email)}
                                         </p>
-                                        <span className="text-xs text-slate-400 whitespace-nowrap">
-                                            {formatDate(email.sentAt)}
-                                        </span>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                                onClick={(e) => handleToggleStar(email.id, e)}
+                                                className="p-0.5 rounded hover:bg-amber-50 transition-colors cursor-pointer"
+                                                title={email.isStarred ? 'Markierung entfernen' : 'Markieren'}
+                                            >
+                                                <Star className={cn(
+                                                    "w-3.5 h-3.5 transition-colors",
+                                                    email.isStarred ? "fill-amber-400 text-amber-400" : "text-slate-300 hover:text-amber-400"
+                                                )} />
+                                            </button>
+                                            <span className="text-xs text-slate-400 whitespace-nowrap">
+                                                {formatDate(email.sentAt)}
+                                            </span>
+                                        </div>
                                     </div>
                                     <p className={cn(
                                         "text-sm mb-1 truncate",
