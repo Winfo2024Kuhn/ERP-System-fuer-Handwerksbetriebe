@@ -613,7 +613,11 @@ export default function EmailCenter() {
                     .catch(err => console.error('Failed to mark as read:', err));
             }
         } else {
-            // Email not in current folder - try fetching it directly
+            // Nicht fetchen wenn die Email gerade optimistisch entfernt wird (Spam, Löschen, Blockieren)
+            // – verhindert Race-Condition: URL-Param ist noch gesetzt während die Email bereits aus
+            // der Liste entfernt wurde, Backend hat die Email aber noch nicht verschoben.
+            if (pendingRemovalsRef.current.has(emailId)) return;
+            // Email not in current folder - try fetching it directly (cross-folder deep-link)
             fetch(`/api/emails/${emailId}`)
                 .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
                 .then((email: EmailItem) => {
