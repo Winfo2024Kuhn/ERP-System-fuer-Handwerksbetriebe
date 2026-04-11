@@ -360,6 +360,9 @@ export default function EmailCenter() {
     const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; timestamp: number }>>(new Map());
     // Ref to guard against stale async responses when switching folders quickly
     const activeFolderRef = useRef<FolderType>(activeFolder);
+    // IDs die gerade optimistisch entfernt werden (Spam, Löschen, Blockieren) – verhindert
+    // dass der Deep-Link-Effect die Email via API-Fetch zurücksetzt bevor die URL gecleart ist
+    const pendingRemovalsRef = useRef<Set<number>>(new Set());
     activeFolderRef.current = activeFolder;
 
     // Sync URL when selectedEmail changes (deselection clears emailId from URL)
@@ -737,6 +740,7 @@ export default function EmailCenter() {
         }
 
         const currentIds = Array.from(idsToDelete);
+        currentIds.forEach(id => pendingRemovalsRef.current.add(id));
         setEmails(prev => prev.filter(item => !idsToDelete.has(item.id)));
 
         setSelectedIds(prev => {
@@ -773,7 +777,7 @@ export default function EmailCenter() {
 
         for (const emailId of idsToAssign) {
             const url = type === 'projekt'
-                ? `/api/emails/${emailId}/assign/${targetId}`
+                ? `/api/emails/${emailId}/assign/projekt/${targetId}`
                 : `/api/emails/${emailId}/assign/anfrage/${targetId}`;
             const res = await fetch(url, { method: 'POST' });
             if (!res.ok) throw new Error('Failed to assign');
@@ -799,6 +803,7 @@ export default function EmailCenter() {
 
         // Optimistic: remove from list immediately
         const idsSet = new Set(ids);
+        ids.forEach(id => pendingRemovalsRef.current.add(id));
         setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
         setSelectedIds(new Set());
         setSelectedEmail(null);
@@ -825,6 +830,7 @@ export default function EmailCenter() {
 
         // Optimistic: remove from list immediately
         const idsSet = new Set(ids);
+        ids.forEach(id => pendingRemovalsRef.current.add(id));
         setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
         setSelectedIds(new Set());
         setSelectedEmail(null);
@@ -851,6 +857,7 @@ export default function EmailCenter() {
 
         // Optimistic: remove from list immediately
         const idsSet = new Set(ids);
+        ids.forEach(id => pendingRemovalsRef.current.add(id));
         setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
         setSelectedIds(new Set());
         setSelectedEmail(null);
@@ -1243,7 +1250,7 @@ export default function EmailCenter() {
                     <div className="p-6 border-b border-slate-200">
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
-                                <h2 className="text-xl font-bold text-slate-900 mb-2">
+                                <h2 className="text-xl font-bold text-slate-900 mb-2 break-words">
                                     {selectedEmail.subject || '(Kein Betreff)'}
                                 </h2>
                                 <div className="flex items-center gap-3 text-sm text-slate-600">
@@ -1276,7 +1283,7 @@ export default function EmailCenter() {
                             </div>
 
                             {/* Actions */}
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 shrink-0">
                                 {activeFolder === 'spam' ? (
                                     <Button
                                         variant="ghost"
@@ -1920,11 +1927,11 @@ export default function EmailCenter() {
                             </Button>
                         </DialogTitle>
                     </DialogHeader>
-                    <div className="flex-1 min-h-0 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                    <div className="flex-1 min-h-0 rounded-lg overflow-y-auto overflow-x-hidden border border-slate-200 bg-slate-100">
                         {previewAttachment?.type === 'pdf' ? (
                             <PdfCanvasViewer
                                 url={previewAttachment.url}
-                                className="w-full h-full overflow-y-auto overflow-x-hidden"
+                                className="w-full"
                             />
                         ) : (
                             <div className="flex items-center justify-center h-full text-center text-slate-500">

@@ -67,7 +67,7 @@ public class SpamBayesService {
     private static final Pattern PURE_NUMBER = Pattern.compile("\\d+");
 
     /** HTML-Tag-Pattern zum Strippen. */
-    private static final Pattern HTML_TAGS = Pattern.compile("<[^>]+>");
+    private static final Pattern HTML_TAGS = Pattern.compile("<[^>]++>");
 
     // ═══════════════════════════════════════════════════════════════
     // IN-MEMORY CACHE
