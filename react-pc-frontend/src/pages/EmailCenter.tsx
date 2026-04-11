@@ -19,7 +19,6 @@ import {
     ChevronRight,
     File,
     PenSquare,
-    HelpCircle,
     ShieldAlert,
     ShieldCheck,
     ShieldX,
@@ -96,7 +95,7 @@ interface EmailItem {
 }
 
 // Folder Types
-type FolderType = 'inbox' | 'sent' | 'trash' | 'spam' | 'newsletter' | 'projects' | 'offers' | 'suppliers' | 'unassigned' | 'inquiries';
+type FolderType = 'inbox' | 'sent' | 'trash' | 'spam' | 'newsletter' | 'projects' | 'offers' | 'suppliers' | 'unassigned';
 
 
 
@@ -327,7 +326,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
 }
 
 // Main EmailCenter Component
-const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'trash', 'spam', 'newsletter', 'projects', 'offers', 'suppliers', 'unassigned', 'inquiries'];
+const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'trash', 'spam', 'newsletter', 'projects', 'offers', 'suppliers', 'unassigned'];
 
 export default function EmailCenter() {
     const toast = useToast();
@@ -386,7 +385,7 @@ export default function EmailCenter() {
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [folderCounts, setFolderCounts] = useState({
         inbox: 0, sent: 0, trash: 0, spam: 0, newsletter: 0,
-        projects: 0, offers: 0, suppliers: 0, unassigned: 0, inquiries: 0
+        projects: 0, offers: 0, suppliers: 0, unassigned: 0
     });
     const [expandedFilters, setExpandedFilters] = useState(true);
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
@@ -462,7 +461,6 @@ export default function EmailCenter() {
             'offers': '/api/emails/offers',
             'suppliers': '/api/emails/suppliers',
             'unassigned': '/api/emails/unassigned',
-            'inquiries': '/api/emails/inquiries'
         };
         const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
 
@@ -527,7 +525,6 @@ export default function EmailCenter() {
                     spam: stats.spamCount || 0,
                     newsletter: stats.newsletterCount || 0,
                     unassigned: stats.unassignedCount || 0,
-                    inquiries: stats.inquiriesCount || 0,
                     projects: stats.projectCount || 0,
                     offers: stats.offerCount || 0,
                     suppliers: stats.supplierCount || 0
@@ -551,7 +548,6 @@ export default function EmailCenter() {
                 'offers': '/api/emails/offers',
                 'suppliers': '/api/emails/suppliers',
                 'unassigned': '/api/emails/unassigned',
-                'inquiries': '/api/emails/inquiries'
             };
             const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
             const res = await fetch(endpoint);
@@ -1500,24 +1496,6 @@ export default function EmailCenter() {
                                 {folderCounts.unassigned > 0 && (
                                     <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full">
                                         {folderCounts.unassigned}
-                                    </span>
-                                )}
-                            </button>
-
-                            <button
-                                onClick={() => setActiveFolder('inquiries')}
-                                className={cn(
-                                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
-                                    activeFolder === 'inquiries'
-                                        ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
-                                        : "text-slate-700 hover:bg-slate-50"
-                                )}
-                            >
-                                <HelpCircle className="w-4 h-4" />
-                                <span className="flex-1 text-left">Anfragen</span>
-                                {folderCounts.inquiries > 0 && (
-                                    <span className="bg-rose-100 text-rose-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-                                        {folderCounts.inquiries}
                                     </span>
                                 )}
                             </button>
