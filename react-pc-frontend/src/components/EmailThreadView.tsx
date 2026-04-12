@@ -241,7 +241,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
     const fromEmail = extractEmail(entry.fromAddress);
     const toName = extractDisplayName(entry.recipient);
     const toEmail = extractEmail(entry.recipient);
-    const avatarName = isOut ? toName : fromName;
+    const avatarName = fromName; // immer der Absender
     const initial = (avatarName.charAt(0) || '?').toUpperCase();
     const avatarBg = isOut ? 'bg-emerald-500' : 'bg-rose-500';
 
@@ -278,7 +278,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-0.5">
                             <p className="font-semibold text-slate-900 truncate text-sm">
-                                {isOut ? toName : fromName}
+                                {fromName}
                             </p>
                             <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
                                 {formatDateTime(entry.sentAt)}
@@ -366,7 +366,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
             <div className={cn('flex flex-col max-w-[72%]', isOut ? 'items-end' : 'items-start')}>
                 {showSenderName && (
                     <p className={cn('text-xs font-semibold mb-1 px-1', isOut ? 'text-emerald-700' : 'text-rose-700')}>
-                        {isOut ? toName : fromName}
+                        {fromName}
                     </p>
                 )}
                 <div
