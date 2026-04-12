@@ -34,7 +34,6 @@ import {
     CheckSquare,
     MailCheck,
     MessagesSquare,
-    DatabaseZap,
     RotateCcw,
     FolderInput,
     ArrowDownAZ,
@@ -1226,81 +1225,6 @@ export default function EmailCenter() {
         }
     };
 
-    const handleBackfillThreads = async () => {
-        if (!await confirmDialog({
-            title: "Thread-Verknüpfungen rückwirkend aufbauen",
-            message: "Alle gespeicherten E-Mails werden anhand von Message-ID / In-Reply-To / References rückwirkend zu Threads verknüpft.\nDies kann bei vielen E-Mails einen Moment dauern.",
-            variant: "info",
-            confirmLabel: "Starten"
-        })) return;
-
-        setLoading(true);
-        try {
-            const res = await fetch('/api/emails/backfill-parents', { method: 'POST' });
-            if (res.ok) {
-                const data = await res.json();
-                toast.success(data.message || `${data.updatedCount} E-Mails verknüpft`);
-                loadEmails();
-                loadStats();
-            } else {
-                toast.error('Fehler beim Backfill');
-            }
-        } catch (err) {
-            console.error(err);
-            toast.error('Fehler beim Backfill');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleBackfillAttachmentFilenames = async () => {
-        if (!await confirmDialog({
-            title: "Anhang-Dateinamen reparieren",
-            message: "Alle MIME-kodierten Dateinamen (z.B. =?iso-8859-1?Q?...?=) werden in der Datenbank in lesbare Namen umgewandelt.\nDies ist einmalig nötig und dauert einen Moment.",
-            variant: "info",
-            confirmLabel: "Reparieren"
-        })) return;
-
-        setLoading(true);
-        try {
-            const res = await fetch('/api/emails/admin/backfill-attachment-filenames', { method: 'POST' });
-            if (res.ok) {
-                const data = await res.json();
-                toast.success(`${data.updated} Anhang-Dateinamen repariert`);
-                loadEmails();
-            } else {
-                toast.error('Fehler bei der Reparatur');
-            }
-        } catch (err) {
-            console.error(err);
-            toast.error('Fehler bei der Reparatur');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleScanAssignments = async () => {
-        if (!await confirmDialog({ title: "E-Mails erneut prüfen", message: "Alle unzugeordneten E-Mails im Posteingang erneut prüfen?\nDies kann einen Moment dauern.", variant: "info", confirmLabel: "Prüfen" })) return;
-
-        setLoading(true);
-        try {
-            const res = await fetch('/api/emails/scan-assignments', { method: 'POST' });
-            if (res.ok) {
-                const data = await res.json();
-                toast.info(data.message);
-                refreshEmailsSilently();
-                loadStats();
-            } else {
-                toast.error("Fehler beim Scan");
-            }
-        } catch (err) {
-            console.error(err);
-            toast.error("Fehler beim Scan");
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const formatDate = (dateStr?: string) => {
         if (!dateStr) return '-';
         try {
@@ -1963,15 +1887,6 @@ export default function EmailCenter() {
                         <PenSquare className="w-4 h-4" />
                         Neue E-Mail
                     </Button>
-                    <Button
-                        variant="outline"
-                        onClick={handleScanAssignments}
-                        className="w-full gap-2 text-slate-600 border-slate-200 hover:bg-white hover:border-rose-200 hover:text-rose-600 transition-colors"
-                        title="Erneute Prüfung der Zuordnung aller Mails im Posteingang"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        Auto-Zuordnung
-                    </Button>
                 </div>
 
                 {/* Folders */}
@@ -2418,26 +2333,6 @@ export default function EmailCenter() {
                     <div className="flex items-center gap-2">
                         {!isDraftFolderView && selectedIds.size > 0 && (
                             <span className="text-rose-600 font-medium">{selectedIds.size} ausgewählt</span>
-                        )}
-                        {!isDraftFolderView && (
-                            <>
-                                <button
-                                    onClick={handleBackfillThreads}
-                                    title="Thread-Verknüpfungen rückwirkend aufbauen"
-                                    className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                >
-                                    <DatabaseZap className="w-3.5 h-3.5" />
-                                    Threads
-                                </button>
-                                <button
-                                    onClick={handleBackfillAttachmentFilenames}
-                                    title="MIME-kodierte Anhang-Dateinamen reparieren (=?iso-8859-1?Q?...?=)"
-                                    className="flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                >
-                                    <Paperclip className="w-3.5 h-3.5" />
-                                    Dateinamen
-                                </button>
-                            </>
                         )}
                     </div>
                 </div>

@@ -534,14 +534,23 @@ export function EmailComposeForm({
                 }
             });
         } else {
-            // initialBody vorhanden (z.B. aus DocumentEditor) → mit Signatur kombinieren
-            loadSignature().then(sig => {
-                const content = `${initialBody}${sig}`;
-                setBody(content);
+            // initialBody vorhanden (z.B. aus Draft oder DocumentEditor)
+            // Signatur nur anhängen wenn im Body noch keine enthalten ist (Draft enthält sie bereits)
+            const alreadyHasSignature = /email-signature/i.test(initialBody);
+            if (alreadyHasSignature) {
+                setBody(initialBody);
                 if (editorRef.current) {
-                    editorRef.current.innerHTML = content;
+                    editorRef.current.innerHTML = initialBody;
                 }
-            });
+            } else {
+                loadSignature().then(sig => {
+                    const content = `${initialBody}${sig}`;
+                    setBody(content);
+                    if (editorRef.current) {
+                        editorRef.current.innerHTML = content;
+                    }
+                });
+            }
         }
 
         loadEmailDokumente();
