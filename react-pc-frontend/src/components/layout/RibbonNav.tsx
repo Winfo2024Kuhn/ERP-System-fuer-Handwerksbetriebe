@@ -256,14 +256,14 @@ export function RibbonNavigation() {
                     ))}
                 </div>
 
-                {/* KI-Hilfe Button */}
+                {/* KI-Assistent Button */}
                 <button
-                    onClick={() => window.dispatchEvent(new CustomEvent('ki-hilfe-open'))}
+                    onClick={() => navigate('/ki-assistent')}
                     className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
-                    title="KI-Hilfe öffnen"
+                    title="KI-Assistent öffnen"
                 >
                     <Gem className="w-4 h-4" />
-                    <span className="text-sm font-medium hidden lg:inline">KI-Hilfe</span>
+                    <span className="text-sm font-medium hidden lg:inline">KI-Assistent</span>
                 </button>
 
                 {/* Notification Bell */}

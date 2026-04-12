@@ -41,6 +41,7 @@ import ArbeitszeitartEditor from './pages/ArbeitszeitartEditor';
 import EinstellungenEditor from './pages/EinstellungenEditor';
 import LoginPage from './pages/LoginPage';
 import FirstLoginSetupPage from './pages/FirstLoginSetupPage';
+import KiAssistentPage from './pages/KiAssistentPage';
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -99,6 +100,7 @@ export default function App() {
                 <Route path="/abteilung-berechtigungen" element={<RequireAdmin><ErrorBoundary><AbteilungBerechtigungenEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/firma" element={<RequireAdmin><ErrorBoundary><FirmaEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/einstellungen" element={<RequireAdmin><ErrorBoundary><EinstellungenEditor /></ErrorBoundary></RequireAdmin>} />
+                <Route path="/ki-assistent" element={<ErrorBoundary><KiAssistentPage /></ErrorBoundary>} />
 
                 <Route path="*" element={<Navigate to="/projekte" replace />} />
               </Route>

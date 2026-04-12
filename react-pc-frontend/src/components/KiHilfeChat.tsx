@@ -501,7 +501,7 @@ const VALID_ROUTES = new Set([
     '/kalender', '/emails', '/formulare', '/offeneposten',
     '/rechnungsuebersicht', '/miete', '/analyse', '/zeitbuchungen',
     '/auswertung', '/steuerberater', '/zeitkonten', '/feiertage',
-    '/urlaubsantraege', '/firma', '/benutzer',
+    '/urlaubsantraege', '/firma', '/benutzer', '/ki-assistent',
 ]);
 
 /** Simple markdown renderer for assistant messages */
