@@ -1,14 +1,17 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -34,6 +37,14 @@ public class KiToolService {
     private static final int MAX_LIST_RESULTS = 50;
     private static final int MAX_DB_ROWS = 50;
     private static final int MAX_EMAIL_RESULTS = 10;
+    private static final int PYTHON_TIMEOUT_SECONDS = 15;
+    private static final int MAX_PYTHON_OUTPUT = 10_000;
+    private static final Pattern DANGEROUS_PYTHON_PATTERN = Pattern.compile(
+            "\\b(os\\.system|os\\.popen|os\\.exec|subprocess|shutil\\.rmtree|shutil\\.move|" +
+            "__import__|eval\\s*\\(|exec\\s*\\(|compile\\s*\\(|open\\s*\\(.*(w|a|x)" +
+            "|socket\\.|http\\.server|xmlrpc|ctypes|importlib|pathlib\\.Path.*unlink" +
+            "|pathlib\\.Path.*rmdir|pathlib\\.Path.*write|webbrowser)",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern SECRET_PATTERN = Pattern.compile(
             "(password|passwd|secret|api[._-]?key|token|credentials)\\s*[=:]",
             Pattern.CASE_INSENSITIVE);
@@ -43,6 +54,12 @@ public class KiToolService {
     private final LocalRagService localRagService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+
+    @Value("${ai.ki-hilfe.python-enabled:true}")
+    private boolean pythonEnabled;
+
+    @Value("${ai.ki-hilfe.python-command:python}")
+    private String pythonCommand;
 
     /**
      * Builds the Gemini functionDeclarations JSON array for all available tools.
@@ -153,6 +170,31 @@ public class KiToolService {
         searchEmails.set("parameters", emailParams);
         declarations.add(searchEmails);
 
+        // 6) run_python
+        if (pythonEnabled) {
+            ObjectNode runPython = objectMapper.createObjectNode();
+            runPython.put("name", "run_python");
+            runPython.put("description",
+                    "Fuehrt ein Python-Skript aus und gibt stdout/stderr zurueck. " +
+                    "Nutze dies fuer mathematische Berechnungen, Datenanalyse, Formatierungen, " +
+                    "statistische Auswertungen oder wenn du Daten aus query_database weiterverarbeiten willst. " +
+                    "Verfuegbare Module: math, statistics, datetime, decimal, fractions, json, csv, re, collections, itertools, functools. " +
+                    "VERBOTEN: Dateisystem-Zugriff, Netzwerk, os, subprocess. Timeout: 15 Sekunden.");
+            ObjectNode pyParams = objectMapper.createObjectNode();
+            pyParams.put("type", "OBJECT");
+            ObjectNode pyProps = objectMapper.createObjectNode();
+            ObjectNode codeProp = objectMapper.createObjectNode();
+            codeProp.put("type", "STRING");
+            codeProp.put("description", "Der Python-Quellcode. Verwende print() fuer die Ausgabe.");
+            pyProps.set("code", codeProp);
+            pyParams.set("properties", pyProps);
+            ArrayNode pyRequired = objectMapper.createArrayNode();
+            pyRequired.add("code");
+            pyParams.set("required", pyRequired);
+            runPython.set("parameters", pyParams);
+            declarations.add(runPython);
+        }
+
         return declarations;
     }
 
@@ -167,6 +209,7 @@ public class KiToolService {
                 case "list_files" -> listFiles(args.path("directory").asText(""));
                 case "query_database" -> queryDatabase(args.path("sql").asText(""));
                 case "search_emails" -> searchEmails(args.path("query").asText(""));
+                case "run_python" -> runPython(args.path("code").asText(""));
                 default -> "Unbekanntes Tool: " + toolName;
             };
         } catch (Exception e) {
@@ -371,6 +414,80 @@ public class KiToolService {
         } catch (Exception e) {
             log.warn("search_emails Fehler: {}", e.getMessage());
             return "E-Mail-Suche fehlgeschlagen: " + e.getMessage();
+        }
+    }
+
+    private String runPython(String code) {
+        if (!pythonEnabled) {
+            return "Python-Ausfuehrung ist deaktiviert.";
+        }
+        if (code == null || code.isBlank()) {
+            return "Kein Python-Code angegeben.";
+        }
+
+        // Security: block dangerous patterns
+        if (DANGEROUS_PYTHON_PATTERN.matcher(code).find()) {
+            return "Sicherheitsfehler: Der Code enthaelt verbotene Operationen " +
+                    "(Dateisystem-Schreibzugriff, Netzwerk, os, subprocess, eval/exec). " +
+                    "Nur reine Berechnungen und Datenverarbeitung sind erlaubt.";
+        }
+
+        Path tempScript = null;
+        try {
+            // Write code to temp file
+            tempScript = Files.createTempFile("ki_python_", ".py");
+            Files.writeString(tempScript, code, StandardCharsets.UTF_8);
+
+            ProcessBuilder pb = new ProcessBuilder(pythonCommand, tempScript.toString());
+            pb.redirectErrorStream(true);
+            pb.environment().put("PYTHONDONTWRITEBYTECODE", "1");
+            // Remove potentially dangerous env vars
+            pb.environment().remove("PYTHONSTARTUP");
+
+            Process process = pb.start();
+
+            String output;
+            try (var reader = new String(
+                    process.getInputStream().readNBytes(MAX_PYTHON_OUTPUT + 1),
+                    StandardCharsets.UTF_8)) {
+                output = reader;
+            }
+
+            boolean finished = process.waitFor(PYTHON_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return "Timeout: Das Python-Skript hat das Zeitlimit von " +
+                        PYTHON_TIMEOUT_SECONDS + " Sekunden ueberschritten.";
+            }
+
+            int exitCode = process.exitValue();
+
+            if (output.length() > MAX_PYTHON_OUTPUT) {
+                output = output.substring(0, MAX_PYTHON_OUTPUT) +
+                        "\n... (Ausgabe abgeschnitten bei " + MAX_PYTHON_OUTPUT + " Zeichen)";
+            }
+
+            if (exitCode != 0) {
+                return "Python-Fehler (Exit-Code " + exitCode + "):\n" + output;
+            }
+
+            return output.isEmpty() ? "(keine Ausgabe)" : output;
+
+        } catch (IOException e) {
+            log.warn("run_python IO-Fehler: {}", e.getMessage());
+            return "Python konnte nicht gestartet werden: " + e.getMessage() +
+                    "\nStelle sicher, dass Python installiert ist und im PATH liegt.";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Python-Ausfuehrung wurde unterbrochen.";
+        } finally {
+            if (tempScript != null) {
+                try {
+                    Files.deleteIfExists(tempScript);
+                } catch (IOException ignored) {
+                    // temp file cleanup is best-effort
+                }
+            }
         }
     }
 

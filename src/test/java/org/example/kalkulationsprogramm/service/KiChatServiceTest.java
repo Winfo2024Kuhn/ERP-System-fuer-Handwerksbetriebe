@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.domain.KiChatMessage;
 import org.example.kalkulationsprogramm.dto.KiChatDto.ChatDetail;
 import org.example.kalkulationsprogramm.dto.KiChatDto.ChatSummary;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
+import org.example.kalkulationsprogramm.repository.KiChatMessageRepository;
 import org.example.kalkulationsprogramm.repository.KiChatRepository;
 import org.example.kalkulationsprogramm.service.KiHilfeService.ChatResult;
 import org.example.kalkulationsprogramm.service.KiHilfeService.PageContext;
@@ -35,6 +36,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class KiChatServiceTest {
 
     @Mock private KiChatRepository kiChatRepository;
+    @Mock private KiChatMessageRepository kiChatMessageRepository;
     @Mock private FrontendUserProfileRepository userRepository;
     @Mock private KiHilfeService kiHilfeService;
 

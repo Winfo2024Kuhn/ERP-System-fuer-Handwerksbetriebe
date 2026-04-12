@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.dto.KiChatDto.ChatDetail;
 import org.example.kalkulationsprogramm.dto.KiChatDto.ChatSummary;
 import org.example.kalkulationsprogramm.dto.KiChatDto.MessageDto;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
+import org.example.kalkulationsprogramm.repository.KiChatMessageRepository;
 import org.example.kalkulationsprogramm.repository.KiChatRepository;
 import org.example.kalkulationsprogramm.service.KiHilfeService.ChatMessage;
 import org.example.kalkulationsprogramm.service.KiHilfeService.ChatResult;
@@ -27,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 public class KiChatService {
 
     private final KiChatRepository kiChatRepository;
+    private final KiChatMessageRepository kiChatMessageRepository;
     private final FrontendUserProfileRepository userRepository;
     private final KiHilfeService kiHilfeService;
 
@@ -95,6 +97,7 @@ public class KiChatService {
         userMsg.setChat(chat);
         userMsg.setRole("user");
         userMsg.setContent(userMessage);
+        kiChatMessageRepository.save(userMsg);
         chat.getMessages().add(userMsg);
 
         // Build message history for Gemini
@@ -110,6 +113,7 @@ public class KiChatService {
         assistantMsg.setChat(chat);
         assistantMsg.setRole("assistant");
         assistantMsg.setContent(result.reply());
+        kiChatMessageRepository.save(assistantMsg);
         chat.getMessages().add(assistantMsg);
 
         // Auto-title on first message

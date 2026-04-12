@@ -27,6 +27,7 @@ public class WebConfig implements WebMvcConfigurer {
     public void addViewControllers(ViewControllerRegistry registry) {
         // SPA-Forwarding: React-Routen an index.html weiterleiten
         registry.addViewController("/dokument-editor").setViewName("forward:/index.html");
+        registry.addViewController("/ki-assistent").setViewName("forward:/index.html");
 
         // Zeiterfassung PWA: alle Navigationsanfragen auf index.html weiterleiten
         // Wichtig: ohne Trailing-Slash und mit Trailing-Slash abdecken

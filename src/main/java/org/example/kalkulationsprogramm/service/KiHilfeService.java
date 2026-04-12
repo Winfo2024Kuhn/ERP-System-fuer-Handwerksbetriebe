@@ -34,7 +34,9 @@ public class KiHilfeService {
     public record ChatResult(String reply, List<SourceLink> sources) {}
     public record SourceLink(String title, String url) {}
 
-    private static final int MAX_TOOL_ITERATIONS = 15;
+    private static final int MAX_TOOL_ITERATIONS = 17; // Vermeidung von Endlosschleifen bei Tool-Nutzung
+    private static final int MAX_RATE_LIMIT_RETRIES = 2;
+    private static final long DEFAULT_RATE_LIMIT_WAIT_MS = 30_000;
 
     private static final String BASE_SYSTEM_PROMPT = """
             Du bist der KI-Assistent für das Kalkulationsprogramm der Bauschlosserei Kuhn.
@@ -136,12 +138,23 @@ public class KiHilfeService {
                Gibt Treffer mit Direkt-Links zum EmailCenter zurueck. Nutze dies IMMER wenn der Benutzer
                nach einer bestimmten E-Mail fragt oder E-Mails zu einem Thema sucht.
                Die Links im Format [E-Mail oeffnen](/emails/folder/id) werden als klickbare Links dargestellt.
+            6. **run_python(code)** - Fuehrt ein Python-Skript aus und gibt die Ausgabe zurueck.
+               Nutze dies fuer:
+               - Mathematische Berechnungen (Kalkulation, Prozentrechnung, Flaechenberechnung, Materialkosten)
+               - Statistische Auswertungen (Durchschnitt, Median, Standardabweichung)
+               - Datenverarbeitung von query_database-Ergebnissen (Summen, Gruppierungen, Pivots)
+               - Einheitenumrechnungen (mm→m, kg→t, etc.)
+               - Datumsberechnungen (Arbeitstage, Fristen, Differenzen)
+               Verfuegbare Module: math, statistics, datetime, decimal, fractions, json, csv, re, collections, itertools.
+               Verwende print() fuer die Ausgabe. Kein Dateizugriff, kein Netzwerk.
             
             REGELN fuer Werkzeug-Nutzung:
             - Nutze search_code ZUERST, bevor du eine Behauptung ueber UI-Elemente aufstellst
             - Nutze read_file wenn du den EXAKTEN Code einer Komponente brauchst
             - Nutze query_database NUR wenn der Benutzer nach Datenbankstruktur oder Daten fragt
             - Nutze search_emails wenn der Benutzer nach E-Mails fragt oder Mails zu einem Thema sucht
+            - Nutze run_python fuer Berechnungen, Auswertungen und Datenverarbeitung
+            - POWER-KOMBINATION: query_database + run_python = Daten abfragen UND direkt auswerten/berechnen
             - Du kannst mehrere Werkzeuge nacheinander aufrufen um deine Antwort zu verbessern
             - Wenn du bereits relevanten Code im Kontext hast, musst du NICHT nochmal suchen
             
@@ -434,14 +447,26 @@ public class KiHilfeService {
         for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
             String body = objectMapper.writeValueAsString(requestBody);
 
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(60))
-                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                    .build();
+            HttpResponse<String> response = null;
+            for (int retry = 0; retry <= MAX_RATE_LIMIT_RETRIES; retry++) {
+                HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                        .header("Content-Type", "application/json")
+                        .timeout(Duration.ofSeconds(60))
+                        .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                        .build();
 
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                response = httpClient.send(request,
+                        HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+
+                if (response.statusCode() != 429 || retry == MAX_RATE_LIMIT_RETRIES) {
+                    break;
+                }
+
+                long waitMs = parseRetryDelay(response.body());
+                log.warn("  -> Rate-Limit (429) bei Iteration {}, warte {} ms vor Retry {}/{}",
+                        iteration + 1, waitMs, retry + 1, MAX_RATE_LIMIT_RETRIES);
+                Thread.sleep(waitMs);
+            }
 
             if (response.statusCode() != 200) {
                 log.error("Gemini KI-Hilfe API Error {}: {}", response.statusCode(), response.body());
@@ -643,5 +668,30 @@ public class KiHilfeService {
             }
         }
         return sources;
+    }
+
+    /**
+     * Parses the retryDelay from a Gemini 429 response body.
+     * Expects format like "28s" or "15.784s" in the RetryInfo detail.
+     */
+    private long parseRetryDelay(String responseBody) {
+        try {
+            JsonNode root = objectMapper.readTree(responseBody);
+            JsonNode details = root.path("error").path("details");
+            if (details.isArray()) {
+                for (JsonNode detail : details) {
+                    if ("type.googleapis.com/google.rpc.RetryInfo".equals(detail.path("@type").asText())) {
+                        String delay = detail.path("retryDelay").asText("");
+                        if (delay.endsWith("s")) {
+                            double seconds = Double.parseDouble(delay.substring(0, delay.length() - 1));
+                            return Math.max(1000, (long) (seconds * 1000) + 1000); // add 1s buffer
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Konnte retryDelay nicht parsen: {}", e.getMessage());
+        }
+        return DEFAULT_RATE_LIMIT_WAIT_MS;
     }
 }
