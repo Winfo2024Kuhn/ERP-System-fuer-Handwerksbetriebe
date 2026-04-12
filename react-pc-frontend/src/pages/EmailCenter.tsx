@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import {
     Mail,
@@ -441,6 +441,7 @@ export default function EmailCenter() {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const { folder: folderParam, emailId: emailIdParam } = useParams<{ folder?: string; emailId?: string }>();
+    const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
 
     // Derive activeFolder from URL param
@@ -821,6 +822,38 @@ export default function EmailCenter() {
         }, 30000);
         return () => clearInterval(interval);
     }, [refreshEmailsSilently, loadStats, loadDrafts]);
+
+    // Deep-link: auto-open draft from query param ?draft=<id> (e.g. from ProjektEditor)
+    useEffect(() => {
+        const draftParam = searchParams.get('draft');
+        if (!draftParam) return;
+        const draftIdToOpen = Number(draftParam);
+        if (isNaN(draftIdToOpen)) return;
+
+        // Clear the query param so it doesn't re-trigger
+        setSearchParams({}, { replace: true });
+
+        // Load draft and open compose
+        (async () => {
+            try {
+                const res = await fetch('/api/emails/drafts');
+                if (!res.ok) return;
+                const allDrafts: DraftItem[] = await res.json();
+                setDrafts(allDrafts);
+                const found = allDrafts.find(d => d.id === draftIdToOpen);
+                if (found) {
+                    setSelectedEmail(null);
+                    setReplyToEmail(null);
+                    setReplyToEmailId(found.replyEmailId || undefined);
+                    setForwardEmail(null);
+                    setActiveDraftId(found.id);
+                    setActiveDraft(found);
+                    setIsComposing(true);
+                }
+            } catch { /* ignore */ }
+        })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Deep-link: auto-select email from URL param /emails/:folder/:emailId
     useEffect(() => {

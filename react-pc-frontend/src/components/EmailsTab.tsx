@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Mail, Search, Paperclip, Plus, Reply, MessagesSquare, X, ArrowLeft } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
@@ -134,6 +135,8 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
     showComposeButton = true,
     showReplyButton = true,
 }) => {
+    const navigate = useNavigate();
+
     // State
     const [emailFilter, setEmailFilter] = useState<'all' | 'in' | 'out'>('all');
     const [emailSearch, setEmailSearch] = useState('');
@@ -458,6 +461,25 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                                 thread={thread}
                                 onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
                                 onReply={showReplyButton ? (entry) => handleThreadReply(entry) : undefined}
+                                onOpenDraft={(entry) => {
+                                    if (entry.draftId) {
+                                        navigate(`/emails/drafts?draft=${encodeURIComponent(entry.draftId)}`);
+                                    }
+                                }}
+                                onDeleteDraft={async (draftId) => {
+                                    try {
+                                        await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
+                                        // Reload thread to reflect deletion
+                                        if (selectedEmailId) {
+                                            setThreadLoading(true);
+                                            fetch(`/api/emails/${selectedEmailId}/thread`)
+                                                .then(r => r.ok ? r.json() : null)
+                                                .then((data: EmailThread | null) => setThread(data))
+                                                .catch(() => {})
+                                                .finally(() => setThreadLoading(false));
+                                        }
+                                    } catch { /* ignore */ }
+                                }}
                             />
                         ) : (
                             <div className="flex-1 flex items-center justify-center p-6">
