@@ -1,13 +1,87 @@
 {
-  "total_views": 0,
-  "total_unique_views": 0,
-  "total_clones": 0,
-  "total_unique_clones": 0,
-  "last_view_timestamp": "1970-01-01T00:00:00Z",
-  "last_clone_timestamp": "1970-01-01T00:00:00Z",
-  "stars": 0,
+  "views_last_14_days": 171,
+  "unique_visitors_last_14_days": 12,
+  "clones_last_14_days": 1790,
+  "unique_cloners_last_14_days": 257,
+  "daily_views": [],
+  "daily_clones": [],
+  "referring_sites": [
+    {
+      "referrer": "github.com",
+      "count": 96,
+      "uniques": 3
+    },
+    {
+      "referrer": "linkedin.com",
+      "count": 20,
+      "uniques": 7
+    }
+  ],
+  "popular_content": [
+    {
+      "path": "/",
+      "title": "Overview",
+      "count": 42,
+      "uniques": 7
+    },
+    {
+      "path": "/pulse",
+      "title": "/pulse",
+      "count": 15,
+      "uniques": 2
+    },
+    {
+      "path": "/graphs/traffic",
+      "title": "/graphs/traffic",
+      "count": 12,
+      "uniques": 1
+    },
+    {
+      "path": "/branches",
+      "title": "/branches",
+      "count": 7,
+      "uniques": 1
+    },
+    {
+      "path": "/blob/main/README.md",
+      "title": "/blob/main/README.md",
+      "count": 6,
+      "uniques": 6
+    },
+    {
+      "path": "/issues",
+      "title": "/issues",
+      "count": 6,
+      "uniques": 1
+    },
+    {
+      "path": "/actions",
+      "title": "/actions",
+      "count": 5,
+      "uniques": 1
+    },
+    {
+      "path": "/actions/runs/23743942820/job/69167603270",
+      "title": "/actions/runs/23743942820/job/69167603270",
+      "count": 3,
+      "uniques": 1
+    },
+    {
+      "path": "/community",
+      "title": "/community",
+      "count": 3,
+      "uniques": 1
+    },
+    {
+      "path": "/pulls",
+      "title": "/pulls",
+      "count": 3,
+      "uniques": 1
+    }
+  ],
+  "stars": 7,
   "forks": 0,
-  "watchers": 0,
+  "watchers": 2,
   "open_issues": 0,
-  "updated_at": "1970-01-01T00:00:00Z"
+  "updated_at": "2026-04-12T10:06:57Z"
 }

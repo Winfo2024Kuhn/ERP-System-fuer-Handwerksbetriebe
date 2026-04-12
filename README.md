@@ -25,10 +25,10 @@
 |--------|-------|
 | ⭐ Stars | ![Stars](https://img.shields.io/github/stars/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=f59e0b) |
 | 🍴 Forks | ![Forks](https://img.shields.io/github/forks/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=6366f1) |
-| 👁️ Total Views (cumulative) | ![Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_views&label=&color=dc2626) |
-| 👤 Unique Visitors (cumulative) | ![Unique Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_views&label=&color=16a34a) |
-| 📥 Total Clones (cumulative) | ![Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_clones&label=&color=7c3aed) |
-| 🧑‍💻 Unique Cloners (cumulative) | ![Unique Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Ftraffic-data%2Fdata.json&query=%24.total_unique_clones&label=&color=0891b2) |
+| 👁️ Views (last 14 days) | ![Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Fmain%2F.github%2Ftraffic%2Fdata.json&query=%24.views_last_14_days&label=&color=dc2626) |
+| 👤 Unique Visitors (last 14 days) | ![Unique Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Fmain%2F.github%2Ftraffic%2Fdata.json&query=%24.unique_visitors_last_14_days&label=&color=16a34a) |
+| 📥 Clones (last 14 days) | ![Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Fmain%2F.github%2Ftraffic%2Fdata.json&query=%24.clones_last_14_days&label=&color=7c3aed) |
+| 🧑‍💻 Unique Cloners (last 14 days) | ![Unique Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Fmain%2F.github%2Ftraffic%2Fdata.json&query=%24.unique_cloners_last_14_days&label=&color=0891b2) |
 
 </div>
 
