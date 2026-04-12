@@ -4,7 +4,7 @@ import {
     Gem, Send, Plus, Trash2, MessageSquare, Pencil, Check, X,
     ExternalLink, Sparkles, Database, Search, FileText, Mail,
     BarChart3, ArrowRight, ChevronLeft, Clock, Bot,
-    Zap, Globe, AlertCircle, Copy, CheckCheck,
+    Zap, Globe, AlertCircle, Copy, CheckCheck, Square,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -169,7 +169,89 @@ export default function KiAssistentPage() {
         } catch { /* ignore */ }
     }, [userId, loadChats]);
 
-    /* ─── Send message ─── */
+    /* ─── Polling for async KI processing ─── */
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const stopPolling = useCallback(() => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+        }
+    }, []);
+
+    const startPolling = useCallback((chatId: number) => {
+        stopPolling();
+        pollingRef.current = setInterval(async () => {
+            if (!userId) return;
+            try {
+                const res = await fetch(`/api/ki-chat/${chatId}/status?userId=${userId}`);
+                if (!res.ok) return;
+                const data = await res.json();
+
+                if (data.status === 'done') {
+                    stopPolling();
+                    // Reload messages from DB
+                    const chatRes = await fetch(`/api/ki-chat/${chatId}?userId=${userId}`);
+                    if (chatRes.ok) {
+                        const chatData: ChatDetail = await chatRes.json();
+                        setMessages(chatData.messages);
+                    }
+                    setLoading(false);
+                    await loadChats();
+                } else if (data.status === 'error') {
+                    stopPolling();
+                    setError(data.error || 'KI-Fehler');
+                    setLoading(false);
+                } else if (data.status === 'cancelled') {
+                    stopPolling();
+                    setLoading(false);
+                } else if (data.status === 'idle') {
+                    // No active processing – maybe finished before polling started
+                    stopPolling();
+                    const chatRes = await fetch(`/api/ki-chat/${chatId}?userId=${userId}`);
+                    if (chatRes.ok) {
+                        const chatData: ChatDetail = await chatRes.json();
+                        setMessages(chatData.messages);
+                    }
+                    setLoading(false);
+                    await loadChats();
+                }
+            } catch { /* network error, keep polling */ }
+        }, 1500);
+    }, [userId, stopPolling, loadChats]);
+
+    // Clean up polling on unmount
+    useEffect(() => () => stopPolling(), [stopPolling]);
+
+    // Resume polling on mount/chat switch if processing is active
+    useEffect(() => {
+        if (!activeChatId || !userId) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`/api/ki-chat/${activeChatId}/status?userId=${userId}`);
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                if (data.status === 'processing') {
+                    setLoading(true);
+                    startPolling(activeChatId);
+                }
+            } catch { /* ignore */ }
+        })();
+        return () => { cancelled = true; };
+    }, [activeChatId, userId, startPolling]);
+
+    /* ─── Cancel processing ─── */
+    const cancelProcessing = useCallback(async () => {
+        if (!activeChatId || !userId) return;
+        try {
+            await fetch(`/api/ki-chat/${activeChatId}/cancel?userId=${userId}`, { method: 'POST' });
+        } catch { /* ignore */ }
+        stopPolling();
+        setLoading(false);
+    }, [activeChatId, userId, stopPolling]);
+
+    /* ─── Send message (async – fire & poll) ─── */
     const sendMessage = useCallback(async () => {
         const trimmed = input.trim();
         if (!trimmed || loading || !userId) return;
@@ -218,18 +300,17 @@ export default function KiAssistentPage() {
             const data = await res.json();
             if (!res.ok) {
                 setError(data.error || 'KI-Fehler');
+                setLoading(false);
                 return;
             }
 
-            const detail = data as ChatDetail;
-            setMessages(detail.messages);
-            await loadChats(); // refresh sidebar (title may have changed)
+            // Backend returns 202 Accepted → start polling for result
+            startPolling(chatId);
         } catch {
             setError('Verbindung fehlgeschlagen');
-        } finally {
             setLoading(false);
         }
-    }, [input, loading, userId, activeChatId, location.pathname, loadChats]);
+    }, [input, loading, userId, activeChatId, location.pathname, startPolling]);
 
     /* ─── Scroll + focus ─── */
     useEffect(() => {
@@ -573,6 +654,13 @@ export default function KiAssistentPage() {
                                                 <span className="w-2 h-2 bg-rose-200 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                             </div>
                                             <span className="text-xs text-slate-400">KI denkt nach…</span>
+                                            <button
+                                                onClick={cancelProcessing}
+                                                className="text-xs text-slate-400 hover:text-red-500 transition-colors cursor-pointer ml-2 flex items-center gap-1"
+                                            >
+                                                <Square className="w-3 h-3" />
+                                                Abbrechen
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -612,24 +700,39 @@ export default function KiAssistentPage() {
                                 placeholder="Nachricht an KI-Assistent…"
                                 rows={1}
                                 autoComplete="off"
+                                autoCorrect="off"
                                 data-1p-ignore
                                 data-lpignore="true"
+                                data-protonpass-ignore
+                                data-form-type="other"
+                                name="ki-chat-input"
+                                role="textbox"
                                 style={{ height: 'auto' }}
                                 className="flex-1 bg-transparent resize-none text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none max-h-[120px] overflow-y-auto leading-relaxed"
                                 disabled={loading}
                             />
-                            <button
-                                onClick={sendMessage}
-                                disabled={!input.trim() || loading}
-                                className={cn(
-                                    'p-2 rounded-xl transition-all duration-200 flex-shrink-0 cursor-pointer',
-                                    input.trim() && !loading
-                                        ? 'bg-rose-600 text-white hover:bg-rose-700 shadow-sm shadow-rose-200/50'
-                                        : 'bg-slate-100 text-slate-300 cursor-not-allowed'
-                                )}
-                            >
-                                <Send className="w-4 h-4" />
-                            </button>
+                            {loading ? (
+                                <button
+                                    onClick={cancelProcessing}
+                                    className="p-2 rounded-xl transition-all duration-200 flex-shrink-0 cursor-pointer bg-slate-700 text-white hover:bg-slate-800 shadow-sm"
+                                    title="Abbrechen"
+                                >
+                                    <Square className="w-4 h-4" />
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={sendMessage}
+                                    disabled={!input.trim()}
+                                    className={cn(
+                                        'p-2 rounded-xl transition-all duration-200 flex-shrink-0 cursor-pointer',
+                                        input.trim()
+                                            ? 'bg-rose-600 text-white hover:bg-rose-700 shadow-sm shadow-rose-200/50'
+                                            : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                                    )}
+                                >
+                                    <Send className="w-4 h-4" />
+                                </button>
+                            )}
                         </div>
                         <p className="text-[10px] text-slate-300 mt-2 text-center">
                             KI-Antworten können fehlerhaft sein · Agentic AI mit Datenbankzugriff & Google Search

@@ -50,6 +50,13 @@ public class KiToolService {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern ALLOWED_SQL = Pattern.compile(
             "^\\s*SELECT\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BLOCKED_SQL_PATTERN = Pattern.compile(
+            "INTO\\s+OUTFILE|INTO\\s+DUMPFILE|LOAD_FILE\\s*\\(|BENCHMARK\\s*\\(" +
+            "|SLEEP\\s*\\(|GET_LOCK\\s*\\(|RELEASE_LOCK\\s*\\(" +
+            "|\\bINSERT\\b|\\bUPDATE\\b|\\bDELETE\\b|\\bDROP\\b|\\bALTER\\b|\\bCREATE\\b|\\bTRUNCATE\\b" +
+            "|\\bGRANT\\b|\\bREVOKE\\b|\\bCALL\\b|\\bEXEC\\b|\\bEXECUTE\\b" +
+            "|/\\*.*\\*/",
+            Pattern.CASE_INSENSITIVE);
 
     private final LocalRagService localRagService;
     private final JdbcTemplate jdbcTemplate;
@@ -60,6 +67,49 @@ public class KiToolService {
 
     @Value("${ai.ki-hilfe.python-command:python}")
     private String pythonCommand;
+
+    /** Cached compact schema overview (table names + columns). Built lazily on first use. */
+    private volatile String cachedSchemaOverview;
+
+    /**
+     * Returns a compact database schema overview listing all tables and their columns.
+     * Cached after first successful query. Used in the system prompt to avoid
+     * repeated INFORMATION_SCHEMA exploration by the LLM.
+     */
+    public String getSchemaOverview() {
+        if (cachedSchemaOverview != null) {
+            return cachedSchemaOverview;
+        }
+        try {
+            var tables = jdbcTemplate.queryForList(
+                    "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME");
+            StringBuilder sb = new StringBuilder();
+            for (var table : tables) {
+                String tableName = (String) table.get("TABLE_NAME");
+                var columns = jdbcTemplate.queryForList(
+                        "SELECT COLUMN_NAME, COLUMN_KEY FROM INFORMATION_SCHEMA.COLUMNS " +
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+                        tableName);
+                sb.append(tableName).append('(');
+                for (int i = 0; i < columns.size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    var col = columns.get(i);
+                    sb.append(col.get("COLUMN_NAME"));
+                    String key = (String) col.get("COLUMN_KEY");
+                    if ("PRI".equals(key)) sb.append(" PK");
+                    else if ("MUL".equals(key)) sb.append(" FK");
+                }
+                sb.append(")\n");
+            }
+            cachedSchemaOverview = sb.toString();
+            log.info("Datenbank-Schema-Uebersicht generiert: {} Tabellen, {} Zeichen",
+                    tables.size(), cachedSchemaOverview.length());
+            return cachedSchemaOverview;
+        } catch (Exception e) {
+            log.warn("Schema-Uebersicht konnte nicht erstellt werden: {}", e.getMessage());
+            return null;
+        }
+    }
 
     /**
      * Builds the Gemini functionDeclarations JSON array for all available tools.
@@ -133,8 +183,9 @@ public class KiToolService {
         queryDb.put("name", "query_database");
         queryDb.put("description",
                 "Fuehrt eine READ-ONLY SQL-Abfrage auf der ERP-Datenbank aus. NUR SELECT-Statements erlaubt. " +
-                "Nutze dies um Datenbank-Schema, Tabellenstrukturen oder konkrete Daten abzufragen. " +
-                "Beispiel: 'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE()'");
+                "WICHTIG: Das vollstaendige DB-Schema (alle Tabellen und Spalten) steht bereits im System-Prompt! " +
+                "Frage NICHT erst INFORMATION_SCHEMA oder DESCRIBE ab — schreibe DIREKT dein SELECT mit JOINs. " +
+                "Nutze Subqueries und JOINs um moeglichst viele Daten in EINER Abfrage zu holen.");
         ObjectNode dbParams = objectMapper.createObjectNode();
         dbParams.put("type", "OBJECT");
         ObjectNode dbProps = objectMapper.createObjectNode();
@@ -305,6 +356,11 @@ public class KiToolService {
             return "Kein SQL-Statement angegeben.";
         }
 
+        // Block multiple statements (semicolons)
+        if (sql.contains(";")) {
+            return "Mehrere SQL-Statements sind nicht erlaubt. Bitte nur ein einzelnes SELECT-Statement senden.";
+        }
+
         // Only allow SELECT statements
         if (!ALLOWED_SQL.matcher(sql).find()) {
             return "Nur SELECT-Statements sind erlaubt. Schreibende Operationen (INSERT, UPDATE, DELETE, DROP, etc.) sind verboten.";
@@ -312,9 +368,7 @@ public class KiToolService {
 
         // Block dangerous keywords even within SELECT
         String upperSql = sql.toUpperCase();
-        if (upperSql.contains("INTO OUTFILE") || upperSql.contains("INTO DUMPFILE")
-                || upperSql.contains("LOAD_FILE") || upperSql.contains("BENCHMARK(")
-                || upperSql.contains("SLEEP(")) {
+        if (BLOCKED_SQL_PATTERN.matcher(upperSql).find()) {
             return "Diese SQL-Funktion ist aus Sicherheitsgruenden nicht erlaubt.";
         }
 
@@ -446,12 +500,9 @@ public class KiToolService {
 
             Process process = pb.start();
 
-            String output;
-            try (var reader = new String(
+            String output = new String(
                     process.getInputStream().readNBytes(MAX_PYTHON_OUTPUT + 1),
-                    StandardCharsets.UTF_8)) {
-                output = reader;
-            }
+                    StandardCharsets.UTF_8);
 
             boolean finished = process.waitFor(PYTHON_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (!finished) {

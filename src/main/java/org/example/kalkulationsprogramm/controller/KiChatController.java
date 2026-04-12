@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.controller;
 import java.util.List;
 import java.util.Map;
 
-import org.example.kalkulationsprogramm.dto.KiChatDto.ChatDetail;
 import org.example.kalkulationsprogramm.dto.KiChatDto.ChatSummary;
 import org.example.kalkulationsprogramm.dto.KiChatDto.CreateChatRequest;
 import org.example.kalkulationsprogramm.dto.KiChatDto.RenameChatRequest;
@@ -100,7 +99,7 @@ public class KiChatController {
         }
     }
 
-    /** Send a message and get AI response */
+    /** Send a message – starts async KI processing, returns immediately */
     @PostMapping("/{chatId}/messages")
     public ResponseEntity<?> sendMessage(
             @PathVariable Long chatId,
@@ -114,6 +113,9 @@ public class KiChatController {
         if (request.message().length() > 5000) {
             return ResponseEntity.badRequest().body(Map.of("error", "Nachricht zu lang (max. 5000 Zeichen)"));
         }
+        if (kiChatService.isProcessing(chatId)) {
+            return ResponseEntity.status(409).body(Map.of("error", "Chat wird bereits verarbeitet"));
+        }
 
         try {
             PageContext pageContext = null;
@@ -124,8 +126,8 @@ public class KiChatController {
                         ctx.errorMessages(), ctx.latitude(), ctx.longitude());
             }
 
-            ChatDetail result = kiChatService.sendMessage(chatId, request.userId(), request.message(), pageContext);
-            return ResponseEntity.ok(result);
+            kiChatService.sendMessageAsync(chatId, request.userId(), request.message(), pageContext);
+            return ResponseEntity.accepted().body(Map.of("status", "processing"));
         } catch (SecurityException e) {
             return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
@@ -133,6 +135,44 @@ public class KiChatController {
         } catch (Exception e) {
             log.error("Fehler bei KI-Chat Nachricht", e);
             return ResponseEntity.internalServerError().body(Map.of("error", "KI-Fehler: " + e.getMessage()));
+        }
+    }
+
+    /** Poll processing status for a chat */
+    @GetMapping("/{chatId}/status")
+    public ResponseEntity<?> getStatus(@PathVariable Long chatId, @RequestParam Long userId) {
+        if (userId == null || userId <= 0) return ResponseEntity.badRequest().build();
+        try {
+            // Verify ownership
+            kiChatService.getChat(chatId, userId);
+            var result = kiChatService.getProcessingStatus(chatId);
+            if (result.status() == null) {
+                return ResponseEntity.ok(Map.of("status", "idle"));
+            }
+            if (result.error() != null) {
+                return ResponseEntity.ok(Map.of("status", result.status().name().toLowerCase(), "error", result.error()));
+            }
+            return ResponseEntity.ok(Map.of("status", result.status().name().toLowerCase()));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** Cancel the currently running KI processing */
+    @PostMapping("/{chatId}/cancel")
+    public ResponseEntity<?> cancelProcessing(@PathVariable Long chatId, @RequestParam Long userId) {
+        if (userId == null || userId <= 0) return ResponseEntity.badRequest().build();
+        try {
+            // Verify ownership
+            kiChatService.getChat(chatId, userId);
+            kiChatService.cancelProcessing(chatId);
+            return ResponseEntity.ok(Map.of("status", "cancelled"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 }

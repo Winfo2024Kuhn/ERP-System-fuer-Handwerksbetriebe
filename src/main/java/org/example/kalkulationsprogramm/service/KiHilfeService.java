@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -34,7 +35,7 @@ public class KiHilfeService {
     public record ChatResult(String reply, List<SourceLink> sources) {}
     public record SourceLink(String title, String url) {}
 
-    private static final int MAX_TOOL_ITERATIONS = 17; // Vermeidung von Endlosschleifen bei Tool-Nutzung
+    private static final int MAX_TOOL_ITERATIONS = 10; // Vermeidung von Endlosschleifen bei Tool-Nutzung
     private static final int MAX_RATE_LIMIT_RETRIES = 2;
     private static final long DEFAULT_RATE_LIMIT_WAIT_MS = 30_000;
 
@@ -151,12 +152,20 @@ public class KiHilfeService {
             REGELN fuer Werkzeug-Nutzung:
             - Nutze search_code ZUERST, bevor du eine Behauptung ueber UI-Elemente aufstellst
             - Nutze read_file wenn du den EXAKTEN Code einer Komponente brauchst
-            - Nutze query_database NUR wenn der Benutzer nach Datenbankstruktur oder Daten fragt
+            - Nutze query_database NUR wenn der Benutzer nach Daten fragt
             - Nutze search_emails wenn der Benutzer nach E-Mails fragt oder Mails zu einem Thema sucht
             - Nutze run_python fuer Berechnungen, Auswertungen und Datenverarbeitung
             - POWER-KOMBINATION: query_database + run_python = Daten abfragen UND direkt auswerten/berechnen
             - Du kannst mehrere Werkzeuge nacheinander aufrufen um deine Antwort zu verbessern
             - Wenn du bereits relevanten Code im Kontext hast, musst du NICHT nochmal suchen
+            
+            ## EFFIZIENZ (Antwortzeit minimieren!)
+            Jeder Tool-Aufruf kostet 2-3 Sekunden Wartezeit fuer den Benutzer!
+            - MAXIMAL 3-5 Tool-Aufrufe pro Antwort. Plane deine Abfragen VORHER.
+            - Das vollstaendige Datenbank-Schema steht im System-Prompt. Frage NIEMALS INFORMATION_SCHEMA, DESCRIBE oder SHOW COLUMNS ab!
+            - Nutze JOINs und Subqueries: Eine komplexe Abfrage statt 5 einfache.
+            - Kombiniere Datenabfrage + Berechnung: 1x query_database + 1x run_python = fertig.
+            - Wenn der Kontext (RAG, Seitenkontext) bereits genug Info enthaelt, antworte DIREKT ohne Tools.
             
             ## Web-Suche & Allgemeinwissen
             Du hast Zugriff auf die Google-Suche (googleSearch Tool) und kannst aktuelle Informationen aus dem Internet abrufen.
@@ -275,50 +284,73 @@ public class KiHilfeService {
     @Value("${ai.ki-hilfe.web-search-enabled:true}")
     private boolean webSearchEnabled;
 
+    /** Exception thrown when a chat request is cancelled by the user. */
+    public static class CancelledException extends IOException {
+        public CancelledException() { super("KI-Anfrage wurde abgebrochen"); }
+    }
+
     public record ChatMessage(String role, String text) {}
 
     /**
      * Build system prompt with RAG context (if available) or full codebase fallback.
+     * Includes database schema overview to eliminate INFORMATION_SCHEMA exploration queries.
      */
     private String buildSystemPrompt(String ragContext) {
-        if (ragContext != null && !ragContext.isBlank()) {
-            return BASE_SYSTEM_PROMPT +
-                    "\n\n## Relevanter Quellcode (per Vektor-Suche gefunden)\n" +
-                    "Die folgenden Code-Abschnitte wurden automatisch als relevant fuer die aktuelle Frage identifiziert. " +
-                    "Abschnitte mit '>>> AKTUELLE SEITE DES BENUTZERS <<<' zeigen den EXAKTEN Quellcode der Seite, " +
-                    "auf der sich der Benutzer GERADE befindet. Diese Abschnitte haben HOECHSTE Prioritaet: " +
-                    "Nur Buttons, Tabs, Formulare und Funktionen die IN DIESEM CODE vorkommen, existieren auf dieser Seite. " +
-                    "Beschreibe NUR das, was du im Code der aktuellen Seite tatsaechlich siehst.\n\n" +
-                    ragContext;
+        StringBuilder prompt = new StringBuilder(BASE_SYSTEM_PROMPT);
+
+        // Inject database schema so the LLM can write queries directly without exploring
+        String schemaOverview = kiToolService.getSchemaOverview();
+        if (schemaOverview != null && !schemaOverview.isBlank()) {
+            prompt.append("\n\n## Datenbank-Schema (VOLLSTAENDIG - frage NICHT INFORMATION_SCHEMA ab!)\n")
+                  .append("PK = Primary Key, FK = Foreign Key (Verweis auf andere Tabelle).\n")
+                  .append("Schreibe DIREKT dein SELECT mit JOINs auf die benoetigten Tabellen.\n\n")
+                  .append(schemaOverview);
         }
 
-        // Fallback: full codebase index
-        String index = codebaseIndexService.getIndex();
-        if (index == null || index.isEmpty()) {
-            return BASE_SYSTEM_PROMPT;
+        if (ragContext != null && !ragContext.isBlank()) {
+            prompt.append("\n\n## Relevanter Quellcode (per Vektor-Suche gefunden)\n")
+                  .append("Die folgenden Code-Abschnitte wurden automatisch als relevant fuer die aktuelle Frage identifiziert. ")
+                  .append("Abschnitte mit '>>> AKTUELLE SEITE DES BENUTZERS <<<' zeigen den EXAKTEN Quellcode der Seite, ")
+                  .append("auf der sich der Benutzer GERADE befindet. Diese Abschnitte haben HOECHSTE Prioritaet: ")
+                  .append("Nur Buttons, Tabs, Formulare und Funktionen die IN DIESEM CODE vorkommen, existieren auf dieser Seite. ")
+                  .append("Beschreibe NUR das, was du im Code der aktuellen Seite tatsaechlich siehst.\n\n")
+                  .append(ragContext);
+        } else {
+            // Fallback: full codebase index
+            String index = codebaseIndexService.getIndex();
+            if (index != null && !index.isEmpty()) {
+                prompt.append("\n\n## Frontend-Quellcode & Dokumentation (Read-Only Wissensbasis)\n")
+                      .append("Im Folgenden findest du den KOMPLETTEN Frontend-Quellcode des Kalkulationsprogramms: ")
+                      .append("Alle React-Seiten (Pages), UI-Komponenten, Navigation (App.tsx Routing), ")
+                      .append("Hooks, Hilfsfunktionen und die Projekt-Dokumentation. ")
+                      .append("Nutze diesen Code, um Benutzern zu erklären, wie sie sich im Programm ")
+                      .append("zurechtfinden, welche Funktionen auf welcher Seite verfügbar sind, ")
+                      .append("und wie Workflows Schritt für Schritt ablaufen.\n\n")
+                      .append(index);
+            }
         }
-        return BASE_SYSTEM_PROMPT +
-                "\n\n## Frontend-Quellcode & Dokumentation (Read-Only Wissensbasis)\n" +
-                "Im Folgenden findest du den KOMPLETTEN Frontend-Quellcode des Kalkulationsprogramms: " +
-                "Alle React-Seiten (Pages), UI-Komponenten, Navigation (App.tsx Routing), " +
-                "Hooks, Hilfsfunktionen und die Projekt-Dokumentation. " +
-                "Nutze diesen Code, um Benutzern zu erklären, wie sie sich im Programm " +
-                "zurechtfinden, welche Funktionen auf welcher Seite verfügbar sind, " +
-                "und wie Workflows Schritt für Schritt ablaufen.\n\n" +
-                index;
+
+        return prompt.toString();
     }
 
     /**
      * Chat without page context (backward-compatible).
      */
     public ChatResult chat(List<ChatMessage> messages) throws IOException, InterruptedException {
-        return chat(messages, null);
+        return chat(messages, null, new AtomicBoolean(false));
     }
 
     /**
      * Chat with optional page context for RAG-enhanced responses.
      */
     public ChatResult chat(List<ChatMessage> messages, PageContext pageContext) throws IOException, InterruptedException {
+        return chat(messages, pageContext, new AtomicBoolean(false));
+    }
+
+    /**
+     * Chat with optional page context and cancellation token.
+     */
+    public ChatResult chat(List<ChatMessage> messages, PageContext pageContext, AtomicBoolean cancelled) throws IOException, InterruptedException {
         if (geminiApiKey == null || geminiApiKey.isBlank()) {
             throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
         }
@@ -445,6 +477,12 @@ public class KiHilfeService {
         List<SourceLink> allSources = new ArrayList<>();
 
         for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+            // Check cancellation at start of each iteration
+            if (cancelled.get()) {
+                log.info("  -> KI-Anfrage abgebrochen durch Benutzer (Iteration {})", iteration + 1);
+                throw new CancelledException();
+            }
+
             String body = objectMapper.writeValueAsString(requestBody);
 
             HttpResponse<String> response = null;
@@ -539,6 +577,12 @@ public class KiHilfeService {
             ArrayNode responseParts = objectMapper.createArrayNode();
 
             for (JsonNode fc : functionCalls) {
+                // Check cancellation before each tool execution
+                if (cancelled.get()) {
+                    log.info("  -> KI-Anfrage abgebrochen vor Tool-Ausfuehrung");
+                    throw new CancelledException();
+                }
+
                 String toolName = fc.path("name").asText();
                 JsonNode args = fc.path("args");
                 log.info("    -> Fuehre Tool '{}' aus mit Args: {}", toolName, args);

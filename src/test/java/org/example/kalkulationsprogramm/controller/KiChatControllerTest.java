@@ -1,6 +1,5 @@
 package org.example.kalkulationsprogramm.controller;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -9,6 +8,8 @@ import org.example.kalkulationsprogramm.dto.KiChatDto.ChatDetail;
 import org.example.kalkulationsprogramm.dto.KiChatDto.ChatSummary;
 import org.example.kalkulationsprogramm.dto.KiChatDto.MessageDto;
 import org.example.kalkulationsprogramm.service.KiChatService;
+import org.example.kalkulationsprogramm.service.KiChatService.ProcessingStatus;
+import org.example.kalkulationsprogramm.service.KiChatService.StatusResult;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import org.junit.jupiter.api.Nested;
@@ -16,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
@@ -311,22 +311,21 @@ class KiChatControllerTest {
     class SendMessage {
 
         @Test
-        void shouldSendMessageSuccessfully() throws Exception {
-            when(kiChatService.sendMessage(eq(10L), eq(1L), eq("Hallo"), isNull()))
-                    .thenReturn(sampleDetail());
+        void shouldStartAsyncProcessingSuccessfully() throws Exception {
+            when(kiChatService.isProcessing(10L)).thenReturn(false);
+            doNothing().when(kiChatService).sendMessageAsync(eq(10L), eq(1L), eq("Hallo"), any());
 
             mockMvc.perform(post("/api/ki-chat/10/messages")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"userId\":1,\"message\":\"Hallo\"}"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id", is(10)))
-                    .andExpect(jsonPath("$.messages", hasSize(2)));
+                    .andExpect(status().isAccepted())
+                    .andExpect(jsonPath("$.status", is("processing")));
         }
 
         @Test
         void shouldSendMessageWithPageContext() throws Exception {
-            when(kiChatService.sendMessage(eq(10L), eq(1L), eq("Frage"), any()))
-                    .thenReturn(sampleDetail());
+            when(kiChatService.isProcessing(10L)).thenReturn(false);
+            doNothing().when(kiChatService).sendMessageAsync(eq(10L), eq(1L), eq("Frage"), any());
 
             String body = """
                     {
@@ -343,7 +342,8 @@ class KiChatControllerTest {
             mockMvc.perform(post("/api/ki-chat/10/messages")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isAccepted())
+                    .andExpect(jsonPath("$.status", is("processing")));
         }
 
         @Test
@@ -387,8 +387,9 @@ class KiChatControllerTest {
 
         @Test
         void shouldReturn403WhenNotOwner() throws Exception {
-            when(kiChatService.sendMessage(eq(10L), eq(2L), anyString(), any()))
-                    .thenThrow(new SecurityException("Kein Zugriff"));
+            when(kiChatService.isProcessing(10L)).thenReturn(false);
+            doThrow(new SecurityException("Kein Zugriff"))
+                    .when(kiChatService).sendMessageAsync(eq(10L), eq(2L), anyString(), any());
 
             mockMvc.perform(post("/api/ki-chat/10/messages")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -399,8 +400,9 @@ class KiChatControllerTest {
 
         @Test
         void shouldReturn400WhenChatNotFound() throws Exception {
-            when(kiChatService.sendMessage(eq(999L), eq(1L), anyString(), any()))
-                    .thenThrow(new IllegalArgumentException("Chat nicht gefunden"));
+            when(kiChatService.isProcessing(999L)).thenReturn(false);
+            doThrow(new IllegalArgumentException("Chat nicht gefunden"))
+                    .when(kiChatService).sendMessageAsync(eq(999L), eq(1L), anyString(), any());
 
             mockMvc.perform(post("/api/ki-chat/999/messages")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -409,29 +411,101 @@ class KiChatControllerTest {
         }
 
         @Test
-        void shouldReturn500WhenKiServiceFails() throws Exception {
-            when(kiChatService.sendMessage(eq(10L), eq(1L), anyString(), any()))
-                    .thenThrow(new IOException("Gemini API down"));
+        void shouldReturn409WhenChatIsAlreadyProcessing() throws Exception {
+            when(kiChatService.isProcessing(10L)).thenReturn(true);
 
             mockMvc.perform(post("/api/ki-chat/10/messages")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"userId\":1,\"message\":\"Test\"}"))
-                    .andExpect(status().isInternalServerError())
-                    .andExpect(jsonPath("$.error").value("KI-Fehler: Gemini API down"));
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error").value("Chat wird bereits verarbeitet"));
         }
 
         @Test
         void shouldAcceptMessageExactly5000Chars() throws Exception {
             String exactMsg = "A".repeat(5000);
-            when(kiChatService.sendMessage(eq(10L), eq(1L), eq(exactMsg), any()))
-                    .thenReturn(sampleDetail());
+            when(kiChatService.isProcessing(10L)).thenReturn(false);
+            doNothing().when(kiChatService).sendMessageAsync(eq(10L), eq(1L), eq(exactMsg), any());
 
             String body = "{\"userId\":1,\"message\":\"" + exactMsg + "\"}";
 
             mockMvc.perform(post("/api/ki-chat/10/messages")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isAccepted());
+        }
+    }
+
+    @Nested
+    class GetStatus {
+
+        @Test
+        void shouldReturnIdleWhenNoProcessingStateExists() throws Exception {
+            when(kiChatService.getChat(10L, 1L)).thenReturn(sampleDetail());
+            when(kiChatService.getProcessingStatus(10L)).thenReturn(new StatusResult(null, null));
+
+            mockMvc.perform(get("/api/ki-chat/10/status").param("userId", "1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is("idle")));
+        }
+
+        @Test
+        void shouldReturnProcessingStatus() throws Exception {
+            when(kiChatService.getChat(10L, 1L)).thenReturn(sampleDetail());
+            when(kiChatService.getProcessingStatus(10L)).thenReturn(new StatusResult(ProcessingStatus.PROCESSING, null));
+
+            mockMvc.perform(get("/api/ki-chat/10/status").param("userId", "1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is("processing")));
+        }
+
+        @Test
+        void shouldReturnErrorStatusWithMessage() throws Exception {
+            when(kiChatService.getChat(10L, 1L)).thenReturn(sampleDetail());
+            when(kiChatService.getProcessingStatus(10L)).thenReturn(new StatusResult(ProcessingStatus.ERROR, "Gemini API down"));
+
+            mockMvc.perform(get("/api/ki-chat/10/status").param("userId", "1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is("error")))
+                    .andExpect(jsonPath("$.error", is("Gemini API down")));
+        }
+
+        @Test
+        void shouldReturn403WhenStatusIsRequestedByOtherUser() throws Exception {
+            when(kiChatService.getChat(10L, 2L)).thenThrow(new SecurityException("Kein Zugriff"));
+
+            mockMvc.perform(get("/api/ki-chat/10/status").param("userId", "2"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error", is("Kein Zugriff")));
+        }
+    }
+
+    @Nested
+    class CancelProcessing {
+
+        @Test
+        void shouldCancelProcessingSuccessfully() throws Exception {
+            when(kiChatService.getChat(10L, 1L)).thenReturn(sampleDetail());
+            doNothing().when(kiChatService).cancelProcessing(10L);
+
+            mockMvc.perform(post("/api/ki-chat/10/cancel").param("userId", "1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is("cancelled")));
+        }
+
+        @Test
+        void shouldReturn400ForInvalidUserId() throws Exception {
+            mockMvc.perform(post("/api/ki-chat/10/cancel").param("userId", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void shouldReturn403WhenCancelIsRequestedByOtherUser() throws Exception {
+            when(kiChatService.getChat(10L, 2L)).thenThrow(new SecurityException("Kein Zugriff"));
+
+            mockMvc.perform(post("/api/ki-chat/10/cancel").param("userId", "2"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error", is("Kein Zugriff")));
         }
     }
 }
