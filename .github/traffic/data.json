@@ -1,10 +1,10 @@
 {
-  "views_last_14_days": 171,
-  "unique_visitors_last_14_days": 12,
-  "clones_last_14_days": 1790,
-  "unique_cloners_last_14_days": 257,
-  "daily_views": [],
-  "daily_clones": [],
+  "total_views": 171,
+  "total_unique_visitors": 12,
+  "total_clones": 1790,
+  "total_unique_cloners": 257,
+  "last_view_timestamp": "2026-04-10T00:00:00Z",
+  "last_clone_timestamp": "2026-04-10T00:00:00Z",
   "referring_sites": [
     {
       "referrer": "github.com",
@@ -83,5 +83,5 @@
   "forks": 0,
   "watchers": 2,
   "open_issues": 0,
-  "updated_at": "2026-04-12T10:06:57Z"
+  "updated_at": "2026-04-12T10:22:25Z"
 }
