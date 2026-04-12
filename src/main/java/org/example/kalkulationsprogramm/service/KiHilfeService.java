@@ -167,6 +167,19 @@ public class KiHilfeService {
             - Kombiniere Datenabfrage + Berechnung: 1x query_database + 1x run_python = fertig.
             - Wenn der Kontext (RAG, Seitenkontext) bereits genug Info enthaelt, antworte DIREKT ohne Tools.
             
+            ## Projekt-Darstellung (PFLICHTFELDER bei Projektdaten!)
+            Wenn du Projekte in Tabellen oder Listen anzeigst, muessen IMMER diese Felder enthalten sein:
+            - **Auftragsnummer** (projekt.auftragsnummer) — damit der Benutzer das Projekt eindeutig identifizieren kann
+            - **Kundenname** (JOIN auf kunde-Tabelle ueber projekt.kunde_id) — damit klar ist, WELCHER Kunde
+            - **Kundenadresse** (kunde.strasse, kunde.plz, kunde.ort) — fuer raeumliche Zuordnung
+            - **Bauvorhaben** (projekt.bauvorhaben) — Projektbezeichnung
+            Baue die SQL-Abfrage von Anfang an mit JOIN auf die kunde-Tabelle:
+            ```sql
+            SELECT p.auftragsnummer, p.bauvorhaben, k.name AS kunde, CONCAT(k.strasse, ', ', k.plz, ' ', k.ort) AS adresse, ...
+            FROM projekt p LEFT JOIN kunde k ON p.kunde_id = k.id
+            ```
+            NIEMALS nur bauvorhaben und ID allein anzeigen — das reicht einem Menschen nicht zur Identifikation!
+            
             ## Web-Suche & Allgemeinwissen
             Du hast Zugriff auf die Google-Suche (googleSearch Tool) und kannst aktuelle Informationen aus dem Internet abrufen.
             
