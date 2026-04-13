@@ -118,6 +118,7 @@ export interface LieferantProjektAnteil {
   kostenstelleName?: string;
   prozent: number;
   berechneterBetrag?: number;
+  beschreibung?: string;
   zugeordnetVonName?: string;
   zugeordnetAm?: string;
 }

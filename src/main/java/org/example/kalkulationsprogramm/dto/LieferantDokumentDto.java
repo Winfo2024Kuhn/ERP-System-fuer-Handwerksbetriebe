@@ -47,6 +47,7 @@ public class LieferantDokumentDto {
         private String kostenstelleName;
         private Integer prozent;
         private BigDecimal berechneterBetrag;
+        private String beschreibung;
         private String zugeordnetVonName;
         private java.time.LocalDateTime zugeordnetAm;
     }

@@ -385,6 +385,7 @@ public class LieferantDokumentService {
                                                                         .id(pa.getId())
                                                                         .prozent(pa.getProzent())
                                                                         .berechneterBetrag(pa.getBerechneterBetrag())
+                                                                        .beschreibung(pa.getBeschreibung())
                                                                         .zugeordnetAm(pa.getZugeordnetAm());
                                                         if (pa.getZugeordnetVon() != null) {
                                                                 b.zugeordnetVonName(pa.getZugeordnetVon().getDisplayName());

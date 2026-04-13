@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
@@ -8,6 +9,7 @@ import { cn } from "../lib/utils";
 import type { LieferantDokument, LieferantDokumentTyp, LieferantDokumentenKette } from "../types";
 import LieferantDokumentModal from "./LieferantDokumentModal";
 import { LieferantDokumentImportModal } from "./LieferantDokumentImportModal";
+import { ZuordnungModal } from "./ZuordnungModal";
 import { prependUniqueById } from "../lib/optimisticUploads";
 
 // Typ-Konfiguration mit Farben
@@ -29,10 +31,12 @@ const TYP_REIHENFOLGE: LieferantDokumentTyp[] = ['ANGEBOT', 'AUFTRAGSBESTAETIGUN
 
 interface LieferantDokumenteTabProps {
     lieferantId: number | string;
+    lieferantName?: string;
     dokumente?: LieferantDokument[];
 }
 
-export default function LieferantDokumenteTab({ lieferantId, dokumente: initialDokumente }: LieferantDokumenteTabProps) {
+export default function LieferantDokumenteTab({ lieferantId, lieferantName, dokumente: initialDokumente }: LieferantDokumenteTabProps) {
+    const navigate = useNavigate();
     const [dokumente, setDokumente] = useState<LieferantDokument[]>(initialDokumente || []);
     const [loading, setLoading] = useState(!initialDokumente);
     const [searchQuery, setSearchQuery] = useState("");
@@ -56,6 +60,9 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
     const [selectedDokument, setSelectedDokument] = useState<LieferantDokument | null>(null);
     const [showDokumentModal, setShowDokumentModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
+
+    // Zuordnung bearbeiten State
+    const [zuordnungDokument, setZuordnungDokument] = useState<LieferantDokument | null>(null);
 
     // Handler für Dokument-Klick
     const handleDokumentSelect = (dok: LieferantDokument) => {
@@ -396,6 +403,8 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
                             formatDate={formatDate}
                             formatCurrency={formatCurrency}
                             onSelect={handleDokumentSelect}
+                            onNavigate={navigate}
+                            onBearbeiten={(dok) => setZuordnungDokument(dok)}
                         />
                     ))}
                 </div>
@@ -449,6 +458,8 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
                                 formatDate={formatDate}
                                 formatCurrency={formatCurrency}
                                 onSelect={() => handleDokumentSelect(dok)}
+                                onNavigate={navigate}
+                                onBearbeiten={() => setZuordnungDokument(dok)}
                             />
                         ))}
                     </div>
@@ -497,6 +508,21 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
                     void loadDokumente();
                 }}
             />
+
+            {/* Zuordnung bearbeiten Modal */}
+            {zuordnungDokument && zuordnungDokument.geschaeftsdaten && (
+                <ZuordnungModal
+                    geschaeftsdokumentId={zuordnungDokument.id}
+                    dokumentNummer={zuordnungDokument.geschaeftsdaten.dokumentNummer}
+                    lieferantName={lieferantName ?? null}
+                    pdfUrl={zuordnungDokument.url ?? null}
+                    onClose={() => setZuordnungDokument(null)}
+                    onSuccess={() => {
+                        setZuordnungDokument(null);
+                        void loadDokumente();
+                    }}
+                />
+            )}
         </div>
     );
 }
@@ -507,9 +533,27 @@ interface DokumentenKetteProps {
     formatDate: (d?: string) => string;
     formatCurrency: (v?: number) => string;
     onSelect: (dok: LieferantDokument) => void;
+    onNavigate: (path: string) => void;
+    onBearbeiten: (dok: LieferantDokument) => void;
 }
 
-function DokumentenKette({ kette, formatDate, formatCurrency, onSelect }: DokumentenKetteProps) {
+function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten }: DokumentenKetteProps) {
+    // Collect all unique project allocations across chain documents
+    const allAnteile = useMemo(() => {
+        const seen = new Set<string>();
+        const result: LieferantDokument['projektAnteile'] = [];
+        for (const dok of kette.dokumente) {
+            for (const anteil of dok.projektAnteile) {
+                const key = `${anteil.projektId ?? ''}-${anteil.kostenstelleId ?? ''}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    result.push(anteil);
+                }
+            }
+        }
+        return result;
+    }, [kette.dokumente]);
+
     return (
         <Card className="p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -569,6 +613,61 @@ function DokumentenKette({ kette, formatDate, formatCurrency, onSelect }: Dokume
                     );
                 })}
             </div>
+
+            {/* Zuordnungen: Projekte und Kostenstellen */}
+            {allAnteile.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-200/60 space-y-1.5">
+                    <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Zuordnungen</p>
+                        {(() => {
+                            const editableDok = kette.dokumente.find(d => d.geschaeftsdaten && d.projektAnteile.length > 0);
+                            return editableDok ? (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-rose-700 hover:bg-rose-100 h-6 px-2 text-xs"
+                                    onClick={() => onBearbeiten(editableDok)}
+                                >
+                                    <Edit2 className="w-3 h-3 mr-1" />
+                                    Bearbeiten
+                                </Button>
+                            ) : null;
+                        })()}
+                    </div>
+                    {allAnteile.map((anteil, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs">
+                            {anteil.projektId ? (
+                                <button
+                                    onClick={() => onNavigate(`/projekte?projektId=${anteil.projektId}`)}
+                                    className="inline-flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:underline"
+                                >
+                                    <Briefcase className="w-3 h-3" />
+                                    <span className="font-medium">{anteil.projektName}</span>
+                                    {anteil.auftragsnummer && <span className="text-slate-400">({anteil.auftragsnummer})</span>}
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                </button>
+                            ) : anteil.kostenstelleId ? (
+                                <span className="inline-flex items-center gap-1 text-slate-600">
+                                    <Building2 className="w-3 h-3" />
+                                    <span className="font-medium">{anteil.kostenstelleName}</span>
+                                </span>
+                            ) : null}
+                            <span className="text-slate-400">
+                                {anteil.prozent != null && `${anteil.prozent}%`}
+                                {anteil.berechneterBetrag != null && ` · ${formatCurrency(anteil.berechneterBetrag)}`}
+                            </span>
+                            {anteil.beschreibung && (
+                                <span className="text-slate-500 italic truncate max-w-[200px]" title={anteil.beschreibung}>
+                                    „{anteil.beschreibung}"
+                                </span>
+                            )}
+                            {anteil.zugeordnetVonName && (
+                                <span className="text-slate-400">(von {anteil.zugeordnetVonName})</span>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
         </Card>
     );
 }
@@ -579,9 +678,11 @@ interface DokumentCardProps {
     formatDate: (d?: string) => string;
     formatCurrency: (v?: number) => string;
     onSelect: () => void;
+    onNavigate: (path: string) => void;
+    onBearbeiten: () => void;
 }
 
-function DokumentCard({ dokument, formatDate, formatCurrency, onSelect }: DokumentCardProps) {
+function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten }: DokumentCardProps) {
     const config = getConfig(dokument.typ);
     const hasProject = dokument.projektAnteile.length > 0;
     const confidence = dokument.geschaeftsdaten?.aiConfidence;
@@ -658,15 +759,32 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect }: Dokume
             {/* Zuordnungsdetails: Wer hat zugeordnet + Aufteilung */}
             {hasProject && (
                 <div className="mt-3 pt-2 border-t border-slate-200/60 space-y-1.5">
+                    {dokument.geschaeftsdaten && (
+                        <div className="flex justify-end">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-rose-700 hover:bg-rose-100 h-6 px-2 text-xs"
+                                onClick={(e) => { e.stopPropagation(); onBearbeiten(); }}
+                            >
+                                <Edit2 className="w-3 h-3 mr-1" />
+                                Bearbeiten
+                            </Button>
+                        </div>
+                    )}
                     {dokument.projektAnteile.map((anteil, idx) => (
                         <div key={idx} className="flex items-center justify-between text-xs">
                             <div className="flex items-center gap-1 text-slate-600 min-w-0">
                                 {anteil.projektId ? (
-                                    <span className="flex items-center gap-1 truncate">
-                                        <Briefcase className="w-3 h-3 text-rose-500 shrink-0" />
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onNavigate(`/projekte?projektId=${anteil.projektId}`); }}
+                                        className="flex items-center gap-1 truncate text-rose-600 hover:text-rose-700 hover:underline"
+                                    >
+                                        <Briefcase className="w-3 h-3 shrink-0" />
                                         <span className="truncate font-medium">{anteil.projektName}</span>
                                         {anteil.auftragsnummer && <span className="text-slate-400">({anteil.auftragsnummer})</span>}
-                                    </span>
+                                        <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                    </button>
                                 ) : anteil.kostenstelleId ? (
                                     <span className="flex items-center gap-1 truncate">
                                         <Building2 className="w-3 h-3 text-slate-500 shrink-0" />
@@ -680,6 +798,12 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect }: Dokume
                             </div>
                         </div>
                     ))}
+                    {/* Beschreibung (erste mit Wert) */}
+                    {dokument.projektAnteile.some(a => a.beschreibung) && (
+                        <p className="text-xs text-slate-500 italic truncate" title={dokument.projektAnteile.find(a => a.beschreibung)?.beschreibung}>
+                            „{dokument.projektAnteile.find(a => a.beschreibung)?.beschreibung}"
+                        </p>
+                    )}
                     {/* Zugeordnet von (erster Anteil mit User-Info) */}
                     {dokument.projektAnteile.some(a => a.zugeordnetVonName) && (
                         <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
