@@ -157,6 +157,21 @@ Coverage-Ziele: Services ≥ 80%, Controller alle Endpoints (Happy-Path + Fehler
 
 ---
 
+## Feature-Flags (application.properties)
+
+Bestimmte Module sind über Feature-Flags steuerbar und standardmäßig **deaktiviert**. Bei Änderungen an diesen Modulen immer im Hinterkopf behalten, dass das Feature im laufenden System deaktiviert sein kann:
+
+| Flag | Modul | Hinweis |
+|------|-------|---------|
+| `en1090.features.enabled=false` | EN 1090 Werkstattproduktionskontrolle (WPK) | Schaltet den EN-1090-Tab, EXC-Klassen-UI und WPK-Status komplett ab |
+| `echeck.features.enabled=false` | E-Check (Betriebsmittelprüfung) | Auch aktiv wenn EN 1090 aktiviert ist; unabhängig schaltbar |
+| `email.features.enabled=false` | E-Mail-Import, Cleanup, Vendor-Abruf (Scheduled Tasks) | |
+| `ai.email.enabled=false` | KI-gestützte E-Mail-Analyse | |
+
+> **Pflicht bei EN-1090-Änderungen:** Frontend-Code, der EN-1090-Funktionalität enthält, muss den `features.en1090`-Flag aus `useFeatures()` auswerten – niemals EN-1090-Inhalte ohne Guard rendern. Backend-Endpoints müssen ebenfalls den Flag prüfen (`@ConditionalOnProperty` oder manuell in Service).
+
+---
+
 ## Architektur-Patterns
 
 | Pattern | Einsatz |

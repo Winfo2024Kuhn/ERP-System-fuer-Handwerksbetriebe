@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ElementType } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
     AlertTriangle,
@@ -18,6 +18,7 @@ import {
     FileText,
     FolderOpen,
     Hammer,
+    Info,
     Lock,
     Mail,
     MapPin,
@@ -1319,98 +1320,191 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             )}
 
             {activeTab === 'en1090' && features.en1090 && (
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-medium text-slate-900">EN 1090 – WPK-Status</h3>
-                        <button
-                            onClick={() => {
-                                setWpkLoading(true);
-                                fetch(`/api/en1090/wpk/${projekt.id}`)
-                                    .then(r => r.ok ? r.json() : null)
-                                    .then((data: WpkStatus | null) => setWpkStatus(data))
-                                    .catch(() => setWpkStatus(null))
-                                    .finally(() => setWpkLoading(false));
-                            }}
-                            disabled={wpkLoading}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm font-medium disabled:opacity-50 transition-colors"
-                        >
-                            <RefreshCw className={`w-3.5 h-3.5 ${wpkLoading ? 'animate-spin' : ''}`} />
-                            Aktualisieren
-                        </button>
+                <div className="space-y-6">
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-lg font-medium text-slate-900">EN 1090 – Anforderungen</h3>
+                            <p className="text-sm text-slate-500 mt-0.5">
+                                {projekt.excKlasse === 'EXC_1' ? 'Ausführungsklasse EXC 1 – Einfache Bauteile' :
+                                 projekt.excKlasse === 'EXC_2' ? 'Ausführungsklasse EXC 2 – Typischer Stahlbau' :
+                                 'Keine Ausführungsklasse zugewiesen'}
+                            </p>
+                        </div>
+                        {projekt.excKlasse === 'EXC_2' && (
+                            <button
+                                onClick={() => {
+                                    setWpkLoading(true);
+                                    fetch(`/api/en1090/wpk/${projekt.id}`)
+                                        .then(r => r.ok ? r.json() : null)
+                                        .then((data: WpkStatus | null) => setWpkStatus(data))
+                                        .catch(() => setWpkStatus(null))
+                                        .finally(() => setWpkLoading(false));
+                                }}
+                                disabled={wpkLoading}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm font-medium disabled:opacity-50 transition-colors"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${wpkLoading ? 'animate-spin' : ''}`} />
+                                Aktualisieren
+                            </button>
+                        )}
                     </div>
 
-                    {wpkLoading && !wpkStatus && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {[1,2,3,4].map(i => (
-                                <div key={i} className="rounded-xl border-2 border-slate-200 bg-slate-50 p-5 animate-pulse">
-                                    <div className="h-5 bg-slate-200 rounded w-1/3 mb-3" />
-                                    <div className="h-4 bg-slate-200 rounded w-2/3" />
-                                </div>
-                            ))}
+                    {/* KEINE EN 1090 */}
+                    {!projekt.excKlasse && (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
+                            <Shield className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                            <p className="font-medium text-slate-600">Kein EN 1090 für dieses Projekt</p>
+                            <p className="text-sm text-slate-400 mt-1">Es wurde keine Ausführungsklasse zugewiesen. EN 1090-Anforderungen sind nicht aktiv.</p>
                         </div>
                     )}
 
-                    {wpkStatus && (
+                    {/* EXC 1 */}
+                    {projekt.excKlasse === 'EXC_1' && (
                         <>
-                            {/* Gesamt-Ampel */}
-                            {(() => {
-                                const values = [wpkStatus.schweisser, wpkStatus.wps, wpkStatus.werkstoffzeugnisse, wpkStatus.echeck];
-                                const gesamt = values.includes('FEHLER') ? 'FEHLER' : values.includes('WARNUNG') ? 'WARNUNG' : 'OK';
-                                return (
-                                    <div className={`rounded-xl p-4 flex items-center gap-3 ${
-                                        gesamt === 'OK' ? 'bg-green-100 border border-green-200' :
-                                        gesamt === 'WARNUNG' ? 'bg-yellow-100 border border-yellow-200' :
-                                        'bg-red-100 border border-red-200'
-                                    }`}>
-                                        {gesamt === 'OK' && <CheckCircle2 className="w-5 h-5 text-green-600" />}
-                                        {gesamt === 'WARNUNG' && <AlertTriangle className="w-5 h-5 text-yellow-600" />}
-                                        {gesamt === 'FEHLER' && <XCircle className="w-5 h-5 text-red-600" />}
-                                        <span className={`font-semibold text-sm ${
-                                            gesamt === 'OK' ? 'text-green-800' :
-                                            gesamt === 'WARNUNG' ? 'text-yellow-800' : 'text-red-800'
-                                        }`}>
-                                            WPK-Gesamtstatus: {gesamt === 'OK' ? 'Konform' : gesamt === 'WARNUNG' ? 'Handlungsbedarf' : 'Nicht konform'}
-                                        </span>
-                                    </div>
-                                );
-                            })()}
-
-                            {/* Status-Karten */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {[
-                                    { title: 'Schweißer-Zertifikate', status: wpkStatus.schweisser, hinweis: wpkStatus.schweisserHinweis, icon: User },
-                                    { title: 'WPS (Schweißanweisungen)', status: wpkStatus.wps, hinweis: wpkStatus.wpsHinweis, icon: FileText },
-                                    { title: 'Werkstoffzeugnisse', status: wpkStatus.werkstoffzeugnisse, hinweis: wpkStatus.werkstoffzeugnisseHinweis, icon: File },
-                                    { title: 'E-Check (Betriebsmittel)', status: wpkStatus.echeck, hinweis: wpkStatus.echeckHinweis, icon: Shield },
-                                ].map(card => {
-                                    const border = card.status === 'OK' ? 'border-green-200' : card.status === 'WARNUNG' ? 'border-yellow-300' : 'border-red-300';
-                                    const bg = card.status === 'OK' ? 'bg-green-50' : card.status === 'WARNUNG' ? 'bg-yellow-50' : 'bg-red-50';
-                                    return (
-                                        <div key={card.title} className={`rounded-xl border-2 ${border} ${bg} p-5`}>
-                                            <div className="flex items-start justify-between gap-3 mb-3">
-                                                <div className="flex items-center gap-2">
-                                                    <card.icon className="w-5 h-5 text-slate-600 flex-shrink-0" />
-                                                    <h4 className="font-semibold text-slate-800">{card.title}</h4>
-                                                </div>
-                                                <En1090StatusBadge status={card.status} />
-                                            </div>
-                                            {card.hinweis ? (
-                                                <p className="text-sm text-slate-600 leading-relaxed">{card.hinweis}</p>
-                                            ) : card.status === 'OK' ? (
-                                                <p className="text-sm text-green-700">Alle Anforderungen erfüllt.</p>
-                                            ) : null}
-                                        </div>
-                                    );
-                                })}
+                            <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 flex items-start gap-3">
+                                <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-semibold text-blue-800 text-sm">EXC 1 – Grundanforderungen</p>
+                                    <p className="text-blue-700 text-xs mt-1">Geringste Anforderungsstufe. Keine externe WPK-Zertifizierung erforderlich. Interne Eigenkontrolle genügt.</p>
+                                </div>
                             </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {([
+                                    { icon: User, title: 'Schweißer-Qualifikation', pflicht: 'Empfohlen', desc: 'Grundqualifikation nach EN ISO 9606-1 bei tragenden Schweißnähten empfohlen. Kein vorgeschriebenes Wiederholungsintervall.' },
+                                    { icon: FileText, title: 'WPS (Schweißanweisung)', pflicht: 'Empfohlen', desc: 'Standardverfahren und vorqualifizierte Schweißanweisungen (pWPS) ausreichend. Keine vollqualifizierte WPS nach EN ISO 15614-1 erforderlich.' },
+                                    { icon: File, title: 'Werkstoffzeugnis', pflicht: 'Pflicht*', desc: '2.1-Zeugnis (einfache Konformitätsbescheinigung nach EN 10204) genügt. Ein 3.1-Zeugnis (Schmelzerzeugnis) ist nicht erforderlich.' },
+                                    { icon: Shield, title: 'Betriebsmittelprüfung', pflicht: 'Pflicht', desc: 'DGUV V3 (BGV A3) Prüfpflicht gilt unabhängig von EN 1090. Regelmäßige E-Prüfung aller elektrischen Betriebsmittel.' },
+                                    { icon: CheckCircle2, title: 'WPK-Überwachung', pflicht: 'Intern', desc: 'Interne werkseigene Produktionskontrolle (WPK) ausreichend. Keine externe Zertifizierung durch eine notifizierte Stelle erforderlich.' },
+                                    { icon: User, title: 'Schweißaufsicht', pflicht: 'Optional', desc: 'Keine zertifizierte Schweißaufsichtsperson nach EN ISO 14731 (IWE/IWI) vorgeschrieben. Empfohlen für größere Schweißarbeiten.' },
+                                ] as { icon: ElementType; title: string; pflicht: string; desc: string }[]).map(item => (
+                                    <div key={item.title} className="rounded-xl border-2 border-slate-200 bg-white p-5">
+                                        <div className="flex items-start justify-between gap-3 mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <item.icon className="w-5 h-5 text-slate-500 flex-shrink-0" />
+                                                <h4 className="font-semibold text-slate-800 text-sm">{item.title}</h4>
+                                            </div>
+                                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 ${
+                                                item.pflicht === 'Pflicht' || item.pflicht === 'Pflicht*' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                                item.pflicht === 'Intern' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                item.pflicht === 'Empfohlen' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                                                'bg-slate-50 text-slate-500 border-slate-200'
+                                            }`}>{item.pflicht}</span>
+                                        </div>
+                                        <p className="text-sm text-slate-600 leading-relaxed">{item.desc}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-xs text-slate-400">* Bei tragenden Bauteilen und Verbindungen gemäß Projektspezifikation.</p>
                         </>
                     )}
 
-                    {!wpkLoading && !wpkStatus && (
-                        <div className="text-center py-10 text-slate-500">
-                            <Shield className="w-10 h-10 mx-auto mb-3 text-slate-300" />
-                            <p className="text-sm">WPK-Status konnte nicht geladen werden.</p>
-                        </div>
+                    {/* EXC 2 */}
+                    {projekt.excKlasse === 'EXC_2' && (
+                        <>
+                            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
+                                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-semibold text-amber-800 text-sm">EXC 2 – Erhöhte Anforderungen</p>
+                                    <p className="text-amber-700 text-xs mt-1">Standard für den typischen Stahlbau. WPS-Pflicht, 3.1-Zeugnis, Schweißaufsicht und externe WPK-Zertifizierung durch notifizierte Stelle erforderlich.</p>
+                                </div>
+                            </div>
+                            <h4 className="font-medium text-slate-700 text-sm">Normanforderungen</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {([
+                                    { icon: User, title: 'Schweißer-Zertifizierung', desc: 'Gültige Prüfbescheinigung nach EN ISO 9606-1 (Pflicht). Erneuerung alle 3 Jahre oder 2-Jahres-Aktivitätsnachweis durch die verantwortliche Schweißaufsichtsperson.' },
+                                    { icon: FileText, title: 'WPS (Schweißanweisung)', desc: 'Vollqualifizierte Schweißanweisung nach EN ISO 15614-1 erforderlich. Vorqualifizierte pWPS ist nicht ausreichend. Je Schweißverfahren und Nahttyp erforderlich.' },
+                                    { icon: File, title: 'Werkstoffzeugnis 3.1', desc: '3.1-Zeugnis nach EN 10204 (Schmelzerzeugnis des Herstellers) ist Pflicht. Lückenlose Rückverfolgbarkeit des Materials bis zur Charge muss gewährleistet sein.' },
+                                    { icon: Shield, title: 'Betriebsmittelprüfung', desc: 'DGUV V3 (BGV A3) Prüfintervalle lückenlos einhalten und dokumentieren. Prüfprotokolle müssen aufbewahrt und auf Verlangen vorgelegt werden können.' },
+                                    { icon: CheckCircle2, title: 'WPK + Zertifizierung', desc: 'Interne WPK + externe Erstinspektion durch notifizierte Stelle. Laufende Fremdüberwachung erforderlich. CE-Kennzeichnung der Bauteile ist Pflicht.' },
+                                    { icon: User, title: 'Schweißaufsichtsperson', desc: 'Zertifizierte Schweißaufsicht nach EN ISO 14731 (IWE – Internationaler Schweißingenieur, IWI oder gleichwertige Qualifikation EWE/EWI) ist zu benennen.' },
+                                ] as { icon: ElementType; title: string; desc: string }[]).map(item => (
+                                    <div key={item.title} className="rounded-xl border-2 border-rose-200 bg-rose-50 p-5">
+                                        <div className="flex items-start justify-between gap-3 mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <item.icon className="w-5 h-5 text-rose-600 flex-shrink-0" />
+                                                <h4 className="font-semibold text-slate-800 text-sm">{item.title}</h4>
+                                            </div>
+                                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-rose-100 text-rose-700 border-rose-300 flex-shrink-0">Pflicht</span>
+                                        </div>
+                                        <p className="text-sm text-slate-600 leading-relaxed">{item.desc}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Live WPK-Status */}
+                            <div className="border-t border-slate-200 pt-4 space-y-4">
+                                <h4 className="font-medium text-slate-700 text-sm">Live WPK-Status</h4>
+                                {wpkLoading && !wpkStatus && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {[1,2,3,4].map(i => (
+                                            <div key={i} className="rounded-xl border-2 border-slate-200 bg-slate-50 p-5 animate-pulse">
+                                                <div className="h-5 bg-slate-200 rounded w-1/3 mb-3" />
+                                                <div className="h-4 bg-slate-200 rounded w-2/3" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {wpkStatus && (
+                                    <>
+                                        {(() => {
+                                            const values = [wpkStatus.schweisser, wpkStatus.wps, wpkStatus.werkstoffzeugnisse, wpkStatus.echeck];
+                                            const gesamt = values.includes('FEHLER') ? 'FEHLER' : values.includes('WARNUNG') ? 'WARNUNG' : 'OK';
+                                            return (
+                                                <div className={`rounded-xl p-4 flex items-center gap-3 ${
+                                                    gesamt === 'OK' ? 'bg-green-100 border border-green-200' :
+                                                    gesamt === 'WARNUNG' ? 'bg-yellow-100 border border-yellow-200' :
+                                                    'bg-red-100 border border-red-200'
+                                                }`}>
+                                                    {gesamt === 'OK' && <CheckCircle2 className="w-5 h-5 text-green-600" />}
+                                                    {gesamt === 'WARNUNG' && <AlertTriangle className="w-5 h-5 text-yellow-600" />}
+                                                    {gesamt === 'FEHLER' && <XCircle className="w-5 h-5 text-red-600" />}
+                                                    <span className={`font-semibold text-sm ${
+                                                        gesamt === 'OK' ? 'text-green-800' :
+                                                        gesamt === 'WARNUNG' ? 'text-yellow-800' : 'text-red-800'
+                                                    }`}>
+                                                        WPK-Gesamtstatus: {gesamt === 'OK' ? 'Konform' : gesamt === 'WARNUNG' ? 'Handlungsbedarf' : 'Nicht konform'}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })()}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {[
+                                                { title: 'Schweißer-Zertifikate', status: wpkStatus.schweisser, hinweis: wpkStatus.schweisserHinweis, icon: User },
+                                                { title: 'WPS (Schweißanweisungen)', status: wpkStatus.wps, hinweis: wpkStatus.wpsHinweis, icon: FileText },
+                                                { title: 'Werkstoffzeugnisse', status: wpkStatus.werkstoffzeugnisse, hinweis: wpkStatus.werkstoffzeugnisseHinweis, icon: File },
+                                                { title: 'E-Check (Betriebsmittel)', status: wpkStatus.echeck, hinweis: wpkStatus.echeckHinweis, icon: Shield },
+                                            ].map(card => {
+                                                const border = card.status === 'OK' ? 'border-green-200' : card.status === 'WARNUNG' ? 'border-yellow-300' : 'border-red-300';
+                                                const bg = card.status === 'OK' ? 'bg-green-50' : card.status === 'WARNUNG' ? 'bg-yellow-50' : 'bg-red-50';
+                                                return (
+                                                    <div key={card.title} className={`rounded-xl border-2 ${border} ${bg} p-5`}>
+                                                        <div className="flex items-start justify-between gap-3 mb-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <card.icon className="w-5 h-5 text-slate-600 flex-shrink-0" />
+                                                                <h4 className="font-semibold text-slate-800">{card.title}</h4>
+                                                            </div>
+                                                            <En1090StatusBadge status={card.status} />
+                                                        </div>
+                                                        {card.hinweis ? (
+                                                            <p className="text-sm text-slate-600 leading-relaxed">{card.hinweis}</p>
+                                                        ) : card.status === 'OK' ? (
+                                                            <p className="text-sm text-green-700">Alle Anforderungen erfüllt.</p>
+                                                        ) : null}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </>
+                                )}
+                                {!wpkLoading && !wpkStatus && (
+                                    <div className="text-center py-8 text-slate-500">
+                                        <Shield className="w-8 h-8 mx-auto mb-3 text-slate-300" />
+                                        <p className="text-sm">WPK-Status konnte nicht geladen werden.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </>
                     )}
                 </div>
             )}

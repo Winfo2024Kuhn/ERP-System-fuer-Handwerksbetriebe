@@ -1268,13 +1268,11 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
                                     EN 1090 Ausführungsklasse <span className="text-slate-400 font-normal">(optional)</span>
                                 </label>
-                                <div className="grid grid-cols-5 gap-2">
+                                <div className="grid grid-cols-3 gap-2">
                                     {[
                                         { value: null, label: 'Keine', desc: 'Kein EN 1090' },
                                         { value: 'EXC_1', label: 'EXC 1', desc: 'Einfache Bauteile' },
                                         { value: 'EXC_2', label: 'EXC 2', desc: 'Typischer Stahlbau' },
-                                        { value: 'EXC_3', label: 'EXC 3', desc: 'Erhöhte Anforderungen' },
-                                        { value: 'EXC_4', label: 'EXC 4', desc: 'Höchste Anforderungen' },
                                     ].map(klasse => (
                                         <button
                                             key={klasse.value ?? 'none'}
