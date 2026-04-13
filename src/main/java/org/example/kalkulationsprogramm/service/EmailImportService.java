@@ -222,7 +222,19 @@ public class EmailImportService {
         String messageId = (ids != null && ids.length > 0) ? ids[0] : null;
 
         if (messageId == null) {
-            return false; // Ohne Message-ID keine sichere Deduplizierung
+            // Fallback: IMAP-UID + Ordner als deterministische Message-ID
+            long uid = folder.getUID(msg);
+            messageId = "<no-msgid-uid-" + uid + "@" + folder.getFullName().replace(" ", "_") + ">";
+            try {
+                String fallbackSubject = msg.getSubject() != null ? msg.getSubject() : "<kein Betreff>";
+                Address[] fallbackFrom = msg.getFrom();
+                String fallbackFromStr = (fallbackFrom != null && fallbackFrom.length > 0) ? fallbackFrom[0].toString() : "<unbekannt>";
+                log.warn("[EmailImport] Email ohne Message-ID in Ordner '{}' (UID: {}), Von: '{}', Betreff: '{}' – Fallback-ID: {}",
+                        folder.getFullName(), uid, fallbackFromStr, fallbackSubject, messageId);
+            } catch (Exception ignored) {
+                log.warn("[EmailImport] Email ohne Message-ID in Ordner '{}' (UID: {}) – Fallback-ID: {}",
+                        folder.getFullName(), uid, messageId);
+            }
         }
 
         // Bereits importiert?
