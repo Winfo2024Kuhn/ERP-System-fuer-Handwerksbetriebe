@@ -1188,6 +1188,9 @@ public class UnifiedEmailController {
             dto.setLieferantName(email.getLieferant().getLieferantenname());
         }
 
+        // Compute folder
+        dto.setFolder(computeFolder(email));
+
         // Attachments
         dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
         if (email.getAttachments() != null && !email.getAttachments().isEmpty()) {
@@ -1220,5 +1223,23 @@ public class UnifiedEmailController {
         }
 
         return dto;
+    }
+
+    private String computeFolder(Email email) {
+        if (email.getDeletedAt() != null) return "trash";
+        if (email.isSpam()) return "spam";
+        if (email.isNewsletter()) return "newsletter";
+        if (email.getDirection() == org.example.kalkulationsprogramm.domain.EmailDirection.OUT) return "sent";
+        var typ = email.getZuordnungTyp();
+        if (typ != null) {
+            switch (typ) {
+                case PROJEKT: return "projects";
+                case ANFRAGE: return "offers";
+                case LIEFERANT: return "suppliers";
+                default: break;
+            }
+        }
+        if (email.isPotentialInquiry()) return "inquiries";
+        return "inbox";
     }
 }

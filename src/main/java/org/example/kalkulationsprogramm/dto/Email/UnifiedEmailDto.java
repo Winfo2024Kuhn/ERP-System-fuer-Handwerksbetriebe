@@ -43,6 +43,9 @@ public class UnifiedEmailDto {
     private Long lieferantId;
     private String lieferantName;
 
+    // Ordner-Zuordnung (computed)
+    private String folder;
+
     // Anhänge
     private List<AttachmentDto> attachments;
     private boolean hasAttachments;

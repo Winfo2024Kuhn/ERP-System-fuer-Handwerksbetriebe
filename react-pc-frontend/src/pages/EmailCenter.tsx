@@ -92,6 +92,8 @@ interface EmailItem {
     projektId?: number;
     anfrageId?: number;
     lieferantId?: number;
+    // Computed folder from backend
+    folder?: FolderType;
 }
 
 // Folder Types
@@ -420,6 +422,7 @@ export default function EmailCenter() {
     const [selectedEmail, setSelectedEmail] = useState<EmailItem | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const lastSelectedIdRef = useRef<number | null>(null);
+    const deepLinkFolderSwitchRef = useRef(false);
 
     // Composition State
     const [isComposing, setIsComposing] = useState(false);
@@ -547,41 +550,44 @@ export default function EmailCenter() {
         if (!emailIdParam || emails.length === 0) return;
         const emailId = Number(emailIdParam);
         if (isNaN(emailId)) return;
-        const found = emails.find(e => e.id === emailId);
-        if (found) {
-            setSelectedEmail(found);
-            setSelectedIds(new Set([found.id]));
-            // Mark as read
-            if (!found.isRead) {
-                fetch(`/api/emails/${found.id}/mark-read`, { method: 'POST' })
+
+        const selectAndMarkRead = (email: EmailItem) => {
+            // Switch folder if the email belongs to a different one
+            if (email.folder && email.folder !== activeFolder) {
+                deepLinkFolderSwitchRef.current = true;
+                setActiveFolder(email.folder);
+            }
+            setSelectedEmail(email);
+            setSelectedIds(new Set([email.id]));
+            if (!email.isRead) {
+                fetch(`/api/emails/${email.id}/mark-read`, { method: 'POST' })
                     .then(() => {
-                        setEmails(prev => prev.map(e => e.id === found.id ? { ...e, isRead: true } : e));
+                        setEmails(prev => prev.map(e => e.id === email.id ? { ...e, isRead: true } : e));
                         loadStats();
                     })
                     .catch(err => console.error('Failed to mark as read:', err));
             }
-            // Clear URL param after selecting
             setSearchParams({}, { replace: true });
+        };
+
+        const found = emails.find(e => e.id === emailId);
+        if (found) {
+            selectAndMarkRead(found);
         } else {
-            // Email not in current folder - try fetching it directly
+            // Email not in current folder - fetch it directly and switch folder
             fetch(`/api/emails/${emailId}`)
                 .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
-                .then((email: EmailItem) => {
-                    setSelectedEmail(email);
-                    setSelectedIds(new Set([email.id]));
-                    if (!email.isRead) {
-                        fetch(`/api/emails/${email.id}/mark-read`, { method: 'POST' })
-                            .then(() => loadStats())
-                            .catch(err => console.error('Failed to mark as read:', err));
-                    }
-                    setSearchParams({}, { replace: true });
-                })
+                .then((email: EmailItem) => selectAndMarkRead(email))
                 .catch(() => { /* email not found, ignore */ });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [emails, searchParams]);
 
     useEffect(() => {
+        if (deepLinkFolderSwitchRef.current) {
+            deepLinkFolderSwitchRef.current = false;
+            return;
+        }
         if (!isComposing) {
             setSelectedEmail(null);
             setSelectedIds(new Set());
