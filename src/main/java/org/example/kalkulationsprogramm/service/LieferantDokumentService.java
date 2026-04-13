@@ -376,6 +376,7 @@ public class LieferantDokumentService {
                                                 ? dok.getUploadedBy().getVorname() + " "
                                                                 + dok.getUploadedBy().getNachname()
                                                 : null)
+                                .wareGeprueft(dok.getWareGeprueft())
 
                                 .projektAnteile(dok.getProjektAnteile().stream()
                                                 .map(pa -> LieferantDokumentDto.ProjektAnteilRef.builder()

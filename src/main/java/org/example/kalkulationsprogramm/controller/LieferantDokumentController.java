@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -735,4 +736,22 @@ public class LieferantDokumentController {
 
         return null;
     }
+
+    // ==================== WARE-GEPRUEFT ====================
+
+    @PatchMapping("/{dokumentId}/ware-geprueft")
+    @Transactional
+    public ResponseEntity<Void> setWareGeprueft(
+            @PathVariable Long dokumentId,
+            @RequestBody WareGeprueftRequest request) {
+        return dokumentRepository.findById(dokumentId)
+                .map(dok -> {
+                    dok.setWareGeprueft(request.wareGeprueft());
+                    dokumentRepository.save(dok);
+                    return ResponseEntity.ok().<Void>build();
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    record WareGeprueftRequest(boolean wareGeprueft) {}
 }

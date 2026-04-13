@@ -32,6 +32,7 @@ public class LieferantDokumentDto {
         private List<ProjektAnteilRef> projektAnteile;
         private List<VerknuepftesDoc> verknuepfteDokumente;
         private GeschaeftsdatenRef geschaeftsdaten;
+        private Boolean wareGeprueft;
     }
 
     @Data
