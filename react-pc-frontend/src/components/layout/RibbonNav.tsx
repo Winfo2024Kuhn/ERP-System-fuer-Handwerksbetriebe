@@ -5,11 +5,12 @@ import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
     FileText, Gem, Home, Layers, List, Mail, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
-    Calendar, CalendarDays, Plane, Shield
+    Calendar, CalendarDays, Plane, Shield, Award, ClipboardCheck, FileCheck2, Wrench, Zap
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../../auth/AuthContext';
+import { useFeatures } from '../../hooks/useFeatures';
 
 // Navigation structure with subgroups for better organization
 interface NavItem {
@@ -156,6 +157,33 @@ const NAVIGATION: NavCategory[] = [
     }
 ];
 
+/** EN 1090 EXC 2 Kategorie – nur sichtbar wenn en1090.features.enabled=true */
+const EN1090_CATEGORY: NavCategory = {
+    category: 'EN 1090',
+    subgroups: [
+        {
+            label: 'Qualitätssicherung',
+            items: [
+                { name: 'WPK-Dashboard', href: '/en1090/wpk', icon: ClipboardCheck },
+                { name: 'Werkstoffzeugnisse', href: '/en1090/werkstoffzeugnisse', icon: FileCheck2 },
+            ]
+        },
+        {
+            label: 'Schweißen',
+            items: [
+                { name: 'Schweißanweisungen', href: '/en1090/wps', icon: Wrench },
+                { name: 'Schweißer-Zertifikate', href: '/en1090/schweisser', icon: Award },
+            ]
+        },
+        {
+            label: 'Prüfungen',
+            items: [
+                { name: 'Betriebsmittel E-Check', href: '/betriebsmittel', icon: Zap },
+            ]
+        }
+    ]
+};
+
 const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer']);
 
 
@@ -163,9 +191,13 @@ export function RibbonNavigation() {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, isAdmin, logout } = useAuth();
+    const features = useFeatures();
 
     const visibleNavigation = useMemo<NavCategory[]>(() => {
-        return NAVIGATION
+        const base = features.en1090
+            ? [...NAVIGATION, EN1090_CATEGORY]
+            : NAVIGATION;
+        return base
             .map((category) => ({
                 ...category,
                 subgroups: category.subgroups
@@ -176,7 +208,7 @@ export function RibbonNavigation() {
                     .filter((subgroup) => subgroup.items.length > 0),
             }))
             .filter((category) => category.subgroups.length > 0);
-    }, [isAdmin]);
+    }, [isAdmin, features.en1090]);
 
     const [selectedCategory, setSelectedCategory] = useState<string>(NAVIGATION[0].category);
     // Track the pathname when the user explicitly clicked a tab.

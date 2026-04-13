@@ -41,6 +41,11 @@ import ArbeitszeitartEditor from './pages/ArbeitszeitartEditor';
 import EinstellungenEditor from './pages/EinstellungenEditor';
 import LoginPage from './pages/LoginPage';
 import FirstLoginSetupPage from './pages/FirstLoginSetupPage';
+import WpkDashboardPage from './pages/WpkDashboardPage';
+import BetriebsmittelPage from './pages/BetriebsmittelPage';
+import SchweisserZertifikatePage from './pages/SchweisserZertifikatePage';
+import WpsPage from './pages/WpsPage';
+import WerkstoffzeugnissePage from './pages/WerkstoffzeugnissePage';
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -99,6 +104,13 @@ export default function App() {
                 <Route path="/abteilung-berechtigungen" element={<RequireAdmin><ErrorBoundary><AbteilungBerechtigungenEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/firma" element={<RequireAdmin><ErrorBoundary><FirmaEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/einstellungen" element={<RequireAdmin><ErrorBoundary><EinstellungenEditor /></ErrorBoundary></RequireAdmin>} />
+
+                {/* EN 1090 */}
+                <Route path="/en1090/wpk" element={<ErrorBoundary><WpkDashboardPage /></ErrorBoundary>} />
+                <Route path="/en1090/schweisser" element={<ErrorBoundary><SchweisserZertifikatePage /></ErrorBoundary>} />
+                <Route path="/en1090/wps" element={<ErrorBoundary><WpsPage /></ErrorBoundary>} />
+                <Route path="/en1090/werkstoffzeugnisse" element={<ErrorBoundary><WerkstoffzeugnissePage /></ErrorBoundary>} />
+                <Route path="/betriebsmittel" element={<ErrorBoundary><BetriebsmittelPage /></ErrorBoundary>} />
 
                 <Route path="*" element={<Navigate to="/projekte" replace />} />
               </Route>

@@ -374,6 +374,8 @@ export interface Projekt {
   ort?: string;
   kurzbeschreibung?: string;
   bildUrl?: string;
+  projektArt?: string;
+  excKlasse?: string | null;
 }
 
 export interface ProjektZeit {
