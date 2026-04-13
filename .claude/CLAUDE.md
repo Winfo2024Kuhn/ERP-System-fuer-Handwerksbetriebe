@@ -166,6 +166,7 @@ Coverage-Ziele: Services ≥ 80%, Controller alle Endpoints (Happy-Path + Fehler
 | MonatsSaldo-Caching | Vergangene Monate gecacht, aktueller Monat live |
 | Datei-Deduplizierung | `LieferantDokument` → FK auf `EmailAttachment` |
 | Enum State-Management | Typsichere Dokumenttypen, Mahnstufen, Audit-Aktionen |
+| **ML Spam-Filter (Naive Bayes)** | Supervised Multinomial Naive Bayes in reinem Java. Ensemble: 40% Regel-Score (`SpamFilterService`) + 60% Bayes-Score (`SpamBayesService`). Token-Frequenzen in `spam_token_counts`-Tabelle, In-Memory-Cache mit 5-Min-Refresh. Cold-Start: nur Regeln (<20 Samples). Pre-trained mit UCI SMS Spam Collection (747 Spam, 4827 Ham). User-Feedback über `mark-spam`/`mark-not-spam` Endpoints trainiert das Modell supervised weiter. |
 
 ---
 

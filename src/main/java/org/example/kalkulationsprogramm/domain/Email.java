@@ -140,6 +140,9 @@ public class Email {
     @Column(nullable = false)
     private boolean isRead = false;
 
+    @Column(nullable = false)
+    private boolean isStarred = false;
+
     // ═══════════════════════════════════════════════════════════════
     // ZUORDNUNG (exklusiv: nur 1 darf gesetzt sein!)
     // ═══════════════════════════════════════════════════════════════
@@ -192,6 +195,18 @@ public class Email {
      */
     @Column(nullable = false)
     private boolean isSpam = false;
+
+    /**
+     * User-Feedback für Supervised Learning: 'SPAM', 'HAM', oder null (kein Feedback).
+     */
+    @Column(length = 20)
+    private String userSpamVerdict;
+
+    /**
+     * Bayesian Spam-Wahrscheinlichkeit (0.0 - 1.0) vom Naive-Bayes-Modell.
+     */
+    @Column
+    private Double bayesScore;
 
     // ═══════════════════════════════════════════════════════════════
     // ANFRAGEN-ERKENNUNG (Inquiry Detection)

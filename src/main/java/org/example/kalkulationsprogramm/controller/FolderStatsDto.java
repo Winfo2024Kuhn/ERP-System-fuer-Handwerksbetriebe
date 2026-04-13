@@ -14,4 +14,5 @@ public class FolderStatsDto {
     private long projectCount;
     private long offerCount;
     private long supplierCount;
+    private long starredCount;
 }

@@ -1239,6 +1239,10 @@ ProjektManagementService {
             if (ed.getBodyHtml() == null)
                 ed.setBodyHtml(e.getRawBody());
 
+            // Thread-Info
+            ed.setParentEmailId(e.getParentEmail() != null ? e.getParentEmail().getId() : null);
+            ed.setReplyCount(countAncestors(e) + countAllReplies(e));
+
             if (e.getAttachments() != null) {
                 final Long emailId = e.getId();
                 ed.setAttachments(e.getAttachments().stream().map(att -> {
@@ -1268,6 +1272,27 @@ ProjektManagementService {
                 .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
         dto.setGesamtKilogramm(total.compareTo(java.math.BigDecimal.ZERO) > 0 ? total : null);
         return dto;
+    }
+
+    private int countAllReplies(Email email) {
+        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
+        int count = email.getReplies().size();
+        for (Email reply : email.getReplies()) {
+            count += countAllReplies(reply);
+        }
+        return count;
+    }
+
+    private int countAncestors(Email email) {
+        int count = 0;
+        java.util.Set<Long> visited = new java.util.HashSet<>();
+        Email current = email.getParentEmail();
+        while (current != null && !visited.contains(current.getId())) {
+            visited.add(current.getId());
+            count++;
+            current = current.getParentEmail();
+        }
+        return count;
     }
 
     private void copyAnfrageEmailsToProjekt(Anfrage anfrage, Projekt projekt) {

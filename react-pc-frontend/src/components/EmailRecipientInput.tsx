@@ -1,5 +1,6 @@
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
 import { X, Search, Building2, User, Briefcase, FileText, Mail, Loader2 } from 'lucide-react';
@@ -21,6 +22,7 @@ export interface EmailRecipientInputProps {
     label?: string;
     onRemove?: () => void;
     className?: string;
+    readOnly?: boolean;
 }
 
 const TYPE_CONFIG: Record<string, { label: string; icon: typeof User; color: string; bg: string }> = {
@@ -36,7 +38,8 @@ export function EmailRecipientInput({
     suggestions = [],
     placeholder = 'E-Mail eingeben...',
     onRemove,
-    className
+    className,
+    readOnly = false
 }: EmailRecipientInputProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [contacts, setContacts] = useState<ContactDto[]>([]);
@@ -44,6 +47,7 @@ export function EmailRecipientInput({
     const [highlightIdx, setHighlightIdx] = useState(-1);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
@@ -123,16 +127,43 @@ export function EmailRecipientInput({
         };
     }, [value, searchContacts]);
 
-    // Click outside → close
+    // Click outside → close (must also check portal dropdown)
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            const insideWrapper = wrapperRef.current?.contains(target);
+            const insideDropdown = dropdownRef.current?.contains(target);
+            if (!insideWrapper && !insideDropdown) {
                 setIsOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    const showDropdown = isOpen && (linkedEmails.length > 0 || displayItems.length > 0 || loading || (value && value.length >= 2));
+
+    // Dropdown-Position berechnen (Portal braucht fixed-Koordinaten als inline styles)
+    // useLayoutEffect: läuft synchron nach DOM-Commit, vor Browser-Paint → kein Flicker
+    useLayoutEffect(() => {
+        if (!showDropdown || !wrapperRef.current) return;
+        const el = wrapperRef.current;
+        const updatePosition = () => {
+            const dd = dropdownRef.current;
+            if (!dd) return;
+            const rect = el.getBoundingClientRect();
+            dd.style.top = `${rect.bottom + 4}px`;
+            dd.style.left = `${rect.left}px`;
+            dd.style.width = `${rect.width}px`;
+        };
+        updatePosition();
+        window.addEventListener('scroll', updatePosition, true);
+        window.addEventListener('resize', updatePosition);
+        return () => {
+            window.removeEventListener('scroll', updatePosition, true);
+            window.removeEventListener('resize', updatePosition);
+        };
+    }, [showDropdown]);
 
     // Reset highlight when items change
     useEffect(() => {
@@ -171,8 +202,6 @@ export function EmailRecipientInput({
         }
     };
 
-    const showDropdown = isOpen && (linkedEmails.length > 0 || displayItems.length > 0 || loading || (value && value.length >= 2));
-
     return (
         <div className={cn("relative", className)} ref={wrapperRef}>
             <div className="relative flex items-center gap-2">
@@ -182,15 +211,18 @@ export function EmailRecipientInput({
                         ref={inputRef}
                         value={value}
                         onChange={(e) => {
+                            if (readOnly) return;
                             onChange(e.target.value);
                             setIsOpen(true);
                         }}
-                        onFocus={() => setIsOpen(true)}
+                        onFocus={() => { if (!readOnly) setIsOpen(true); }}
                         onKeyDown={handleKeyDown}
                         placeholder={placeholder}
+                        readOnly={readOnly}
                         className={cn(
                             "w-full pl-9 pr-8",
-                            isOpen && "ring-2 ring-rose-200 border-rose-300"
+                            readOnly ? "bg-slate-50 text-slate-500 cursor-default" : "",
+                            !readOnly && isOpen && "ring-2 ring-rose-200 border-rose-300"
                         )}
                     />
                     {loading && (
@@ -211,9 +243,9 @@ export function EmailRecipientInput({
                 )}
             </div>
 
-            {/* Premium Dropdown */}
-            {showDropdown && (
-                <div className="absolute z-[70] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-auto animate-in fade-in zoom-in-95 duration-150">
+            {/* Premium Dropdown – via Portal gerendert, damit overflow:hidden der Eltern nicht abschneidet */}
+            {showDropdown && createPortal(
+                <div ref={dropdownRef} className="email-recipient-dropdown bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-auto animate-in fade-in zoom-in-95 duration-150">
                     {/* Verknüpfte E-Mail-Adressen (immer sichtbar wenn vorhanden) */}
                     {linkedEmails.length > 0 && (
                         <>
@@ -230,6 +262,7 @@ export function EmailRecipientInput({
                                     return (
                                         <li
                                             key={'linked_' + email}
+                                            onMouseDown={(e) => e.preventDefault()}
                                             onClick={() => handleSelect(email)}
                                             onMouseEnter={() => setHighlightIdx(idx)}
                                             className={cn(
@@ -276,6 +309,7 @@ export function EmailRecipientInput({
                                         return (
                                             <li
                                                 key={c.id + '_' + c.email}
+                                                onMouseDown={(e) => e.preventDefault()}
                                                 onClick={() => handleSelect(c.email)}
                                                 onMouseEnter={() => setHighlightIdx(globalIdx)}
                                                 className={cn(
@@ -309,6 +343,7 @@ export function EmailRecipientInput({
                                         return (
                                             <li
                                                 key={'email_' + item.email}
+                                                onMouseDown={(e) => e.preventDefault()}
                                                 onClick={() => handleSelect(item.email)}
                                                 onMouseEnter={() => setHighlightIdx(globalIdx)}
                                                 className={cn(
@@ -353,7 +388,8 @@ export function EmailRecipientInput({
                             </p>
                         </div>
                     )}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

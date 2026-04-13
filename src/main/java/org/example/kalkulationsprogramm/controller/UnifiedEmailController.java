@@ -1,23 +1,31 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
+import org.example.kalkulationsprogramm.domain.Angebot;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailBlacklistEntry;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
-
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.dto.ContactDto;
 import org.example.kalkulationsprogramm.dto.Email.UnifiedEmailDto;
+import org.example.kalkulationsprogramm.dto.EmailThreadDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
+import org.example.kalkulationsprogramm.repository.AngebotRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -27,24 +35,29 @@ import org.example.kalkulationsprogramm.service.ContactService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.EmailAutoAssignmentService;
 import org.example.kalkulationsprogramm.service.EmailImportService;
+import org.example.kalkulationsprogramm.service.EmailThreadService;
 import org.example.kalkulationsprogramm.service.InquiryDetectionService;
+import org.example.kalkulationsprogramm.service.SpamBayesService;
 import org.example.kalkulationsprogramm.service.SpamFilterService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Unified Email API Controller.
@@ -61,6 +74,7 @@ public class UnifiedEmailController {
     private final EmailRepository emailRepository;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
+    private final AngebotRepository angebotRepository;
     private final LieferantenRepository lieferantenRepository;
     private final EmailAutoAssignmentService emailAutoAssignmentService;
     private final EmailImportService emailImportService;
@@ -71,6 +85,8 @@ public class UnifiedEmailController {
     private final AnfrageDokumentRepository anfrageDokumentRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final ContactService contactService;
+    private final SpamBayesService spamBayesService;
+    private final EmailThreadService emailThreadService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -219,6 +235,111 @@ public class UnifiedEmailController {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // SPAM ML-FEEDBACK (Supervised Learning)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Implizites Ham-Training: Wenn ein User eine Email zuordnet oder beantwortet,
+     * ist das ein starkes Signal, dass die Email kein Spam ist.
+     */
+    private void trainImplicitHam(Email email) {
+        if (email.getUserSpamVerdict() != null) return; // User hat schon explizit entschieden
+        if (spamBayesService.isModelReady()) {
+            spamBayesService.train(email, false);
+            email.setUserSpamVerdict("HAM_IMPLICIT");
+            log.debug("[SpamML] Implizites Ham-Training für Email {}, subject='{}'",
+                    email.getId(), email.getSubject());
+        }
+    }
+
+    @PostMapping("/{emailId}/mark-spam")
+    @Transactional
+    public ResponseEntity<String> markAsSpam(@PathVariable Long emailId) {
+        Email email = emailRepository.findById(emailId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Email not found"));
+
+        email.setUserSpamVerdict("SPAM");
+        email.setSpam(true);
+        email.setSpamScore(100);
+        emailRepository.save(email);
+
+        spamBayesService.train(email, true);
+
+        log.info("[SpamML] Email {} als Spam markiert (User-Feedback), subject='{}'",
+                emailId, email.getSubject());
+        return ResponseEntity.ok("Email als Spam markiert und Modell trainiert.");
+    }
+
+    @PostMapping("/{emailId}/mark-not-spam")
+    @Transactional
+    public ResponseEntity<String> markAsNotSpam(@PathVariable Long emailId) {
+        Email email = emailRepository.findById(emailId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Email not found"));
+
+        email.setUserSpamVerdict("HAM");
+        email.setSpam(false);
+        email.setNewsletter(false);
+        email.setSpamScore(0);
+        emailRepository.save(email);
+
+        spamBayesService.train(email, false);
+
+        log.info("[SpamML] Email {} als Nicht-Spam markiert (User-Feedback), subject='{}'",
+                emailId, email.getSubject());
+        return ResponseEntity.ok("Email als kein Spam markiert und Modell trainiert.");
+    }
+
+    @PostMapping("/spam-model/bootstrap")
+    public ResponseEntity<Map<String, Object>> bootstrapSpamModel(
+            @RequestParam("file") MultipartFile file) {
+        try {
+            int[] result = spamBayesService.bootstrapFromCsv(file.getInputStream());
+            return ResponseEntity.ok(Map.of(
+                    "message", "Modell mit " + (result[0] + result[1]) + " Datensätzen trainiert.",
+                    "spamImported", result[0],
+                    "hamImported", result[1],
+                    "modelReady", spamBayesService.isModelReady()
+            ));
+        } catch (Exception e) {
+            log.error("[SpamML] Fehler beim CSV-Bootstrap", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Fehler beim Import: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/spam-model/stats")
+    public ResponseEntity<Map<String, Object>> getSpamModelStats() {
+        return ResponseEntity.ok(Map.of(
+                "totalSpam", spamBayesService.getTotalSpam(),
+                "totalHam", spamBayesService.getTotalHam(),
+                "vocabularySize", spamBayesService.getVocabularySize(),
+                "modelReady", spamBayesService.isModelReady(),
+                "minTrainingSamples", 20
+        ));
+    }
+
+    @PostMapping("/spam-model/rescore")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> rescoreAllEmails() {
+        if (!spamBayesService.isModelReady()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Spam-Modell noch nicht trainiert."));
+        }
+        List<Email> allEmails = emailRepository.findAll();
+        int rescored = 0;
+        for (Email email : allEmails) {
+            spamFilterService.analyzeAndMarkSpam(email);
+            emailRepository.save(email);
+            rescored++;
+        }
+        return ResponseEntity.ok(Map.of(
+                "message", rescored + " Emails neu bewertet.",
+                "rescored", rescored
+        ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // EMAILS FÜR PROJEKTE
     // ═══════════════════════════════════════════════════════════════
 
@@ -230,6 +351,30 @@ public class UnifiedEmailController {
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
         if (projekt == null) {
             return ResponseEntity.notFound().build();
+        }
+        List<Email> emails = emailRepository.findByProjektOrderBySentAtDesc(projekt);
+        return ResponseEntity.ok(emails.stream()
+                .limit(limit)
+                .map(this::toDto)
+                .collect(Collectors.toList()));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // EMAILS FÜR ANGEBOTE (über zugehöriges Projekt)
+    // ═══════════════════════════════════════════════════════════════
+
+    @GetMapping("/angebot/{angebotId}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<List<UnifiedEmailDto>> getEmailsByAngebot(
+            @PathVariable Long angebotId,
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        Angebot angebot = angebotRepository.findById(angebotId).orElse(null);
+        if (angebot == null) {
+            return ResponseEntity.notFound().build();
+        }
+        Projekt projekt = angebot.getProjekt();
+        if (projekt == null) {
+            return ResponseEntity.ok(List.of());
         }
         List<Email> emails = emailRepository.findByProjektOrderBySentAtDesc(projekt);
         return ResponseEntity.ok(emails.stream()
@@ -288,7 +433,7 @@ public class UnifiedEmailController {
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findUnassigned().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -301,7 +446,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getInquiryEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findPotentialInquiries().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -314,7 +459,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getNewProjektEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.PROJEKT).stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -323,7 +468,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getNewAnfrageEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.ANFRAGE).stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -333,7 +478,25 @@ public class UnifiedEmailController {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.LIEFERANT).stream()
                 .filter(e -> e.getDeletedAt() == null)
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // GLOBALE SUCHE
+    // ═══════════════════════════════════════════════════════════════
+
+    @GetMapping("/search")
+    @Transactional(readOnly = true)
+    public List<UnifiedEmailDto> searchEmails(
+            @RequestParam("q") String query,
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        if (query == null || query.trim().length() < 2) {
+            return List.of();
+        }
+        return emailRepository.searchGlobal(query.trim()).stream()
+                .limit(limit)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -352,7 +515,7 @@ public class UnifiedEmailController {
         return emailRepository.findInboxFiltered().stream()
                 .filter(e -> !unassignedIds.contains(e.getId())) // Exclude "Nicht zugeordnet"
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -362,7 +525,7 @@ public class UnifiedEmailController {
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findProjectEmails().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -371,7 +534,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getOfferFolderEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findAnfrageEmails().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -381,7 +544,7 @@ public class UnifiedEmailController {
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findLieferantEmails().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -391,7 +554,7 @@ public class UnifiedEmailController {
         return emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
                 .filter(e -> e.getDeletedAt() == null)
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -400,7 +563,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getTrashEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -409,7 +572,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getSpamEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findSpam().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -418,7 +581,16 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getNewsletterEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findNewsletter().stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
+    }
+
+    @GetMapping("/starred")
+    @Transactional(readOnly = true)
+    public List<UnifiedEmailDto> getStarredEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findStarred().stream()
+                .limit(limit)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
     }
 
@@ -433,6 +605,37 @@ public class UnifiedEmailController {
                 .map(this::toDto)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Liefert den vollstaendigen E-Mail-Thread fuer eine gegebene E-Mail-ID.
+     * Die angeklickte E-Mail ist als focusedEmailId markiert und wird im Frontend
+     * auto-expandiert und hervorgehoben.
+     *
+     * @param emailId ID der fokussierten E-Mail
+     * @return EmailThreadDto mit chronologisch sortierten Eintraegen
+     */
+    @GetMapping("/{emailId}/thread")
+    @Transactional(readOnly = true)
+    public ResponseEntity<EmailThreadDto> getEmailThread(@PathVariable Long emailId) {
+        log.debug("Thread requested for emailId={}", emailId);
+        EmailThreadDto thread = emailThreadService.loadThreadFor(emailId);
+        return ResponseEntity.ok(thread);
+    }
+
+    /**
+     * Einmaliger Backfill: Dekodiert alle EmailAttachment-Dateinamen in der DB,
+     * die noch als MIME encoded-word vorliegen (=?iso-8859-1?Q?...?=).
+     * Idempotent – bereits dekodierte Namen werden nicht erneut angefasst.
+     */
+    @PostMapping("/admin/backfill-attachment-filenames")
+    public ResponseEntity<Map<String, Object>> backfillAttachmentFilenames() {
+        log.info("Backfill attachment filenames gestartet");
+        int updated = emailImportService.backfillAttachmentFilenames();
+        return ResponseEntity.ok(Map.of(
+                "status", "ok",
+                "updated", updated
+        ));
     }
 
     @GetMapping("/{id}/mark-viewed")
@@ -464,6 +667,7 @@ public class UnifiedEmailController {
             return ResponseEntity.notFound().build();
         }
         email.assignToProjekt(projekt);
+        trainImplicitHam(email);
         emailRepository.save(email);
         return ResponseEntity.ok(toDto(email));
     }
@@ -479,6 +683,7 @@ public class UnifiedEmailController {
             return ResponseEntity.notFound().build();
         }
         email.assignToAnfrage(anfrage);
+        trainImplicitHam(email);
         emailRepository.save(email);
         return ResponseEntity.ok(toDto(email));
     }
@@ -494,6 +699,7 @@ public class UnifiedEmailController {
             return ResponseEntity.notFound().build();
         }
         email.assignToLieferant(lieferant);
+        trainImplicitHam(email);
         emailRepository.save(email);
         return ResponseEntity.ok(toDto(email));
     }
@@ -556,45 +762,99 @@ public class UnifiedEmailController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Markiert eine Email manuell als NICHT-Spam (Nutzerfeedback für Training).
-     * Wird aufgerufen wenn Nutzer eine Email aus Spam/Newsletter in den Posteingang verschiebt.
-     */
-    @PostMapping("/{id}/mark-not-spam")
-    @Transactional
-    public ResponseEntity<Void> markNotSpam(@PathVariable Long id) {
-        Email email = emailRepository.findById(id).orElse(null);
-        if (email == null) {
-            return ResponseEntity.notFound().build();
-        }
-        email.setSpam(false);
-        email.setNewsletter(false);
-        email.setSpamScore(0);
-        // Aus Papierkorb wiederherstellen falls nötig
-        if (email.getDeletedAt() != null) {
-            email.setDeletedAt(null);
-        }
-        emailRepository.save(email);
-        log.info("[SpamFilter] Email {} manuell als NICHT-Spam klassifiziert (in Posteingang verschoben)", id);
-        return ResponseEntity.ok().build();
-    }
+    // ═══════════════════════════════════════════════════════════════
+    // MOVE TO FOLDER (Drag & Drop / Button / Wiederherstellen)
+    // ═══════════════════════════════════════════════════════════════
+
+    public record MoveToFolderRequest(List<Long> ids, String targetFolder) {}
 
     /**
-     * Markiert eine Email manuell als Spam (Nutzerfeedback für Training).
-     * Wird aufgerufen wenn Nutzer eine Email manuell in den Spam-Ordner verschiebt.
+     * Verschiebt eine oder mehrere E-Mails in einen Ordner.
+     * Gültige Ziele: inbox, trash, spam, newsletter.
+     * - inbox: Wiederherstellen (aus Papierkorb/Spam/Newsletter zurück in den Posteingang)
+     * - trash: Soft-Delete (Papierkorb)
+     * - spam: Als Spam markieren + Bayes-Training
+     * - newsletter: Als Newsletter markieren
      */
-    @PostMapping("/{id}/mark-spam")
+    @PostMapping("/bulk/move-to-folder")
     @Transactional
-    public ResponseEntity<Void> markAsSpam(@PathVariable Long id) {
-        Email email = emailRepository.findById(id).orElse(null);
-        if (email == null) {
-            return ResponseEntity.notFound().build();
+    public ResponseEntity<Map<String, Integer>> moveToFolder(@RequestBody MoveToFolderRequest req) {
+        if (req == null || req.ids() == null || req.targetFolder() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ids und targetFolder sind Pflicht");
         }
-        email.setSpam(true);
-        email.setSpamScore(100);
-        emailRepository.save(email);
-        log.info("[SpamFilter] Email {} manuell als Spam klassifiziert", id);
-        return ResponseEntity.ok().build();
+
+        String target = req.targetFolder();
+        if (!Set.of("inbox", "trash", "spam", "newsletter").contains(target)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Ungültiger targetFolder: " + target);
+        }
+
+        List<Email> emails = emailRepository.findAllById(req.ids());
+        int moved = 0;
+        for (Email email : emails) {
+            switch (target) {
+                case "inbox" -> {
+                    email.setDeletedAt(null);
+                    email.setSpam(false);
+                    email.setNewsletter(false);
+                    email.setUserSpamVerdict("HAM");
+                    email.setSpamScore(0);
+                    if (spamBayesService.isModelReady()) {
+                        spamBayesService.train(email, false);
+                    }
+                }
+                case "trash" -> email.setDeletedAt(LocalDateTime.now());
+                case "spam" -> {
+                    email.setDeletedAt(null);
+                    email.setSpam(true);
+                    email.setUserSpamVerdict("SPAM");
+                    email.setSpamScore(100);
+                    spamBayesService.train(email, true);
+                }
+                case "newsletter" -> {
+                    email.setDeletedAt(null);
+                    email.setSpam(false);
+                    email.setNewsletter(true);
+                }
+            }
+            moved++;
+        }
+        if (moved > 0) {
+            emailRepository.saveAll(emails);
+        }
+        log.info("Bulk move-to-folder: {} Mails nach '{}' verschoben", moved, target);
+        return ResponseEntity.ok(Map.of("moved", moved));
+    }
+
+    /** Alle E-Mails eines Ordners auf gelesen setzen. */
+    @PostMapping("/mark-all-read")
+    @Transactional
+    public ResponseEntity<Map<String, Integer>> markAllRead(@RequestParam String folder) {
+        List<Email> emails = switch (folder) {
+            case "inbox"      -> emailRepository.findInboxFiltered();
+            case "spam"       -> emailRepository.findSpam();
+            case "newsletter" -> emailRepository.findNewsletter();
+            case "starred"    -> emailRepository.findStarred();
+            case "unassigned" -> emailRepository.findUnassigned();
+            case "inquiries"  -> emailRepository.findPotentialInquiries();
+            case "projects"   -> emailRepository.findProjectEmails();
+            case "offers"     -> emailRepository.findAnfrageEmails();
+            case "suppliers"  -> emailRepository.findLieferantEmails();
+            case "trash"      -> emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc();
+            case "sent"       -> java.util.Collections.emptyList();
+            default           -> java.util.Collections.emptyList();
+        };
+
+        int count = 0;
+        for (Email email : emails) {
+            if (!email.isRead()) {
+                email.setRead(true);
+                if (email.getFirstViewedAt() == null) email.setFirstViewedAt(LocalDateTime.now());
+                count++;
+            }
+        }
+        if (count > 0) emailRepository.saveAll(emails);
+        return ResponseEntity.ok(Map.of("updated", count));
     }
 
     @PostMapping("/{id}/mark-read")
@@ -612,6 +872,79 @@ public class UnifiedEmailController {
         }
 
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/toggle-star")
+    @Transactional
+    public ResponseEntity<Map<String, Boolean>> toggleStar(@PathVariable Long id) {
+        Email email = emailRepository.findById(id).orElse(null);
+        if (email == null) {
+            return ResponseEntity.notFound().build();
+        }
+        email.setStarred(!email.isStarred());
+        emailRepository.save(email);
+        return ResponseEntity.ok(Map.of("isStarred", email.isStarred()));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ANHÄNGE – ZIP DOWNLOAD
+    // ═══════════════════════════════════════════════════════════════
+
+    @GetMapping("/{emailId}/attachments/download-all")
+    public ResponseEntity<byte[]> downloadAllAttachments(@PathVariable Long emailId) {
+        Email email = emailRepository.findById(emailId).orElse(null);
+        if (email == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (email.getAttachments() == null || email.getAttachments().isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos);
+            java.nio.file.Path baseDir = Path.of(mailAttachmentDir).toAbsolutePath().normalize();
+
+            for (EmailAttachment att : email.getAttachments()) {
+                // Skip inline images
+                if (Boolean.TRUE.equals(att.getInlineAttachment())) continue;
+
+                java.nio.file.Path path = baseDir.resolve(att.getStoredFilename()).normalize();
+                if (!path.startsWith(baseDir)) {
+                    log.warn("Path traversal attempt blocked for attachment: {}", att.getStoredFilename());
+                    continue;
+                }
+                if (!java.nio.file.Files.exists(path)) {
+                    path = baseDir.resolve(String.valueOf(emailId)).resolve(att.getStoredFilename()).normalize();
+                }
+                if (!path.startsWith(baseDir) || !java.nio.file.Files.exists(path)) {
+                    path = baseDir.resolve("attachments").resolve(String.valueOf(emailId)).resolve(att.getStoredFilename()).normalize();
+                }
+                if (!path.startsWith(baseDir) || !java.nio.file.Files.exists(path)) {
+                    log.warn("Attachment file not found for zip: {}", att.getStoredFilename());
+                    continue;
+                }
+
+                // Sanitize zip entry name to prevent zip-slip
+                String filename = att.getOriginalFilename() != null ? att.getOriginalFilename() : att.getStoredFilename();
+                filename = Path.of(filename).getFileName().toString();
+                zos.putNextEntry(new java.util.zip.ZipEntry(filename));
+                java.nio.file.Files.copy(path, zos);
+                zos.closeEntry();
+            }
+            zos.finish();
+            zos.close();
+
+            String zipName = "Anhaenge_" + (email.getSubject() != null ? email.getSubject().replaceAll("[^a-zA-Z0-9äöüÄÖÜß_-]", "_").substring(0, Math.min(email.getSubject().length(), 40)) : emailId) + ".zip";
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + zipName + "\"")
+                    .body(baos.toByteArray());
+        } catch (Exception e) {
+            log.error("Fehler beim Erstellen des ZIP-Archivs", e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -649,6 +982,7 @@ public class UnifiedEmailController {
 
         stats.setUnassignedCount(emailRepository.countUnassigned());
         stats.setInquiriesCount(emailRepository.countPotentialInquiries());
+        stats.setStarredCount(emailRepository.countStarredUnread());
 
         return stats;
     }
@@ -1111,6 +1445,10 @@ public class UnifiedEmailController {
 
             emailRepository.save(email);
 
+            // Implizites Ham-Training: Wer antwortet, bestätigt, dass die Email kein Spam ist
+            trainImplicitHam(parentEmail);
+            emailRepository.save(parentEmail);
+
             // Attachments speichern
             if (attachments != null) {
                 java.nio.file.Path baseDir = Path.of(mailAttachmentDir);
@@ -1158,21 +1496,31 @@ public class UnifiedEmailController {
     // MAPPER
     // ═══════════════════════════════════════════════════════════════
 
-    private UnifiedEmailDto toDto(Email email) {
+    /**
+     * Lightweight DTO for list endpoints – excludes htmlBody and trims body to 200 chars.
+     * Skips expensive CID-rewriting; only returns attachment metadata.
+     */
+    private UnifiedEmailDto toListDto(Email email) {
         UnifiedEmailDto dto = new UnifiedEmailDto();
         dto.setId(email.getId());
-        dto.setMessageId(email.getMessageId());
         dto.setFromAddress(email.getFromAddress());
-        dto.setSenderDomain(email.getSenderDomain());
         dto.setRecipient(email.getRecipient());
-        dto.setCc(email.getCc());
         dto.setSubject(email.getSubject());
-        dto.setBody(email.getBody());
+
+        // Trim body for preview (list only needs ~200 chars)
+        String body = email.getBody();
+        if (body != null && body.length() > 200) {
+            body = body.substring(0, 200);
+        }
+        dto.setBody(body);
+        // htmlBody deliberately omitted for list performance
+
         dto.setSentAt(email.getSentAt());
-        dto.setFirstViewedAt(email.getFirstViewedAt());
-        dto.setRead(email.isRead()); // Use actual isRead field from entity
+        dto.setRead(email.isRead());
+        dto.setStarred(email.isStarred());
         dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
+        dto.setSpamScore(email.getSpamScore());
 
         // Zuordnungs-Info
         if (email.getProjekt() != null) {
@@ -1191,6 +1539,72 @@ public class UnifiedEmailController {
         // Compute folder
         dto.setFolder(computeFolder(email));
 
+        // Thread
+        if (email.getParentEmail() != null) {
+            dto.setParentEmailId(email.getParentEmail().getId());
+        }
+        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
+
+        // Attachments – metadata only, no CID rewriting
+        dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
+        if (email.getAttachments() != null && !email.getAttachments().isEmpty()) {
+            dto.setAttachments(email.getAttachments().stream().map(att -> {
+                UnifiedEmailDto.AttachmentDto attDto = new UnifiedEmailDto.AttachmentDto();
+                attDto.setId(att.getId());
+                attDto.setOriginalFilename(att.getOriginalFilename());
+                attDto.setMimeType(att.getMimeType());
+                attDto.setFileSize(att.getSizeBytes());
+                attDto.setContentId(att.getContentId());
+                attDto.setInline(Boolean.TRUE.equals(att.getInlineAttachment()));
+                return attDto;
+            }).collect(Collectors.toList()));
+        }
+
+        return dto;
+    }
+
+    /** Full DTO with htmlBody + CID-rewriting – for detail/thread views only. */
+    private UnifiedEmailDto toDto(Email email) {
+        UnifiedEmailDto dto = new UnifiedEmailDto();
+        dto.setId(email.getId());
+        dto.setMessageId(email.getMessageId());
+        dto.setFromAddress(email.getFromAddress());
+        dto.setSenderDomain(email.getSenderDomain());
+        dto.setRecipient(email.getRecipient());
+        dto.setCc(email.getCc());
+        dto.setSubject(email.getSubject());
+        dto.setBody(email.getBody());
+        dto.setSentAt(email.getSentAt());
+        dto.setFirstViewedAt(email.getFirstViewedAt());
+        dto.setRead(email.isRead()); // Use actual isRead field from entity
+        dto.setStarred(email.isStarred());
+        dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
+        dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
+        dto.setSpamScore(email.getSpamScore());
+
+        // Zuordnungs-Info
+        if (email.getProjekt() != null) {
+            dto.setProjektId(email.getProjekt().getId());
+            dto.setProjektName(email.getProjekt().getBauvorhaben());
+        }
+        if (email.getAnfrage() != null) {
+            dto.setAnfrageId(email.getAnfrage().getId());
+            dto.setAnfrageName(email.getAnfrage().getBauvorhaben());
+        }
+        if (email.getLieferant() != null) {
+            dto.setLieferantId(email.getLieferant().getId());
+            dto.setLieferantName(email.getLieferant().getLieferantenname());
+        }
+
+        // Compute folder
+        dto.setFolder(computeFolder(email));
+
+        // Thread-Informationen
+        if (email.getParentEmail() != null) {
+            dto.setParentEmailId(email.getParentEmail().getId());
+        }
+        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
+
         // Attachments
         dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
         if (email.getAttachments() != null && !email.getAttachments().isEmpty()) {
@@ -1201,6 +1615,7 @@ public class UnifiedEmailController {
                 attDto.setMimeType(att.getMimeType());
                 attDto.setFileSize(att.getSizeBytes());
                 attDto.setContentId(att.getContentId());
+                attDto.setInline(Boolean.TRUE.equals(att.getInlineAttachment()));
                 return attDto;
             }).collect(Collectors.toList()));
 
@@ -1241,5 +1656,28 @@ public class UnifiedEmailController {
         }
         if (email.isPotentialInquiry()) return "inquiries";
         return "inbox";
+    }
+
+    /** Zählt rekursiv alle Nachfolger-Emails (Kinder, Kindeskinder, …). */
+    private int countAllReplies(Email email) {
+        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
+        int count = email.getReplies().size();
+        for (org.example.kalkulationsprogramm.domain.Email reply : email.getReplies()) {
+            count += countAllReplies(reply);
+        }
+        return count;
+    }
+
+    /** Zählt alle Vorfahren (Eltern, Großeltern, …) bis zur Thread-Wurzel. */
+    private int countAncestors(Email email) {
+        int count = 0;
+        java.util.Set<Long> visited = new java.util.HashSet<>();
+        Email current = email.getParentEmail();
+        while (current != null && !visited.contains(current.getId())) {
+            visited.add(current.getId());
+            count++;
+            current = current.getParentEmail();
+        }
+        return count;
     }
 }

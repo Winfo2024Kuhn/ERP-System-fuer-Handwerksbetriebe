@@ -37,10 +37,16 @@ export interface EmailComposeFormProps {
     initialRecipient?: string;
     initialSubject?: string;
     initialBody?: string;
+    /** Zitat-Block für Antworten – wird NACH der Signatur eingefügt (richtige Reihenfolge: Text → Signatur → Zitat) */
+    replyQuote?: string;
+    /** ID der Email, auf die geantwortet wird – nutzt /{replyEmailId}/reply statt /send */
+    replyEmailId?: number;
     /** Pre-attached files (e.g. generated PDF from DocumentEditor) */
     initialAttachments?: File[];
     onSuccess?: () => void;
     variant?: 'default' | 'modal';
+    /** Existing draft ID to resume editing */
+    draftId?: number;
 }
 
 interface SignatureResponse {
@@ -146,9 +152,11 @@ export function EmailComposeForm({
     initialRecipient = '',
     initialSubject = '',
     initialBody = '',
+    replyQuote,
+    replyEmailId,
     initialAttachments,
     onSuccess,
-    variant = 'default'
+    draftId: initialDraftId,
 }: EmailComposeFormProps) {
     // Determine context: projekt or anfrage
     const isAnfrageContext = !!anfrageId;
@@ -228,6 +236,11 @@ export function EmailComposeForm({
     const [beautifying, setBeautifying] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Draft auto-save
+    const [draftId, setDraftId] = useState<number | null>(initialDraftId ?? null);
+    const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [draftSaving, setDraftSaving] = useState(false);
+
     // CC State
     const [ccRecipients, setCcRecipients] = useState<string[]>([]);
     const [showCc, setShowCc] = useState(false);
@@ -296,7 +309,72 @@ export function EmailComposeForm({
         setRecipient(val);
     };
 
-    // Signatur laden
+    // ═══════════════════════════════════════════════════════════════
+    // DRAFT AUTO-SAVE (2s Debounce)
+    // ═══════════════════════════════════════════════════════════════
+    const saveDraft = useCallback(async () => {
+        const currentBody = editorRef.current?.innerHTML || body;
+        // Nur speichern wenn mindestens Empfänger, Betreff oder Body vorhanden
+        if (!recipient.trim() && !subject.trim() && !currentBody.trim()) return;
+
+        const draftData = {
+            recipient: recipient.trim(),
+            cc: ccRecipients.filter(c => c.trim()).join(', '),
+            subject: subject.trim(),
+            body: currentBody,
+            fromAddress: fromAddress || null,
+            replyEmailId: replyEmailId || null,
+            projektId: !isAnfrageContext && entityId ? entityId : null,
+            anfrageId: isAnfrageContext && entityId ? entityId : null,
+        };
+
+        try {
+            setDraftSaving(true);
+            if (draftId) {
+                await fetch(`/api/emails/drafts/${draftId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(draftData),
+                });
+            } else {
+                const res = await fetch('/api/emails/drafts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(draftData),
+                });
+                if (res.ok) {
+                    const saved = await res.json();
+                    setDraftId(saved.id);
+                }
+            }
+        } catch (err) {
+            console.warn('Draft auto-save fehlgeschlagen:', err);
+        } finally {
+            setDraftSaving(false);
+        }
+    }, [recipient, subject, body, ccRecipients, fromAddress, replyEmailId, entityId, isAnfrageContext, draftId]);
+
+    // Debounced auto-save: bei jeder relevanten Änderung wird nach 2s gespeichert
+    useEffect(() => {
+        if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+        draftSaveTimer.current = setTimeout(() => {
+            saveDraft();
+        }, 2000);
+        return () => {
+            if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+        };
+    }, [saveDraft]);
+
+    // Draft löschen (nach Send oder wenn User Entwurf verwirft)
+    const deleteDraft = useCallback(async () => {
+        if (!draftId) return;
+        try {
+            await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
+            setDraftId(null);
+        } catch (err) {
+            console.warn('Draft löschen fehlgeschlagen:', err);
+        }
+    }, [draftId]);
     const loadSignature = useCallback(async () => {
         try {
             const currentUser = getCurrentFrontendUser();
@@ -430,26 +508,49 @@ export function EmailComposeForm({
 
     // Initialisierung - nur einmal beim Mount
     useEffect(() => {
-        if (!initialBody) {
-            // Signatur laden wenn body leer
+        if (replyQuote) {
+            // Antwort-Modus: Schreibbereich → Signatur → Zitat
             loadSignature().then(sig => {
-                // Für BEIDE Kontexte: Nur Signatur initial setzen, Template wird bei Dokument-Auswahl geladen
+                const content = `<p><br></p>${sig}<br>${replyQuote}`;
+                setBody(content);
+                if (editorRef.current) {
+                    editorRef.current.innerHTML = content;
+                    // Cursor an den Anfang setzen
+                    const range = document.createRange();
+                    const sel = window.getSelection();
+                    range.setStart(editorRef.current, 0);
+                    range.collapse(true);
+                    sel?.removeAllRanges();
+                    sel?.addRange(range);
+                }
+            });
+        } else if (!initialBody) {
+            // Neue E-Mail: nur Signatur
+            loadSignature().then(sig => {
                 const initialContent = `<p><br></p>${sig}`;
                 setBody(initialContent);
-                // Setze Editor-Inhalt via ref (nicht via dangerouslySetInnerHTML bei Re-Render)
                 if (editorRef.current) {
                     editorRef.current.innerHTML = initialContent;
                 }
             });
         } else {
-            // initialBody vorhanden (z.B. aus DocumentEditor) → mit Signatur kombinieren
-            loadSignature().then(sig => {
-                const content = `${initialBody}${sig}`;
-                setBody(content);
+            // initialBody vorhanden (z.B. aus Draft oder DocumentEditor)
+            // Signatur nur anhängen wenn im Body noch keine enthalten ist (Draft enthält sie bereits)
+            const alreadyHasSignature = /email-signature/i.test(initialBody);
+            if (alreadyHasSignature) {
+                setBody(initialBody);
                 if (editorRef.current) {
-                    editorRef.current.innerHTML = content;
+                    editorRef.current.innerHTML = initialBody;
                 }
-            });
+            } else {
+                loadSignature().then(sig => {
+                    const content = `${initialBody}${sig}`;
+                    setBody(content);
+                    if (editorRef.current) {
+                        editorRef.current.innerHTML = content;
+                    }
+                });
+            }
         }
 
         loadEmailDokumente();
@@ -576,8 +677,8 @@ export function EmailComposeForm({
                 ? suggestion
                 : suggestion.split(/\n{2,}/).filter(Boolean).map((p: string) => `<p>${p}</p>`).join('');
 
-            // 4. Alles wieder zusammensetzen: Optimierter Text + Zitat + Signatur
-            const newContent = `${htmlSuggestion}${quoteHtml ? '<br>' + quoteHtml : ''}${sigHtml || signature}`;
+            // 4. Alles wieder zusammensetzen: Optimierter Text + Signatur + Zitat
+            const newContent = `${htmlSuggestion}${sigHtml || signature}${quoteHtml ? '<br>' + quoteHtml : ''}`;
             setBody(newContent);
             if (editorRef.current) {
                 editorRef.current.innerHTML = newContent;
@@ -636,8 +737,10 @@ export function EmailComposeForm({
                 formData.append('attachments', uf.file);
             });
 
-            // Always use the unified send endpoint - assignment handled via DTO payload
-            const apiUrl = '/api/emails/send';
+            // Bei Antworten den Reply-Endpoint nutzen (setzt parentEmail + In-Reply-To Header)
+            const apiUrl = replyEmailId
+                ? `/api/emails/${replyEmailId}/reply`
+                : '/api/emails/send';
 
             const res = await fetch(apiUrl, {
                 method: 'POST',
@@ -647,6 +750,9 @@ export function EmailComposeForm({
             if (!res.ok) {
                 throw new Error('E-Mail senden fehlgeschlagen');
             }
+
+            // Draft nach erfolgreichem Senden löschen
+            await deleteDraft();
 
             // Check if the recipient email is new (not in known emails)
             const isNewEmail = finalRecipient && !availableEmails.some(
@@ -708,34 +814,19 @@ export function EmailComposeForm({
     return (
         <div className="flex flex-col h-full bg-slate-50">
             {/* Header */}
-            <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-200 bg-rose-50 flex-shrink-0">
-                <div className="flex min-w-0 items-center gap-3">
-                    <div className="w-11 h-11 rounded-full bg-white border border-rose-200 flex items-center justify-center shadow-sm">
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-rose-50 flex-shrink-0">
+                <div className="flex min-w-0 items-center gap-3 flex-1">
+                    <div className="w-11 h-11 rounded-full bg-white border border-rose-200 flex items-center justify-center shadow-sm flex-shrink-0">
                         <Mail className="w-5 h-5 text-rose-600" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 overflow-hidden">
                         <h2 className="text-lg font-semibold text-slate-900 truncate">{dialogTitle}</h2>
-                        <p className="text-sm text-slate-500 truncate">
+                        <p className="text-sm text-slate-500 truncate hidden sm:block">
                             {dialogSubtitle}
                         </p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    {variant === 'modal' && (
-                        <>
-                            <Button variant="ghost" onClick={onClose} disabled={sending} className="hidden sm:inline-flex">
-                                Abbrechen
-                            </Button>
-                            <Button
-                                onClick={handleSend}
-                                disabled={sending || !recipient.trim() || !subject.trim()}
-                                className="bg-rose-600 hover:bg-rose-700 text-white"
-                            >
-                                {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                                {sending ? 'Wird gesendet...' : 'E-Mail senden'}
-                            </Button>
-                        </>
-                    )}
                     <Button
                         variant="ghost"
                         size="sm"
@@ -792,8 +883,8 @@ export function EmailComposeForm({
                             <p className="text-xs text-slate-500 mt-1">Empfänger, Absender und Betreff in einer kompakten Übersicht.</p>
                         </div>
 
-                        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2 md:col-span-2">
+                        <div className="p-5 flex flex-col gap-4">
+                            <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-3">
                                     <Label>Empfänger *</Label>
                                     {!showCc && (
@@ -802,7 +893,7 @@ export function EmailComposeForm({
                                             variant="ghost"
                                             size="sm"
                                             className="min-h-11 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3"
-                                            onClick={() => setShowCc(true)}
+                                            onClick={() => { setShowCc(true); setCcRecipients(['']); }}
                                         >
                                             + CC hinzufügen
                                         </Button>
@@ -813,17 +904,7 @@ export function EmailComposeForm({
                                     onChange={handleRecipientChange}
                                     suggestions={availableEmails}
                                     placeholder="Name, Firma oder E-Mail eingeben"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="subject">Betreff</Label>
-                                <Input
-                                    id="subject"
-                                    value={subject}
-                                    onChange={(e) => setSubject(e.target.value)}
-                                    placeholder="Betreff eingeben"
-                                    className="font-medium"
+                                    readOnly={!!replyEmailId}
                                 />
                             </div>
 
@@ -838,9 +919,20 @@ export function EmailComposeForm({
                                 />
                             </div>
 
+                            <div className="space-y-2">
+                                <Label htmlFor="subject">Betreff</Label>
+                                <Input
+                                    id="subject"
+                                    value={subject}
+                                    onChange={(e) => setSubject(e.target.value)}
+                                    placeholder="Betreff eingeben"
+                                    className="font-medium"
+                                />
+                            </div>
+
                             {/* CC Section */}
                             {showCc && (
-                                <div className="space-y-2 md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
                                     <div className="flex items-center justify-between gap-3">
                                         <Label>CC</Label>
                                         <Button
@@ -892,7 +984,7 @@ export function EmailComposeForm({
 
                             {/* Dokument Auswahl - für Projekt UND Anfrage Kontext (ausgeblendet wenn initialAttachments vorhanden) */}
                             {entityId && !hasInitialAttachments && (
-                                <div className="space-y-2 md:col-span-2">
+                                <div className="space-y-2">
                                     <Label className="flex items-center gap-2 text-slate-700">
                                         <FileText className="w-4 h-4" />
                                         Dokument aus {isAnfrageContext ? 'Anfrage' : 'Projekt'} anhängen
@@ -1046,6 +1138,7 @@ export function EmailComposeForm({
                                 className="h-full min-h-[240px] rounded-xl border border-slate-200 p-4 outline-none overflow-auto focus-within:border-rose-300"
                                 contentEditable
                                 suppressContentEditableWarning
+                                onInput={() => setBody(editorRef.current?.innerHTML || '')}
                             />
                         </div>
                     </div>
@@ -1053,11 +1146,14 @@ export function EmailComposeForm({
                 </div>
             </div>
 
-            {/* Footer - Only show if variant is default */}
-            {variant !== 'modal' && (
-                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 flex-shrink-0">
+            {/* Footer – immer sichtbar, damit "E-Mail senden" nie verdeckt wird */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between flex-shrink-0 relative z-10">
+                <span className="text-xs text-slate-400">
+                    {draftSaving ? 'Entwurf wird gespeichert…' : draftId ? 'Entwurf gespeichert' : ''}
+                </span>
+                <div className="flex gap-3">
                     <Button variant="outline" onClick={onClose} disabled={sending}>
-                        Abbrechen
+                        Schließen
                     </Button>
                     <Button
                         onClick={handleSend}
@@ -1068,7 +1164,7 @@ export function EmailComposeForm({
                         {sending ? 'Wird gesendet...' : 'E-Mail senden'}
                     </Button>
                 </div>
-            )}
+            </div>
 
             {/* Save Email Dialog */}
             {showSaveEmailDialog && (

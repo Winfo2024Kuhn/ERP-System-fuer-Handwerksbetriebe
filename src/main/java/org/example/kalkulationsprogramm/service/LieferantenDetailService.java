@@ -177,6 +177,10 @@ public class LieferantenDetailService {
         dto.setSentAt(email.getSentAt());
         dto.setBodyHtml(email.getHtmlBody() != null ? email.getHtmlBody() : email.getBody());
 
+        // Thread-Info
+        dto.setParentEmailId(email.getParentEmail() != null ? email.getParentEmail().getId() : null);
+        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
+
         if (email.getAttachments() != null) {
             final Long emailId = email.getId();
             dto.setAttachments(email.getAttachments().stream()
@@ -194,6 +198,27 @@ public class LieferantenDetailService {
                     .toList());
         }
         return dto;
+    }
+
+    private int countAllReplies(org.example.kalkulationsprogramm.domain.Email email) {
+        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
+        int count = email.getReplies().size();
+        for (org.example.kalkulationsprogramm.domain.Email reply : email.getReplies()) {
+            count += countAllReplies(reply);
+        }
+        return count;
+    }
+
+    private int countAncestors(org.example.kalkulationsprogramm.domain.Email email) {
+        int count = 0;
+        java.util.Set<Long> visited = new java.util.HashSet<>();
+        org.example.kalkulationsprogramm.domain.Email current = email.getParentEmail();
+        while (current != null && !visited.contains(current.getId())) {
+            visited.add(current.getId());
+            count++;
+            current = current.getParentEmail();
+        }
+        return count;
     }
 
     private LieferantStatistikDto buildStatistik(Lieferanten lieferant) {

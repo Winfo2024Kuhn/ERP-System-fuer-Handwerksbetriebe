@@ -1,9 +1,11 @@
 package org.example.kalkulationsprogramm.dto.Email;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import lombok.Data;
 
 /**
  * Unified Email Response DTO für das neue Email-System.
@@ -31,6 +33,9 @@ public class UnifiedEmailDto {
     @JsonProperty("isRead")
     private boolean isRead; // Computed: firstViewedAt != null
 
+    @JsonProperty("isStarred")
+    private boolean isStarred;
+
     // Metadaten
     private String direction; // IN, OUT
     private String zuordnungTyp; // KEINE, PROJEKT, ANFRAGE, LIEFERANT
@@ -46,6 +51,15 @@ public class UnifiedEmailDto {
     // Ordner-Zuordnung (computed)
     private String folder;
 
+    // Spam
+    private Integer spamScore;
+
+    // Thread-Informationen
+    /** ID der übergeordneten E-Mail; null für Thread-Wurzeln (Root-Emails). */
+    private Long parentEmailId;
+    /** Anzahl direkter Antworten auf diese E-Mail. 0 = keine Antworten vorhanden. */
+    private int replyCount;
+
     // Anhänge
     private List<AttachmentDto> attachments;
     private boolean hasAttachments;
@@ -57,5 +71,6 @@ public class UnifiedEmailDto {
         private String mimeType;
         private Long fileSize;
         private String contentId;
+        private boolean inline;
     }
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
     ArrowDown, ArrowUp, ArrowUpDown,
-    BarChart3, Calendar, FileText, Loader2,
+    BarChart3, Calendar, FileText, Layers, Loader2,
     Search, Users, Wrench, X,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -11,7 +11,7 @@ import { ProjectSelectModal } from '../components/ProjectSelectModal';
 
 type SortField = 'mitarbeiter' | 'datum' | 'dauer' | 'produktkategorie' | 'arbeitsgang';
 type SortDir   = 'asc' | 'desc';
-type GroupBy   = 'arbeitsgang' | 'qualifikation' | 'mitarbeiter' | 'datum';
+type GroupBy   = 'arbeitsgang' | 'qualifikation' | 'mitarbeiter' | 'datum' | 'produktkategorie';
 
 interface AuswertungBuchung {
     id: number;
@@ -47,10 +47,11 @@ const GROUP_OPTIONS: {
     icon: React.ReactNode;
     desc: string;
 }[] = [
-    { key: 'arbeitsgang',   label: 'Arbeitsgang',   icon: <Wrench className="w-5 h-5" />,   desc: 'Nach Tätigkeit / Gewerk' },
-    { key: 'qualifikation', label: 'Qualifikation', icon: <BarChart3 className="w-5 h-5" />, desc: 'Nach Berufsgruppe' },
-    { key: 'mitarbeiter',   label: 'Mitarbeiter',   icon: <Users className="w-5 h-5" />,    desc: 'Nach Person' },
-    { key: 'datum',         label: 'Datum',         icon: <Calendar className="w-5 h-5" />,  desc: 'Chronologisch' },
+    { key: 'arbeitsgang',      label: 'Arbeitsgang',      icon: <Wrench className="w-5 h-5" />,   desc: 'Nach Tätigkeit / Gewerk' },
+    { key: 'qualifikation',    label: 'Qualifikation',    icon: <BarChart3 className="w-5 h-5" />, desc: 'Nach Berufsgruppe' },
+    { key: 'mitarbeiter',      label: 'Mitarbeiter',      icon: <Users className="w-5 h-5" />,    desc: 'Nach Person' },
+    { key: 'datum',            label: 'Datum',            icon: <Calendar className="w-5 h-5" />,  desc: 'Chronologisch' },
+    { key: 'produktkategorie', label: 'Produktkategorie', icon: <Layers className="w-5 h-5" />,   desc: 'Nach Kategorie' },
 ];
 
 // ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ function getGroupKey(b: AuswertungBuchung, groupBy: GroupBy): string {
             return b.startDateTime
                 ? new Date(b.startDateTime).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
                 : 'Kein Datum';
+        case 'produktkategorie': return b.produktkategoriePfad || 'Keine Kategorie';
         default:              return b.arbeitsgangName  || 'Sonstiges';
     }
 }

@@ -1,11 +1,12 @@
 package org.example.kalkulationsprogramm.dto.ProjektEmail;
 
-import lombok.Getter;
-import lombok.Setter;
-import org.example.kalkulationsprogramm.domain.EmailDirection;
-
 import java.time.LocalDateTime;
 import java.util.List;
+
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+
+import lombok.Getter;
+import lombok.Setter;
 
 @Getter
 @Setter
@@ -31,4 +32,8 @@ public class ProjektEmailDto {
     private Long projektId;
     private Long anfrageId;
     private Long lieferantId;
+
+    // Thread-Unterstützung
+    private Long parentEmailId;
+    private int replyCount;
 }

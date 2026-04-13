@@ -36,8 +36,8 @@ public class Zeitbuchung {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "mitarbeiter_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "mitarbeiter_id", nullable = true)
     private Mitarbeiter mitarbeiter;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = true)
@@ -56,7 +56,7 @@ public class Zeitbuchung {
     @JoinColumn(name = "projekt_produktkategorie_id")
     private ProjektProduktkategorie projektProduktkategorie;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private LocalDateTime startZeit;
 
     @Column

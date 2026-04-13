@@ -537,3 +537,12 @@ body {
     }
   }
 }
+
+/* EmailRecipientInput – Portal-Dropdown (Position via CSS-Custom-Properties gesetzt) */
+.email-recipient-dropdown {
+  position: fixed;
+  top: var(--dropdown-top);
+  left: var(--dropdown-left);
+  width: var(--dropdown-width);
+  z-index: 9999;
+}

@@ -1,13 +1,19 @@
 package org.example.kalkulationsprogramm.repository;
 
-import org.example.kalkulationsprogramm.domain.*;
+import java.util.List;
+import java.util.Optional;
+
+import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.EmailProcessingStatus;
+import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.Projekt;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
-import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface EmailRepository extends JpaRepository<Email, Long> {
@@ -430,4 +436,32 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   @Query("SELECT COUNT(e) FROM Email e WHERE e.isSpam = true AND e.deletedAt IS NULL AND e.isRead = false")
   long countSpamUnread();
+
+  // ═══════════════════════════════════════════════════════════════
+  // STARRED / MARKIERT
+  // ═══════════════════════════════════════════════════════════════
+
+  @Query("SELECT e FROM Email e WHERE e.isStarred = true AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  List<Email> findStarred();
+
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.isStarred = true AND e.deletedAt IS NULL AND e.isRead = false")
+  long countStarredUnread();
+
+  // ═══════════════════════════════════════════════════════════════
+  // GLOBALE SUCHE
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Durchsucht alle Emails nach Betreff, Absender oder Empfänger.
+   * Gibt maximal 50 Ergebnisse zurück, sortiert nach Datum absteigend.
+   */
+  @Query(value = """
+      SELECT * FROM email e
+      WHERE (LOWER(e.subject) LIKE LOWER(CONCAT('%', :query, '%'))
+          OR LOWER(e.from_address) LIKE LOWER(CONCAT('%', :query, '%'))
+          OR LOWER(e.recipient) LIKE LOWER(CONCAT('%', :query, '%'))
+          OR LOWER(e.body) LIKE LOWER(CONCAT('%', :query, '%')))
+      ORDER BY e.sent_at DESC
+      """, nativeQuery = true)
+  List<Email> searchGlobal(@Param("query") String query);
 }

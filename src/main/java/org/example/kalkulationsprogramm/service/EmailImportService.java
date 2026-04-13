@@ -1,27 +1,49 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.sun.mail.imap.IMAPFolder;
-import jakarta.mail.*;
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeBodyPart;
-import jakarta.mail.internet.MimeMessage;
-import jakarta.mail.internet.MimeMultipart;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.domain.*;
-import org.example.kalkulationsprogramm.repository.*;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.UUID;
+
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.EmailProcessingStatus;
+import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
+import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
+import org.example.kalkulationsprogramm.repository.EmailRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.sun.mail.imap.IMAPFolder;
+
+import jakarta.mail.Address;
+import jakarta.mail.BodyPart;
+import jakarta.mail.FetchProfile;
+import jakarta.mail.Flags;
+import jakarta.mail.Folder;
+import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
+import jakarta.mail.Part;
+import jakarta.mail.Session;
+import jakarta.mail.Store;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeBodyPart;
+import jakarta.mail.internet.MimeMultipart;
+import jakarta.mail.internet.MimeUtility;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Service für den Import von E-Mails aus IMAP in die neue unified
@@ -424,7 +446,7 @@ public class EmailImportService {
             if (Part.ATTACHMENT.equalsIgnoreCase(disposition) ||
                     Part.INLINE.equalsIgnoreCase(disposition)) {
 
-                String filename = part.getFileName();
+                String filename = decodeFilename(part.getFileName());
                 if (filename != null) {
                     saveAttachment(part, email, Part.INLINE.equalsIgnoreCase(disposition));
                 }
@@ -446,7 +468,7 @@ public class EmailImportService {
     private void saveAttachment(BodyPart part, Email email, boolean inline)
             throws MessagingException, IOException {
 
-        String originalFilename = part.getFileName();
+        String originalFilename = decodeFilename(part.getFileName());
         String storedFilename = UUID.randomUUID().toString() + "_" + sanitizeFilename(originalFilename);
 
         // Verzeichnis: Flat Structure (User Request)
@@ -480,6 +502,47 @@ public class EmailImportService {
 
         email.addAttachment(attachment);
         attachmentRepository.save(attachment);
+    }
+
+    /**
+     * Backfill: Dekodiert alle EmailAttachment-Einträge in der DB, deren
+     * originalFilename noch MIME encoded-word Strings enthält (=?...?=).
+     *
+     * @return Anzahl der aktualisierten Datensätze
+     */
+    @Transactional
+    public int backfillAttachmentFilenames() {
+        List<EmailAttachment> all = attachmentRepository.findAll();
+        int updated = 0;
+        for (EmailAttachment att : all) {
+            String raw = att.getOriginalFilename();
+            if (raw != null && raw.contains("=?")) {
+                String decoded = decodeFilename(raw);
+                if (!decoded.equals(raw)) {
+                    att.setOriginalFilename(decoded);
+                    attachmentRepository.save(att);
+                    updated++;
+                    log.debug("Backfill: '{}' → '{}'", raw, decoded);
+                }
+            }
+        }
+        log.info("Backfill attachment filenames: {} von {} Einträgen aktualisiert", updated, all.size());
+        return updated;
+    }
+
+    /**
+     * Dekodiert MIME encoded-word Dateinamen (RFC 2047), z.B.
+     * {@code =?iso-8859-1?Q?Stahltr=E4ger.pdf?=} → {@code Stahlträger.pdf}.
+     * Gibt den Originalstring zurück wenn die Dekodierung fehlschlägt.
+     */
+    private String decodeFilename(String filename) {
+        if (filename == null) return null;
+        try {
+            return MimeUtility.decodeText(filename);
+        } catch (Exception e) {
+            log.debug("MIME filename decoding failed for '{}': {}", filename, e.getMessage());
+            return filename;
+        }
     }
 
     private String sanitizeFilename(String filename) {
@@ -518,7 +581,6 @@ public class EmailImportService {
                 email.setSpam(false);
                 email.setNewsletter(false);
                 email.setSpamScore(0);
-                emailRepository.save(email);
                 log.info("[EmailImport] Spam/Newsletter-Flags bereinigt für Lieferanten-Email {}", email.getId());
             }
 
@@ -532,6 +594,9 @@ public class EmailImportService {
                         email.getId(), e.getMessage(), e);
             }
         }
+
+        // Spam-Score und Zuordnungs-Änderungen persistieren
+        emailRepository.save(email);
     }
 
     /**

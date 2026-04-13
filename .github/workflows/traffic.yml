@@ -1,0 +1,154 @@
+name: Traffic Stats sammeln
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # täglich um 02:00 UTC
+  workflow_dispatch:        # auch manuell auslösbar
+
+permissions:
+  contents: write
+
+concurrency:
+  group: traffic-stats
+  cancel-in-progress: true
+
+jobs:
+  collect-traffic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: main Branch auschecken
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          # TRAFFIC_TOKEN muss in den Repo-Settings als Secret hinterlegt sein.
+          # Damit der direkte Push auf main erlaubt ist, muss das Token außerdem
+          # in den Branch-Schutzregeln als Bypass-Akteur eingetragen sein:
+          #   Settings → Rules → Rulesets → main-Regel → Bypass list → Add Bypass
+          #   → Role: Repository admin  ODER  das PAT direkt als Actor hinzufügen.
+          token: ${{ secrets.TRAFFIC_TOKEN }}
+
+      - name: Traffic-Daten akkumulieren und schreiben
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+
+          DATA_FILE=".github/traffic/data.json"
+          mkdir -p .github/traffic
+
+          # ── Vorhandene akkumulierte Werte laden ──────────────────────────────
+          if [ -f "$DATA_FILE" ]; then
+            ACC_VIEWS=$(jq '.total_views // 0'          "$DATA_FILE")
+            ACC_UNIQ_VIEWS=$(jq '.total_unique_visitors // 0' "$DATA_FILE")
+            ACC_CLONES=$(jq '.total_clones // 0'        "$DATA_FILE")
+            ACC_UNIQ_CLONES=$(jq '.total_unique_cloners // 0' "$DATA_FILE")
+            LAST_VIEW_TS=$(jq -r '.last_view_timestamp  // "1970-01-01T00:00:00Z"' "$DATA_FILE")
+            LAST_CLONE_TS=$(jq -r '.last_clone_timestamp // "1970-01-01T00:00:00Z"' "$DATA_FILE")
+          else
+            ACC_VIEWS=0; ACC_UNIQ_VIEWS=0; ACC_CLONES=0; ACC_UNIQ_CLONES=0
+            LAST_VIEW_TS="1970-01-01T00:00:00Z"
+            LAST_CLONE_TS="1970-01-01T00:00:00Z"
+          fi
+
+          # ── GitHub Traffic API abrufen ────────────────────────────────────────
+          VIEWS_JSON=$(curl --fail-with-body -sS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/traffic/views?per=day")
+          echo "Views API: $VIEWS_JSON"
+
+          CLONES_JSON=$(curl --fail-with-body -sS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/traffic/clones?per=day")
+          echo "Clones API: $CLONES_JSON"
+
+          REFERRERS_JSON=$(curl --fail-with-body -sS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/traffic/popular/referrers")
+
+          PATHS_JSON=$(curl --fail-with-body -sS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/traffic/popular/paths")
+
+          REPO_JSON=$(curl --fail-with-body -sS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO")
+
+          # ── Validierung: API hat gültige Zahlen zurückgegeben ─────────────────
+          echo "$VIEWS_JSON"  | jq -e '.count | numbers'  > /dev/null
+          echo "$CLONES_JSON" | jq -e '.count | numbers'  > /dev/null
+          echo "$REPO_JSON"   | jq -e '.stargazers_count | numbers' > /dev/null
+
+          # ── Nur neue Tage addieren (Timestamp-Filter) ─────────────────────────
+          NEW_VIEWS=$(echo "$VIEWS_JSON" | jq --arg last "$LAST_VIEW_TS" '
+            [ (.views? // [])[] | select(.timestamp > $last) ] |
+            { count: (map(.count) | add // 0), uniques: (map(.uniques) | add // 0),
+              latest_ts: (map(.timestamp) | max // "") }')
+          ADD_VIEWS=$(echo "$NEW_VIEWS" | jq '.count')
+          ADD_UNIQ_VIEWS=$(echo "$NEW_VIEWS" | jq '.uniques')
+          LATEST_VIEW_TS=$(echo "$NEW_VIEWS" | jq -r '.latest_ts')
+          [ -n "$LATEST_VIEW_TS" ] && [ "$LATEST_VIEW_TS" \> "$LAST_VIEW_TS" ] && LAST_VIEW_TS="$LATEST_VIEW_TS"
+
+          NEW_CLONES=$(echo "$CLONES_JSON" | jq --arg last "$LAST_CLONE_TS" '
+            [ (.clones? // [])[] | select(.timestamp > $last) ] |
+            { count: (map(.count) | add // 0), uniques: (map(.uniques) | add // 0),
+              latest_ts: (map(.timestamp) | max // "") }')
+          ADD_CLONES=$(echo "$NEW_CLONES" | jq '.count')
+          ADD_UNIQ_CLONES=$(echo "$NEW_CLONES" | jq '.uniques')
+          LATEST_CLONE_TS=$(echo "$NEW_CLONES" | jq -r '.latest_ts')
+          [ -n "$LATEST_CLONE_TS" ] && [ "$LATEST_CLONE_TS" \> "$LAST_CLONE_TS" ] && LAST_CLONE_TS="$LATEST_CLONE_TS"
+
+          # ── Neue Gesamtwerte berechnen ────────────────────────────────────────
+          TOTAL_VIEWS=$(( ACC_VIEWS + ADD_VIEWS ))
+          TOTAL_UNIQ_VIEWS=$(( ACC_UNIQ_VIEWS + ADD_UNIQ_VIEWS ))
+          TOTAL_CLONES=$(( ACC_CLONES + ADD_CLONES ))
+          TOTAL_UNIQ_CLONES=$(( ACC_UNIQ_CLONES + ADD_UNIQ_CLONES ))
+
+          # ── JSON schreiben ────────────────────────────────────────────────────
+          jq -n \
+            --argjson total_views          "$TOTAL_VIEWS" \
+            --argjson total_unique_visitors "$TOTAL_UNIQ_VIEWS" \
+            --argjson total_clones         "$TOTAL_CLONES" \
+            --argjson total_unique_cloners "$TOTAL_UNIQ_CLONES" \
+            --arg     last_view_timestamp  "$LAST_VIEW_TS" \
+            --arg     last_clone_timestamp "$LAST_CLONE_TS" \
+            --argjson referring_sites      "$(echo "$REFERRERS_JSON" | jq '. // []')" \
+            --argjson popular_content      "$(echo "$PATHS_JSON"     | jq '. // []')" \
+            --argjson stars   "$(echo "$REPO_JSON" | jq '.stargazers_count // 0')" \
+            --argjson forks   "$(echo "$REPO_JSON" | jq '.forks_count // 0')" \
+            --argjson watchers "$(echo "$REPO_JSON" | jq '.subscribers_count // 0')" \
+            --argjson open_issues "$(echo "$REPO_JSON" | jq '.open_issues_count // 0')" \
+            --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              total_views:           $total_views,
+              total_unique_visitors: $total_unique_visitors,
+              total_clones:          $total_clones,
+              total_unique_cloners:  $total_unique_cloners,
+              last_view_timestamp:   $last_view_timestamp,
+              last_clone_timestamp:  $last_clone_timestamp,
+              referring_sites:       $referring_sites,
+              popular_content:       $popular_content,
+              stars:       $stars,
+              forks:       $forks,
+              watchers:    $watchers,
+              open_issues: $open_issues,
+              updated_at:  $updated_at
+            }' > "$DATA_FILE"
+
+          echo "Gesamt-Views: $TOTAL_VIEWS (unique: $TOTAL_UNIQ_VIEWS)"
+          echo "Gesamt-Clones: $TOTAL_CLONES (unique: $TOTAL_UNIQ_CLONES)"
+          echo "Stars: $(echo "$REPO_JSON" | jq '.stargazers_count') | Forks: $(echo "$REPO_JSON" | jq '.forks_count')"
+
+      - name: Daten direkt auf main committen und pushen
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .github/traffic/data.json
+          git diff --staged --quiet || git commit -m "chore(traffic): aktualisiere kumulative Traffic-Statistiken [skip ci]"
+          git push origin main

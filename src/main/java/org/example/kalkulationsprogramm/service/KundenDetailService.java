@@ -281,7 +281,30 @@ public class KundenDetailService {
         dto.setSnippet(buildSnippet(email.getHtmlBody(), email.getBody()));
         dto.setBody(extractPlainText(email.getHtmlBody(), email.getBody()));
         dto.setAttachments(mapAttachments(email.getAttachments(), referenzTyp, referenzId, email.getId()));
+        dto.setParentEmailId(email.getParentEmail() != null ? email.getParentEmail().getId() : null);
+        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
         return dto;
+    }
+
+    private int countAllReplies(org.example.kalkulationsprogramm.domain.Email email) {
+        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
+        int count = email.getReplies().size();
+        for (org.example.kalkulationsprogramm.domain.Email reply : email.getReplies()) {
+            count += countAllReplies(reply);
+        }
+        return count;
+    }
+
+    private int countAncestors(org.example.kalkulationsprogramm.domain.Email email) {
+        int count = 0;
+        java.util.Set<Long> visited = new java.util.HashSet<>();
+        org.example.kalkulationsprogramm.domain.Email current = email.getParentEmail();
+        while (current != null && !visited.contains(current.getId())) {
+            visited.add(current.getId());
+            count++;
+            current = current.getParentEmail();
+        }
+        return count;
     }
 
     private String combineRecipients(String recipient, String cc) {

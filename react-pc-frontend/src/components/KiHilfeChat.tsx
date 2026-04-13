@@ -317,38 +317,19 @@ export function KiHilfeChat() {
         localStorage.setItem(keyMessages, '[]');
     };
 
-    // Floating button when closed
-    if (!open) {
-        return (
-            <button
-                onClick={() => setOpen(true)}
-                className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-rose-600 text-white px-4 py-3 rounded-full shadow-lg hover:bg-rose-700 transition-all hover:scale-105 group"
-                title="KI-Hilfe öffnen"
-            >
-                <Gem className="w-5 h-5 group-hover:drop-shadow-sm" />
-                <span className="text-sm font-medium">KI-Hilfe</span>
-            </button>
-        );
-    }
+    // Custom-Event zum Öffnen von außen (z.B. aus der RibbonNav)
+    useEffect(() => {
+        const handler = () => {
+            setOpen(true);
+            setMinimized(false);
+        };
+        window.addEventListener('ki-hilfe-open', handler);
+        return () => window.removeEventListener('ki-hilfe-open', handler);
+    }, []);
 
-    // Minimized state
-    if (minimized) {
-        return createPortal(
-            <button
-                onClick={() => setMinimized(false)}
-                className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-rose-600 text-white px-4 py-3 rounded-full shadow-lg hover:bg-rose-700 transition-all hover:scale-105"
-                title="KI-Hilfe maximieren"
-            >
-                <Gem className="w-5 h-5" />
-                <span className="text-sm font-medium">KI-Hilfe</span>
-                {messages.length > 0 && (
-                    <span className="bg-white text-rose-600 text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                        {messages.filter(m => m.role === 'assistant').length}
-                    </span>
-                )}
-            </button>,
-            document.body
-        );
+    // Wenn geschlossen oder minimiert: nichts rendern (Trigger ist jetzt in der RibbonNav)
+    if (!open || minimized) {
+        return null;
     }
 
     // Full chat panel

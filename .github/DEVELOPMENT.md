@@ -673,3 +673,86 @@ Neue Detailseiten sollten immer `DetailLayout` verwenden, um das zweispaltige La
 ### Visual Consistency Check
 - **Color Enforcement:** Strictly adhere to the **Rose/Red** (`#dc2626`, `rose-50` to `rose-900`) theme defined in the "Button Design Guidelines".
 - **No Magic Values:** Do not invent new styles. If a style is missing in `.github/DEVELOPMENT.md`, define it there first.
+
+---
+
+## Datei-Öffnung via OpenFileLauncher (Excel, HiCAD, TENADO)
+
+Dateien vom Typ `.xlsm`, `.xlsx`, `.xls`, `.sza`, `.tcd` werden **nicht heruntergeladen**, sondern direkt auf dem Server geöffnet – ohne Kopie. Dafür sind zwei Dinge nötig: eine Windows-Netzwerkfreigabe auf dem Serverrechner und der OpenFileLauncher auf jedem Client-PC.
+
+### Funktionsweise
+
+```
+Browser klickt Datei
+  → Frontend ruft openfile://?path=\\SERVER\ERP-Uploads\CADdrawings\datei.xlsm auf
+  → Windows leitet an launcher.ps1 weiter
+  → Launcher mappt Netzlaufwerk und öffnet Datei direkt in Excel/HiCAD
+  → Änderungen werden direkt auf dem Server gespeichert (keine Kopie)
+```
+
+### 1. Serverrechner einrichten (einmalig, pro Installation)
+
+#### a) Netzwerkfreigabe erstellen
+
+Den `uploads/`-Ordner als Windows-Freigabe freigeben. Entweder über das mitgelieferte Skript (empfohlen) oder manuell:
+
+**Automatisch (empfohlen):**
+```
+deployment\openfile-launcher\Setup-Freigabe.ps1
+→ Rechtsklick → Als Administrator ausführen
+```
+Das Skript erstellt die Freigabe `ERP-Uploads` und aktualisiert den Launcher automatisch.
+
+**Manuell (PowerShell als Administrator):**
+```powershell
+New-SmbShare -Name 'ERP-Uploads' `
+             -Path 'C:\<Installationspfad>\uploads' `
+             -FullAccess $env:USERNAME
+```
+
+#### b) `application-local.properties` konfigurieren
+
+```properties
+# Netzwerkpfad zur CADdrawings-Freigabe (UNC-Format, doppelte Backslashes)
+hicad.network-url=\\\\<RECHNERNAME>\\ERP-Uploads\\CADdrawings
+```
+
+`<RECHNERNAME>` = Windows-Computername (`hostname` in CMD ausführen).
+
+Excel- und HiCAD-Dateien werden automatisch in `uploads/CADdrawings/` gespeichert. Der UNC-Pfad muss genau auf diesen Unterordner zeigen.
+
+#### c) Backend neu starten
+
+Nach Änderung der `application-local.properties` muss das Backend neu gestartet werden.
+
+### 2. Client-PCs einrichten (einmalig, pro Arbeitsplatz)
+
+Auf jedem PC, der Dateien direkt öffnen soll:
+
+1. OpenFileLauncher-Setup herunterladen (in der App unter Einstellungen → OpenFile Launcher)
+2. `OpenFileLauncher-Install.bat` als Administrator ausführen
+3. Registriert das `openfile://`-Protokoll in der Windows-Registry
+
+Kein Neustart nötig. Ab sofort öffnen sich Excel- und HiCAD-Dateien per Klick direkt im Programm.
+
+### 3. `launcher.ps1` – erlaubte Netzwerkpfade (config.json)
+
+Der Launcher liest die erlaubten UNC-Roots **dynamisch** aus `C:\Program Files\OpenFileLauncher\config.json`. Diese Datei wird von `Setup-Freigabe.ps1` automatisch aus `hicad.network-url` generiert — `launcher.ps1` selbst muss nie manuell bearbeitet werden.
+
+```json
+{
+  "allowedRoots": ["\\\\<RECHNERNAME>\\ERP-Uploads\\CADdrawings"],
+  "rootAliases": {}
+}
+```
+
+**Pfad ändern:** Nur `hicad.network-url` in `application-local.properties` anpassen, dann `Setup-Freigabe.ps1` als Admin ausführen — `config.json` wird neu generiert und der Launcher automatisch aktualisiert.
+
+### Troubleshooting
+
+| Problem | Ursache | Lösung |
+|---------|---------|--------|
+| Datei wird heruntergeladen statt geöffnet | `hicad.network-url` nicht gesetzt oder kein UNC-Pfad | `application-local.properties` prüfen (Java-Escaping: `\\\\SERVER\\Share`), Backend neu starten |
+| Launcher öffnet sich nicht | `openfile://`-Protokoll nicht registriert | OpenFileLauncher auf dem Client neu installieren (`INSTALL.bat` als Admin) |
+| „Pfad nicht gefunden" im Launcher | `config.json` fehlt oder falsche `allowedRoots` | `Setup-Freigabe.ps1` als Admin auf dem Serverrechner ausführen, dann `config.json` auf Client-PCs verteilen |
+| Freigabe nicht erreichbar | Windows-Firewall blockiert SMB | Firewall-Regel für Port 445 prüfen oder Freigabe auf dem Server kontrollieren |

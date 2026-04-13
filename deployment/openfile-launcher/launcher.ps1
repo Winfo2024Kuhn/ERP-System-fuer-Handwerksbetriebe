@@ -4,16 +4,31 @@ param([string]$Url)
 Add-Type -AssemblyName System.Web
 $ErrorActionPreference = 'Stop'
 
-# Erlaubte UNC-Roots (neuer zuerst)
-$AllowedRoots = @(
-  '\\THOMAS_PC\CADdrawings'
-  '\\THOMAS_PC\Kalkulationsprogramm\uploads\CADdrawings'
-)
+# Konfiguration aus config.json laden (wird von Setup-Freigabe.ps1 generiert)
+# Fallback auf hartcodierte Werte wenn Datei fehlt
+$AllowedRoots = @()
+$RootAliases  = @{}
+$configFile   = Join-Path $PSScriptRoot 'config.json'
+if (Test-Path $configFile) {
+  try {
+    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
+    if ($cfg.allowedRoots) { $AllowedRoots = @($cfg.allowedRoots) }
+    if ($cfg.rootAliases) {
+      foreach ($key in $cfg.rootAliases.PSObject.Properties.Name) {
+        $RootAliases[$key] = $cfg.rootAliases.$key
+      }
+    }
+    # config.json geladen – keine Fallback-Roots noetig
+  } catch {
+    # Fehler beim Lesen – Fallback greift unten
+  }
+}
 
-# Alias: alten Root automatisch auf neuen umschreiben
-$RootAliases = @{
-  '\\MARVIN-PC\Zeichnungen'   = '\\THOMAS_PC\Kalkulationsprogramm\uploads\CADdrawings'
-  '\\THOMAS_PC\CADdrawings'   = '\\THOMAS_PC\Kalkulationsprogramm\uploads\CADdrawings'
+# Fallback falls config.json fehlt oder leer
+if ($AllowedRoots.Count -eq 0) {
+  $AllowedRoots = @(
+    '\\Marvins_Laptop\ERP-Uploads\CADdrawings'
+  )
 }
 
 # Bevorzugter Laufwerksbuchstabe

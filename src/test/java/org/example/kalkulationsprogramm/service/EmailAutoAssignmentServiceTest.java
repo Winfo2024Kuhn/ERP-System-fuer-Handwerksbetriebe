@@ -26,12 +26,13 @@ class EmailAutoAssignmentServiceTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private ProjektRepository projektRepository;
     @Mock private AnfrageRepository anfrageRepository;
+    @Mock private EmailKiClassificationService emailKiClassificationService;
 
     private EmailAutoAssignmentService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailAutoAssignmentService(emailRepository, lieferantenRepository, projektRepository, anfrageRepository);
+        service = new EmailAutoAssignmentService(emailRepository, lieferantenRepository, projektRepository, anfrageRepository, emailKiClassificationService);
     }
 
     private Email erstelleEmail(String fromAddress, String subject) {

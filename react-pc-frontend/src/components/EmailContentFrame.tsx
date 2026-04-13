@@ -3,103 +3,318 @@ import React, { useEffect, useRef, useState } from 'react';
 interface EmailContentFrameProps {
     html: string;
     className?: string;
+    /** Im Thread-Modus: zitierte Inhalte (blockquote, Outlook-Divs etc.) einklappen */
+    hideQuotes?: boolean;
 }
 
-export const EmailContentFrame: React.FC<EmailContentFrameProps> = ({ html, className }) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// Quote-Collapsing: läuft im Parent-Context, manipuliert iframe-DOM direkt.
+// Kein inline-Script im iframe nötig → keine CSP-Konflikte.
+// ─────────────────────────────────────────────────────────────────────────────
+function collapseQuotes(doc: Document, onHeightChange: () => void): void {
+    // Gibt es schon Toggle-Buttons? Dann nicht nochmal anwenden.
+    if (doc.querySelector('[data-quote-btn]')) return;
+
+    // ── Hilfsfunktion: Gruppe von Elementen verstecken + Toggle-Button einfügen ──
+    function hideGroup(elements: Element[]): void {
+        if (!elements.length) return;
+        const firstEl = elements[0];
+        const parent = firstEl.parentNode;
+        if (!parent) return;
+
+        // Alle ausblenden
+        elements.forEach(el => ((el as HTMLElement).style.display = 'none'));
+
+        // Toggle-Button VOR dem ersten Element einfügen
+        const btn = doc.createElement('button');
+        btn.setAttribute('data-quote-btn', '1');
+        btn.textContent = '···';
+        btn.title = 'Zitierten Inhalt anzeigen';
+        Object.assign(btn.style, {
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '6px 0',
+            padding: '2px 10px',
+            fontSize: '13px',
+            fontWeight: '600',
+            letterSpacing: '2px',
+            color: '#64748b',
+            background: '#f1f5f9',
+            border: '1px solid #cbd5e1',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            lineHeight: '1.4',
+            fontFamily: 'inherit',
+        });
+
+        btn.addEventListener('mouseenter', () => {
+            btn.style.background = '#e2e8f0';
+            btn.style.borderColor = '#94a3b8';
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.style.background = '#f1f5f9';
+            btn.style.borderColor = '#cbd5e1';
+        });
+
+        let expanded = false;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            expanded = !expanded;
+            elements.forEach(el => ((el as HTMLElement).style.display = expanded ? '' : 'none'));
+            btn.textContent = expanded ? '▲ Zitat ausblenden' : '···';
+            btn.style.letterSpacing = expanded ? '0' : '2px';
+            setTimeout(onHeightChange, 50);
+        });
+
+        parent.insertBefore(btn, firstEl);
+    }
+
+    // ── Outlook-Muster 1: #divRplyFwdMsg (Outlook Web App / OWA) ────────────
+    // Struktur: [hr] [appendonsend] #divRplyFwdMsg [quoted-siblings...]
+    const rplyEl = doc.querySelector('#divRplyFwdMsg');
+    if (rplyEl) {
+        const group: Element[] = [];
+        // Vorherige leere Geschwister (hr, leere divs) aufsammeln
+        let prevEl = rplyEl.previousElementSibling;
+        const prevCollect: Element[] = [];
+        while (prevEl) {
+            const tag = prevEl.tagName.toUpperCase();
+            const isEmpty = (prevEl.textContent || '').trim().length < 5;
+            if (tag === 'HR' || (tag === 'DIV' && isEmpty)) {
+                prevCollect.unshift(prevEl);
+                prevEl = prevEl.previousElementSibling;
+            } else { break; }
+        }
+        group.push(...prevCollect);
+        // divRplyFwdMsg + alle folgenden Geschwister
+        let cur: Element | null = rplyEl;
+        while (cur) { group.push(cur); cur = cur.nextElementSibling; }
+        hideGroup(group);
+        return; // Nicht auch noch blockquote suchen
+    }
+
+    // ── Outlook-Muster 2: border-top Trennlinie (Outlook Desktop/Exchange) ──
+    // Variante A: <div style="border-top">Von:...</div>  [direct separator]
+    // Variante B: <div><div style="border-top">Von:...</div></div>  [wrapper]
+    const borderDivs = doc.querySelectorAll<HTMLElement>('div[style*="border-top"]');
+    for (const bd of Array.from(borderDivs)) {
+        if (/Von:|From:|Gesendet:|Sent:|De:|Envoy/i.test(bd.textContent || '')) {
+            let startEl: Element = bd;
+            const parent2 = bd.parentElement;
+            if (parent2 && parent2.tagName.toUpperCase() === 'DIV') {
+                const pLen = (parent2.textContent || '').trim().length;
+                const bLen = (bd.textContent || '').trim().length;
+                if (pLen > 0 && Math.abs(pLen - bLen) < 30) {
+                    startEl = parent2; // Variante B: Parent ist Wrapper
+                }
+            }
+            const group: Element[] = [startEl];
+            let nxt = startEl.nextElementSibling;
+            while (nxt) { group.push(nxt); nxt = nxt.nextElementSibling; }
+            hideGroup(group);
+            return;
+        }
+    }
+
+    // ── Eigene email-quote Klasse (aus unserem Compose) ─────────────────────
+    const ownQuotes = doc.querySelectorAll('.email-quote');
+    if (ownQuotes.length > 0) {
+        for (const q of Array.from(ownQuotes)) {
+            // "Am ... schrieb:" Zeile VOR dem Quote auch verstecken
+            let prev: Node | null = q.previousSibling;
+            while (prev && prev.nodeType === 3 && (prev.textContent || '').trim() === '') {
+                prev = prev.previousSibling;
+            }
+            if (prev && prev.nodeType === 1) {
+                const text = ((prev as Element).textContent || '').trim();
+                if (/^(Am |On |Von:|From:)/i.test(text) || /schrieb.*:|wrote.*:/i.test(text)) {
+                    hideGroup([prev as Element, q]);
+                    continue;
+                }
+            }
+            hideGroup([q]);
+        }
+        return;
+    }
+
+    // ── Standard-Selektoren (Gmail, Yahoo, blockquote, Apple Mail) ───────────
+    const quoteSelectors = [
+        'blockquote',
+        '.gmail_quote',
+        '.yahoo_quoted',
+        '.moz-cite-prefix',
+        '[class*="ygmail_extra"]',
+    ];
+
+    // Nur Top-Level-Quotes (keine verschachtelten)
+    const found: Element[] = [];
+    for (const sel of quoteSelectors) {
+        try {
+            doc.querySelectorAll(sel).forEach(el => {
+                const isNested = found.some(f => f.contains(el));
+                if (!isNested && found.indexOf(el) === -1) found.push(el);
+            });
+        } catch { /* ignore invalid selectors */ }
+    }
+
+    if (found.length > 0) {
+        for (const quote of found) {
+            // Optionale Zeile VOR dem Quote verstecken ("Am ... schrieb:", "On ... wrote:")
+            let prev: Node | null = quote.previousSibling;
+            while (prev && prev.nodeType === 3 && (prev.textContent || '').trim() === '') {
+                prev = prev.previousSibling;
+            }
+            if (prev && prev.nodeType === 1) {
+                const text = ((prev as Element).textContent || '').trim();
+                if (/^(Am |On |Von:|From:|De:|Le )/i.test(text) || text.length < 120) {
+                    (prev as HTMLElement).style.display = 'none';
+                }
+            }
+            hideGroup([quote]);
+        }
+        return;
+    }
+
+    // ── Textmuster-Erkennung (Klartext-Clients: t-online, Thunderbird etc.) ─
+    // Diese Clients markieren Zitate nicht mit HTML-Elementen, sondern fügen
+    // den Nachrichtenverlauf als Fließtext ein. Wir suchen nach typischen
+    // Trennmustern und verstecken alles ab dort.
+
+    const body = doc.body;
+    if (!body) return;
+    const walker = doc.createTreeWalker(body, NodeFilter.SHOW_ELEMENT, null);
+    let node: Node | null = walker.currentNode;
+    while (node) {
+        if (node.nodeType === 1) {
+            const el = node as HTMLElement;
+            const text = (el.textContent || '').trim();
+            const ownText = getOwnText(el).trim();
+
+            // "-------- Ursprüngliche Nachricht --------" oder "---- Original Message ----"
+            if (/^-{3,}\s*(Urspr|Original|Weitergeleitete|Forwarded)/i.test(ownText)) {
+                collectFromElement(el);
+                return;
+            }
+
+            // "Am DD.MM.YYYY um HH:MM schrieb ...:" (t-online, Thunderbird)
+            if (/^Am\s+\d{1,2}\.\d{1,2}\.\d{2,4}\s+um\s+\d{1,2}:\d{2}\s+schrieb\b/i.test(ownText)) {
+                collectFromElement(el);
+                return;
+            }
+
+            // "On ... wrote:" (English equivalent)
+            if (/^On\s+.+wrote\s*:/i.test(ownText) && ownText.length < 300) {
+                collectFromElement(el);
+                return;
+            }
+
+            // "Von: ... Gesendet: ... An: ... Betreff: ..." block without border-top
+            if (/Von:.*Gesendet:.*An:.*Betreff:/is.test(text) && text.length < 600) {
+                collectFromElement(el);
+                return;
+            }
+        }
+        node = walker.nextNode();
+    }
+
+    // Hilfsfunktion: eigenen Textinhalt eines Elements (ohne Kinder)
+    function getOwnText(el: HTMLElement): string {
+        let t = '';
+        el.childNodes.forEach(c => {
+            if (c.nodeType === 3) t += c.textContent || '';
+        });
+        return t;
+    }
+
+    // Hilfsfunktion: Element + alle folgenden Geschwister verstecken
+    function collectFromElement(startEl: HTMLElement): void {
+        const group: Element[] = [startEl];
+        let nxt = startEl.nextElementSibling;
+        while (nxt) { group.push(nxt); nxt = nxt.nextElementSibling; }
+        hideGroup(group);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EmailContentFrame
+// ─────────────────────────────────────────────────────────────────────────────
+export const EmailContentFrame: React.FC<EmailContentFrameProps> = ({ html, className, hideQuotes = false }) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [height, setHeight] = useState<number>(0);
 
-    // Function to update height based on content
     const updateHeight = () => {
         const iframe = iframeRef.current;
         if (iframe && iframe.contentWindow?.document?.body) {
-            // Reset height to allow shrinking
             iframe.style.height = '0px';
-            
-            // Calculate new height
-            const scrollHeight = iframe.contentWindow.document.documentElement.scrollHeight || 
-                                 iframe.contentWindow.document.body.scrollHeight;
-            
-            // Add a small buffer to prevent scrollbars from appearing due to rounding
+            const scrollHeight =
+                iframe.contentWindow.document.documentElement.scrollHeight ||
+                iframe.contentWindow.document.body.scrollHeight;
             setHeight(scrollHeight + 20);
             iframe.style.height = `${scrollHeight + 20}px`;
         }
     };
 
+    // srcDoc aktualisieren wenn html sich ändert
     useEffect(() => {
-        const iframe = iframeRef.current;
-        if (!iframe) return;
-
-        // Create a blob to handle charset and base styles better than srcDoc sometimes
-        // But srcDoc is easier for React updates. Let's use srcDoc but inject some base CSS.
-        
-
-
-
+        // Wird durch onLoad abgehandelt – kein zusätzliches Handling nötig
     }, [html]);
 
-    // Update height when HTML changes or loads
     const handleLoad = () => {
-        updateHeight();
-        
-        // Optional: Set up a resize observer on the iframe body from the parent side 
-        // if access is allowed (srcDoc usually is).
         const iframe = iframeRef.current;
-        if (iframe && iframe.contentWindow?.document?.body) {
-            const body = iframe.contentWindow.document.body;
-            const resizeObserver = new ResizeObserver(() => {
-                updateHeight();
-            });
-            resizeObserver.observe(body);
-            
-            // Also monitor images loading
-            const imgs = body.getElementsByTagName('img');
-            for (let i = 0; i < imgs.length; i++) {
-                imgs[i].addEventListener('load', updateHeight);
-            }
+        if (!iframe || !iframe.contentWindow?.document?.body) return;
+
+        // Zitate einklappen (vor Höhenberechnung, damit korrekte Höhe)
+        if (hideQuotes) {
+            collapseQuotes(iframe.contentWindow.document, updateHeight);
+        }
+
+        updateHeight();
+
+        // Höhe bei Größenänderung anpassen
+        const body = iframe.contentWindow.document.body;
+        const resizeObserver = new ResizeObserver(() => updateHeight());
+        resizeObserver.observe(body);
+
+        // Bilder: Höhe nach dem Laden anpassen
+        const imgs = body.getElementsByTagName('img');
+        for (let i = 0; i < imgs.length; i++) {
+            imgs[i].addEventListener('load', updateHeight);
         }
     };
 
-    // Inject styles and html into srcDoc
     const baseStyles = `
         <style>
             body {
                 margin: 0;
-                padding: 1rem; /* Add padding to match the previous p-6 */
+                padding: 1rem;
                 font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
                 font-size: 0.875rem;
                 line-height: 1.6;
-                color: #334155; /* slate-700 */
+                color: #334155;
                 overflow-wrap: break-word;
                 word-wrap: break-word;
             }
-            a { color: #e11d48; text-decoration: underline; } /* rose-600 */
+            a { color: #e11d48; text-decoration: underline; }
             img { max-width: 100%; height: auto; display: block; }
             blockquote { border-left: 4px solid #e2e8f0; margin-left: 0; padding-left: 1rem; color: #64748b; }
             pre { background: #f1f5f9; padding: 1rem; overflow-x: auto; border-radius: 0.375rem; }
-            /* Table resets */
-            /* Table resets - minimal */
             table { border-collapse: collapse; }
-            
-            /* Hide scrollbar */
             ::-webkit-scrollbar { display: none; }
         </style>
-        <!-- Base target blank to open links in new tab -->
         <base target="_blank">
     `;
 
-    const fullHtml = `
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <meta charset="utf-8">
-                ${baseStyles}
-            </head>
-            <body>
-                ${html || '<p class="text-slate-400 italic">Kein Inhalt</p>'}
-            </body>
-        </html>
-    `;
+    const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+${baseStyles}
+</head>
+<body>
+${html || '<p style="color:#94a3b8;font-style:italic">Kein Inhalt</p>'}
+</body>
+</html>`;
 
     return (
         <iframe
@@ -109,7 +324,7 @@ export const EmailContentFrame: React.FC<EmailContentFrameProps> = ({ html, clas
             onLoad={handleLoad}
             title="Email Content"
             sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-            style={{ minHeight: '100px', height: height ? `${height}px` : '100%' }}
+            style={{ minHeight: '60px', height: height ? `${height}px` : '100%' }}
         />
     );
 };

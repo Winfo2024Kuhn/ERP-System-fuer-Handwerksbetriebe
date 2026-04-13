@@ -33,6 +33,8 @@ export interface Kommunikation {
   snippet: string;
   body?: string;
   attachments?: EmailAttachment[];
+  parentEmailId?: number;
+  replyCount?: number;
 }
 
 export interface EmailAttachment {
@@ -529,6 +531,10 @@ export interface ProjektEmail {
   bodyHtml?: string;       // Backend liefert "bodyHtml"
   bodyPreview?: string;    // Alias für Kompatibilität
   attachments?: ProjektEmailAttachment[];
+  parentId?: number;       // Thread: Parent-Email-ID (alt)
+  parentEmailId?: number;  // Thread: Parent-Email-ID (Backend DTO)
+  replyCount?: number;     // Thread: Anzahl Antworten
+  replies?: ProjektEmail[];// Thread: Antworten
 }
 
 export interface ArtikelInProjekt {
@@ -627,6 +633,8 @@ export interface AnfrageEmail {
   attachments?: AnfrageEmailAttachment[];
   direction?: 'IN' | 'OUT';
   parentId?: number;
+  parentEmailId?: number;
+  replyCount?: number;
   replies?: AnfrageEmail[];
   benutzer?: string;
   frontendUserId?: number;

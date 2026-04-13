@@ -86,10 +86,24 @@ public class NotificationController {
                                                                                 ? e.getFromAddress()
                                                                                 : "Unbekannt"),
                                                                 e.getSentAt() != null ? e.getSentAt().toString() : "",
-                                                                "/emails?emailId=" + e.getId())));
+                                                                "/emails/inbox/" + e.getId())));
                         }
                 } catch (Exception ignored) {
                         /* Email service may not be available */ }
+
+                // 1b. Ungelesene E-Mails aus weiteren Ordnern (Projekte, Angebote, Lieferanten, Spam, Newsletter)
+                addEmailCategory(categories, recentItems, emailRepository.findProjectEmails(),
+                        "EMAILS_PROJECTS", "Ungelesene Projekt-E-Mails", "projects");
+                addEmailCategory(categories, recentItems, emailRepository.findAnfrageEmails(),
+                        "EMAILS_OFFERS", "Ungelesene Angebots-E-Mails", "offers");
+                addEmailCategory(categories, recentItems, emailRepository.findLieferantEmails(),
+                        "EMAILS_SUPPLIERS", "Ungelesene Lieferanten-E-Mails", "suppliers");
+                addEmailCategory(categories, recentItems, emailRepository.findSpam().stream()
+                        .filter(e -> e.getDeletedAt() == null).toList(),
+                        "EMAILS_SPAM", "Ungelesene Spam-E-Mails", "spam");
+                addEmailCategory(categories, recentItems, emailRepository.findNewsletter().stream()
+                        .filter(e -> e.getDeletedAt() == null).toList(),
+                        "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter");
 
                 // 2. Offene Urlaubsanträge
                 try {
@@ -459,6 +473,30 @@ public class NotificationController {
                                 : recentItems;
 
                 return new NotificationSummaryDto(totalCount, categories, limitedItems);
+        }
+
+        // ---- Helper ----
+
+        private void addEmailCategory(List<CategoryDto> categories, List<RecentItemDto> recentItems,
+                        List<Email> allEmails, String type, String label, String folder) {
+                try {
+                        List<Email> unread = allEmails.stream().filter(e -> !e.isRead()).toList();
+                        if (unread.isEmpty()) return;
+                        categories.add(new CategoryDto(type, label, unread.size(), "Mail",
+                                        "/emails/" + folder));
+                        unread.stream()
+                                        .sorted(Comparator.comparing(Email::getSentAt,
+                                                        Comparator.nullsLast(Comparator.reverseOrder())))
+                                        .limit(3)
+                                        .forEach(e -> recentItems.add(new RecentItemDto(
+                                                        "EMAIL",
+                                                        e.getSubject() != null ? e.getSubject() : "Kein Betreff",
+                                                        "Von: " + (e.getFromAddress() != null ? e.getFromAddress()
+                                                                        : "Unbekannt"),
+                                                        e.getSentAt() != null ? e.getSentAt().toString() : "",
+                                                        "/emails/" + folder + "/" + e.getId())));
+                } catch (Exception ignored) {
+                }
         }
 
         // ---- DTOs ----

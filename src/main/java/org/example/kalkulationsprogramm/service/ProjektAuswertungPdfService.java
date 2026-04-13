@@ -34,7 +34,7 @@ public class ProjektAuswertungPdfService {
      *
      * @param sortField Spalte: "mitarbeiter" | "datum" | "dauer" | "produktkategorie" | "arbeitsgang"
      * @param sortDir   "asc" | "desc"
-     * @param groupBy   Gruppierung: "arbeitsgang" | "qualifikation" | "mitarbeiter" | "datum"
+     * @param groupBy   Gruppierung: "arbeitsgang" | "qualifikation" | "mitarbeiter" | "datum" | "produktkategorie"
      */
     public Path generatePdf(Long projektId, LocalDate von, LocalDate bis,
                             String sortField, String sortDir, String groupBy) {
@@ -333,6 +333,10 @@ public class ProjektAuswertungPdfService {
             case "datum" -> b.getStartZeit() != null
                     ? b.getStartZeit().toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
                     : "Kein Datum";
+            case "produktkategorie" -> b.getProjektProduktkategorie() != null
+                    && b.getProjektProduktkategorie().getProduktkategorie() != null
+                    ? buildKategoriePfad(b.getProjektProduktkategorie().getProduktkategorie())
+                    : "Keine Kategorie";
             default -> // arbeitsgang
                 b.getArbeitsgangStundensatz() != null && b.getArbeitsgangStundensatz().getArbeitsgang() != null
                         ? b.getArbeitsgangStundensatz().getArbeitsgang().getBeschreibung()
@@ -345,6 +349,7 @@ public class ProjektAuswertungPdfService {
             case "qualifikation" -> "Qualifikation";
             case "mitarbeiter" -> "Mitarbeiter";
             case "datum" -> "Datum";
+            case "produktkategorie" -> "Produktkategorie";
             default -> "Arbeitsgang";
         };
     }

@@ -19,6 +19,19 @@
   <img src="https://img.shields.io/badge/Lizenz-MIT-green" alt="Lizenz" />
 </p>
 
+<div align="center">
+
+| Metric | Value |
+|--------|-------|
+| ⭐ Stars | ![Stars](https://img.shields.io/github/stars/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=f59e0b) |
+| 🍴 Forks | ![Forks](https://img.shields.io/github/forks/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=6366f1) |
+| 👁️ Total Views | ![Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Fmain%2F.github%2Ftraffic%2Fdata.json&query=%24.total_views&label=&color=dc2626) |
+| 👤 Unique Visitors (total) | ![Unique Views](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Fmain%2F.github%2Ftraffic%2Fdata.json&query=%24.total_unique_visitors&label=&color=16a34a) |
+| 📥 Total Clones | ![Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Fmain%2F.github%2Ftraffic%2Fdata.json&query=%24.total_clones&label=&color=7c3aed) |
+| 🧑‍💻 Unique Cloners (total) | ![Unique Clones](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FWinfo2024Kuhn%2FERP-System-fuer-Handwerksbetriebe%2Fmain%2F.github%2Ftraffic%2Fdata.json&query=%24.total_unique_cloners&label=&color=0891b2) |
+
+</div>
+
 <p align="center">
   ⭐ <strong>Gefällt dir das Projekt? Ein Stern hilft dabei, dass mehr Handwerksbetriebe dieses Tool finden!</strong>
 </p>

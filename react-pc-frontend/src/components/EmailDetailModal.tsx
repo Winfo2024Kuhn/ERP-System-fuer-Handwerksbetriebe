@@ -73,7 +73,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
     // Filter out attachments that are likely inline (have contentId)
     const visibleAttachments = useMemo(() => {
         if (!email || !email.attachments) return [];
-        return email.attachments.filter(att => !att.inline && !att.contentId);
+        return email.attachments.filter(att => !att.inline);
     }, [email]);
 
     // Helper to format date
