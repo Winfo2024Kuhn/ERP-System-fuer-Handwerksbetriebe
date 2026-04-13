@@ -44,7 +44,7 @@ public class Wps {
     private String norm;
 
     /** Schweißprozess z.B. 135 MAG, 141 WIG */
-    @Column(nullable = false, length = 50)
+    @Column(name = "schweiss_prozess", nullable = false, length = 50)
     private String schweissProzes;
 
     /** Grundwerkstoff z.B. S235, S355 */

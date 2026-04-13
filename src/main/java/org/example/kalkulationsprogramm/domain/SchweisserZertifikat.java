@@ -41,7 +41,7 @@ public class SchweisserZertifikat {
     private String norm;
 
     /** Schweißprozess-Nummer z.B. 111 MMA, 135 MAG, 141 WIG */
-    @Column(nullable = false)
+    @Column(name = "schweiss_prozess", nullable = false)
     private String schweissProzes;
 
     /** Grundwerkstoff z.B. S355, 1.4301 */
