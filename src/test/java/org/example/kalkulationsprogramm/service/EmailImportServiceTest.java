@@ -356,34 +356,36 @@ class EmailImportServiceTest {
             mockMessage = mock(Message.class);
 
             // Standard-Setup: kein Message-ID Header
-            when(mockMessage.getHeader("Message-ID")).thenReturn(null);
-            when(mockFolder.getUID(mockMessage)).thenReturn(146693L);
-            when(mockFolder.getFullName()).thenReturn("INBOX");
-            when(mockMessage.getFrom()).thenReturn(new Address[]{
+            // lenient(): einzelne Tests überschreiben diese Stubs (z.B. andere Ordner oder UIDs),
+            // ohne dass Mockito strict-mode UnnecessaryStubbingException wirft.
+            lenient().when(mockMessage.getHeader("Message-ID")).thenReturn(null);
+            lenient().when(mockFolder.getUID(mockMessage)).thenReturn(146693L);
+            lenient().when(mockFolder.getFullName()).thenReturn("INBOX");
+            lenient().when(mockMessage.getFrom()).thenReturn(new Address[]{
                     new InternetAddress("rechnungen@bluesolution.software", "blue:solution software GmbH")
             });
-            when(mockMessage.getSubject()).thenReturn("Rechnung 400185");
-            when(mockMessage.getSentDate()).thenReturn(new Date());
-            when(mockMessage.getRecipients(Message.RecipientType.TO)).thenReturn(null);
-            when(mockMessage.getRecipients(Message.RecipientType.CC)).thenReturn(null);
-            when(mockMessage.getHeader("In-Reply-To")).thenReturn(null);
-            when(mockMessage.getHeader("References")).thenReturn(null);
-            when(mockMessage.getHeader("List-Unsubscribe")).thenReturn(null);
-            when(mockMessage.getHeader("X-Mailer")).thenReturn(null);
-            when(mockMessage.getHeader("X-Spam-Status")).thenReturn(null);
-            when(mockMessage.getContentType()).thenReturn("text/plain");
-            when(mockMessage.getContent()).thenReturn("Rechnungsinhalt");
+            lenient().when(mockMessage.getSubject()).thenReturn("Rechnung 400185");
+            lenient().when(mockMessage.getSentDate()).thenReturn(new Date());
+            lenient().when(mockMessage.getRecipients(Message.RecipientType.TO)).thenReturn(null);
+            lenient().when(mockMessage.getRecipients(Message.RecipientType.CC)).thenReturn(null);
+            lenient().when(mockMessage.getHeader("In-Reply-To")).thenReturn(null);
+            lenient().when(mockMessage.getHeader("References")).thenReturn(null);
+            lenient().when(mockMessage.getHeader("List-Unsubscribe")).thenReturn(null);
+            lenient().when(mockMessage.getHeader("X-Mailer")).thenReturn(null);
+            lenient().when(mockMessage.getHeader("X-Spam-Status")).thenReturn(null);
+            lenient().when(mockMessage.getContentType()).thenReturn("text/plain");
+            lenient().when(mockMessage.getContent()).thenReturn("Rechnungsinhalt");
 
             // Repository-Mocks
-            when(emailRepository.existsByMessageId(any())).thenReturn(false);
-            when(emailRepository.save(any(Email.class))).thenAnswer(inv -> {
+            lenient().when(emailRepository.existsByMessageId(any())).thenReturn(false);
+            lenient().when(emailRepository.save(any(Email.class))).thenAnswer(inv -> {
                 Email e = inv.getArgument(0);
                 e.setId(3202L);
                 return e;
             });
-            when(lieferantenRepository.findByEmailDomain(any())).thenReturn(Collections.emptyList());
-            when(lieferantenRepository.existsByEmailDomain(any())).thenReturn(false);
-            when(steuerberaterEmailProcessingService.processSteuerberaterEmail(any())).thenReturn(false);
+            lenient().when(lieferantenRepository.findByEmailDomain(any())).thenReturn(Collections.emptyList());
+            lenient().when(lieferantenRepository.existsByEmailDomain(any())).thenReturn(false);
+            lenient().when(steuerberaterEmailProcessingService.processSteuerberaterEmail(any())).thenReturn(false);
         }
 
         @Test
@@ -393,7 +395,7 @@ class EmailImportServiceTest {
             boolean imported = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
 
             assertThat(imported).isTrue();
-            verify(emailRepository).save(any(Email.class));
+            verify(emailRepository, atLeastOnce()).save(any(Email.class));
         }
 
         @Test
@@ -436,17 +438,21 @@ class EmailImportServiceTest {
 
             service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
 
+            // Original Message-ID wird für Dedup-Prüfung verwendet
             verify(emailRepository).existsByMessageId("<original-id@example.com>");
-            // UID wird nicht für ID-Generierung verwendet
-            verify(mockFolder, never()).getUID(mockMessage);
+            // Fallback-Format (<no-msgid-uid-...>) wird NICHT für Dedup genutzt
+            // (getUID wird aber trotzdem für imapUid-Speicherung aufgerufen – das ist korrekt)
+            verify(emailRepository, never()).existsByMessageId(
+                    argThat(id -> id != null && id.startsWith("<no-msgid-uid-")));
         }
 
         @Test
         void speichertImapUidInEmail() throws Exception {
-            // Die IMAP-UID muss in der Email gespeichert werden für spätere Referenzen
+            // Die IMAP-UID muss in der Email gespeichert werden für spätere Referenzen.
+            // Hinweis: save() wird 2× aufgerufen – einmal in importMessage, einmal in postProcessEmail.
             service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
 
-            verify(emailRepository).save(argThat(email ->
+            verify(emailRepository, atLeastOnce()).save(argThat(email ->
                     email.getImapUid() != null && email.getImapUid() == 146693L
             ));
         }

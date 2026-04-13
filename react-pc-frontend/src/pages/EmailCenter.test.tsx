@@ -340,10 +340,12 @@ describe('EmailCenter', () => {
 
             // Wait for detail pane with spam button (title="Als Spam markieren")
             await waitFor(() => {
-                expect(screen.getByTitle('Als Spam markieren')).toBeInTheDocument();
+                expect(screen.getAllByTitle('Als Spam markieren').length).toBeGreaterThan(0);
             });
 
-            await user.click(screen.getByTitle('Als Spam markieren'));
+            // Mehrere Spam-Buttons möglich (Listenansicht + Detailansicht) – letzten nehmen
+            const spamButtons = screen.getAllByTitle('Als Spam markieren');
+            await user.click(spamButtons[spamButtons.length - 1]);
 
             // Email should be optimistically removed
             await waitFor(() => {
