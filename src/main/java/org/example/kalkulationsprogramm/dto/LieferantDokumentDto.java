@@ -154,6 +154,12 @@ public class LieferantDokumentDto {
         private String lieferantStrasse;
         private String lieferantPlz;
         private String lieferantOrt;
+
+        // Werkstoffzeugnis-spezifische Felder (EN 10204)
+        private String schmelzNummer;
+        private String materialGuete;
+        private String normTyp;
+        private String lieferscheinNummer;
     }
 
     /**

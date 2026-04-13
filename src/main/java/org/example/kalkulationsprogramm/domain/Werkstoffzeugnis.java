@@ -61,6 +61,11 @@ public class Werkstoffzeugnis {
     @JoinColumn(name = "lieferant_dokument_id", unique = true)
     private LieferantDokument lieferantDokument;
 
+    /** Zugehöriger Lieferschein (1 Lieferschein : N Werkstoffzeugnisse) */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lieferschein_dokument_id")
+    private LieferantDokument lieferscheinDokument;
+
     @Column(length = 500)
     private String gespeicherterDateiname;
 

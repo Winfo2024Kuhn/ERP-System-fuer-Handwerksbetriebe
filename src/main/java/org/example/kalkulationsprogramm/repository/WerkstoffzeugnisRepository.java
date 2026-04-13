@@ -15,6 +15,9 @@ public interface WerkstoffzeugnisRepository extends JpaRepository<Werkstoffzeugn
 
     Optional<Werkstoffzeugnis> findByLieferantDokumentId(Long lieferantDokumentId);
 
+    /** Alle Werkstoffzeugnisse zu einem Lieferschein (1:N) */
+    List<Werkstoffzeugnis> findByLieferscheinDokumentId(Long lieferscheinDokumentId);
+
     @Query("SELECT DISTINCT w FROM Werkstoffzeugnis w JOIN w.projekte p WHERE p.id = :projektId")
     List<Werkstoffzeugnis> findByProjektId(Long projektId);
 }

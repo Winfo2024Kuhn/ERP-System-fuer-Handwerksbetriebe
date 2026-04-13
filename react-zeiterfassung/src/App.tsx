@@ -75,6 +75,9 @@ import { LieferantReklamationenPage } from './pages/LieferantReklamationenPage'
 import LieferantLieferscheinePage from './pages/LieferantLieferscheinePage'
 import { LieferantReklamationDetailPage } from './pages/LieferantReklamationDetailPage'
 import KalenderPage from './pages/KalenderPage'
+import BetriebsmittelListePage from './pages/BetriebsmittelListePage'
+import BetriebsmittelScanPage from './pages/BetriebsmittelScanPage'
+import BetriebsmittelPruefungPage from './pages/BetriebsmittelPruefungPage'
 import { OfflineService } from './services/OfflineService'
 import { NotificationService } from './services/NotificationService'
 
@@ -355,6 +358,9 @@ function App() {
         <Route path="/salden" element={<SaldenPage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />
         <Route path="/tagesbuchungen" element={<TagesbuchungenPage syncStatus={syncStatus} onSync={syncData} />} />
         <Route path="/kalender" element={<KalenderPage mitarbeiter={mitarbeiter} token={localStorage.getItem('zeiterfassung_token')} syncStatus={syncStatus} onSync={syncData} />} />
+        <Route path="/betriebsmittel" element={<BetriebsmittelListePage />} />
+        <Route path="/betriebsmittel/scan" element={<BetriebsmittelScanPage />} />
+        <Route path="/betriebsmittel/:id/pruefung" element={<BetriebsmittelPruefungPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

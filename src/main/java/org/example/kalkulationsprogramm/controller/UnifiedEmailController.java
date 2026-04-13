@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -90,6 +91,37 @@ public class UnifiedEmailController {
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
+
+    // ═══════════════════════════════════════════════════════════════
+    // PAGINATION HELPER
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Paginiert eine Liste von Emails und gibt eine Map mit content, page, size,
+     * totalElements und hasMore zurück.
+     * Unterstützt sortDir=asc|desc (Standard: desc = neueste zuerst).
+     */
+    private Map<String, Object> paginateEmails(List<Email> allEmails, int page, int size,
+                                                String sortDir,
+                                                java.util.function.Function<Email, UnifiedEmailDto> mapper) {
+        if ("asc".equalsIgnoreCase(sortDir)) {
+            allEmails = new ArrayList<>(allEmails);
+            Collections.reverse(allEmails);
+        }
+        long totalElements = allEmails.size();
+        List<UnifiedEmailDto> content = allEmails.stream()
+                .skip((long) page * size)
+                .limit(size)
+                .map(mapper)
+                .collect(Collectors.toList());
+        return Map.of(
+                "content", content,
+                "page", page,
+                "size", size,
+                "totalElements", totalElements,
+                "hasMore", (long) (page + 1) * size < totalElements
+        );
+    }
 
     @GetMapping("/{emailId}/attachments/{attachmentId}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadAttachment(
@@ -512,12 +544,11 @@ public class UnifiedEmailController {
 
     @GetMapping("/unassigned")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getUnassignedEmails(
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findUnassigned().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getUnassignedEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findUnassigned(), page, size, sortDir, this::toListDto);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -526,11 +557,11 @@ public class UnifiedEmailController {
 
     @GetMapping("/inquiries")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getInquiryEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findPotentialInquiries().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getInquiryEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findPotentialInquiries(), page, size, sortDir, this::toListDto);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -589,92 +620,94 @@ public class UnifiedEmailController {
 
     @GetMapping("/inbox")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getInboxEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public Map<String, Object> getInboxEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
         // Get IDs of "Nicht zugeordnet" emails to exclude from inbox
         Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
                 .map(Email::getId)
                 .collect(Collectors.toSet());
 
-        return emailRepository.findInboxFiltered().stream()
-                .filter(e -> !unassignedIds.contains(e.getId())) // Exclude "Nicht zugeordnet"
-                .limit(limit)
-                .map(this::toListDto)
+        List<Email> filtered = emailRepository.findInboxFiltered().stream()
+                .filter(e -> !unassignedIds.contains(e.getId()))
                 .collect(Collectors.toList());
+        return paginateEmails(filtered, page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/projects")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getProjectFolderEmails(
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findProjectEmails().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getProjectFolderEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findProjectEmails(), page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/offers")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getOfferFolderEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findAnfrageEmails().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getOfferFolderEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findAnfrageEmails(), page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/suppliers")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getSupplierFolderEmails(
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findLieferantEmails().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getSupplierFolderEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findLieferantEmails(), page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/sent")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getSentEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
+    public Map<String, Object> getSentEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        List<Email> filtered = emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
                 .filter(e -> e.getDeletedAt() == null)
-                .limit(limit)
-                .map(this::toListDto)
                 .collect(Collectors.toList());
+        return paginateEmails(filtered, page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/trash")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getTrashEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getTrashEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc(), page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/spam")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getSpamEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findSpam().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getSpamEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findSpam(), page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/newsletter")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getNewsletterEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findNewsletter().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getNewsletterEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findNewsletter(), page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/starred")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getStarredEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findStarred().stream()
-                .limit(limit)
-                .map(this::toListDto)
-                .collect(Collectors.toList());
+    public Map<String, Object> getStarredEmails(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        return paginateEmails(emailRepository.findStarred(), page, size, sortDir, this::toListDto);
     }
 
     // ═══════════════════════════════════════════════════════════════

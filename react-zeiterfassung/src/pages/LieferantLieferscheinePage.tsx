@@ -42,6 +42,11 @@ interface AnalyzeResponse {
     skontoTage?: number
     skontoProzent?: number
     nettoTage?: number
+    // Werkstoffzeugnis-spezifisch (EN 10204)
+    schmelzNummer?: string
+    materialGuete?: string
+    normTyp?: string
+    lieferscheinNummer?: string
 }
 
 interface MultiInvoiceResponse {
@@ -146,10 +151,10 @@ export default function LieferantLieferscheinePage() {
                     const result = data[0].analyzeResponse
 
 
-                    // Initialize Form Data
+                    // Initialize Form Data — preserve WERKSTOFFZEUGNIS type if detected
                     setFormData({
                         ...result,
-                        dokumentTyp: 'LIEFERSCHEIN' // Force Lieferschein context
+                        dokumentTyp: result.dokumentTyp === 'WERKSTOFFZEUGNIS' ? 'WERKSTOFFZEUGNIS' : 'LIEFERSCHEIN'
                     })
                     setVerifying(true)
                 } else {
@@ -289,8 +294,61 @@ export default function LieferantLieferscheinePage() {
                             />
                         </div>
 
-                        {/* Hidden fields for internal logic */}
-                        {/* We default to LIEFERSCHEIN, so we don't show type selector unless necessary */}
+                        {/* Werkstoffzeugnis-spezifische Felder */}
+                        {formData.dokumentTyp === 'WERKSTOFFZEUGNIS' && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                                <p className="text-sm font-semibold text-amber-800">Werkstoffzeugnis (EN 10204)</p>
+                                <div>
+                                    <label className="block text-xs text-amber-700 mb-1">Schmelznummer</label>
+                                    <input
+                                        type="text"
+                                        value={formData.schmelzNummer || formData.dokumentNummer || ''}
+                                        onChange={e => setFormData({ ...formData, schmelzNummer: e.target.value })}
+                                        className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
+                                        placeholder="z.B. 123456"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-amber-700 mb-1">Werkstoffgüte</label>
+                                    <input
+                                        type="text"
+                                        value={formData.materialGuete || ''}
+                                        onChange={e => setFormData({ ...formData, materialGuete: e.target.value })}
+                                        className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
+                                        placeholder="z.B. S355J2, 1.4301"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-amber-700 mb-1">Zeugnistyp (EN 10204)</label>
+                                    <div className="flex gap-2">
+                                        {['2.1', '2.2', '3.1', '3.2'].map(typ => (
+                                            <button
+                                                key={typ}
+                                                type="button"
+                                                onClick={() => setFormData({ ...formData, normTyp: typ })}
+                                                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                                    (formData.normTyp || '3.1') === typ
+                                                        ? 'bg-amber-600 text-white'
+                                                        : 'bg-white border border-amber-200 text-amber-800 hover:bg-amber-50'
+                                                }`}
+                                            >
+                                                {typ}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-amber-700 mb-1">Lieferschein-Nr. (Verknüpfung)</label>
+                                    <input
+                                        type="text"
+                                        value={formData.lieferscheinNummer || ''}
+                                        onChange={e => setFormData({ ...formData, lieferscheinNummer: e.target.value })}
+                                        className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
+                                        placeholder="z.B. 90406834/01 (falls vorhanden)"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

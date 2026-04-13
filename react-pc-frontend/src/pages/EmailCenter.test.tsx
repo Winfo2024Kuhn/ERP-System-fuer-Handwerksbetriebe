@@ -39,14 +39,20 @@ const mockStats = {
 
 // ---- Test helpers ----
 function mockFetchResponses(overrides: Record<string, unknown> = {}) {
+    const paginate = (items: unknown[]) => ({ content: items, page: 0, size: 50, totalElements: items.length, hasMore: false });
+
     const responses: Record<string, unknown> = {
-        '/api/emails/inbox': mockEmails.filter(e => e.direction === 'IN'),
         '/api/emails/stats': mockStats,
+        ...overrides
+    };
+
+    // Paginated folder endpoints
+    const folderData: Record<string, unknown[]> = {
+        '/api/emails/inbox': mockEmails.filter(e => e.direction === 'IN'),
         '/api/emails/sent': mockEmails.filter(e => e.direction === 'OUT'),
         '/api/emails/trash': [],
         '/api/emails/spam': [],
         '/api/emails/newsletter': [],
-        ...overrides
     };
 
     return vi.fn((url: string, options?: RequestInit) => {
@@ -57,7 +63,18 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
             return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
         }
 
-        const data = responses[url];
+        // Check for paginated folder endpoints (url may have query params)
+        const basePath = url.split('?')[0];
+        if (folderData[basePath] !== undefined) {
+            const overrideData = overrides[basePath];
+            const items = overrideData !== undefined ? overrideData as unknown[] : folderData[basePath];
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve(paginate(items))
+            });
+        }
+
+        const data = responses[url] ?? responses[basePath];
         if (data !== undefined) {
             return Promise.resolve({
                 ok: true,
@@ -120,7 +137,7 @@ describe('EmailCenter', () => {
         it('ruft inbox und stats Endpoints auf', async () => {
             renderEmailCenter();
             await waitFor(() => {
-                expect(fetchMock).toHaveBeenCalledWith('/api/emails/inbox');
+                expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/emails/inbox'));
                 expect(fetchMock).toHaveBeenCalledWith('/api/emails/stats');
             });
         });
@@ -135,7 +152,7 @@ describe('EmailCenter', () => {
             await user.click(screen.getByText('Gesendet'));
 
             await waitFor(() => {
-                expect(fetchMock).toHaveBeenCalledWith('/api/emails/sent');
+                expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/emails/sent'));
             });
         });
     });
@@ -331,6 +348,21 @@ describe('EmailCenter', () => {
     describe('Optimistic Updates', () => {
         it('entfernt E-Mail sofort aus Liste bei Spam-Markierung', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            fetchMock = mockFetchResponses();
+            // Also handle email detail fetch
+            const originalMock = fetchMock;
+            global.fetch = vi.fn((url: string, options?: RequestInit) => {
+                if (typeof url === 'string' && url.match(/^\/api\/emails\/\d+$/)) {
+                    const emailId = Number(url.split('/').pop());
+                    const found = mockEmails.find(e => e.id === emailId);
+                    return Promise.resolve({
+                        ok: !!found,
+                        json: () => Promise.resolve(found || {}),
+                        status: found ? 200 : 404
+                    });
+                }
+                return originalMock(url, options);
+            }) as unknown as typeof fetch;
             renderEmailCenter();
 
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
@@ -339,11 +371,13 @@ describe('EmailCenter', () => {
             await user.click(screen.getByText('Angebot für Treppe'));
 
             // Wait for detail pane with spam button (title="Als Spam markieren")
+            let spamButtons: HTMLElement[] = [];
             await waitFor(() => {
-                expect(screen.getByTitle('Als Spam markieren')).toBeInTheDocument();
+                spamButtons = screen.getAllByTitle('Als Spam markieren');
+                expect(spamButtons.length).toBeGreaterThanOrEqual(1);
             });
 
-            await user.click(screen.getByTitle('Als Spam markieren'));
+            await user.click(spamButtons[spamButtons.length - 1]);
 
             // Email should be optimistically removed
             await waitFor(() => {
@@ -385,9 +419,9 @@ describe('EmailCenter', () => {
         it('aktualisiert E-Mails nach 30 Sekunden', async () => {
             renderEmailCenter();
 
-            await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/emails/inbox'));
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/emails/inbox')));
 
-            const callsBefore = fetchMock.mock.calls.filter(c => c[0] === '/api/emails/inbox').length;
+            const callsBefore = fetchMock.mock.calls.filter((c: [string]) => c[0].startsWith('/api/emails/inbox')).length;
 
             // Advance timers by 30 seconds
             await act(async () => {
@@ -395,7 +429,7 @@ describe('EmailCenter', () => {
             });
 
             await waitFor(() => {
-                const callsAfter = fetchMock.mock.calls.filter(c => c[0] === '/api/emails/inbox').length;
+                const callsAfter = fetchMock.mock.calls.filter((c: [string]) => c[0].startsWith('/api/emails/inbox')).length;
                 expect(callsAfter).toBeGreaterThan(callsBefore);
             });
         });

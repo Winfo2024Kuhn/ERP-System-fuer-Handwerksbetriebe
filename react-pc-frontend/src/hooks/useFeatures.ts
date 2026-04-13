@@ -28,7 +28,6 @@ export function useFeatures(): Features {
     useEffect(() => {
         const now = Date.now();
         if (cachedFeatures && now - cacheTime < CACHE_TTL_MS) {
-            setFeatures(cachedFeatures);
             return;
         }
         fetch('/api/features')

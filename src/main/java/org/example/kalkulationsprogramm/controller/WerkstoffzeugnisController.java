@@ -45,6 +45,8 @@ public class WerkstoffzeugnisController {
             String pruefstelle,
             String originalDateiname,
             String gespeicherterDateiname,
+            Long lieferscheinDokumentId,
+            String lieferscheinNummer,
             LocalDateTime erstelltAm) {
     }
 
@@ -60,6 +62,7 @@ public class WerkstoffzeugnisController {
     }
 
     private WerkstoffzeugnisResponse toResponse(Werkstoffzeugnis w) {
+        var ls = w.getLieferscheinDokument();
         return new WerkstoffzeugnisResponse(
                 w.getId(),
                 w.getLieferant() != null ? w.getLieferant().getId() : null,
@@ -71,6 +74,9 @@ public class WerkstoffzeugnisController {
                 w.getPruefstelle(),
                 w.getOriginalDateiname(),
                 w.getGespeicherterDateiname(),
+                ls != null ? ls.getId() : null,
+                ls != null && ls.getGeschaeftsdaten() != null
+                        ? ls.getGeschaeftsdaten().getDokumentNummer() : null,
                 w.getErstelltAm());
     }
 
@@ -91,6 +97,17 @@ public class WerkstoffzeugnisController {
     @GetMapping("/projekt/{projektId}")
     public List<WerkstoffzeugnisResponse> getByProjekt(@PathVariable Long projektId) {
         return repository.findByProjektId(projektId).stream().map(this::toResponse).toList();
+    }
+
+    /** Alle Werkstoffzeugnisse zu einem Lieferschein (1:N) */
+    @GetMapping("/lieferschein/{dokumentId}")
+    public List<WerkstoffzeugnisResponse> getByLieferschein(@PathVariable Long dokumentId) {
+        return repository.findByLieferscheinDokumentId(dokumentId).stream().map(this::toResponse).toList();
+    }
+
+    @GetMapping("/lieferant/{lieferantId}")
+    public List<WerkstoffzeugnisResponse> getByLieferant(@PathVariable Long lieferantId) {
+        return repository.findByLieferantId(lieferantId).stream().map(this::toResponse).toList();
     }
 
     @PostMapping

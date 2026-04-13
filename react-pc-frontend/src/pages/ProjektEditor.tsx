@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+    AlertTriangle,
     ArrowLeft,
     Briefcase,
     Calendar,
     Check,
+    CheckCircle2,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -24,12 +26,14 @@ import {
     Receipt,
     RefreshCw,
     Search,
+    Shield,
     StickyNote,
     Ban,
     Trash2,
     Upload,
     User,
     X,
+    XCircle,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -55,6 +59,7 @@ import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks }
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { useFeatures } from '../hooks/useFeatures';
 
 interface Supplier {
     id: number;
@@ -142,19 +147,62 @@ interface ProjektDetailViewProps {
     onBack: () => void;
     onEdit: () => void;
     onRefresh: () => Promise<void>;
-    initialTab?: 'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen';
+    initialTab?: 'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen' | 'en1090';
+}
+
+interface WpkStatus {
+    schweisser: string;
+    schweisserHinweis: string;
+    wps: string;
+    wpsHinweis: string;
+    werkstoffzeugnisse: string;
+    werkstoffzeugnisseHinweis: string;
+    echeck: string;
+    echeckHinweis: string;
+}
+
+function En1090StatusBadge({ status }: { status: string }) {
+    if (status === 'OK') return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold">
+            <CheckCircle2 className="w-3.5 h-3.5" /> OK
+        </span>
+    );
+    if (status === 'WARNUNG') return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold">
+            <AlertTriangle className="w-3.5 h-3.5" /> Warnung
+        </span>
+    );
+    return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 text-xs font-semibold">
+            <XCircle className="w-3.5 h-3.5" /> Fehler
+        </span>
+    );
 }
 
 const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, onEdit, onRefresh, initialTab }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
-    const [activeTab, setActiveTab] = useState<'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen'>(initialTab || 'zeiten');
+    const features = useFeatures();
+    const [activeTab, setActiveTab] = useState<'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen' | 'en1090'>(initialTab || 'zeiten');
+    const [wpkStatus, setWpkStatus] = useState<WpkStatus | null>(null);
+    const [wpkLoading, setWpkLoading] = useState(false);
     const [kurzbeschreibung, setKurzbeschreibung] = useState(projekt.kurzbeschreibung || '');
     const [savingDesc, setSavingDesc] = useState(false);
 
     useEffect(() => {
         setKurzbeschreibung(projekt.kurzbeschreibung || '');
     }, [projekt.kurzbeschreibung]);
+
+    // EN 1090 WPK-Status laden wenn Tab aktiv
+    useEffect(() => {
+        if (activeTab !== 'en1090' || !features.en1090) return;
+        setWpkLoading(true);
+        fetch(`/api/en1090/wpk/${projekt.id}`)
+            .then(r => r.ok ? r.json() : null)
+            .then((data: WpkStatus | null) => setWpkStatus(data))
+            .catch(() => setWpkStatus(null))
+            .finally(() => setWpkLoading(false));
+    }, [activeTab, projekt.id, features.en1090]);
 
     const handleSaveDescription = async () => {
         setSavingDesc(true);
@@ -1098,6 +1146,20 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     <StickyNote className="w-4 h-4 inline-block mr-2" />
                     Bau Tagebuch ({notizen.length})
                 </button>
+                {features.en1090 && (
+                    <button
+                        onClick={() => setActiveTab('en1090')}
+                        className={cn(
+                            "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                            activeTab === 'en1090'
+                                ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                        )}
+                    >
+                        <Shield className="w-4 h-4 inline-block mr-2" />
+                        EN 1090
+                    </button>
+                )}
             </div>
 
             {/* Tab Content */}
@@ -1253,6 +1315,103 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             Speichern
                         </Button>
                     </div>
+                </div>
+            )}
+
+            {activeTab === 'en1090' && features.en1090 && (
+                <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-medium text-slate-900">EN 1090 – WPK-Status</h3>
+                        <button
+                            onClick={() => {
+                                setWpkLoading(true);
+                                fetch(`/api/en1090/wpk/${projekt.id}`)
+                                    .then(r => r.ok ? r.json() : null)
+                                    .then((data: WpkStatus | null) => setWpkStatus(data))
+                                    .catch(() => setWpkStatus(null))
+                                    .finally(() => setWpkLoading(false));
+                            }}
+                            disabled={wpkLoading}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm font-medium disabled:opacity-50 transition-colors"
+                        >
+                            <RefreshCw className={`w-3.5 h-3.5 ${wpkLoading ? 'animate-spin' : ''}`} />
+                            Aktualisieren
+                        </button>
+                    </div>
+
+                    {wpkLoading && !wpkStatus && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {[1,2,3,4].map(i => (
+                                <div key={i} className="rounded-xl border-2 border-slate-200 bg-slate-50 p-5 animate-pulse">
+                                    <div className="h-5 bg-slate-200 rounded w-1/3 mb-3" />
+                                    <div className="h-4 bg-slate-200 rounded w-2/3" />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {wpkStatus && (
+                        <>
+                            {/* Gesamt-Ampel */}
+                            {(() => {
+                                const values = [wpkStatus.schweisser, wpkStatus.wps, wpkStatus.werkstoffzeugnisse, wpkStatus.echeck];
+                                const gesamt = values.includes('FEHLER') ? 'FEHLER' : values.includes('WARNUNG') ? 'WARNUNG' : 'OK';
+                                return (
+                                    <div className={`rounded-xl p-4 flex items-center gap-3 ${
+                                        gesamt === 'OK' ? 'bg-green-100 border border-green-200' :
+                                        gesamt === 'WARNUNG' ? 'bg-yellow-100 border border-yellow-200' :
+                                        'bg-red-100 border border-red-200'
+                                    }`}>
+                                        {gesamt === 'OK' && <CheckCircle2 className="w-5 h-5 text-green-600" />}
+                                        {gesamt === 'WARNUNG' && <AlertTriangle className="w-5 h-5 text-yellow-600" />}
+                                        {gesamt === 'FEHLER' && <XCircle className="w-5 h-5 text-red-600" />}
+                                        <span className={`font-semibold text-sm ${
+                                            gesamt === 'OK' ? 'text-green-800' :
+                                            gesamt === 'WARNUNG' ? 'text-yellow-800' : 'text-red-800'
+                                        }`}>
+                                            WPK-Gesamtstatus: {gesamt === 'OK' ? 'Konform' : gesamt === 'WARNUNG' ? 'Handlungsbedarf' : 'Nicht konform'}
+                                        </span>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Status-Karten */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {[
+                                    { title: 'Schweißer-Zertifikate', status: wpkStatus.schweisser, hinweis: wpkStatus.schweisserHinweis, icon: User },
+                                    { title: 'WPS (Schweißanweisungen)', status: wpkStatus.wps, hinweis: wpkStatus.wpsHinweis, icon: FileText },
+                                    { title: 'Werkstoffzeugnisse', status: wpkStatus.werkstoffzeugnisse, hinweis: wpkStatus.werkstoffzeugnisseHinweis, icon: File },
+                                    { title: 'E-Check (Betriebsmittel)', status: wpkStatus.echeck, hinweis: wpkStatus.echeckHinweis, icon: Shield },
+                                ].map(card => {
+                                    const border = card.status === 'OK' ? 'border-green-200' : card.status === 'WARNUNG' ? 'border-yellow-300' : 'border-red-300';
+                                    const bg = card.status === 'OK' ? 'bg-green-50' : card.status === 'WARNUNG' ? 'bg-yellow-50' : 'bg-red-50';
+                                    return (
+                                        <div key={card.title} className={`rounded-xl border-2 ${border} ${bg} p-5`}>
+                                            <div className="flex items-start justify-between gap-3 mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <card.icon className="w-5 h-5 text-slate-600 flex-shrink-0" />
+                                                    <h4 className="font-semibold text-slate-800">{card.title}</h4>
+                                                </div>
+                                                <En1090StatusBadge status={card.status} />
+                                            </div>
+                                            {card.hinweis ? (
+                                                <p className="text-sm text-slate-600 leading-relaxed">{card.hinweis}</p>
+                                            ) : card.status === 'OK' ? (
+                                                <p className="text-sm text-green-700">Alle Anforderungen erfüllt.</p>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+
+                    {!wpkLoading && !wpkStatus && (
+                        <div className="text-center py-10 text-slate-500">
+                            <Shield className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                            <p className="text-sm">WPK-Status konnte nicht geladen werden.</p>
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -16,9 +16,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 public class SpaForwardController {
 
     @GetMapping(value = {
-            "/",
             "/{path:[^\\.]*}",
-            "/**/{path:[^\\.]*}"
+            "/{path1:[^\\.]*}/{path2:[^\\.]*}",
+            "/{path1:[^\\.]*}/{path2:[^\\.]*}/{path3:[^\\.]*}"
     })
     public String forwardToSpa() {
         return "forward:/index.html";

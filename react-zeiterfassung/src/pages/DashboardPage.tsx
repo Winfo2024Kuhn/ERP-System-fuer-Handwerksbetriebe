@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer } from 'lucide-react'
+import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Zap } from 'lucide-react'
 import { buildBookingRequestPayload, createOperationId, OfflineService } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import { shouldIncludeCurrentSessionMinutes, shouldIncludeOfflineCompletedMinutes } from './DashboardPage.logic'
@@ -923,6 +923,19 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
 
                 {/* Full-width actions */}
                 <div className="space-y-3">
+
+                    <button
+                        onClick={() => navigate('/betriebsmittel')}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-4 hover:border-rose-200 hover:shadow-md transition-all text-left flex items-center gap-4"
+                    >
+                        <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">
+                            <Zap className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div>
+                            <p className="font-semibold text-slate-900">E-Check</p>
+                            <p className="text-sm text-slate-500">Betriebsmittelprüfung (DGUV V3)</p>
+                        </div>
+                    </button>
 
                     <button
                         onClick={() => navigate('/kalender')}

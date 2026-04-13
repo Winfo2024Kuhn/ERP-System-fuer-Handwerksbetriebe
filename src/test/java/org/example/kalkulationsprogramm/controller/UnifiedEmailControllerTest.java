@@ -273,7 +273,9 @@ class UnifiedEmailControllerTest {
 
             mockMvc.perform(get("/api/emails/inbox"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].subject").value("Hallo"));
+                    .andExpect(jsonPath("$.content[0].subject").value("Hallo"))
+                    .andExpect(jsonPath("$.hasMore").value(false))
+                    .andExpect(jsonPath("$.totalElements").value(1));
         }
     }
 

@@ -29,6 +29,8 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.WerkstoffzeugnisRepository;
+import org.example.kalkulationsprogramm.domain.Werkstoffzeugnis;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,6 +62,7 @@ public class GeminiDokumentAnalyseService {
     private final ZugferdExtractorService zugferdExtractorService;
     private final LieferantenArtikelPreiseRepository artikelPreiseRepository;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
+    private final WerkstoffzeugnisRepository werkstoffzeugnisRepository;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -185,7 +188,11 @@ public class GeminiDokumentAnalyseService {
                 "lieferantName": "Name des Lieferanten/Absenders",
                 "lieferantStrasse": "Straße und Hausnummer",
                 "lieferantPlz": "Postleitzahl",
-                "lieferantOrt": "Ort"
+                "lieferantOrt": "Ort",
+                "schmelzNummer": "Schmelznummer/Charge bei WERKSTOFFZEUGNIS, sonst null",
+                "materialGuete": "Werkstoffgüte bei WERKSTOFFZEUGNIS (z.B. S355J2, 1.4301), sonst null",
+                "normTyp": "EN-10204-Zeugnistyp bei WERKSTOFFZEUGNIS (z.B. 3.1 oder 3.2), sonst null",
+                "lieferscheinNummer": "Lieferschein-Nr. die im WERKSTOFFZEUGNIS referenziert wird (z.B. 90406834/01), sonst null"
             }
 
             WICHTIG FÜR NICHT-GESCHÄFTSDOKUMENTE:
@@ -196,6 +203,13 @@ public class GeminiDokumentAnalyseService {
             WICHTIG FÜR WERKSTOFFZEUGNISSE:
             - Wenn dokumentTyp = "WERKSTOFFZEUGNIS", dann setze istGeschaeftsdokument = false
             - dokumentNummer = Schmelznummer oder Prüfnummer (OHNE Leerzeichen!)
+            - schmelzNummer = Schmelznummer/Charge (identisch mit dokumentNummer falls Schmelznummer)
+            - materialGuete = Werkstoffgüte/Materialbezeichnung (z.B. S235JR, S355J2, 1.4301, St37-2)
+            - normTyp = EN-10204-Zeugnistyp: "2.1", "2.2", "3.1" oder "3.2" (Standard: "3.1")
+            - lieferscheinNummer = Lieferschein-Nr. falls im Zeugnis vorhanden (z.B. bei Krönlein: "Lieferschein-Nr. 90406834/01")
+              Suche nach: "Lieferschein-Nr.", "Lieferschein", "Delivery Note", "LS-Nr."
+              ACHTUNG: Nicht verwechseln mit Auftrags-Nr. oder Bestellnummer! Nur explizite Lieferschein-Nummern extrahieren.
+            - bestellnummer = Bestellnummer/Auftragsnummer falls vorhanden (z.B. "Ihre Bestellung: LBE 1521374 / 8510")
             - betragNetto/betragBrutto = null (keine Geldbeträge)
             - dokumentDatum = Prüfdatum oder Ausstellungsdatum des Zertifikats
             - confidence = 0.9 wenn eindeutig
@@ -929,6 +943,20 @@ public class GeminiDokumentAnalyseService {
                 builder.aiConfidence(0.8);
             }
 
+            // Werkstoffzeugnis-spezifische Felder
+            if (json.has("schmelzNummer") && !json.get("schmelzNummer").isNull()) {
+                builder.schmelzNummer(json.get("schmelzNummer").asText().trim());
+            }
+            if (json.has("materialGuete") && !json.get("materialGuete").isNull()) {
+                builder.materialGuete(json.get("materialGuete").asText().trim());
+            }
+            if (json.has("normTyp") && !json.get("normTyp").isNull()) {
+                builder.normTyp(json.get("normTyp").asText().trim());
+            }
+            if (json.has("lieferscheinNummer") && !json.get("lieferscheinNummer").isNull()) {
+                builder.lieferscheinNummer(json.get("lieferscheinNummer").asText().trim());
+            }
+
             builder.analyseQuelle("KI");
 
             return builder.build();
@@ -1106,6 +1134,11 @@ public class GeminiDokumentAnalyseService {
             // geschaeftsdaten)
             freshDokument.setGeschaeftsdaten(savedGeschaeftsdaten);
             dokumentRepository.saveAndFlush(freshDokument);
+
+            // Werkstoffzeugnis auto-erstellen wenn KI den Typ erkannt hat
+            if (savedGeschaeftsdaten.getDetectedTyp() == LieferantDokumentTyp.WERKSTOFFZEUGNIS) {
+                erstelleWerkstoffzeugnisAusDokument(freshDokument, savedGeschaeftsdaten);
+            }
 
             log.info("Dokument {} erfolgreich analysiert: {} (Quelle: {}, Confidence: {})",
                     freshDokument.getId(),
@@ -1905,6 +1938,129 @@ public class GeminiDokumentAnalyseService {
         performRelink(neuesDokument);
     }
 
+    /**
+     * Erstellt automatisch einen Werkstoffzeugnis-Eintrag wenn die KI ein Dokument
+     * als WERKSTOFFZEUGNIS klassifiziert hat. Extrahiert Schmelznummer, Materialguete
+     * und Norm-Typ aus dem AI-Raw-JSON.
+     * Verknüpft automatisch mit dem zugehörigen Lieferschein (über Lieferschein-Nr.
+     * oder Bestellnummer als Fallback).
+     */
+    private void erstelleWerkstoffzeugnisAusDokument(LieferantDokument dokument,
+            LieferantGeschaeftsdokument geschaeftsdaten) {
+        try {
+            // Prüfe ob bereits ein Werkstoffzeugnis für dieses Dokument existiert
+            if (werkstoffzeugnisRepository.findByLieferantDokumentId(dokument.getId()).isPresent()) {
+                log.debug("Werkstoffzeugnis für Dokument {} existiert bereits", dokument.getId());
+                return;
+            }
+
+            Werkstoffzeugnis wz = new Werkstoffzeugnis();
+            wz.setLieferantDokument(dokument);
+            wz.setLieferant(dokument.getLieferant());
+
+            // Schmelznummer = dokumentNummer (bereits extrahiert)
+            if (geschaeftsdaten.getDokumentNummer() != null) {
+                wz.setSchmelzNummer(geschaeftsdaten.getDokumentNummer());
+            }
+
+            // Prüfdatum = dokumentDatum
+            if (geschaeftsdaten.getDokumentDatum() != null) {
+                wz.setPruefDatum(geschaeftsdaten.getDokumentDatum());
+            }
+
+            // Werkstoffzeugnis-spezifische Felder aus AI-Raw-JSON extrahieren
+            String lieferscheinNummer = null;
+            if (geschaeftsdaten.getAiRawJson() != null) {
+                try {
+                    var json = objectMapper.readTree(geschaeftsdaten.getAiRawJson());
+
+                    if (json.has("schmelzNummer") && !json.get("schmelzNummer").isNull()) {
+                        wz.setSchmelzNummer(json.get("schmelzNummer").asText().trim());
+                    }
+                    if (json.has("materialGuete") && !json.get("materialGuete").isNull()) {
+                        wz.setMaterialGuete(json.get("materialGuete").asText().trim());
+                    }
+                    if (json.has("normTyp") && !json.get("normTyp").isNull()) {
+                        wz.setNormTyp(json.get("normTyp").asText().trim());
+                    }
+                    if (json.has("lieferscheinNummer") && !json.get("lieferscheinNummer").isNull()) {
+                        lieferscheinNummer = json.get("lieferscheinNummer").asText().trim();
+                    }
+                } catch (Exception e) {
+                    log.debug("Konnte Werkstoffzeugnis-Felder nicht aus JSON parsen: {}", e.getMessage());
+                }
+            }
+
+            // Lieferschein-Verknüpfung: 1. Lieferschein-Nr., 2. Bestellnummer als Fallback
+            LieferantDokument lieferschein = sucheLieferscheinFuerWerkstoffzeugnis(
+                    dokument.getLieferant().getId(), lieferscheinNummer, geschaeftsdaten.getBestellnummer());
+            if (lieferschein != null) {
+                wz.setLieferscheinDokument(lieferschein);
+                log.info("Werkstoffzeugnis automatisch mit Lieferschein {} verknüpft (Dok-ID: {})",
+                        lieferschein.getGeschaeftsdaten() != null
+                                ? lieferschein.getGeschaeftsdaten().getDokumentNummer() : "?",
+                        lieferschein.getId());
+            }
+
+            werkstoffzeugnisRepository.save(wz);
+            log.info("Werkstoffzeugnis automatisch erstellt für Dokument {} (Schmelz-Nr: {}, Güte: {}, Norm: {})",
+                    dokument.getId(), wz.getSchmelzNummer(), wz.getMaterialGuete(), wz.getNormTyp());
+
+        } catch (Exception e) {
+            log.warn("Fehler beim automatischen Erstellen des Werkstoffzeugnisses für Dokument {}: {}",
+                    dokument.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * Sucht den passenden Lieferschein zu einem Werkstoffzeugnis.
+     * Strategie: 1. Direkte Lieferschein-Nr. (z.B. Krönlein: "90406834/01")
+     *            2. Bestellnummer-Fallback (z.B. SWT: "LBE 1521374 / 8510")
+     */
+    private LieferantDokument sucheLieferscheinFuerWerkstoffzeugnis(
+            Long lieferantId, String lieferscheinNummer, String bestellnummer) {
+        // 1. Versuche über explizite Lieferschein-Nr. zu finden
+        if (lieferscheinNummer != null && !lieferscheinNummer.isBlank()) {
+            String cleanNr = lieferscheinNummer.replaceAll("\\s+", "");
+            var treffer = lieferantGeschaeftsdokumentRepository
+                    .findByLieferantIdAndDokumentNummer(lieferantId, cleanNr);
+            for (var gd : treffer) {
+                if (gd.getDokument() != null
+                        && gd.getDokument().getTyp() == LieferantDokumentTyp.LIEFERSCHEIN) {
+                    return gd.getDokument();
+                }
+            }
+            // Auch ohne Whitespace-Bereinigung versuchen (Original-Nr.)
+            if (!cleanNr.equals(lieferscheinNummer)) {
+                treffer = lieferantGeschaeftsdokumentRepository
+                        .findByLieferantIdAndDokumentNummer(lieferantId, lieferscheinNummer);
+                for (var gd : treffer) {
+                    if (gd.getDokument() != null
+                            && gd.getDokument().getTyp() == LieferantDokumentTyp.LIEFERSCHEIN) {
+                        return gd.getDokument();
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: Suche Lieferschein über Bestellnummer
+        if (bestellnummer != null && !bestellnummer.isBlank()) {
+            String cleanBnr = bestellnummer.replaceAll("\\s+", "");
+            var alleDokumente = dokumentRepository
+                    .findByLieferantIdAndTypOrderByUploadDatumDesc(lieferantId, LieferantDokumentTyp.LIEFERSCHEIN);
+            for (var dok : alleDokumente) {
+                if (dok.getGeschaeftsdaten() != null && dok.getGeschaeftsdaten().getBestellnummer() != null) {
+                    String dokBnr = dok.getGeschaeftsdaten().getBestellnummer().replaceAll("\\s+", "");
+                    if (dokBnr.equalsIgnoreCase(cleanBnr)) {
+                        return dok;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     private String getMimeType(LieferantDokument dokument) {
         String dateiname = dokument.getEffektiverDateiname();
         if (dateiname == null)
@@ -2177,9 +2333,9 @@ public class GeminiDokumentAnalyseService {
                 }
             }
 
-            // Dokumentnummer
+            // Dokumentnummer – Leerzeichen entfernen für zuverlässiges Dokumentketten-Matching
             if (json.has("dokumentNummer") && !json.get("dokumentNummer").isNull()) {
-                gd.setDokumentNummer(json.get("dokumentNummer").asText().trim());
+                gd.setDokumentNummer(json.get("dokumentNummer").asText().replaceAll("\\s+", ""));
             }
 
             // Datum

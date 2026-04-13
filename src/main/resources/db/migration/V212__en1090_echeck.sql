@@ -4,8 +4,17 @@
 -- ---------------------------------------------------------------------------
 -- 1. lieferant_dokument: Wareneingangs-Prüfung (Ware geprüft)
 -- ---------------------------------------------------------------------------
-ALTER TABLE lieferant_dokument
-    ADD COLUMN IF NOT EXISTS ware_geprueft BOOLEAN NOT NULL DEFAULT FALSE;
+-- MySQL 8.0 doesn't support ADD COLUMN IF NOT EXISTS — use procedure workaround
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'lieferant_dokument'
+                   AND COLUMN_NAME = 'ware_geprueft');
+SET @sql = IF(@col_exists = 0,
+    'ALTER TABLE lieferant_dokument ADD COLUMN ware_geprueft BOOLEAN NOT NULL DEFAULT FALSE',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- ---------------------------------------------------------------------------
 -- 2. schweisser_zertifikat: Schweißer-Qualifikationen (EN ISO 9606-1)
