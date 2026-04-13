@@ -41,3 +41,9 @@ ai.gemini.api-key=DEIN_GEMINI_API_KEY
 #vendor.amazon.client-id=DEIN_CLIENT_ID
 #vendor.amazon.client-secret=DEIN_CLIENT_SECRET
 #vendor.amazon.refresh-token=DEIN_REFRESH_TOKEN
+
+# ========== Feature-Toggles (auf true setzen zum Aktivieren) ==========
+#ai.email.enabled=false
+#email.features.enabled=false
+#en1090.features.enabled=false
+#echeck.features.enabled=false
