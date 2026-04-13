@@ -446,17 +446,10 @@ public class SpamFilterService {
             return;
         }
 
-        // 1. Newsletter Check (falls noch nicht via Header erkannt)
-        if (!email.isNewsletter()) {
-            if (checkForNewsletter(email)) {
-                email.setNewsletter(true);
-            }
-        }
-
-        // 2. Spam Check (Regel-basiert)
+        // 1. Spam Check (Regel-basiert)
         int ruleScore = calculateSpamScore(email);
 
-        // 3. Bayes ML-Score (wenn Modell bereit)
+        // 2. Bayes ML-Score (wenn Modell bereit)
         double bayesProb = -1.0;
         if (spamBayesService.isModelReady()) {
             java.util.Set<String> tokens = spamBayesService.tokenize(email);
@@ -464,7 +457,7 @@ public class SpamFilterService {
             email.setBayesScore(bayesProb >= 0 ? bayesProb : null);
         }
 
-        // 4. Ensemble: Regel + Bayes kombinieren
+        // 3. Ensemble: Regel + Bayes kombinieren
         int finalScore;
         if (bayesProb < 0) {
             // Cold-Start: nur Regel-Score
@@ -479,9 +472,20 @@ public class SpamFilterService {
         email.setSpam(finalScore >= AUTO_SPAM_THRESHOLD);
 
         if (email.isSpam()) {
+            // Echter Spam überschreibt Newsletter-Flag – Spam hat Vorrang
+            email.setNewsletter(false);
             log.info("[SpamFilter] Email automatisch als Spam verschoben (Score ≥ {}%): finalScore={} (rule={}, bayes={}), subject='{}'",
                     AUTO_SPAM_THRESHOLD, finalScore, ruleScore, bayesProb >= 0 ? String.format("%.2f", bayesProb) : "n/a",
                     email.getSubject());
+            return;
+        }
+
+        // 4. Newsletter Check – nur wenn Email KEIN Spam ist
+        // (verhindert, dass echter Spam mit "abmelden"-Links im Newsletter-Ordner landet)
+        if (!email.isNewsletter()) {
+            if (checkForNewsletter(email)) {
+                email.setNewsletter(true);
+            }
         }
     }
 

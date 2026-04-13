@@ -231,6 +231,56 @@ public class SpamBayesService {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // UNTRAINING (Reklassifizierung rückgängig machen)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Macht ein vorheriges Training rückgängig.
+     * Wird aufgerufen wenn der User eine Email umklassifiziert (Spam→Ham oder Ham→Spam),
+     * damit die alten Token-Zähler korrigiert werden bevor die neue Klassifizierung
+     * trainiert wird. Verhindert doppelte Zählung.
+     *
+     * @param email   die Email deren vorherige Klassifizierung rückgängig gemacht wird
+     * @param wasSpam true wenn die Email bisher als Spam trainiert war
+     */
+    @Transactional
+    public void untrain(Email email, boolean wasSpam) {
+        Set<String> tokens = tokenize(email);
+        untrainTokens(tokens, wasSpam);
+    }
+
+    private void untrainTokens(Set<String> tokens, boolean wasSpam) {
+        if (tokens.isEmpty()) return;
+
+        int spamDec = wasSpam ? 1 : 0;
+        int hamDec  = wasSpam ? 0 : 1;
+
+        for (String token : tokens) {
+            // GREATEST(0,...) in der Query verhindert negative Werte
+            tokenRepo.decrementToken(token, spamDec, hamDec);
+        }
+
+        // Globalen Zähler dekrementieren (mindestens 0)
+        statsRepo.decrementStat(wasSpam ? "total_spam" : "total_ham");
+
+        // In-Memory-Cache sofort aktualisieren
+        for (String token : tokens) {
+            tokenCache.computeIfPresent(token, (k, counts) -> {
+                counts[wasSpam ? 0 : 1] = Math.max(0, counts[wasSpam ? 0 : 1] - 1);
+                return counts;
+            });
+        }
+        if (wasSpam) {
+            totalSpam      = Math.max(0, totalSpam      - 1);
+            totalSpamTokens = Math.max(0, totalSpamTokens - tokens.size());
+        } else {
+            totalHam      = Math.max(0, totalHam      - 1);
+            totalHamTokens = Math.max(0, totalHamTokens - tokens.size());
+        }
+        vocabularySize = tokenCache.size();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // PREDICTION
     // ═══════════════════════════════════════════════════════════════
 

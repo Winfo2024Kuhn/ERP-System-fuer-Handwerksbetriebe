@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -389,6 +390,24 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       "AND e.lieferant IS NULL " +
       "ORDER BY e.sentAt DESC")
   List<Email> findInboxFiltered();
+
+  /**
+   * Findet Posteingang-Emails die älter als der angegebene Zeitpunkt sind und noch
+   * kein explizites Spam/Ham-Urteil haben.
+   * Wird täglich für implizites Ham-Training verwendet (2 Monate im Posteingang = Vertrauen).
+   */
+  @Query("SELECT e FROM Email e " +
+      "WHERE e.direction = 'IN' " +
+      "AND e.zuordnungTyp = 'KEINE' " +
+      "AND e.deletedAt IS NULL " +
+      "AND e.isSpam = false " +
+      "AND e.isNewsletter = false " +
+      "AND e.userSpamVerdict IS NULL " +
+      "AND e.sentAt < :cutoff " +
+      "AND e.projekt IS NULL " +
+      "AND e.anfrage IS NULL " +
+      "AND e.lieferant IS NULL")
+  List<Email> findLongLivedInboxEmailsWithoutVerdict(@Param("cutoff") LocalDateTime cutoff);
 
   /**
    * Counts unread emails for "Posteingang" (filtered).

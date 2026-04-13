@@ -37,7 +37,8 @@ import {
     RotateCcw,
     FolderInput,
     ArrowDownAZ,
-    ArrowUpAZ
+    ArrowUpAZ,
+    CheckCircle2
 } from 'lucide-react';
 import {
     DndContext,
@@ -517,21 +518,25 @@ export default function EmailCenter() {
     const [threadLoading, setThreadLoading] = useState(false);
 
     // Thread laden wenn eine E-Mail selektiert wird
+    const selectedEmailId = selectedEmail?.id;
     useEffect(() => {
-        if (!selectedEmail) {
-            setThread(null);
-            return;
-        }
-        setThreadLoading(true);
-        fetch(`/api/emails/${selectedEmail.id}/thread`)
-            .then(r => {
+        if (!selectedEmailId) return;
+        let active = true;
+        (async () => {
+            setThreadLoading(true);
+            try {
+                const r = await fetch(`/api/emails/${selectedEmailId}/thread`);
                 if (!r.ok) throw new Error('Thread not found');
-                return r.json();
-            })
-            .then((data: EmailThread) => setThread(data))
-            .catch(() => setThread(null))
-            .finally(() => setThreadLoading(false));
-    }, [selectedEmail?.id]);
+                const data: EmailThread = await r.json();
+                if (active) setThread(data);
+            } catch {
+                if (active) setThread(null);
+            } finally {
+                if (active) setThreadLoading(false);
+            }
+        })();
+        return () => { active = false; setThread(null); };
+    }, [selectedEmailId]);
 
     // Action Handlers
     const handleComposeNew = () => {
@@ -1157,6 +1162,58 @@ export default function EmailCenter() {
         }
     };
 
+    const handleMarkNotNewsletter = async (emailIds?: number[]) => {
+        const ids = emailIds || (selectedEmail ? [selectedEmail.id] : []);
+        if (ids.length === 0) return;
+
+        const idsSet = new Set(ids);
+        ids.forEach(id => pendingRemovalsRef.current.add(id));
+        setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
+        setSelectedIds(new Set());
+        setSelectedEmail(null);
+
+        try {
+            let successCount = 0;
+            for (const id of ids) {
+                const res = await fetch(`/api/emails/${id}/mark-not-newsletter`, { method: 'POST' });
+                if (res.ok) successCount++;
+            }
+            toast.info(successCount === 1 ? "Kein Newsletter – zurück im Posteingang" : `${successCount} E-Mails in Posteingang verschoben`);
+            folderCacheRef.current.clear();
+            loadStats();
+        } catch (err) {
+            console.error(err);
+            toast.error("Fehler beim Verschieben in Posteingang");
+            refreshEmailsSilently();
+        }
+    };
+
+    const handleConfirmNewsletter = async (emailIds?: number[]) => {
+        const ids = emailIds || (selectedEmail ? [selectedEmail.id] : []);
+        if (ids.length === 0) return;
+
+        const idsSet = new Set(ids);
+        ids.forEach(id => pendingRemovalsRef.current.add(id));
+        setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
+        setSelectedIds(new Set());
+        setSelectedEmail(null);
+
+        try {
+            let successCount = 0;
+            for (const id of ids) {
+                const res = await fetch(`/api/emails/${id}/confirm-newsletter`, { method: 'POST' });
+                if (res.ok) successCount++;
+            }
+            toast.success(successCount === 1 ? "Newsletter bestätigt – Modell lernt dazu" : `${successCount} Newsletter bestätigt`);
+            folderCacheRef.current.clear();
+            loadStats();
+        } catch (err) {
+            console.error(err);
+            toast.error("Fehler beim Bestätigen des Newsletters");
+            refreshEmailsSilently();
+        }
+    };
+
     const MOVE_TARGETS = [
         { id: 'inbox' as const, label: 'Posteingang', icon: Inbox },
         { id: 'trash' as const, label: 'Papierkorb', icon: Trash2 },
@@ -1595,6 +1652,33 @@ export default function EmailCenter() {
                                 <ShieldCheck className="w-4 h-4" />
                                 Kein Spam ({selectedIds.size})
                             </Button>
+                        ) : activeFolder === 'newsletter' ? (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => handleMarkSpam(bulkIds)}
+                                    className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                                >
+                                    <ShieldX className="w-4 h-4" />
+                                    Ist Spam ({selectedIds.size})
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => handleMarkNotNewsletter(bulkIds)}
+                                    className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300"
+                                >
+                                    <Inbox className="w-4 h-4" />
+                                    Kein Newsletter ({selectedIds.size})
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => handleConfirmNewsletter(bulkIds)}
+                                    className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300"
+                                >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    Newsletter bestätigen ({selectedIds.size})
+                                </Button>
+                            </>
                         ) : activeFolder !== 'trash' && (
                             <Button
                                 variant="outline"
@@ -1743,6 +1827,36 @@ export default function EmailCenter() {
                                     >
                                         <ShieldCheck className="w-4 h-4" />
                                     </Button>
+                                ) : activeFolder === 'newsletter' ? (
+                                    <>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleMarkSpam()}
+                                            className="text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                            title="Ist Spam"
+                                        >
+                                            <ShieldX className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleMarkNotNewsletter()}
+                                            className="text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                                            title="Kein Newsletter – in Posteingang"
+                                        >
+                                            <Inbox className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleConfirmNewsletter()}
+                                            className="text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
+                                            title="Newsletter bestätigen"
+                                        >
+                                            <CheckCircle2 className="w-4 h-4" />
+                                        </Button>
+                                    </>
                                 ) : activeFolder !== 'trash' && (
                                     <Button
                                         variant="ghost"

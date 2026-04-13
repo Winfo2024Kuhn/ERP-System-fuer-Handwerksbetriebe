@@ -25,4 +25,15 @@ public interface SpamTokenCountRepository extends JpaRepository<SpamTokenCount, 
     void upsertToken(@Param("token") String token,
                      @Param("spamInc") int spamIncrement,
                      @Param("hamInc") int hamIncrement);
+
+    /** Dekrementiert Spam- oder Ham-Zähler, klemmt bei 0 (verhindert negative Werte). */
+    @Modifying
+    @Query(value = "UPDATE spam_token_count SET "
+            + "spam_count = GREATEST(0, spam_count - :spamDec), "
+            + "ham_count  = GREATEST(0, ham_count  - :hamDec) "
+            + "WHERE token = :token",
+            nativeQuery = true)
+    void decrementToken(@Param("token") String token,
+                        @Param("spamDec") int spamDecrement,
+                        @Param("hamDec") int hamDecrement);
 }

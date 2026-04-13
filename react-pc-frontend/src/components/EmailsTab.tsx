@@ -124,10 +124,6 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
     projektId,
     anfrageId,
     angebotId,
-    kundeId: _kundeId,
-    lieferantId: _lieferantId,
-    entityName: _entityName,
-    kundenEmail: _kundenEmail,
     projekt,
     anfrage,
     angebot,
@@ -220,13 +216,22 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
     // ─── Load thread when email is selected ───────────────────
     useEffect(() => {
-        if (!selectedEmailId) { setThread(null); return; }
-        setThreadLoading(true);
-        fetch(`/api/emails/${selectedEmailId}/thread`)
-            .then(r => { if (!r.ok) throw new Error('Thread not found'); return r.json(); })
-            .then((data: EmailThread) => setThread(data))
-            .catch(() => setThread(null))
-            .finally(() => setThreadLoading(false));
+        if (!selectedEmailId) return;
+        let active = true;
+        (async () => {
+            setThreadLoading(true);
+            try {
+                const r = await fetch(`/api/emails/${selectedEmailId}/thread`);
+                if (!r.ok) throw new Error('Thread not found');
+                const data: EmailThread = await r.json();
+                if (active) setThread(data);
+            } catch {
+                if (active) setThread(null);
+            } finally {
+                if (active) setThreadLoading(false);
+            }
+        })();
+        return () => { active = false; setThread(null); };
     }, [selectedEmailId]);
 
     const handleEmailClick = (email: GenericEmail) => {

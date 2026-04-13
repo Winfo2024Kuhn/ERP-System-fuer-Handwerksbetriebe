@@ -17,4 +17,8 @@ public interface SpamModelStatsRepository extends JpaRepository<SpamModelStats, 
     @Modifying
     @Query("UPDATE SpamModelStats s SET s.statValue = s.statValue + 1 WHERE s.statKey = :key")
     int incrementStat(@Param("key") String key);
+
+    @Modifying
+    @Query("UPDATE SpamModelStats s SET s.statValue = CASE WHEN s.statValue > 0 THEN s.statValue - 1 ELSE 0 END WHERE s.statKey = :key")
+    int decrementStat(@Param("key") String key);
 }

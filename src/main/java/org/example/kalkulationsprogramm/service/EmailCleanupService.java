@@ -22,6 +22,7 @@ public class EmailCleanupService {
 
     private final EmailRepository emailRepository;
     private final EmailImportService emailImportService;
+    private final SpamBayesService spamBayesService;
 
     /**
      * Bereinigt Papierkorb, Spam und Newsletter: Löscht Elemente, die älter als 30
@@ -92,6 +93,43 @@ public class EmailCleanupService {
         }
 
         log.info("Email-Bereinigung abgeschlossen. Gelöscht: {}, Fehler: {}", deletedCount, errorCount);
+    }
+
+    /**
+     * Implizites Ham-Training: Emails die mindestens 2 Monate im Posteingang geblieben sind
+     * ohne als Spam markiert zu werden, werden einmalig als Ham trainiert.
+     * Läuft täglich um 03:10 Uhr (nach dem Cleanup-Job).
+     */
+    @Scheduled(cron = "0 10 3 * * *")
+    @Transactional
+    public void trainImplicitHam() {
+        if (!emailFeaturesEnabled) {
+            return;
+        }
+        if (!spamBayesService.isModelReady()) {
+            log.debug("[ImplizitHAM] Modell noch nicht bereit, implizites Training übersprungen");
+            return;
+        }
+
+        LocalDateTime cutoff = LocalDateTime.now().minusMonths(2);
+        List<Email> candidates = emailRepository.findLongLivedInboxEmailsWithoutVerdict(cutoff);
+
+        if (candidates.isEmpty()) {
+            return;
+        }
+
+        int trained = 0;
+        for (Email email : candidates) {
+            try {
+                spamBayesService.train(email, false);
+                email.setUserSpamVerdict("HAM_IMPLICIT");
+                trained++;
+            } catch (Exception e) {
+                log.warn("[ImplizitHAM] Fehler beim Training für Email {}: {}", email.getId(), e.getMessage());
+            }
+        }
+        emailRepository.saveAll(candidates);
+        log.info("[ImplizitHAM] {} Posteingang-Emails (>2 Monate) implizit als Ham trainiert", trained);
     }
 
     private boolean deleteEmail(Email email) {

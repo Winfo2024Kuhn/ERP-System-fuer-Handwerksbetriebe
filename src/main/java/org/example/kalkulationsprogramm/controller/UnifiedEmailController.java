@@ -259,12 +259,23 @@ public class UnifiedEmailController {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
 
+        String previousVerdict = email.getUserSpamVerdict();
         email.setUserSpamVerdict("SPAM");
         email.setSpam(true);
         email.setSpamScore(100);
         emailRepository.save(email);
 
-        spamBayesService.train(email, true);
+        if ("SPAM".equals(previousVerdict)) {
+            // Bereits als Spam trainiert – kein doppeltes Training
+            log.debug("[SpamML] Email {} bereits als Spam trainiert, Training übersprungen", emailId);
+        } else {
+            // Vorheriges HAM-Training rückgängig machen (falls vorhanden)
+            if ("HAM".equals(previousVerdict) || "HAM_IMPLICIT".equals(previousVerdict)) {
+                spamBayesService.untrain(email, false);
+                log.debug("[SpamML] Vorheriges HAM-Training für Email {} rückgängig gemacht", emailId);
+            }
+            spamBayesService.train(email, true);
+        }
 
         log.info("[SpamML] Email {} als Spam markiert (User-Feedback), subject='{}'",
                 emailId, email.getSubject());
@@ -278,17 +289,89 @@ public class UnifiedEmailController {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
 
+        String previousVerdict = email.getUserSpamVerdict();
         email.setUserSpamVerdict("HAM");
         email.setSpam(false);
         email.setNewsletter(false);
         email.setSpamScore(0);
         emailRepository.save(email);
 
-        spamBayesService.train(email, false);
+        if ("HAM".equals(previousVerdict) || "HAM_IMPLICIT".equals(previousVerdict)) {
+            // Bereits als Ham trainiert – kein doppeltes Training
+            log.debug("[SpamML] Email {} bereits als Ham trainiert, Training übersprungen", emailId);
+        } else {
+            // Vorheriges SPAM-Training rückgängig machen (falls vorhanden)
+            if ("SPAM".equals(previousVerdict)) {
+                spamBayesService.untrain(email, true);
+                log.debug("[SpamML] Vorheriges Spam-Training für Email {} rückgängig gemacht", emailId);
+            }
+            spamBayesService.train(email, false);
+        }
 
         log.info("[SpamML] Email {} als Nicht-Spam markiert (User-Feedback), subject='{}'",
                 emailId, email.getSubject());
         return ResponseEntity.ok("Email als kein Spam markiert und Modell trainiert.");
+    }
+
+    /**
+     * Newsletter-Email zurück in den Posteingang verschieben.
+     * Trainiert das Modell als Ham (der User will diese Email, sie ist kein Spam).
+     */
+    @PostMapping("/{emailId}/mark-not-newsletter")
+    @Transactional
+    public ResponseEntity<String> markAsNotNewsletter(@PathVariable Long emailId) {
+        Email email = emailRepository.findById(emailId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Email not found"));
+
+        String previousVerdict = email.getUserSpamVerdict();
+        email.setNewsletter(false);
+        email.setSpam(false);
+        email.setSpamScore(0);
+        email.setUserSpamVerdict("HAM");
+        emailRepository.save(email);
+
+        if (!"HAM".equals(previousVerdict) && !"HAM_IMPLICIT".equals(previousVerdict)) {
+            if ("SPAM".equals(previousVerdict)) {
+                spamBayesService.untrain(email, true);
+            }
+            spamBayesService.train(email, false);
+        }
+
+        log.info("[SpamML] Email {} als kein Newsletter markiert (zurück in Posteingang), subject='{}'",
+                emailId, email.getSubject());
+        return ResponseEntity.ok("Email aus Newsletter entfernt und Modell trainiert.");
+    }
+
+    /**
+     * Newsletter-Email als Newsletter bestätigen.
+     * Trainiert das Modell als Ham (Newsletter sind kein Spam – hilft dem Modell
+     * die Grenze zwischen Spam und gewollten Massenmails zu lernen).
+     */
+    @PostMapping("/{emailId}/confirm-newsletter")
+    @Transactional
+    public ResponseEntity<String> confirmNewsletter(@PathVariable Long emailId) {
+        Email email = emailRepository.findById(emailId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Email not found"));
+
+        String previousVerdict = email.getUserSpamVerdict();
+        email.setNewsletter(true);
+        email.setSpam(false);
+        email.setSpamScore(Math.min(email.getSpamScore() != null ? email.getSpamScore() : 0, 49));
+        email.setUserSpamVerdict("HAM");
+        emailRepository.save(email);
+
+        if (!"HAM".equals(previousVerdict) && !"HAM_IMPLICIT".equals(previousVerdict)) {
+            if ("SPAM".equals(previousVerdict)) {
+                spamBayesService.untrain(email, true);
+            }
+            spamBayesService.train(email, false);
+        }
+
+        log.info("[SpamML] Newsletter {} bestätigt (Ham-Training), subject='{}'",
+                emailId, email.getSubject());
+        return ResponseEntity.ok("Newsletter bestätigt und Modell trainiert.");
     }
 
     @PostMapping("/spam-model/bootstrap")
