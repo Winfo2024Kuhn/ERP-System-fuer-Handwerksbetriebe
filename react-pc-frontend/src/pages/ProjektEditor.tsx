@@ -275,7 +275,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         typ: string;
         dokumentNummer?: string;
         dokumentDatum?: string;
-        betragBrutto?: number;
+        betragNetto?: number;
         pdfUrl?: string;
     }
     interface Eingangsrechnung {
@@ -1838,7 +1838,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                     const ketteItems: DokumentKetteRef[] = er.dokumentenKette && er.dokumentenKette.length > 0
                                         ? er.dokumentenKette
                                         : er.pdfUrl
-                                            ? [{ id: er.dokumentId ?? er.id, typ: 'RECHNUNG', dokumentNummer: er.dokumentNummer ?? null, dokumentDatum: er.dokumentDatum ?? null, betragBrutto: er.gesamtbetrag ?? null, pdfUrl: er.pdfUrl }]
+                                            ? [{ id: er.dokumentId ?? er.id, typ: 'RECHNUNG', dokumentNummer: er.dokumentNummer ?? null, dokumentDatum: er.dokumentDatum ?? null, betragNetto: er.gesamtbetrag ?? null, pdfUrl: er.pdfUrl }]
                                             : [];
                                     const hasKette = ketteItems.length > 0;
                                     const alleZuordnungen = er.alleZuordnungen || [];
@@ -1872,8 +1872,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                         <File className="w-3 h-3" />
                                                                         <span className="font-medium">{cfg.label}</span>
                                                                         {kd.dokumentNummer && <span className="opacity-70">#{kd.dokumentNummer}</span>}
-                                                                        {kd.betragBrutto != null && (
-                                                                            <span className="opacity-70">{formatCurrency(kd.betragBrutto)}</span>
+                                                                        {kd.betragNetto != null && (
+                                                                            <span className="opacity-70">{formatCurrency(kd.betragNetto)}</span>
                                                                         )}
                                                                     </button>
                                                                 </React.Fragment>

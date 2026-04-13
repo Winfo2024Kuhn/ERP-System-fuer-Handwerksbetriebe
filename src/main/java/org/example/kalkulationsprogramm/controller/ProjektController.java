@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -566,7 +567,13 @@ public class ProjektController {
                     var gd = dok.getGeschaeftsdaten();
                     dto.geschaeftsdokumentId = gd.getId();
                     dto.dokumentNummer = gd.getDokumentNummer();
-                    dto.gesamtbetrag = gd.getBetragBrutto();
+                    dto.gesamtbetrag = gd.getBetragNetto();
+                    // berechneterBetrag dynamisch aus Netto neu berechnen – korrigiert brutto-basierte Altdaten
+                    if (gd.getBetragNetto() != null && anteil.getProzent() != null) {
+                        dto.berechneterBetrag = gd.getBetragNetto()
+                                .multiply(BigDecimal.valueOf(anteil.getProzent()))
+                                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    }
                     if (gd.getDokumentDatum() != null) {
                         dto.dokumentDatum = gd.getDokumentDatum();
                     }
@@ -606,7 +613,16 @@ public class ProjektController {
                         ad.kostenstelleName = a.getKostenstelle().getBezeichnung();
                     }
                     ad.prozent = a.getProzent();
-                    ad.berechneterBetrag = a.getBerechneterBetrag();
+                    // berechneterBetrag aus Netto des Dokuments berechnen (korrigiert Altdaten)
+                    BigDecimal nettoFuerAnteil = (a.getDokument() != null && a.getDokument().getGeschaeftsdaten() != null)
+                            ? a.getDokument().getGeschaeftsdaten().getBetragNetto() : null;
+                    if (nettoFuerAnteil != null && a.getProzent() != null) {
+                        ad.berechneterBetrag = nettoFuerAnteil
+                                .multiply(BigDecimal.valueOf(a.getProzent()))
+                                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    } else {
+                        ad.berechneterBetrag = a.getBerechneterBetrag();
+                    }
                     ad.beschreibung = a.getBeschreibung();
                     ad.zugeordnetAm = a.getZugeordnetAm();
                     if (a.getZugeordnetVon() != null) {
@@ -640,7 +656,7 @@ public class ProjektController {
                         if (chainDoc.getGeschaeftsdaten() != null) {
                             ref.dokumentNummer = chainDoc.getGeschaeftsdaten().getDokumentNummer();
                             ref.dokumentDatum = chainDoc.getGeschaeftsdaten().getDokumentDatum();
-                            ref.betragBrutto = chainDoc.getGeschaeftsdaten().getBetragBrutto();
+                            ref.betragNetto = chainDoc.getGeschaeftsdaten().getBetragNetto();
                         }
                         // PDF URL
                         if (chainDoc.getAttachment() != null && chainDoc.getAttachment().getEmail() != null && chainDoc.getLieferant() != null) {
@@ -716,7 +732,7 @@ public class ProjektController {
         public String typ;
         public String dokumentNummer;
         public LocalDate dokumentDatum;
-        public BigDecimal betragBrutto;
+        public BigDecimal betragNetto;
         public String pdfUrl;
     }
 

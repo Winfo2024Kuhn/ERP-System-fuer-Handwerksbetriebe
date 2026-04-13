@@ -70,21 +70,30 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
             fetch(`/api/bestellungen-uebersicht/zuordnungen/${geschaeftsdokumentId}`),
         ])
             .then(async ([gdRes, zuordRes]) => {
+                let nettoFuerBerechnung = 0;
                 if (gdRes.ok) {
                     const gd = await gdRes.json();
                     setGeschaeftsdaten(gd);
+                    nettoFuerBerechnung = gd.betragNetto ?? 0;
                 }
                 if (zuordRes.ok) {
                     const zuordnungen = await zuordRes.json();
-                    setAnteile(zuordnungen.map((z: { projektId?: number; projektName?: string; kostenstelleId?: number; kostenstelleName?: string; betrag?: number; prozentanteil?: number; beschreibung?: string }) => ({
-                        projektId: z.projektId,
-                        projektName: z.projektName,
-                        kostenstelleId: z.kostenstelleId,
-                        kostenstelleName: z.kostenstelleName,
-                        betrag: z.betrag || 0,
-                        prozentanteil: z.prozentanteil || 0,
-                        beschreibung: z.beschreibung || '',
-                    })));
+                    setAnteile(zuordnungen.map((z: { projektId?: number; projektName?: string; kostenstelleId?: number; kostenstelleName?: string; betrag?: number; prozentanteil?: number; beschreibung?: string }) => {
+                        const pct = z.prozentanteil || 0;
+                        // Betrag immer aus prozentanteil × betragNetto berechnen – vermeidet brutto-basierte Altdaten
+                        const betrag = nettoFuerBerechnung > 0
+                            ? Number((nettoFuerBerechnung * pct / 100).toFixed(2))
+                            : (z.betrag || 0);
+                        return {
+                            projektId: z.projektId,
+                            projektName: z.projektName,
+                            kostenstelleId: z.kostenstelleId,
+                            kostenstelleName: z.kostenstelleName,
+                            betrag,
+                            prozentanteil: pct,
+                            beschreibung: z.beschreibung || '',
+                        };
+                    }));
                 }
             })
             .catch(() => toast.error('Fehler beim Laden der Zuordnungsdaten'))
@@ -164,10 +173,16 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
         setAnteile(prev => prev.filter((_, i) => i !== idx));
     };
 
-    // Berechne Summen
-    const sumBetrag = anteile.reduce((s, a) => s + a.betrag, 0);
-    const sumProzent = anteile.reduce((s, a) => s + a.prozentanteil, 0);
-    const rest = betragNetto - sumBetrag;
+    // Berechne Summen – letzten Eintrag mit effektiv berechnetem Wert (nicht gespeichertem) addieren
+    const sumBetrag = anteile.reduce((s, a, idx) => {
+        const isLast = idx === anteile.length - 1 && anteile.length >= 2;
+        return s + (isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restBetrag : a.betrag);
+    }, 0);
+    const sumProzent = anteile.reduce((s, a, idx) => {
+        const isLast = idx === anteile.length - 1 && anteile.length >= 2;
+        return s + (isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : a.prozentanteil);
+    }, 0);
+    const rest = Number((betragNetto - sumBetrag).toFixed(2));
 
     // Speichern - mit berechneten Werten für den letzten Eintrag
     const speichern = async () => {
