@@ -34,4 +34,11 @@ public class Abteilung {
      */
     @Column(nullable = false)
     private Boolean darfRechnungenSehen = false;
+
+    /**
+     * Darf die E-Check Funktion in der Zeiterfassungs-App verwenden.
+     * Steuert Sichtbarkeit des E-Check Menüpunkts in der mobilen App.
+     */
+    @Column(nullable = false)
+    private Boolean darfEcheckApp = false;
 }

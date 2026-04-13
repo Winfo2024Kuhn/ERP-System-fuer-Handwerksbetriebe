@@ -33,6 +33,7 @@ public class ProjektErstellenDto {
     private boolean bezahlt;
     private boolean abgeschlossen;
     private String projektArt;
+    private String excKlasse;
 
     // Fremdschlüssel
     private List<Long> anfrageIds;

@@ -20,6 +20,7 @@ public class AbteilungBerechtigungDto {
         private List<TypBerechtigung> berechtigungen;
         private Boolean darfRechnungenGenehmigen;
         private Boolean darfRechnungenSehen;
+        private Boolean darfEcheckApp;
     }
 
     @Data
@@ -39,5 +40,6 @@ public class AbteilungBerechtigungDto {
         private List<TypBerechtigung> berechtigungen;
         private Boolean darfRechnungenGenehmigen;
         private Boolean darfRechnungenSehen;
+        private Boolean darfEcheckApp;
     }
 }

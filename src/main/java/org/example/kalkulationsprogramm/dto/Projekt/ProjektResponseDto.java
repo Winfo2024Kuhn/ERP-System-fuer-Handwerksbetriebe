@@ -41,6 +41,7 @@ public class ProjektResponseDto {
     private boolean bezahlt;
     private boolean abgeschlossen;
     private String projektArt;
+    private String excKlasse;
     private boolean produktiv;
     private List<ProjektProduktkategorieResponseDto> produktkategorien;
     private List<ZeitResponseDto> zeiten;

@@ -60,6 +60,7 @@ public class AbteilungBerechtigungController {
                 .berechtigungen(typBerechtigungen)
                 .darfRechnungenGenehmigen(Boolean.TRUE.equals(abt.getDarfRechnungenGenehmigen()))
                 .darfRechnungenSehen(Boolean.TRUE.equals(abt.getDarfRechnungenSehen()))
+                .darfEcheckApp(Boolean.TRUE.equals(abt.getDarfEcheckApp()))
                 .build());
         }
 
@@ -101,6 +102,7 @@ public class AbteilungBerechtigungController {
             .berechtigungen(typBerechtigungen)
             .darfRechnungenGenehmigen(Boolean.TRUE.equals(abteilung.getDarfRechnungenGenehmigen()))
             .darfRechnungenSehen(Boolean.TRUE.equals(abteilung.getDarfRechnungenSehen()))
+            .darfEcheckApp(Boolean.TRUE.equals(abteilung.getDarfEcheckApp()))
             .build());
     }
 
@@ -151,6 +153,9 @@ public class AbteilungBerechtigungController {
         }
         if (request.getDarfRechnungenSehen() != null) {
             abteilung.setDarfRechnungenSehen(request.getDarfRechnungenSehen());
+        }
+        if (request.getDarfEcheckApp() != null) {
+            abteilung.setDarfEcheckApp(request.getDarfEcheckApp());
         }
         abteilungRepository.save(abteilung);
 

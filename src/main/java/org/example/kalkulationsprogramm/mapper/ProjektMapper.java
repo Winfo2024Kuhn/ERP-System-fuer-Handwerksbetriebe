@@ -62,6 +62,9 @@ public class ProjektMapper {
             dto.setProduktiv(true);
         }
 
+        // EN 1090 Ausführungsklasse
+        dto.setExcKlasse(projekt.getExcKlasse());
+
         if (projekt.getProjektProduktkategorien() != null) {
             List<ProjektProduktkategorieResponseDto> pkDtos = projekt.getProjektProduktkategorien().stream()
                     .map(ppk -> {

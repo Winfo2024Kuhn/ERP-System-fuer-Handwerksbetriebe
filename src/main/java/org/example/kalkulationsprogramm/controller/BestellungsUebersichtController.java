@@ -542,8 +542,9 @@ public class BestellungsUebersichtController {
             case ANGEBOT -> 0;
             case AUFTRAGSBESTAETIGUNG -> 1;
             case LIEFERSCHEIN -> 2;
-            case RECHNUNG -> 3;
-            case GUTSCHRIFT -> 4;
+            case WERKSTOFFZEUGNIS -> 3;
+            case RECHNUNG -> 4;
+            case GUTSCHRIFT -> 5;
             case SONSTIG -> 99;
         };
     }

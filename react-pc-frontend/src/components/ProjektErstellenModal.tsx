@@ -27,6 +27,7 @@ interface ProjektErstellenPayload {
     ort?: string;
     anfrageIds?: number[];
     projektArt?: string;
+    excKlasse?: string | null;
 }
 
 interface ProjektBearbeiten {
@@ -42,6 +43,7 @@ interface ProjektBearbeiten {
     ort?: string;
     abgeschlossen?: boolean;
     projektArt?: string;
+    excKlasse?: string | null;
     kundenEmails?: string[];
     kundeDto?: {
         id: number;
@@ -518,6 +520,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         plz: '',
         ort: '',
         projektArt: 'PAUSCHAL', // Default: Pauschalpreis
+        excKlasse: null,
     });
 
     // Nächste Auftragsnummer laden
@@ -634,6 +637,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 plz: '',
                 ort: '',
                 projektArt: 'PAUSCHAL',
+                excKlasse: null,
             });
             setError(null);
         } else if (editProjekt) {
@@ -683,6 +687,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 plz: editProjekt.plz || '',
                 ort: editProjekt.ort || '',
                 projektArt: editProjekt.projektArt || 'PAUSCHAL',
+                excKlasse: editProjekt.excKlasse ?? null,
             });
 
             // Produktkategorien aus bestehendem Projekt laden
@@ -808,7 +813,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         handleKundeSelect(kunde);
     };
 
-    const handleInputChange = (field: keyof ProjektErstellenPayload, value: string | number | undefined) => {
+    const handleInputChange = (field: keyof ProjektErstellenPayload, value: string | number | null | undefined) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
@@ -1253,6 +1258,38 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                             }`}>
                                                 {art.produktiv ? 'Produktiv' : 'Unproduktiv'}
                                             </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* EN 1090 Ausführungsklasse */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    EN 1090 Ausführungsklasse <span className="text-slate-400 font-normal">(optional)</span>
+                                </label>
+                                <div className="grid grid-cols-5 gap-2">
+                                    {[
+                                        { value: null, label: 'Keine', desc: 'Kein EN 1090' },
+                                        { value: 'EXC_1', label: 'EXC 1', desc: 'Einfache Bauteile' },
+                                        { value: 'EXC_2', label: 'EXC 2', desc: 'Typischer Stahlbau' },
+                                        { value: 'EXC_3', label: 'EXC 3', desc: 'Erhöhte Anforderungen' },
+                                        { value: 'EXC_4', label: 'EXC 4', desc: 'Höchste Anforderungen' },
+                                    ].map(klasse => (
+                                        <button
+                                            key={klasse.value ?? 'none'}
+                                            type="button"
+                                            onClick={() => handleInputChange('excKlasse', klasse.value as string | undefined)}
+                                            className={`p-3 rounded-lg border-2 text-left transition-all ${
+                                                formData.excKlasse === klasse.value
+                                                    ? 'border-rose-500 bg-rose-50'
+                                                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                                            }`}
+                                        >
+                                            <p className={`font-semibold text-sm ${formData.excKlasse === klasse.value ? 'text-rose-700' : 'text-slate-700'}`}>
+                                                {klasse.label}
+                                            </p>
+                                            <p className="text-xs text-slate-500 mt-0.5">{klasse.desc}</p>
                                         </button>
                                     ))}
                                 </div>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet } from 'lucide-react';
+import { Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet, Zap } from 'lucide-react';
 
 interface TypBerechtigung {
     typ: string;
@@ -16,13 +16,15 @@ interface AbteilungBerechtigung {
     berechtigungen: TypBerechtigung[];
     darfRechnungenGenehmigen: boolean;
     darfRechnungenSehen: boolean;
+    darfEcheckApp: boolean;
 }
 
 const DOKUMENT_TYP_LABELS: Record<string, string> = {
     'ANFRAGE': 'Anfrage',
     'AUFTRAGSBESTAETIGUNG': 'Auftragsbestätigung',
     'LIEFERSCHEIN': 'Lieferschein',
-    'RECHNUNG': 'Rechnung'
+    'RECHNUNG': 'Rechnung',
+    'WERKSTOFFZEUGNIS': 'Werkstoffzeugnis'
 };
 
 export default function AbteilungBerechtigungenEditor() {
@@ -71,7 +73,7 @@ export default function AbteilungBerechtigungenEditor() {
         }));
     };
 
-    const handleToggleRechnungsFlag = (abteilungId: number, field: 'darfRechnungenGenehmigen' | 'darfRechnungenSehen') => {
+    const handleToggleRechnungsFlag = (abteilungId: number, field: 'darfRechnungenGenehmigen' | 'darfRechnungenSehen' | 'darfEcheckApp') => {
         setBerechtigungen(prev => prev.map(abt => {
             if (abt.abteilungId !== abteilungId) return abt;
             return { ...abt, [field]: !abt[field] };
@@ -87,7 +89,8 @@ export default function AbteilungBerechtigungenEditor() {
                 body: JSON.stringify({
                     berechtigungen: abteilung.berechtigungen,
                     darfRechnungenGenehmigen: abteilung.darfRechnungenGenehmigen,
-                    darfRechnungenSehen: abteilung.darfRechnungenSehen
+                    darfRechnungenSehen: abteilung.darfRechnungenSehen,
+                    darfEcheckApp: abteilung.darfEcheckApp
                 })
             });
             if (res.ok) {
@@ -259,6 +262,30 @@ export default function AbteilungBerechtigungenEditor() {
                                     <div>
                                         <span className="text-sm font-medium text-slate-900">Darf genehmigte Rechnungen sehen</span>
                                         <p className="text-xs text-slate-500">Sieht nur bereits genehmigte Eingangsrechnungen (Buchhaltung)</p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            {/* E-Check App (Mobil) */}
+                            <div className="mt-4 pt-4 border-t border-slate-200">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Zap className="w-4 h-4 text-yellow-600" />
+                                    <h3 className="font-semibold text-slate-700">E-Check App (Mobile Zeiterfassung)</h3>
+                                </div>
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <button
+                                        onClick={() => handleToggleRechnungsFlag(abt.abteilungId, 'darfEcheckApp')}
+                                        className={`w-6 h-6 rounded-md border-2 transition-colors flex-shrink-0 ${
+                                            abt.darfEcheckApp
+                                                ? 'bg-yellow-500 border-yellow-500'
+                                                : 'bg-white border-slate-300 hover:border-slate-400'
+                                        }`}
+                                    >
+                                        {abt.darfEcheckApp && <Check className="w-full h-full text-white p-0.5" />}
+                                    </button>
+                                    <div>
+                                        <span className="text-sm font-medium text-slate-900">Darf E-Check App verwenden</span>
+                                        <p className="text-xs text-slate-500">Mitarbeiter dieser Abteilung sehen den E-Check Menüpunkt in der mobilen Zeiterfassungs-App</p>
                                     </div>
                                 </label>
                             </div>

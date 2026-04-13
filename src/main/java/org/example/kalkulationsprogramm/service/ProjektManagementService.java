@@ -220,6 +220,9 @@ ProjektManagementService {
             neuesProjekt.setProjektArt(ProjektArt.PAUSCHAL);
         }
 
+        // EN 1090 Ausführungsklasse (optional)
+        neuesProjekt.setExcKlasse(dto.getExcKlasse());
+
         // KORREKTUR: Das separate 'bild'-Objekt verarbeiten
         if (bild != null && !bild.isEmpty()) {
             String bildWebPfad = this.dateiSpeicherService.speichereBild(bild);
@@ -461,6 +464,9 @@ ProjektManagementService {
                 // Bei ungültigem Wert Projektart beibehalten
             }
         }
+
+        // EN 1090 Ausführungsklasse aktualisieren (null = kein EN 1090 Projekt)
+        projekt.setExcKlasse(dto.getExcKlasse());
 
         // Projekt-spezifische E-Mail-Adressen aktualisieren
         if (dto.getKundenEmails() != null) {

@@ -1,14 +1,29 @@
 package org.example.kalkulationsprogramm.domain;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import org.hibernate.annotations.BatchSize;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.hibernate.annotations.BatchSize;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Transient;
+import lombok.Getter;
+import lombok.Setter;
 
 @Getter
 @Setter
@@ -67,6 +82,13 @@ public class Projekt {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ProjektArt projektArt = ProjektArt.PAUSCHAL;
+
+    /**
+     * EN 1090 Ausführungsklasse (optional).
+     * Mögliche Werte: EXC_1, EXC_2, EXC_3, EXC_4 – null = kein EN 1090 Projekt.
+     */
+    @Column(name = "exc_klasse", length = 10)
+    private String excKlasse;
 
     /**
      * @return true wenn Stunden auf diesem Projekt als produktiv gelten.

@@ -18,6 +18,7 @@ import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ReklamationStatus;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
+import org.example.kalkulationsprogramm.repository.BetriebsmittelRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.KalenderEintragRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
@@ -50,6 +51,7 @@ public class NotificationController {
         private final KalenderEintragRepository kalenderEintragRepository;
         private final LieferantDokumentRepository lieferantDokumentRepository;
         private final LieferantReklamationRepository lieferantReklamationRepository;
+        private final BetriebsmittelRepository betriebsmittelRepository;
 
         @GetMapping("/summary")
         public NotificationSummaryDto getSummary(@RequestParam(required = false) Long mitarbeiterId) {
@@ -461,6 +463,30 @@ public class NotificationController {
                 }
 
                 int totalCount = categories.stream().mapToInt(CategoryDto::count).sum();
+
+                // 10. Fällige E-Check Prüfungen (BGV A3 / DGUV V3)
+                try {
+                        List<org.example.kalkulationsprogramm.domain.Betriebsmittel> faelligBm =
+                                betriebsmittelRepository.findFaelligBis(LocalDate.now());
+                        if (!faelligBm.isEmpty()) {
+                                categories.add(new CategoryDto("ECHECK_FAELLIG", "E-Check fällig",
+                                                faelligBm.size(), "Zap", "/betriebsmittel"));
+                                faelligBm.stream().limit(3).forEach(bm ->
+                                        recentItems.add(new RecentItemDto(
+                                                "ECHECK_FAELLIG",
+                                                bm.getBezeichnung(),
+                                                bm.getNaechstesPruefDatum() != null
+                                                        ? "Fällig: " + bm.getNaechstesPruefDatum()
+                                                        : "Noch nie geprüft",
+                                                bm.getNaechstesPruefDatum() != null
+                                                        ? bm.getNaechstesPruefDatum().atStartOfDay().toString()
+                                                        : "",
+                                                "/betriebsmittel")));
+                        }
+                } catch (Exception ignored) {
+                }
+
+                totalCount = categories.stream().mapToInt(CategoryDto::count).sum();
 
                 // Sort recent items by timestamp descending
                 recentItems

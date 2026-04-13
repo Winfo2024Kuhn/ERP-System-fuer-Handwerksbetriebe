@@ -126,6 +126,19 @@ public class GeminiDokumentAnalyseService {
                - Dokumentiert gelieferte Waren
                - Hat KEINEN Gesamtbetrag mit MwSt, oft nur Stückzahlen
 
+            3a. WERKSTOFFZEUGNIS (WICHTIG - NICHT als SONSTIG klassifizieren!):
+               - Titel/Inhalt enthält: "Werkstoffzeugnis", "Materialzeugnis", "Prüfzeugnis",
+                 "Mill Certificate", "Test Certificate", "Material Test Report",
+                 "EN 10204", "DIN EN ISO 10204", "Zeugnis nach EN 10204"
+               - Erkennungsmerkmale: Abschnitt "3.1" oder "3.2" als Zeugnistyp,
+                 chem. Analyse-Tabelle (C, Si, Mn, P, S, Cr, Ni, Mo Werte),
+                 mechanische Kennwerte (Streckgrenze, Zugfestigkeit, Dehnung, Kerbschlagarbeit),
+                 Schmelznummer/Charge, Materialbezeichnung (z.B. S235, S355, 1.4301, St37)
+               - dokumentNummer = Schmelznummer oder Prüfnummer des Zertifikats
+               - istGeschaeftsdokument = false (kein Buchungsvorgang)
+               - KEINE Beträge extrahieren (betragNetto/Brutto = null)
+               - confidence = 0.9 wenn eindeutig erkannt
+
             4. RECHNUNG:
                - Titel enthält: "Rechnung", "Invoice", "Faktura"
                - Typische Nummern: RE-..., R-..., Rechnung-Nr..., Invoice-Nr...
@@ -143,17 +156,17 @@ public class GeminiDokumentAnalyseService {
                - Kataloge, Produktinformationen, Werbematerial
                - Newsletter, Rundschreiben, Infoschreiben
                - Allgemeine Korrespondenz ohne Geschäftsvorgang
-               - Technische Datenblätter, Zertifikate
-               - ALLES was NICHT Angebot/AB/Lieferschein/Rechnung/Gutschrift ist
+               - Technische Datenblätter (NICHT Werkstoffzeugnisse - diese sind WERKSTOFFZEUGNIS!)
+               - ALLES was NICHT Angebot/AB/Lieferschein/Werkstoffzeugnis/Rechnung/Gutschrift ist
                - WICHTIG: Wenn du dir nicht sicher bist ob es ein Geschäftsdokument ist,
                  dann wähle SONSTIG und setze confidence auf 0.0!
 
             EXTRAHIERE die folgenden Informationen als JSON:
 
             {
-                "dokumentTyp": "ANGEBOT|AUFTRAGSBESTAETIGUNG|LIEFERSCHEIN|RECHNUNG|GUTSCHRIFT|SONSTIG (ggf. mit Vermerk ' (Kopie)')",
+                "dokumentTyp": "ANGEBOT|AUFTRAGSBESTAETIGUNG|LIEFERSCHEIN|WERKSTOFFZEUGNIS|RECHNUNG|GUTSCHRIFT|SONSTIG (ggf. mit Vermerk ' (Kopie)')",
                 "istGeschaeftsdokument": true/false,
-                "dokumentNummer": "Die Dokumentnummer (exakt wie im Dokument) oder null",
+                "dokumentNummer": "Die Dokumentnummer/Schmelznummer (exakt wie im Dokument, OHNE Leerzeichen) oder null",
                 "dokumentDatum": "YYYY-MM-DD oder null",
                 "betragNetto": 1234.56 oder null,
                 "betragBrutto": 1469.33 oder null,
@@ -179,6 +192,13 @@ public class GeminiDokumentAnalyseService {
             - Wenn dokumentTyp = "SONSTIG", dann setze istGeschaeftsdokument = false
             - Wenn dokumentTyp = "SONSTIG", dann sind alle anderen Felder (dokumentNummer, betrag etc.) = null
             - confidence sollte bei SONSTIG = 0.0 sein, da keine relevanten Daten extrahiert werden
+
+            WICHTIG FÜR WERKSTOFFZEUGNISSE:
+            - Wenn dokumentTyp = "WERKSTOFFZEUGNIS", dann setze istGeschaeftsdokument = false
+            - dokumentNummer = Schmelznummer oder Prüfnummer (OHNE Leerzeichen!)
+            - betragNetto/betragBrutto = null (keine Geldbeträge)
+            - dokumentDatum = Prüfdatum oder Ausstellungsdatum des Zertifikats
+            - confidence = 0.9 wenn eindeutig
 
             ARTIKELPOSITIONEN EXTRAKTION (WICHTIG für Rechnungen):
             - Extrahiere ALLE Positionen mit Artikelnummer/Materialnummer
@@ -682,7 +702,7 @@ public class GeminiDokumentAnalyseService {
 
             return org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse.builder()
                     .dokumentTyp(typ)
-                    .dokumentNummer(zugferd.getRechnungsnummer())
+                    .dokumentNummer(zugferd.getRechnungsnummer() != null ? zugferd.getRechnungsnummer().replaceAll("\\s+", "") : null)
                     .dokumentDatum(zugferd.getRechnungsdatum())
                     .betragNetto(zugferd.getBetragNetto())
                     .betragBrutto(zugferd.getBetrag())
@@ -742,7 +762,7 @@ public class GeminiDokumentAnalyseService {
 
             return org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse.builder()
                     .dokumentTyp(LieferantDokumentTyp.RECHNUNG)
-                    .dokumentNummer(dokumentNummer)
+                    .dokumentNummer(dokumentNummer != null ? dokumentNummer.replaceAll("\\s+", "") : null)
                     .dokumentDatum(dokumentDatum)
                     .betragBrutto(betragBrutto)
                     .aiConfidence(1.0)
@@ -802,6 +822,8 @@ public class GeminiDokumentAnalyseService {
             String typStr = json.has("dokumentTyp") ? json.get("dokumentTyp").asText(null) : null;
             if (typStr != null) {
                 typStr = typStr.replace(" (Kopie)", "").trim();
+                // KI gibt ggf. Nummer mit Leerzeichen zurück – normalisieren
+                typStr = typStr.replaceAll("\\s+", "_").toUpperCase();
                 try {
                     builder.dokumentTyp(LieferantDokumentTyp.valueOf(typStr));
                 } catch (Exception e) {
@@ -811,9 +833,9 @@ public class GeminiDokumentAnalyseService {
                 builder.dokumentTyp(LieferantDokumentTyp.RECHNUNG);
             }
 
-            // Dokumentnummer
+            // Dokumentnummer – Leerzeichen entfernen für zuverlässiges Dokumentketten-Matching
             if (json.has("dokumentNummer") && !json.get("dokumentNummer").isNull()) {
-                builder.dokumentNummer(json.get("dokumentNummer").asText());
+                builder.dokumentNummer(json.get("dokumentNummer").asText().replaceAll("\\s+", ""));
             }
 
             // Datum
@@ -1132,7 +1154,8 @@ public class GeminiDokumentAnalyseService {
                     gd.setDokument(dokument);
                 }
             }
-            gd.setDokumentNummer(zugferd.getRechnungsnummer());
+            // Leerzeichen entfernen für zuverlässiges Dokumentketten-Matching
+            gd.setDokumentNummer(zugferd.getRechnungsnummer() != null ? zugferd.getRechnungsnummer().replaceAll("\\s+", "") : null);
             gd.setDokumentDatum(zugferd.getRechnungsdatum());
             gd.setBetragBrutto(zugferd.getBetrag());
             gd.setAiConfidence(1.0); // Strukturierte Daten = 100% Confidence
@@ -1243,8 +1266,9 @@ public class GeminiDokumentAnalyseService {
             gd.setDatenquelle("XML");
             gd.setAnalysiertAm(LocalDateTime.now());
 
-            // Dokumentnummer extrahieren
-            gd.setDokumentNummer(extractXmlValue(xmlContent, "ID", "InvoiceNumber", "ram:ID"));
+            // Dokumentnummer extrahieren – Leerzeichen entfernen
+            String rawXmlNummer = extractXmlValue(xmlContent, "ID", "InvoiceNumber", "ram:ID");
+            gd.setDokumentNummer(rawXmlNummer != null ? rawXmlNummer.replaceAll("\\s+", "") : null);
 
             // Betrag extrahieren
             String betrag = extractXmlValue(xmlContent, "GrandTotalAmount", "PayableAmount", "ram:GrandTotalAmount");
