@@ -275,4 +275,50 @@ class LieferantDokumentControllerTest {
                     .andExpect(status().isNotFound());
         }
     }
+
+    @Nested
+    @DisplayName("PATCH /api/lieferant-dokumente/{id}/ware-geprueft")
+    class WareGeprueft {
+
+        @Test
+        @DisplayName("Setzt wareGeprueft auf true")
+        void setWareGeprueft_true() throws Exception {
+            LieferantDokument dok = new LieferantDokument();
+            dok.setId(1L);
+            dok.setWareGeprueft(false);
+            given(dokumentRepository.findById(1L)).willReturn(Optional.of(dok));
+            given(dokumentRepository.save(any())).willReturn(dok);
+
+            mockMvc.perform(patch("/api/lieferant-dokumente/1/ware-geprueft")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"wareGeprueft\": true}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Setzt wareGeprueft auf false")
+        void setWareGeprueft_false() throws Exception {
+            LieferantDokument dok = new LieferantDokument();
+            dok.setId(1L);
+            dok.setWareGeprueft(true);
+            given(dokumentRepository.findById(1L)).willReturn(Optional.of(dok));
+            given(dokumentRepository.save(any())).willReturn(dok);
+
+            mockMvc.perform(patch("/api/lieferant-dokumente/1/ware-geprueft")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"wareGeprueft\": false}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Nicht gefunden gibt 404")
+        void nichtGefundenGibt404() throws Exception {
+            given(dokumentRepository.findById(999L)).willReturn(Optional.empty());
+
+            mockMvc.perform(patch("/api/lieferant-dokumente/999/ware-geprueft")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"wareGeprueft\": true}"))
+                    .andExpect(status().isNotFound());
+        }
+    }
 }
