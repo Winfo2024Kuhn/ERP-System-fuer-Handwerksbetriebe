@@ -378,14 +378,22 @@ public class LieferantDokumentService {
                                                 : null)
 
                                 .projektAnteile(dok.getProjektAnteile().stream()
-                                                .map(pa -> LieferantDokumentDto.ProjektAnteilRef.builder()
-                                                                .id(pa.getId())
-                                                                .projektId(pa.getProjekt().getId())
-                                                                .projektName(pa.getProjekt().getBauvorhaben())
-                                                                .auftragsnummer(pa.getProjekt().getAuftragsnummer())
-                                                                .prozent(pa.getProzent())
-                                                                .berechneterBetrag(pa.getBerechneterBetrag())
-                                                                .build())
+                                                .filter(pa -> pa.getProjekt() != null || pa.getKostenstelle() != null)
+                                                .map(pa -> {
+                                                        LieferantDokumentDto.ProjektAnteilRef.ProjektAnteilRefBuilder b =
+                                                                LieferantDokumentDto.ProjektAnteilRef.builder()
+                                                                        .id(pa.getId())
+                                                                        .prozent(pa.getProzent())
+                                                                        .berechneterBetrag(pa.getBerechneterBetrag());
+                                                        if (pa.getProjekt() != null) {
+                                                                b.projektId(pa.getProjekt().getId())
+                                                                 .projektName(pa.getProjekt().getBauvorhaben())
+                                                                 .auftragsnummer(pa.getProjekt().getAuftragsnummer());
+                                                        } else {
+                                                                b.projektName("KSt: " + pa.getKostenstelle().getBezeichnung());
+                                                        }
+                                                        return b.build();
+                                                })
                                                 .collect(Collectors.toList()))
                                 .verknuepfteDokumente(dok.getVerknuepfteDokumente().stream()
                                                 .map(v -> LieferantDokumentDto.VerknuepftesDoc.builder()
