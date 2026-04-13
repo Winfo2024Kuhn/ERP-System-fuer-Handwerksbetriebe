@@ -176,7 +176,18 @@ public class EmailImportService {
                             imported++;
                         }
                     } catch (Exception e) {
-                        log.debug("[EmailImport] Fehler bei Message: {}", e.getMessage());
+                        // Versuche Kontext-Infos aus dem Envelope zu extrahieren (bereits vorgeladen)
+                        String msgSubject = "<unbekannt>";
+                        String msgFrom = "<unbekannt>";
+                        try {
+                            if (msg.getSubject() != null) msgSubject = msg.getSubject();
+                            Address[] from = msg.getFrom();
+                            if (from != null && from.length > 0) msgFrom = from[0].toString();
+                        } catch (Exception ignored) {}
+                        log.warn("[EmailImport] Fehler beim Verarbeiten einer Nachricht in Ordner '{}'" +
+                                " (Betreff: '{}', Von: '{}'): {} – {}",
+                                folderName, msgSubject, msgFrom,
+                                e.getClass().getSimpleName(), e.getMessage());
                     }
                 }
 
@@ -193,7 +204,7 @@ public class EmailImportService {
             }
 
         } catch (MessagingException e) {
-            log.debug("[EmailImport] Ordner {} nicht verfügbar: {}", folderName, e.getMessage());
+            log.warn("[EmailImport] Ordner '{}' nicht verfügbar: {}", folderName, e.getMessage());
             return 0;
         }
     }
