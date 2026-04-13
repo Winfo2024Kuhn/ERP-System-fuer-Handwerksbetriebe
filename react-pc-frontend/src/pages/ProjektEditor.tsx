@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
     ArrowLeft,
     Briefcase,
@@ -26,6 +26,8 @@ import {
     Search,
     StickyNote,
     Ban,
+    Building2,
+    ExternalLink,
     Trash2,
     Upload,
     User,
@@ -148,6 +150,7 @@ interface ProjektDetailViewProps {
 const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, onEdit, onRefresh, initialTab }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen'>(initialTab || 'zeiten');
     const [kurzbeschreibung, setKurzbeschreibung] = useState(projekt.kurzbeschreibung || '');
     const [savingDesc, setSavingDesc] = useState(false);
@@ -251,6 +254,25 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [pdfPreviewDoc, setPdfPreviewDoc] = useState<{ url: string; title: string } | null>(null);
 
     // Eingangsrechnungen State
+    interface EingangsrechnungAnteil {
+        projektId?: number;
+        projektName?: string;
+        projektNummer?: string;
+        kostenstelleId?: number;
+        kostenstelleName?: string;
+        prozent?: number;
+        berechneterBetrag?: number;
+        zugeordnetVonName?: string;
+        zugeordnetAm?: string;
+    }
+    interface DokumentKetteRef {
+        id: number;
+        typ: string;
+        dokumentNummer?: string;
+        dokumentDatum?: string;
+        betragBrutto?: number;
+        pdfUrl?: string;
+    }
     interface Eingangsrechnung {
         id: number;
         dokumentId: number;
@@ -265,6 +287,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         lieferantId: number;
         lieferantName: string;
         pdfUrl: string;
+        zugeordnetVonName?: string;
+        zugeordnetAm?: string;
+        alleZuordnungen?: EingangsrechnungAnteil[];
+        dokumentenKette?: DokumentKetteRef[];
     }
     const [eingangsrechnungen, setEingangsrechnungen] = useState<Eingangsrechnung[]>([]);
 
@@ -1824,73 +1850,181 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             <span className="text-sm text-slate-500">{eingangsrechnungen.length} Rechnung{eingangsrechnungen.length !== 1 ? 'en' : ''}{eingangsrechnungen.length > 0 ? ` — ${formatCurrency(eingangsrechnungenSum)}` : ''}</span>
                         </div>
                         {eingangsrechnungen.length > 0 ? (
-                            <div className="space-y-2">
-                                {eingangsrechnungen.map((er) => (
-                                    <div key={er.id} className="p-4 bg-white rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
-                                                        EINGANGSRECHNUNG
-                                                    </span>
-                                                    <span className="font-semibold text-slate-900 truncate">
-                                                        {er.lieferantName || 'Unbekannter Lieferant'}
-                                                    </span>
-                                                    {er.dokumentNummer && (
-                                                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
-                                                            {er.dokumentNummer}
-                                                        </span>
-                                                    )}
+                            <div className="space-y-4">
+                                {eingangsrechnungen.map((er) => {
+                                    const hasKette = er.dokumentenKette && er.dokumentenKette.length > 1;
+                                    const alleZuordnungen = er.alleZuordnungen || [];
+                                    const andereZuordnungen = alleZuordnungen.filter(z => z.projektId !== projekt.id);
+                                    
+                                    return (
+                                        <div key={er.id} className="bg-white rounded-xl border border-slate-200 hover:shadow-md transition-shadow overflow-hidden">
+                                            {/* Dokumentenkette */}
+                                            {hasKette && (
+                                                <div className="px-4 pt-3 pb-2 bg-slate-50 border-b border-slate-100">
+                                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Dokumentenkette</p>
+                                                    <div className="flex items-center gap-1 flex-wrap">
+                                                        {er.dokumentenKette!.map((kd, idx) => {
+                                                            const typConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
+                                                                ANGEBOT: { label: 'Angebot', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+                                                                AUFTRAGSBESTAETIGUNG: { label: 'AB', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
+                                                                LIEFERSCHEIN: { label: 'Lieferschein', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
+                                                                RECHNUNG: { label: 'Rechnung', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
+                                                                GUTSCHRIFT: { label: 'Gutschrift', color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200' },
+                                                                SONSTIG: { label: 'Sonstiges', color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' },
+                                                            };
+                                                            const cfg = typConfig[kd.typ] || { label: kd.typ, color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' };
+                                                            return (
+                                                                <React.Fragment key={kd.id}>
+                                                                    {idx > 0 && <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />}
+                                                                    <button
+                                                                        onClick={() => kd.pdfUrl && setPdfPreviewDoc({ url: kd.pdfUrl, title: kd.dokumentNummer || cfg.label })}
+                                                                        className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${cfg.bg} ${cfg.color} ${cfg.border} hover:opacity-80 transition-opacity`}
+                                                                        title={kd.dokumentNummer ? `${cfg.label} ${kd.dokumentNummer}` : cfg.label}
+                                                                    >
+                                                                        <File className="w-3 h-3" />
+                                                                        <span className="font-medium">{cfg.label}</span>
+                                                                        {kd.dokumentNummer && <span className="opacity-70">#{kd.dokumentNummer}</span>}
+                                                                        {kd.betragBrutto != null && (
+                                                                            <span className="opacity-70">{formatCurrency(kd.betragBrutto)}</span>
+                                                                        )}
+                                                                    </button>
+                                                                </React.Fragment>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
-                                                <p className="text-sm text-slate-500 truncate">{er.dateiname}</p>
-                                                {er.beschreibung && (
-                                                    <p className="text-sm text-slate-600 mt-1">{er.beschreibung}</p>
+                                            )}
+                                            
+                                            {/* Hauptinhalt */}
+                                            <div className="p-4">
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                                                EINGANGSRECHNUNG
+                                                            </span>
+                                                            <span className="font-semibold text-slate-900 truncate">
+                                                                {er.lieferantName || 'Unbekannter Lieferant'}
+                                                            </span>
+                                                            {er.dokumentNummer && (
+                                                                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                                                                    {er.dokumentNummer}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-sm text-slate-500 truncate">{er.dateiname}</p>
+                                                        {er.beschreibung && (
+                                                            <p className="text-sm text-slate-600 mt-1">{er.beschreibung}</p>
+                                                        )}
+                                                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
+                                                            {er.dokumentDatum && (
+                                                                <span>Datum: {new Date(er.dokumentDatum).toLocaleDateString('de-DE')}</span>
+                                                            )}
+                                                            {er.prozent < 100 && (
+                                                                <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                                                    {er.prozent}% Anteil
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-lg font-bold text-slate-900">
+                                                            {formatCurrency(er.berechneterBetrag)}
+                                                        </p>
+                                                        {er.gesamtbetrag && er.prozent < 100 && (
+                                                            <p className="text-xs text-slate-400">
+                                                                von {formatCurrency(er.gesamtbetrag)}
+                                                            </p>
+                                                        )}
+                                                        <div className="flex items-center gap-2 justify-end mt-2">
+                                                            {er.pdfUrl && (
+                                                                <button
+                                                                    onClick={() => setPdfPreviewDoc({ url: er.pdfUrl, title: er.dokumentNummer || 'Eingangsrechnung' })}
+                                                                    className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
+                                                                >
+                                                                    <File className="w-3 h-3" />
+                                                                    PDF ansehen
+                                                                </button>
+                                                            )}
+                                                            {er.geschaeftsdokumentId && (
+                                                                <button
+                                                                    onClick={() => handleZuordnungAufheben(er.geschaeftsdokumentId)}
+                                                                    className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-600"
+                                                                    title="Zuordnung aufheben"
+                                                                >
+                                                                    <X className="w-3 h-3" />
+                                                                    Aufheben
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Zuordnungs-Info: Wer hat zugeordnet + Aufteilung */}
+                                                {(er.zugeordnetVonName || andereZuordnungen.length > 0) && (
+                                                    <div className="mt-3 pt-3 border-t border-slate-100">
+                                                        {/* Zugeordnet von */}
+                                                        {er.zugeordnetVonName && (
+                                                            <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
+                                                                <User className="w-3 h-3" />
+                                                                <span>Zugeordnet von <span className="font-medium text-slate-700">{er.zugeordnetVonName}</span></span>
+                                                                {er.zugeordnetAm && (
+                                                                    <span className="text-slate-400">
+                                                                        am {new Date(er.zugeordnetAm).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {/* Aufteilung auf andere Projekte/Kostenstellen */}
+                                                        {andereZuordnungen.length > 0 && (
+                                                            <div className="space-y-1">
+                                                                <p className="text-xs font-medium text-slate-500 mb-1">Weitere Zuordnungen:</p>
+                                                                {andereZuordnungen.map((z, idx) => (
+                                                                    <div key={idx} className="flex items-center gap-2 text-xs">
+                                                                        {z.projektId ? (
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    navigate(`/projekte?id=${z.projektId}`);
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:underline"
+                                                                            >
+                                                                                <Briefcase className="w-3 h-3" />
+                                                                                {z.projektName || 'Projekt'}
+                                                                                {z.projektNummer && <span className="text-slate-400">({z.projektNummer})</span>}
+                                                                                <ExternalLink className="w-2.5 h-2.5" />
+                                                                            </button>
+                                                                        ) : z.kostenstelleId ? (
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    navigate(`/kostenstellen?id=${z.kostenstelleId}`);
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-700 hover:underline"
+                                                                            >
+                                                                                <Building2 className="w-3 h-3" />
+                                                                                {z.kostenstelleName || 'Kostenstelle'}
+                                                                                <ExternalLink className="w-2.5 h-2.5" />
+                                                                            </button>
+                                                                        ) : null}
+                                                                        <span className="text-slate-400">
+                                                                            {z.prozent != null && `${z.prozent}%`}
+                                                                            {z.berechneterBetrag != null && ` · ${formatCurrency(z.berechneterBetrag)}`}
+                                                                        </span>
+                                                                        {z.zugeordnetVonName && (
+                                                                            <span className="text-slate-400">
+                                                                                (von {z.zugeordnetVonName})
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 )}
-                                                <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                                                    {er.dokumentDatum && (
-                                                        <span>Datum: {new Date(er.dokumentDatum).toLocaleDateString('de-DE')}</span>
-                                                    )}
-                                                    {er.prozent < 100 && (
-                                                        <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                                                            {er.prozent}% Anteil
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="text-right shrink-0">
-                                                <p className="text-lg font-bold text-slate-900">
-                                                    {formatCurrency(er.berechneterBetrag)}
-                                                </p>
-                                                {er.gesamtbetrag && er.prozent < 100 && (
-                                                    <p className="text-xs text-slate-400">
-                                                        von {formatCurrency(er.gesamtbetrag)}
-                                                    </p>
-                                                )}
-                                                <div className="flex items-center gap-2 justify-end mt-2">
-                                                    {er.pdfUrl && (
-                                                        <button
-                                                            onClick={() => setPdfPreviewDoc({ url: er.pdfUrl, title: er.dokumentNummer || 'Eingangsrechnung' })}
-                                                            className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
-                                                        >
-                                                            <File className="w-3 h-3" />
-                                                            PDF ansehen
-                                                        </button>
-                                                    )}
-                                                    {er.geschaeftsdokumentId && (
-                                                        <button
-                                                            onClick={() => handleZuordnungAufheben(er.geschaeftsdokumentId)}
-                                                            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-600"
-                                                            title="Zuordnung aufheben"
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                            Aufheben
-                                                        </button>
-                                                    )}
-                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center py-8 text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">

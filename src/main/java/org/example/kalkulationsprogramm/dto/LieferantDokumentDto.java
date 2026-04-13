@@ -43,8 +43,12 @@ public class LieferantDokumentDto {
         private Long projektId;
         private String projektName;
         private String auftragsnummer;
+        private Long kostenstelleId;
+        private String kostenstelleName;
         private Integer prozent;
         private BigDecimal berechneterBetrag;
+        private String zugeordnetVonName;
+        private java.time.LocalDateTime zugeordnetAm;
     }
 
     @Data

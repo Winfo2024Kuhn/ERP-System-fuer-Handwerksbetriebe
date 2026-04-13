@@ -75,6 +75,14 @@ public class LieferantDokumentProjektAnteil {
     @Column(nullable = true)
     private java.time.LocalDateTime zugeordnetAm;
 
+    /**
+     * Welcher Frontend-User hat diese Zuordnung vorgenommen?
+     * Nullable für bestehende Datensätze.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "zugeordnet_von_user_id")
+    private FrontendUserProfile zugeordnetVon;
+
     @PrePersist
     protected void onCreate() {
         if (zugeordnetAm == null) {

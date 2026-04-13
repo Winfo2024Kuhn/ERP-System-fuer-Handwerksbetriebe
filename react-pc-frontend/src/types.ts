@@ -114,8 +114,12 @@ export interface LieferantProjektAnteil {
   projektId: number;
   projektName: string;
   auftragsnummer?: string;
+  kostenstelleId?: number;
+  kostenstelleName?: string;
   prozent: number;
   berechneterBetrag?: number;
+  zugeordnetVonName?: string;
+  zugeordnetAm?: string;
 }
 
 export interface LieferantDokumentRef {

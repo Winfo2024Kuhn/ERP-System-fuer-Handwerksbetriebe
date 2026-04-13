@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
@@ -652,6 +652,51 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect }: Dokume
                 <div className="mt-3 flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
                     <AlertCircle className="w-3 h-3" />
                     Kein Projekt zugeordnet
+                </div>
+            )}
+
+            {/* Zuordnungsdetails: Wer hat zugeordnet + Aufteilung */}
+            {hasProject && (
+                <div className="mt-3 pt-2 border-t border-slate-200/60 space-y-1.5">
+                    {dokument.projektAnteile.map((anteil, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1 text-slate-600 min-w-0">
+                                {anteil.projektId ? (
+                                    <span className="flex items-center gap-1 truncate">
+                                        <Briefcase className="w-3 h-3 text-rose-500 shrink-0" />
+                                        <span className="truncate font-medium">{anteil.projektName}</span>
+                                        {anteil.auftragsnummer && <span className="text-slate-400">({anteil.auftragsnummer})</span>}
+                                    </span>
+                                ) : anteil.kostenstelleId ? (
+                                    <span className="flex items-center gap-1 truncate">
+                                        <Building2 className="w-3 h-3 text-slate-500 shrink-0" />
+                                        <span className="truncate font-medium">{anteil.kostenstelleName}</span>
+                                    </span>
+                                ) : null}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 text-slate-500">
+                                {anteil.prozent != null && <span>{anteil.prozent}%</span>}
+                                {anteil.berechneterBetrag != null && <span className="font-medium">{formatCurrency(anteil.berechneterBetrag)}</span>}
+                            </div>
+                        </div>
+                    ))}
+                    {/* Zugeordnet von (erster Anteil mit User-Info) */}
+                    {dokument.projektAnteile.some(a => a.zugeordnetVonName) && (
+                        <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
+                            <User className="w-3 h-3" />
+                            <span>
+                                Zugeordnet von{' '}
+                                <span className="font-medium text-slate-600">
+                                    {dokument.projektAnteile.find(a => a.zugeordnetVonName)?.zugeordnetVonName}
+                                </span>
+                            </span>
+                            {dokument.projektAnteile.find(a => a.zugeordnetAm)?.zugeordnetAm && (
+                                <span className="text-slate-400">
+                                    am {new Date(dokument.projektAnteile.find(a => a.zugeordnetAm)!.zugeordnetAm!).toLocaleDateString('de-DE')}
+                                </span>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -85,7 +85,8 @@ class LieferantDokumentServiceTest {
 
         LieferantDokumentDto.ProjektAnteilRef ref = dto.getProjektAnteile().get(0);
         assertThat(ref.getProjektId()).isNull();
-        assertThat(ref.getProjektName()).contains("Werkstatt");
+        assertThat(ref.getKostenstelleId()).isEqualTo(4L);
+        assertThat(ref.getKostenstelleName()).isEqualTo("Werkstatt");
         assertThat(ref.getProzent()).isEqualTo(100);
     }
 
@@ -168,5 +169,178 @@ class LieferantDokumentServiceTest {
         // Assert
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getProjektAnteile()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("toDto mappt zugeordnetVon-User korrekt auf zugeordnetVonName und zugeordnetAm")
+    void getDokumenteByLieferant_mitZugeordnetVon_korrektGemappt() {
+        // Arrange
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(400L);
+        lieferant.setLieferantenname("Zuordnung Test GmbH");
+
+        Projekt projekt = new Projekt();
+        projekt.setId(10L);
+        projekt.setBauvorhaben("Testprojekt Zuordnung");
+        projekt.setAuftragsnummer("A-2025-099");
+
+        FrontendUserProfile user = new FrontendUserProfile();
+        user.setId(7L);
+        user.setDisplayName("Max Mustermann");
+
+        LocalDateTime zugeordnetAm = LocalDateTime.of(2025, 3, 15, 10, 30, 0);
+
+        LieferantDokument dokument = new LieferantDokument();
+        dokument.setId(700L);
+        dokument.setLieferant(lieferant);
+        dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
+        dokument.setOriginalDateiname("zuordnung_test.pdf");
+        dokument.setGespeicherterDateiname("stored_zuordnung_test.pdf");
+        dokument.setUploadDatum(LocalDateTime.now());
+
+        LieferantDokumentProjektAnteil anteil = new LieferantDokumentProjektAnteil();
+        anteil.setId(200L);
+        anteil.setDokument(dokument);
+        anteil.setProjekt(projekt);
+        anteil.setProzent(100);
+        anteil.setBerechneterBetrag(new BigDecimal("500.00"));
+        anteil.setZugeordnetVon(user);
+        anteil.setZugeordnetAm(zugeordnetAm);
+
+        dokument.setProjektAnteile(Set.of(anteil));
+        dokument.setVerknuepfteDokumente(new HashSet<>());
+
+        given(dokumentRepository.findByLieferantIdOrderByUploadDatumDesc(400L))
+                .willReturn(List.of(dokument));
+
+        // Act
+        List<LieferantDokumentDto.Response> result = service.getDokumenteByLieferant(400L, null);
+
+        // Assert
+        assertThat(result).hasSize(1);
+        LieferantDokumentDto.ProjektAnteilRef ref = result.get(0).getProjektAnteile().get(0);
+        assertThat(ref.getZugeordnetVonName()).isEqualTo("Max Mustermann");
+        assertThat(ref.getZugeordnetAm()).isEqualTo(zugeordnetAm);
+        assertThat(ref.getProjektId()).isEqualTo(10L);
+        assertThat(ref.getBerechneterBetrag()).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    @DisplayName("toDto mappt zugeordnetVonName als null wenn kein User gesetzt")
+    void getDokumenteByLieferant_ohneZugeordnetVon_nameIstNull() {
+        // Arrange
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(401L);
+        lieferant.setLieferantenname("Ohne User Test GmbH");
+
+        Projekt projekt = new Projekt();
+        projekt.setId(11L);
+        projekt.setBauvorhaben("Testprojekt ohne User");
+        projekt.setAuftragsnummer("A-2025-100");
+
+        LieferantDokument dokument = new LieferantDokument();
+        dokument.setId(701L);
+        dokument.setLieferant(lieferant);
+        dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
+        dokument.setOriginalDateiname("ohne_user.pdf");
+        dokument.setGespeicherterDateiname("stored_ohne_user.pdf");
+        dokument.setUploadDatum(LocalDateTime.now());
+
+        LieferantDokumentProjektAnteil anteil = new LieferantDokumentProjektAnteil();
+        anteil.setId(201L);
+        anteil.setDokument(dokument);
+        anteil.setProjekt(projekt);
+        anteil.setProzent(100);
+        anteil.setZugeordnetVon(null); // kein User
+
+        dokument.setProjektAnteile(Set.of(anteil));
+        dokument.setVerknuepfteDokumente(new HashSet<>());
+
+        given(dokumentRepository.findByLieferantIdOrderByUploadDatumDesc(401L))
+                .willReturn(List.of(dokument));
+
+        // Act
+        List<LieferantDokumentDto.Response> result = service.getDokumenteByLieferant(401L, null);
+
+        // Assert
+        assertThat(result).hasSize(1);
+        LieferantDokumentDto.ProjektAnteilRef ref = result.get(0).getProjektAnteile().get(0);
+        assertThat(ref.getZugeordnetVonName()).isNull();
+        assertThat(ref.getProjektId()).isEqualTo(11L);
+    }
+
+    @Test
+    @DisplayName("toDto mappt Projekt UND Kostenstelle gleichzeitig korrekt")
+    void getDokumenteByLieferant_mitProjektUndKostenstelle_beideGemappt() {
+        // Arrange
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(402L);
+        lieferant.setLieferantenname("Kombi Test GmbH");
+
+        Projekt projekt = new Projekt();
+        projekt.setId(20L);
+        projekt.setBauvorhaben("Kombiprojekt");
+        projekt.setAuftragsnummer("A-2025-200");
+
+        Kostenstelle kostenstelle = new Kostenstelle();
+        kostenstelle.setId(8L);
+        kostenstelle.setBezeichnung("Verwaltung");
+
+        LieferantDokument dokument = new LieferantDokument();
+        dokument.setId(702L);
+        dokument.setLieferant(lieferant);
+        dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
+        dokument.setOriginalDateiname("kombi.pdf");
+        dokument.setGespeicherterDateiname("stored_kombi.pdf");
+        dokument.setUploadDatum(LocalDateTime.now());
+
+        LieferantDokumentProjektAnteil anteilProjekt = new LieferantDokumentProjektAnteil();
+        anteilProjekt.setId(301L);
+        anteilProjekt.setDokument(dokument);
+        anteilProjekt.setProjekt(projekt);
+        anteilProjekt.setKostenstelle(null);
+        anteilProjekt.setProzent(60);
+        anteilProjekt.setBerechneterBetrag(new BigDecimal("300.00"));
+
+        LieferantDokumentProjektAnteil anteilKostenstelle = new LieferantDokumentProjektAnteil();
+        anteilKostenstelle.setId(302L);
+        anteilKostenstelle.setDokument(dokument);
+        anteilKostenstelle.setProjekt(null);
+        anteilKostenstelle.setKostenstelle(kostenstelle);
+        anteilKostenstelle.setProzent(40);
+        anteilKostenstelle.setBerechneterBetrag(new BigDecimal("200.00"));
+
+        dokument.setProjektAnteile(Set.of(anteilProjekt, anteilKostenstelle));
+        dokument.setVerknuepfteDokumente(new HashSet<>());
+
+        given(dokumentRepository.findByLieferantIdOrderByUploadDatumDesc(402L))
+                .willReturn(List.of(dokument));
+
+        // Act
+        List<LieferantDokumentDto.Response> result = service.getDokumenteByLieferant(402L, null);
+
+        // Assert
+        assertThat(result).hasSize(1);
+        List<LieferantDokumentDto.ProjektAnteilRef> anteile = result.get(0).getProjektAnteile();
+        assertThat(anteile).hasSize(2);
+
+        // Projekt-Anteil finden
+        LieferantDokumentDto.ProjektAnteilRef projRef = anteile.stream()
+                .filter(a -> a.getProjektId() != null)
+                .findFirst().orElseThrow();
+        assertThat(projRef.getProjektId()).isEqualTo(20L);
+        assertThat(projRef.getProjektName()).isEqualTo("Kombiprojekt");
+        assertThat(projRef.getAuftragsnummer()).isEqualTo("A-2025-200");
+        assertThat(projRef.getKostenstelleId()).isNull();
+        assertThat(projRef.getProzent()).isEqualTo(60);
+
+        // Kostenstelle-Anteil finden
+        LieferantDokumentDto.ProjektAnteilRef kstRef = anteile.stream()
+                .filter(a -> a.getKostenstelleId() != null)
+                .findFirst().orElseThrow();
+        assertThat(kstRef.getKostenstelleId()).isEqualTo(8L);
+        assertThat(kstRef.getKostenstelleName()).isEqualTo("Verwaltung");
+        assertThat(kstRef.getProjektId()).isNull();
+        assertThat(kstRef.getProzent()).isEqualTo(40);
     }
 }

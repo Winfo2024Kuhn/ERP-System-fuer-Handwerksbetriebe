@@ -380,6 +380,16 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     geschaeftsdokumentId: rechnung.id,
+                    frontendUserProfileId: (() => {
+                        try {
+                            const stored = localStorage.getItem('frontendUserSelection');
+                            if (stored) {
+                                const parsed = JSON.parse(stored);
+                                return parsed.id || null;
+                            }
+                        } catch { /* ignore */ }
+                        return null;
+                    })(),
                     projektAnteile: anteileZumSpeichern
                 })
             });

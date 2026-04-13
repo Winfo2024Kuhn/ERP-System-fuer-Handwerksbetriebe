@@ -384,13 +384,19 @@ public class LieferantDokumentService {
                                                                 LieferantDokumentDto.ProjektAnteilRef.builder()
                                                                         .id(pa.getId())
                                                                         .prozent(pa.getProzent())
-                                                                        .berechneterBetrag(pa.getBerechneterBetrag());
+                                                                        .berechneterBetrag(pa.getBerechneterBetrag())
+                                                                        .zugeordnetAm(pa.getZugeordnetAm());
+                                                        if (pa.getZugeordnetVon() != null) {
+                                                                b.zugeordnetVonName(pa.getZugeordnetVon().getDisplayName());
+                                                        }
                                                         if (pa.getProjekt() != null) {
                                                                 b.projektId(pa.getProjekt().getId())
                                                                  .projektName(pa.getProjekt().getBauvorhaben())
                                                                  .auftragsnummer(pa.getProjekt().getAuftragsnummer());
-                                                        } else {
-                                                                b.projektName("KSt: " + pa.getKostenstelle().getBezeichnung());
+                                                        }
+                                                        if (pa.getKostenstelle() != null) {
+                                                                b.kostenstelleId(pa.getKostenstelle().getId())
+                                                                 .kostenstelleName(pa.getKostenstelle().getBezeichnung());
                                                         }
                                                         return b.build();
                                                 })
