@@ -57,6 +57,7 @@ import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks }
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { ZuordnungModal } from '../components/ZuordnungModal';
 
 interface Supplier {
     id: number;
@@ -134,6 +135,8 @@ const TYP_COLORS: Record<string, string> = {
     'GUTSCHRIFT': 'bg-green-50 text-green-700 border-green-200',
     'STORNO': 'bg-red-50 text-red-700 border-red-200',
 };
+
+
 
 
 
@@ -252,6 +255,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // PDF Preview Modal State
     const [pdfPreviewDoc, setPdfPreviewDoc] = useState<{ url: string; title: string } | null>(null);
+    const [zuordnungBearbeitenEr, setZuordnungBearbeitenEr] = useState<Eingangsrechnung | null>(null);
 
     // Eingangsrechnungen State
     interface EingangsrechnungAnteil {
@@ -262,6 +266,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         kostenstelleName?: string;
         prozent?: number;
         berechneterBetrag?: number;
+        beschreibung?: string;
         zugeordnetVonName?: string;
         zugeordnetAm?: string;
     }
@@ -543,28 +548,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             toast.error('Fehler beim Löschen');
         }
     };
-
-    // Zuordnung aufheben
-    const handleZuordnungAufheben = async (geschaeftsdokumentId: number) => {
-        if (!await confirmDialog({ title: 'Zuordnung aufheben', message: 'Möchten Sie diese Zuordnung wirklich aufheben? Die Rechnung wird wieder unter "Abgeschlossene Bestellungen" angezeigt.', variant: 'warning', confirmLabel: 'Aufheben' })) {
-            return;
-        }
-        try {
-            const res = await fetch(`/api/bestellungen-uebersicht/zuordnung/${geschaeftsdokumentId}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
-                await loadEingangsrechnungen();
-                await onRefresh();
-            } else {
-                toast.error('Fehler beim Aufheben der Zuordnung');
-            }
-        } catch (error) {
-            console.error(error);
-            toast.error('Fehler beim Aufheben der Zuordnung');
-        }
-    };
-
 
     useEffect(() => {
         if (!showMaterialModal && !showSupplierPicker) return;
@@ -1852,7 +1835,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         {eingangsrechnungen.length > 0 ? (
                             <div className="space-y-4">
                                 {eingangsrechnungen.map((er) => {
-                                    const hasKette = er.dokumentenKette && er.dokumentenKette.length > 1;
+                                    const ketteItems: DokumentKetteRef[] = er.dokumentenKette && er.dokumentenKette.length > 0
+                                        ? er.dokumentenKette
+                                        : er.pdfUrl
+                                            ? [{ id: er.dokumentId ?? er.id, typ: 'RECHNUNG', dokumentNummer: er.dokumentNummer ?? null, dokumentDatum: er.dokumentDatum ?? null, betragBrutto: er.gesamtbetrag ?? null, pdfUrl: er.pdfUrl }]
+                                            : [];
+                                    const hasKette = ketteItems.length > 0;
                                     const alleZuordnungen = er.alleZuordnungen || [];
                                     const andereZuordnungen = alleZuordnungen.filter(z => z.projektId !== projekt.id);
                                     
@@ -1863,7 +1851,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                 <div className="px-4 pt-3 pb-2 bg-slate-50 border-b border-slate-100">
                                                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Dokumentenkette</p>
                                                     <div className="flex items-center gap-1 flex-wrap">
-                                                        {er.dokumentenKette!.map((kd, idx) => {
+                                                        {ketteItems.map((kd, idx) => {
                                                             const typConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
                                                                 ANGEBOT: { label: 'Angebot', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
                                                                 AUFTRAGSBESTAETIGUNG: { label: 'AB', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
@@ -1920,9 +1908,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             {er.dokumentDatum && (
                                                                 <span>Datum: {new Date(er.dokumentDatum).toLocaleDateString('de-DE')}</span>
                                                             )}
-                                                            {er.prozent < 100 && (
+                                                            {er.prozent < 100 ? (
                                                                 <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
                                                                     {er.prozent}% Anteil
+                                                                </span>
+                                                            ) : (
+                                                                <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                                                                    100% zugewiesen
                                                                 </span>
                                                             )}
                                                         </div>
@@ -1937,23 +1929,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             </p>
                                                         )}
                                                         <div className="flex items-center gap-2 justify-end mt-2">
-                                                            {er.pdfUrl && (
-                                                                <button
-                                                                    onClick={() => setPdfPreviewDoc({ url: er.pdfUrl, title: er.dokumentNummer || 'Eingangsrechnung' })}
-                                                                    className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
-                                                                >
-                                                                    <File className="w-3 h-3" />
-                                                                    PDF ansehen
-                                                                </button>
-                                                            )}
                                                             {er.geschaeftsdokumentId && (
                                                                 <button
-                                                                    onClick={() => handleZuordnungAufheben(er.geschaeftsdokumentId)}
-                                                                    className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-600"
-                                                                    title="Zuordnung aufheben"
+                                                                    onClick={() => setZuordnungBearbeitenEr(er)}
+                                                                    className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
+                                                                    title="Zuordnung bearbeiten"
                                                                 >
-                                                                    <X className="w-3 h-3" />
-                                                                    Aufheben
+                                                                    <Edit2 className="w-3 h-3" />
+                                                                    Bearbeiten
                                                                 </button>
                                                             )}
                                                         </div>
@@ -1985,7 +1968,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                         {z.projektId ? (
                                                                             <button
                                                                                 onClick={() => {
-                                                                                    navigate(`/projekte?id=${z.projektId}`);
+                                                                                    navigate(`/projekte?projektId=${z.projektId}`);
                                                                                 }}
                                                                                 className="inline-flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:underline"
                                                                             >
@@ -1995,21 +1978,22 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                 <ExternalLink className="w-2.5 h-2.5" />
                                                                             </button>
                                                                         ) : z.kostenstelleId ? (
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    navigate(`/kostenstellen?id=${z.kostenstelleId}`);
-                                                                                }}
-                                                                                className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-700 hover:underline"
+                                                                            <span
+                                                                                className="inline-flex items-center gap-1 text-slate-600"
                                                                             >
                                                                                 <Building2 className="w-3 h-3" />
                                                                                 {z.kostenstelleName || 'Kostenstelle'}
-                                                                                <ExternalLink className="w-2.5 h-2.5" />
-                                                                            </button>
+                                                                            </span>
                                                                         ) : null}
                                                                         <span className="text-slate-400">
                                                                             {z.prozent != null && `${z.prozent}%`}
                                                                             {z.berechneterBetrag != null && ` · ${formatCurrency(z.berechneterBetrag)}`}
                                                                         </span>
+                                                                        {z.beschreibung && (
+                                                                            <span className="text-slate-500 italic truncate max-w-[200px]" title={z.beschreibung}>
+                                                                                „{z.beschreibung}"
+                                                                            </span>
+                                                                        )}
                                                                         {z.zugeordnetVonName && (
                                                                             <span className="text-slate-400">
                                                                                 (von {z.zugeordnetVonName})
@@ -2701,6 +2685,22 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 />
             )}
 
+            {/* Zuordnung Bearbeiten Modal */}
+            {zuordnungBearbeitenEr && (
+                <ZuordnungModal
+                    geschaeftsdokumentId={zuordnungBearbeitenEr.geschaeftsdokumentId}
+                    dokumentNummer={zuordnungBearbeitenEr.dokumentNummer}
+                    lieferantName={zuordnungBearbeitenEr.lieferantName}
+                    pdfUrl={zuordnungBearbeitenEr.pdfUrl}
+                    onClose={() => setZuordnungBearbeitenEr(null)}
+                    onSuccess={async () => {
+                        setZuordnungBearbeitenEr(null);
+                        await loadEingangsrechnungen();
+                        await onRefresh();
+                    }}
+                />
+            )}
+
             {/* Material Modal */}
             <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
                 <DialogContent>
@@ -3192,16 +3192,17 @@ export default function ProjektEditor() {
 
     // Deep-link: auto-open project from URL param ?projektId=123&tab=notizen
     const [deepLinkTab, setDeepLinkTab] = useState<ProjektDetailViewProps['initialTab']>(undefined);
-    const deepLinkProcessed = useRef(false);
+    const lastProcessedProjektId = useRef<string | null>(null);
     useEffect(() => {
-        if (deepLinkProcessed.current) return;
         const projektIdParam = searchParams.get('projektId');
         const tabParam = searchParams.get('tab') as ProjektDetailViewProps['initialTab'];
         if (!projektIdParam && !tabParam) return;
+        // Skip if we already processed this exact projektId
+        if (projektIdParam && lastProcessedProjektId.current === projektIdParam) return;
         const projektId = projektIdParam ? Number(projektIdParam) : null;
         if (projektIdParam && (isNaN(projektId!) || !projektId)) return;
         if (tabParam) setDeepLinkTab(tabParam);
-        deepLinkProcessed.current = true;
+        if (projektIdParam) lastProcessedProjektId.current = projektIdParam;
         if (projektId) {
             (async () => {
                 try {

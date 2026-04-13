@@ -16,9 +16,32 @@ public interface LieferantDokumentProjektAnteilRepository extends JpaRepository<
     List<LieferantDokumentProjektAnteil> findByDokumentId(Long dokumentId);
 
     /**
+     * Findet alle Projekt-Anteile für ein bestimmtes Dokument mit eager-loaded Projekt/Kostenstelle/User.
+     */
+    @Query("SELECT pa FROM LieferantDokumentProjektAnteil pa " +
+            "LEFT JOIN FETCH pa.projekt " +
+            "LEFT JOIN FETCH pa.kostenstelle " +
+            "LEFT JOIN FETCH pa.zugeordnetVon " +
+            "WHERE pa.dokument.id = :dokumentId")
+    List<LieferantDokumentProjektAnteil> findByDokumentIdEager(@Param("dokumentId") Long dokumentId);
+
+    /**
      * Findet alle Dokument-Anteile für ein bestimmtes Projekt.
      */
     List<LieferantDokumentProjektAnteil> findByProjektId(Long projektId);
+
+    /**
+     * Findet alle Dokument-Anteile für ein Projekt mit eager-loaded Dokument + Geschäftsdaten + Lieferant.
+     */
+    @Query("SELECT pa FROM LieferantDokumentProjektAnteil pa " +
+            "LEFT JOIN FETCH pa.dokument d " +
+            "LEFT JOIN FETCH d.geschaeftsdaten " +
+            "LEFT JOIN FETCH d.lieferant " +
+            "LEFT JOIN FETCH d.attachment a " +
+            "LEFT JOIN FETCH a.email " +
+            "LEFT JOIN FETCH pa.zugeordnetVon " +
+            "WHERE pa.projekt.id = :projektId")
+    List<LieferantDokumentProjektAnteil> findByProjektIdEager(@Param("projektId") Long projektId);
 
     /**
      * Berechnet die Summe aller zugeordneten Beträge für ein Projekt.

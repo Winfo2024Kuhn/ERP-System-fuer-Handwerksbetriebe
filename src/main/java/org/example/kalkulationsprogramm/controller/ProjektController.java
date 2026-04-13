@@ -60,6 +60,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -534,10 +535,11 @@ public class ProjektController {
      * Diese werden für die Nachkalkulation unter "Materialkosten" angezeigt.
      */
     @GetMapping("/{projektID}/eingangsrechnungen")
+    @Transactional(readOnly = true)
     public ResponseEntity<List<EingangsrechnungDto>> listeEingangsrechnungen(@PathVariable Long projektID) {
-        // 1. Hole Anteile (Legacy/Standard)
+        // 1. Hole Anteile mit eager-loaded Dokument + Geschäftsdaten + Lieferant
         List<LieferantDokumentProjektAnteil> anteile = lieferantDokumentProjektAnteilRepository
-                .findByProjektId(projektID);
+                .findByProjektIdEager(projektID);
         
         Map<Long, EingangsrechnungDto> dtoMap = new HashMap<>();
 
@@ -591,7 +593,7 @@ public class ProjektController {
 
                 // Alle Zuordnungen dieses Dokuments (alle Projekte + Kostenstellen)
                 List<LieferantDokumentProjektAnteil> alleDokAnteile = lieferantDokumentProjektAnteilRepository
-                        .findByDokumentId(dok.getId());
+                        .findByDokumentIdEager(dok.getId());
                 dto.alleZuordnungen = alleDokAnteile.stream().map(a -> {
                     AnteilDto ad = new AnteilDto();
                     if (a.getProjekt() != null) {
@@ -605,6 +607,7 @@ public class ProjektController {
                     }
                     ad.prozent = a.getProzent();
                     ad.berechneterBetrag = a.getBerechneterBetrag();
+                    ad.beschreibung = a.getBeschreibung();
                     ad.zugeordnetAm = a.getZugeordnetAm();
                     if (a.getZugeordnetVon() != null) {
                         ad.zugeordnetVonName = a.getZugeordnetVon().getDisplayName();
@@ -703,6 +706,7 @@ public class ProjektController {
         public String kostenstelleName;
         public Integer prozent;
         public BigDecimal berechneterBetrag;
+        public String beschreibung;
         public String zugeordnetVonName;
         public LocalDateTime zugeordnetAm;
     }
