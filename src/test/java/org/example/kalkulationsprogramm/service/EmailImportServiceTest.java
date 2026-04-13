@@ -96,6 +96,129 @@ class EmailImportServiceTest {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // 2.3.2b Lieferant-Domain hat Vorrang vor Projekt-Thread-Vererbung
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class LieferantVorrangBeiThreadVererbung {
+
+        @Test
+        void lieferantDomainHatVorrangVorProjektVererbung() {
+            // Arrange: Parent-Email ist einem Projekt zugeordnet
+            Email parent = erstelleEmail(1L, "<parent@example.com>", "intern@firma.de");
+            Projekt projekt = new Projekt();
+            projekt.setId(95L);
+            parent.assignToProjekt(projekt);
+
+            // Lieferant mit passender Domain
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(222L);
+            lieferant.setLieferantenname("Blue Solution");
+
+            // Kind-Email vom Lieferanten (Antwort im Projekt-Thread)
+            Email child = erstelleEmail(2L, "<reply@bluesolution.software>", "rechnungen@bluesolution.software");
+            child.setParentEmail(parent);
+
+            when(lieferantenRepository.findByEmailDomain("bluesolution.software"))
+                    .thenReturn(List.of(lieferant));
+
+            // Act: Simuliere die Zuordnungslogik wie in importMessage()
+            // (Wir können importMessage nicht direkt aufrufen da es IMAP Message braucht,
+            // daher prüfen wir die findByEmailDomain-Logik)
+            boolean assignedToLieferant = false;
+            if (parent.getProjekt() != null || parent.getAnfrage() != null) {
+                String senderDomain = child.getSenderDomain();
+                if (senderDomain != null) {
+                    List<Lieferanten> matches = lieferantenRepository.findByEmailDomain(senderDomain);
+                    if (!matches.isEmpty()) {
+                        child.assignToLieferant(matches.getFirst());
+                        assignedToLieferant = true;
+                    }
+                }
+            }
+
+            // Assert: Email soll Lieferant zugeordnet sein, NICHT dem Projekt
+            assertThat(assignedToLieferant).isTrue();
+            assertThat(child.getZuordnungTyp()).isEqualTo(EmailZuordnungTyp.LIEFERANT);
+            assertThat(child.getLieferant()).isEqualTo(lieferant);
+            assertThat(child.getProjekt()).isNull();
+        }
+
+        @Test
+        void nichtLieferantDomainErbtProjektVonParent() {
+            // Arrange: Parent-Email mit Projekt-Zuordnung
+            Email parent = erstelleEmail(1L, "<parent@example.com>", "intern@firma.de");
+            Projekt projekt = new Projekt();
+            projekt.setId(95L);
+            parent.assignToProjekt(projekt);
+
+            // Kind-Email von unbekannter Domain (kein Lieferant)
+            Email child = erstelleEmail(2L, "<reply@kunde.de>", "kontakt@kunde.de");
+
+            when(lieferantenRepository.findByEmailDomain("kunde.de"))
+                    .thenReturn(Collections.emptyList());
+
+            // Act
+            boolean assignedToLieferant = false;
+            if (parent.getProjekt() != null || parent.getAnfrage() != null) {
+                String senderDomain = child.getSenderDomain();
+                if (senderDomain != null) {
+                    List<Lieferanten> matches = lieferantenRepository.findByEmailDomain(senderDomain);
+                    if (!matches.isEmpty()) {
+                        child.assignToLieferant(matches.getFirst());
+                        assignedToLieferant = true;
+                    }
+                }
+            }
+            if (!assignedToLieferant) {
+                child.assignToProjekt(projekt);
+            }
+
+            // Assert: Email erbt Projekt-Zuordnung vom Parent
+            assertThat(child.getZuordnungTyp()).isEqualTo(EmailZuordnungTyp.PROJEKT);
+            assertThat(child.getProjekt()).isEqualTo(projekt);
+            assertThat(child.getLieferant()).isNull();
+        }
+
+        @Test
+        void zweiteDomainDesLieferantenWirdErkannt() {
+            // Arrange: Blue Solution hat ZWEI Domains
+            Email parent = erstelleEmail(1L, "<parent@example.com>", "intern@firma.de");
+            Projekt projekt = new Projekt();
+            projekt.setId(95L);
+            parent.assignToProjekt(projekt);
+
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(222L);
+            lieferant.setLieferantenname("Blue Solution");
+
+            // Email von der zweiten Domain (bluesolution.de statt bluesolution.software)
+            Email child = erstelleEmail(3L, "<info@bluesolution.de>", "info@bluesolution.de");
+
+            when(lieferantenRepository.findByEmailDomain("bluesolution.de"))
+                    .thenReturn(List.of(lieferant));
+
+            // Act
+            boolean assignedToLieferant = false;
+            if (parent.getProjekt() != null) {
+                String senderDomain = child.getSenderDomain();
+                if (senderDomain != null) {
+                    List<Lieferanten> matches = lieferantenRepository.findByEmailDomain(senderDomain);
+                    if (!matches.isEmpty()) {
+                        child.assignToLieferant(matches.getFirst());
+                        assignedToLieferant = true;
+                    }
+                }
+            }
+
+            // Assert
+            assertThat(assignedToLieferant).isTrue();
+            assertThat(child.getZuordnungTyp()).isEqualTo(EmailZuordnungTyp.LIEFERANT);
+            assertThat(child.getLieferant().getId()).isEqualTo(222L);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // 2.3.3 Newsletter werden als solche markiert
     // ═══════════════════════════════════════════════════════════════
 

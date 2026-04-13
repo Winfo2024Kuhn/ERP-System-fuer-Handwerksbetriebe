@@ -254,14 +254,37 @@ public class EmailImportService {
         Email parentEmail = findParentEmail(msg);
         if (parentEmail != null) {
             email.setParentEmail(parentEmail);
-            // Zuordnung vom Parent übernehmen (stärkstes Signal - gleicher
-            // Konversations-Thread!)
-            if (parentEmail.getProjekt() != null) {
-                email.assignToProjekt(parentEmail.getProjekt());
-            } else if (parentEmail.getAnfrage() != null) {
-                email.assignToAnfrage(parentEmail.getAnfrage());
-            } else if (parentEmail.getLieferant() != null) {
-                email.assignToLieferant(parentEmail.getLieferant());
+            // Zuordnung vom Parent übernehmen, ABER: Lieferant-Domain hat Vorrang
+            // vor Projekt/Anfrage-Vererbung. Grund: Lieferanten senden Rechnungen
+            // oft als Antwort auf Projekt-Threads, sollen aber dem Lieferanten
+            // zugeordnet werden (nicht dem Projekt).
+            boolean assignedToLieferantByDomain = false;
+            if (parentEmail.getProjekt() != null || parentEmail.getAnfrage() != null) {
+                // Prüfe ob Absender ein bekannter Lieferant ist
+                String senderDomain = email.getSenderDomain();
+                if (senderDomain == null && email.getFromAddress() != null && email.getFromAddress().contains("@")) {
+                    senderDomain = email.getFromAddress()
+                            .substring(email.getFromAddress().lastIndexOf('@') + 1).toLowerCase();
+                }
+                if (senderDomain != null) {
+                    List<org.example.kalkulationsprogramm.domain.Lieferanten> lieferantMatches =
+                            lieferantenRepository.findByEmailDomain(senderDomain);
+                    if (!lieferantMatches.isEmpty()) {
+                        email.assignToLieferant(lieferantMatches.getFirst());
+                        assignedToLieferantByDomain = true;
+                        log.info("[EmailImport] Lieferant-Domain {} hat Vorrang vor Parent-Zuordnung (Projekt/Anfrage) für Email von {}",
+                                senderDomain, email.getFromAddress());
+                    }
+                }
+            }
+            if (!assignedToLieferantByDomain) {
+                if (parentEmail.getProjekt() != null) {
+                    email.assignToProjekt(parentEmail.getProjekt());
+                } else if (parentEmail.getAnfrage() != null) {
+                    email.assignToAnfrage(parentEmail.getAnfrage());
+                } else if (parentEmail.getLieferant() != null) {
+                    email.assignToLieferant(parentEmail.getLieferant());
+                }
             }
         }
 
