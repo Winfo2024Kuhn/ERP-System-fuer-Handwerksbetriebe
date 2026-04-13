@@ -1,52 +1,64 @@
 {
-  "total_views": 176,
-  "total_unique_visitors": 13,
-  "total_clones": 2085,
-  "total_unique_cloners": 301,
-  "last_view_timestamp": "2026-04-11T00:00:00Z",
-  "last_clone_timestamp": "2026-04-11T00:00:00Z",
+  "total_views": 283,
+  "total_unique_visitors": 14,
+  "total_clones": 2293,
+  "total_unique_cloners": 365,
+  "last_view_timestamp": "2026-04-12T00:00:00Z",
+  "last_clone_timestamp": "2026-04-12T00:00:00Z",
   "referring_sites": [
     {
       "referrer": "github.com",
-      "count": 96,
-      "uniques": 3
+      "count": 119,
+      "uniques": 2
     },
     {
       "referrer": "linkedin.com",
-      "count": 20,
-      "uniques": 7
+      "count": 18,
+      "uniques": 5
     }
   ],
   "popular_content": [
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe",
       "title": "Overview",
-      "count": 42,
-      "uniques": 7
+      "count": 58,
+      "uniques": 5
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/pulse",
       "title": "/pulse",
-      "count": 15,
+      "count": 19,
       "uniques": 2
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions",
+      "title": "/actions",
+      "count": 17,
+      "uniques": 1
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/graphs/traffic",
       "title": "/graphs/traffic",
-      "count": 12,
+      "count": 17,
       "uniques": 1
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/branches",
       "title": "/branches",
-      "count": 7,
+      "count": 11,
+      "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/agents",
+      "title": "/agents",
+      "count": 9,
       "uniques": 1
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/README.md",
       "title": "/blob/main/README.md",
       "count": 6,
-      "uniques": 6
+      "uniques": 5
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/issues",
@@ -55,27 +67,15 @@
       "uniques": 1
     },
     {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions",
-      "title": "/actions",
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions/runs/24304157502",
+      "title": "/actions/runs/24304157502",
       "count": 5,
       "uniques": 1
     },
     {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions/runs/23743942820/job/69167603270",
-      "title": "/actions/runs/23743942820/job/69167603270",
-      "count": 3,
-      "uniques": 1
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/community",
-      "title": "/community",
-      "count": 3,
-      "uniques": 1
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/pulls",
-      "title": "/pulls",
-      "count": 3,
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions/workflows/traffic.yml",
+      "title": "/actions/workflows/traffic.yml",
+      "count": 5,
       "uniques": 1
     }
   ],
@@ -83,5 +83,5 @@
   "forks": 0,
   "watchers": 2,
   "open_issues": 0,
-  "updated_at": "2026-04-13T03:07:01Z"
+  "updated_at": "2026-04-13T12:53:33Z"
 }
