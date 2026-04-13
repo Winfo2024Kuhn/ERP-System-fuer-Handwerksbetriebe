@@ -1,14 +1,23 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.SchweisserZertifikat;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.SchweisserZertifikatRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,7 +25,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import lombok.RequiredArgsConstructor;
 
@@ -31,6 +42,11 @@ public class SchweisserZertifikatController {
 
     private final SchweisserZertifikatRepository repository;
     private final MitarbeiterRepository mitarbeiterRepository;
+
+    @Value("${file.upload-dir}")
+    private String uploadDir;
+
+    private static final List<String> ERLAUBTE_ENDUNGEN = List.of(".pdf", ".png", ".jpg", ".jpeg", ".webp");
 
     // --- Response / Request DTOs ---
 
@@ -130,6 +146,69 @@ public class SchweisserZertifikatController {
             return ResponseEntity.notFound().build();
         }
         repository.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value = "/{id}/dokument", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ZertifikatResponse> uploadDokument(
+            @PathVariable Long id,
+            @RequestPart("datei") MultipartFile datei) throws IOException {
+
+        SchweisserZertifikat z = repository.findById(id)
+                .orElse(null);
+        if (z == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String originalFilename = Path.of(
+                StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename())))
+                .getFileName().toString();
+
+        String lower = originalFilename.toLowerCase();
+        boolean erlaubt = ERLAUBTE_ENDUNGEN.stream().anyMatch(lower::endsWith);
+        if (!erlaubt) {
+            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).build();
+        }
+
+        String storedFilename = UUID.randomUUID() + "_" + originalFilename;
+        Path uploadBase = Path.of(uploadDir).toAbsolutePath().normalize();
+        Path targetPath = uploadBase.resolve(storedFilename).normalize();
+        if (!targetPath.startsWith(uploadBase)) {
+            return ResponseEntity.badRequest().build();
+        }
+        Files.createDirectories(uploadBase);
+
+        // Alte Datei löschen
+        if (z.getGespeicherterDateiname() != null) {
+            try {
+                Files.deleteIfExists(uploadBase.resolve(z.getGespeicherterDateiname()).normalize());
+            } catch (IOException ignored) {
+            }
+        }
+
+        datei.transferTo(targetPath);
+
+        z.setOriginalDateiname(originalFilename);
+        z.setGespeicherterDateiname(storedFilename);
+        return ResponseEntity.ok(toResponse(repository.save(z)));
+    }
+
+    @DeleteMapping("/{id}/dokument")
+    public ResponseEntity<Void> deleteDokument(@PathVariable Long id) {
+        SchweisserZertifikat z = repository.findById(id).orElse(null);
+        if (z == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (z.getGespeicherterDateiname() != null) {
+            try {
+                Path uploadBase = Path.of(uploadDir).toAbsolutePath().normalize();
+                Files.deleteIfExists(uploadBase.resolve(z.getGespeicherterDateiname()).normalize());
+            } catch (IOException ignored) {
+            }
+            z.setGespeicherterDateiname(null);
+            z.setOriginalDateiname(null);
+            repository.save(z);
+        }
         return ResponseEntity.noContent().build();
     }
 

@@ -24,13 +24,13 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.Werkstoffzeugnis;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffzeugnisRepository;
-import org.example.kalkulationsprogramm.domain.Werkstoffzeugnis;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,6 +91,9 @@ public class GeminiDokumentAnalyseService {
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
+
+    @Value("${en1090.features.enabled:false}")
+    private boolean en1090FeaturesEnabled;
 
     private static final String SYSTEM_PROMPT_DOKUMENT_ANALYSE = """
             Du bist ein Experte für die Analyse von deutschen Geschäftsdokumenten.
@@ -1136,8 +1139,11 @@ public class GeminiDokumentAnalyseService {
             dokumentRepository.saveAndFlush(freshDokument);
 
             // Werkstoffzeugnis auto-erstellen wenn KI den Typ erkannt hat
-            if (savedGeschaeftsdaten.getDetectedTyp() == LieferantDokumentTyp.WERKSTOFFZEUGNIS) {
-                erstelleWerkstoffzeugnisAusDokument(freshDokument, savedGeschaeftsdaten);
+            // Nur wenn EN 1090 Feature-Flag aktiv (en1090.features.enabled=true)
+            if (en1090FeaturesEnabled && savedGeschaeftsdaten.getDetectedTyp() == LieferantDokumentTyp.WERKSTOFFZEUGNIS) {
+                erstelleOderSplitteWerkstoffzeugnisse(freshDokument, savedGeschaeftsdaten, dateiPfad);
+            } else if (!en1090FeaturesEnabled && savedGeschaeftsdaten.getDetectedTyp() == LieferantDokumentTyp.WERKSTOFFZEUGNIS) {
+                log.debug("Werkstoffzeugnis-Erstellung übersprungen (en1090.features.enabled=false) für Dokument {}", freshDokument.getId());
             }
 
             log.info("Dokument {} erfolgreich analysiert: {} (Quelle: {}, Confidence: {})",
@@ -2013,8 +2019,169 @@ public class GeminiDokumentAnalyseService {
     }
 
     /**
+     * Erstellt Werkstoffzeugnis-Einträge aus einem Dokument.
+     * Bei PDFs mit mehreren Seiten: Gemini fragen ob mehrere Zertifikate enthalten sind.
+     * Wenn ja: PDF splitten, für jedes Zertifikat ein separates LieferantDokument + Werkstoffzeugnis anlegen.
+     * Wenn nein: Einzelne Erstellung via erstelleWerkstoffzeugnisAusDokument (bestehende Logik).
+     */
+    private void erstelleOderSplitteWerkstoffzeugnisse(LieferantDokument dokument,
+            LieferantGeschaeftsdokument geschaeftsdaten, Path dateiPfad) {
+        try {
+            String dateiname = dokument.getEffektiverDateiname();
+
+            // Nur PDFs mit mehr als einer Seite können mehrere Zertifikate enthalten
+            if (dateiname == null || !dateiname.toLowerCase().endsWith(".pdf")
+                    || dateiPfad == null || !Files.exists(dateiPfad)) {
+                erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
+                return;
+            }
+
+            byte[] pdfBytes = Files.readAllBytes(dateiPfad);
+            int totalPages;
+            try (var pdDoc = org.apache.pdfbox.Loader.loadPDF(pdfBytes)) {
+                totalPages = pdDoc.getNumberOfPages();
+            }
+
+            if (totalPages <= 1) {
+                // Einzelseite: kein Split möglich
+                erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
+                return;
+            }
+
+            // Gemini fragen: Wie viele separate Werkstoffzeugnisse enthält dieses PDF?
+            String jsonResponse = rufGeminiApiMitPrompt(pdfBytes, "application/pdf",
+                    buildMultiWerkstoffzeugnisPrompt());
+
+            if (jsonResponse == null) {
+                erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
+                return;
+            }
+
+            var jsonArray = objectMapper.readTree(jsonResponse);
+            if (!jsonArray.isArray() || jsonArray.size() <= 1) {
+                // Nur ein Zertifikat erkannt → bestehende Einzellogik
+                erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
+                return;
+            }
+
+            log.info("Multi-Werkstoffzeugnis-PDF erkannt: {} Zertifikate in Dokument {}",
+                    jsonArray.size(), dokument.getId());
+
+            // Upload-Verzeichnis sicherstellen
+            Path uploadDir = Path.of(uploadPath, "lieferanten",
+                    String.valueOf(dokument.getLieferant().getId()));
+            Files.createDirectories(uploadDir);
+
+            int wzIndex = 0;
+            try (var originalPdf = org.apache.pdfbox.Loader.loadPDF(dateiPfad.toFile())) {
+                for (var wzNode : jsonArray) {
+                    wzIndex++;
+                    String pageRange = wzNode.has("seiten") ? wzNode.get("seiten").asText() : "alle";
+
+                    // PDF-Seiten für dieses Zertifikat extrahieren
+                    int[] pages = parsePageRange(pageRange, totalPages);
+                    byte[] splitBytes = extractPages(originalPdf, pages);
+
+                    // Split-PDF in Upload-Verzeichnis speichern
+                    String splitFilename = java.util.UUID.randomUUID() + "_wz" + wzIndex + ".pdf";
+                    Files.write(uploadDir.resolve(splitFilename), splitBytes);
+
+                    // Neues LieferantDokument für die Split-Seiten anlegen
+                    LieferantDokument splitDok = new LieferantDokument();
+                    splitDok.setLieferant(dokument.getLieferant());
+                    splitDok.setTyp(LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+                    splitDok.setGespeicherterDateiname(splitFilename);
+                    String origName = dokument.getOriginalDateiname() != null
+                            ? dokument.getOriginalDateiname() : dateiname;
+                    splitDok.setOriginalDateiname(origName + " [WZ " + wzIndex + "/" + jsonArray.size() + "]");
+                    splitDok = dokumentRepository.saveAndFlush(splitDok);
+
+                    // Werkstoffzeugnis direkt aus dem JSON-Node befüllen
+                    Werkstoffzeugnis wz = new Werkstoffzeugnis();
+                    wz.setLieferantDokument(splitDok);
+                    wz.setLieferant(dokument.getLieferant());
+
+                    if (wzNode.has("schmelzNummer") && !wzNode.get("schmelzNummer").isNull()) {
+                        wz.setSchmelzNummer(wzNode.get("schmelzNummer").asText().trim());
+                    }
+                    if (wzNode.has("materialGuete") && !wzNode.get("materialGuete").isNull()) {
+                        wz.setMaterialGuete(wzNode.get("materialGuete").asText().trim());
+                    }
+                    if (wzNode.has("normTyp") && !wzNode.get("normTyp").isNull()) {
+                        wz.setNormTyp(wzNode.get("normTyp").asText().trim());
+                    }
+                    if (wzNode.has("pruefDatum") && !wzNode.get("pruefDatum").isNull()) {
+                        wz.setPruefDatum(parseDateFlexibel(wzNode.get("pruefDatum").asText()));
+                    }
+
+                    // Lieferschein-Verknüpfung aus dem JSON
+                    String lieferscheinNr = wzNode.has("lieferscheinNummer")
+                            && !wzNode.get("lieferscheinNummer").isNull()
+                                    ? wzNode.get("lieferscheinNummer").asText().trim() : null;
+                    String bestellNr = wzNode.has("bestellnummer") && !wzNode.get("bestellnummer").isNull()
+                            ? wzNode.get("bestellnummer").asText().trim() : null;
+
+                    LieferantDokument lieferschein = sucheLieferscheinFuerWerkstoffzeugnis(
+                            dokument.getLieferant().getId(), lieferscheinNr, bestellNr);
+                    if (lieferschein != null) {
+                        wz.setLieferscheinDokument(lieferschein);
+                    }
+
+                    werkstoffzeugnisRepository.save(wz);
+                    log.info("Werkstoffzeugnis {}/{} erstellt: Schmelz={}, Güte={}, Seiten={}",
+                            wzIndex, jsonArray.size(), wz.getSchmelzNummer(), wz.getMaterialGuete(), pageRange);
+                }
+            }
+
+            log.info("Multi-Werkstoffzeugnis-Split abgeschlossen: {} Zertifikate aus Dokument {}",
+                    wzIndex, dokument.getId());
+
+        } catch (Exception e) {
+            log.error("Fehler beim Multi-Werkstoffzeugnis-Split für Dokument {}: {}",
+                    dokument.getId(), e.getMessage(), e);
+            // Fallback: Einzelerstellung mit den bereits vorhandenen Geschäftsdaten
+            erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
+        }
+    }
+
+    /**
+     * Prompt für Gemini: Erkennung mehrerer Werkstoffzeugnisse in einem PDF.
+     * Analoge Logik zu buildMultiDocumentPrompt(), aber für EN 10204 Material-Zeugnisse.
+     */
+    private String buildMultiWerkstoffzeugnisPrompt() {
+        return """
+                Analysiere dieses PDF-Dokument. Es könnte MEHRERE SEPARATE Werkstoffzeugnisse (Material Test Reports / EN 10204) enthalten.
+
+                WICHTIG: Prüfe ob jede Seite ein eigenes, separates Werkstoffzeugnis ist (unterschiedliche Schmelznummern, Materialien oder Zertifikatsnummern).
+
+                Antworte NUR mit einem JSON-Array. Für JEDES erkannte Werkstoffzeugnis ein Objekt:
+                [
+                  {
+                    "seiten": "1",
+                    "schmelzNummer": "...",
+                    "materialGuete": "...",
+                    "normTyp": "...",
+                    "pruefDatum": "YYYY-MM-DD",
+                    "lieferscheinNummer": "...",
+                    "bestellnummer": "..."
+                  }
+                ]
+
+                "seiten" enthält die Seitennummern dieses Werkstoffzeugnisses (z.B. "1", "2-3", "4").
+                "schmelzNummer" ist die Schmelze- oder Chargennummer des Stahls/Materials.
+                "materialGuete" ist die Werkstoffbezeichnung (z.B. "S355J2+N", "S235JR", "42CrMo4").
+                "normTyp" ist der Zertifikatstyp nach DIN EN 10204 (z.B. "3.1", "2.2", "EN 10204 3.1").
+                "pruefDatum" ist das Prüf- oder Ausstellungsdatum im Format YYYY-MM-DD.
+                "lieferscheinNummer" ist die referenzierte Lieferscheinnummer (null wenn nicht vorhanden).
+                "bestellnummer" ist die referenzierte Bestellnummer (null wenn nicht vorhanden).
+
+                Setze leer erkannte Felder auf null – nie raten.
+                Wenn NUR EIN Werkstoffzeugnis vorhanden ist, gib trotzdem ein Array mit einem Element zurück.
+                """;
+    }
+
+    /**
      * Sucht den passenden Lieferschein zu einem Werkstoffzeugnis.
-     * Strategie: 1. Direkte Lieferschein-Nr. (z.B. Krönlein: "90406834/01")
      *            2. Bestellnummer-Fallback (z.B. SWT: "LBE 1521374 / 8510")
      */
     private LieferantDokument sucheLieferscheinFuerWerkstoffzeugnis(

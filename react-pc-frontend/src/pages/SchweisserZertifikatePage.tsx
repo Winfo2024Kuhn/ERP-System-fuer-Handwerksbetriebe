@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
-import { Plus, Search, Award, X, Loader2 } from 'lucide-react';
+import { Plus, Search, Award, X, Loader2, Upload, FileText, Paperclip } from 'lucide-react';
 
 interface SchweisserZertifikat {
     id: number;
@@ -53,6 +53,8 @@ export default function SchweisserZertifikatePage() {
         ausstellungsdatum: '',
         ablaufdatum: '',
     });
+    const [draggedFile, setDraggedFile] = useState<File | null>(null);
+    const [dragOver, setDragOver] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -73,6 +75,7 @@ export default function SchweisserZertifikatePage() {
     const openCreate = () => {
         setEditItem(null);
         setForm({ mitarbeiterId: '', zertifikatsnummer: '', norm: 'EN ISO 9606-1', schweissProzes: '', grundwerkstoff: '', pruefstelle: '', ausstellungsdatum: '', ablaufdatum: '' });
+        setDraggedFile(null);
         setShowModal(true);
     };
 
@@ -88,6 +91,7 @@ export default function SchweisserZertifikatePage() {
             ausstellungsdatum: item.ausstellungsdatum,
             ablaufdatum: item.ablaufdatum || '',
         });
+        setDraggedFile(null);
         setShowModal(true);
     };
 
@@ -107,9 +111,24 @@ export default function SchweisserZertifikatePage() {
             };
             const url = editItem ? `/api/schweisser-zertifikate/${editItem.id}` : '/api/schweisser-zertifikate';
             const res = await fetch(url, { method: editItem ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (res.ok) { setShowModal(false); load(); }
+            if (res.ok) {
+                const saved = await res.json();
+                if (draggedFile) {
+                    const fd = new FormData();
+                    fd.append('datei', draggedFile);
+                    await fetch(`/api/schweisser-zertifikate/${saved.id}/dokument`, { method: 'POST', body: fd });
+                }
+                setShowModal(false);
+                load();
+            }
         } catch (e) { console.error(e); }
         finally { setSaving(false); }
+    };
+
+    const handleDeleteDokument = async () => {
+        if (!editItem) return;
+        await fetch(`/api/schweisser-zertifikate/${editItem.id}/dokument`, { method: 'DELETE' });
+        setEditItem(prev => prev ? { ...prev, originalDateiname: undefined, gespeicherterDateiname: undefined } : null);
     };
 
     const handleDelete = async (id: number) => {
@@ -189,6 +208,11 @@ export default function SchweisserZertifikatePage() {
                                     <div className="text-right flex-shrink-0 space-y-1">
                                         <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${st.css}`}>{st.label}</span>
                                         <p className="text-xs text-slate-400">Ausgestellt: {new Date(item.ausstellungsdatum).toLocaleDateString('de-DE')}</p>
+                                        {item.originalDateiname && (
+                                            <p className="text-xs text-slate-400 flex items-center justify-end gap-1">
+                                                <Paperclip className="w-3 h-3" /> Dokument
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             );
@@ -261,6 +285,87 @@ export default function SchweisserZertifikatePage() {
                                     <input type="date" value={form.ablaufdatum} onChange={e => setForm(f => ({ ...f, ablaufdatum: e.target.value }))}
                                         className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
                                 </div>
+                            </div>
+
+                            {/* Dokument anhängen */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    Zertifikat-Dokument <span className="text-slate-400 font-normal">(PDF oder Bild)</span>
+                                </label>
+
+                                {/* Vorhandenes Dokument anzeigen */}
+                                {editItem?.originalDateiname && !draggedFile && (
+                                    <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                                        <FileText className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                                        <a
+                                            href={`/api/dokumente/${encodeURIComponent(editItem.gespeicherterDateiname!)}`}
+                                            target="_blank" rel="noopener noreferrer"
+                                            className="text-sm text-rose-600 hover:underline truncate flex-1"
+                                            onClick={e => e.stopPropagation()}
+                                        >
+                                            {editItem.originalDateiname}
+                                        </a>
+                                        <button
+                                            type="button"
+                                            onClick={handleDeleteDokument}
+                                            title="Dokument entfernen"
+                                            className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 flex-shrink-0 transition-colors"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Drag-and-drop Zone */}
+                                <label
+                                    onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                                    onDragLeave={() => setDragOver(false)}
+                                    onDrop={e => {
+                                        e.preventDefault();
+                                        setDragOver(false);
+                                        const file = e.dataTransfer.files[0];
+                                        if (file) setDraggedFile(file);
+                                    }}
+                                    className={`flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                                        dragOver
+                                            ? 'border-rose-400 bg-rose-50'
+                                            : draggedFile
+                                                ? 'border-green-400 bg-green-50'
+                                                : 'border-slate-300 hover:border-rose-400 hover:bg-rose-50/40'
+                                    }`}
+                                >
+                                    <input
+                                        type="file"
+                                        accept=".pdf,.png,.jpg,.jpeg,.webp"
+                                        className="hidden"
+                                        onChange={e => {
+                                            const file = e.target.files?.[0];
+                                            if (file) setDraggedFile(file);
+                                        }}
+                                    />
+                                    {draggedFile ? (
+                                        <>
+                                            <FileText className="w-6 h-6 text-green-600" />
+                                            <p className="text-sm font-medium text-green-700 text-center break-all">{draggedFile.name}</p>
+                                            <button
+                                                type="button"
+                                                onClick={e => { e.preventDefault(); setDraggedFile(null); }}
+                                                className="text-xs text-slate-400 hover:text-red-600 transition-colors"
+                                            >
+                                                Auswahl aufheben
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Upload className="w-6 h-6 text-slate-400" />
+                                            <p className="text-sm text-slate-500 text-center">
+                                                Datei hierher ziehen oder{' '}
+                                                <span className="text-rose-600 font-medium">auswählen</span>
+                                            </p>
+                                            <p className="text-xs text-slate-400">PDF, PNG, JPG, WEBP</p>
+                                        </>
+                                    )}
+                                </label>
                             </div>
                         </div>
                         <div className="flex justify-between px-6 py-4 border-t border-slate-200 gap-3">
