@@ -534,6 +534,14 @@ public class UnifiedEmailController {
             return ResponseEntity.notFound().build();
         }
 
+        // Emails mit hoher Spam-Wahrscheinlichkeit (>= 85%) als Spam klassifizieren
+        // bevor sie endgültig gelöscht werden (Trainingsdaten für Filter)
+        if (email.getSpamScore() >= 85 && !email.isSpam()) {
+            email.setSpam(true);
+            log.debug("[SpamFilter] Email {} mit spamScore={} vor permanenter Löschung als Spam klassifiziert",
+                    id, email.getSpamScore());
+        }
+
         // Hard delete
         // Optional: Löschen vom Mailserver hier triggern
         try {
@@ -546,6 +554,47 @@ public class UnifiedEmailController {
         emailRepository.delete(email);
         log.info("Email {} permanent gelöscht", id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Markiert eine Email manuell als NICHT-Spam (Nutzerfeedback für Training).
+     * Wird aufgerufen wenn Nutzer eine Email aus Spam/Newsletter in den Posteingang verschiebt.
+     */
+    @PostMapping("/{id}/mark-not-spam")
+    @Transactional
+    public ResponseEntity<Void> markNotSpam(@PathVariable Long id) {
+        Email email = emailRepository.findById(id).orElse(null);
+        if (email == null) {
+            return ResponseEntity.notFound().build();
+        }
+        email.setSpam(false);
+        email.setNewsletter(false);
+        email.setSpamScore(0);
+        // Aus Papierkorb wiederherstellen falls nötig
+        if (email.getDeletedAt() != null) {
+            email.setDeletedAt(null);
+        }
+        emailRepository.save(email);
+        log.info("[SpamFilter] Email {} manuell als NICHT-Spam klassifiziert (in Posteingang verschoben)", id);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Markiert eine Email manuell als Spam (Nutzerfeedback für Training).
+     * Wird aufgerufen wenn Nutzer eine Email manuell in den Spam-Ordner verschiebt.
+     */
+    @PostMapping("/{id}/mark-spam")
+    @Transactional
+    public ResponseEntity<Void> markAsSpam(@PathVariable Long id) {
+        Email email = emailRepository.findById(id).orElse(null);
+        if (email == null) {
+            return ResponseEntity.notFound().build();
+        }
+        email.setSpam(true);
+        email.setSpamScore(100);
+        emailRepository.save(email);
+        log.info("[SpamFilter] Email {} manuell als Spam klassifiziert", id);
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/{id}/mark-read")

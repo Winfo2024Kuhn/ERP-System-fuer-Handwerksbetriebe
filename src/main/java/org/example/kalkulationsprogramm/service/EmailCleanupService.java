@@ -44,6 +44,14 @@ public class EmailCleanupService {
         List<Email> trashEmails = emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc();
         for (Email email : trashEmails) {
             if (email.getDeletedAt().isBefore(retentionLimit)) {
+                // Emails mit hoher Spam-Wahrscheinlichkeit (>= 85%) vor dem Löschen als Spam klassifizieren
+                // damit sie als Trainingsdaten für den Filter dienen
+                if (email.getSpamScore() >= 85 && !email.isSpam()) {
+                    email.setSpam(true);
+                    emailRepository.save(email);
+                    log.debug("[EmailCleanup] Email {} mit spamScore={} vor Löschung als Spam klassifiziert",
+                            email.getId(), email.getSpamScore());
+                }
                 if (deleteEmail(email))
                     deletedCount++;
                 else

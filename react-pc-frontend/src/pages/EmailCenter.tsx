@@ -725,6 +725,42 @@ export default function EmailCenter() {
         setSelectedEmail(null);
     };
 
+    const handleMoveToInbox = async (email?: EmailItem) => {
+        const target = email || selectedEmail;
+        if (!target) return;
+        try {
+            const res = await fetch(`/api/emails/${target.id}/mark-not-spam`, { method: 'POST' });
+            if (res.ok) {
+                setEmails(prev => prev.filter(e => e.id !== target.id));
+                if (selectedEmail?.id === target.id) setSelectedEmail(null);
+                toast.success('E-Mail als nicht Spam markiert und in Posteingang verschoben');
+                loadStats();
+            } else {
+                toast.error('Fehler beim Verschieben in den Posteingang');
+            }
+        } catch {
+            toast.error('Fehler beim Verschieben in den Posteingang');
+        }
+    };
+
+    const handleMoveToSpam = async (email?: EmailItem) => {
+        const target = email || selectedEmail;
+        if (!target) return;
+        try {
+            const res = await fetch(`/api/emails/${target.id}/mark-spam`, { method: 'POST' });
+            if (res.ok) {
+                setEmails(prev => prev.filter(e => e.id !== target.id));
+                if (selectedEmail?.id === target.id) setSelectedEmail(null);
+                toast.info('E-Mail als Spam markiert');
+                loadStats();
+            } else {
+                toast.error('Fehler beim Markieren als Spam');
+            }
+        } catch {
+            toast.error('Fehler beim Markieren als Spam');
+        }
+    };
+
     const handleBlockSender = async () => {
         if (!selectedEmail) return;
         if (!await confirmDialog({ title: "Absender sperren", message: `Möchten Sie den Absender "${selectedEmail.fromAddress}" wirklich sperren?\nAlle E-Mails dieses Absenders werden in Spam verschoben.`, variant: "danger", confirmLabel: "Sperren" })) return;
@@ -959,6 +995,28 @@ export default function EmailCenter() {
                                 >
                                     <ShieldAlert className="w-4 h-4" />
                                 </Button>
+                                {(activeFolder === 'spam' || activeFolder === 'newsletter') && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleMoveToInbox()}
+                                        className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                                        title="In Posteingang verschieben (kein Spam)"
+                                    >
+                                        <Inbox className="w-4 h-4" /> Kein Spam
+                                    </Button>
+                                )}
+                                {activeFolder !== 'spam' && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleMoveToSpam()}
+                                        className="text-slate-500 hover:text-orange-600 hover:bg-orange-50"
+                                        title="Als Spam markieren"
+                                    >
+                                        <AlertCircle className="w-4 h-4" />
+                                    </Button>
+                                )}
                                 <Button
                                     variant="outline"
                                     size="sm"
