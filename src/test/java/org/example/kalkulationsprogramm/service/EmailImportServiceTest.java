@@ -5,9 +5,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
+import com.sun.mail.imap.IMAPFolder;
+import jakarta.mail.Address;
+import jakarta.mail.Message;
+import jakarta.mail.internet.InternetAddress;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -329,6 +334,121 @@ class EmailImportServiceTest {
 
             email.setProcessingStatus(EmailProcessingStatus.DONE);
             assertThat(email.getProcessingStatus()).isEqualTo(EmailProcessingStatus.DONE);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 2.3.6b Regression: Emails ohne Message-ID werden nicht verworfen
+    // Bug: importMessage() hatte `if (messageId == null) return false;`
+    // Folge: Alle bluesolution.software Rechnungen wurden nie importiert.
+    // Fix: Fallback-ID aus IMAP-UID + Ordnername (<no-msgid-uid-{uid}@{folder}>)
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class FallbackMessageId {
+
+        private IMAPFolder mockFolder;
+        private Message mockMessage;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            mockFolder = mock(IMAPFolder.class);
+            mockMessage = mock(Message.class);
+
+            // Standard-Setup: kein Message-ID Header
+            when(mockMessage.getHeader("Message-ID")).thenReturn(null);
+            when(mockFolder.getUID(mockMessage)).thenReturn(146693L);
+            when(mockFolder.getFullName()).thenReturn("INBOX");
+            when(mockMessage.getFrom()).thenReturn(new Address[]{
+                    new InternetAddress("rechnungen@bluesolution.software", "blue:solution software GmbH")
+            });
+            when(mockMessage.getSubject()).thenReturn("Rechnung 400185");
+            when(mockMessage.getSentDate()).thenReturn(new Date());
+            when(mockMessage.getRecipients(Message.RecipientType.TO)).thenReturn(null);
+            when(mockMessage.getRecipients(Message.RecipientType.CC)).thenReturn(null);
+            when(mockMessage.getHeader("In-Reply-To")).thenReturn(null);
+            when(mockMessage.getHeader("References")).thenReturn(null);
+            when(mockMessage.getHeader("List-Unsubscribe")).thenReturn(null);
+            when(mockMessage.getHeader("X-Mailer")).thenReturn(null);
+            when(mockMessage.getHeader("X-Spam-Status")).thenReturn(null);
+            when(mockMessage.getContentType()).thenReturn("text/plain");
+            when(mockMessage.getContent()).thenReturn("Rechnungsinhalt");
+
+            // Repository-Mocks
+            when(emailRepository.existsByMessageId(any())).thenReturn(false);
+            when(emailRepository.save(any(Email.class))).thenAnswer(inv -> {
+                Email e = inv.getArgument(0);
+                e.setId(3202L);
+                return e;
+            });
+            when(lieferantenRepository.findByEmailDomain(any())).thenReturn(Collections.emptyList());
+            when(lieferantenRepository.existsByEmailDomain(any())).thenReturn(false);
+            when(steuerberaterEmailProcessingService.processSteuerberaterEmail(any())).thenReturn(false);
+        }
+
+        @Test
+        void emailOhneMessageIdWirdNichtVerworfen() throws Exception {
+            // Regression für: `if (messageId == null) { return false; }`
+            // Emails ohne Message-ID-Header müssen importiert werden
+            boolean imported = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+
+            assertThat(imported).isTrue();
+            verify(emailRepository).save(any(Email.class));
+        }
+
+        @Test
+        void fallbackIdWirdAusIMAPUidUndOrdnerGeneriert() throws Exception {
+            // Fallback-ID muss deterministisch und eindeutig sein:
+            // Format: <no-msgid-uid-{uid}@{folder}>
+            service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+
+            verify(emailRepository).existsByMessageId("<no-msgid-uid-146693@INBOX>");
+        }
+
+        @Test
+        void fallbackIdErmoeglichtDeduplizierung() throws Exception {
+            // Wenn die Fallback-ID bereits existiert, darf die Email nicht
+            // erneut importiert werden (Dedup nach erfolgreichem Import)
+            when(emailRepository.existsByMessageId("<no-msgid-uid-146693@INBOX>")).thenReturn(true);
+
+            boolean imported = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+
+            assertThat(imported).isFalse();
+            verify(emailRepository, never()).save(any(Email.class));
+        }
+
+        @Test
+        void fallbackIdEncodeOrdnerMitLeerzeichen() throws Exception {
+            // Ordnernamen mit Leerzeichen werden mit _ ersetzt (URL-sicher)
+            when(mockFolder.getFullName()).thenReturn("INBOX.Mein Ordner");
+            when(mockFolder.getUID(mockMessage)).thenReturn(999L);
+
+            service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+
+            verify(emailRepository).existsByMessageId("<no-msgid-uid-999@INBOX.Mein_Ordner>");
+        }
+
+        @Test
+        void emailMitMessageIdNutztOriginalId() throws Exception {
+            // Emails MIT Message-ID sollen die Original-ID benutzen (kein Fallback)
+            when(mockMessage.getHeader("Message-ID"))
+                    .thenReturn(new String[]{"<original-id@example.com>"});
+
+            service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+
+            verify(emailRepository).existsByMessageId("<original-id@example.com>");
+            // UID wird nicht für ID-Generierung verwendet
+            verify(mockFolder, never()).getUID(mockMessage);
+        }
+
+        @Test
+        void speichertImapUidInEmail() throws Exception {
+            // Die IMAP-UID muss in der Email gespeichert werden für spätere Referenzen
+            service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+
+            verify(emailRepository).save(argThat(email ->
+                    email.getImapUid() != null && email.getImapUid() == 146693L
+            ));
         }
     }
 

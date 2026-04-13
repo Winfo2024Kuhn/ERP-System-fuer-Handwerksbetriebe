@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Search, FileText, Link2, FolderPlus, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
@@ -56,8 +56,6 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
     const [selectedDokument, setSelectedDokument] = useState<LieferantDokument | null>(null);
     const [showDokumentModal, setShowDokumentModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [, setShowProjektModal] = useState(false);
-    const [, setShowVerknuepfungModal] = useState(false);
 
     // Handler für Dokument-Klick
     const handleDokumentSelect = (dok: LieferantDokument) => {
@@ -451,14 +449,6 @@ export default function LieferantDokumenteTab({ lieferantId, dokumente: initialD
                                 formatDate={formatDate}
                                 formatCurrency={formatCurrency}
                                 onSelect={() => handleDokumentSelect(dok)}
-                                onProjektZuordnen={() => {
-                                    setSelectedDokument(dok);
-                                    setShowProjektModal(true);
-                                }}
-                                onVerknuepfen={() => {
-                                    setSelectedDokument(dok);
-                                    setShowVerknuepfungModal(true);
-                                }}
                             />
                         ))}
                     </div>
@@ -589,11 +579,9 @@ interface DokumentCardProps {
     formatDate: (d?: string) => string;
     formatCurrency: (v?: number) => string;
     onSelect: () => void;
-    onProjektZuordnen: () => void;
-    onVerknuepfen: () => void;
 }
 
-function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onProjektZuordnen, onVerknuepfen }: DokumentCardProps) {
+function DokumentCard({ dokument, formatDate, formatCurrency, onSelect }: DokumentCardProps) {
     const config = getConfig(dokument.typ);
     const hasProject = dokument.projektAnteile.length > 0;
     const confidence = dokument.geschaeftsdaten?.aiConfidence;
@@ -667,17 +655,7 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onProjek
                 </div>
             )}
 
-            {/* Actions */}
-            <div className="mt-3 pt-3 border-t border-slate-200/50 flex gap-2">
-                <Button variant="ghost" size="sm" onClick={onProjektZuordnen} className="flex-1 text-xs">
-                    <FolderPlus className="w-3 h-3 mr-1" />
-                    Projekt
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onVerknuepfen} className="flex-1 text-xs">
-                    <Link2 className="w-3 h-3 mr-1" />
-                    Verknüpfen
-                </Button>
-            </div>
+
         </Card>
     );
 }
