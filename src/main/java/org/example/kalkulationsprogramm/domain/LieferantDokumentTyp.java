@@ -10,6 +10,7 @@ public enum LieferantDokumentTyp {
     ANGEBOT,
     AUFTRAGSBESTAETIGUNG,
     LIEFERSCHEIN,
+    WERKSTOFFZEUGNIS, // EN 10204 Zeugnisse (3.1 / 3.2) – kein Buchungsvorgang
     RECHNUNG,
     GUTSCHRIFT, // Gutschriften vom Lieferanten
     SONSTIG // Nicht-Geschäftsdokumente (Katalog, Info etc.)
