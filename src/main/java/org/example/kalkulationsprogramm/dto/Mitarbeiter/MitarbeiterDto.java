@@ -1,9 +1,10 @@
 package org.example.kalkulationsprogramm.dto.Mitarbeiter;
 
-import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+
+import lombok.Data;
 
 @Data
 public class MitarbeiterDto {
@@ -25,4 +26,8 @@ public class MitarbeiterDto {
     private List<Long> abteilungIds;
     private String abteilungNames; // Komma-separierte Namen für Anzeige
     private String loginToken;
+
+    // EN 1090 – Rollenzuweisungen
+    private List<Long> en1090RolleIds;
+    private String en1090RolleNames; // Komma-separiert für Anzeige
 }

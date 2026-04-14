@@ -1,15 +1,27 @@
 package org.example.kalkulationsprogramm.domain;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OneToMany;
+import lombok.Getter;
+import lombok.Setter;
 
 @Getter
 @Setter
@@ -78,6 +90,14 @@ public class Mitarbeiter {
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "mitarbeiter_abteilung", joinColumns = @JoinColumn(name = "mitarbeiter_id"), inverseJoinColumns = @JoinColumn(name = "abteilung_id"))
     private Set<Abteilung> abteilungen = new HashSet<>();
+
+    // N:M – EN-1090-Rollen (WPK-Leiter, Schweißaufsicht, etc.)
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(name = "mitarbeiter_en1090_rolle", joinColumns = @JoinColumn(name = "mitarbeiter_id"), inverseJoinColumns = @JoinColumn(name = "rolle_id"))
+    private Set<En1090Rolle> en1090Rollen = new HashSet<>();
+
+    @OneToMany(mappedBy = "mitarbeiter", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<MitarbeiterQualifikation> qualifikationen = new ArrayList<>();
 
     @OneToMany(mappedBy = "mitarbeiter", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<MitarbeiterDokument> dokumente = new ArrayList<>();

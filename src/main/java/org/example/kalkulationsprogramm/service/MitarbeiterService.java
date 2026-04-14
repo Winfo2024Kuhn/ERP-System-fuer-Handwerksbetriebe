@@ -1,16 +1,34 @@
 package org.example.kalkulationsprogramm.service;
 
-import lombok.RequiredArgsConstructor;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
 import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
+import org.example.kalkulationsprogramm.domain.En1090Rolle;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.MitarbeiterDokument;
+import org.example.kalkulationsprogramm.domain.MitarbeiterQualifikation;
 import org.example.kalkulationsprogramm.domain.Qualifikation;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterErstellenDto;
+import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterQualifikationDto;
 import org.example.kalkulationsprogramm.repository.AbteilungRepository;
+import org.example.kalkulationsprogramm.repository.En1090RolleRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterDokumentRepository;
+import org.example.kalkulationsprogramm.repository.MitarbeiterQualifikationRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -18,25 +36,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.io.ByteArrayOutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.WriterException;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
@@ -46,6 +52,8 @@ public class MitarbeiterService {
     private final MitarbeiterDokumentRepository dokumentRepository;
     private final org.example.kalkulationsprogramm.repository.MitarbeiterNotizRepository notizRepository;
     private final AbteilungRepository abteilungRepository;
+    private final En1090RolleRepository en1090RolleRepository;
+    private final MitarbeiterQualifikationRepository qualifikationRepository;
 
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;
@@ -105,6 +113,19 @@ public class MitarbeiterService {
             entity.setAbteilungen(abteilungen);
         } else {
             entity.getAbteilungen().clear();
+        }
+
+        // EN-1090-Rollen zuweisen (N:M)
+        if (dto.getEn1090RolleIds() != null && !dto.getEn1090RolleIds().isEmpty()) {
+            Set<En1090Rolle> rollen = new HashSet<>();
+            for (Long rolleId : dto.getEn1090RolleIds()) {
+                En1090Rolle rolle = en1090RolleRepository.findById(rolleId)
+                        .orElseThrow(() -> new RuntimeException("EN-1090-Rolle nicht gefunden: " + rolleId));
+                rollen.add(rolle);
+            }
+            entity.setEn1090Rollen(rollen);
+        } else {
+            entity.getEn1090Rollen().clear();
         }
 
         return mapToDto(repository.save(entity));
@@ -185,6 +206,16 @@ public class MitarbeiterService {
                     .collect(Collectors.toList()));
             dto.setAbteilungNames(m.getAbteilungen().stream()
                     .map(Abteilung::getName)
+                    .collect(Collectors.joining(", ")));
+        }
+
+        // EN-1090-Rollen (N:M)
+        if (m.getEn1090Rollen() != null && !m.getEn1090Rollen().isEmpty()) {
+            dto.setEn1090RolleIds(m.getEn1090Rollen().stream()
+                    .map(En1090Rolle::getId)
+                    .collect(Collectors.toList()));
+            dto.setEn1090RolleNames(m.getEn1090Rollen().stream()
+                    .map(En1090Rolle::getKurztext)
                     .collect(Collectors.joining(", ")));
         }
         return dto;
@@ -272,5 +303,107 @@ public class MitarbeiterService {
     @Transactional
     public void deleteNotiz(Long notizId) {
         notizRepository.deleteById(notizId);
+    }
+
+    // ==================== QUALIFIKATIONEN METHODS ====================
+
+    @Transactional(readOnly = true)
+    public List<MitarbeiterQualifikationDto> listQualifikationen(Long mitarbeiterId) {
+        return qualifikationRepository.findByMitarbeiterIdOrderByErstelltAmDesc(mitarbeiterId)
+                .stream().map(this::mapToQualifikationDto).collect(Collectors.toList());
+    }
+
+    @Transactional
+    public MitarbeiterQualifikationDto createQualifikation(Long mitarbeiterId,
+            String bezeichnung, String beschreibung, LocalDate datum, MultipartFile datei) {
+        Mitarbeiter mitarbeiter = repository.findById(mitarbeiterId)
+                .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+
+        MitarbeiterQualifikation q = new MitarbeiterQualifikation();
+        q.setMitarbeiter(mitarbeiter);
+        q.setBezeichnung(bezeichnung);
+        q.setBeschreibung(beschreibung);
+        q.setDatum(datum);
+
+        if (datei != null && !datei.isEmpty()) {
+            MitarbeiterDokument dok = speichereDokument(mitarbeiter, datei, DokumentGruppe.DIVERSE_DOKUMENTE);
+            q.setDokument(dok);
+        }
+
+        return mapToQualifikationDto(qualifikationRepository.save(q));
+    }
+
+    @Transactional
+    public MitarbeiterQualifikationDto updateQualifikation(Long mitarbeiterId, Long qualId,
+            String bezeichnung, String beschreibung, LocalDate datum, MultipartFile datei) {
+        MitarbeiterQualifikation q = qualifikationRepository.findById(qualId)
+                .orElseThrow(() -> new RuntimeException("Qualifikation nicht gefunden"));
+        if (!q.getMitarbeiter().getId().equals(mitarbeiterId)) {
+            throw new RuntimeException("Qualifikation geh\u00f6rt nicht zu diesem Mitarbeiter");
+        }
+        q.setBezeichnung(bezeichnung);
+        q.setBeschreibung(beschreibung);
+        q.setDatum(datum);
+
+        if (datei != null && !datei.isEmpty()) {
+            MitarbeiterDokument dok = speichereDokument(q.getMitarbeiter(), datei, DokumentGruppe.DIVERSE_DOKUMENTE);
+            q.setDokument(dok);
+        }
+
+        return mapToQualifikationDto(qualifikationRepository.save(q));
+    }
+
+    @Transactional
+    public void deleteQualifikation(Long mitarbeiterId, Long qualId) {
+        MitarbeiterQualifikation q = qualifikationRepository.findById(qualId)
+                .orElseThrow(() -> new RuntimeException("Qualifikation nicht gefunden"));
+        if (!q.getMitarbeiter().getId().equals(mitarbeiterId)) {
+            throw new RuntimeException("Qualifikation geh\u00f6rt nicht zu diesem Mitarbeiter");
+        }
+        qualifikationRepository.delete(q);
+    }
+
+    private MitarbeiterDokument speichereDokument(Mitarbeiter mitarbeiter, MultipartFile file, DokumentGruppe gruppe) {
+        try {
+            Path uploadPath = Path.of(uploadDir).toAbsolutePath().normalize();
+            Files.createDirectories(uploadPath);
+            String originalFileName = Path.of(StringUtils.cleanPath(
+                    Objects.requireNonNull(file.getOriginalFilename()))).getFileName().toString();
+            String savedFileName = UUID.randomUUID() + "_" + originalFileName;
+            Path targetLocation = uploadPath.resolve(savedFileName).normalize();
+            if (!targetLocation.startsWith(uploadPath)) {
+                throw new SecurityException("Ung\u00fcltiger Dateipfad: Verzeichnistraversal erkannt");
+            }
+            Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
+
+            MitarbeiterDokument dok = new MitarbeiterDokument();
+            dok.setOriginalDateiname(originalFileName);
+            dok.setGespeicherterDateiname(savedFileName);
+            dok.setDateityp(file.getContentType());
+            dok.setDateigroesse(file.getSize());
+            dok.setUploadDatum(LocalDate.now());
+            dok.setDokumentGruppe(gruppe);
+            dok.setMitarbeiter(mitarbeiter);
+            return dokumentRepository.save(dok);
+        } catch (IOException ex) {
+            throw new RuntimeException("Konnte Datei nicht speichern", ex);
+        }
+    }
+
+    private MitarbeiterQualifikationDto mapToQualifikationDto(MitarbeiterQualifikation q) {
+        MitarbeiterQualifikationDto dto = new MitarbeiterQualifikationDto();
+        dto.setId(q.getId());
+        dto.setBezeichnung(q.getBezeichnung());
+        dto.setBeschreibung(q.getBeschreibung());
+        dto.setDatum(q.getDatum());
+        dto.setErstelltAm(q.getErstelltAm());
+        if (q.getDokument() != null) {
+            dto.setDokumentId(q.getDokument().getId());
+            dto.setDokumentAnzeigename(q.getDokument().getOriginalDateiname());
+            dto.setDokumentGespeicherterName(q.getDokument().getGespeicherterDateiname());
+            dto.setDokumentDateityp(q.getDokument().getDateityp());
+            dto.setDokumentUploadDatum(q.getDokument().getUploadDatum());
+        }
+        return dto;
     }
 }

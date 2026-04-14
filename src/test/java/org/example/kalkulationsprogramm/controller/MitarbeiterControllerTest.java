@@ -1,14 +1,24 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterErstellenDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterNotizDto;
+import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterQualifikationDto;
 import org.example.kalkulationsprogramm.service.MitarbeiterService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -16,18 +26,16 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @WebMvcTest(MitarbeiterController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -352,6 +360,78 @@ class MitarbeiterControllerTest {
 
             mockMvc.perform(post("/api/mitarbeiter/999/regenerate-token"))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/mitarbeiter/{id}/en1090-rollen")
+    class UpdateEn1090Rollen {
+
+        @Test
+        @DisplayName("Aktualisiert EN-1090-Rollen erfolgreich")
+        void aktualisiertRollenErfolgreich() throws Exception {
+            MitarbeiterDto existing = buildMitarbeiterDto(1L, "Max", "Muster");
+            given(service.findById(1L)).willReturn(Optional.of(existing));
+            given(service.save(eq(1L), any(MitarbeiterErstellenDto.class))).willReturn(existing);
+
+            mockMvc.perform(put("/api/mitarbeiter/1/en1090-rollen")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("[1,2,3]"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.vorname").value("Max"));
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/mitarbeiter/{id}/qualifikationen")
+    class ListQualifikationen {
+
+        @Test
+        @DisplayName("Gibt Qualifikationsliste zurueck")
+        void gibtQualifikationenZurueck() throws Exception {
+            MitarbeiterQualifikationDto qual = new MitarbeiterQualifikationDto();
+            qual.setId(1L);
+            qual.setBezeichnung("Ersthelfer");
+            given(service.listQualifikationen(1L)).willReturn(List.of(qual));
+
+            mockMvc.perform(get("/api/mitarbeiter/1/qualifikationen"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].bezeichnung").value("Ersthelfer"));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/mitarbeiter/{id}/qualifikationen")
+    class CreateQualifikation {
+
+        @Test
+        @DisplayName("Erstellt Qualifikation ohne Dateianhang")
+        void erstelltQualifikationOhneDatei() throws Exception {
+            MitarbeiterQualifikationDto result = new MitarbeiterQualifikationDto();
+            result.setId(5L);
+            result.setBezeichnung("Ersthelfer-Schein");
+            given(service.createQualifikation(eq(1L), eq("Ersthelfer-Schein"), any(), any(), any()))
+                    .willReturn(result);
+
+            mockMvc.perform(multipart("/api/mitarbeiter/1/qualifikationen")
+                            .param("bezeichnung", "Ersthelfer-Schein"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(5))
+                    .andExpect(jsonPath("$.bezeichnung").value("Ersthelfer-Schein"));
+        }
+    }
+
+    @Nested
+    @DisplayName("DELETE /api/mitarbeiter/{id}/qualifikationen/{qualId}")
+    class DeleteQualifikation {
+
+        @Test
+        @DisplayName("Loescht Qualifikation und gibt 204 zurueck")
+        void loeschtQualifikationErfolgreich() throws Exception {
+            doNothing().when(service).deleteQualifikation(1L, 5L);
+
+            mockMvc.perform(delete("/api/mitarbeiter/1/qualifikationen/5"))
+                    .andExpect(status().isNoContent());
         }
     }
 }

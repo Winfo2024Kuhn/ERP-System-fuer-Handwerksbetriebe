@@ -9,11 +9,12 @@ import { DatePicker } from '../components/ui/datepicker';
 import { DetailLayout } from '../components/DetailLayout';
 import {
     Plus, User, Trash2, ArrowLeft,
-    FileText, Upload, Calendar, Euro, File, Building2, QrCode, RefreshCw, Download, Loader2, Eye, X, Phone, GraduationCap, Home, StickyNote, Receipt
+    FileText, Upload, Calendar, Euro, File, Building2, QrCode, RefreshCw, Download, Loader2, Eye, X, Phone, GraduationCap, Home, StickyNote, Receipt, Shield, Award, FileBadge
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { useFeatures } from '../hooks/useFeatures';
 
 // Interfaces
 interface Abteilung {
@@ -36,10 +37,12 @@ interface Mitarbeiter {
     geburtstag: string | null;
     eintrittsdatum: string | null;
     aktiv: boolean;
-    abteilungIds: number[] | null;  // N:M - Multiple abteilungen
-    abteilungNames: string | null;  // Komma-separiert
+    abteilungIds: number[] | null;
+    abteilungNames: string | null;
     loginToken: string | null;
     jahresUrlaub: number | null;
+    en1090RolleIds: number[] | null;
+    en1090RolleNames: string | null;
 }
 
 const QUALIFIKATIONEN = [
@@ -82,6 +85,25 @@ interface Lohnabrechnung {
     status: string;
 }
 
+interface En1090RolleOption {
+    id: number;
+    kurztext: string;
+    aktiv: boolean;
+}
+
+interface MitarbeiterQualifikation {
+    id: number;
+    bezeichnung: string;
+    beschreibung: string | null;
+    datum: string | null;
+    dokumentId: number | null;
+    dokumentAnzeigename: string | null;
+    dokumentGespeicherterName: string | null;
+    dokumentDateityp: string | null;
+    dokumentUploadDatum: string | null;
+    erstelltAm: string;
+}
+
 const BASE_API = '/api/mitarbeiter';
 
 export default function MitarbeiterEditor() {
@@ -104,7 +126,7 @@ export default function MitarbeiterEditor() {
     const [previewDoc, setPreviewDoc] = useState<MitarbeiterDokument | null>(null);
 
     // Notizen States
-    const [activeTab, setActiveTab] = useState<'dokumente' | 'notizen' | 'lohnabrechnungen'>('dokumente');
+    const [activeTab, setActiveTab] = useState<'dokumente' | 'notizen' | 'lohnabrechnungen' | 'en1090'>('dokumente');
     const [notizen, setNotizen] = useState<MitarbeiterNotiz[]>([]);
     const [showNotizModal, setShowNotizModal] = useState(false);
     const [neueNotiz, setNeueNotiz] = useState('');
@@ -112,6 +134,16 @@ export default function MitarbeiterEditor() {
     // Lohnabrechnungen States
     const [lohnabrechnungen, setLohnabrechnungen] = useState<Lohnabrechnung[]>([]);
     const [loadingLohnabrechnungen, setLoadingLohnabrechnungen] = useState(false);
+
+    // EN 1090 States
+    const features = useFeatures();
+    const [en1090RolleOptionen, setEn1090RolleOptionen] = useState<En1090RolleOption[]>([]);
+    const [selectedRolleIds, setSelectedRolleIds] = useState<number[]>([]);
+    const [savingRollen, setSavingRollen] = useState(false);
+    const [qualifikationen, setQualifikationen] = useState<MitarbeiterQualifikation[]>([]);
+    const [showQualModal, setShowQualModal] = useState(false);
+    const [editingQual, setEditingQual] = useState<Partial<MitarbeiterQualifikation> & { dateiFile?: File | null }>({});
+    const [savingQual, setSavingQual] = useState(false);
 
     useEffect(() => {
         loadMitarbeiter();
@@ -186,7 +218,70 @@ export default function MitarbeiterEditor() {
         if (activeTab === 'lohnabrechnungen' && selectedMitarbeiter) {
             loadLohnabrechnungen(selectedMitarbeiter.id);
         }
-    }, [activeTab, selectedMitarbeiter]);
+        if (activeTab === 'en1090' && selectedMitarbeiter && features.en1090) {
+            loadEn1090Rollen();
+            loadQualifikationen(selectedMitarbeiter.id);
+        }
+    }, [activeTab, selectedMitarbeiter, features.en1090]);
+
+    const loadEn1090Rollen = async () => {
+        try {
+            const res = await fetch('/api/en1090/rollen');
+            if (res.ok) setEn1090RolleOptionen(await res.json());
+        } catch (e) { console.error(e); }
+    };
+
+    const loadQualifikationen = async (id: number) => {
+        try {
+            const res = await fetch(`${BASE_API}/${id}/qualifikationen`);
+            if (res.ok) setQualifikationen(await res.json());
+        } catch (e) { console.error(e); }
+    };
+
+    const saveRollen = async () => {
+        if (!selectedMitarbeiter) return;
+        setSavingRollen(true);
+        try {
+            await fetch(`${BASE_API}/${selectedMitarbeiter.id}/en1090-rollen`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(selectedRolleIds)
+            });
+            const updRes = await fetch(`${BASE_API}/${selectedMitarbeiter.id}`);
+            if (updRes.ok) setSelectedMitarbeiter(await updRes.json());
+        } catch (e) { console.error(e); } finally { setSavingRollen(false); }
+    };
+
+    const saveQualifikation = async () => {
+        if (!selectedMitarbeiter || !editingQual.bezeichnung?.trim()) return;
+        setSavingQual(true);
+        try {
+            const fd = new FormData();
+            fd.append('bezeichnung', editingQual.bezeichnung.trim());
+            if (editingQual.beschreibung) fd.append('beschreibung', editingQual.beschreibung);
+            if (editingQual.datum) fd.append('datum', editingQual.datum);
+            if (editingQual.dateiFile) fd.append('datei', editingQual.dateiFile);
+            const isEdit = !!editingQual.id;
+            const url = isEdit
+                ? `${BASE_API}/${selectedMitarbeiter.id}/qualifikationen/${editingQual.id}`
+                : `${BASE_API}/${selectedMitarbeiter.id}/qualifikationen`;
+            const res = await fetch(url, { method: isEdit ? 'PUT' : 'POST', body: fd });
+            if (res.ok) {
+                await loadQualifikationen(selectedMitarbeiter.id);
+                setShowQualModal(false);
+                setEditingQual({});
+            }
+        } catch (e) { console.error(e); } finally { setSavingQual(false); }
+    };
+
+    const deleteQualifikation = async (qualId: number) => {
+        if (!selectedMitarbeiter) return;
+        if (!await confirmDialog({ title: 'Qualifikation l\u00f6schen', message: 'Nachweis wirklich l\u00f6schen?', variant: 'danger', confirmLabel: 'L\u00f6schen' })) return;
+        try {
+            await fetch(`${BASE_API}/${selectedMitarbeiter.id}/qualifikationen/${qualId}`, { method: 'DELETE' });
+            await loadQualifikationen(selectedMitarbeiter.id);
+        } catch (e) { console.error(e); }
+    };
 
     const handleCreateNotiz = async () => {
         if (!selectedMitarbeiter || !neueNotiz.trim()) return;
@@ -695,11 +790,121 @@ export default function MitarbeiterEditor() {
                     <Receipt className="w-4 h-4 inline-block mr-2" />
                     Lohnabrechnungen
                 </button>
+                {features.en1090 && (
+                    <button
+                        onClick={() => setActiveTab('en1090')}
+                        className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'en1090'
+                            ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                            : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                            }`}
+                    >
+                        <Shield className="w-4 h-4 inline-block mr-2" />
+                        EN&nbsp;1090
+                    </button>
+                )}
             </div>
 
             {activeTab === 'dokumente' && <DokumenteList />}
             {activeTab === 'notizen' && <NotizenList />}
             {activeTab === 'lohnabrechnungen' && <LohnabrechnungenList />}
+            {activeTab === 'en1090' && features.en1090 && (
+                <div className="space-y-6">
+                    {/* Rollen-Bereich */}
+                    <Card className="p-5 space-y-4">
+                        <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                            <Shield className="w-4 h-4 text-rose-600" /> Zugewiesene Rollen
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                            {en1090RolleOptionen.filter(r => r.aktiv).map(rolle => (
+                                <label key={rolle.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-pointer text-sm transition-colors ${
+                                    selectedRolleIds.includes(rolle.id)
+                                        ? 'bg-rose-600 text-white border-rose-600'
+                                        : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300'
+                                }`}>
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={selectedRolleIds.includes(rolle.id)}
+                                        onChange={e => setSelectedRolleIds(prev =>
+                                            e.target.checked ? [...prev, rolle.id] : prev.filter(id => id !== rolle.id)
+                                        )}
+                                    />
+                                    {rolle.kurztext}
+                                </label>
+                            ))}
+                            {en1090RolleOptionen.filter(r => r.aktiv).length === 0 && (
+                                <p className="text-sm text-slate-400">Keine Rollen verfügbar. Bitte zuerst in den Firmaeinstellungen anlegen.</p>
+                            )}
+                        </div>
+                        <Button
+                            size="sm"
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                            onClick={saveRollen}
+                            disabled={savingRollen}
+                        >
+                            {savingRollen ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                            Rollen speichern
+                        </Button>
+                    </Card>
+
+                    {/* Qualifikationen-Bereich */}
+                    <Card className="p-5 space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                <FileBadge className="w-4 h-4 text-rose-600" /> Qualifikations-Nachweise
+                            </h3>
+                            <Button
+                                size="sm"
+                                className="bg-rose-600 text-white hover:bg-rose-700"
+                                onClick={() => { setEditingQual({}); setShowQualModal(true); }}
+                            >
+                                <Plus className="w-4 h-4 mr-2" /> Neuer Nachweis
+                            </Button>
+                        </div>
+
+                        {qualifikationen.length === 0 ? (
+                            <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                <Award className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                                <p className="text-sm">Noch keine Nachweise eingetragen</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {qualifikationen.map(q => (
+                                    <div key={q.id} className="flex items-start justify-between gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-medium text-slate-900 text-sm">{q.bezeichnung}</p>
+                                            {q.beschreibung && <p className="text-xs text-slate-500 mt-0.5">{q.beschreibung}</p>}
+                                            <div className="flex flex-wrap gap-3 mt-1 text-xs text-slate-400">
+                                                {q.datum && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{q.datum}</span>}
+                                                {q.dokumentAnzeigename && (
+                                                    <a
+                                                        href={`/api/dokumente/${q.dokumentGespeicherterName}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="flex items-center gap-1 text-rose-600 hover:underline"
+                                                    >
+                                                        <FileText className="w-3 h-3" />{q.dokumentAnzeigename}
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-1 shrink-0">
+                                            <Button size="sm" variant="ghost" className="text-slate-500 hover:text-slate-700"
+                                                onClick={() => { setEditingQual({ ...q, dateiFile: null }); setShowQualModal(true); }}>
+                                                <Eye className="w-4 h-4" />
+                                            </Button>
+                                            <Button size="sm" variant="ghost" className="text-rose-600 hover:bg-rose-50"
+                                                onClick={() => deleteQualifikation(q.id)}>
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </Card>
+                </div>
+            )}
         </>
     );
 
@@ -1025,6 +1230,68 @@ export default function MitarbeiterEditor() {
                 </DialogContent>
             </Dialog>
 
+            {/* Qualifikation Modal */}
+            <Dialog open={showQualModal} onOpenChange={open => { if (!open) { setShowQualModal(false); setEditingQual({}); } }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{editingQual.id ? 'Nachweis bearbeiten' : 'Neuer Qualifikations-Nachweis'}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div>
+                            <Label>Bezeichnung *</Label>
+                            <Input
+                                placeholder="z.B. Schweißer-Prüfungszeugnis nach EN ISO 9606-1"
+                                value={editingQual.bezeichnung || ''}
+                                onChange={e => setEditingQual(prev => ({ ...prev, bezeichnung: e.target.value }))}
+                            />
+                        </div>
+                        <div>
+                            <Label>Beschreibung</Label>
+                            <textarea
+                                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[80px] resize-y"
+                                placeholder="Weitere Details zum Nachweis..."
+                                value={editingQual.beschreibung || ''}
+                                onChange={e => setEditingQual(prev => ({ ...prev, beschreibung: e.target.value }))}
+                            />
+                        </div>
+                        <div>
+                            <Label>Datum (z.B. Ausstellungsdatum)</Label>
+                            <Input
+                                type="date"
+                                value={editingQual.datum || ''}
+                                onChange={e => setEditingQual(prev => ({ ...prev, datum: e.target.value }))}
+                            />
+                        </div>
+                        <div>
+                            <Label>Dokument hochladen (optional)</Label>
+                            {editingQual.dokumentAnzeigename && !editingQual.dateiFile && (
+                                <p className="text-xs text-slate-500 mb-1 flex items-center gap-1">
+                                    <FileText className="w-3 h-3" /> Aktuell: {editingQual.dokumentAnzeigename}
+                                </p>
+                            )}
+                            <input
+                                type="file"
+                                className="block w-full text-sm text-slate-700 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100"
+                                onChange={e => setEditingQual(prev => ({ ...prev, dateiFile: e.target.files?.[0] ?? null }))}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => { setShowQualModal(false); setEditingQual({}); }}>
+                            <X className="w-4 h-4 mr-2" /> Abbrechen
+                        </Button>
+                        <Button
+                            onClick={saveQualifikation}
+                            disabled={savingQual || !editingQual.bezeichnung?.trim()}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                            {savingQual ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                            Speichern
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* Standard ImageViewer for Images */}
             {previewDoc && previewDoc.dateityp?.startsWith('image/') && (
                 <ImageViewer
@@ -1114,6 +1381,7 @@ export default function MitarbeiterEditor() {
                                 className="p-6 cursor-pointer hover:border-rose-200 transition-all group"
                                 onClick={() => {
                                     setSelectedMitarbeiter(m);
+                                    setSelectedRolleIds(m.en1090RolleIds ?? []);
                                     loadDokumente(m.id);
                                     loadNotizen(m.id);
                                     setView('DETAIL');

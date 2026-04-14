@@ -1,17 +1,29 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.RequiredArgsConstructor;
+import java.time.LocalDate;
+import java.util.List;
+
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterErstellenDto;
+import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterQualifikationDto;
 import org.example.kalkulationsprogramm.service.MitarbeiterService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/mitarbeiter")
@@ -114,6 +126,75 @@ public class MitarbeiterController {
     @DeleteMapping("/notizen/{notizId}")
     public ResponseEntity<Void> deleteNotiz(@PathVariable Long notizId) {
         service.deleteNotiz(notizId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ==================== EN-1090-ROLLEN ENDPOINTS ====================
+
+    @PutMapping("/{id}/en1090-rollen")
+    public ResponseEntity<MitarbeiterDto> updateEn1090Rollen(
+            @PathVariable Long id,
+            @RequestBody java.util.List<Long> rolleIds) {
+        // Rollen werden über save() gesetzt – wir bauen ein Mini-DTO
+        org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterErstellenDto patch =
+                service.findById(id)
+                        .map(existing -> {
+                            MitarbeiterErstellenDto d = new MitarbeiterErstellenDto();
+                            d.setVorname(existing.getVorname());
+                            d.setNachname(existing.getNachname());
+                            d.setStrasse(existing.getStrasse());
+                            d.setPlz(existing.getPlz());
+                            d.setOrt(existing.getOrt());
+                            d.setEmail(existing.getEmail());
+                            d.setTelefon(existing.getTelefon());
+                            d.setFestnetz(existing.getFestnetz());
+                            d.setQualifikation(existing.getQualifikation());
+                            d.setStundenlohn(existing.getStundenlohn());
+                            d.setGeburtstag(existing.getGeburtstag());
+                            d.setEintrittsdatum(existing.getEintrittsdatum());
+                            d.setJahresUrlaub(existing.getJahresUrlaub());
+                            d.setAktiv(existing.getAktiv());
+                            d.setAbteilungIds(existing.getAbteilungIds());
+                            d.setEn1090RolleIds(rolleIds);
+                            return d;
+                        })
+                        .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+        return ResponseEntity.ok(service.save(id, patch));
+    }
+
+    // ==================== QUALIFIKATIONEN ENDPOINTS ====================
+
+    @GetMapping("/{id}/qualifikationen")
+    public ResponseEntity<List<MitarbeiterQualifikationDto>> listQualifikationen(@PathVariable Long id) {
+        return ResponseEntity.ok(service.listQualifikationen(id));
+    }
+
+    @PostMapping(value = "/{id}/qualifikationen", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<MitarbeiterQualifikationDto> createQualifikation(
+            @PathVariable Long id,
+            @RequestParam("bezeichnung") String bezeichnung,
+            @RequestParam(value = "beschreibung", required = false) String beschreibung,
+            @RequestParam(value = "datum", required = false)
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate datum,
+            @RequestParam(value = "datei", required = false) MultipartFile datei) {
+        return ResponseEntity.ok(service.createQualifikation(id, bezeichnung, beschreibung, datum, datei));
+    }
+
+    @PutMapping(value = "/{id}/qualifikationen/{qualId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<MitarbeiterQualifikationDto> updateQualifikation(
+            @PathVariable Long id,
+            @PathVariable Long qualId,
+            @RequestParam("bezeichnung") String bezeichnung,
+            @RequestParam(value = "beschreibung", required = false) String beschreibung,
+            @RequestParam(value = "datum", required = false)
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate datum,
+            @RequestParam(value = "datei", required = false) MultipartFile datei) {
+        return ResponseEntity.ok(service.updateQualifikation(id, qualId, bezeichnung, beschreibung, datum, datei));
+    }
+
+    @DeleteMapping("/{id}/qualifikationen/{qualId}")
+    public ResponseEntity<Void> deleteQualifikation(@PathVariable Long id, @PathVariable Long qualId) {
+        service.deleteQualifikation(id, qualId);
         return ResponseEntity.noContent().build();
     }
 }

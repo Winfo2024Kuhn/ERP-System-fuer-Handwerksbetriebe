@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings } from 'lucide-react';
+import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, Shield, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -13,6 +13,8 @@ import { DatePicker } from '../components/ui/datepicker';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfigurator';
+
+import { useFeatures } from '../hooks/useFeatures';
 
 // Types
 interface Firmeninformation {
@@ -94,7 +96,23 @@ interface BwaUploadDto {
     steuerberaterName: string;
 }
 
-type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'systemsetup';
+interface En1090RolleDto {
+    id: number;
+    kurztext: string;
+    beschreibung: string | null;
+    sortierung: number;
+    aktiv: boolean;
+}
+
+interface En1090RolleDto {
+    id: number;
+    kurztext: string;
+    beschreibung: string | null;
+    sortierung: number;
+    aktiv: boolean;
+}
+
+type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'en1090rollen' | 'systemsetup';
 type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
 const KOSTENSTELLEN_TYP_OPTIONS = [
@@ -107,6 +125,7 @@ const KOSTENSTELLEN_TYP_OPTIONS = [
 export default function FirmaEditor() {
     const toast = useToast();
     const confirmDialog = useConfirm();
+    const features = useFeatures();
     const [activeTab, setActiveTab] = useState<ActiveTab>('firma');
     const [sbSubTab, setSbSubTab] = useState<SteuerberaterSubTab>('kontakte');
     const [loading, setLoading] = useState(false);
@@ -134,6 +153,11 @@ export default function FirmaEditor() {
 
     // BWA State
     const [bwaListe, setBwaListe] = useState<BwaUploadDto[]>([]);
+
+    // EN 1090 Rollen State
+    const [en1090Rollen, setEn1090Rollen] = useState<En1090RolleDto[]>([]);
+    const [showRolleModal, setShowRolleModal] = useState(false);
+    const [editingRolle, setEditingRolle] = useState<Partial<En1090RolleDto> | null>(null);
 
     // Load Firmeninformation
     const loadFirma = useCallback(async () => {
@@ -168,6 +192,18 @@ export default function FirmaEditor() {
             }
         } catch (e) {
             console.error('Fehler beim Laden der Steuerberater', e);
+        }
+    }, []);
+
+    // Load EN 1090 Rollen
+    const loadEn1090Rollen = useCallback(async () => {
+        try {
+            const res = await fetch('/api/en1090/rollen');
+            if (res.ok) {
+                setEn1090Rollen(await res.json());
+            }
+        } catch (e) {
+            console.error('Fehler beim Laden der EN-1090-Rollen', e);
         }
     }, []);
 
@@ -234,9 +270,10 @@ export default function FirmaEditor() {
 
     useEffect(() => {
         setLoading(true);
-        Promise.all([loadFirma(), loadKostenstellen(), loadSteuerberater(), loadMeta()])
-            .finally(() => setLoading(false));
-    }, [loadFirma, loadKostenstellen, loadSteuerberater, loadMeta]);
+        const base = [loadFirma(), loadKostenstellen(), loadSteuerberater(), loadMeta()];
+        if (features.en1090) base.push(loadEn1090Rollen());
+        Promise.all(base).finally(() => setLoading(false));
+    }, [loadFirma, loadKostenstellen, loadSteuerberater, loadMeta, loadEn1090Rollen, features.en1090]);
 
     // Save Firmeninformation
     const saveFirma = async () => {
@@ -364,6 +401,40 @@ export default function FirmaEditor() {
         }
     };
 
+    // EN 1090 Rollen CRUD
+    const saveRolle = async () => {
+        if (!editingRolle?.kurztext?.trim()) return;
+        setSaving(true);
+        try {
+            const method = editingRolle.id ? 'PUT' : 'POST';
+            const url = editingRolle.id ? `/api/en1090/rollen/${editingRolle.id}` : '/api/en1090/rollen';
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...editingRolle, aktiv: editingRolle.aktiv ?? true, sortierung: editingRolle.sortierung ?? 0 })
+            });
+            if (res.ok) {
+                await loadEn1090Rollen();
+                setShowRolleModal(false);
+                setEditingRolle(null);
+            }
+        } catch (e) {
+            console.error('Fehler beim Speichern der Rolle', e);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const deleteRolle = async (id: number) => {
+        if (!await confirmDialog({ title: 'Rolle l\u00f6schen', message: 'Rolle wirklich l\u00f6schen? Zuweisungen werden entfernt.', variant: 'danger', confirmLabel: 'L\u00f6schen' })) return;
+        try {
+            await fetch(`/api/en1090/rollen/${id}`, { method: 'DELETE' });
+            await loadEn1090Rollen();
+        } catch (e) {
+            console.error('Fehler beim L\u00f6schen', e);
+        }
+    };
+
     const getKostenstelleTypLabel = (typ: string) => {
         const option = KOSTENSTELLEN_TYP_OPTIONS.find(o => o.value === typ);
         return option?.label || typ;
@@ -428,6 +499,20 @@ export default function FirmaEditor() {
                             <Users className="w-4 h-4 inline-block mr-2" />
                             Steuerberater ({steuerberater.length})
                         </button>
+                        {features.en1090 && (
+                            <button
+                                onClick={() => setActiveTab('en1090rollen')}
+                                className={cn(
+                                    "px-4 py-2 text-sm font-medium rounded-t-lg transition",
+                                    activeTab === 'en1090rollen'
+                                        ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                                )}
+                            >
+                                <Shield className="w-4 h-4 inline-block mr-2" />
+                                EN 1090 Rollen ({en1090Rollen.length})
+                            </button>
+                        )}
                         <button
                             onClick={() => setActiveTab('systemsetup')}
                             className={cn(
@@ -978,8 +1063,113 @@ export default function FirmaEditor() {
                             <SystemSetupConfigurator />
                         </div>
                     )}
+
+                    {activeTab === 'en1090rollen' && features.en1090 && (
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <p className="text-slate-500 text-sm">
+                                    EN&nbsp;1090 Rollen definieren – z.&thinsp;B. WPK-Leiter, Schweißaufsicht, Monteur. Diese Rollen können Mitarbeitern zugewiesen werden.
+                                </p>
+                                <Button
+                                    size="sm"
+                                    className="bg-rose-600 text-white hover:bg-rose-700"
+                                    onClick={() => { setEditingRolle({ aktiv: true, sortierung: (en1090Rollen.length + 1) * 10 }); setShowRolleModal(true); }}
+                                >
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Neue Rolle
+                                </Button>
+                            </div>
+
+                            {en1090Rollen.length === 0 ? (
+                                <div className="text-center py-16 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                    <Shield className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                                    <p className="font-medium">Noch keine Rollen angelegt</p>
+                                    <p className="text-sm mt-1">Standard-Rollen werden beim ersten Start automatisch angelegt.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {en1090Rollen.map(rolle => (
+                                        <Card key={rolle.id} className="p-4 flex flex-col gap-3">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-semibold text-slate-900 truncate">{rolle.kurztext}</p>
+                                                    {rolle.beschreibung && (
+                                                        <p className="text-xs text-slate-500 mt-1 line-clamp-3">{rolle.beschreibung}</p>
+                                                    )}
+                                                </div>
+                                                <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ${rolle.aktiv ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                                    {rolle.aktiv ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                                                    {rolle.aktiv ? 'Aktiv' : 'Inaktiv'}
+                                                </span>
+                                            </div>
+                                            <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                                <Button size="sm" variant="outline" className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                    onClick={() => { setEditingRolle({ ...rolle }); setShowRolleModal(true); }}>
+                                                    <Edit2 className="w-3 h-3 mr-1" /> Bearbeiten
+                                                </Button>
+                                                <Button size="sm" variant="ghost" className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                                    onClick={() => deleteRolle(rolle.id)}>
+                                                    <Trash2 className="w-3 h-3" />
+                                                </Button>
+                                            </div>
+                                        </Card>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </>
             )}
+
+            {/* EN 1090 Rolle Modal */}
+            <Dialog open={showRolleModal} onOpenChange={setShowRolleModal}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{editingRolle?.id ? 'Rolle bearbeiten' : 'Neue EN\u00a01090 Rolle'}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div>
+                            <Label>Kurzbezeichnung *</Label>
+                            <Input
+                                placeholder="z.B. Schweißaufsicht (SAP)"
+                                value={editingRolle?.kurztext || ''}
+                                onChange={e => setEditingRolle(prev => ({ ...prev, kurztext: e.target.value }))}
+                            />
+                        </div>
+                        <div>
+                            <Label>Beschreibung</Label>
+                            <textarea
+                                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[100px] resize-y"
+                                placeholder="Aufgaben und Verantwortlichkeiten dieser Rolle..."
+                                value={editingRolle?.beschreibung || ''}
+                                onChange={e => setEditingRolle(prev => ({ ...prev, beschreibung: e.target.value }))}
+                            />
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="checkbox"
+                                id="rolle-aktiv"
+                                checked={editingRolle?.aktiv ?? true}
+                                onChange={e => setEditingRolle(prev => ({ ...prev, aktiv: e.target.checked }))}
+                                className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                            />
+                            <label htmlFor="rolle-aktiv" className="text-sm text-slate-700">Rolle ist aktiv und kann Mitarbeitern zugewiesen werden</label>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => { setShowRolleModal(false); setEditingRolle(null); }}>
+                            <X className="w-4 h-4 mr-2" /> Abbrechen
+                        </Button>
+                        <Button
+                            onClick={saveRolle}
+                            disabled={saving || !editingRolle?.kurztext?.trim()}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                            <Save className="w-4 h-4 mr-2" /> Speichern
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Kostenstelle Modal */}
             <Dialog open={showKostenstelleModal} onOpenChange={setShowKostenstelleModal}>
