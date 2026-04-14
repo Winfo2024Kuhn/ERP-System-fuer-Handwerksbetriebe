@@ -40,3 +40,5 @@ Bevor du Code schreibst, lade dir **zwingend** die passende Dokumentation in dei
 4. **Abschluss jeder Aufgabe (Skill-Execution):**
    Wenn du am Ende einer Aufgabe angekommen bist und Code geschrieben oder refactored hast, führe IMMER diesen Skill / diese Aktion aus:
    `.claude\commands\review-and-ship.md` (Überprüfe den Code auf Typensicherheit, Performance-Bottlenecks, UX-Konsistenz und bereite ihn für den Commit vor).
+
+5. **Gebe mir immer in deier thought of chain feedback ob du dir andere dinge als die CLAUDE.md anschaust!!!

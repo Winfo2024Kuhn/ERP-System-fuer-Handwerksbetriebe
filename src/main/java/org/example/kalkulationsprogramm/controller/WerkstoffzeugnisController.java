@@ -5,10 +5,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Werkstoffzeugnis;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffzeugnisRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +34,7 @@ public class WerkstoffzeugnisController {
 
     private final WerkstoffzeugnisRepository repository;
     private final LieferantenRepository lieferantenRepository;
+    private final ProjektRepository projektRepository;
 
     // --- Response / Request DTOs ---
 
@@ -132,6 +136,33 @@ public class WerkstoffzeugnisController {
             return ResponseEntity.notFound().build();
         }
         repository.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Projekt-Zuweisung ---
+
+    /** Werkstoffzeugnis einem Projekt zuordnen */
+    @PostMapping("/{id}/projekt/{projektId}")
+    @Transactional
+    public ResponseEntity<Void> assignToProjekt(@PathVariable Long id,
+                                                 @PathVariable Long projektId) {
+        Werkstoffzeugnis w = repository.findById(id).orElse(null);
+        Projekt projekt = projektRepository.findById(projektId).orElse(null);
+        if (w == null || projekt == null) return ResponseEntity.notFound().build();
+        w.getProjekte().add(projekt);
+        repository.save(w);
+        return ResponseEntity.ok().build();
+    }
+
+    /** Werkstoffzeugnis aus Projekt entfernen */
+    @DeleteMapping("/{id}/projekt/{projektId}")
+    @Transactional
+    public ResponseEntity<Void> unassignFromProjekt(@PathVariable Long id,
+                                                     @PathVariable Long projektId) {
+        Werkstoffzeugnis w = repository.findById(id).orElse(null);
+        if (w == null) return ResponseEntity.notFound().build();
+        w.getProjekte().removeIf(p -> p.getId().equals(projektId));
+        repository.save(w);
         return ResponseEntity.noContent().build();
     }
 

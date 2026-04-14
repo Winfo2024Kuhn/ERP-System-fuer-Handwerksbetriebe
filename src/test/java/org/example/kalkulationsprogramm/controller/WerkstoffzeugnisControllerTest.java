@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Werkstoffzeugnis;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffzeugnisRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,9 @@ class WerkstoffzeugnisControllerTest {
 
     @MockBean
     private LieferantenRepository lieferantenRepository;
+
+    @MockBean
+    private ProjektRepository projektRepository;
 
     @Test
     void getAll_gibtListeZurueck() throws Exception {

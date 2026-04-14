@@ -1,6 +1,9 @@
 package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.domain.Wps;
+import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.WpsProjektZuweisungRepository;
 import org.example.kalkulationsprogramm.repository.WpsRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +33,15 @@ class WpsControllerTest {
 
     @MockBean
     private WpsRepository repository;
+
+    @MockBean
+    private ProjektRepository projektRepository;
+
+    @MockBean
+    private WpsProjektZuweisungRepository zuweisungRepository;
+
+    @MockBean
+    private MitarbeiterRepository mitarbeiterRepository;
 
     @Test
     void getAll_gibtListeZurueck() throws Exception {
