@@ -12,7 +12,7 @@ import Leistungseditor from './pages/Leistungseditor';
 import Kundeneditor from './pages/Kundeneditor';
 import LieferantenEditor from './pages/LieferantenEditor';
 import ArtikelEditor from './pages/ArtikelEditor';
-import ArbeitsgangEditor from './pages/ArbeitsgangEditor';
+
 import ProduktkategorieEditor from './pages/ProduktkategorieEditor';
 import ProjektEditor from './pages/ProjektEditor';
 import AnfrageEditor from './pages/AnfrageEditor';
@@ -76,7 +76,7 @@ export default function App() {
                 <Route path="/mitarbeiter" element={<ErrorBoundary><MitarbeiterEditor /></ErrorBoundary>} />
                 <Route path="/lieferanten" element={<ErrorBoundary><LieferantenEditor /></ErrorBoundary>} />
                 <Route path="/artikel" element={<ErrorBoundary><ArtikelEditor /></ErrorBoundary>} />
-                <Route path="/arbeitsgaenge" element={<ErrorBoundary><ArbeitsgangEditor /></ErrorBoundary>} />
+
                 <Route path="/produktkategorien" element={<ErrorBoundary><ProduktkategorieEditor /></ErrorBoundary>} />
                 <Route path="/projekte" element={<ErrorBoundary><ProjektEditor /></ErrorBoundary>} />
                 <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />

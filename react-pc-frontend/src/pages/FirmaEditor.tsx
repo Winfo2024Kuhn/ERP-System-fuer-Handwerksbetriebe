@@ -1212,11 +1212,11 @@ export default function FirmaEditor() {
                     )}
 
                     {activeTab === 'abteilungen' && (
-                        <div className="grid grid-cols-1 xl:grid-cols-[1fr_2fr] gap-6">
-                            {/* Left: Abteilungen List + Create */}
+                        <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.2fr_1.8fr] gap-6">
+                            {/* Column 1: Abteilungen */}
                             <Card className="p-6 border-0 shadow-sm rounded-xl">
                                 <div className="mb-4">
-                                    <p className="text-xs uppercase tracking-wide text-slate-500">Struktur</p>
+                                    <p className="text-xs uppercase tracking-wide text-slate-500">Betriebsstruktur</p>
                                     <h4 className="text-lg font-semibold text-slate-900">Abteilungen</h4>
                                 </div>
 
@@ -1276,7 +1276,7 @@ export default function FirmaEditor() {
                                 </div>
                             </Card>
 
-                            {/* Right: Arbeitsgänge */}
+                            {/* Column 2: Arbeitsgänge List */}
                             <Card className="p-6 border-0 shadow-sm rounded-xl">
                                 <div className="flex items-center justify-between mb-4">
                                     <div>
@@ -1288,8 +1288,7 @@ export default function FirmaEditor() {
                                 </div>
 
                                 {selectedAbteilungId ? (
-                                    <div className="space-y-4">
-                                        {/* Search */}
+                                    <div className="space-y-3">
                                         <div className="relative">
                                             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
                                             <Input
@@ -1299,8 +1298,6 @@ export default function FirmaEditor() {
                                                 className="pl-9"
                                             />
                                         </div>
-
-                                        {/* List */}
                                         <div className="space-y-2">
                                             {filteredArbeitsgaenge.length === 0 ? (
                                                 <div className="p-8 text-center text-slate-500 border border-dashed rounded-lg">
@@ -1349,26 +1346,6 @@ export default function FirmaEditor() {
                                                 })
                                             )}
                                         </div>
-
-                                        {/* Add Arbeitsgang */}
-                                        <div className="flex gap-2 pt-2 border-t border-slate-100">
-                                            <Input
-                                                value={newArbeitsgangBeschr}
-                                                onChange={e => setNewArbeitsgangBeschr(e.target.value)}
-                                                placeholder="Neuer Arbeitsgang, z.B. Montage Metallfassade"
-                                                onKeyDown={e => e.key === 'Enter' && handleCreateArbeitsgang()}
-                                                className="flex-1"
-                                            />
-                                            <Button
-                                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-                                                size="sm"
-                                                onClick={handleCreateArbeitsgang}
-                                                disabled={!newArbeitsgangBeschr.trim() || creatingArbeitsgang}
-                                            >
-                                                <Plus className="w-4 h-4 mr-1" />
-                                                Erstellen
-                                            </Button>
-                                        </div>
                                     </div>
                                 ) : (
                                     <div className="p-10 text-center text-slate-500 border border-dashed rounded-lg">
@@ -1376,6 +1353,62 @@ export default function FirmaEditor() {
                                     </div>
                                 )}
                             </Card>
+
+                            {/* Column 3: Neuer Arbeitsgang anlegen */}
+                            {selectedAbteilungId ? (
+                                <Card className="p-6 border-0 shadow-sm rounded-xl">
+                                    <div className="flex items-center justify-between gap-3 mb-4">
+                                        <div>
+                                            <p className="text-xs uppercase tracking-wide text-slate-500">Neuanlage</p>
+                                            <h3 className="text-xl font-semibold text-slate-900">Neuer Arbeitsgang</h3>
+                                        </div>
+                                        <span className="inline-flex items-center px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-100 text-sm font-medium">
+                                            {selectedAbteilung?.name}
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="ag-beschreibung">Bezeichnung</Label>
+                                            <Input
+                                                id="ag-beschreibung"
+                                                value={newArbeitsgangBeschr}
+                                                onChange={e => setNewArbeitsgangBeschr(e.target.value)}
+                                                placeholder="z.B. Montage Metallfassade"
+                                                onKeyDown={e => e.key === 'Enter' && handleCreateArbeitsgang()}
+                                            />
+                                        </div>
+                                        <div className="rounded-xl border border-dashed border-slate-300 p-4 bg-slate-50">
+                                            <h4 className="text-sm font-semibold text-slate-900 mb-1">Hinweis</h4>
+                                            <p className="text-sm text-slate-600 leading-relaxed">
+                                                Nach dem Erstellen können Sie mit dem Stift-Icon den Stundensatz für das aktuelle Jahr festlegen.
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-3 pt-2">
+                                            <Button
+                                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                                                size="sm"
+                                                onClick={handleCreateArbeitsgang}
+                                                disabled={!newArbeitsgangBeschr.trim() || creatingArbeitsgang}
+                                            >
+                                                <Save className="w-4 h-4 mr-2" />
+                                                {creatingArbeitsgang ? 'Erstellt...' : 'Erstellen'}
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setNewArbeitsgangBeschr('')}
+                                            >
+                                                <X className="w-4 h-4 mr-2" /> Leeren
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </Card>
+                            ) : (
+                                <Card className="p-10 border border-dashed border-slate-200 shadow-sm rounded-xl text-center text-slate-500">
+                                    Wählen Sie eine Abteilung aus, um einen neuen Arbeitsgang anzulegen.
+                                </Card>
+                            )}
                         </div>
                     )}
 

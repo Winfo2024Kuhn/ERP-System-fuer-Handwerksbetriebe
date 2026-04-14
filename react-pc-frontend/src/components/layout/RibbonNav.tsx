@@ -54,15 +54,14 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Katalog',
                 items: [
                     { name: 'Artikel', href: '/artikel', icon: Package },
-                    { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
                     { name: 'Kategorien', href: '/produktkategorien', icon: Layers },
                 ]
             },
             {
-                label: 'Administration',
+                label: 'Firma & Organisation',
                 items: [
+                    { name: 'Firma & Abteilungen', href: '/firma', icon: Building2 },
                     { name: 'Dokumentenrechte', href: '/abteilung-berechtigungen', icon: Shield },
-                    { name: 'Firma', href: '/firma', icon: Building2 },
                     { name: 'Einstellungen', href: '/einstellungen', icon: Settings },
                 ]
             }
