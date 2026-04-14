@@ -12,6 +12,8 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 
 1. **Strategisches Refactoring & Auslagerung:**
    Sobald du merkst, dass es Sinn macht, Code-Teile (Komponenten, Hooks, Services) auszulagern, um sie wiederverwenden zu können: **Halte an, frage den User um Erlaubnis** und setze es erst nach Freigabe um.
+2. **DRY (Don't Repeat Yourself):** Vermeide Code-Duplizierung um jeden Preis! Entdeckst du     doppelten Code oder ähnliche Muster, lagere sie strategisch in wiederverwendbare Hooks, UI-Komponenten (Frontend) oder Utils/Services (Backend) aus. Kein "Copy & Paste" für schnelle Lösungen.
+3. **Strategie vor Schnelligkeit:** Denke langfristig. Ein sauber abstrahierter Code ist wertvoller als ein schneller Hack.
 
 ## 🛑 ABSOLUTE SICHERHEITSREGELN (NIEMALS IGNORIEREN)
 1. **API-Keys & Secrets:** NIEMALS in Code oder Commits schreiben. Nur in `application-local.properties` (gitignored). Vor jedem Commit `git diff --staged` prüfen. Bei Leak: Sofort rotieren!
@@ -27,6 +29,7 @@ Bevor du Code schreibst, lade dir **zwingend** die passende Dokumentation in dei
 
 ## 🚀 Build & Run (Quickstart)
 - Backend: `./mvnw spring-boot:run` (Port 8080)
+- Tests: `./mvnw.cmd test 2>&1 | tail -60`
 - Frontend PC: `cd react-pc-frontend && npm run dev`
 - Frontend Mobile: `cd react-zeiterfassung && npm run dev`
 
