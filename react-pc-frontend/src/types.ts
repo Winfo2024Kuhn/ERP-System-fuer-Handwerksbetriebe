@@ -270,12 +270,27 @@ export interface Mitarbeiter {
   plz?: string;
   ort?: string;
   email?: string;
+  telefon?: string;
+  festnetz?: string;
+  qualifikation?: string | null;
   stundenlohn?: number;
+  jahresUrlaub?: number;
   geburtstag?: string;
   eintrittsdatum?: string;
   aktiv?: boolean;
-  abteilungId?: number;
-  abteilungName?: string;
+  abteilungIds?: number[];
+  abteilungNames?: string | null;
+  loginToken?: string;
+  en1090RolleIds?: number[];
+  en1090RolleNames?: string | null;
+}
+
+export interface En1090Rolle {
+  id: number;
+  kurztext: string;
+  beschreibung: string | null;
+  sortierung: number;
+  aktiv: boolean;
 }
 
 export interface Arbeitsgang {

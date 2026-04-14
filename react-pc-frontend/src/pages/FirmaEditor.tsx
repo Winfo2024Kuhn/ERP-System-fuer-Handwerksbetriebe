@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, Shield, CheckCircle, XCircle, ChevronRight, Pencil, Search, Layers } from 'lucide-react';
+import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, Shield, CheckCircle, XCircle, ChevronRight, Pencil, Search, Layers, GitBranch } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -13,6 +13,7 @@ import { DatePicker } from '../components/ui/datepicker';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfigurator';
+import OrganigrammEditor from '../components/organigramm/OrganigrammEditor';
 
 import { useFeatures } from '../hooks/useFeatures';
 import { StundensatzEditModal } from '../components/StundensatzEditModal';
@@ -114,7 +115,7 @@ interface En1090RolleDto {
     aktiv: boolean;
 }
 
-type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'en1090rollen' | 'abteilungen' | 'systemsetup';
+type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'en1090rollen' | 'abteilungen' | 'organigramm' | 'systemsetup';
 type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
 const KOSTENSTELLEN_TYP_OPTIONS = [
@@ -593,6 +594,11 @@ export default function FirmaEditor() {
         }
     };
 
+    // Organigramm: Fullscreen-Editor (wie FormularwesenMain im Editor-Modus)
+    if (activeTab === 'organigramm') {
+        return <OrganigrammEditor onBack={() => setActiveTab('abteilungen')} />;
+    }
+
     return (
         <PageLayout
             ribbonCategory="Vorlagen & Stammdaten"
@@ -668,6 +674,13 @@ export default function FirmaEditor() {
                         >
                             <Layers className="w-4 h-4 inline-block mr-2" />
                             Abteilungen ({abteilungen.length})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('organigramm')}
+                            className="px-4 py-2 text-sm font-medium rounded-t-lg transition text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                        >
+                            <GitBranch className="w-4 h-4 inline-block mr-2" />
+                            Organigramm
                         </button>
                         <button
                             onClick={() => setActiveTab('systemsetup')}
