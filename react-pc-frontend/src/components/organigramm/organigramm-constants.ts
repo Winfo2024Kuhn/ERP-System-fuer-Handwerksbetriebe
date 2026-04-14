@@ -6,9 +6,11 @@ export const nodeTypes = {
     en1090rolle: En1090RolleNode,
 };
 
-/** Node dimensions per type (used by dagre layout) */
+/** Uniform width for all nodes; height varies by content */
+export const NODE_WIDTH = 260;
+
 export const NODE_DIMENSIONS: Record<string, { width: number; height: number }> = {
-    abteilung: { width: 220, height: 80 },
-    mitarbeiter: { width: 240, height: 110 },
-    en1090rolle: { width: 200, height: 90 },
+    abteilung: { width: NODE_WIDTH, height: 70 },
+    mitarbeiter: { width: NODE_WIDTH, height: 100 },
+    en1090rolle: { width: NODE_WIDTH, height: 90 },
 };

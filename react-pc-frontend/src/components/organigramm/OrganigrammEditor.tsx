@@ -22,10 +22,10 @@ import type { Abteilung, Mitarbeiter, En1090Rolle } from '../../types';
 const STORAGE_KEY = 'organigramm-state';
 
 interface OrganigrammEditorProps {
-    onBack: () => void;
+    onClose: () => void;
 }
 
-function OrganigrammEditorInner({ onBack }: OrganigrammEditorProps) {
+function OrganigrammEditorInner({ onClose }: OrganigrammEditorProps) {
     const toast = useToast();
     const features = useFeatures();
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -203,7 +203,7 @@ function OrganigrammEditorInner({ onBack }: OrganigrammEditorProps) {
                     onExportPdf={handleExportPdf}
                     onPrint={printOrganigramm}
                     onSave={handleSave}
-                    onBack={onBack}
+                    onClose={onClose}
                 />
             </div>
 

@@ -28,11 +28,13 @@ export interface En1090RolleNodeData {
 
 // ─── Abteilung Node ─────────────────────────────────────────────────────────
 
+const NODE_WIDTH_CLASS = 'w-[260px]';
+
 const AbteilungNodeComponent = ({ id, data }: NodeProps) => {
     const nodeData = data as AbteilungNodeData;
     return (
-        <div className="relative group min-w-[180px] max-w-[260px]">
-            <Handle type="target" position={Position.Top} className="!bg-rose-400 !w-2.5 !h-2.5 !border-2 !border-white" />
+        <div className={`relative group ${NODE_WIDTH_CLASS}`}>
+            <Handle type="target" position={Position.Top} className="!bg-rose-400 !w-3 !h-3 !border-2 !border-white !-top-1.5" />
             <div className="bg-white border border-slate-200 border-l-4 border-l-rose-500 rounded-lg shadow-sm px-4 py-3 hover:shadow-md transition-shadow">
                 <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center flex-shrink-0">
@@ -52,7 +54,7 @@ const AbteilungNodeComponent = ({ id, data }: NodeProps) => {
                     <X className="w-3 h-3" />
                 </button>
             )}
-            <Handle type="source" position={Position.Bottom} className="!bg-rose-400 !w-2.5 !h-2.5 !border-2 !border-white" />
+            <Handle type="source" position={Position.Bottom} className="!bg-rose-400 !w-3 !h-3 !border-2 !border-white !-bottom-1.5" />
         </div>
     );
 };
@@ -64,8 +66,8 @@ const MitarbeiterNodeComponent = ({ id, data }: NodeProps) => {
     const rollenArr = nodeData.en1090RolleNames?.split(',').map(r => r.trim()).filter(Boolean) || [];
 
     return (
-        <div className="relative group min-w-[180px] max-w-[280px]">
-            <Handle type="target" position={Position.Top} className="!bg-slate-400 !w-2.5 !h-2.5 !border-2 !border-white" />
+        <div className={`relative group ${NODE_WIDTH_CLASS}`}>
+            <Handle type="target" position={Position.Top} className="!bg-slate-400 !w-3 !h-3 !border-2 !border-white !-top-1.5" />
             <div className={`bg-white border border-slate-200 border-l-4 rounded-lg shadow-sm px-4 py-3 hover:shadow-md transition-shadow ${nodeData.aktiv !== false ? 'border-l-slate-400' : 'border-l-slate-300 opacity-60'}`}>
                 <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
@@ -104,7 +106,7 @@ const MitarbeiterNodeComponent = ({ id, data }: NodeProps) => {
                     <X className="w-3 h-3" />
                 </button>
             )}
-            <Handle type="source" position={Position.Bottom} className="!bg-slate-400 !w-2.5 !h-2.5 !border-2 !border-white" />
+            <Handle type="source" position={Position.Bottom} className="!bg-slate-400 !w-3 !h-3 !border-2 !border-white !-bottom-1.5" />
         </div>
     );
 };
@@ -114,8 +116,8 @@ const MitarbeiterNodeComponent = ({ id, data }: NodeProps) => {
 const En1090RolleNodeComponent = ({ id, data }: NodeProps) => {
     const nodeData = data as En1090RolleNodeData;
     return (
-        <div className="relative group min-w-[160px] max-w-[240px]">
-            <Handle type="target" position={Position.Top} className="!bg-amber-400 !w-2.5 !h-2.5 !border-2 !border-white" />
+        <div className={`relative group ${NODE_WIDTH_CLASS}`}>
+            <Handle type="target" position={Position.Top} className="!bg-amber-400 !w-3 !h-3 !border-2 !border-white !-top-1.5" />
             <div className="bg-white border border-slate-200 border-l-4 border-l-amber-500 rounded-lg shadow-sm px-4 py-3 hover:shadow-md transition-shadow">
                 <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
@@ -138,7 +140,7 @@ const En1090RolleNodeComponent = ({ id, data }: NodeProps) => {
                     <X className="w-3 h-3" />
                 </button>
             )}
-            <Handle type="source" position={Position.Bottom} className="!bg-amber-400 !w-2.5 !h-2.5 !border-2 !border-white" />
+            <Handle type="source" position={Position.Bottom} className="!bg-amber-400 !w-3 !h-3 !border-2 !border-white !-bottom-1.5" />
         </div>
     );
 };

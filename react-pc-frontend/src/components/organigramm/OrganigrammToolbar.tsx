@@ -1,4 +1,4 @@
-import { ArrowLeft, GitBranch, Image, FileText, Printer, Save, AlignVerticalSpaceAround } from 'lucide-react';
+import { X, GitBranch, Image, FileText, Printer, Save, AlignVerticalSpaceAround } from 'lucide-react';
 import { Button } from '../ui/button';
 
 interface OrganigrammToolbarProps {
@@ -7,7 +7,7 @@ interface OrganigrammToolbarProps {
     onExportPdf: () => void;
     onPrint: () => void;
     onSave: () => void;
-    onBack: () => void;
+    onClose: () => void;
 }
 
 export default function OrganigrammToolbar({
@@ -16,29 +16,19 @@ export default function OrganigrammToolbar({
     onExportPdf,
     onPrint,
     onSave,
-    onBack,
+    onClose,
 }: OrganigrammToolbarProps) {
     return (
         <div className="flex items-center justify-between gap-4 py-3 px-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
-            {/* Left — Back + Title */}
+            {/* Left — Title */}
             <div className="flex items-center gap-3 min-w-0">
-                <button
-                    onClick={onBack}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span className="hidden sm:inline">Zurück</span>
-                </button>
-
-                <div className="h-6 w-px bg-slate-200" />
-
                 <div className="flex items-center gap-2">
                     <GitBranch className="w-4 h-4 text-rose-600" />
                     <span className="text-sm font-semibold text-slate-800">Organigramm</span>
                 </div>
             </div>
 
-            {/* Right — Actions */}
+            {/* Center — Actions */}
             <div className="flex items-center gap-2 flex-shrink-0">
                 {/* Layout */}
                 <Button
@@ -107,6 +97,15 @@ export default function OrganigrammToolbar({
                     Speichern
                 </Button>
             </div>
+
+            {/* Right — Close */}
+            <button
+                onClick={onClose}
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer"
+                title="Editor schließen"
+            >
+                <X className="w-5 h-5" />
+            </button>
         </div>
     );
 }

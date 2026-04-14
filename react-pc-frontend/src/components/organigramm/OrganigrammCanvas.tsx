@@ -4,6 +4,8 @@ import {
     Background,
     Controls,
     MiniMap,
+    ConnectionMode,
+    ConnectionLineType,
     type Node,
     type Edge,
     type OnNodesChange,
@@ -82,6 +84,10 @@ export default function OrganigrammCanvas({
                 onPaneClick={onPaneClick}
                 nodeTypes={nodeTypes}
                 fitView
+                snapToGrid
+                snapGrid={[20, 20]}
+                connectionMode={ConnectionMode.Loose}
+                connectionLineType={ConnectionLineType.SmoothStep}
                 defaultEdgeOptions={{
                     type: 'smoothstep',
                     style: { stroke: '#94a3b8', strokeWidth: 2 },

@@ -46,6 +46,7 @@ import BetriebsmittelPage from './pages/BetriebsmittelPage';
 import SchweisserZertifikatePage from './pages/SchweisserZertifikatePage';
 import WpsPage from './pages/WpsPage';
 import WerkstoffzeugnissePage from './pages/WerkstoffzeugnissePage';
+import OrganigrammPage from './pages/OrganigrammPage';
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -64,6 +65,7 @@ export default function App() {
 
               {/* Fullscreen pages outside MainLayout — still require authentication */}
               <Route path="/dokument-editor" element={<RequireAuth><ErrorBoundary><DocumentEditorPage /></ErrorBoundary></RequireAuth>} />
+              <Route path="/organigramm" element={<RequireAuth><ErrorBoundary><OrganigrammPage /></ErrorBoundary></RequireAuth>} />
               <Route path="/onboarding" element={<RequireAdmin><ErrorBoundary><FirstLoginSetupPage /></ErrorBoundary></RequireAdmin>} />
 
               <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
