@@ -422,7 +422,7 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="relative bg-white rounded-xl shadow-2xl w-full h-full mx-10 max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-rose-50">
                     <div>

@@ -195,7 +195,7 @@ public class BestellungsUebersichtController {
     @GetMapping("/kostenstellen")
     public ResponseEntity<List<KostenstelleDto>> getKostenstellen() {
         var list = kostenstelleRepository.findByAktivTrueOrderBySortierungAsc().stream()
-                .map(k -> new KostenstelleDto(k.getId(), k.getBezeichnung(), k.getTyp().name()))
+                .map(k -> new KostenstelleDto(k.getId(), k.getBezeichnung(), k.getTyp().name(), k.getBeschreibung()))
                 .toList();
         return ResponseEntity.ok(list);
     }
@@ -669,5 +669,5 @@ public class BestellungsUebersichtController {
         public Long geschaeftsdokumentId;
     }
 
-    public record KostenstelleDto(Long id, String bezeichnung, String typ) {}
+    public record KostenstelleDto(Long id, String bezeichnung, String typ, String beschreibung) {}
 }

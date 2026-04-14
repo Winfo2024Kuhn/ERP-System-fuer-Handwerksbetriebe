@@ -53,7 +53,7 @@ export const KostenstelleSelectModal: React.FC<KostenstelleSelectModalProps> = (
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <Card className="w-full max-w-md flex flex-col max-h-[80vh] bg-white shadow-2xl">
+            <Card className="w-full max-w-lg flex flex-col max-h-[80vh] bg-white shadow-2xl">
                 <div className="p-4 border-b flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Package className="w-5 h-5 text-rose-600" />
@@ -67,7 +67,7 @@ export const KostenstelleSelectModal: React.FC<KostenstelleSelectModalProps> = (
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                         <Input
-                            placeholder="Suche nach Bezeichnung..."
+                            placeholder="Suche nach Bezeichnung oder Beschreibung..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="pl-9"
@@ -85,14 +85,12 @@ export const KostenstelleSelectModal: React.FC<KostenstelleSelectModalProps> = (
                             {filtered.map((k) => (
                                 <button
                                     key={k.id}
-                                    className="w-full text-left px-3 py-2 rounded hover:bg-rose-50 text-sm text-slate-700 hover:text-rose-700 transition-colors flex flex-col"
+                                    className="w-full text-left px-3 py-2 rounded hover:bg-rose-50 text-sm text-slate-700 hover:text-rose-700 transition-colors flex items-baseline gap-2"
                                     onClick={() => onSelect({ id: k.id, bezeichnung: k.bezeichnung })}
                                 >
-                                    <span className="font-medium">{k.bezeichnung}</span>
-                                    {(k.nummer || k.beschreibung) && (
-                                        <span className="text-xs text-slate-500">
-                                            {k.nummer ? `Nr. ${k.nummer}` : ''}{k.nummer && k.beschreibung ? ' • ' : ''}{k.beschreibung || ''}
-                                        </span>
+                                    <span className="font-medium shrink-0">{k.bezeichnung}</span>
+                                    {k.beschreibung && (
+                                        <span className="text-xs text-slate-400 truncate">{k.beschreibung}</span>
                                     )}
                                 </button>
                             ))}
