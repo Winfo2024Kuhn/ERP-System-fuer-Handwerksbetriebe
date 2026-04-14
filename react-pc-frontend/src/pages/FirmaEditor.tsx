@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, Shield, CheckCircle, XCircle } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, Shield, CheckCircle, XCircle, ChevronRight, Pencil, Search, Layers } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -15,6 +15,8 @@ import { useConfirm } from '../components/ui/confirm-dialog';
 import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfigurator';
 
 import { useFeatures } from '../hooks/useFeatures';
+import { StundensatzEditModal } from '../components/StundensatzEditModal';
+import { type Abteilung, type Arbeitsgang } from '../types';
 
 // Types
 interface Firmeninformation {
@@ -112,7 +114,7 @@ interface En1090RolleDto {
     aktiv: boolean;
 }
 
-type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'en1090rollen' | 'systemsetup';
+type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'en1090rollen' | 'abteilungen' | 'systemsetup';
 type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
 const KOSTENSTELLEN_TYP_OPTIONS = [
@@ -159,6 +161,29 @@ export default function FirmaEditor() {
     const [showRolleModal, setShowRolleModal] = useState(false);
     const [editingRolle, setEditingRolle] = useState<Partial<En1090RolleDto> | null>(null);
 
+    // Abteilungen & Arbeitsgänge State
+    const [abteilungen, setAbteilungen] = useState<Abteilung[]>([]);
+    const [arbeitsgaenge, setArbeitsgaenge] = useState<Arbeitsgang[]>([]);
+    const [selectedAbteilungId, setSelectedAbteilungId] = useState<number | null>(null);
+    const [newAbteilungName, setNewAbteilungName] = useState('');
+    const [newArbeitsgangBeschr, setNewArbeitsgangBeschr] = useState('');
+    const [creatingAbteilung, setCreatingAbteilung] = useState(false);
+    const [creatingArbeitsgang, setCreatingArbeitsgang] = useState(false);
+    const [editingArbeitsgang, setEditingArbeitsgang] = useState<Arbeitsgang | null>(null);
+    const [agSearchTerm, setAgSearchTerm] = useState('');
+
+    const selectedAbteilung = useMemo(
+        () => abteilungen.find(a => a.id === selectedAbteilungId) || null,
+        [abteilungen, selectedAbteilungId]
+    );
+    const filteredArbeitsgaenge = useMemo(() => {
+        if (!selectedAbteilungId) return [];
+        const base = arbeitsgaenge.filter(a => a.abteilungId === selectedAbteilungId);
+        if (!agSearchTerm.trim()) return base;
+        const term = agSearchTerm.toLowerCase();
+        return base.filter(a => a.beschreibung.toLowerCase().includes(term));
+    }, [arbeitsgaenge, selectedAbteilungId, agSearchTerm]);
+
     // Load Firmeninformation
     const loadFirma = useCallback(async () => {
         try {
@@ -204,6 +229,26 @@ export default function FirmaEditor() {
             }
         } catch (e) {
             console.error('Fehler beim Laden der EN-1090-Rollen', e);
+        }
+    }, []);
+
+    // Load Abteilungen & Arbeitsgänge
+    const loadAbteilungenData = useCallback(async () => {
+        try {
+            const [abtRes, agRes] = await Promise.all([
+                fetch('/api/abteilungen'),
+                fetch('/api/arbeitsgaenge')
+            ]);
+            if (abtRes.ok) {
+                const data = await abtRes.json();
+                setAbteilungen(Array.isArray(data) ? data : []);
+            }
+            if (agRes.ok) {
+                const data = await agRes.json();
+                setArbeitsgaenge(Array.isArray(data) ? data : []);
+            }
+        } catch (e) {
+            console.error('Fehler beim Laden der Abteilungen', e);
         }
     }, []);
 
@@ -266,7 +311,17 @@ export default function FirmaEditor() {
             if (sbSubTab === 'lohnabrechnungen') loadLohnabrechnungen();
             if (sbSubTab === 'bwa') loadBwaListe();
         }
-    }, [activeTab, sbSubTab, loadLohnabrechnungen, loadBwaListe]);
+        if (activeTab === 'abteilungen') loadAbteilungenData();
+    }, [activeTab, sbSubTab, loadLohnabrechnungen, loadBwaListe, loadAbteilungenData]);
+
+    // Auto-select first Abteilung when data loads
+    useEffect(() => {
+        if (abteilungen.length > 0 && selectedAbteilungId === null) {
+            setSelectedAbteilungId(abteilungen[0].id);
+        } else if (abteilungen.length > 0 && !abteilungen.some(a => a.id === selectedAbteilungId)) {
+            setSelectedAbteilungId(abteilungen[0].id);
+        }
+    }, [abteilungen, selectedAbteilungId]);
 
     useEffect(() => {
         setLoading(true);
@@ -435,6 +490,95 @@ export default function FirmaEditor() {
         }
     };
 
+    // Abteilung CRUD
+    const handleCreateAbteilung = async () => {
+        if (!newAbteilungName.trim()) return;
+        setCreatingAbteilung(true);
+        try {
+            const res = await fetch('/api/abteilungen', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newAbteilungName.trim() })
+            });
+            if (res.ok) {
+                setNewAbteilungName('');
+                await loadAbteilungenData();
+            } else {
+                toast.error('Fehler beim Erstellen der Abteilung.');
+            }
+        } catch (e) {
+            console.error(e);
+            toast.error('Fehler beim Erstellen der Abteilung.');
+        } finally {
+            setCreatingAbteilung(false);
+        }
+    };
+
+    const handleDeleteAbteilung = async (id: number) => {
+        if (!await confirmDialog({ title: 'Abteilung löschen', message: 'Abteilung wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
+        try {
+            const res = await fetch(`/api/abteilungen/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                await loadAbteilungenData();
+            } else if (res.status === 409) {
+                toast.warning('Abteilung kann nicht gelöscht werden – noch Arbeitsgänge zugeordnet.');
+            } else {
+                toast.error('Fehler beim Löschen der Abteilung.');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const handleCreateArbeitsgang = async () => {
+        if (!newArbeitsgangBeschr.trim() || !selectedAbteilungId) return;
+        setCreatingArbeitsgang(true);
+        try {
+            const res = await fetch('/api/arbeitsgaenge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ beschreibung: newArbeitsgangBeschr.trim(), abteilungId: selectedAbteilungId })
+            });
+            if (res.ok) {
+                setNewArbeitsgangBeschr('');
+                await loadAbteilungenData();
+            } else {
+                toast.error('Fehler beim Erstellen des Arbeitsgangs.');
+            }
+        } catch (e) {
+            console.error(e);
+            toast.error('Fehler beim Erstellen des Arbeitsgangs.');
+        } finally {
+            setCreatingArbeitsgang(false);
+        }
+    };
+
+    const handleDeleteArbeitsgang = async (id: number) => {
+        if (!await confirmDialog({ title: 'Arbeitsgang löschen', message: 'Arbeitsgang wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
+        try {
+            const res = await fetch(`/api/arbeitsgaenge/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                await loadAbteilungenData();
+            } else if (res.status === 409) {
+                toast.warning('Arbeitsgang kann nicht gelöscht werden – wird noch verwendet.');
+            } else {
+                toast.error('Fehler beim Löschen des Arbeitsgangs.');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const handleSaveStundensatz = async (arbeitsgangId: number, neuerStundensatz: number) => {
+        const res = await fetch(`/api/arbeitsgaenge/${arbeitsgangId}/stundensatz`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stundensatz: neuerStundensatz })
+        });
+        if (!res.ok) throw new Error('Speichern fehlgeschlagen');
+        await loadAbteilungenData();
+    };
+
     const getKostenstelleTypLabel = (typ: string) => {
         const option = KOSTENSTELLEN_TYP_OPTIONS.find(o => o.value === typ);
         return option?.label || typ;
@@ -513,6 +657,18 @@ export default function FirmaEditor() {
                                 EN 1090 Rollen ({en1090Rollen.length})
                             </button>
                         )}
+                        <button
+                            onClick={() => setActiveTab('abteilungen')}
+                            className={cn(
+                                "px-4 py-2 text-sm font-medium rounded-t-lg transition",
+                                activeTab === 'abteilungen'
+                                    ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                            )}
+                        >
+                            <Layers className="w-4 h-4 inline-block mr-2" />
+                            Abteilungen ({abteilungen.length})
+                        </button>
                         <button
                             onClick={() => setActiveTab('systemsetup')}
                             className={cn(
@@ -1055,6 +1211,174 @@ export default function FirmaEditor() {
                         </div>
                     )}
 
+                    {activeTab === 'abteilungen' && (
+                        <div className="grid grid-cols-1 xl:grid-cols-[1fr_2fr] gap-6">
+                            {/* Left: Abteilungen List + Create */}
+                            <Card className="p-6 border-0 shadow-sm rounded-xl">
+                                <div className="mb-4">
+                                    <p className="text-xs uppercase tracking-wide text-slate-500">Struktur</p>
+                                    <h4 className="text-lg font-semibold text-slate-900">Abteilungen</h4>
+                                </div>
+
+                                <div className="space-y-2">
+                                    {abteilungen.length === 0 ? (
+                                        <div className="p-8 text-center text-slate-500 border border-dashed rounded-lg">
+                                            <Building2 className="w-8 h-8 mx-auto mb-2 text-rose-200" />
+                                            Keine Abteilungen vorhanden
+                                        </div>
+                                    ) : (
+                                        abteilungen.map(abt => (
+                                            <div
+                                                key={abt.id}
+                                                className={cn(
+                                                    'group flex items-center justify-between gap-2 rounded-lg border px-3 py-2 cursor-pointer transition',
+                                                    'border-slate-200 bg-white hover:border-rose-200 hover:shadow-sm',
+                                                    selectedAbteilungId === abt.id ? 'border-rose-500 bg-rose-50 shadow-sm' : ''
+                                                )}
+                                                onClick={() => setSelectedAbteilungId(abt.id)}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <Building2 className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                                                    <span className="text-sm font-semibold text-slate-900 truncate">{abt.name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    {selectedAbteilungId === abt.id && (
+                                                        <ChevronRight className="w-4 h-4 text-rose-600" />
+                                                    )}
+                                                    <button
+                                                        onClick={e => { e.stopPropagation(); handleDeleteAbteilung(abt.id); }}
+                                                        className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
+                                                        title="Abteilung löschen"
+                                                    >
+                                                        <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+                                    <Input
+                                        value={newAbteilungName}
+                                        onChange={e => setNewAbteilungName(e.target.value)}
+                                        placeholder="Neue Abteilung..."
+                                        onKeyDown={e => e.key === 'Enter' && handleCreateAbteilung()}
+                                    />
+                                    <Button
+                                        className="w-full bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                                        size="sm"
+                                        onClick={handleCreateAbteilung}
+                                        disabled={!newAbteilungName.trim() || creatingAbteilung}
+                                    >
+                                        <Plus className="w-4 h-4 mr-1" /> Abteilung anlegen
+                                    </Button>
+                                </div>
+                            </Card>
+
+                            {/* Right: Arbeitsgänge */}
+                            <Card className="p-6 border-0 shadow-sm rounded-xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <p className="text-xs uppercase tracking-wide text-slate-500">Arbeitsgänge</p>
+                                        <h4 className="text-lg font-semibold text-slate-900">
+                                            {selectedAbteilung?.name || 'Abteilung auswählen'}
+                                        </h4>
+                                    </div>
+                                </div>
+
+                                {selectedAbteilungId ? (
+                                    <div className="space-y-4">
+                                        {/* Search */}
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                                            <Input
+                                                value={agSearchTerm}
+                                                onChange={e => setAgSearchTerm(e.target.value)}
+                                                placeholder="Arbeitsgänge durchsuchen..."
+                                                className="pl-9"
+                                            />
+                                        </div>
+
+                                        {/* List */}
+                                        <div className="space-y-2">
+                                            {filteredArbeitsgaenge.length === 0 ? (
+                                                <div className="p-8 text-center text-slate-500 border border-dashed rounded-lg">
+                                                    <Plus className="w-8 h-8 mx-auto mb-2 text-rose-200" />
+                                                    Keine Arbeitsgänge in dieser Abteilung
+                                                </div>
+                                            ) : (
+                                                filteredArbeitsgaenge.map(ag => {
+                                                    const currentYear = new Date().getFullYear();
+                                                    const isOutdated = ag.stundensatzJahr !== null && currentYear - ag.stundensatzJahr >= 1;
+                                                    const hasNoRate = ag.stundensatz === null;
+                                                    return (
+                                                        <div key={ag.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-slate-200 bg-white hover:border-rose-200 hover:shadow-sm transition">
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <p className="text-sm font-semibold text-slate-900 truncate">{ag.beschreibung}</p>
+                                                                    {(isOutdated || hasNoRate) && (
+                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                                                                            Stundensatz veraltet
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-sm text-rose-700 mt-0.5">
+                                                                    {ag.stundensatz !== null
+                                                                        ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ag.stundensatz)
+                                                                        : '—'}
+                                                                    <span className="text-slate-400 mx-1">/</span>
+                                                                    <span className="text-slate-600">Stunde</span>
+                                                                    {ag.stundensatzJahr && (
+                                                                        <span className="text-xs text-slate-400 ml-2">({ag.stundensatzJahr})</span>
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 flex-shrink-0">
+                                                                <Button variant="ghost" size="sm" className="text-rose-700 hover:bg-rose-100"
+                                                                    onClick={() => setEditingArbeitsgang(ag)} title="Stundensatz bearbeiten">
+                                                                    <Pencil className="w-4 h-4" />
+                                                                </Button>
+                                                                <Button variant="ghost" size="sm" className="text-rose-700 hover:bg-rose-100"
+                                                                    onClick={() => handleDeleteArbeitsgang(ag.id)} title="Löschen">
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+
+                                        {/* Add Arbeitsgang */}
+                                        <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                            <Input
+                                                value={newArbeitsgangBeschr}
+                                                onChange={e => setNewArbeitsgangBeschr(e.target.value)}
+                                                placeholder="Neuer Arbeitsgang, z.B. Montage Metallfassade"
+                                                onKeyDown={e => e.key === 'Enter' && handleCreateArbeitsgang()}
+                                                className="flex-1"
+                                            />
+                                            <Button
+                                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                                                size="sm"
+                                                onClick={handleCreateArbeitsgang}
+                                                disabled={!newArbeitsgangBeschr.trim() || creatingArbeitsgang}
+                                            >
+                                                <Plus className="w-4 h-4 mr-1" />
+                                                Erstellen
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="p-10 text-center text-slate-500 border border-dashed rounded-lg">
+                                        Wähle eine Abteilung aus
+                                    </div>
+                                )}
+                            </Card>
+                        </div>
+                    )}
+
                     {activeTab === 'systemsetup' && (
                         <div className="space-y-4">
                             <p className="text-sm text-slate-500">
@@ -1320,6 +1644,15 @@ export default function FirmaEditor() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            {/* Stundensatz Modal (Abteilungen-Tab) */}
+            {editingArbeitsgang && (
+                <StundensatzEditModal
+                    arbeitsgang={editingArbeitsgang}
+                    isOpen={!!editingArbeitsgang}
+                    onClose={() => setEditingArbeitsgang(null)}
+                    onSave={handleSaveStundensatz}
+                />
+            )}
         </PageLayout>
     );
 }
