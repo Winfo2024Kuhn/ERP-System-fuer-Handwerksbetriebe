@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -144,6 +144,8 @@ export default function MitarbeiterEditor() {
     const [showQualModal, setShowQualModal] = useState(false);
     const [editingQual, setEditingQual] = useState<Partial<MitarbeiterQualifikation> & { dateiFile?: File | null }>({});
     const [savingQual, setSavingQual] = useState(false);
+    const [isDraggingQual, setIsDraggingQual] = useState(false);
+    const qualFileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         loadMitarbeiter();
@@ -1231,7 +1233,7 @@ export default function MitarbeiterEditor() {
             </Dialog>
 
             {/* Qualifikation Modal */}
-            <Dialog open={showQualModal} onOpenChange={open => { if (!open) { setShowQualModal(false); setEditingQual({}); } }}>
+            <Dialog open={showQualModal} onOpenChange={open => { if (!open) { setShowQualModal(false); setEditingQual({}); } }} className="w-[700px] max-w-[95vw]">
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>{editingQual.id ? 'Nachweis bearbeiten' : 'Neuer Qualifikations-Nachweis'}</DialogTitle>
@@ -1269,11 +1271,50 @@ export default function MitarbeiterEditor() {
                                     <FileText className="w-3 h-3" /> Aktuell: {editingQual.dokumentAnzeigename}
                                 </p>
                             )}
-                            <input
-                                type="file"
-                                className="block w-full text-sm text-slate-700 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100"
-                                onChange={e => setEditingQual(prev => ({ ...prev, dateiFile: e.target.files?.[0] ?? null }))}
-                            />
+                            <div
+                                className={`mt-1 border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                                    isDraggingQual
+                                        ? 'border-rose-500 bg-rose-50'
+                                        : editingQual.dateiFile
+                                        ? 'border-rose-400 bg-rose-50'
+                                        : 'border-slate-300 hover:border-rose-400 hover:bg-slate-50'
+                                }`}
+                                onClick={() => qualFileInputRef.current?.click()}
+                                onDragOver={e => { e.preventDefault(); setIsDraggingQual(true); }}
+                                onDragLeave={() => setIsDraggingQual(false)}
+                                onDrop={e => {
+                                    e.preventDefault();
+                                    setIsDraggingQual(false);
+                                    const file = e.dataTransfer.files?.[0];
+                                    if (file) setEditingQual(prev => ({ ...prev, dateiFile: file }));
+                                }}
+                            >
+                                {editingQual.dateiFile ? (
+                                    <>
+                                        <FileText className="w-8 h-8 mx-auto mb-2 text-rose-500" />
+                                        <p className="text-sm font-medium text-rose-700">{editingQual.dateiFile.name}</p>
+                                        <button
+                                            type="button"
+                                            className="mt-2 text-xs text-slate-400 hover:text-rose-500 underline"
+                                            onClick={e => { e.stopPropagation(); setEditingQual(prev => ({ ...prev, dateiFile: null })); }}
+                                        >
+                                            Datei entfernen
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                                        <p className="text-sm font-medium text-slate-700">Datei hier ablegen oder klicken</p>
+                                        <p className="text-xs text-slate-400 mt-1">PDF, JPG, PNG oder andere Dokumente</p>
+                                    </>
+                                )}
+                                <input
+                                    ref={qualFileInputRef}
+                                    type="file"
+                                    className="hidden"
+                                    onChange={e => setEditingQual(prev => ({ ...prev, dateiFile: e.target.files?.[0] ?? null }))}
+                                />
+                            </div>
                         </div>
                     </div>
                     <DialogFooter>

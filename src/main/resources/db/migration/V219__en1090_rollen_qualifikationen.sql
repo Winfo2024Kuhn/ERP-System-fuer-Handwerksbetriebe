@@ -39,13 +39,14 @@ CREATE TABLE IF NOT EXISTS mitarbeiter_qualifikation (
 -- Seed: 10 Standard-Rollen gemäß EN 1090 Personalliste
 -- =========================================================
 INSERT IGNORE INTO en1090_rolle (kurztext, beschreibung, sortierung) VALUES
-('Leiter WPK',                 'Leiter der Werkseigenen Produktionskontrolle – verantwortlich für das gesamte WPK-System nach EN 1090.',                     10),
-('Stellvertreter WPK',         'Stellvertretender WPK-Leiter – übernimmt alle Aufgaben und Verantwortlichkeiten des WPK-Leiters bei dessen Abwesenheit.',    20),
+('Leiter WPK',                  'Leiter der Werkseigenen Produktionskontrolle – verantwortlich für das gesamte WPK-System nach EN 1090.',                     10),
+('Stellvertreter WPK',          'Stellvertretender WPK-Leiter – übernimmt alle Aufgaben und Verantwortlichkeiten des WPK-Leiters bei dessen Abwesenheit.',    20),
 ('Schweißaufsicht (SAP)',       'Schweiß-Aufsichts-Person nach EN ISO 14731 – überwacht und dokumentiert alle Schweißarbeiten im Betrieb.',                   30),
-('Stellvertreter SAP',         'Stellvertretende Schweißaufsicht – vertritt die SAP bei Abwesenheit.',                                                        40),
+('Stellvertreter SAP',          'Stellvertretende Schweißaufsicht – vertritt die SAP bei Abwesenheit.',                                                        40),
 ('Schweißer (mit Prüfung)',     'Schweißer mit gültiger Schweißerprüfung nach DIN EN ISO 9606-1 (3-Jahres-Erneuerung für EXC 2 Pflicht).',                   50),
 ('Schweißer (ohne Prüfung)',    'Schweißer ohne aktuelle Schweißerprüfung – nur für einfache, nicht prüfungspflichtige Schweißaufgaben einsetzbar.',           60),
 ('Montageleiter',               'Leiter der Montagetätigkeiten auf der Baustelle – verantwortlich für die fachgerechte Montage von Stahlbauteilen.',          70),
 ('Monteur',                     'Monteur für die Montage von Stahlkonstruktionen auf Baustellen gemäß Montageplänen und EN 1090.',                            80),
 ('Korrosionsschutzaufsicht',    'Überwacht und dokumentiert alle Korrosionsschutzmaßnahmen (Grundierung, Beschichtung, Verzinkung) gemäß EN ISO 12944.',     90),
+('Geschäftsführer',             'Geschäftsführer des Unternehmens – verantwortlich für die strategische und operative Leitung.',     110),
 ('Korrosionsschützer',          'Führt Korrosionsschutzarbeiten aus: Strahlen, Grundieren, Lackieren, Beschichten an Stahlbauteilen.',                       100);
