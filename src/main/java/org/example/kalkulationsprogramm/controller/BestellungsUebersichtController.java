@@ -37,6 +37,7 @@ public class BestellungsUebersichtController {
     private final ProjektDokumentRepository projektDokumentRepository;
     private final LieferantDokumentProjektAnteilRepository projektAnteilRepository;
     private final KostenstelleRepository kostenstelleRepository;
+    private final FrontendUserProfileRepository frontendUserProfileRepository;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -194,7 +195,7 @@ public class BestellungsUebersichtController {
     @GetMapping("/kostenstellen")
     public ResponseEntity<List<KostenstelleDto>> getKostenstellen() {
         var list = kostenstelleRepository.findByAktivTrueOrderBySortierungAsc().stream()
-                .map(k -> new KostenstelleDto(k.getId(), k.getBezeichnung(), k.getTyp().name()))
+                .map(k -> new KostenstelleDto(k.getId(), k.getBezeichnung(), k.getTyp().name(), k.getBeschreibung()))
                 .toList();
         return ResponseEntity.ok(list);
     }
@@ -218,6 +219,12 @@ public class BestellungsUebersichtController {
         LieferantDokument lieferantDokument = gd.getDokument();
         if (lieferantDokument == null) {
              return ResponseEntity.badRequest().body(Map.of("error", "Kein Basis-Dokument vorhanden"));
+        }
+
+        // Frontend-User laden (wer ordnet zu?)
+        FrontendUserProfile zugeordnetVon = null;
+        if (request.frontendUserProfileId != null) {
+            zugeordnetVon = frontendUserProfileRepository.findById(request.frontendUserProfileId).orElse(null);
         }
 
         // Lösche alte LieferantDokumentProjektAnteil für dieses Dokument
@@ -265,6 +272,7 @@ public class BestellungsUebersichtController {
                 projektAnteil.setBerechneterBetrag(anteil.betrag);
             }
             neueProjektAnteile.add(projektAnteil);
+            projektAnteil.setZugeordnetVon(zugeordnetVon);
             
             // PDF als ProjektDokument in EINGANGSRECHNUNGEN-Gruppe speichern (Nur bei Projektzuordnung)
             if (projekt != null) {
@@ -423,6 +431,9 @@ public class BestellungsUebersichtController {
             dto.prozentanteil = a.getProzent() != null ? BigDecimal.valueOf(a.getProzent()) : null;
             dto.beschreibung = a.getBeschreibung();
             dto.zugeordnetAm = a.getZugeordnetAm();
+            if (a.getZugeordnetVon() != null) {
+                dto.zugeordnetVonName = a.getZugeordnetVon().getDisplayName();
+            }
             return dto;
         }).collect(Collectors.toList());
 
@@ -628,6 +639,7 @@ public class BestellungsUebersichtController {
 
     public static class ZuordnungRequest {
         public Long geschaeftsdokumentId;
+        public Long frontendUserProfileId;
         public List<ProjektAnteil> projektAnteile;
     }
 
@@ -649,6 +661,7 @@ public class BestellungsUebersichtController {
         public BigDecimal prozentanteil;
         public String beschreibung;
         public LocalDateTime zugeordnetAm;
+        public String zugeordnetVonName;
         
         // Extra Info
         public String lieferantName;
@@ -657,5 +670,5 @@ public class BestellungsUebersichtController {
         public Long geschaeftsdokumentId;
     }
 
-    public record KostenstelleDto(Long id, String bezeichnung, String typ) {}
+    public record KostenstelleDto(Long id, String bezeichnung, String typ, String beschreibung) {}
 }

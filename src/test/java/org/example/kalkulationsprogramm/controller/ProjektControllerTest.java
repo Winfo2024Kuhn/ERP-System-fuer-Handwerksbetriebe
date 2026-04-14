@@ -174,4 +174,80 @@ class ProjektControllerTest {
                                 .param("bezahlt", "true"))
                                 .andExpect(status().isNotFound());
         }
+
+        // --- Regressionstests: Eingangsrechnungen nur mit Netto-Beträgen ---
+
+        @Test
+        void eingangsrechnungen_gibtNettoBasiertenBerechneterBetragZurueck_nichtBruttoAltdaten() throws Exception {
+                // Arrangieren: Anteil mit brutto-basiertem Altdaten-Betrag (75% von 119 Brutto = 89,25)
+                org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument gd =
+                        new org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument();
+                gd.setId(1L);
+                gd.setBetragNetto(new java.math.BigDecimal("100.00"));
+                gd.setBetragBrutto(new java.math.BigDecimal("119.00"));
+                gd.setDokumentNummer("TEST-001");
+
+                org.example.kalkulationsprogramm.domain.LieferantDokument dok =
+                        new org.example.kalkulationsprogramm.domain.LieferantDokument();
+                dok.setId(1L);
+                dok.setUploadDatum(java.time.LocalDateTime.of(2026, 4, 2, 0, 0));
+                dok.setGeschaeftsdaten(gd);
+
+                org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil anteil =
+                        new org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil();
+                anteil.setId(1L);
+                anteil.setProzent(75);
+                anteil.setBerechneterBetrag(new java.math.BigDecimal("89.25")); // Altdaten: 75% von Brutto
+                anteil.setDokument(dok);
+
+                when(lieferantDokumentProjektAnteilRepository.findByProjektIdEager(99L))
+                        .thenReturn(List.of(anteil));
+                when(lieferantDokumentProjektAnteilRepository.findByDokumentIdEager(1L))
+                        .thenReturn(List.of(anteil));
+
+                // berechneterBetrag muss 75,00 sein (75% von 100 Netto), NICHT 89,25 (75% von 119 Brutto)
+                // gesamtbetrag muss 100,00 sein (betragNetto), NICHT 119,00 (betragBrutto)
+                mockMvc.perform(get("/api/projekte/99/eingangsrechnungen"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$[0].berechneterBetrag").value(75.00))
+                        .andExpect(jsonPath("$[0].gesamtbetrag").value(100.00));
+        }
+
+        @Test
+        void eingangsrechnungen_dokumentenkette_gibtBetragNettoZurueck() throws Exception {
+                // Arrangieren: Dokument mit Dokumentenkette (verknüpfte Dokumente)
+                org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument gd =
+                        new org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument();
+                gd.setId(2L);
+                gd.setBetragNetto(new java.math.BigDecimal("200.00"));
+                gd.setBetragBrutto(new java.math.BigDecimal("238.00"));
+                gd.setDokumentNummer("TEST-002");
+
+                org.example.kalkulationsprogramm.domain.LieferantDokument dok =
+                        new org.example.kalkulationsprogramm.domain.LieferantDokument();
+                dok.setId(2L);
+                dok.setUploadDatum(java.time.LocalDateTime.of(2026, 4, 2, 0, 0));
+                dok.setGeschaeftsdaten(gd);
+                // Verknüpftes Dokument (Lieferschein) – keine Geschäftsdaten nötig
+                dok.setVerknuepfteDokumente(new java.util.HashSet<>());
+                dok.setVerknuepftVon(new java.util.HashSet<>());
+
+                org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil anteil =
+                        new org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil();
+                anteil.setId(2L);
+                anteil.setProzent(100);
+                anteil.setBerechneterBetrag(new java.math.BigDecimal("238.00")); // Altdaten: Brutto
+                anteil.setDokument(dok);
+
+                when(lieferantDokumentProjektAnteilRepository.findByProjektIdEager(99L))
+                        .thenReturn(List.of(anteil));
+                when(lieferantDokumentProjektAnteilRepository.findByDokumentIdEager(2L))
+                        .thenReturn(List.of(anteil));
+
+                // berechneterBetrag muss 200,00 sein (100% von 200 Netto), NICHT 238,00 (Brutto)
+                mockMvc.perform(get("/api/projekte/99/eingangsrechnungen"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$[0].berechneterBetrag").value(200.00))
+                        .andExpect(jsonPath("$[0].gesamtbetrag").value(200.00));
+        }
 }

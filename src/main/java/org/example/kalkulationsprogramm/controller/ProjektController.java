@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -10,11 +11,14 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Mahnstufe;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
@@ -57,6 +61,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -531,10 +536,11 @@ public class ProjektController {
      * Diese werden für die Nachkalkulation unter "Materialkosten" angezeigt.
      */
     @GetMapping("/{projektID}/eingangsrechnungen")
+    @Transactional(readOnly = true)
     public ResponseEntity<List<EingangsrechnungDto>> listeEingangsrechnungen(@PathVariable Long projektID) {
-        // 1. Hole Anteile (Legacy/Standard)
+        // 1. Hole Anteile mit eager-loaded Dokument + Geschäftsdaten + Lieferant
         List<LieferantDokumentProjektAnteil> anteile = lieferantDokumentProjektAnteilRepository
-                .findByProjektId(projektID);
+                .findByProjektIdEager(projektID);
         
         Map<Long, EingangsrechnungDto> dtoMap = new HashMap<>();
 
@@ -545,6 +551,10 @@ public class ProjektController {
             dto.prozent = anteil.getProzent();
             dto.berechneterBetrag = anteil.getBerechneterBetrag();
             dto.beschreibung = anteil.getBeschreibung();
+            dto.zugeordnetAm = anteil.getZugeordnetAm();
+            if (anteil.getZugeordnetVon() != null) {
+                dto.zugeordnetVonName = anteil.getZugeordnetVon().getDisplayName();
+            }
 
             if (anteil.getDokument() != null) {
                 var dok = anteil.getDokument();
@@ -557,7 +567,16 @@ public class ProjektController {
                     var gd = dok.getGeschaeftsdaten();
                     dto.geschaeftsdokumentId = gd.getId();
                     dto.dokumentNummer = gd.getDokumentNummer();
-                    dto.gesamtbetrag = gd.getBetragBrutto();
+                    dto.gesamtbetrag = gd.getBetragNetto();
+                    // berechneterBetrag dynamisch aus Netto neu berechnen – korrigiert brutto-basierte Altdaten
+                    if (gd.getBetragNetto() != null && anteil.getProzent() != null) {
+                        dto.berechneterBetrag = gd.getBetragNetto()
+                                .multiply(BigDecimal.valueOf(anteil.getProzent()))
+                                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    }
+                    if (gd.getDokumentDatum() != null) {
+                        dto.dokumentDatum = gd.getDokumentDatum();
+                    }
                 } else {
                     // Fallback Key if no Geschaeftsdaten (unlikely for matched invoices)
                     dto.geschaeftsdokumentId = dok.getId(); 
@@ -578,6 +597,79 @@ public class ProjektController {
                 } else {
                     dto.pdfUrl = "/api/lieferant-dokumente/" + dok.getId() + "/download";
                 }
+
+                // Alle Zuordnungen dieses Dokuments (alle Projekte + Kostenstellen)
+                List<LieferantDokumentProjektAnteil> alleDokAnteile = lieferantDokumentProjektAnteilRepository
+                        .findByDokumentIdEager(dok.getId());
+                dto.alleZuordnungen = alleDokAnteile.stream().map(a -> {
+                    AnteilDto ad = new AnteilDto();
+                    if (a.getProjekt() != null) {
+                        ad.projektId = a.getProjekt().getId();
+                        ad.projektName = a.getProjekt().getBauvorhaben();
+                        ad.projektNummer = a.getProjekt().getAuftragsnummer();
+                    }
+                    if (a.getKostenstelle() != null) {
+                        ad.kostenstelleId = a.getKostenstelle().getId();
+                        ad.kostenstelleName = a.getKostenstelle().getBezeichnung();
+                    }
+                    ad.prozent = a.getProzent();
+                    // berechneterBetrag aus Netto des Dokuments berechnen (korrigiert Altdaten)
+                    BigDecimal nettoFuerAnteil = (a.getDokument() != null && a.getDokument().getGeschaeftsdaten() != null)
+                            ? a.getDokument().getGeschaeftsdaten().getBetragNetto() : null;
+                    if (nettoFuerAnteil != null && a.getProzent() != null) {
+                        ad.berechneterBetrag = nettoFuerAnteil
+                                .multiply(BigDecimal.valueOf(a.getProzent()))
+                                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    } else {
+                        ad.berechneterBetrag = a.getBerechneterBetrag();
+                    }
+                    ad.beschreibung = a.getBeschreibung();
+                    ad.zugeordnetAm = a.getZugeordnetAm();
+                    if (a.getZugeordnetVon() != null) {
+                        ad.zugeordnetVonName = a.getZugeordnetVon().getDisplayName();
+                    }
+                    return ad;
+                }).collect(java.util.stream.Collectors.toList());
+
+                // Dokumentenkette (verknüpfte Dokumente)
+                dto.dokumentenKette = new java.util.ArrayList<>();
+                Set<LieferantDokument> verknuepft = dok.getVerknuepfteDokumente();
+                Set<LieferantDokument> verknuepftVon = dok.getVerknuepftVon();
+                Set<LieferantDokument> alleVerknuepft = new java.util.HashSet<>();
+                if (verknuepft != null) alleVerknuepft.addAll(verknuepft);
+                if (verknuepftVon != null) alleVerknuepft.addAll(verknuepftVon);
+                // Also add the document itself to the chain
+                alleVerknuepft.add(dok);
+                
+                if (alleVerknuepft.size() > 1) {
+                    // Sort chain by type order
+                    List<LieferantDokument> sortedChain = new java.util.ArrayList<>(alleVerknuepft);
+                    sortedChain.sort((a, b) -> {
+                        int orderA = getTypOrder(a.getTyp());
+                        int orderB = getTypOrder(b.getTyp());
+                        return Integer.compare(orderA, orderB);
+                    });
+                    for (LieferantDokument chainDoc : sortedChain) {
+                        DokumentKetteRefDto ref = new DokumentKetteRefDto();
+                        ref.id = chainDoc.getId();
+                        ref.typ = chainDoc.getTyp().name();
+                        if (chainDoc.getGeschaeftsdaten() != null) {
+                            ref.dokumentNummer = chainDoc.getGeschaeftsdaten().getDokumentNummer();
+                            ref.dokumentDatum = chainDoc.getGeschaeftsdaten().getDokumentDatum();
+                            ref.betragNetto = chainDoc.getGeschaeftsdaten().getBetragNetto();
+                        }
+                        // PDF URL
+                        if (chainDoc.getAttachment() != null && chainDoc.getAttachment().getEmail() != null && chainDoc.getLieferant() != null) {
+                            var att = chainDoc.getAttachment();
+                            ref.pdfUrl = "/api/lieferanten/" + chainDoc.getLieferant().getId() +
+                                    "/emails/" + att.getEmail().getId() +
+                                    "/attachments/" + att.getId();
+                        } else {
+                            ref.pdfUrl = "/api/lieferant-dokumente/" + chainDoc.getId() + "/download";
+                        }
+                        dto.dokumentenKette.add(ref);
+                    }
+                }
             }
             // Add to map - Key is GeschaeftsdokumentId (usually same as DocumentId)
             if (dto.geschaeftsdokumentId != null) {
@@ -586,6 +678,18 @@ public class ProjektController {
         }
 
         return ResponseEntity.ok(new java.util.ArrayList<>(dtoMap.values()));
+    }
+
+    private int getTypOrder(LieferantDokumentTyp typ) {
+        if (typ == null) return 99;
+        return switch (typ) {
+            case ANGEBOT -> 1;
+            case AUFTRAGSBESTAETIGUNG -> 2;
+            case LIEFERSCHEIN -> 3;
+            case RECHNUNG -> 4;
+            case GUTSCHRIFT -> 5;
+            case SONSTIG -> 6;
+        };
     }
 
     public static class EingangsrechnungDto {
@@ -601,6 +705,34 @@ public class ProjektController {
         public String beschreibung;
         public Long lieferantId;
         public String lieferantName;
+        public String pdfUrl;
+        public String zugeordnetVonName;
+        public LocalDateTime zugeordnetAm;
+        // Alle Zuordnungen dieses Dokuments (Projektanteile + Kostenstellen)
+        public List<AnteilDto> alleZuordnungen;
+        // Dokumentenkette
+        public List<DokumentKetteRefDto> dokumentenKette;
+    }
+
+    public static class AnteilDto {
+        public Long projektId;
+        public String projektName;
+        public String projektNummer;
+        public Long kostenstelleId;
+        public String kostenstelleName;
+        public Integer prozent;
+        public BigDecimal berechneterBetrag;
+        public String beschreibung;
+        public String zugeordnetVonName;
+        public LocalDateTime zugeordnetAm;
+    }
+
+    public static class DokumentKetteRefDto {
+        public Long id;
+        public String typ;
+        public String dokumentNummer;
+        public LocalDate dokumentDatum;
+        public BigDecimal betragNetto;
         public String pdfUrl;
     }
 

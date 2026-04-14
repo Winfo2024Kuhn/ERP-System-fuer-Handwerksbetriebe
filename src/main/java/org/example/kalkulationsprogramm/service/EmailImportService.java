@@ -176,7 +176,18 @@ public class EmailImportService {
                             imported++;
                         }
                     } catch (Exception e) {
-                        log.debug("[EmailImport] Fehler bei Message: {}", e.getMessage());
+                        // Versuche Kontext-Infos aus dem Envelope zu extrahieren (bereits vorgeladen)
+                        String msgSubject = "<unbekannt>";
+                        String msgFrom = "<unbekannt>";
+                        try {
+                            if (msg.getSubject() != null) msgSubject = msg.getSubject();
+                            Address[] from = msg.getFrom();
+                            if (from != null && from.length > 0) msgFrom = from[0].toString();
+                        } catch (Exception ignored) {}
+                        log.warn("[EmailImport] Fehler beim Verarbeiten einer Nachricht in Ordner '{}'" +
+                                " (Betreff: '{}', Von: '{}'): {} – {}",
+                                folderName, msgSubject, msgFrom,
+                                e.getClass().getSimpleName(), e.getMessage());
                     }
                 }
 
@@ -193,7 +204,7 @@ public class EmailImportService {
             }
 
         } catch (MessagingException e) {
-            log.debug("[EmailImport] Ordner {} nicht verfügbar: {}", folderName, e.getMessage());
+            log.warn("[EmailImport] Ordner '{}' nicht verfügbar: {}", folderName, e.getMessage());
             return 0;
         }
     }
@@ -210,13 +221,30 @@ public class EmailImportService {
         String[] ids = msg.getHeader("Message-ID");
         String messageId = (ids != null && ids.length > 0) ? ids[0] : null;
 
+        boolean fallbackId = false;
         if (messageId == null) {
-            return false; // Ohne Message-ID keine sichere Deduplizierung
+            // Fallback: IMAP-UID + Ordner als deterministische Message-ID
+            long uid = folder.getUID(msg);
+            messageId = "<no-msgid-uid-" + uid + "@" + folder.getFullName().replace(" ", "_") + ">";
+            fallbackId = true;
         }
 
         // Bereits importiert?
         if (emailRepository.existsByMessageId(messageId)) {
             return false;
+        }
+
+        // Nur beim ersten Import warnen (nach Deduplizierungsprüfung)
+        if (fallbackId) {
+            try {
+                String fallbackSubject = msg.getSubject() != null ? msg.getSubject() : "<kein Betreff>";
+                Address[] fallbackFrom = msg.getFrom();
+                String fallbackFromStr = (fallbackFrom != null && fallbackFrom.length > 0) ? fallbackFrom[0].toString() : "<unbekannt>";
+                log.warn("[EmailImport] Neue Email ohne Message-ID in Ordner '{}', Von: '{}', Betreff: '{}' – Fallback-ID: {}",
+                        folder.getFullName(), fallbackFromStr, fallbackSubject, messageId);
+            } catch (Exception ignored) {
+                log.warn("[EmailImport] Neue Email ohne Message-ID in Ordner '{}' – Fallback-ID: {}", folder.getFullName(), messageId);
+            }
         }
 
         // Email erstellen
@@ -254,14 +282,37 @@ public class EmailImportService {
         Email parentEmail = findParentEmail(msg);
         if (parentEmail != null) {
             email.setParentEmail(parentEmail);
-            // Zuordnung vom Parent übernehmen (stärkstes Signal - gleicher
-            // Konversations-Thread!)
-            if (parentEmail.getProjekt() != null) {
-                email.assignToProjekt(parentEmail.getProjekt());
-            } else if (parentEmail.getAnfrage() != null) {
-                email.assignToAnfrage(parentEmail.getAnfrage());
-            } else if (parentEmail.getLieferant() != null) {
-                email.assignToLieferant(parentEmail.getLieferant());
+            // Zuordnung vom Parent übernehmen, ABER: Lieferant-Domain hat Vorrang
+            // vor Projekt/Anfrage-Vererbung. Grund: Lieferanten senden Rechnungen
+            // oft als Antwort auf Projekt-Threads, sollen aber dem Lieferanten
+            // zugeordnet werden (nicht dem Projekt).
+            boolean assignedToLieferantByDomain = false;
+            if (parentEmail.getProjekt() != null || parentEmail.getAnfrage() != null) {
+                // Prüfe ob Absender ein bekannter Lieferant ist
+                String senderDomain = email.getSenderDomain();
+                if (senderDomain == null && email.getFromAddress() != null && email.getFromAddress().contains("@")) {
+                    senderDomain = email.getFromAddress()
+                            .substring(email.getFromAddress().lastIndexOf('@') + 1).toLowerCase();
+                }
+                if (senderDomain != null) {
+                    List<org.example.kalkulationsprogramm.domain.Lieferanten> lieferantMatches =
+                            lieferantenRepository.findByEmailDomain(senderDomain);
+                    if (!lieferantMatches.isEmpty()) {
+                        email.assignToLieferant(lieferantMatches.getFirst());
+                        assignedToLieferantByDomain = true;
+                        log.info("[EmailImport] Lieferant-Domain {} hat Vorrang vor Parent-Zuordnung (Projekt/Anfrage) für Email von {}",
+                                senderDomain, email.getFromAddress());
+                    }
+                }
+            }
+            if (!assignedToLieferantByDomain) {
+                if (parentEmail.getProjekt() != null) {
+                    email.assignToProjekt(parentEmail.getProjekt());
+                } else if (parentEmail.getAnfrage() != null) {
+                    email.assignToAnfrage(parentEmail.getAnfrage());
+                } else if (parentEmail.getLieferant() != null) {
+                    email.assignToLieferant(parentEmail.getLieferant());
+                }
             }
         }
 

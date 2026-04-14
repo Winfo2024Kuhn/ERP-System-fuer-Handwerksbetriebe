@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ElementType } from "react";
-import { useSearchParams } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
-    AlertTriangle,
     ArrowLeft,
     Briefcase,
     Calendar,
     Check,
-    CheckCircle2,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -18,7 +16,6 @@ import {
     FileText,
     FolderOpen,
     Hammer,
-    Info,
     Lock,
     Mail,
     MapPin,
@@ -27,14 +24,14 @@ import {
     Receipt,
     RefreshCw,
     Search,
-    Shield,
     StickyNote,
     Ban,
+    Building2,
+    ExternalLink,
     Trash2,
     Upload,
     User,
     X,
-    XCircle,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -60,7 +57,7 @@ import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks }
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
-import { useFeatures } from '../hooks/useFeatures';
+import { ZuordnungModal } from '../components/ZuordnungModal';
 
 interface Supplier {
     id: number;
@@ -141,6 +138,8 @@ const TYP_COLORS: Record<string, string> = {
 
 
 
+
+
 // ==================== DETAIL VIEW ====================
 
 interface ProjektDetailViewProps {
@@ -148,62 +147,20 @@ interface ProjektDetailViewProps {
     onBack: () => void;
     onEdit: () => void;
     onRefresh: () => Promise<void>;
-    initialTab?: 'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen' | 'en1090';
-}
-
-interface WpkStatus {
-    schweisser: string;
-    schweisserHinweis: string;
-    wps: string;
-    wpsHinweis: string;
-    werkstoffzeugnisse: string;
-    werkstoffzeugnisseHinweis: string;
-    echeck: string;
-    echeckHinweis: string;
-}
-
-function En1090StatusBadge({ status }: { status: string }) {
-    if (status === 'OK') return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold">
-            <CheckCircle2 className="w-3.5 h-3.5" /> OK
-        </span>
-    );
-    if (status === 'WARNUNG') return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold">
-            <AlertTriangle className="w-3.5 h-3.5" /> Warnung
-        </span>
-    );
-    return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 text-xs font-semibold">
-            <XCircle className="w-3.5 h-3.5" /> Fehler
-        </span>
-    );
+    initialTab?: 'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen';
 }
 
 const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, onEdit, onRefresh, initialTab }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
-    const features = useFeatures();
-    const [activeTab, setActiveTab] = useState<'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen' | 'en1090'>(initialTab || 'zeiten');
-    const [wpkStatus, setWpkStatus] = useState<WpkStatus | null>(null);
-    const [wpkLoading, setWpkLoading] = useState(false);
+    const navigate = useNavigate();
+    const [activeTab, setActiveTab] = useState<'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen'>(initialTab || 'zeiten');
     const [kurzbeschreibung, setKurzbeschreibung] = useState(projekt.kurzbeschreibung || '');
     const [savingDesc, setSavingDesc] = useState(false);
 
     useEffect(() => {
         setKurzbeschreibung(projekt.kurzbeschreibung || '');
     }, [projekt.kurzbeschreibung]);
-
-    // EN 1090 WPK-Status laden wenn Tab aktiv
-    useEffect(() => {
-        if (activeTab !== 'en1090' || !features.en1090) return;
-        setWpkLoading(true);
-        fetch(`/api/en1090/wpk/${projekt.id}`)
-            .then(r => r.ok ? r.json() : null)
-            .then((data: WpkStatus | null) => setWpkStatus(data))
-            .catch(() => setWpkStatus(null))
-            .finally(() => setWpkLoading(false));
-    }, [activeTab, projekt.id, features.en1090]);
 
     const handleSaveDescription = async () => {
         setSavingDesc(true);
@@ -298,8 +255,29 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // PDF Preview Modal State
     const [pdfPreviewDoc, setPdfPreviewDoc] = useState<{ url: string; title: string } | null>(null);
+    const [zuordnungBearbeitenEr, setZuordnungBearbeitenEr] = useState<Eingangsrechnung | null>(null);
 
     // Eingangsrechnungen State
+    interface EingangsrechnungAnteil {
+        projektId?: number;
+        projektName?: string;
+        projektNummer?: string;
+        kostenstelleId?: number;
+        kostenstelleName?: string;
+        prozent?: number;
+        berechneterBetrag?: number;
+        beschreibung?: string;
+        zugeordnetVonName?: string;
+        zugeordnetAm?: string;
+    }
+    interface DokumentKetteRef {
+        id: number;
+        typ: string;
+        dokumentNummer?: string;
+        dokumentDatum?: string;
+        betragNetto?: number;
+        pdfUrl?: string;
+    }
     interface Eingangsrechnung {
         id: number;
         dokumentId: number;
@@ -314,6 +292,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         lieferantId: number;
         lieferantName: string;
         pdfUrl: string;
+        zugeordnetVonName?: string;
+        zugeordnetAm?: string;
+        alleZuordnungen?: EingangsrechnungAnteil[];
+        dokumentenKette?: DokumentKetteRef[];
     }
     const [eingangsrechnungen, setEingangsrechnungen] = useState<Eingangsrechnung[]>([]);
 
@@ -566,28 +548,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             toast.error('Fehler beim Löschen');
         }
     };
-
-    // Zuordnung aufheben
-    const handleZuordnungAufheben = async (geschaeftsdokumentId: number) => {
-        if (!await confirmDialog({ title: 'Zuordnung aufheben', message: 'Möchten Sie diese Zuordnung wirklich aufheben? Die Rechnung wird wieder unter "Abgeschlossene Bestellungen" angezeigt.', variant: 'warning', confirmLabel: 'Aufheben' })) {
-            return;
-        }
-        try {
-            const res = await fetch(`/api/bestellungen-uebersicht/zuordnung/${geschaeftsdokumentId}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
-                await loadEingangsrechnungen();
-                await onRefresh();
-            } else {
-                toast.error('Fehler beim Aufheben der Zuordnung');
-            }
-        } catch (error) {
-            console.error(error);
-            toast.error('Fehler beim Aufheben der Zuordnung');
-        }
-    };
-
 
     useEffect(() => {
         if (!showMaterialModal && !showSupplierPicker) return;
@@ -1147,20 +1107,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     <StickyNote className="w-4 h-4 inline-block mr-2" />
                     Bau Tagebuch ({notizen.length})
                 </button>
-                {features.en1090 && (
-                    <button
-                        onClick={() => setActiveTab('en1090')}
-                        className={cn(
-                            "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
-                            activeTab === 'en1090'
-                                ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
-                                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                        )}
-                    >
-                        <Shield className="w-4 h-4 inline-block mr-2" />
-                        EN 1090
-                    </button>
-                )}
             </div>
 
             {/* Tab Content */}
@@ -1316,196 +1262,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             Speichern
                         </Button>
                     </div>
-                </div>
-            )}
-
-            {activeTab === 'en1090' && features.en1090 && (
-                <div className="space-y-6">
-                    {/* Header */}
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h3 className="text-lg font-medium text-slate-900">EN 1090 – Anforderungen</h3>
-                            <p className="text-sm text-slate-500 mt-0.5">
-                                {projekt.excKlasse === 'EXC_1' ? 'Ausführungsklasse EXC 1 – Einfache Bauteile' :
-                                 projekt.excKlasse === 'EXC_2' ? 'Ausführungsklasse EXC 2 – Typischer Stahlbau' :
-                                 'Keine Ausführungsklasse zugewiesen'}
-                            </p>
-                        </div>
-                        {projekt.excKlasse === 'EXC_2' && (
-                            <button
-                                onClick={() => {
-                                    setWpkLoading(true);
-                                    fetch(`/api/en1090/wpk/${projekt.id}`)
-                                        .then(r => r.ok ? r.json() : null)
-                                        .then((data: WpkStatus | null) => setWpkStatus(data))
-                                        .catch(() => setWpkStatus(null))
-                                        .finally(() => setWpkLoading(false));
-                                }}
-                                disabled={wpkLoading}
-                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm font-medium disabled:opacity-50 transition-colors"
-                            >
-                                <RefreshCw className={`w-3.5 h-3.5 ${wpkLoading ? 'animate-spin' : ''}`} />
-                                Aktualisieren
-                            </button>
-                        )}
-                    </div>
-
-                    {/* KEINE EN 1090 */}
-                    {!projekt.excKlasse && (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
-                            <Shield className="w-10 h-10 mx-auto mb-3 text-slate-300" />
-                            <p className="font-medium text-slate-600">Kein EN 1090 für dieses Projekt</p>
-                            <p className="text-sm text-slate-400 mt-1">Es wurde keine Ausführungsklasse zugewiesen. EN 1090-Anforderungen sind nicht aktiv.</p>
-                        </div>
-                    )}
-
-                    {/* EXC 1 */}
-                    {projekt.excKlasse === 'EXC_1' && (
-                        <>
-                            <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 flex items-start gap-3">
-                                <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="font-semibold text-blue-800 text-sm">EXC 1 – Grundanforderungen</p>
-                                    <p className="text-blue-700 text-xs mt-1">Geringste Anforderungsstufe. Keine externe WPK-Zertifizierung erforderlich. Interne Eigenkontrolle genügt.</p>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {([
-                                    { icon: User, title: 'Schweißer-Qualifikation', pflicht: 'Empfohlen', desc: 'Grundqualifikation nach EN ISO 9606-1 bei tragenden Schweißnähten empfohlen. Kein vorgeschriebenes Wiederholungsintervall.' },
-                                    { icon: FileText, title: 'WPS (Schweißanweisung)', pflicht: 'Empfohlen', desc: 'Standardverfahren und vorqualifizierte Schweißanweisungen (pWPS) ausreichend. Keine vollqualifizierte WPS nach EN ISO 15614-1 erforderlich.' },
-                                    { icon: File, title: 'Werkstoffzeugnis', pflicht: 'Pflicht*', desc: '2.1-Zeugnis (einfache Konformitätsbescheinigung nach EN 10204) genügt. Ein 3.1-Zeugnis (Schmelzerzeugnis) ist nicht erforderlich.' },
-                                    { icon: Shield, title: 'Betriebsmittelprüfung', pflicht: 'Pflicht', desc: 'DGUV V3 (BGV A3) Prüfpflicht gilt unabhängig von EN 1090. Regelmäßige E-Prüfung aller elektrischen Betriebsmittel.' },
-                                    { icon: CheckCircle2, title: 'WPK-Überwachung', pflicht: 'Intern', desc: 'Interne werkseigene Produktionskontrolle (WPK) ausreichend. Keine externe Zertifizierung durch eine notifizierte Stelle erforderlich.' },
-                                    { icon: User, title: 'Schweißaufsicht', pflicht: 'Optional', desc: 'Keine zertifizierte Schweißaufsichtsperson nach EN ISO 14731 (IWE/IWI) vorgeschrieben. Empfohlen für größere Schweißarbeiten.' },
-                                ] as { icon: ElementType; title: string; pflicht: string; desc: string }[]).map(item => (
-                                    <div key={item.title} className="rounded-xl border-2 border-slate-200 bg-white p-5">
-                                        <div className="flex items-start justify-between gap-3 mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <item.icon className="w-5 h-5 text-slate-500 flex-shrink-0" />
-                                                <h4 className="font-semibold text-slate-800 text-sm">{item.title}</h4>
-                                            </div>
-                                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 ${
-                                                item.pflicht === 'Pflicht' || item.pflicht === 'Pflicht*' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                                                item.pflicht === 'Intern' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                                item.pflicht === 'Empfohlen' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                                'bg-slate-50 text-slate-500 border-slate-200'
-                                            }`}>{item.pflicht}</span>
-                                        </div>
-                                        <p className="text-sm text-slate-600 leading-relaxed">{item.desc}</p>
-                                    </div>
-                                ))}
-                            </div>
-                            <p className="text-xs text-slate-400">* Bei tragenden Bauteilen und Verbindungen gemäß Projektspezifikation.</p>
-                        </>
-                    )}
-
-                    {/* EXC 2 */}
-                    {projekt.excKlasse === 'EXC_2' && (
-                        <>
-                            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
-                                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="font-semibold text-amber-800 text-sm">EXC 2 – Erhöhte Anforderungen</p>
-                                    <p className="text-amber-700 text-xs mt-1">Standard für den typischen Stahlbau. WPS-Pflicht, 3.1-Zeugnis, Schweißaufsicht und externe WPK-Zertifizierung durch notifizierte Stelle erforderlich.</p>
-                                </div>
-                            </div>
-                            <h4 className="font-medium text-slate-700 text-sm">Normanforderungen</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {([
-                                    { icon: User, title: 'Schweißer-Zertifizierung', desc: 'Gültige Prüfbescheinigung nach EN ISO 9606-1 (Pflicht). Erneuerung alle 3 Jahre oder 2-Jahres-Aktivitätsnachweis durch die verantwortliche Schweißaufsichtsperson.' },
-                                    { icon: FileText, title: 'WPS (Schweißanweisung)', desc: 'Vollqualifizierte Schweißanweisung nach EN ISO 15614-1 erforderlich. Vorqualifizierte pWPS ist nicht ausreichend. Je Schweißverfahren und Nahttyp erforderlich.' },
-                                    { icon: File, title: 'Werkstoffzeugnis 3.1', desc: '3.1-Zeugnis nach EN 10204 (Schmelzerzeugnis des Herstellers) ist Pflicht. Lückenlose Rückverfolgbarkeit des Materials bis zur Charge muss gewährleistet sein.' },
-                                    { icon: Shield, title: 'Betriebsmittelprüfung', desc: 'DGUV V3 (BGV A3) Prüfintervalle lückenlos einhalten und dokumentieren. Prüfprotokolle müssen aufbewahrt und auf Verlangen vorgelegt werden können.' },
-                                    { icon: CheckCircle2, title: 'WPK + Zertifizierung', desc: 'Interne WPK + externe Erstinspektion durch notifizierte Stelle. Laufende Fremdüberwachung erforderlich. CE-Kennzeichnung der Bauteile ist Pflicht.' },
-                                    { icon: User, title: 'Schweißaufsichtsperson', desc: 'Zertifizierte Schweißaufsicht nach EN ISO 14731 (IWE – Internationaler Schweißingenieur, IWI oder gleichwertige Qualifikation EWE/EWI) ist zu benennen.' },
-                                ] as { icon: ElementType; title: string; desc: string }[]).map(item => (
-                                    <div key={item.title} className="rounded-xl border-2 border-rose-200 bg-rose-50 p-5">
-                                        <div className="flex items-start justify-between gap-3 mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <item.icon className="w-5 h-5 text-rose-600 flex-shrink-0" />
-                                                <h4 className="font-semibold text-slate-800 text-sm">{item.title}</h4>
-                                            </div>
-                                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-rose-100 text-rose-700 border-rose-300 flex-shrink-0">Pflicht</span>
-                                        </div>
-                                        <p className="text-sm text-slate-600 leading-relaxed">{item.desc}</p>
-                                    </div>
-                                ))}
-                            </div>
-
-                            {/* Live WPK-Status */}
-                            <div className="border-t border-slate-200 pt-4 space-y-4">
-                                <h4 className="font-medium text-slate-700 text-sm">Live WPK-Status</h4>
-                                {wpkLoading && !wpkStatus && (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {[1,2,3,4].map(i => (
-                                            <div key={i} className="rounded-xl border-2 border-slate-200 bg-slate-50 p-5 animate-pulse">
-                                                <div className="h-5 bg-slate-200 rounded w-1/3 mb-3" />
-                                                <div className="h-4 bg-slate-200 rounded w-2/3" />
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                {wpkStatus && (
-                                    <>
-                                        {(() => {
-                                            const values = [wpkStatus.schweisser, wpkStatus.wps, wpkStatus.werkstoffzeugnisse, wpkStatus.echeck];
-                                            const gesamt = values.includes('FEHLER') ? 'FEHLER' : values.includes('WARNUNG') ? 'WARNUNG' : 'OK';
-                                            return (
-                                                <div className={`rounded-xl p-4 flex items-center gap-3 ${
-                                                    gesamt === 'OK' ? 'bg-green-100 border border-green-200' :
-                                                    gesamt === 'WARNUNG' ? 'bg-yellow-100 border border-yellow-200' :
-                                                    'bg-red-100 border border-red-200'
-                                                }`}>
-                                                    {gesamt === 'OK' && <CheckCircle2 className="w-5 h-5 text-green-600" />}
-                                                    {gesamt === 'WARNUNG' && <AlertTriangle className="w-5 h-5 text-yellow-600" />}
-                                                    {gesamt === 'FEHLER' && <XCircle className="w-5 h-5 text-red-600" />}
-                                                    <span className={`font-semibold text-sm ${
-                                                        gesamt === 'OK' ? 'text-green-800' :
-                                                        gesamt === 'WARNUNG' ? 'text-yellow-800' : 'text-red-800'
-                                                    }`}>
-                                                        WPK-Gesamtstatus: {gesamt === 'OK' ? 'Konform' : gesamt === 'WARNUNG' ? 'Handlungsbedarf' : 'Nicht konform'}
-                                                    </span>
-                                                </div>
-                                            );
-                                        })()}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {[
-                                                { title: 'Schweißer-Zertifikate', status: wpkStatus.schweisser, hinweis: wpkStatus.schweisserHinweis, icon: User },
-                                                { title: 'WPS (Schweißanweisungen)', status: wpkStatus.wps, hinweis: wpkStatus.wpsHinweis, icon: FileText },
-                                                { title: 'Werkstoffzeugnisse', status: wpkStatus.werkstoffzeugnisse, hinweis: wpkStatus.werkstoffzeugnisseHinweis, icon: File },
-                                                { title: 'E-Check (Betriebsmittel)', status: wpkStatus.echeck, hinweis: wpkStatus.echeckHinweis, icon: Shield },
-                                            ].map(card => {
-                                                const border = card.status === 'OK' ? 'border-green-200' : card.status === 'WARNUNG' ? 'border-yellow-300' : 'border-red-300';
-                                                const bg = card.status === 'OK' ? 'bg-green-50' : card.status === 'WARNUNG' ? 'bg-yellow-50' : 'bg-red-50';
-                                                return (
-                                                    <div key={card.title} className={`rounded-xl border-2 ${border} ${bg} p-5`}>
-                                                        <div className="flex items-start justify-between gap-3 mb-3">
-                                                            <div className="flex items-center gap-2">
-                                                                <card.icon className="w-5 h-5 text-slate-600 flex-shrink-0" />
-                                                                <h4 className="font-semibold text-slate-800">{card.title}</h4>
-                                                            </div>
-                                                            <En1090StatusBadge status={card.status} />
-                                                        </div>
-                                                        {card.hinweis ? (
-                                                            <p className="text-sm text-slate-600 leading-relaxed">{card.hinweis}</p>
-                                                        ) : card.status === 'OK' ? (
-                                                            <p className="text-sm text-green-700">Alle Anforderungen erfüllt.</p>
-                                                        ) : null}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </>
-                                )}
-                                {!wpkLoading && !wpkStatus && (
-                                    <div className="text-center py-8 text-slate-500">
-                                        <Shield className="w-8 h-8 mx-auto mb-3 text-slate-300" />
-                                        <p className="text-sm">WPK-Status konnte nicht geladen werden.</p>
-                                    </div>
-                                )}
-                            </div>
-                        </>
-                    )}
                 </div>
             )}
 
@@ -2077,73 +1833,182 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             <span className="text-sm text-slate-500">{eingangsrechnungen.length} Rechnung{eingangsrechnungen.length !== 1 ? 'en' : ''}{eingangsrechnungen.length > 0 ? ` — ${formatCurrency(eingangsrechnungenSum)}` : ''}</span>
                         </div>
                         {eingangsrechnungen.length > 0 ? (
-                            <div className="space-y-2">
-                                {eingangsrechnungen.map((er) => (
-                                    <div key={er.id} className="p-4 bg-white rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
-                                                        EINGANGSRECHNUNG
-                                                    </span>
-                                                    <span className="font-semibold text-slate-900 truncate">
-                                                        {er.lieferantName || 'Unbekannter Lieferant'}
-                                                    </span>
-                                                    {er.dokumentNummer && (
-                                                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
-                                                            {er.dokumentNummer}
-                                                        </span>
-                                                    )}
+                            <div className="space-y-4">
+                                {eingangsrechnungen.map((er) => {
+                                    const ketteItems: DokumentKetteRef[] = er.dokumentenKette && er.dokumentenKette.length > 0
+                                        ? er.dokumentenKette
+                                        : er.pdfUrl
+                                            ? [{ id: er.dokumentId ?? er.id, typ: 'RECHNUNG', dokumentNummer: er.dokumentNummer ?? null, dokumentDatum: er.dokumentDatum ?? null, betragNetto: er.gesamtbetrag ?? null, pdfUrl: er.pdfUrl }]
+                                            : [];
+                                    const hasKette = ketteItems.length > 0;
+                                    const alleZuordnungen = er.alleZuordnungen || [];
+                                    const andereZuordnungen = alleZuordnungen.filter(z => z.projektId !== projekt.id);
+                                    
+                                    return (
+                                        <div key={er.id} className="bg-white rounded-xl border border-slate-200 hover:shadow-md transition-shadow overflow-hidden">
+                                            {/* Dokumentenkette */}
+                                            {hasKette && (
+                                                <div className="px-4 pt-3 pb-2 bg-slate-50 border-b border-slate-100">
+                                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Dokumentenkette</p>
+                                                    <div className="flex items-center gap-1 flex-wrap">
+                                                        {ketteItems.map((kd, idx) => {
+                                                            const typConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
+                                                                ANGEBOT: { label: 'Angebot', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+                                                                AUFTRAGSBESTAETIGUNG: { label: 'AB', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
+                                                                LIEFERSCHEIN: { label: 'Lieferschein', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
+                                                                RECHNUNG: { label: 'Rechnung', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
+                                                                GUTSCHRIFT: { label: 'Gutschrift', color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200' },
+                                                                SONSTIG: { label: 'Sonstiges', color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' },
+                                                            };
+                                                            const cfg = typConfig[kd.typ] || { label: kd.typ, color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' };
+                                                            return (
+                                                                <React.Fragment key={kd.id}>
+                                                                    {idx > 0 && <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />}
+                                                                    <button
+                                                                        onClick={() => kd.pdfUrl && setPdfPreviewDoc({ url: kd.pdfUrl, title: kd.dokumentNummer || cfg.label })}
+                                                                        className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${cfg.bg} ${cfg.color} ${cfg.border} hover:opacity-80 transition-opacity`}
+                                                                        title={kd.dokumentNummer ? `${cfg.label} ${kd.dokumentNummer}` : cfg.label}
+                                                                    >
+                                                                        <File className="w-3 h-3" />
+                                                                        <span className="font-medium">{cfg.label}</span>
+                                                                        {kd.dokumentNummer && <span className="opacity-70">#{kd.dokumentNummer}</span>}
+                                                                        {kd.betragNetto != null && (
+                                                                            <span className="opacity-70">{formatCurrency(kd.betragNetto)}</span>
+                                                                        )}
+                                                                    </button>
+                                                                </React.Fragment>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
-                                                <p className="text-sm text-slate-500 truncate">{er.dateiname}</p>
-                                                {er.beschreibung && (
-                                                    <p className="text-sm text-slate-600 mt-1">{er.beschreibung}</p>
+                                            )}
+                                            
+                                            {/* Hauptinhalt */}
+                                            <div className="p-4">
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                                                EINGANGSRECHNUNG
+                                                            </span>
+                                                            <span className="font-semibold text-slate-900 truncate">
+                                                                {er.lieferantName || 'Unbekannter Lieferant'}
+                                                            </span>
+                                                            {er.dokumentNummer && (
+                                                                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                                                                    {er.dokumentNummer}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-sm text-slate-500 truncate">{er.dateiname}</p>
+                                                        {er.beschreibung && (
+                                                            <p className="text-sm text-slate-600 mt-1">{er.beschreibung}</p>
+                                                        )}
+                                                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
+                                                            {er.dokumentDatum && (
+                                                                <span>Datum: {new Date(er.dokumentDatum).toLocaleDateString('de-DE')}</span>
+                                                            )}
+                                                            {er.prozent < 100 ? (
+                                                                <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                                                    {er.prozent}% Anteil
+                                                                </span>
+                                                            ) : (
+                                                                <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                                                                    100% zugewiesen
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-lg font-bold text-slate-900">
+                                                            {formatCurrency(er.berechneterBetrag)}
+                                                        </p>
+                                                        {er.gesamtbetrag && er.prozent < 100 && (
+                                                            <p className="text-xs text-slate-400">
+                                                                von {formatCurrency(er.gesamtbetrag)}
+                                                            </p>
+                                                        )}
+                                                        <div className="flex items-center gap-2 justify-end mt-2">
+                                                            {er.geschaeftsdokumentId && (
+                                                                <button
+                                                                    onClick={() => setZuordnungBearbeitenEr(er)}
+                                                                    className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
+                                                                    title="Zuordnung bearbeiten"
+                                                                >
+                                                                    <Edit2 className="w-3 h-3" />
+                                                                    Bearbeiten
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Zuordnungs-Info: Wer hat zugeordnet + Aufteilung */}
+                                                {(er.zugeordnetVonName || andereZuordnungen.length > 0) && (
+                                                    <div className="mt-3 pt-3 border-t border-slate-100">
+                                                        {/* Zugeordnet von */}
+                                                        {er.zugeordnetVonName && (
+                                                            <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
+                                                                <User className="w-3 h-3" />
+                                                                <span>Zugeordnet von <span className="font-medium text-slate-700">{er.zugeordnetVonName}</span></span>
+                                                                {er.zugeordnetAm && (
+                                                                    <span className="text-slate-400">
+                                                                        am {new Date(er.zugeordnetAm).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {/* Aufteilung auf andere Projekte/Kostenstellen */}
+                                                        {andereZuordnungen.length > 0 && (
+                                                            <div className="space-y-1">
+                                                                <p className="text-xs font-medium text-slate-500 mb-1">Weitere Zuordnungen:</p>
+                                                                {andereZuordnungen.map((z, idx) => (
+                                                                    <div key={idx} className="flex items-center gap-2 text-xs">
+                                                                        {z.projektId ? (
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    navigate(`/projekte?projektId=${z.projektId}`);
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:underline"
+                                                                            >
+                                                                                <Briefcase className="w-3 h-3" />
+                                                                                {z.projektName || 'Projekt'}
+                                                                                {z.projektNummer && <span className="text-slate-400">({z.projektNummer})</span>}
+                                                                                <ExternalLink className="w-2.5 h-2.5" />
+                                                                            </button>
+                                                                        ) : z.kostenstelleId ? (
+                                                                            <span
+                                                                                className="inline-flex items-center gap-1 text-slate-600"
+                                                                            >
+                                                                                <Building2 className="w-3 h-3" />
+                                                                                {z.kostenstelleName || 'Kostenstelle'}
+                                                                            </span>
+                                                                        ) : null}
+                                                                        <span className="text-slate-400">
+                                                                            {z.prozent != null && `${z.prozent}%`}
+                                                                            {z.berechneterBetrag != null && ` · ${formatCurrency(z.berechneterBetrag)}`}
+                                                                        </span>
+                                                                        {z.beschreibung && (
+                                                                            <span className="text-slate-500 italic truncate max-w-[200px]" title={z.beschreibung}>
+                                                                                „{z.beschreibung}"
+                                                                            </span>
+                                                                        )}
+                                                                        {z.zugeordnetVonName && (
+                                                                            <span className="text-slate-400">
+                                                                                (von {z.zugeordnetVonName})
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 )}
-                                                <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                                                    {er.dokumentDatum && (
-                                                        <span>Datum: {new Date(er.dokumentDatum).toLocaleDateString('de-DE')}</span>
-                                                    )}
-                                                    {er.prozent < 100 && (
-                                                        <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                                                            {er.prozent}% Anteil
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="text-right shrink-0">
-                                                <p className="text-lg font-bold text-slate-900">
-                                                    {formatCurrency(er.berechneterBetrag)}
-                                                </p>
-                                                {er.gesamtbetrag && er.prozent < 100 && (
-                                                    <p className="text-xs text-slate-400">
-                                                        von {formatCurrency(er.gesamtbetrag)}
-                                                    </p>
-                                                )}
-                                                <div className="flex items-center gap-2 justify-end mt-2">
-                                                    {er.pdfUrl && (
-                                                        <button
-                                                            onClick={() => setPdfPreviewDoc({ url: er.pdfUrl, title: er.dokumentNummer || 'Eingangsrechnung' })}
-                                                            className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
-                                                        >
-                                                            <File className="w-3 h-3" />
-                                                            PDF ansehen
-                                                        </button>
-                                                    )}
-                                                    {er.geschaeftsdokumentId && (
-                                                        <button
-                                                            onClick={() => handleZuordnungAufheben(er.geschaeftsdokumentId)}
-                                                            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-600"
-                                                            title="Zuordnung aufheben"
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                            Aufheben
-                                                        </button>
-                                                    )}
-                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center py-8 text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">
@@ -2820,6 +2685,22 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 />
             )}
 
+            {/* Zuordnung Bearbeiten Modal */}
+            {zuordnungBearbeitenEr && (
+                <ZuordnungModal
+                    geschaeftsdokumentId={zuordnungBearbeitenEr.geschaeftsdokumentId}
+                    dokumentNummer={zuordnungBearbeitenEr.dokumentNummer}
+                    lieferantName={zuordnungBearbeitenEr.lieferantName}
+                    pdfUrl={zuordnungBearbeitenEr.pdfUrl}
+                    onClose={() => setZuordnungBearbeitenEr(null)}
+                    onSuccess={async () => {
+                        setZuordnungBearbeitenEr(null);
+                        await loadEingangsrechnungen();
+                        await onRefresh();
+                    }}
+                />
+            )}
+
             {/* Material Modal */}
             <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
                 <DialogContent>
@@ -3311,16 +3192,17 @@ export default function ProjektEditor() {
 
     // Deep-link: auto-open project from URL param ?projektId=123&tab=notizen
     const [deepLinkTab, setDeepLinkTab] = useState<ProjektDetailViewProps['initialTab']>(undefined);
-    const deepLinkProcessed = useRef(false);
+    const lastProcessedProjektId = useRef<string | null>(null);
     useEffect(() => {
-        if (deepLinkProcessed.current) return;
         const projektIdParam = searchParams.get('projektId');
         const tabParam = searchParams.get('tab') as ProjektDetailViewProps['initialTab'];
         if (!projektIdParam && !tabParam) return;
+        // Skip if we already processed this exact projektId
+        if (projektIdParam && lastProcessedProjektId.current === projektIdParam) return;
         const projektId = projektIdParam ? Number(projektIdParam) : null;
         if (projektIdParam && (isNaN(projektId!) || !projektId)) return;
         if (tabParam) setDeepLinkTab(tabParam);
-        deepLinkProcessed.current = true;
+        if (projektIdParam) lastProcessedProjektId.current = projektIdParam;
         if (projektId) {
             (async () => {
                 try {
@@ -3481,8 +3363,6 @@ export default function ProjektEditor() {
                         plz: selectedProjekt.plz,
                         ort: selectedProjekt.ort,
                         abgeschlossen: selectedProjekt.abgeschlossen,
-                        projektArt: selectedProjekt.projektArt,
-                        excKlasse: selectedProjekt.excKlasse,
                         kundeDto: selectedProjekt.kundeDto,
                         produktkategorien: selectedProjekt.produktkategorien,
                         kundenEmails: selectedProjekt.kundenEmails,
@@ -3630,8 +3510,6 @@ export default function ProjektEditor() {
                         plz: selectedProjekt.plz,
                         ort: selectedProjekt.ort,
                         abgeschlossen: selectedProjekt.abgeschlossen,
-                        projektArt: selectedProjekt.projektArt,
-                        excKlasse: selectedProjekt.excKlasse,
                         kundeDto: selectedProjekt.kundeDto,
                         produktkategorien: selectedProjekt.produktkategorien,
                         kundenEmails: selectedProjekt.kundenEmails,

@@ -371,12 +371,12 @@ describe('EmailCenter', () => {
             await user.click(screen.getByText('Angebot für Treppe'));
 
             // Wait for detail pane with spam button (title="Als Spam markieren")
-            let spamButtons: HTMLElement[] = [];
             await waitFor(() => {
-                spamButtons = screen.getAllByTitle('Als Spam markieren');
-                expect(spamButtons.length).toBeGreaterThanOrEqual(1);
+                expect(screen.getAllByTitle('Als Spam markieren').length).toBeGreaterThan(0);
             });
 
+            // Mehrere Spam-Buttons möglich (Listenansicht + Detailansicht) – letzten nehmen
+            const spamButtons = screen.getAllByTitle('Als Spam markieren');
             await user.click(spamButtons[spamButtons.length - 1]);
 
             // Email should be optimistically removed

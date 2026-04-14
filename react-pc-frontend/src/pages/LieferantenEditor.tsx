@@ -179,6 +179,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                     <div className="absolute inset-0 overflow-y-auto pr-2">
                         <LieferantDokumenteTab
                             lieferantId={lieferant.id}
+                            lieferantName={lieferant.lieferantenname}
                             dokumente={lieferant.dokumente}
                         />
                     </div>
@@ -307,14 +308,14 @@ export default function LieferantenEditor() {
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Deep-link: restore detail view from URL param ?lieferantId=123
-    const deepLinkProcessed = useRef(false);
+    const lastProcessedLieferantId = useRef<string | null>(null);
     useEffect(() => {
-        if (deepLinkProcessed.current) return;
         const lieferantIdParam = searchParams.get('lieferantId');
         if (!lieferantIdParam) return;
+        if (lastProcessedLieferantId.current === lieferantIdParam) return;
         const lieferantId = Number(lieferantIdParam);
         if (isNaN(lieferantId) || !lieferantId) return;
-        deepLinkProcessed.current = true;
+        lastProcessedLieferantId.current = lieferantIdParam;
         (async () => {
             try {
                 setLoading(true);
