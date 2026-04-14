@@ -30,6 +30,29 @@ Reference these guidelines when:
 
 ## Quick Reference
 
+## Cognitive UX Principles (CRITICAL FOR ERP)
+
+When designing interfaces, explicitly evaluate your design against these cognitive principles to ensure the system is intuitive for non-technical users (e.g., tradespeople).
+
+### 1. The Two Gulfs of Interaction (Don Norman)
+Bridge the gap between user intent and system state:
+
+* **Gulf of Execution (Kluft der Ausführung):** "How do I do this?"
+    * *Rule:* The UI must make actions obvious. Do not hide primary actions (like "Rechnung erstellen") in nested menus or behind cryptic icons. Use clear, descriptive buttons.
+    * *Check:* Can the user instantly see how to achieve their goal without guessing?
+* **Gulf of Evaluation (Kluft der Auswertung):** "Did it work? What happened?"
+    * *Rule:* The system must provide immediate, clear feedback. If a user saves a time entry, show a visible success toast ("Zeiten erfolgreich gebucht!") and update the UI state immediately.
+    * *Check:* Does the user know exactly what state the system is in after an action?
+
+### 2. Nielsen's Usability Heuristics (Top 5 for this ERP)
+Apply these heuristics strictly to prevent user frustration:
+
+1.  **Match between system and the real world:** Speak the user's language. No SAP-jargon. Use words, phrases, and concepts familiar to the tradesperson (e.g., "Kunde" instead of "Debitor", "Material" instead of "Ressourcenallokation").
+2.  **Visibility of system status:** Always keep users informed about what is going on through appropriate feedback within a reasonable time (loading spinners, progress bars, empty states).
+3.  **Error prevention:** Even better than good error messages is a careful design that prevents a problem from occurring in the first place. (e.g., disable the "Submit" button until all required fields are filled, format phone numbers automatically).
+4.  **Recognition rather than recall:** Minimize the user's memory load. Objects, actions, and options should be visible. Users shouldn't have to remember an ID from one part of the app to type it into another; provide dropdowns with names.
+5.  **User control and freedom:** Users often choose system functions by mistake and will need a clearly marked "emergency exit" to leave the unwanted state (e.g., a clear "Abbrechen" button on every form, undo functionality).
+
 ### 1. Accessibility (CRITICAL)
 
 - `color-contrast` - Minimum 4.5:1 ratio for normal text
