@@ -2,6 +2,7 @@ import { X, GitBranch, Image, FileText, Printer, Save, AlignVerticalSpaceAround 
 import { Button } from '../ui/button';
 
 interface OrganigrammToolbarProps {
+    name?: string | null;
     onAutoLayout: (direction: 'TB' | 'LR') => void;
     onExportPng: () => void;
     onExportPdf: () => void;
@@ -11,6 +12,7 @@ interface OrganigrammToolbarProps {
 }
 
 export default function OrganigrammToolbar({
+    name,
     onAutoLayout,
     onExportPng,
     onExportPdf,
@@ -24,7 +26,9 @@ export default function OrganigrammToolbar({
             <div className="flex items-center gap-3 min-w-0">
                 <div className="flex items-center gap-2">
                     <GitBranch className="w-4 h-4 text-rose-600" />
-                    <span className="text-sm font-semibold text-slate-800">Organigramm</span>
+                    <span className="text-sm font-semibold text-slate-800 truncate max-w-[200px]">
+                        {name || 'Neues Organigramm'}
+                    </span>
                 </div>
             </div>
 

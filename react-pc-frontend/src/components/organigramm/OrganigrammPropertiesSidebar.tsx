@@ -1,4 +1,4 @@
-import { Building2, User, Shield, Trash2 } from 'lucide-react';
+import { Building2, User, Shield, Trash2, Users } from 'lucide-react';
 import { Button } from '../ui/button';
 import type { Node } from '@xyflow/react';
 
@@ -27,24 +27,29 @@ export default function OrganigrammPropertiesSidebar({
         );
     }
 
-    const data = selectedNode.data as Record<string, string | boolean | null | undefined>;
+    const data = selectedNode.data as Record<string, string | number | boolean | null | undefined>;
     const nodeType = selectedNode.type;
 
-    const icon = nodeType === 'abteilung' ? <Building2 className="w-5 h-5 text-rose-600" />
+    const icon = (nodeType === 'abteilungGroup' || nodeType === 'abteilung')
+        ? <Building2 className="w-5 h-5 text-rose-600" />
         : nodeType === 'mitarbeiter' ? <User className="w-5 h-5 text-slate-600" />
         : <Shield className="w-5 h-5 text-amber-600" />;
 
-    const typeLabel = nodeType === 'abteilung' ? 'Abteilung'
+    const typeLabel = (nodeType === 'abteilungGroup' || nodeType === 'abteilung')
+        ? 'Abteilung'
         : nodeType === 'mitarbeiter' ? 'Mitarbeiter'
         : 'EN 1090 Rolle';
 
-    const typeBg = nodeType === 'abteilung' ? 'bg-rose-50 text-rose-700 border-rose-200'
+    const typeBg = (nodeType === 'abteilungGroup' || nodeType === 'abteilung')
+        ? 'bg-rose-50 text-rose-700 border-rose-200'
         : nodeType === 'mitarbeiter' ? 'bg-slate-100 text-slate-700 border-slate-200'
         : 'bg-amber-50 text-amber-700 border-amber-200';
 
     const rollenArr = typeof data.en1090RolleNames === 'string'
         ? data.en1090RolleNames.split(',').map((r: string) => r.trim()).filter(Boolean)
         : [];
+
+    const isDocked = !!data.isDocked;
 
     return (
         <div className="h-full flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -60,6 +65,11 @@ export default function OrganigrammPropertiesSidebar({
                     <span className={`px-2 py-1 text-xs font-medium border rounded-lg ${typeBg}`}>
                         {typeLabel}
                     </span>
+                    {isDocked && (
+                        <span className="px-2 py-1 text-xs font-medium bg-blue-50 text-blue-600 border border-blue-200 rounded-lg">
+                            In Gruppe
+                        </span>
+                    )}
                 </div>
 
                 {/* Name */}
@@ -67,6 +77,19 @@ export default function OrganigrammPropertiesSidebar({
                     <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">Name</p>
                     <p className="text-sm font-semibold text-slate-900">{String(data.label ?? '')}</p>
                 </div>
+
+                {/* Group-specific: member count */}
+                {(nodeType === 'abteilungGroup') && data.childCount != null && (
+                    <div>
+                        <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">Mitglieder</p>
+                        <div className="flex items-center gap-1.5">
+                            <Users className="w-4 h-4 text-rose-400" />
+                            <span className="text-sm font-medium text-slate-700">
+                                {Number(data.childCount)} {Number(data.childCount) === 1 ? 'Mitglied' : 'Mitglieder'}
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Mitarbeiter-specific */}
                 {nodeType === 'mitarbeiter' && (
@@ -124,7 +147,7 @@ export default function OrganigrammPropertiesSidebar({
                     onClick={() => onDeleteNode(selectedNode.id)}
                 >
                     <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                    Vom Organigramm entfernen
+                    {(nodeType === 'abteilungGroup') ? 'Gruppe auflösen' : 'Vom Organigramm entfernen'}
                 </Button>
             </div>
         </div>

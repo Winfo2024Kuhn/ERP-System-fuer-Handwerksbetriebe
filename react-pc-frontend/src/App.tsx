@@ -65,7 +65,6 @@ export default function App() {
 
               {/* Fullscreen pages outside MainLayout — still require authentication */}
               <Route path="/dokument-editor" element={<RequireAuth><ErrorBoundary><DocumentEditorPage /></ErrorBoundary></RequireAuth>} />
-              <Route path="/organigramm" element={<RequireAuth><ErrorBoundary><OrganigrammPage /></ErrorBoundary></RequireAuth>} />
               <Route path="/onboarding" element={<RequireAdmin><ErrorBoundary><FirstLoginSetupPage /></ErrorBoundary></RequireAdmin>} />
 
               <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
@@ -105,6 +104,7 @@ export default function App() {
                 <Route path="/urlaubsantraege" element={<ErrorBoundary><Urlaubsantraege /></ErrorBoundary>} />
                 <Route path="/abteilung-berechtigungen" element={<RequireAdmin><ErrorBoundary><AbteilungBerechtigungenEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/firma" element={<RequireAdmin><ErrorBoundary><FirmaEditor /></ErrorBoundary></RequireAdmin>} />
+                <Route path="/organigramm" element={<ErrorBoundary><OrganigrammPage /></ErrorBoundary>} />
                 <Route path="/einstellungen" element={<RequireAdmin><ErrorBoundary><EinstellungenEditor /></ErrorBoundary></RequireAdmin>} />
 
                 {/* EN 1090 */}

@@ -14,7 +14,8 @@ import {
     useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { nodeTypes } from './organigramm-constants';
+import { nodeTypes, edgeTypes } from './organigramm-constants';
+import type { DockPreview } from './useGroupDocking';
 
 interface OrganigrammCanvasProps {
     nodes: Node[];
@@ -26,6 +27,11 @@ interface OrganigrammCanvasProps {
     onNodeClick: (event: MouseEvent, node: Node) => void;
     onPaneClick: () => void;
     onDeleteNode: (id: string) => void;
+    onDeleteEdge: (id: string) => void;
+    dockPreview: DockPreview | null;
+    onNodeDrag: (event: MouseEvent, node: Node) => void;
+    onNodeDragStop: (event: MouseEvent, node: Node) => void;
+    isValidConnection: (connection: Connection | Edge) => boolean;
 }
 
 export default function OrganigrammCanvas({
@@ -38,13 +44,26 @@ export default function OrganigrammCanvas({
     onNodeClick,
     onPaneClick,
     onDeleteNode,
+    onDeleteEdge,
+    dockPreview,
+    onNodeDrag,
+    onNodeDragStop,
+    isValidConnection,
 }: OrganigrammCanvasProps) {
     const reactFlowInstance = useReactFlow();
 
-    // Inject onDelete callback into all node data
-    const nodesWithDelete = nodes.map(n => ({
+    const nodesWithMeta = nodes.map(n => ({
         ...n,
-        data: { ...n.data, onDelete: onDeleteNode },
+        data: {
+            ...n.data,
+            onDelete: onDeleteNode,
+            isDockTarget: dockPreview?.groupId === n.id,
+        },
+    }));
+
+    const edgesWithDelete = edges.map(e => ({
+        ...e,
+        data: { ...e.data, onDeleteEdge },
     }));
 
     const handleDragOver = useCallback((e: DragEvent) => {
@@ -73,8 +92,8 @@ export default function OrganigrammCanvas({
     return (
         <div className="h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <ReactFlow
-                nodes={nodesWithDelete}
-                edges={edges}
+                nodes={nodesWithMeta}
+                edges={edgesWithDelete}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
@@ -82,14 +101,16 @@ export default function OrganigrammCanvas({
                 onDragOver={handleDragOver}
                 onNodeClick={onNodeClick}
                 onPaneClick={onPaneClick}
+                onNodeDrag={onNodeDrag}
+                onNodeDragStop={onNodeDragStop}
+                isValidConnection={isValidConnection}
                 nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
                 fitView
-                snapToGrid
-                snapGrid={[20, 20]}
-                connectionMode={ConnectionMode.Loose}
+                connectionMode={ConnectionMode.Strict}
                 connectionLineType={ConnectionLineType.SmoothStep}
                 defaultEdgeOptions={{
-                    type: 'smoothstep',
+                    type: 'organigramm',
                     style: { stroke: '#94a3b8', strokeWidth: 2 },
                     animated: false,
                 }}
@@ -103,7 +124,7 @@ export default function OrganigrammCanvas({
                 />
                 <MiniMap
                     nodeColor={(n) => {
-                        if (n.type === 'abteilung') return '#f43f5e';
+                        if (n.type === 'abteilungGroup' || n.type === 'abteilung') return '#f43f5e';
                         if (n.type === 'mitarbeiter') return '#64748b';
                         return '#f59e0b';
                     }}
