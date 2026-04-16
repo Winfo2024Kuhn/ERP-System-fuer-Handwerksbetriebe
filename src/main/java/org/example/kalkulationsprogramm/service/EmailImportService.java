@@ -21,7 +21,9 @@ import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +45,7 @@ import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.internet.MimeUtility;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -64,6 +67,12 @@ public class EmailImportService {
     private final SpamFilterService spamFilterService;
     private final SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
     private final LieferantenRepository lieferantenRepository;
+
+    // Self-Injection für transactional proxy: importMessage muss durch den
+    // Spring-Proxy laufen, damit @Transactional pro Mail eine eigene
+    // Mini-Transaktion startet (nicht eine Riesen-Transaktion über alle Mails).
+    @Setter(onMethod_ = { @Autowired, @Lazy })
+    private EmailImportService self;
 
     // IMAP-Ordner für eingehende E-Mails
     private static final List<String> INCOMING_FOLDERS = List.of(
@@ -107,8 +116,11 @@ public class EmailImportService {
 
     /**
      * Führt den IMAP-Import durch.
+     * Bewusst NICHT @Transactional: jede Mail bekommt via importMessage()
+     * (über self-Proxy) eine eigene Mini-Transaktion. Sonst würde der gesamte
+     * Import (alle Ordner, alle Mails, alle KI-Calls) in einer einzigen
+     * minutenlangen Transaktion laufen und Connections blockieren.
      */
-    @Transactional
     public int doImport() {
         String user = System.getenv("IMAP_USER");
         String pass = System.getenv("IMAP_PASSWORD");
@@ -172,7 +184,9 @@ public class EmailImportService {
                 int imported = 0;
                 for (Message msg : messages) {
                     try {
-                        if (importMessage(msg, folder, direction)) {
+                        // Über self-Proxy aufrufen, damit @Transactional auf
+                        // importMessage greift (eigene Tx pro Mail).
+                        if (self.importMessage(msg, folder, direction)) {
                             imported++;
                         }
                     } catch (Exception e) {

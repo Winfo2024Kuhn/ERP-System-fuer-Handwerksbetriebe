@@ -40,7 +40,7 @@ public class EmailBackfillEventListener {
     private final org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
     private final org.example.kalkulationsprogramm.service.EmailAutoAssignmentService emailAutoAssignmentService;
 
-    @Async
+    @Async("emailTaskExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     // KEIN @Transactional - jeder saveAndFlush committet sofort in eigener
     // Mini-Transaktion
