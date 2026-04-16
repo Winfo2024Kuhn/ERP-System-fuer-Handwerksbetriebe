@@ -16,7 +16,7 @@
 - **SQL:** Nur parametrisierte Queries (`@Query` mit `:param`), kein String-Concat.
 - **Flyway & Idempotenz (WICHTIG):** - Neue Skripte unter `src/main/resources/db/migration/V{N}__{beschreibung}.sql` (aufsteigend ab V207+). 
   - Bestehende Migrationen NIEMALS ändern.
-  - **Alle DDL-Statements müssen zwingend idempotent sein!** Nutze konsequent `CREATE TABLE IF NOT EXISTS`, `DROP TABLE IF EXISTS` etc., um fehlschlagende Migrationen bei inkonsistenten Datenbankständen zu verhindern.
+  
 
 ## Architektur-Patterns
 - **Audit-Trail:** GoBD-konform (`ZeitbuchungAudit`, vollständige Snapshots).
