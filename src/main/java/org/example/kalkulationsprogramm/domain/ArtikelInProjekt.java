@@ -21,7 +21,7 @@ public class ArtikelInProjekt {
     @JoinColumn(name = "projekt_id")
     private Projekt projekt;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
     @JoinColumn(name = "artikel_id")
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Artikel artikel;
@@ -61,4 +61,27 @@ public class ArtikelInProjekt {
             @JoinColumn(name = "lieferant_id", referencedColumnName = "lieferant_id", insertable = false, updatable = false)
     })
     private LieferantenArtikelPreise lieferantenArtikelPreis;
+
+    // EN 1090: manuell gewähltes oder vorgeschlagenes Zeugnis pro Position
+    @Enumerated(EnumType.STRING)
+    @Column(name = "zeugnis_anforderung", columnDefinition = "varchar(30)")
+    private ZeugnisTyp zeugnisAnforderung;
+
+    // Freitext-Felder für manuelle Positionen (ohne Stammartikel)
+    @Column(name = "freitext_produktname", length = 500)
+    private String freitextProduktname;
+
+    @Column(name = "freitext_produkttext", columnDefinition = "TEXT")
+    private String freitextProdukttext;
+
+    @Column(name = "freitext_einheit", length = 50)
+    private String freitextEinheit;
+
+    @Column(name = "freitext_menge", precision = 19, scale = 3)
+    private java.math.BigDecimal freitextMenge;
+
+    // Warengruppe direkt (für freie Positionen ohne Stammartikel)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "kategorie_id")
+    private Kategorie kategorie;
 }

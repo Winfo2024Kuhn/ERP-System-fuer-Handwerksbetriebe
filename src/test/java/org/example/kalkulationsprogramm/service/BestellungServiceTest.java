@@ -3,6 +3,9 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
+import org.example.kalkulationsprogramm.repository.KategorieRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,14 +26,17 @@ class BestellungServiceTest {
         System.setProperty("net.bytebuddy.experimental", "true");
     }
 
-    @Mock
-    private ArtikelInProjektRepository artikelInProjektRepository;
+    @Mock private ArtikelInProjektRepository artikelInProjektRepository;
+    @Mock private ProjektRepository projektRepository;
+    @Mock private LieferantenRepository lieferantenRepository;
+    @Mock private KategorieRepository kategorieRepository;
 
     private BestellungService service;
 
     @BeforeEach
     void setup() {
-        service = new BestellungService(artikelInProjektRepository);
+        ZeugnisService zeugnisService = new ZeugnisService(kategorieRepository);
+        service = new BestellungService(artikelInProjektRepository, projektRepository, lieferantenRepository, kategorieRepository, zeugnisService);
     }
 
     @Test

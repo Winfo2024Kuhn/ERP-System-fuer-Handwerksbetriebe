@@ -7,8 +7,10 @@ import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 import lombok.AllArgsConstructor;
+import org.example.kalkulationsprogramm.domain.ZeugnisTyp;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
+import org.example.kalkulationsprogramm.service.ZeugnisService;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
@@ -18,8 +20,11 @@ import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -30,6 +35,7 @@ public class BestellungPdfService {
     private final BestellungService bestellungService;
     private final SchnittbilderRepository schnittbilderRepository;
     private final DateiSpeicherService dateiSpeicherService;
+    private final ZeugnisService zeugnisService;
 
     private static final byte[] NO_IMAGE = new byte[0];
     private final Map<String, byte[]> schnittbildIconCache = new ConcurrentHashMap<>();
@@ -102,6 +108,10 @@ public class BestellungPdfService {
                 doc.add(table);
                 doc.add(new Paragraph(" ", cellFont));
             }
+
+            // EN 1090: Zeugnis-Anforderungsblock
+            addEn1090ZeugnisBlock(doc, items);
+
             doc.close();
             // Statische Schnittbild-PDF-Seiten am Ende anhängen
             try {
@@ -260,6 +270,50 @@ public class BestellungPdfService {
         } catch (IOException e) {
             throw new RuntimeException("PDF generation failed", e);
         }
+    }
+
+    private void addEn1090ZeugnisBlock(Document doc, List<BestellungResponseDto> items) throws DocumentException {
+        // Sammle alle Zeugnis-Anforderungen gruppiert nach Typ
+        Map<String, Set<String>> zeugnisMap = new LinkedHashMap<>();
+        for (BestellungResponseDto b : items) {
+            if (b.getZeugnisAnforderung() == null || b.getZeugnisAnforderung().isBlank()) continue;
+            String beschreibung = zeugnisService.beschreibung(ZeugnisTyp.valueOf(b.getZeugnisAnforderung()));
+            String position = b.getProduktname() != null ? b.getProduktname() : b.getKategorieName();
+            zeugnisMap.computeIfAbsent(beschreibung, k -> new LinkedHashSet<>())
+                    .add(position != null ? position : "Position " + b.getId());
+        }
+        if (zeugnisMap.isEmpty()) return;
+
+        Font boldFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(204, 0, 0));
+        Font normFont = FontFactory.getFont(FontFactory.HELVETICA, 9);
+
+        doc.add(new Paragraph(" "));
+        Paragraph header = new Paragraph("DIN EN 1090 – Zeugnisanforderungen", boldFont);
+        header.setSpacingBefore(10f);
+        header.setSpacingAfter(6f);
+        doc.add(header);
+
+        for (Map.Entry<String, Set<String>> entry : zeugnisMap.entrySet()) {
+            String positionen = String.join(", ", entry.getValue());
+            Paragraph p = new Paragraph(
+                    "\u2022  " + entry.getKey() + " gefordert für: " + positionen, normFont);
+            p.setSpacingAfter(3f);
+            doc.add(p);
+        }
+
+        // Hinweis auf EXC-Klasse wenn vorhanden
+        items.stream()
+                .map(BestellungResponseDto::getExcKlasse)
+                .filter(e -> e != null && !e.isBlank())
+                .findFirst()
+                .ifPresent(exc -> {
+                    try {
+                        Paragraph excP = new Paragraph(
+                                "Ausführungsklasse dieses Auftrags: " + exc.replace("_", " "), normFont);
+                        excP.setSpacingBefore(6f);
+                        doc.add(excP);
+                    } catch (DocumentException ignored) {}
+                });
     }
 
     private PdfPCell makeCutCell(String form, Font font, Color bg) {

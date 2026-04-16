@@ -1057,7 +1057,7 @@ public class ProjektController {
             stream = stream.filter(p -> !p.isAbgeschlossen());
         }
         List<ProjektSucheDto> results = stream
-                .map(p -> new ProjektSucheDto(p.getId(), p.getBauvorhaben(), p.getAuftragsnummer(), p.getKunde(), p.isAbgeschlossen()))
+                .map(p -> new ProjektSucheDto(p.getId(), p.getBauvorhaben(), p.getAuftragsnummer(), p.getKunde(), p.isAbgeschlossen(), p.getExcKlasse()))
                 .toList();
         return ResponseEntity.ok(results);
     }
@@ -1074,12 +1074,12 @@ public class ProjektController {
         Page<ProjektResponseDto> projekte = projektManagementService.findeProjekteMitFilter(
                 q.trim(), null, null, null, null, null, null, 0, 10);
         List<ProjektSucheDto> results = projekte.getContent().stream()
-                .map(p -> new ProjektSucheDto(p.getId(), p.getBauvorhaben(), p.getAuftragsnummer(), p.getKunde(), p.isAbgeschlossen()))
+                .map(p -> new ProjektSucheDto(p.getId(), p.getBauvorhaben(), p.getAuftragsnummer(), p.getKunde(), p.isAbgeschlossen(), p.getExcKlasse()))
                 .toList();
         return ResponseEntity.ok(results);
     }
 
-    public record ProjektSucheDto(Long id, String bauvorhaben, String auftragsnummer, String kunde, boolean abgeschlossen) {
+    public record ProjektSucheDto(Long id, String bauvorhaben, String auftragsnummer, String kunde, boolean abgeschlossen, String excKlasse) {
     }
 
 

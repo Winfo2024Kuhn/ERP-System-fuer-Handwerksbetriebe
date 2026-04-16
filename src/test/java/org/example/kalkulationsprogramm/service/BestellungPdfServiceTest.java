@@ -30,7 +30,8 @@ class BestellungPdfServiceTest {
 
         SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
         DateiSpeicherService dateiSpeicherService = Mockito.mock(DateiSpeicherService.class);
-        BestellungPdfService service = new BestellungPdfService(bestellungService, schnittbilderRepository, dateiSpeicherService);
+        ZeugnisService zeugnisService = Mockito.mock(ZeugnisService.class);
+        BestellungPdfService service = new BestellungPdfService(bestellungService, schnittbilderRepository, dateiSpeicherService, zeugnisService);
         Path pdf = service.generatePdfForLieferant(1L);
         assertTrue(Files.size(pdf) > 0);
         String content = Files.readString(pdf, StandardCharsets.ISO_8859_1);
@@ -55,7 +56,8 @@ class BestellungPdfServiceTest {
 
         SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
         DateiSpeicherService dateiSpeicherService = Mockito.mock(DateiSpeicherService.class);
-        BestellungPdfService service = new BestellungPdfService(bestellungService, schnittbilderRepository, dateiSpeicherService);
+        ZeugnisService zeugnisService = Mockito.mock(ZeugnisService.class);
+        BestellungPdfService service = new BestellungPdfService(bestellungService, schnittbilderRepository, dateiSpeicherService, zeugnisService);
         Path pdf = service.generatePdfForLieferant(null);
         assertTrue(Files.size(pdf) > 0);
         Files.deleteIfExists(pdf);
@@ -78,7 +80,8 @@ class BestellungPdfServiceTest {
 
         SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
         DateiSpeicherService dateiSpeicherService = Mockito.mock(DateiSpeicherService.class);
-        BestellungPdfService service = new BestellungPdfService(bestellungService, schnittbilderRepository, dateiSpeicherService);
+        ZeugnisService zeugnisService = Mockito.mock(ZeugnisService.class);
+        BestellungPdfService service = new BestellungPdfService(bestellungService, schnittbilderRepository, dateiSpeicherService, zeugnisService);
         Path pdf = service.generatePdfForProjekt(7L);
         assertTrue(Files.size(pdf) > 0);
         Files.deleteIfExists(pdf);

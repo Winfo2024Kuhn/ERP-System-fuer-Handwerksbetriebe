@@ -34,4 +34,9 @@ public class BestellungResponseDto {
     private String schnittForm;
     private String anschnittWinkelLinks;
     private String anschnittWinkelRechts;
+    // EN 1090
+    private String zeugnisAnforderung;
+    private String excKlasse;
+    private Integer kategorieId;
+    private boolean freiePosition;
 }

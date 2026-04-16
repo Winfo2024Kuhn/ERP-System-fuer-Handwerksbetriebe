@@ -126,13 +126,14 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
                 String getAuftragsnummer();
                 String getKunde();
                 boolean isAbgeschlossen();
+                String getExcKlasse();
         }
 
         /**
          * Schnelle Projektsuche für Dropdowns. Gibt nur die wichtigsten Felder zurück.
          */
         @Query("""
-                        SELECT p.id as id, p.bauvorhaben as bauvorhaben, p.auftragsnummer as auftragsnummer, k.name as kunde, p.abgeschlossen as abgeschlossen
+                        SELECT p.id as id, p.bauvorhaben as bauvorhaben, p.auftragsnummer as auftragsnummer, k.name as kunde, p.abgeschlossen as abgeschlossen, p.excKlasse as excKlasse
                         FROM Projekt p LEFT JOIN p.kundenId k
                         WHERE (:query IS NULL OR :query = ''
                            OR LOWER(p.bauvorhaben) LIKE LOWER(CONCAT('%', :query, '%'))

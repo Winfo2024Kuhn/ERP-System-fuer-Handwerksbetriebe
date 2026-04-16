@@ -20,4 +20,21 @@ public class Kategorie
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_kategorie_id")
     private Kategorie parentKategorie;
+
+    // EN 1090: Pflicht-Zeugnis je EXC-Klasse (vererbt von parentKategorie wenn null)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "zeugnis_exc1", columnDefinition = "varchar(30)")
+    private ZeugnisTyp zeugnisExc1;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "zeugnis_exc2", columnDefinition = "varchar(30)")
+    private ZeugnisTyp zeugnisExc2;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "zeugnis_exc3", columnDefinition = "varchar(30)")
+    private ZeugnisTyp zeugnisExc3;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "zeugnis_exc4", columnDefinition = "varchar(30)")
+    private ZeugnisTyp zeugnisExc4;
 }

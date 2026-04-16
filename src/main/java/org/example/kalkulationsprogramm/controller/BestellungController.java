@@ -1,8 +1,11 @@
 package org.example.kalkulationsprogramm.controller;
 
 import java.util.List;
+import java.util.Map;
 
+import org.example.kalkulationsprogramm.domain.ZeugnisTyp;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.ManuelleBestellpositionDto;
 import org.example.kalkulationsprogramm.service.BestellungPdfService;
 import org.example.kalkulationsprogramm.service.BestellungService;
 import org.springframework.core.io.InputStreamResource;
@@ -10,12 +13,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import lombok.AllArgsConstructor;
 
@@ -56,5 +54,25 @@ public class BestellungController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=bestellung-lieferant.pdf")
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(res);
+    }
+
+    @PostMapping("/manuell")
+    public ResponseEntity<BestellungResponseDto> manuellePosition(@RequestBody ManuelleBestellpositionDto dto) {
+        return ResponseEntity.ok(bestellungService.manuellePosition(dto));
+    }
+
+    @DeleteMapping("/{id}/freitext")
+    public ResponseEntity<Void> loescheFreiePosition(@PathVariable Long id) {
+        bestellungService.loeschePosition(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/zeugnis-default")
+    public ResponseEntity<Map<String, String>> zeugnisDefault(
+            @RequestParam Integer kategorieId,
+            @RequestParam(required = false) String excKlasse) {
+        return bestellungService.zeugnisDefault(kategorieId, excKlasse)
+                .map(z -> ResponseEntity.ok(Map.of("zeugnisTyp", z.name())))
+                .orElse(ResponseEntity.ok(Map.of()));
     }
 }
