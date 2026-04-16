@@ -56,6 +56,14 @@ public class SchweisserZertifikat {
     /** NULL = unbegrenzt (z.B. nach Meisterprüfung) */
     private LocalDate ablaufdatum;
 
+    /** Datum der letzten internen Verlängerung durch die Schweißaufsichtsperson (alle 6 Monate) */
+    @Column(name = "letzte_verlaengerung")
+    private LocalDate letzteVerlaengerung;
+
+    /** Name der Person, die die letzte interne Verlängerung bestätigt hat */
+    @Column(name = "verlaengert_durch", length = 150)
+    private String verlaengertDurch;
+
     /** UUID-Dateiname des Zertifikat-PDFs */
     @Column(length = 500)
     private String gespeicherterDateiname;

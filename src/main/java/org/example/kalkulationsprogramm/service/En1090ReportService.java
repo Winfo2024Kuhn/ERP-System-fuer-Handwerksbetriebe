@@ -40,20 +40,37 @@ public class En1090ReportService {
 
         // --- Schweißer-Zertifikate ---
         List<SchweisserZertifikat> alleZertifikate = zertifikatRepository.findAll();
+        LocalDate frist6Monate = heute.minusMonths(6);
+        LocalDate frist5Monate = heute.minusMonths(5);
+
         long abgelaufen = alleZertifikate.stream()
-                .filter(z -> z.getAblaufdatum() != null && z.getAblaufdatum().isBefore(heute))
+                .filter(z -> {
+                    boolean generalExpired = z.getAblaufdatum() != null && z.getAblaufdatum().isBefore(heute);
+                    LocalDate refDate = z.getLetzteVerlaengerung() != null ? z.getLetzteVerlaengerung() : z.getAusstellungsdatum();
+                    boolean verlaengerungUeberfaellig = refDate != null && refDate.isBefore(frist6Monate);
+                    return generalExpired || verlaengerungUeberfaellig;
+                })
                 .count();
+
         long baldAblaufend = alleZertifikate.stream()
-                .filter(z -> z.getAblaufdatum() != null && !z.getAblaufdatum().isBefore(heute)
-                        && z.getAblaufdatum().isBefore(warnFrist))
+                .filter(z -> {
+                    boolean generalExpired = z.getAblaufdatum() != null && z.getAblaufdatum().isBefore(heute);
+                    LocalDate refDate = z.getLetzteVerlaengerung() != null ? z.getLetzteVerlaengerung() : z.getAusstellungsdatum();
+                    boolean verlaengerungUeberfaellig = refDate != null && refDate.isBefore(frist6Monate);
+                    if (generalExpired || verlaengerungUeberfaellig) return false;
+
+                    boolean generalBald = z.getAblaufdatum() != null && z.getAblaufdatum().isBefore(warnFrist);
+                    boolean verlaengerungBald = refDate != null && refDate.isBefore(frist5Monate);
+                    return generalBald || verlaengerungBald;
+                })
                 .count();
 
         if (abgelaufen > 0) {
             status.schweisser = "FEHLER";
-            status.schweisserHinweis = abgelaufen + " Zertifikat(e) abgelaufen";
+            status.schweisserHinweis = abgelaufen + " Zertifikat(e) abgelaufen bzw. Verlängerung überfällig";
         } else if (baldAblaufend > 0) {
             status.schweisser = "WARNUNG";
-            status.schweisserHinweis = baldAblaufend + " Zertifikat(e) laufen in <60 Tagen ab";
+            status.schweisserHinweis = baldAblaufend + " Zertifikat(e) laufen in <60 Tagen ab bzw. benötigen Verlängerung";
         } else if (alleZertifikate.isEmpty()) {
             status.schweisser = "FEHLER";
             status.schweisserHinweis = "Keine Schweißer-Zertifikate hinterlegt";

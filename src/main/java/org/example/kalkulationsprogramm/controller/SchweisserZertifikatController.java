@@ -61,10 +61,14 @@ public class SchweisserZertifikatController {
             String pruefstelle,
             LocalDate ausstellungsdatum,
             LocalDate ablaufdatum,
+            LocalDate letzteVerlaengerung,
+            String verlaengertDurch,
             String originalDateiname,
             String gespeicherterDateiname,
             LocalDateTime erstelltAm) {
     }
+
+    public record VerlaengerungRequest(String verlaengertDurch) {}
 
     public record ZertifikatRequest(
             Long mitarbeiterId,
@@ -94,6 +98,8 @@ public class SchweisserZertifikatController {
                 z.getPruefstelle(),
                 z.getAusstellungsdatum(),
                 z.getAblaufdatum(),
+                z.getLetzteVerlaengerung(),
+                z.getVerlaengertDurch(),
                 z.getOriginalDateiname(),
                 z.getGespeicherterDateiname(),
                 z.getErstelltAm());
@@ -136,6 +142,15 @@ public class SchweisserZertifikatController {
                                                       @RequestBody ZertifikatRequest req) {
         return repository.findById(id).map(z -> {
             apply(z, req);
+            return ResponseEntity.ok(toResponse(repository.save(z)));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{id}/verlaengerung")
+    public ResponseEntity<ZertifikatResponse> verlaengereInter(@PathVariable Long id, @RequestBody VerlaengerungRequest req) {
+        return repository.findById(id).map(z -> {
+            z.setLetzteVerlaengerung(LocalDate.now());
+            z.setVerlaengertDurch(req.verlaengertDurch());
             return ResponseEntity.ok(toResponse(repository.save(z)));
         }).orElse(ResponseEntity.notFound().build());
     }

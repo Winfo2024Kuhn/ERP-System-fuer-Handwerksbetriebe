@@ -14,6 +14,8 @@ interface SchweisserZertifikat {
     pruefstelle?: string;
     ausstellungsdatum: string;
     ablaufdatum?: string;
+    letzteVerlaengerung?: string;
+    verlaengertDurch?: string;
     originalDateiname?: string;
     gespeicherterDateiname?: string;
 }
@@ -25,14 +27,27 @@ interface Mitarbeiter {
     aktiv?: boolean;
 }
 
-function ablaufStatus(ablaufdatum?: string) {
-    if (!ablaufdatum) return { label: 'Unbegrenzt', css: 'bg-green-100 text-green-800' };
-    const d = new Date(ablaufdatum);
-    const now = new Date();
-    const in90 = new Date(); in90.setDate(now.getDate() + 90);
-    if (d < now) return { label: 'Abgelaufen', css: 'bg-red-100 text-red-800' };
-    if (d <= in90) return { label: 'Läuft bald ab', css: 'bg-yellow-100 text-yellow-800' };
-    return { label: new Date(ablaufdatum).toLocaleDateString('de-DE'), css: 'bg-green-100 text-green-800' };
+function ablaufStatus(item: SchweisserZertifikat) {
+    const heute = new Date();
+    heute.setHours(0,0,0,0);
+    
+    const refDate = item.letzteVerlaengerung ? new Date(item.letzteVerlaengerung) : new Date(item.ausstellungsdatum);
+    refDate.setHours(0,0,0,0);
+    const in5Monaten = new Date(refDate); in5Monaten.setMonth(refDate.getMonth() + 5);
+    const in6Monaten = new Date(refDate); in6Monaten.setMonth(refDate.getMonth() + 6);
+    
+    if (heute > in6Monaten) return { label: 'Verlängerung überfällig', css: 'bg-red-100 text-red-800' };
+
+    if (item.ablaufdatum) {
+        const d = new Date(item.ablaufdatum);
+        const in90 = new Date(heute); in90.setDate(heute.getDate() + 90);
+        if (d < heute) return { label: 'Zertifikat abgelaufen', css: 'bg-red-100 text-red-800' };
+        if (d <= in90) return { label: 'Zertifikat läuft bald ab', css: 'bg-yellow-100 text-yellow-800' };
+    }
+    
+    if (heute > in5Monaten) return { label: 'Verlängerung fällig (< 1M)', css: 'bg-yellow-100 text-yellow-800' };
+    
+    return { label: 'Gültig', css: 'bg-green-100 text-green-800' };
 }
 
 export default function SchweisserZertifikatePage() {
@@ -42,6 +57,9 @@ export default function SchweisserZertifikatePage() {
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<SchweisserZertifikat | null>(null);
+    const [showVerlaengerungModal, setShowVerlaengerungModal] = useState(false);
+    const [verlaengerungItem, setVerlaengerungItem] = useState<SchweisserZertifikat | null>(null);
+    const [verlaengertDurch, setVerlaengertDurch] = useState('');
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
         mitarbeiterId: '' as string | number,
@@ -95,6 +113,13 @@ export default function SchweisserZertifikatePage() {
         setShowModal(true);
     };
 
+    const openVerlaengerung = (e: React.MouseEvent, item: SchweisserZertifikat) => {
+        e.stopPropagation();
+        setVerlaengerungItem(item);
+        setVerlaengertDurch('');
+        setShowVerlaengerungModal(true);
+    };
+
     const handleSave = async () => {
         if (!form.zertifikatsnummer.trim() || !form.norm.trim() || !form.schweissProzes.trim()) return;
         setSaving(true);
@@ -138,6 +163,23 @@ export default function SchweisserZertifikatePage() {
         load();
     };
 
+    const handleVerlaengerung = async () => {
+        if (!verlaengerungItem || !verlaengertDurch.trim()) return;
+        setSaving(true);
+        try {
+            const res = await fetch(`/api/schweisser-zertifikate/${verlaengerungItem.id}/verlaengerung`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ verlaengertDurch })
+            });
+            if (res.ok) {
+                setShowVerlaengerungModal(false);
+                load();
+            }
+        } catch (e) { console.error(e); }
+        finally { setSaving(false); }
+    };
+
     const filtered = liste.filter(z =>
         (z.mitarbeiterName || '').toLowerCase().includes(search.toLowerCase()) ||
         z.zertifikatsnummer.toLowerCase().includes(search.toLowerCase()) ||
@@ -145,10 +187,15 @@ export default function SchweisserZertifikatePage() {
     );
 
     const ablaufendCount = liste.filter(z => {
-        if (!z.ablaufdatum) return false;
-        const d = new Date(z.ablaufdatum);
-        const in90 = new Date(); in90.setDate(in90.getDate() + 90);
-        return d <= in90;
+        if (z.ablaufdatum) {
+            const d = new Date(z.ablaufdatum);
+            const in90 = new Date(); in90.setDate(in90.getDate() + 90);
+            if (d <= in90) return true;
+        }
+        const refDate = z.letzteVerlaengerung ? new Date(z.letzteVerlaengerung) : new Date(z.ausstellungsdatum);
+        const in5Monaten = new Date(refDate); in5Monaten.setMonth(refDate.getMonth() + 5);
+        if (new Date() > in5Monaten) return true;
+        return false;
     }).length;
 
     return (
@@ -191,7 +238,7 @@ export default function SchweisserZertifikatePage() {
                 ) : (
                     <div className="divide-y divide-slate-100">
                         {filtered.map(item => {
-                            const st = ablaufStatus(item.ablaufdatum);
+                            const st = ablaufStatus(item);
                             return (
                                 <div key={item.id} onClick={() => openEdit(item)}
                                     className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50 cursor-pointer transition-colors">
@@ -204,10 +251,13 @@ export default function SchweisserZertifikatePage() {
                                             <span className="text-xs text-slate-400 font-mono">{item.zertifikatsnummer}</span>
                                         </div>
                                         <p className="text-sm text-slate-500 mt-0.5">{item.norm} · Prozess {item.schweissProzes}{item.grundwerkstoff ? ` · ${item.grundwerkstoff}` : ''}</p>
+                                        <p className="text-xs text-slate-400 mt-1">Letzte Prüfung/Verlängerung: {item.letzteVerlaengerung ? new Date(item.letzteVerlaengerung).toLocaleDateString('de-DE') : new Date(item.ausstellungsdatum).toLocaleDateString('de-DE')}</p>
                                     </div>
-                                    <div className="text-right flex-shrink-0 space-y-1">
+                                    <div className="text-right flex-shrink-0 space-y-2 flex flex-col items-end">
                                         <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${st.css}`}>{st.label}</span>
-                                        <p className="text-xs text-slate-400">Ausgestellt: {new Date(item.ausstellungsdatum).toLocaleDateString('de-DE')}</p>
+                                        <button onClick={(e) => openVerlaengerung(e, item)} className="px-3 py-1 bg-white border border-rose-300 text-rose-700 rounded-lg text-xs font-medium hover:bg-rose-50 transition-colors">
+                                            Verlängerung (6-Monate)
+                                        </button>
                                         {item.originalDateiname && (
                                             <p className="text-xs text-slate-400 flex items-center justify-end gap-1">
                                                 <Paperclip className="w-3 h-3" /> Dokument
@@ -379,6 +429,37 @@ export default function SchweisserZertifikatePage() {
                                     {saving && <Loader2 className="w-4 h-4 animate-spin" />} Speichern
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Verlängerung Modal */}
+            {showVerlaengerungModal && verlaengerungItem && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+                            <h2 className="text-lg font-bold text-slate-900">Zertifikat verlängern (6-Monate)</h2>
+                            <button onClick={() => setShowVerlaengerungModal(false)} className="p-1 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-500" /></button>
+                        </div>
+                        <div className="px-6 py-5 space-y-4">
+                            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600 leading-relaxed">
+                                <strong>Zertifikat:</strong> {verlaengerungItem.zertifikatsnummer} ({verlaengerungItem.mitarbeiterName})<br />
+                                Gemäß ISO 9606-1 muss die Schweißaufsichtsperson alle 6 Monate bestätigen, dass der Schweißer im Geltungsbereich fortlaufend geschweißt hat.
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Hiermit bestätige ich die Verlängerung. Mein Name:</label>
+                                <input value={verlaengertDurch} onChange={e => setVerlaengertDurch(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Max Mustermann (Schweißaufsicht)" />
+                            </div>
+                        </div>
+                        <div className="flex justify-end px-6 py-4 border-t border-slate-200 gap-2">
+                            <button onClick={() => setShowVerlaengerungModal(false)} className="px-4 py-2 rounded-lg text-rose-700 hover:bg-rose-100 text-sm font-medium transition-colors">Abbrechen</button>
+                            <button onClick={handleVerlaengerung} disabled={saving || !verlaengertDurch.trim()}
+                                className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white border border-rose-600 rounded-lg hover:bg-rose-700 text-sm font-medium disabled:opacity-50 transition-colors">
+                                {saving && <Loader2 className="w-4 h-4 animate-spin" />} Verlängerung bestätigen
+                            </button>
                         </div>
                     </div>
                 </div>

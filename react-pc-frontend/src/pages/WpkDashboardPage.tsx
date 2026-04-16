@@ -111,8 +111,8 @@ function StatusCard({ title, icon: Icon, status, hinweis }: {
 }
 
 // Tab-Button-Komponente
-function TabBtn({ label, active, onClick, count }: {
-    label: string; active: boolean; onClick: () => void; count?: number;
+function TabBtn({ label, active, onClick, count, alert }: {
+    label: string; active: boolean; onClick: () => void; count?: number | string; alert?: boolean;
 }) {
     return (
         <button
@@ -128,7 +128,7 @@ function TabBtn({ label, active, onClick, count }: {
             {count !== undefined && (
                 <span className={cn(
                     'ml-1.5 px-1.5 py-0.5 rounded-full text-xs font-semibold',
-                    active ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+                    alert ? 'bg-red-100 text-red-700' : (active ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500')
                 )}>{count}</span>
             )}
         </button>
@@ -406,7 +406,10 @@ export default function WpkDashboardPage() {
                         <TabBtn label="WPK-Status"          active={activeTab === 'status'}    onClick={() => setActiveTab('status')} />
                         <TabBtn label="Schweißanweisungen"  active={activeTab === 'wps'}       onClick={() => setActiveTab('wps')}    count={projektWps.length} />
                         <TabBtn label="Werkstoffzeugnisse"  active={activeTab === 'werkstoff'} onClick={() => setActiveTab('werkstoff')} count={projektWz.length} />
-                        <TabBtn label="Schweißer-Zertifikate" active={activeTab === 'schweisser'} onClick={() => setActiveTab('schweisser')} />
+                        <TabBtn label="Schweißer-Zertifikate" active={activeTab === 'schweisser'} onClick={() => setActiveTab('schweisser')} 
+                            count={wpkStatus && wpkStatus.schweisser !== 'OK' ? '!' : undefined} 
+                            alert={wpkStatus?.schweisser !== 'OK'} 
+                        />
                     </div>
 
                     {/* ── Tab: WPK-Status ─────────────────────────────────── */}
@@ -683,6 +686,16 @@ export default function WpkDashboardPage() {
                     {/* ── Tab: Schweißer-Zertifikate ───────────────────────── */}
                     {activeTab === 'schweisser' && (
                         <div className="pt-5">
+                            {wpkStatus && wpkStatus.schweisser !== 'OK' && (
+                                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                                    <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-red-800">Achtung: Zertifikats-Verlängerung prüfen</p>
+                                        <p className="text-sm text-red-700 mt-0.5">{wpkStatus.schweisserHinweis}</p>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="mb-3">
                                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                                     <Users className="w-4 h-4 text-rose-500" />
