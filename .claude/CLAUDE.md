@@ -43,5 +43,40 @@ Bevor du Code schreibst, lade dir **zwingend** die passende Dokumentation in dei
 
 5. **Gebe mir immer in deier thought of chain feedback ob du dir andere dinge als die CLAUDE.md anschaust!!!
 
-## 📓 NotebookLM-Integration
-Du hast Zugriff auf NotebookLM-Tools über den MCP-Server. **Nur bei Fragen zu DIN EN 1090** verwende das Notebook mit der ID: 917b7857-0d32-43bf-9dec-b5ca1d362800. Wenn ich Fragen zu DIN EN 1090 stelle, verwende bitte immer zuerst das Tool search_notebooks oder get_notebook_content mit dieser ID, um mir fundierte Antworten basierend auf meinen Quellen zu geben. Bei allen anderen Themen den MCP-Server NICHT verwenden.
+## 📓 NotebookLM-Integration (MCP-Server)
+
+### Wann verwenden?
+**Nur bei Fragen zu DIN EN 1090** — bei allen anderen Themen den MCP-Server NICHT verwenden.
+
+### Notebook-ID
+`917b7857-0d32-43bf-9dec-b5ca1d362800` (DIN EN 1090 Wissensdatenbank)
+
+### So funktioniert es
+Der MCP-Server `notebooklm` ist in `.vscode/mcp.json` konfiguriert und stellt ~35 Tools bereit (Prefix: `mcp_notebooklm_*`).
+
+**Bei DIN EN 1090-Fragen diese Tools verwenden:**
+1. `mcp_notebooklm_notebook_query` — Frage an das Notebook stellen (nutzt die hinterlegten Quellen)
+2. `mcp_notebooklm_notebook_get` — Notebook-Details und Quellen abrufen
+3. `mcp_notebooklm_notebook_describe` — KI-Zusammenfassung des Notebooks
+4. `mcp_notebooklm_source_list_drive` / `mcp_notebooklm_source_get_content` — Einzelne Quellen lesen
+
+### Setup (falls der Server nicht läuft)
+Falls der MCP-Server nicht erreichbar ist oder Authentifizierungsfehler auftreten:
+
+1. **Voraussetzung:** `uv` / `uvx` muss installiert sein:
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+2. **Authentifizierung** (einmalig, muss alle ~2-4 Wochen erneuert werden):
+   ```powershell
+   uvx --from notebooklm-mcp-cli nlm login
+   ```
+   Öffnet Chrome → bei Google anmelden (Account: mkuhn864@gmail.com) → Cookies werden automatisch extrahiert.
+3. **Auth-Status prüfen:**
+   ```powershell
+   uvx --from notebooklm-mcp-cli nlm login --check
+   ```
+4. **MCP-Server in VS Code neu starten:** `Ctrl+Shift+P` → `Developer: Reload Window`
+
+### Credentials-Speicherort
+`C:\Users\bausc\.notebooklm-mcp-cli\profiles\default` — NIEMALS committen!

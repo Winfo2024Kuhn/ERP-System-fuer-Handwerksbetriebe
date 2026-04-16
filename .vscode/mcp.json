@@ -1,7 +1,7 @@
 {
 	"servers": {
 		"notebooklm": {
-			"command": "C:\\Users\\bausc\\.local\\bin\\uvx.exe",
+			"command": "uvx",
 			"args": [
 				"--from",
 				"notebooklm-mcp-cli",
