@@ -42,3 +42,6 @@ Bevor du Code schreibst, lade dir **zwingend** die passende Dokumentation in dei
    `.claude\commands\review-and-ship.md` (Überprüfe den Code auf Typensicherheit, Performance-Bottlenecks, UX-Konsistenz und bereite ihn für den Commit vor).
 
 5. **Gebe mir immer in deier thought of chain feedback ob du dir andere dinge als die CLAUDE.md anschaust!!!
+
+## 📓 NotebookLM-Integration
+Du hast Zugriff auf NotebookLM-Tools über den MCP-Server. **Nur bei Fragen zu DIN EN 1090** verwende das Notebook mit der ID: 917b7857-0d32-43bf-9dec-b5ca1d362800. Wenn ich Fragen zu DIN EN 1090 stelle, verwende bitte immer zuerst das Tool search_notebooks oder get_notebook_content mit dieser ID, um mir fundierte Antworten basierend auf meinen Quellen zu geben. Bei allen anderen Themen den MCP-Server NICHT verwenden.
