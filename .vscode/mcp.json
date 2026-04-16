@@ -1,0 +1,16 @@
+{
+	"servers": {
+		"notebooklm": {
+			"command": "C:\\Users\\bausc\\.local\\bin\\uvx.exe",
+			"args": [
+				"--from",
+				"notebooklm-mcp-cli",
+				"notebooklm-mcp"
+			],
+			"env": {
+				"NOTEBOOK_ID": "917b7857-0d32-43bf-9dec-b5ca1d362800"
+			}
+		}
+	},
+	"inputs": []
+}
