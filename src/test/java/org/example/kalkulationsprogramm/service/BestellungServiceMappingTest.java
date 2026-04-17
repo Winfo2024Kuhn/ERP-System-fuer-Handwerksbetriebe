@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
+import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -23,8 +24,9 @@ class BestellungServiceMappingTest {
         ProjektRepository projektRepo = mock(ProjektRepository.class);
         LieferantenRepository lieferantenRepo = mock(LieferantenRepository.class);
         KategorieRepository kategorieRepo = mock(KategorieRepository.class);
+        ArtikelRepository artikelRepo = mock(ArtikelRepository.class);
         ZeugnisService zeugnisService = new ZeugnisService(kategorieRepo);
-        BestellungService service = new BestellungService(repo, projektRepo, lieferantenRepo, kategorieRepo, zeugnisService);
+        BestellungService service = new BestellungService(repo, projektRepo, lieferantenRepo, kategorieRepo, artikelRepo, zeugnisService);
 
         Kategorie kat = new Kategorie();
         kat.setId(2);

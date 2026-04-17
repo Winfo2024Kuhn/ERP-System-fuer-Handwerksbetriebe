@@ -1138,6 +1138,16 @@ public class GeminiDokumentAnalyseService {
             freshDokument.setGeschaeftsdaten(savedGeschaeftsdaten);
             dokumentRepository.saveAndFlush(freshDokument);
 
+            // KI-Pfad: Artikelpreise aus AI-JSON aktualisieren (analog ZUGFeRD-Pfad)
+            if (savedGeschaeftsdaten.getAiRawJson() != null && freshDokument.getLieferant() != null) {
+                try {
+                    JsonNode aiJson = objectMapper.readTree(savedGeschaeftsdaten.getAiRawJson());
+                    verarbeiteArtikelPositionen(aiJson, freshDokument.getLieferant());
+                } catch (Exception e) {
+                    log.warn("Artikelpreis-Update aus KI-JSON fehlgeschlagen: {}", e.getMessage());
+                }
+            }
+
             // Werkstoffzeugnis auto-erstellen wenn KI den Typ erkannt hat
             // Nur wenn EN 1090 Feature-Flag aktiv (en1090.features.enabled=true)
             if (en1090FeaturesEnabled && savedGeschaeftsdaten.getDetectedTyp() == LieferantDokumentTyp.WERKSTOFFZEUGNIS) {

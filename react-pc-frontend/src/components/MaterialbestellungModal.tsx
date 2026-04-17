@@ -55,6 +55,7 @@ const EXC_LABEL: Record<string, string> = {
 // ========= Position-Row-Typ =========
 interface Position {
     clientId: string;                   // Lokale ID für Key
+    originalId?: number;                // Falls gesetzt: Ziel für PUT (Batch-Edit)
     artikelId: number | null;           // Wenn gesetzt: Stammartikel
     produktname: string;                // Freitext oder aus Artikel übernommen
     produkttext: string;
@@ -67,6 +68,15 @@ interface Position {
     zeugnis: string;
     zeugnisVomSystem: string;
     kommentar: string;
+    // Per-Position-Kontext (nur Batch-Edit): behält Original-Projekt/-Lieferant je Zeile
+    perProjektId?: number | null;
+    perProjektName?: string | null;
+    perProjektNummer?: string | null;
+    perKundenName?: string | null;
+    perExcKlasse?: string | null;
+    perLieferantId?: number | null;
+    perLieferantName?: string | null;
+    exportiertAm?: string | null;       // falls gesperrt
 }
 
 const neuePosition = (): Position => ({
@@ -110,6 +120,7 @@ export interface EditPosition {
     excKlasse?: string | null;
     lieferantId?: number | null;
     lieferantName?: string | null;
+    exportiertAm?: string | null;
 }
 
 export interface MaterialbestellungModalProps {
@@ -122,6 +133,10 @@ export interface MaterialbestellungModalProps {
     projektSperren?: boolean;
     /** Wenn gesetzt: Edit-Modus für genau diese eine Position (PUT statt POST) */
     editPosition?: EditPosition | null;
+    /** Wenn gesetzt: Batch-Edit-Modus — mehrere Positionen gleichzeitig bearbeiten (PUT pro Position) */
+    editPositions?: EditPosition[] | null;
+    /** Optionaler Titel für den Batch-Edit-Modus (z. B. Lieferantenname) */
+    batchTitle?: string;
 }
 
 // ========= Hauptkomponente =========
@@ -132,9 +147,12 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     initialProjekt,
     projektSperren = false,
     editPosition = null,
+    editPositions = null,
+    batchTitle,
 }) => {
     const toast = useToast();
-    const istEditModus = editPosition != null;
+    const istBatchEditModus = editPositions != null && editPositions.length > 0;
+    const istEditModus = editPosition != null || istBatchEditModus;
 
     // Stammdaten
     const [kategorien, setKategorien] = useState<KategorieFlach[]>([]);
@@ -160,7 +178,34 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
 
         fetch('/api/kategorien').then(r => r.json()).then(setKategorien).catch(console.error);
 
-        if (editPosition) {
+        if (istBatchEditModus && editPositions) {
+            // Projekt/Lieferant-Header im Batch-Modus ungenutzt — Kontext ist per-Position
+            setProjekt(null);
+            setLieferant(null);
+            setPositionen(editPositions.map(ep => ({
+                ...neuePosition(),
+                originalId: ep.id,
+                artikelId: ep.artikelId ?? null,
+                externeArtikelnummer: ep.externeArtikelnummer ?? undefined,
+                produktname: ep.produktname ?? '',
+                produkttext: ep.produkttext ?? '',
+                werkstoffName: ep.werkstoffName ?? undefined,
+                kategorieId: ep.kategorieId ?? null,
+                menge: ep.menge != null ? String(ep.menge) : '1',
+                einheit: ep.einheit || 'Stück',
+                fixmassMm: ep.fixmassMm != null ? String(ep.fixmassMm) : '',
+                zeugnis: ep.zeugnisAnforderung ?? '',
+                kommentar: ep.kommentar ?? '',
+                perProjektId: ep.projektId ?? null,
+                perProjektName: ep.projektName ?? null,
+                perProjektNummer: ep.projektNummer ?? null,
+                perKundenName: ep.kundenName ?? null,
+                perExcKlasse: ep.excKlasse ?? null,
+                perLieferantId: ep.lieferantId ?? null,
+                perLieferantName: ep.lieferantName ?? null,
+                exportiertAm: ep.exportiertAm ?? null,
+            })));
+        } else if (editPosition) {
             setProjekt(editPosition.projektId ? {
                 id: editPosition.projektId,
                 bauvorhaben: editPosition.projektName ?? undefined,
@@ -174,6 +219,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
             } as LieferantSuchErgebnis : null);
             setPositionen([{
                 ...neuePosition(),
+                originalId: editPosition.id,
                 artikelId: editPosition.artikelId ?? null,
                 externeArtikelnummer: editPosition.externeArtikelnummer ?? undefined,
                 produktname: editPosition.produktname ?? '',
@@ -191,7 +237,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
             setLieferant(null);
             setPositionen([neuePosition()]);
         }
-    }, [isOpen, initialProjekt, editPosition]);
+    }, [isOpen, initialProjekt, editPosition, editPositions, istBatchEditModus]);
 
     // Norm-Vorschlag pro Position nachziehen, wenn Projekt oder Kategorie sich ändert
     const ladeZeugnisVorschlag = useCallback(async (kategorieId: number, excKlasse: string) => {
@@ -271,6 +317,73 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     };
 
     const speichern = async () => {
+        // Batch-Edit: PUT pro Position (jede Position behält ihren Projekt/Lieferant-Kontext)
+        if (istBatchEditModus) {
+            const zuSpeichern = positionen.filter(p =>
+                p.originalId != null
+                && !p.exportiertAm
+                && p.produktname.trim()
+                && p.menge
+                && !isNaN(Number(p.menge))
+            );
+            if (zuSpeichern.length === 0) {
+                toast.warning('Keine gültigen Positionen zum Speichern');
+                return;
+            }
+
+            setSaving(true);
+            let erfolg = 0;
+            let fehler = 0;
+            let gesperrt = 0;
+
+            for (const pos of zuSpeichern) {
+                const payload = {
+                    projektId: pos.perProjektId ?? null,
+                    lieferantId: pos.perLieferantId ?? null,
+                    kategorieId: pos.kategorieId,
+                    artikelId: pos.artikelId,
+                    produktname: pos.produktname.trim(),
+                    produkttext: pos.produkttext.trim() || null,
+                    menge: Number(pos.menge),
+                    einheit: pos.einheit.trim() || 'Stück',
+                    fixmassMm: pos.fixmassMm ? Number(pos.fixmassMm) : null,
+                    zeugnisAnforderung: pos.zeugnis || null,
+                    kommentar: pos.kommentar.trim() || null,
+                };
+                try {
+                    const res = await fetch(`/api/bestellungen/${pos.originalId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    if (res.ok) erfolg++;
+                    else if (res.status === 409) gesperrt++;
+                    else fehler++;
+                } catch {
+                    fehler++;
+                }
+            }
+
+            setSaving(false);
+
+            if (erfolg > 0 && fehler === 0 && gesperrt === 0) {
+                toast.success(`${erfolg} Position${erfolg > 1 ? 'en' : ''} gespeichert`);
+                onSuccess?.();
+                onClose();
+            } else if (erfolg > 0) {
+                const teile: string[] = [`${erfolg} gespeichert`];
+                if (gesperrt > 0) teile.push(`${gesperrt} gesperrt (bereits exportiert)`);
+                if (fehler > 0) teile.push(`${fehler} fehlgeschlagen`);
+                toast.warning(teile.join(', '));
+                onSuccess?.();
+            } else if (gesperrt > 0 && fehler === 0) {
+                toast.error(`Alle ${gesperrt} Positionen bereits exportiert`);
+            } else {
+                toast.error('Speichern fehlgeschlagen');
+            }
+            return;
+        }
+
         if (!lieferant) { toast.warning('Bitte Lieferanten auswählen'); return; }
         const zuSpeichern = positionen.filter(p => p.produktname.trim() && p.menge && !isNaN(Number(p.menge)));
         if (zuSpeichern.length === 0) { toast.warning('Bitte mindestens eine Position ausfüllen'); return; }
@@ -379,12 +492,16 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                         </div>
                         <div>
                             <h2 id="materialbest-title" className="text-xl font-bold text-slate-900">
-                                {istEditModus ? 'Bestellposition bearbeiten' : 'Materialbestellung'}
+                                {istBatchEditModus
+                                    ? (batchTitle ? `${batchTitle} – Positionen bearbeiten` : 'Positionen bearbeiten')
+                                    : istEditModus ? 'Bestellposition bearbeiten' : 'Materialbestellung'}
                             </h2>
                             <p className="text-sm text-slate-500">
-                                {istEditModus
-                                    ? 'Änderungen werden gespeichert, solange die Position nicht exportiert wurde.'
-                                    : 'Mehrere Positionen für einen Lieferanten erfassen'}
+                                {istBatchEditModus
+                                    ? `${positionen.length} Position${positionen.length === 1 ? '' : 'en'} — Änderungen pro Position speichern`
+                                    : istEditModus
+                                        ? 'Änderungen werden gespeichert, solange die Position nicht exportiert wurde.'
+                                        : 'Mehrere Positionen für einen Lieferanten erfassen'}
                             </p>
                         </div>
                     </div>
@@ -392,11 +509,15 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                         <Button variant="ghost" onClick={onClose} disabled={saving}>Abbrechen</Button>
                         <Button
                             onClick={speichern}
-                            disabled={saving || !lieferant}
+                            disabled={saving || (!istBatchEditModus && !lieferant)}
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
                             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-                            {saving ? 'Speichern...' : istEditModus ? 'Änderungen speichern' : 'Alle speichern'}
+                            {saving
+                                ? 'Speichern...'
+                                : istBatchEditModus
+                                    ? 'Änderungen speichern'
+                                    : istEditModus ? 'Änderungen speichern' : 'Alle speichern'}
                         </Button>
                         <Button variant="ghost" size="sm" onClick={onClose}>
                             <X className="w-5 h-5" />
@@ -404,7 +525,8 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                     </div>
                 </div>
 
-                {/* Shared Header-Controls: Projekt + Lieferant */}
+                {/* Shared Header-Controls: Projekt + Lieferant (nicht im Batch-Edit-Modus) */}
+                {!istBatchEditModus && (
                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 shrink-0">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Projekt */}
@@ -499,12 +621,15 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                         </div>
                     </div>
                 </div>
+                )}
 
                 {/* Positionen-Bereich */}
                 <div className="flex-1 overflow-auto px-6 py-4">
                     <div className="flex items-center justify-between mb-3">
                         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
-                            {istEditModus ? 'Position' : <>Positionen <span className="text-slate-400">({positionen.length})</span></>}
+                            {istBatchEditModus
+                                ? <>Positionen <span className="text-slate-400">({positionen.length})</span></>
+                                : istEditModus ? 'Position' : <>Positionen <span className="text-slate-400">({positionen.length})</span></>}
                         </h3>
                         {!istEditModus && (
                             <div className="flex items-center gap-2">
@@ -536,6 +661,8 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                                 onRemove={() => entfernePosition(pos.clientId)}
                                 onArtikelSuchen={() => setArtikelModalFuerZeile(pos.clientId)}
                                 showRemove={!istEditModus}
+                                showKontext={istBatchEditModus}
+                                disabled={istBatchEditModus && pos.exportiertAm != null}
                             />
                         ))}
                     </div>
@@ -602,23 +729,66 @@ interface PositionRowProps {
     onRemove: () => void;
     onArtikelSuchen: () => void;
     showRemove?: boolean;
+    /** Zeigt Projekt/Lieferant-Kontext-Badges oben in der Zeile (Batch-Edit) */
+    showKontext?: boolean;
+    /** Zeile ist lesend (z. B. weil bereits exportiert) */
+    disabled?: boolean;
 }
 
 const PositionRow: React.FC<PositionRowProps> = ({
     index, position, kategorien, onUpdate, onRemove, onArtikelSuchen, showRemove = true,
+    showKontext = false, disabled = false,
 }) => {
     return (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 hover:border-slate-300 transition-colors">
+        <div className={cn(
+            "bg-white border border-slate-200 rounded-xl p-4 transition-colors",
+            disabled ? "opacity-60 bg-slate-50" : "hover:border-slate-300"
+        )}>
             <div className="flex gap-4">
                 {/* Nummerierung */}
                 <div className="flex-shrink-0">
-                    <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-sm font-bold">
+                    <div className={cn(
+                        "w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold",
+                        disabled ? "bg-slate-200 text-slate-500" : "bg-rose-100 text-rose-700"
+                    )}>
                         {index + 1}
                     </div>
                 </div>
 
                 {/* Eingabefelder */}
-                <div className="flex-1 space-y-3 min-w-0">
+                <fieldset className="flex-1 space-y-3 min-w-0" disabled={disabled}>
+                    {showKontext && (
+                        <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-100">
+                            {position.perProjektName || position.perProjektNummer ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs">
+                                    <Briefcase className="w-3 h-3" />
+                                    {position.perProjektNummer && (
+                                        <span className="font-mono">{position.perProjektNummer}</span>
+                                    )}
+                                    {position.perProjektName && <span>· {position.perProjektName}</span>}
+                                </span>
+                            ) : (
+                                <span className="text-xs text-slate-400 italic">Ohne Projekt</span>
+                            )}
+                            {position.perLieferantName && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs">
+                                    <Truck className="w-3 h-3" />
+                                    {position.perLieferantName}
+                                </span>
+                            )}
+                            {position.perExcKlasse && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-xs font-medium">
+                                    <ShieldCheck className="w-3 h-3" />
+                                    {EXC_LABEL[position.perExcKlasse] ?? position.perExcKlasse}
+                                </span>
+                            )}
+                            {disabled && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
+                                    Bereits exportiert — Bearbeitung gesperrt
+                                </span>
+                            )}
+                        </div>
+                    )}
                     {/* Zeile 1: Artikel-Auswahl + Produktname */}
                     <div className="grid grid-cols-12 gap-3">
                         <div className="col-span-12 md:col-span-5">
@@ -758,7 +928,7 @@ const PositionRow: React.FC<PositionRowProps> = ({
                             />
                         </div>
                     </div>
-                </div>
+                </fieldset>
 
                 {/* Löschen */}
                 {showRemove && (

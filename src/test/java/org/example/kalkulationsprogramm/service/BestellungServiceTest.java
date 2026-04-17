@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
+import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -30,13 +31,14 @@ class BestellungServiceTest {
     @Mock private ProjektRepository projektRepository;
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private KategorieRepository kategorieRepository;
+    @Mock private ArtikelRepository artikelRepository;
 
     private BestellungService service;
 
     @BeforeEach
     void setup() {
         ZeugnisService zeugnisService = new ZeugnisService(kategorieRepository);
-        service = new BestellungService(artikelInProjektRepository, projektRepository, lieferantenRepository, kategorieRepository, zeugnisService);
+        service = new BestellungService(artikelInProjektRepository, projektRepository, lieferantenRepository, kategorieRepository, artikelRepository, zeugnisService);
     }
 
     @Test

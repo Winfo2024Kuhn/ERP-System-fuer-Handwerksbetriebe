@@ -5,9 +5,14 @@ import java.util.Map;
 
 import org.example.kalkulationsprogramm.domain.ZeugnisTyp;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmRequestDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmResponseDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.PreviewResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.ManuelleBestellpositionDto;
 import org.example.kalkulationsprogramm.service.BestellungPdfService;
 import org.example.kalkulationsprogramm.service.BestellungService;
+import org.example.kalkulationsprogramm.service.HicadImportService;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -24,6 +29,7 @@ public class BestellungController {
 
     private final BestellungService bestellungService;
     private final BestellungPdfService bestellungPdfService;
+    private final HicadImportService hicadImportService;
 
     @GetMapping("/offen")
     public List<BestellungResponseDto> offeneBestellungen() {
@@ -84,6 +90,35 @@ public class BestellungController {
     public ResponseEntity<Void> loescheFreiePosition(@PathVariable Long id) {
         bestellungService.loeschePosition(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value = "/import/hicad/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<PreviewResponseDto> hicadPreview(@RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            return ResponseEntity.ok(hicadImportService.preview(file));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .header("X-Error-Reason", e.getMessage())
+                    .build();
+        } catch (java.io.IOException e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
+                    .header("X-Error-Reason", "Datei konnte nicht gelesen werden")
+                    .build();
+        }
+    }
+
+    @PostMapping(value = "/import/hicad/confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ConfirmResponseDto> hicadConfirm(@RequestBody ConfirmRequestDto req) {
+        try {
+            return ResponseEntity.ok(hicadImportService.confirm(req));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .header("X-Error-Reason", e.getMessage())
+                    .build();
+        }
     }
 
     @GetMapping("/zeugnis-default")

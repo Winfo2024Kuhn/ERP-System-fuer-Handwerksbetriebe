@@ -19,5 +19,16 @@ public interface ArtikelRepository extends JpaRepository<Artikel, Long>, JpaSpec
 
     @Query("select distinct a.produktlinie from Artikel a left join a.artikelpreis ap where (ap is null or ap.lieferant.id <> :lieferantId) and a.produktlinie is not null")
     List<String> findDistinctProduktlinieExcludingLieferant(@Param("lieferantId") Long lieferantId);
+
+    /**
+     * HiCAD-Matching: Sucht einen Stammartikel primär über hicadName, fallback produktname.
+     * Vergleich case-insensitive und getrimmt.
+     */
+    @Query("""
+            select a from Artikel a
+            where lower(trim(coalesce(a.hicadName, ''))) = lower(trim(:bezeichnung))
+               or lower(trim(coalesce(a.produktname, ''))) = lower(trim(:bezeichnung))
+            """)
+    List<Artikel> findByHicadNameOrProduktname(@Param("bezeichnung") String bezeichnung);
 }
 

@@ -104,6 +104,8 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
 
         Optional<Projekt> findByBauvorhaben(String bauvorhaben);
 
+        Optional<Projekt> findByAuftragsnummer(String auftragsnummer);
+
         /**
          * Findet Projekte wo die Email in kunden_emails ODER projekt_kunden_emails
          * vorkommt.

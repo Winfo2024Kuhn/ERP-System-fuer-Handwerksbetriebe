@@ -8,6 +8,7 @@ import {
     ExternalLink,
     Eye,
     File,
+    FileSpreadsheet,
     Loader2,
     Lock,
     Mail,
@@ -32,6 +33,29 @@ import { Input } from "../components/ui/input";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { MaterialbestellungModal, type EditPosition } from '../components/MaterialbestellungModal';
+const toEditPosition = (b: Bestellung): EditPosition => ({
+    id: b.id,
+    artikelId: b.artikelId || null,
+    externeArtikelnummer: b.externeArtikelnummer || null,
+    produktname: b.produktname || null,
+    produkttext: b.produkttext || null,
+    werkstoffName: b.werkstoffName || null,
+    kategorieId: b.kategorieId ?? null,
+    menge: b.menge ?? b.stueckzahl ?? null,
+    einheit: b.einheit || null,
+    fixmassMm: b.fixmassMm ?? null,
+    zeugnisAnforderung: b.zeugnisAnforderung || null,
+    kommentar: b.kommentar || null,
+    projektId: b.projektId ?? null,
+    projektName: b.projektName || null,
+    projektNummer: b.projektNummer || null,
+    kundenName: b.kundenName || null,
+    excKlasse: b.excKlasse || null,
+    lieferantId: b.lieferantId ?? null,
+    lieferantName: b.lieferantName || null,
+    exportiertAm: b.exportiertAm ?? null,
+});
+import { HicadImportModal } from '../components/HicadImportModal';
 
 // Statische Icon-Pfade
 const BASE_URL = '/react-textbausteine/';
@@ -142,6 +166,7 @@ interface Bestellung {
     schnittForm?: string;
     anschnittWinkelLinks?: string;
     anschnittWinkelRechts?: string;
+    fixmassMm?: number | null;
 }
 
 type GroupBy = 'lieferant' | 'projekt';
@@ -733,7 +758,7 @@ interface GruppeCardProps {
     onToggleBestellt: (id: number, bestellt: boolean) => Promise<void>;
     onEmailClick: (lieferantId: number, lieferantName: string) => void;
     onPdfClick: (lieferantId: number) => void;
-    onEditClick: (position: Bestellung) => void;
+    onBatchEditClick: (gruppe: Gruppe) => void;
 }
 
 const GruppeCard: React.FC<GruppeCardProps> = ({
@@ -742,7 +767,7 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
     onToggleBestellt,
     onEmailClick,
     onPdfClick,
-    onEditClick,
+    onBatchEditClick,
 }) => {
     const [expanded, setExpanded] = useState(true);
 
@@ -772,6 +797,10 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
     };
 
     const exportVerfuegbar = groupBy === 'lieferant' && gruppe.lieferantId != null;
+    const hatBearbeitbarePositionen = useMemo(
+        () => gruppe.items.some(item => !item.exportiertAm),
+        [gruppe.items],
+    );
 
     return (
         <Card className="overflow-hidden">
@@ -805,26 +834,39 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
                     </div>
                 </div>
 
-                {exportVerfuegbar && (
-                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    {hatBearbeitbarePositionen && (
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={handlePdfExport}
+                            onClick={() => onBatchEditClick(gruppe)}
+                            title="Alle offenen Positionen dieser Gruppe bearbeiten"
                         >
-                            <Download className="w-4 h-4 mr-1" />
-                            PDF
+                            <Pencil className="w-4 h-4 mr-1" />
+                            Bearbeiten
                         </Button>
-                        <Button
-                            size="sm"
-                            onClick={() => gruppe.lieferantId && onEmailClick(gruppe.lieferantId, gruppe.title)}
-                            className="bg-rose-600 text-white hover:bg-rose-700"
-                        >
-                            <Mail className="w-4 h-4 mr-1" />
-                            E-Mail
-                        </Button>
-                    </div>
-                )}
+                    )}
+                    {exportVerfuegbar && (
+                        <>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handlePdfExport}
+                            >
+                                <Download className="w-4 h-4 mr-1" />
+                                PDF
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={() => gruppe.lieferantId && onEmailClick(gruppe.lieferantId, gruppe.title)}
+                                className="bg-rose-600 text-white hover:bg-rose-700"
+                            >
+                                <Mail className="w-4 h-4 mr-1" />
+                                E-Mail
+                            </Button>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Table */}
@@ -850,7 +892,7 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Werkstoff</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Kategorie</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Menge</th>
-                                <th className="px-4 py-3 text-right font-medium text-slate-600 w-16">Aktion</th>
+                                <th className="px-4 py-3 text-right font-medium text-slate-600 w-12">Status</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -908,24 +950,13 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
                                         {b.menge ? `${b.menge} ${b.einheit || ''}` : '-'}
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                        {b.exportiertAm ? (
+                                        {b.exportiertAm && (
                                             <span
                                                 className="inline-flex items-center gap-1 text-xs text-slate-400"
                                                 title={`Bereits exportiert am ${new Date(b.exportiertAm).toLocaleString('de-DE')} – Bearbeiten gesperrt`}
                                             >
                                                 <Lock className="w-4 h-4" />
                                             </span>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={() => onEditClick(b)}
-                                                className="inline-flex items-center justify-center p-1.5 rounded text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                                                title="Position bearbeiten"
-                                                aria-label="Position bearbeiten"
-                                                disabled={b.bestellt}
-                                            >
-                                                <Pencil className="w-4 h-4" />
-                                            </button>
                                         )}
                                     </td>
                                 </tr>
@@ -944,7 +975,8 @@ export default function BestellungEditor() {
     const [loading, setLoading] = useState(true);
     const [emailModal, setEmailModal] = useState<{ lieferantId: number; lieferantName: string } | null>(null);
     const [bestellpositionModalOffen, setBestellpositionModalOffen] = useState(false);
-    const [editPosition, setEditPosition] = useState<EditPosition | null>(null);
+    const [hicadImportOffen, setHicadImportOffen] = useState(false);
+    const [batchEditGruppe, setBatchEditGruppe] = useState<Gruppe | null>(null);
     const [groupBy, setGroupBy] = useState<GroupBy>('lieferant');
 
     const markiereLieferantAlsExportiert = useCallback(async (lieferantId: number) => {
@@ -1040,28 +1072,8 @@ export default function BestellungEditor() {
         loadBestellungen();
     };
 
-    const handleEditClick = (position: Bestellung) => {
-        setEditPosition({
-            id: position.id,
-            artikelId: position.artikelId || null,
-            externeArtikelnummer: position.externeArtikelnummer || null,
-            produktname: position.produktname || null,
-            produkttext: position.produkttext || null,
-            werkstoffName: position.werkstoffName || null,
-            kategorieId: position.kategorieId ?? null,
-            menge: position.menge ?? position.stueckzahl ?? null,
-            einheit: position.einheit || null,
-            fixmassMm: null,
-            zeugnisAnforderung: position.zeugnisAnforderung || null,
-            kommentar: position.kommentar || null,
-            projektId: position.projektId ?? null,
-            projektName: position.projektName || null,
-            projektNummer: position.projektNummer || null,
-            kundenName: position.kundenName || null,
-            excKlasse: position.excKlasse || null,
-            lieferantId: position.lieferantId ?? null,
-            lieferantName: position.lieferantName || null,
-        });
+    const handleBatchEditClick = (gruppe: Gruppe) => {
+        setBatchEditGruppe(gruppe);
     };
 
     const handleEmailSuccess = async (lieferantId: number) => {
@@ -1073,10 +1085,18 @@ export default function BestellungEditor() {
 
         <PageLayout
             ribbonCategory="Einkauf"
-            title="Bestellungen"
-            subtitle="Offene Bestellungen nach Lieferanten verwalten und versenden."
+            title="Bedarf"
+            subtitle="Benötigtes Material nach Lieferanten bündeln und als Bestellung versenden."
             actions={
                 <div className="flex items-center gap-2">
+                    <Button
+                        onClick={() => setHicadImportOffen(true)}
+                        variant="outline"
+                        size="sm"
+                    >
+                        <FileSpreadsheet className="w-4 h-4 mr-2" />
+                        HiCAD-Stückliste importieren
+                    </Button>
                     <Button onClick={() => setBestellpositionModalOffen(true)} className="bg-rose-600 text-white hover:bg-rose-700" size="sm">
                         <Plus className="w-4 h-4 mr-2" />
                         Position hinzufügen
@@ -1129,7 +1149,7 @@ export default function BestellungEditor() {
             ) : gruppen.length === 0 ? (
                 <Card className="p-12 text-center">
                     <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                    <p className="text-slate-500 text-lg">Keine offenen Bestellungen vorhanden.</p>
+                    <p className="text-slate-500 text-lg">Kein offener Bedarf vorhanden.</p>
                 </Card>
             ) : (
                 <div className="space-y-6">
@@ -1141,11 +1161,18 @@ export default function BestellungEditor() {
                             onToggleBestellt={handleToggleBestellt}
                             onEmailClick={handleEmailClick}
                             onPdfClick={handlePdfClick}
-                            onEditClick={handleEditClick}
+                            onBatchEditClick={handleBatchEditClick}
                         />
                     ))}
                 </div>
             )}
+
+            {/* HiCAD-Stücklisten-Import */}
+            <HicadImportModal
+                isOpen={hicadImportOffen}
+                onClose={() => setHicadImportOffen(false)}
+                onSuccess={loadBestellungen}
+            />
 
             {/* Manuelle Bestellposition */}
             <MaterialbestellungModal
@@ -1154,12 +1181,13 @@ export default function BestellungEditor() {
                 onSuccess={loadBestellungen}
             />
 
-            {/* Position bearbeiten */}
+            {/* Gruppen-Batch-Edit: alle Positionen einer Gruppe gleichzeitig bearbeiten */}
             <MaterialbestellungModal
-                isOpen={editPosition != null}
-                onClose={() => setEditPosition(null)}
+                isOpen={batchEditGruppe != null}
+                onClose={() => setBatchEditGruppe(null)}
                 onSuccess={loadBestellungen}
-                editPosition={editPosition}
+                editPositions={batchEditGruppe ? batchEditGruppe.items.map(toEditPosition) : null}
+                batchTitle={batchEditGruppe?.title}
             />
 
             {/* Email Modal */}
