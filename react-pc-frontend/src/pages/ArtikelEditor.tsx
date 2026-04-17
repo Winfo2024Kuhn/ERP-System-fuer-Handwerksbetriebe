@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Package, Edit2, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus } from "lucide-react";
+import { RefreshCw, Package, Edit2, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus, Sparkles } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -9,6 +9,7 @@ import type { Artikel } from "../types";
 import { SupplierSelectModal } from "../components/SupplierSelectModal";
 import { CategoryTreeModal } from "../components/CategoryTreeModal";
 import { CreateArticleModal } from "../components/CreateArticleModal";
+import { ArtikelVorschlaegeModal } from "../components/ArtikelVorschlaegeModal";
 import { PageLayout } from "../components/layout/PageLayout";
 import { useToast } from '../components/ui/toast';
 
@@ -38,7 +39,22 @@ export default function ArtikelEditor() {
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showCategoryManagerModal, setShowCategoryManagerModal] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showVorschlaegeModal, setShowVorschlaegeModal] = useState(false);
+    const [pendingCount, setPendingCount] = useState(0);
     const [supplierSelectionMode, setSupplierSelectionMode] = useState<'filter' | 'edit'>('filter');
+
+    const ladePendingCount = useCallback(() => {
+        fetch('/api/artikel-vorschlaege/count')
+            .then(res => res.ok ? res.json() : { pending: 0 })
+            .then(data => setPendingCount(data?.pending ?? 0))
+            .catch(() => setPendingCount(0));
+    }, []);
+
+    useEffect(() => {
+        ladePendingCount();
+        const intervalId = window.setInterval(ladePendingCount, 60_000);
+        return () => window.clearInterval(intervalId);
+    }, [ladePendingCount]);
 
     // Sort state
     const [sortColumn, setSortColumn] = useState('produktname');
@@ -220,6 +236,24 @@ export default function ArtikelEditor() {
             subtitle="Verwaltung der Artikel und Preise."
             actions={
                 <>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className={cn(
+                            "relative border-rose-300 text-rose-700 hover:bg-rose-50",
+                            pendingCount > 0 && "border-rose-500 text-rose-800 bg-rose-50 shadow-sm"
+                        )}
+                        onClick={() => setShowVorschlaegeModal(true)}
+                        title="Vorgeschlagene neue Materialien aus Lieferantenrechnungen pr\u00fcfen"
+                    >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        KI-Vorschl\u00e4ge
+                        {pendingCount > 0 && (
+                            <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-xs font-semibold">
+                                {pendingCount > 99 ? '99+' : pendingCount}
+                            </span>
+                        )}
+                    </Button>
                     <Button size="sm" className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => setShowCreateModal(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Neu
@@ -416,6 +450,12 @@ export default function ArtikelEditor() {
                 <CategoryTreeModal
                     mode="manage"
                     onClose={() => setShowCategoryManagerModal(false)}
+                />
+            )}
+            {showVorschlaegeModal && (
+                <ArtikelVorschlaegeModal
+                    onClose={() => { setShowVorschlaegeModal(false); ladePendingCount(); loadArtikel(); }}
+                    onApproved={() => { ladePendingCount(); loadArtikel(); }}
                 />
             )}
         </PageLayout>

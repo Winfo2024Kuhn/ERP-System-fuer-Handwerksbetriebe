@@ -63,6 +63,10 @@ public class GeminiDokumentAnalyseService {
     private final LieferantenArtikelPreiseRepository artikelPreiseRepository;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final WerkstoffzeugnisRepository werkstoffzeugnisRepository;
+    private final ArtikelMatchingAgentService artikelMatchingAgentService;
+
+    @Value("${ai.materialstamm.auto-matching.enabled:false}")
+    private boolean autoMatchingEnabled;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -187,7 +191,17 @@ public class GeminiDokumentAnalyseService {
                 "skontoProzent": 2.0 oder null,
                 "nettoTage": 30 oder null,
                 "confidence": 0.0-1.0,
-                "artikelPositionen": [...],
+                "artikelPositionen": [
+                    {
+                        "externeArtikelnummer": "Art.-Nr. vom Lieferanten oder null",
+                        "bezeichnung": "vollständige Beschreibung inkl. Abmessungen",
+                        "menge": 10.0,
+                        "mengeneinheit": "kg|m|Stk|...",
+                        "einzelpreis": 1.23,
+                        "preiseinheit": "kg|t|100kg|Stk",
+                        "positionsTyp": "ARTIKEL|ZUSCHNITT|FRACHT|VERPACKUNG|DIENSTLEISTUNG|SONSTIGE"
+                    }
+                ],
                 "lieferantName": "Name des Lieferanten/Absenders",
                 "lieferantStrasse": "Straße und Hausnummer",
                 "lieferantPlz": "Postleitzahl",
@@ -222,6 +236,17 @@ public class GeminiDokumentAnalyseService {
             - Die externe Artikelnummer ist oft eine Materialnummer wie "12345" oder "MAT-001"
             - Die Preiseinheit ist entscheidend: "€/t" = pro Tonne, "€/100kg" = pro 100kg, "€/kg" = pro kg
             - Falls keine Preiseinheit erkennbar, nimm "kg" an
+
+            POSITIONS-TYP KLASSIFIZIERUNG (pro Position Pflichtfeld):
+            - "ARTIKEL" = echter Material-/Stahl-/Bauteil-Artikel (Flachstahl, Rundrohr, Blech, Schrauben, …)
+            - "ZUSCHNITT" = Säge-, Brennschnitt-, Plasma-, Laser-Kosten oder Schnittkostenpauschale
+            - "FRACHT" = Transport, Versand, Logistik, Spedition, Kleinmengenzuschlag Transport
+            - "VERPACKUNG" = Palette, Einwegpalette, Umverpackung, Verpackungspauschale
+            - "DIENSTLEISTUNG" = Oberflächenbehandlung/Veredelung (Verzinken, Feuerverzinken, Pulverbeschichten,
+               Lackieren, Strahlen, Beschriften, Bohren, Biegen etc.) oder reine Lohnarbeit
+            - "SONSTIGE" = Gebühren, Rabatte, Skonto, Mindermengenzuschlag, alles andere Nicht-Material
+            WICHTIG: Nur "ARTIKEL" darf im Materialstamm landen — alle anderen Typen sind nur
+            Abrechnungspositionen und werden beim Artikel-Matching ignoriert.
 
             ZAHLUNGSBEDINGUNGEN ERKENNUNG (SEHR WICHTIG!):
             Typische Muster auf deutschen Rechnungen:
@@ -1034,24 +1059,31 @@ public class GeminiDokumentAnalyseService {
             LieferantGeschaeftsdokument geschaeftsdaten = null;
 
             // 1. Prüfe auf ZUGFeRD-PDF oder XML
+            log.info("[Analyse] Dokument {} ('{}') Lieferant={} autoMatchingEnabled={}",
+                    freshDokument.getId(), dateiname,
+                    freshDokument.getLieferant() != null ? freshDokument.getLieferant().getId() + "/" + freshDokument.getLieferant().getLieferantenname() : "NULL",
+                    autoMatchingEnabled);
             if (dateiname != null) {
                 String lower = dateiname.toLowerCase();
 
                 if (lower.endsWith(".pdf")) {
-                    // Versuche ZUGFeRD-Extraktion
+                    log.info("[Analyse] PDF erkannt → versuche ZUGFeRD-Extraktion");
                     geschaeftsdaten = versucheZugferdExtraktion(dateiPfad, dateiname, freshDokument);
+                    log.info("[Analyse] ZUGFeRD-Extraktion Ergebnis: {}",
+                            geschaeftsdaten != null ? "OK (DokNr=" + geschaeftsdaten.getDokumentNummer() + ")" : "NULL (kein ZUGFeRD)");
                 } else if (lower.endsWith(".xml")) {
-                    // Versuche XML-Extraktion (XRechnung, ZUGFeRD-XML)
+                    log.info("[Analyse] XML erkannt → versuche XML-Extraktion");
                     geschaeftsdaten = versucheXmlExtraktion(
                             leseXmlDateiSicher(dateiPfad, explicitPath != null),
                             freshDokument,
                             dateiPfad.getFileName().toString());
+                    log.info("[Analyse] XML-Extraktion Ergebnis: {}", geschaeftsdaten != null ? "OK" : "NULL");
                 }
             }
 
             // 2. Falls keine strukturierten Daten, Fallback auf KI
             if (geschaeftsdaten == null) {
-                log.info("Keine ZUGFeRD/XML-Daten gefunden, verwende KI-Analyse für Dokument {}",
+                log.info("[Analyse] Keine ZUGFeRD/XML-Daten gefunden → Fallback auf KI-Analyse für Dokument {}",
                         freshDokument.getId());
                 geschaeftsdaten = analysierePerKi(freshDokument, dateiPfad);
             }
@@ -1142,7 +1174,7 @@ public class GeminiDokumentAnalyseService {
             if (savedGeschaeftsdaten.getAiRawJson() != null && freshDokument.getLieferant() != null) {
                 try {
                     JsonNode aiJson = objectMapper.readTree(savedGeschaeftsdaten.getAiRawJson());
-                    verarbeiteArtikelPositionen(aiJson, freshDokument.getLieferant());
+                    verarbeiteArtikelPositionen(aiJson, freshDokument.getLieferant(), freshDokument);
                 } catch (Exception e) {
                     log.warn("Artikelpreis-Update aus KI-JSON fehlgeschlagen: {}", e.getMessage());
                 }
@@ -1260,8 +1292,20 @@ public class GeminiDokumentAnalyseService {
             }
 
             // Artikelpositionen verarbeiten und Preise aktualisieren
+            int posCount = zugferd.getArtikelPositionen() != null ? zugferd.getArtikelPositionen().size() : -1;
+            log.info("[ZUGFeRD] Positions-Pipeline: dokument={} lieferant={} artikelPositionen={} autoMatchingEnabled={}",
+                    dokument != null ? dokument.getId() : "NULL",
+                    (dokument != null && dokument.getLieferant() != null)
+                            ? dokument.getLieferant().getId() + "/" + dokument.getLieferant().getLieferantenname()
+                            : "NULL",
+                    posCount, autoMatchingEnabled);
             if (dokument != null && dokument.getLieferant() != null && zugferd.getArtikelPositionen() != null) {
-                verarbeiteZugferdArtikelPositionen(zugferd.getArtikelPositionen(), dokument.getLieferant());
+                verarbeiteZugferdArtikelPositionen(zugferd.getArtikelPositionen(), dokument.getLieferant(), dokument);
+            } else {
+                log.warn("[ZUGFeRD] verarbeiteZugferdArtikelPositionen ÜBERSPRUNGEN — Grund: dokument={} lieferant={} positionen={}",
+                        dokument != null,
+                        dokument != null && dokument.getLieferant() != null,
+                        zugferd.getArtikelPositionen() != null);
             }
 
             return gd;
@@ -2651,7 +2695,7 @@ public class GeminiDokumentAnalyseService {
      * Datenbank.
      * Nur Artikel mit bekannter externeArtikelnummer werden aktualisiert.
      */
-    private void verarbeiteArtikelPositionen(JsonNode json, Lieferanten lieferant) {
+    private void verarbeiteArtikelPositionen(JsonNode json, Lieferanten lieferant, LieferantDokument quelle) {
         if (lieferant == null) {
             log.debug("Kein Lieferant - überspringe Artikelpreis-Update");
             return;
@@ -2668,8 +2712,19 @@ public class GeminiDokumentAnalyseService {
 
         int updated = 0;
         int skipped = 0;
+        int agentMatched = 0;
+        int agentVorgeschlagen = 0;
 
         for (JsonNode pos : positionen) {
+            // Dienstleistungen / Nebenkosten nicht als Materialposition behandeln
+            String positionsTyp = pos.has("positionsTyp") ? pos.get("positionsTyp").asText("ARTIKEL") : "ARTIKEL";
+            if (!"ARTIKEL".equalsIgnoreCase(positionsTyp)) {
+                log.debug("Position übersprungen (Typ={}): {}", positionsTyp,
+                        pos.has("bezeichnung") ? pos.get("bezeichnung").asText("") : "");
+                skipped++;
+                continue;
+            }
+
             String externeNr = pos.has("externeArtikelnummer") ? pos.get("externeArtikelnummer").asText(null) : null;
             if (externeNr == null || externeNr.isBlank()) {
                 skipped++;
@@ -2681,6 +2736,15 @@ public class GeminiDokumentAnalyseService {
                     externeNr.trim(), lieferant.getId());
 
             if (lapOpt.isEmpty()) {
+                if (autoMatchingEnabled) {
+                    var ergebnis = artikelMatchingAgentService.matcheOderSchlageAn(pos, lieferant, quelle);
+                    switch (ergebnis.ergebnis()) {
+                        case PREIS_AKTUALISIERT -> { agentMatched++; log.info("Agent-Match: {}", ergebnis.hinweis()); }
+                        case VORSCHLAG_ANGELEGT -> { agentVorgeschlagen++; log.info("Agent-Vorschlag: {}", ergebnis.hinweis()); }
+                        case SKIPPED, FEHLER -> { skipped++; log.debug("Agent-Skip: {}", ergebnis.hinweis()); }
+                    }
+                    continue;
+                }
                 log.debug("Artikel nicht gefunden: {} für Lieferant {}", externeNr, lieferant.getLieferantenname());
                 skipped++;
                 continue;
@@ -2716,8 +2780,9 @@ public class GeminiDokumentAnalyseService {
                     externeNr, preisProKg, einzelpreis, preiseinheit);
         }
 
-        if (updated > 0 || skipped > 0) {
-            log.info("Artikelpreise verarbeitet: {} aktualisiert, {} übersprungen", updated, skipped);
+        if (updated > 0 || skipped > 0 || agentMatched > 0 || agentVorgeschlagen > 0) {
+            log.info("Artikelpreise verarbeitet: {} aktualisiert, {} übersprungen, Agent: {} Matches, {} Vorschläge",
+                    updated, skipped, agentMatched, agentVorgeschlagen);
         }
     }
 
@@ -2777,60 +2842,90 @@ public class GeminiDokumentAnalyseService {
      */
     private void verarbeiteZugferdArtikelPositionen(
             java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen,
-            Lieferanten lieferant) {
+            Lieferanten lieferant,
+            LieferantDokument quelle) {
         if (lieferant == null || positionen == null || positionen.isEmpty()) {
+            log.warn("[ZUGFeRD-Match] Frühzeitiger Abbruch: lieferant={} positionen={}",
+                    lieferant != null, positionen != null ? positionen.size() : "null");
             return;
         }
 
+        log.info("[ZUGFeRD-Match] Starte Verarbeitung von {} Positionen für Lieferant {}/{} (autoMatchingEnabled={})",
+                positionen.size(), lieferant.getId(), lieferant.getLieferantenname(), autoMatchingEnabled);
+
         int updated = 0;
         int skipped = 0;
+        int agentMatched = 0;
+        int agentVorgeschlagen = 0;
+        int posIndex = 0;
 
         for (var pos : positionen) {
+            posIndex++;
             String externeNr = pos.getExterneArtikelnummer();
+            String bez = pos.getBezeichnung();
+            log.info("[ZUGFeRD-Match] Position {}/{}: externeNr='{}' bezeichnung='{}' menge={} {} preis={} {}",
+                    posIndex, positionen.size(), externeNr, bez, pos.getMenge(), pos.getMengeneinheit(),
+                    pos.getEinzelpreis(), pos.getPreiseinheit());
+
             if (externeNr == null || externeNr.isBlank()) {
+                log.info("[ZUGFeRD-Match] Position {}: keine externe Nummer → SKIP", posIndex);
                 skipped++;
                 continue;
             }
 
-            // Suche in LieferantenArtikelPreise nach externeArtikelnummer + lieferantId
             var lapOpt = artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_Id(
                     externeNr.trim(), lieferant.getId());
 
             if (lapOpt.isEmpty()) {
-                log.debug("ZUGFeRD-Artikel nicht in DB: {} für Lieferant {}", externeNr,
-                        lieferant.getLieferantenname());
+                log.info("[ZUGFeRD-Match] Position {}: externe Nummer '{}' NICHT in DB für Lieferant {} — autoMatchingEnabled={}",
+                        posIndex, externeNr, lieferant.getId(), autoMatchingEnabled);
+                if (autoMatchingEnabled) {
+                    log.info("[ZUGFeRD-Match] Position {}: triggere KI-Agent", posIndex);
+                    JsonNode posJson = objectMapper.valueToTree(pos);
+                    var ergebnis = artikelMatchingAgentService.matcheOderSchlageAn(posJson, lieferant, quelle);
+                    log.info("[ZUGFeRD-Match] Position {}: Agent-Ergebnis={} hinweis='{}'",
+                            posIndex, ergebnis.ergebnis(), ergebnis.hinweis());
+                    switch (ergebnis.ergebnis()) {
+                        case PREIS_AKTUALISIERT -> agentMatched++;
+                        case VORSCHLAG_ANGELEGT -> agentVorgeschlagen++;
+                        case SKIPPED, FEHLER -> skipped++;
+                    }
+                    continue;
+                }
+                log.info("[ZUGFeRD-Match] Position {}: Agent DEAKTIVIERT (Flag off) → SKIP", posIndex);
                 skipped++;
                 continue;
             }
+
+            log.info("[ZUGFeRD-Match] Position {}: externe Nummer '{}' GEFUNDEN (Artikel-ID={}) → Preis-Update",
+                    posIndex, externeNr, lapOpt.get().getArtikel() != null ? lapOpt.get().getArtikel().getId() : "?");
 
             if (pos.getEinzelpreis() == null) {
+                log.info("[ZUGFeRD-Match] Position {}: kein Einzelpreis → SKIP", posIndex);
                 skipped++;
                 continue;
             }
 
-            // Normalisiere Preis auf €/kg
             BigDecimal preisProKg = normalizePreisZuKg(pos.getEinzelpreis(), pos.getPreiseinheit());
             if (preisProKg == null) {
-                log.debug("ZUGFeRD-Preis außerhalb Bereich für {}: {} {}",
-                        externeNr, pos.getEinzelpreis(), pos.getPreiseinheit());
+                log.warn("[ZUGFeRD-Match] Position {}: Preisnormalisierung fehlgeschlagen ({} {}) → SKIP",
+                        posIndex, pos.getEinzelpreis(), pos.getPreiseinheit());
                 skipped++;
                 continue;
             }
 
-            // Update LieferantenArtikelPreise
             LieferantenArtikelPreise lap = lapOpt.get();
             lap.setPreis(preisProKg);
             lap.setPreisAenderungsdatum(new Date());
             artikelPreiseRepository.save(lap);
             updated++;
 
-            log.info("ZUGFeRD-Artikelpreis aktualisiert: {} = {} €/kg (war: {} {})",
-                    externeNr, preisProKg, pos.getEinzelpreis(), pos.getPreiseinheit());
+            log.info("[ZUGFeRD-Match] Position {}: Preis aktualisiert → {} €/kg (Rohwert: {} {})",
+                    posIndex, preisProKg, pos.getEinzelpreis(), pos.getPreiseinheit());
         }
 
-        if (updated > 0 || skipped > 0) {
-            log.info("ZUGFeRD-Artikelpreise: {} aktualisiert, {} übersprungen", updated, skipped);
-        }
+        log.info("[ZUGFeRD-Match] FERTIG: {} Positionen insgesamt → {} Exakt-Match aktualisiert, {} Agent-Matches, {} Agent-Vorschläge, {} übersprungen",
+                positionen.size(), updated, agentMatched, agentVorgeschlagen, skipped);
     }
 
     /**

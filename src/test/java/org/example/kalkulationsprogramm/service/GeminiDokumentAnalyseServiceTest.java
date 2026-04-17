@@ -37,6 +37,7 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private LieferantenArtikelPreiseRepository artikelPreiseRepository;
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @Mock private WerkstoffzeugnisRepository werkstoffzeugnisRepository;
+    @Mock private ArtikelMatchingAgentService artikelMatchingAgentService;
 
     private GeminiDokumentAnalyseService service;
 
@@ -49,7 +50,8 @@ class GeminiDokumentAnalyseServiceTest {
                 zugferdExtractorService,
                 artikelPreiseRepository,
                 lieferantGeschaeftsdokumentRepository,
-                werkstoffzeugnisRepository
+                werkstoffzeugnisRepository,
+                artikelMatchingAgentService
         );
     }
 
