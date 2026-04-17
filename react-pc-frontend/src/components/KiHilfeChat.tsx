@@ -473,6 +473,14 @@ export function KiHilfeChat() {
                         onKeyDown={handleKeyDown}
                         placeholder="Frage stellen..."
                         rows={1}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        data-1p-ignore
+                        data-lpignore="true"
+                        data-protonpass-ignore
+                        data-form-type="other"
+                        name="ki-hilfe-input"
+                        role="textbox"
                         className="flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent max-h-24 overflow-y-auto"
                         disabled={loading}
                     />
@@ -501,7 +509,7 @@ const VALID_ROUTES = new Set([
     '/kalender', '/emails', '/formulare', '/offeneposten',
     '/rechnungsuebersicht', '/miete', '/analyse', '/zeitbuchungen',
     '/auswertung', '/steuerberater', '/zeitkonten', '/feiertage',
-    '/urlaubsantraege', '/firma', '/benutzer',
+    '/urlaubsantraege', '/firma', '/benutzer', '/ki-assistent',
 ]);
 
 /** Simple markdown renderer for assistant messages */

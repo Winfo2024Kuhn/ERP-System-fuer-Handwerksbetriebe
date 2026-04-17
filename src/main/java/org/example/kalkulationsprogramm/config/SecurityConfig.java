@@ -74,6 +74,7 @@ public class SecurityConfig {
                 .securityMatcher("/", "/index.html", "/favicon.ico", "/app-icon.png", "/assets/**",
                         "/static/**", "/manifest.json", "/sw.js",
                     "/dokument-editor", "/dokument-editor/**",
+                    "/ki-assistent", "/ki-assistent/**",
                     "/login", "/login/**", "/onboarding", "/onboarding/**",
                     "/error", "/error/**")
                 .csrf(csrf -> csrf.disable())

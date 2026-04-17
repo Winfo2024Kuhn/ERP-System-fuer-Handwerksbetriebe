@@ -47,6 +47,7 @@ import SchweisserZertifikatePage from './pages/SchweisserZertifikatePage';
 import WpsPage from './pages/WpsPage';
 import WerkstoffzeugnissePage from './pages/WerkstoffzeugnissePage';
 import OrganigrammPage from './pages/OrganigrammPage';
+import KiAssistentPage from './pages/KiAssistentPage';
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -106,6 +107,7 @@ export default function App() {
                 <Route path="/firma" element={<RequireAdmin><ErrorBoundary><FirmaEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/organigramm" element={<ErrorBoundary><OrganigrammPage /></ErrorBoundary>} />
                 <Route path="/einstellungen" element={<RequireAdmin><ErrorBoundary><EinstellungenEditor /></ErrorBoundary></RequireAdmin>} />
+                <Route path="/ki-assistent" element={<ErrorBoundary><KiAssistentPage /></ErrorBoundary>} />
 
                 {/* EN 1090 */}
                 <Route path="/en1090/wpk" element={<ErrorBoundary><WpkDashboardPage /></ErrorBoundary>} />
