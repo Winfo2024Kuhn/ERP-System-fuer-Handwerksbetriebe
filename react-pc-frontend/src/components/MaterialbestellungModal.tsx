@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     Briefcase,
-    ChevronDown,
-    Folder,
-    FolderOpen,
     Loader2,
     Package,
     Plus,
@@ -22,14 +19,9 @@ import { cn } from '../lib/utils';
 import { ProjektSearchModal } from './ProjektSearchModal';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
 import { ArtikelSearchModal, type ArtikelSuchErgebnis } from './ArtikelSearchModal';
+import { KategoriePicker, type KategorieFlach } from './KategoriePicker';
 
 // ========= Shared Types =========
-interface KategorieFlach {
-    id: number;
-    beschreibung: string;
-    parentId: number | null;
-}
-
 interface ProjektRef {
     id: number;
     bauvorhaben?: string;
@@ -93,99 +85,33 @@ const neuePosition = (): Position => ({
     kommentar: '',
 });
 
-// ========= Kategorie-Baum =========
-function buildKategorieTree(flach: KategorieFlach[]): Map<number | null, KategorieFlach[]> {
-    const map = new Map<number | null, KategorieFlach[]>();
-    flach.forEach(k => {
-        const list = map.get(k.parentId) ?? [];
-        list.push(k);
-        map.set(k.parentId, list);
-    });
-    return map;
-}
-
-interface KategoriePickerProps {
-    kategorien: KategorieFlach[];
-    value: number | null;
-    onChange: (id: number | null, beschreibung: string | null) => void;
-    compact?: boolean;
-}
-
-const KategoriePicker: React.FC<KategoriePickerProps> = ({ kategorien, value, onChange, compact }) => {
-    const [offen, setOffen] = useState(false);
-    const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
-    const tree = useMemo(() => buildKategorieTree(kategorien), [kategorien]);
-    const gewaehlt = useMemo(() => kategorien.find(k => k.id === value) ?? null, [kategorien, value]);
-
-    const toggleExpand = (id: number) => {
-        setExpandedIds(prev => {
-            const next = new Set(prev);
-            next.has(id) ? next.delete(id) : next.add(id);
-            return next;
-        });
-    };
-
-    const renderTree = (parentId: number | null, depth: number) => {
-        const kinder = tree.get(parentId) ?? [];
-        return (
-            <ul className="space-y-0.5">
-                {kinder.map(k => {
-                    const hatKinder = (tree.get(k.id) ?? []).length > 0;
-                    const istOffen = expandedIds.has(k.id);
-                    const istGewaehlt = value === k.id;
-                    return (
-                        <li key={k.id}>
-                            <div
-                                className={cn(
-                                    'flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-sm select-none',
-                                    istGewaehlt ? 'bg-rose-100 text-rose-800 font-medium' : 'hover:bg-slate-100 text-slate-700'
-                                )}
-                                style={{ paddingLeft: `${8 + depth * 14}px` }}
-                                onClick={() => {
-                                    if (hatKinder) toggleExpand(k.id);
-                                    onChange(k.id, k.beschreibung);
-                                    if (!hatKinder) setOffen(false);
-                                }}
-                            >
-                                {hatKinder ? (
-                                    istOffen ? <FolderOpen className="w-4 h-4 text-rose-500 shrink-0" /> : <Folder className="w-4 h-4 text-slate-400 shrink-0" />
-                                ) : (
-                                    <Folder className="w-4 h-4 text-slate-300 shrink-0" />
-                                )}
-                                <span className="truncate">{k.beschreibung}</span>
-                            </div>
-                            {hatKinder && istOffen && renderTree(k.id, depth + 1)}
-                        </li>
-                    );
-                })}
-            </ul>
-        );
-    };
-
-    return (
-        <div className="relative">
-            <button
-                type="button"
-                onClick={() => setOffen(v => !v)}
-                className={cn(
-                    'w-full flex items-center justify-between border rounded-md text-left',
-                    compact ? 'px-2 py-1.5 text-sm' : 'px-3 py-2 text-sm',
-                    gewaehlt ? 'border-rose-300 bg-rose-50 text-rose-800' : 'border-slate-300 bg-white text-slate-400'
-                )}
-            >
-                <span className="truncate">{gewaehlt?.beschreibung ?? 'Kategorie...'}</span>
-                <ChevronDown className={cn('w-4 h-4 text-slate-400 shrink-0 transition-transform', offen && 'rotate-180')} />
-            </button>
-            {offen && (
-                <div className="absolute top-full left-0 right-0 mt-1 z-10 border border-slate-200 rounded-lg bg-white shadow-xl max-h-64 overflow-auto p-2">
-                    {renderTree(null, 0)}
-                </div>
-            )}
-        </div>
-    );
-};
-
 // ========= Props =========
+/**
+ * Minimales Interface für eine zu bearbeitende Bestellposition.
+ * Deckt die Felder ab, die in der Oberfläche editiert werden können.
+ */
+export interface EditPosition {
+    id: number;
+    artikelId?: number | null;
+    externeArtikelnummer?: string | null;
+    produktname?: string | null;
+    produkttext?: string | null;
+    werkstoffName?: string | null;
+    kategorieId?: number | null;
+    menge?: number | string | null;
+    einheit?: string | null;
+    fixmassMm?: number | null;
+    zeugnisAnforderung?: string | null;
+    kommentar?: string | null;
+    projektId?: number | null;
+    projektName?: string | null;
+    projektNummer?: string | null;
+    kundenName?: string | null;
+    excKlasse?: string | null;
+    lieferantId?: number | null;
+    lieferantName?: string | null;
+}
+
 export interface MaterialbestellungModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -194,6 +120,8 @@ export interface MaterialbestellungModalProps {
     initialProjekt?: ProjektRef | null;
     /** Projekt-Auswahl deaktivieren (wenn aus Projekt-Kontext aufgerufen) */
     projektSperren?: boolean;
+    /** Wenn gesetzt: Edit-Modus für genau diese eine Position (PUT statt POST) */
+    editPosition?: EditPosition | null;
 }
 
 // ========= Hauptkomponente =========
@@ -203,8 +131,10 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     onSuccess,
     initialProjekt,
     projektSperren = false,
+    editPosition = null,
 }) => {
     const toast = useToast();
+    const istEditModus = editPosition != null;
 
     // Stammdaten
     const [kategorien, setKategorien] = useState<KategorieFlach[]>([]);
@@ -227,12 +157,41 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     // Reset beim Öffnen
     useEffect(() => {
         if (!isOpen) return;
-        setProjekt(initialProjekt ?? null);
-        setLieferant(null);
-        setPositionen([neuePosition()]);
 
         fetch('/api/kategorien').then(r => r.json()).then(setKategorien).catch(console.error);
-    }, [isOpen, initialProjekt]);
+
+        if (editPosition) {
+            setProjekt(editPosition.projektId ? {
+                id: editPosition.projektId,
+                bauvorhaben: editPosition.projektName ?? undefined,
+                auftragsnummer: editPosition.projektNummer ?? undefined,
+                kunde: editPosition.kundenName ?? undefined,
+                excKlasse: editPosition.excKlasse ?? null,
+            } : null);
+            setLieferant(editPosition.lieferantId ? {
+                id: editPosition.lieferantId,
+                lieferantenname: editPosition.lieferantName ?? '',
+            } as LieferantSuchErgebnis : null);
+            setPositionen([{
+                ...neuePosition(),
+                artikelId: editPosition.artikelId ?? null,
+                externeArtikelnummer: editPosition.externeArtikelnummer ?? undefined,
+                produktname: editPosition.produktname ?? '',
+                produkttext: editPosition.produkttext ?? '',
+                werkstoffName: editPosition.werkstoffName ?? undefined,
+                kategorieId: editPosition.kategorieId ?? null,
+                menge: editPosition.menge != null ? String(editPosition.menge) : '1',
+                einheit: editPosition.einheit || 'Stück',
+                fixmassMm: editPosition.fixmassMm != null ? String(editPosition.fixmassMm) : '',
+                zeugnis: editPosition.zeugnisAnforderung ?? '',
+                kommentar: editPosition.kommentar ?? '',
+            }]);
+        } else {
+            setProjekt(initialProjekt ?? null);
+            setLieferant(null);
+            setPositionen([neuePosition()]);
+        }
+    }, [isOpen, initialProjekt, editPosition]);
 
     // Norm-Vorschlag pro Position nachziehen, wenn Projekt oder Kategorie sich ändert
     const ladeZeugnisVorschlag = useCallback(async (kategorieId: number, excKlasse: string) => {
@@ -317,6 +276,47 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
         if (zuSpeichern.length === 0) { toast.warning('Bitte mindestens eine Position ausfüllen'); return; }
 
         setSaving(true);
+
+        // Edit-Modus: PUT für genau eine Position
+        if (istEditModus && editPosition) {
+            const pos = zuSpeichern[0];
+            const payload = {
+                projektId: projekt?.id ?? null,
+                lieferantId: lieferant.id,
+                kategorieId: pos.kategorieId,
+                artikelId: pos.artikelId,
+                produktname: pos.produktname.trim(),
+                produkttext: pos.produkttext.trim() || null,
+                menge: Number(pos.menge),
+                einheit: pos.einheit.trim() || 'Stück',
+                fixmassMm: pos.fixmassMm ? Number(pos.fixmassMm) : null,
+                zeugnisAnforderung: pos.zeugnis || null,
+                kommentar: pos.kommentar.trim() || null,
+            };
+            try {
+                const res = await fetch(`/api/bestellungen/${editPosition.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                setSaving(false);
+                if (res.ok) {
+                    toast.success('Änderungen gespeichert');
+                    onSuccess?.();
+                    onClose();
+                } else if (res.status === 409) {
+                    toast.error(res.headers.get('X-Error-Reason') || 'Position wurde bereits exportiert');
+                } else {
+                    toast.error('Speichern fehlgeschlagen');
+                }
+            } catch {
+                setSaving(false);
+                toast.error('Speichern fehlgeschlagen');
+            }
+            return;
+        }
+
+        // Standard-Modus: POST je Position
         let erfolg = 0;
         let fehler = 0;
 
@@ -378,9 +378,13 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                             <Package className="w-5 h-5" />
                         </div>
                         <div>
-                            <h2 id="materialbest-title" className="text-xl font-bold text-slate-900">Materialbestellung</h2>
+                            <h2 id="materialbest-title" className="text-xl font-bold text-slate-900">
+                                {istEditModus ? 'Bestellposition bearbeiten' : 'Materialbestellung'}
+                            </h2>
                             <p className="text-sm text-slate-500">
-                                Mehrere Positionen für einen Lieferanten erfassen
+                                {istEditModus
+                                    ? 'Änderungen werden gespeichert, solange die Position nicht exportiert wurde.'
+                                    : 'Mehrere Positionen für einen Lieferanten erfassen'}
                             </p>
                         </div>
                     </div>
@@ -392,7 +396,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
                             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-                            {saving ? 'Speichern...' : 'Alle speichern'}
+                            {saving ? 'Speichern...' : istEditModus ? 'Änderungen speichern' : 'Alle speichern'}
                         </Button>
                         <Button variant="ghost" size="sm" onClick={onClose}>
                             <X className="w-5 h-5" />
@@ -500,23 +504,25 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 <div className="flex-1 overflow-auto px-6 py-4">
                     <div className="flex items-center justify-between mb-3">
                         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
-                            Positionen <span className="text-slate-400">({positionen.length})</span>
+                            {istEditModus ? 'Position' : <>Positionen <span className="text-slate-400">({positionen.length})</span></>}
                         </h3>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setArtikelMultiModalOffen(true)}
-                                className="border-rose-200 text-rose-700 hover:bg-rose-50"
-                            >
-                                <Package className="w-4 h-4 mr-1" />
-                                Artikel aus Stammdaten (Mehrfachauswahl)
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={addLeerePosition}>
-                                <Plus className="w-4 h-4 mr-1" />
-                                Leere Zeile
-                            </Button>
-                        </div>
+                        {!istEditModus && (
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setArtikelMultiModalOffen(true)}
+                                    className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                                >
+                                    <Package className="w-4 h-4 mr-1" />
+                                    Artikel aus Stammdaten (Mehrfachauswahl)
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={addLeerePosition}>
+                                    <Plus className="w-4 h-4 mr-1" />
+                                    Leere Zeile
+                                </Button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="space-y-3">
@@ -529,16 +535,19 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                                 onUpdate={patch => updatePosition(pos.clientId, patch)}
                                 onRemove={() => entfernePosition(pos.clientId)}
                                 onArtikelSuchen={() => setArtikelModalFuerZeile(pos.clientId)}
+                                showRemove={!istEditModus}
                             />
                         ))}
                     </div>
 
-                    <div className="mt-4 flex justify-center">
-                        <Button variant="outline" onClick={addLeerePosition} className="border-dashed">
-                            <Plus className="w-4 h-4 mr-2" />
-                            Weitere Position hinzufügen
-                        </Button>
-                    </div>
+                    {!istEditModus && (
+                        <div className="mt-4 flex justify-center">
+                            <Button variant="outline" onClick={addLeerePosition} className="border-dashed">
+                                <Plus className="w-4 h-4 mr-2" />
+                                Weitere Position hinzufügen
+                            </Button>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -592,10 +601,11 @@ interface PositionRowProps {
     onUpdate: (patch: Partial<Position>) => void;
     onRemove: () => void;
     onArtikelSuchen: () => void;
+    showRemove?: boolean;
 }
 
 const PositionRow: React.FC<PositionRowProps> = ({
-    index, position, kategorien, onUpdate, onRemove, onArtikelSuchen,
+    index, position, kategorien, onUpdate, onRemove, onArtikelSuchen, showRemove = true,
 }) => {
     return (
         <div className="bg-white border border-slate-200 rounded-xl p-4 hover:border-slate-300 transition-colors">
@@ -751,17 +761,19 @@ const PositionRow: React.FC<PositionRowProps> = ({
                 </div>
 
                 {/* Löschen */}
-                <div className="flex-shrink-0">
-                    <button
-                        type="button"
-                        onClick={onRemove}
-                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Position entfernen"
-                        aria-label={`Position ${index + 1} entfernen`}
-                    >
-                        <Trash2 className="w-5 h-5" />
-                    </button>
-                </div>
+                {showRemove && (
+                    <div className="flex-shrink-0">
+                        <button
+                            type="button"
+                            onClick={onRemove}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Position entfernen"
+                            aria-label={`Position ${index + 1} entfernen`}
+                        >
+                            <Trash2 className="w-5 h-5" />
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

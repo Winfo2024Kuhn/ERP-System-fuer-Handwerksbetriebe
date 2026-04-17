@@ -61,6 +61,25 @@ public class BestellungController {
         return ResponseEntity.ok(bestellungService.manuellePosition(dto));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<BestellungResponseDto> aktualisierePosition(
+            @PathVariable Long id,
+            @RequestBody ManuelleBestellpositionDto dto) {
+        try {
+            return ResponseEntity.ok(bestellungService.aktualisierePosition(id, dto));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                    .header("X-Error-Reason", e.getMessage())
+                    .build();
+        }
+    }
+
+    @PostMapping("/lieferant/{lieferantId}/markiere-exportiert")
+    public ResponseEntity<Map<String, Integer>> markiereLieferantAlsExportiert(@PathVariable Long lieferantId) {
+        int count = bestellungService.markiereLieferantAlsExportiert(lieferantId);
+        return ResponseEntity.ok(Map.of("markiert", count));
+    }
+
     @DeleteMapping("/{id}/freitext")
     public ResponseEntity<Void> loescheFreiePosition(@PathVariable Long id) {
         bestellungService.loeschePosition(id);

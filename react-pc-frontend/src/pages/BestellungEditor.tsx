@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { PdfCanvasViewer } from "../components/ui/PdfCanvasViewer";
 import {
+    Briefcase,
     ChevronDown,
     ChevronRight,
     Download,
@@ -8,13 +9,16 @@ import {
     Eye,
     File,
     Loader2,
+    Lock,
     Mail,
     Package,
     Paperclip,
+    Pencil,
     Plus,
     RefreshCw,
     Send,
     Trash2,
+    Truck,
     Upload,
     X,
 } from "lucide-react";
@@ -27,7 +31,7 @@ import { cn } from "../lib/utils";
 import { Input } from "../components/ui/input";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
-import { MaterialbestellungModal } from '../components/MaterialbestellungModal';
+import { MaterialbestellungModal, type EditPosition } from '../components/MaterialbestellungModal';
 
 // Statische Icon-Pfade
 const BASE_URL = '/react-textbausteine/';
@@ -128,7 +132,11 @@ interface Bestellung {
     lieferantId?: number;
     bestellt: boolean;
     bestelltAm?: string;
+    exportiertAm?: string | null;
     kommentar?: string;
+    kategorieId?: number;
+    excKlasse?: string | null;
+    zeugnisAnforderung?: string | null;
     kilogramm?: number;
     gesamtKilogramm?: number;
     schnittForm?: string;
@@ -136,9 +144,18 @@ interface Bestellung {
     anschnittWinkelRechts?: string;
 }
 
-interface LieferantGruppe {
+type GroupBy = 'lieferant' | 'projekt';
+
+const GROUP_OPTIONS: { key: GroupBy; label: string; icon: React.ReactNode; desc: string }[] = [
+    { key: 'lieferant', label: 'Lieferant', icon: <Truck className="w-4 h-4" />, desc: 'Gruppierung nach Lieferant (Standard für Export)' },
+    { key: 'projekt', label: 'Projekt', icon: <Briefcase className="w-4 h-4" />, desc: 'Gruppierung nach Projekt (nur Ansicht)' },
+];
+
+interface Gruppe {
+    key: string;
+    title: string;
+    subtitle?: string;
     lieferantId: number | null;
-    lieferantName: string;
     items: Bestellung[];
 }
 
@@ -709,17 +726,23 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
 };
 
 
-// ==================== PROJEKT GRUPPE COMPONENT ====================
-interface LieferantGruppeCardProps {
-    gruppe: LieferantGruppe;
+// ==================== GRUPPE CARD COMPONENT ====================
+interface GruppeCardProps {
+    gruppe: Gruppe;
+    groupBy: GroupBy;
     onToggleBestellt: (id: number, bestellt: boolean) => Promise<void>;
     onEmailClick: (lieferantId: number, lieferantName: string) => void;
+    onPdfClick: (lieferantId: number) => void;
+    onEditClick: (position: Bestellung) => void;
 }
 
-const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
+const GruppeCard: React.FC<GruppeCardProps> = ({
     gruppe,
+    groupBy,
     onToggleBestellt,
     onEmailClick,
+    onPdfClick,
+    onEditClick,
 }) => {
     const [expanded, setExpanded] = useState(true);
 
@@ -731,16 +754,24 @@ const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
         return kg.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
-    const projektAnzahl = useMemo(() => {
-        const ids = new Set(gruppe.items.map(item => item.projektId).filter((id): id is number => !!id));
-        return ids.size;
-    }, [gruppe.items]);
+    const nebenAnzahl = useMemo(() => {
+        if (groupBy === 'lieferant') {
+            const ids = new Set(gruppe.items.map(item => item.projektId).filter((id): id is number => !!id));
+            return { anzahl: ids.size, label: ids.size === 1 ? 'Projekt' : 'Projekte' };
+        }
+        const ids = new Set(gruppe.items.map(item => item.lieferantId).filter((id): id is number => !!id));
+        const hatOhne = gruppe.items.some(item => !item.lieferantId);
+        const total = ids.size + (hatOhne ? 1 : 0);
+        return { anzahl: total, label: total === 1 ? 'Lieferant' : 'Lieferanten' };
+    }, [gruppe.items, groupBy]);
 
     const handlePdfExport = () => {
         if (gruppe.lieferantId) {
-            window.open(`/api/bestellungen/lieferant/${gruppe.lieferantId}/pdf`, '_blank');
+            onPdfClick(gruppe.lieferantId);
         }
     };
+
+    const exportVerfuegbar = groupBy === 'lieferant' && gruppe.lieferantId != null;
 
     return (
         <Card className="overflow-hidden">
@@ -757,11 +788,14 @@ const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
                     )}
                     <div>
                         <h3 className="font-semibold text-slate-900">
-                            {gruppe.lieferantName || 'Ohne Lieferant'}
+                            {gruppe.title}
                         </h3>
                         <div className="flex items-center gap-4 text-sm text-slate-500">
-                            {projektAnzahl > 0 && (
-                                <span>{projektAnzahl} Projekte</span>
+                            {gruppe.subtitle && (
+                                <span className="text-slate-600">{gruppe.subtitle}</span>
+                            )}
+                            {nebenAnzahl.anzahl > 0 && (
+                                <span>{nebenAnzahl.anzahl} {nebenAnzahl.label}</span>
                             )}
                             <span>{gruppe.items.length} Positionen</span>
                             {totalKg > 0 && (
@@ -771,26 +805,26 @@ const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handlePdfExport}
-                        disabled={!gruppe.lieferantId}
-                    >
-                        <Download className="w-4 h-4 mr-1" />
-                        PDF
-                    </Button>
-                    <Button
-                        size="sm"
-                        onClick={() => gruppe.lieferantId && onEmailClick(gruppe.lieferantId, gruppe.lieferantName)}
-                        disabled={!gruppe.lieferantId}
-                        className="bg-rose-600 text-white hover:bg-rose-700"
-                    >
-                        <Mail className="w-4 h-4 mr-1" />
-                        E-Mail
-                    </Button>
-                </div>
+                {exportVerfuegbar && (
+                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handlePdfExport}
+                        >
+                            <Download className="w-4 h-4 mr-1" />
+                            PDF
+                        </Button>
+                        <Button
+                            size="sm"
+                            onClick={() => gruppe.lieferantId && onEmailClick(gruppe.lieferantId, gruppe.title)}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                            <Mail className="w-4 h-4 mr-1" />
+                            E-Mail
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {/* Table */}
@@ -800,9 +834,15 @@ const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
                         <thead className="bg-slate-100">
                             <tr>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Bestellt</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Projektnummer</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Projekt</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Kunde</th>
+                                {groupBy === 'lieferant' ? (
+                                    <>
+                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Projektnummer</th>
+                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Projekt</th>
+                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Kunde</th>
+                                    </>
+                                ) : (
+                                    <th className="px-4 py-3 text-left font-medium text-slate-600">Lieferant</th>
+                                )}
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Artikelnummer</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Produkt</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Produkttext</th>
@@ -810,6 +850,7 @@ const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Werkstoff</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Kategorie</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-600">Menge</th>
+                                <th className="px-4 py-3 text-right font-medium text-slate-600 w-16">Aktion</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -828,15 +869,23 @@ const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
                                             aria-label={`Position ${b.produktname || ''} als bestellt markieren`}
                                         />
                                     </td>
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {b.projektNummer || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-900 font-medium">
-                                        {b.projektName || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {b.kundenName || '-'}
-                                    </td>
+                                    {groupBy === 'lieferant' ? (
+                                        <>
+                                            <td className="px-4 py-3 text-slate-600">
+                                                {b.projektNummer || '-'}
+                                            </td>
+                                            <td className="px-4 py-3 text-slate-900 font-medium">
+                                                {b.projektName || '-'}
+                                            </td>
+                                            <td className="px-4 py-3 text-slate-600">
+                                                {b.kundenName || '-'}
+                                            </td>
+                                        </>
+                                    ) : (
+                                        <td className="px-4 py-3 text-slate-900 font-medium">
+                                            {b.lieferantName || 'Ohne Lieferant'}
+                                        </td>
+                                    )}
                                     <td className="px-4 py-3 text-slate-900 font-mono text-xs">
                                         {b.externeArtikelnummer || '-'}
                                     </td>
@@ -858,6 +907,27 @@ const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
                                     <td className="px-4 py-3 text-slate-900">
                                         {b.menge ? `${b.menge} ${b.einheit || ''}` : '-'}
                                     </td>
+                                    <td className="px-4 py-3 text-right">
+                                        {b.exportiertAm ? (
+                                            <span
+                                                className="inline-flex items-center gap-1 text-xs text-slate-400"
+                                                title={`Bereits exportiert am ${new Date(b.exportiertAm).toLocaleString('de-DE')} – Bearbeiten gesperrt`}
+                                            >
+                                                <Lock className="w-4 h-4" />
+                                            </span>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => onEditClick(b)}
+                                                className="inline-flex items-center justify-center p-1.5 rounded text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                                title="Position bearbeiten"
+                                                aria-label="Position bearbeiten"
+                                                disabled={b.bestellt}
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -874,6 +944,18 @@ export default function BestellungEditor() {
     const [loading, setLoading] = useState(true);
     const [emailModal, setEmailModal] = useState<{ lieferantId: number; lieferantName: string } | null>(null);
     const [bestellpositionModalOffen, setBestellpositionModalOffen] = useState(false);
+    const [editPosition, setEditPosition] = useState<EditPosition | null>(null);
+    const [groupBy, setGroupBy] = useState<GroupBy>('lieferant');
+
+    const markiereLieferantAlsExportiert = useCallback(async (lieferantId: number) => {
+        try {
+            await fetch(`/api/bestellungen/lieferant/${lieferantId}/markiere-exportiert`, {
+                method: 'POST',
+            });
+        } catch (err) {
+            console.error('Export-Markierung fehlgeschlagen:', err);
+        }
+    }, []);
 
     const loadBestellungen = useCallback(async () => {
         setLoading(true);
@@ -893,27 +975,47 @@ export default function BestellungEditor() {
         loadBestellungen();
     }, [loadBestellungen]);
 
-    // Group by supplier
-    const lieferantGruppen = useMemo(() => {
-        const gruppiert: Record<string, LieferantGruppe> = {};
+    // Gruppierung (Lieferant oder Projekt) — nur Ansicht, Export bleibt lieferantenbasiert
+    const gruppen = useMemo<Gruppe[]>(() => {
+        const gruppiert: Record<string, Gruppe> = {};
+
         bestellungen.forEach(b => {
-            const key = b.lieferantId != null
-                ? `lieferant-${b.lieferantId}`
-                : `ohne-${(b.lieferantName || 'lieferant').toLowerCase()}`;
-            if (!gruppiert[key]) {
-                gruppiert[key] = {
-                    lieferantId: b.lieferantId || null,
-                    lieferantName: b.lieferantName || 'Ohne Lieferant',
-                    items: [],
-                };
+            if (groupBy === 'lieferant') {
+                const key = b.lieferantId != null
+                    ? `lieferant-${b.lieferantId}`
+                    : `ohne-${(b.lieferantName || 'lieferant').toLowerCase()}`;
+                if (!gruppiert[key]) {
+                    gruppiert[key] = {
+                        key,
+                        title: b.lieferantName || 'Ohne Lieferant',
+                        lieferantId: b.lieferantId || null,
+                        items: [],
+                    };
+                }
+                gruppiert[key].items.push(b);
+            } else {
+                const key = b.projektId != null
+                    ? `projekt-${b.projektId}`
+                    : `ohne-projekt`;
+                if (!gruppiert[key]) {
+                    gruppiert[key] = {
+                        key,
+                        title: b.projektName
+                            ? `${b.projektNummer ? b.projektNummer + ' – ' : ''}${b.projektName}`
+                            : 'Ohne Projekt',
+                        subtitle: b.kundenName || undefined,
+                        lieferantId: null,
+                        items: [],
+                    };
+                }
+                gruppiert[key].items.push(b);
             }
-            gruppiert[key].items.push(b);
         });
 
         return Object.values(gruppiert).sort((a, b) =>
-            a.lieferantName.localeCompare(b.lieferantName, 'de-DE')
+            a.title.localeCompare(b.title, 'de-DE')
         );
-    }, [bestellungen]);
+    }, [bestellungen, groupBy]);
 
     const handleToggleBestellt = async (id: number, bestellt: boolean) => {
         try {
@@ -929,6 +1031,42 @@ export default function BestellungEditor() {
 
     const handleEmailClick = (lieferantId: number, lieferantName: string) => {
         setEmailModal({ lieferantId, lieferantName });
+    };
+
+    const handlePdfClick = async (lieferantId: number) => {
+        // PDF in neuem Tab öffnen, parallel Export-Markierung setzen
+        window.open(`/api/bestellungen/lieferant/${lieferantId}/pdf`, '_blank');
+        await markiereLieferantAlsExportiert(lieferantId);
+        loadBestellungen();
+    };
+
+    const handleEditClick = (position: Bestellung) => {
+        setEditPosition({
+            id: position.id,
+            artikelId: position.artikelId || null,
+            externeArtikelnummer: position.externeArtikelnummer || null,
+            produktname: position.produktname || null,
+            produkttext: position.produkttext || null,
+            werkstoffName: position.werkstoffName || null,
+            kategorieId: position.kategorieId ?? null,
+            menge: position.menge ?? position.stueckzahl ?? null,
+            einheit: position.einheit || null,
+            fixmassMm: null,
+            zeugnisAnforderung: position.zeugnisAnforderung || null,
+            kommentar: position.kommentar || null,
+            projektId: position.projektId ?? null,
+            projektName: position.projektName || null,
+            projektNummer: position.projektNummer || null,
+            kundenName: position.kundenName || null,
+            excKlasse: position.excKlasse || null,
+            lieferantId: position.lieferantId ?? null,
+            lieferantName: position.lieferantName || null,
+        });
+    };
+
+    const handleEmailSuccess = async (lieferantId: number) => {
+        await markiereLieferantAlsExportiert(lieferantId);
+        loadBestellungen();
     };
 
     return (
@@ -951,24 +1089,59 @@ export default function BestellungEditor() {
             }
         >
 
+            {/* Gruppierungs-Umschalter */}
+            <div className="mb-4 flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-slate-600 mr-1">Gruppieren nach:</span>
+                <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-full border border-slate-200">
+                    {GROUP_OPTIONS.map(opt => {
+                        const aktiv = groupBy === opt.key;
+                        return (
+                            <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => setGroupBy(opt.key)}
+                                title={opt.desc}
+                                className={cn(
+                                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
+                                    aktiv
+                                        ? "bg-white text-rose-700 shadow-sm border border-rose-200"
+                                        : "text-slate-600 hover:text-slate-900"
+                                )}
+                            >
+                                {opt.icon}
+                                {opt.label}
+                            </button>
+                        );
+                    })}
+                </div>
+                {groupBy === 'projekt' && (
+                    <span className="text-xs text-slate-500 italic">
+                        Export (PDF / E-Mail) ist nur in der Lieferanten-Ansicht verfügbar.
+                    </span>
+                )}
+            </div>
+
             {/* Content */}
             {loading ? (
                 <div className="flex items-center justify-center py-12">
                     <RefreshCw className="w-8 h-8 text-rose-600 animate-spin" />
                 </div>
-            ) : lieferantGruppen.length === 0 ? (
+            ) : gruppen.length === 0 ? (
                 <Card className="p-12 text-center">
                     <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                     <p className="text-slate-500 text-lg">Keine offenen Bestellungen vorhanden.</p>
                 </Card>
             ) : (
                 <div className="space-y-6">
-                    {lieferantGruppen.map((gruppe) => (
-                        <LieferantGruppeCard
-                            key={gruppe.lieferantId || gruppe.lieferantName || 'ohne-lieferant'}
+                    {gruppen.map((gruppe) => (
+                        <GruppeCard
+                            key={gruppe.key}
                             gruppe={gruppe}
+                            groupBy={groupBy}
                             onToggleBestellt={handleToggleBestellt}
                             onEmailClick={handleEmailClick}
+                            onPdfClick={handlePdfClick}
+                            onEditClick={handleEditClick}
                         />
                     ))}
                 </div>
@@ -981,6 +1154,14 @@ export default function BestellungEditor() {
                 onSuccess={loadBestellungen}
             />
 
+            {/* Position bearbeiten */}
+            <MaterialbestellungModal
+                isOpen={editPosition != null}
+                onClose={() => setEditPosition(null)}
+                onSuccess={loadBestellungen}
+                editPosition={editPosition}
+            />
+
             {/* Email Modal */}
             {emailModal && (
                 <BestellungEmailModal
@@ -988,7 +1169,7 @@ export default function BestellungEditor() {
                     onClose={() => setEmailModal(null)}
                     lieferantId={emailModal.lieferantId}
                     lieferantName={emailModal.lieferantName}
-                    onSuccess={loadBestellungen}
+                    onSuccess={() => handleEmailSuccess(emailModal.lieferantId)}
                 />
             )}
         </PageLayout>

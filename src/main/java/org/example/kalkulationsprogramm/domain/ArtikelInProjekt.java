@@ -8,6 +8,7 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -50,6 +51,9 @@ public class ArtikelInProjekt {
     String kommentar;
 
     private LocalDate bestelltAm;
+
+    @Column(name = "exportiert_am")
+    private LocalDateTime exportiertAm;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lieferant_id")

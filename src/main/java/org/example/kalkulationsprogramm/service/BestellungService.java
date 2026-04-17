@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -150,6 +151,7 @@ public class BestellungService {
         dto.setFixmassMm(aip.getFixmassMm());
         dto.setBestellt(aip.isBestellt());
         dto.setBestelltAm(aip.getBestelltAm());
+        dto.setExportiertAm(aip.getExportiertAm());
         dto.setSchnittForm(aip.getSchnittForm());
         dto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
         dto.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
@@ -218,5 +220,80 @@ public class BestellungService {
             throw new IllegalStateException("Nur freie Positionen können hier gelöscht werden");
         }
         artikelInProjektRepository.delete(aip);
+    }
+
+    /**
+     * Markiert alle offenen Positionen eines Lieferanten als exportiert (PDF-Download oder E-Mail-Versand).
+     * Bereits markierte Positionen werden übersprungen.
+     */
+    @Transactional
+    public int markiereLieferantAlsExportiert(Long lieferantId) {
+        List<ArtikelInProjekt> offene = lieferantId != null
+                ? artikelInProjektRepository.findByBestelltFalseAndLieferant_IdOrderByProjekt_BauvorhabenAsc(lieferantId)
+                : artikelInProjektRepository.findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc()
+                        .stream()
+                        .filter(a -> a.getLieferant() == null)
+                        .toList();
+        LocalDateTime now = LocalDateTime.now();
+        int count = 0;
+        for (ArtikelInProjekt aip : offene) {
+            if (aip.getExportiertAm() == null) {
+                aip.setExportiertAm(now);
+                count++;
+            }
+        }
+        if (count > 0) {
+            artikelInProjektRepository.saveAll(offene);
+        }
+        return count;
+    }
+
+    /**
+     * Aktualisiert eine Bestellposition. Schlägt fehl, wenn die Position bereits exportiert wurde.
+     */
+    @Transactional
+    public BestellungResponseDto aktualisierePosition(Long id, ManuelleBestellpositionDto req) {
+        ArtikelInProjekt aip = artikelInProjektRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Position nicht gefunden"));
+        if (aip.getExportiertAm() != null) {
+            throw new IllegalStateException("Position wurde bereits exportiert und kann nicht mehr bearbeitet werden");
+        }
+        if (aip.isBestellt()) {
+            throw new IllegalStateException("Bereits bestellte Positionen können nicht bearbeitet werden");
+        }
+
+        aip.setProjekt(req.getProjektId() != null ? projektRepository.getReferenceById(req.getProjektId()) : null);
+        aip.setLieferant(req.getLieferantId() != null ? lieferantenRepository.getReferenceById(req.getLieferantId()) : null);
+        aip.setKategorie(req.getKategorieId() != null ? kategorieRepository.getReferenceById(req.getKategorieId()) : null);
+
+        if (req.getArtikelId() != null) {
+            Artikel artikel = artikelRepository.findById(req.getArtikelId())
+                    .orElseThrow(() -> new RuntimeException("Artikel nicht gefunden: " + req.getArtikelId()));
+            aip.setArtikel(artikel);
+            if (req.getMenge() != null) {
+                aip.setStueckzahl(req.getMenge().intValue());
+            }
+            // Freitext-Felder leeren, da jetzt Stammartikel
+            aip.setFreitextProduktname(null);
+            aip.setFreitextProdukttext(null);
+            aip.setFreitextMenge(null);
+            aip.setFreitextEinheit(null);
+        } else {
+            aip.setArtikel(null);
+            aip.setFreitextProduktname(req.getProduktname());
+            aip.setFreitextProdukttext(req.getProdukttext());
+            aip.setFreitextMenge(req.getMenge());
+            aip.setFreitextEinheit(req.getEinheit());
+        }
+        aip.setKommentar(req.getKommentar());
+        aip.setFixmassMm(req.getFixmassMm());
+
+        if (req.getZeugnisAnforderung() != null && !req.getZeugnisAnforderung().isBlank()) {
+            aip.setZeugnisAnforderung(ZeugnisTyp.valueOf(req.getZeugnisAnforderung()));
+        } else {
+            aip.setZeugnisAnforderung(null);
+        }
+
+        return toDto(artikelInProjektRepository.save(aip));
     }
 }

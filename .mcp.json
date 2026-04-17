@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "notebooklm-mcp-cli",
+        "notebooklm-mcp"
+      ],
+      "env": {
+        "NOTEBOOK_ID": "917b7857-0d32-43bf-9dec-b5ca1d362800"
+      }
+    }
+  }
+}

@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -28,6 +29,8 @@ public class BestellungResponseDto {
     private Long lieferantId;
     private boolean bestellt;
     private LocalDate bestelltAm;
+    /** Zeitpunkt des letzten Exports (PDF-Download oder E-Mail-Versand). NULL = noch editierbar. */
+    private LocalDateTime exportiertAm;
     private String kommentar;
     private java.math.BigDecimal kilogramm;
     private java.math.BigDecimal gesamtKilogramm;
