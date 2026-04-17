@@ -80,6 +80,10 @@ public class ArtikelInProjekt {
     @Column(name = "freitext_menge", precision = 19, scale = 3)
     private java.math.BigDecimal freitextMenge;
 
+    // Fixmaß pro Stück in Millimetern (z. B. für Träger auf Länge bestellt: 6000 mm × 3 Stück)
+    @Column(name = "fixmass_mm")
+    private Integer fixmassMm;
+
     // Warengruppe direkt (für freie Positionen ohne Stammartikel)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "kategorie_id")

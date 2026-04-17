@@ -1,96 +1,90 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Briefcase, ChevronRight, Loader2 } from 'lucide-react';
+import { Search, X, Truck, ChevronRight, Loader2, MapPin } from 'lucide-react';
 
-interface Projekt {
+export interface LieferantSuchErgebnis {
     id: number;
-    bauvorhaben: string;
-    auftragsnummer?: string;
-    kunde?: string;
-    abgeschlossen?: boolean;
-    excKlasse?: string | null;
+    lieferantenname: string;
+    lieferantenTyp?: string | null;
+    ort?: string | null;
+    plz?: string | null;
+    strasse?: string | null;
+    vertreter?: string | null;
+    istAktiv?: boolean | null;
 }
 
-interface ProjektSearchModalProps {
+interface LieferantSearchModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelect: (projekt: Projekt) => void;
-    /** @deprecated Projekte werden jetzt serverseitig geladen */
-    projekte?: Projekt[];
-    currentProjektId?: number;
-    /** Nur offene (nicht abgeschlossene) Projekte anzeigen */
-    nurOffene?: boolean;
+    onSelect: (lieferant: LieferantSuchErgebnis) => void;
+    currentLieferantId?: number;
+    /** Nur aktive Lieferanten anzeigen (Default: true) */
+    nurAktive?: boolean;
 }
 
 /**
- * Modal für Projektsuche mit server-seitiger Suche.
- * Sucht über Bauvorhaben, Auftragsnummer, Kundenname und Ansprechpartner.
+ * Modal zur Lieferantensuche via /api/lieferanten?q=...
+ * Sucht über Name, Typ, Vertreter, Ort und Straße.
  */
-export function ProjektSearchModal({
+export function LieferantSearchModal({
     isOpen,
     onClose,
     onSelect,
-    currentProjektId,
-    nurOffene = false
-}: ProjektSearchModalProps) {
+    currentLieferantId,
+    nurAktive = true,
+}: LieferantSearchModalProps) {
     const [searchTerm, setSearchTerm] = useState('');
-    const [projekte, setProjekte] = useState<Projekt[]>([]);
+    const [lieferanten, setLieferanten] = useState<LieferantSuchErgebnis[]>([]);
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(false);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
-    // Projekte vom Server laden
-    const loadProjekte = useCallback(async (query: string) => {
-        // Vorherigen Request abbrechen
+    const loadLieferanten = useCallback(async (query: string) => {
         if (abortRef.current) abortRef.current.abort();
         const controller = new AbortController();
         abortRef.current = controller;
 
         setLoading(true);
         try {
-            const params = new URLSearchParams({ size: '500' });
+            const params = new URLSearchParams({ size: '100' });
             if (query.trim()) params.set('q', query.trim());
-            if (nurOffene) params.set('nurOffene', 'true');
-            const res = await fetch(`/api/projekte/simple?${params}`, { signal: controller.signal });
+            const res = await fetch(`/api/lieferanten?${params}`, { signal: controller.signal });
             if (!res.ok) throw new Error('Fehler beim Laden');
-            const data: Projekt[] = await res.json();
-            setProjekte(data);
-            // Beim ersten Laden (ohne Query) die Gesamtanzahl merken
-            if (!query.trim()) setTotalCount(data.length);
+            const data = await res.json();
+            const list: LieferantSuchErgebnis[] = Array.isArray(data?.lieferanten) ? data.lieferanten : [];
+            const gefiltert = nurAktive ? list.filter(l => l.istAktiv !== false) : list;
+            setLieferanten(gefiltert);
+            setTotalCount(typeof data?.gesamt === 'number' ? data.gesamt : gefiltert.length);
         } catch (e) {
             if (!(e instanceof DOMException && e.name === 'AbortError')) {
-                console.error('Projektsuche fehlgeschlagen:', e);
+                console.error('Lieferantensuche fehlgeschlagen:', e);
             }
         } finally {
             if (!controller.signal.aborted) setLoading(false);
         }
-    }, [nurOffene]);
+    }, [nurAktive]);
 
-    // Initiales Laden wenn Modal geöffnet wird
     useEffect(() => {
         if (isOpen) {
             setSearchTerm('');
-            loadProjekte('');
+            loadLieferanten('');
         }
         return () => {
             if (abortRef.current) abortRef.current.abort();
         };
-    }, [isOpen, loadProjekte]);
+    }, [isOpen, loadLieferanten]);
 
-    // Debounced Suche bei Eingabe
     useEffect(() => {
         if (!isOpen) return;
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
-            loadProjekte(searchTerm);
-        }, 300);
+        debounceRef.current = setTimeout(() => loadLieferanten(searchTerm), 250);
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };
-    }, [searchTerm, isOpen, loadProjekte]);
+    }, [searchTerm, isOpen, loadLieferanten]);
 
-    const handleSelect = (projekt: Projekt) => {
-        onSelect(projekt);
+    const handleSelect = (l: LieferantSuchErgebnis) => {
+        onSelect(l);
         setSearchTerm('');
         onClose();
     };
@@ -100,12 +94,11 @@ export function ProjektSearchModal({
     return (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                {/* Header mit Suche */}
                 <div className="p-4 border-b border-slate-200">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                            <Briefcase className="w-5 h-5 text-rose-600" />
-                            <h2 className="text-lg font-bold text-slate-900">Projekt auswählen</h2>
+                            <Truck className="w-5 h-5 text-rose-600" />
+                            <h2 className="text-lg font-bold text-slate-900">Lieferant auswählen</h2>
                         </div>
                         <button
                             onClick={onClose}
@@ -115,14 +108,13 @@ export function ProjektSearchModal({
                         </button>
                     </div>
 
-                    {/* Suchfeld */}
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                         <input
                             type="text"
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="Freitext suchen (Bauvorhaben, Kunde, Ansprechpartner, Auftragsnr.)..."
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="Suche nach Name, Ort, Typ, Vertreter..."
                             className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
                             autoFocus
                         />
@@ -132,26 +124,25 @@ export function ProjektSearchModal({
                     </div>
                 </div>
 
-                {/* Liste */}
                 <div className="flex-1 overflow-y-auto">
-                    {loading && projekte.length === 0 ? (
+                    {loading && lieferanten.length === 0 ? (
                         <div className="text-center py-12 text-slate-400">
                             <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin opacity-50" />
-                            <p>Projekte werden geladen...</p>
+                            <p>Lieferanten werden geladen...</p>
                         </div>
-                    ) : projekte.length === 0 ? (
+                    ) : lieferanten.length === 0 ? (
                         <div className="text-center py-12 text-slate-400">
-                            <Briefcase className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                            <p>{searchTerm ? 'Keine Projekte gefunden' : 'Keine Projekte verfügbar'}</p>
+                            <Truck className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                            <p>{searchTerm ? 'Keine Lieferanten gefunden' : 'Keine Lieferanten verfügbar'}</p>
                         </div>
                     ) : (
                         <div className="divide-y divide-slate-100">
-                            {projekte.map(projekt => {
-                                const isSelected = projekt.id === currentProjektId;
+                            {lieferanten.map(l => {
+                                const isSelected = l.id === currentLieferantId;
                                 return (
                                     <button
-                                        key={projekt.id}
-                                        onClick={() => handleSelect(projekt)}
+                                        key={l.id}
+                                        onClick={() => handleSelect(l)}
                                         className={`w-full flex items-center gap-4 p-4 text-left transition-colors group
                                             ${isSelected
                                                 ? 'bg-rose-50 border-l-4 border-rose-500'
@@ -160,27 +151,33 @@ export function ProjektSearchModal({
                                     >
                                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
                                             ${isSelected ? 'bg-rose-100' : 'bg-slate-100 group-hover:bg-slate-200'}`}>
-                                            <Briefcase className={`w-5 h-5 ${isSelected ? 'text-rose-600' : 'text-slate-500'}`} />
+                                            <Truck className={`w-5 h-5 ${isSelected ? 'text-rose-600' : 'text-slate-500'}`} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2">
                                                 <p className={`font-medium truncate ${isSelected ? 'text-rose-700' : 'text-slate-900'}`}>
-                                                    {projekt.bauvorhaben || 'Unbenanntes Projekt'}
+                                                    {l.lieferantenname}
                                                 </p>
-                                                {projekt.abgeschlossen && (
-                                                    <span className="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded flex-shrink-0">
-                                                        Beendet
+                                                {l.lieferantenTyp && (
+                                                    <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded flex-shrink-0">
+                                                        {l.lieferantenTyp}
+                                                    </span>
+                                                )}
+                                                {l.istAktiv === false && (
+                                                    <span className="text-xs bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded flex-shrink-0">
+                                                        Inaktiv
                                                     </span>
                                                 )}
                                             </div>
-                                            <div className="flex items-center gap-2 text-sm text-slate-500">
-                                                {projekt.auftragsnummer && (
-                                                    <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs">
-                                                        {projekt.auftragsnummer}
+                                            <div className="flex items-center gap-3 text-sm text-slate-500 mt-0.5">
+                                                {(l.plz || l.ort) && (
+                                                    <span className="inline-flex items-center gap-1 truncate">
+                                                        <MapPin className="w-3 h-3" />
+                                                        {[l.plz, l.ort].filter(Boolean).join(' ')}
                                                     </span>
                                                 )}
-                                                {projekt.kunde && (
-                                                    <span className="truncate">{projekt.kunde}</span>
+                                                {l.vertreter && (
+                                                    <span className="truncate">· {l.vertreter}</span>
                                                 )}
                                             </div>
                                         </div>
@@ -192,9 +189,8 @@ export function ProjektSearchModal({
                     )}
                 </div>
 
-                {/* Footer mit Anzahl */}
                 <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 text-sm text-slate-500">
-                    {projekte.length}{totalCount > 0 && searchTerm.trim() ? ` von ${totalCount}` : ''} Projekten
+                    {lieferanten.length}{totalCount > lieferanten.length ? ` von ${totalCount}` : ''} Lieferanten
                 </div>
             </div>
         </div>

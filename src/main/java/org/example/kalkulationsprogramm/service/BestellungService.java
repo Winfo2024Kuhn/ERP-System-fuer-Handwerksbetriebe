@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.ManuelleBestellpositionDto;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
+import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -24,6 +25,7 @@ public class BestellungService {
     private final ProjektRepository projektRepository;
     private final LieferantenRepository lieferantenRepository;
     private final KategorieRepository kategorieRepository;
+    private final ArtikelRepository artikelRepository;
     private final ZeugnisService zeugnisService;
 
     public List<BestellungResponseDto> findeOffeneBestellungen() {
@@ -145,6 +147,7 @@ public class BestellungService {
             dto.setEinheit(hasMeter ? "m" : "Stück");
         }
         dto.setKilogramm(aip.getKilogramm());
+        dto.setFixmassMm(aip.getFixmassMm());
         dto.setBestellt(aip.isBestellt());
         dto.setBestelltAm(aip.getBestelltAm());
         dto.setSchnittForm(aip.getSchnittForm());
@@ -179,11 +182,22 @@ public class BestellungService {
             aip.setKategorie(kategorieRepository.getReferenceById(req.getKategorieId()));
         }
 
-        aip.setFreitextProduktname(req.getProduktname());
-        aip.setFreitextProdukttext(req.getProdukttext());
-        aip.setFreitextMenge(req.getMenge());
-        aip.setFreitextEinheit(req.getEinheit());
+        // Stammartikel oder Freitext — Artikel hat Vorrang, wenn gesetzt
+        if (req.getArtikelId() != null) {
+            Artikel artikel = artikelRepository.findById(req.getArtikelId())
+                    .orElseThrow(() -> new RuntimeException("Artikel nicht gefunden: " + req.getArtikelId()));
+            aip.setArtikel(artikel);
+            if (req.getMenge() != null) {
+                aip.setStueckzahl(req.getMenge().intValue());
+            }
+        } else {
+            aip.setFreitextProduktname(req.getProduktname());
+            aip.setFreitextProdukttext(req.getProdukttext());
+            aip.setFreitextMenge(req.getMenge());
+            aip.setFreitextEinheit(req.getEinheit());
+        }
         aip.setKommentar(req.getKommentar());
+        aip.setFixmassMm(req.getFixmassMm());
 
         if (req.getZeugnisAnforderung() != null && !req.getZeugnisAnforderung().isBlank()) {
             aip.setZeugnisAnforderung(ZeugnisTyp.valueOf(req.getZeugnisAnforderung()));

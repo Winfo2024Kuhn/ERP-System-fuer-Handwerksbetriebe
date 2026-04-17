@@ -16,6 +16,7 @@
 - **SQL:** Nur parametrisierte Queries (`@Query` mit `:param`), kein String-Concat.
 - **Flyway & Idempotenz (WICHTIG):** - Neue Skripte unter `src/main/resources/db/migration/V{N}__{beschreibung}.sql` (aufsteigend ab V207+). 
   - Bestehende Migrationen NIEMALS ändern.
+  - bitte für MySQL 8.0 syntax auslegen
   
 
 ## Architektur-Patterns

@@ -31,6 +31,8 @@ public class BestellungResponseDto {
     private String kommentar;
     private java.math.BigDecimal kilogramm;
     private java.math.BigDecimal gesamtKilogramm;
+    /** Fixmaß pro Stück in Millimetern (optional). */
+    private Integer fixmassMm;
     private String schnittForm;
     private String anschnittWinkelLinks;
     private String anschnittWinkelRechts;
