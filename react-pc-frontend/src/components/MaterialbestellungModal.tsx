@@ -286,6 +286,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
             werkstoffName: a.werkstoffName || undefined,
             externeArtikelnummer: a.externeArtikelnummer || undefined,
             kategorieId: a.kategorieId ?? null,
+            fixmassMm: a.fixmassMm ? String(a.fixmassMm) : '',
         });
     };
 
@@ -304,6 +305,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 werkstoffName: a.werkstoffName || undefined,
                 externeArtikelnummer: a.externeArtikelnummer || undefined,
                 kategorieId: a.kategorieId ?? null,
+                fixmassMm: a.fixmassMm ? String(a.fixmassMm) : '',
             }));
             return [...rest, ...neu];
         });
