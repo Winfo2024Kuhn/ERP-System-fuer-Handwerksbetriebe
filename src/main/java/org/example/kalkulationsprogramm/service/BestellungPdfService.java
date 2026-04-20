@@ -60,14 +60,7 @@ public class BestellungPdfService {
             logo.scaleToFit(150, 70);
             doc.add(logo);
             doc.add(new Paragraph(" "));
-            String infoText = "Bitte stellen Sie je Auftrag eine separate Rechnung aus. Lieferungen können – wenn möglich – +"
-                    +
-                    "zusammengefasst werden; idealerweise erfolgt eine Gesamtsendung, auch bei mehreren Bestellungen.+"
-                    +
-                    " Die benötigten Meter je Profil entnehmen Sie der Anfrage. Bitte optimieren Sie die Zuschnitte auf Ihre Lagerlängen.\n";
-            Paragraph info = new Paragraph(infoText, FontFactory.getFont(FontFactory.HELVETICA, 10));
-            info.setSpacingAfter(15f);
-            doc.add(info);
+            addRueckverfolgbarkeitsInfobox(doc);
 
             Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, new Color(204, 0, 0));
             Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
@@ -75,10 +68,8 @@ public class BestellungPdfService {
             Color headerBg = new Color(204, 0, 0);
             Color altBg = new Color(245, 245, 245);
             for (Map.Entry<String, List<BestellungResponseDto>> entry : byProjekt.entrySet()) {
-                String heading = "Bauvorhaben: " + entry.getKey();
-                Paragraph title = new Paragraph(heading, titleFont);
-                title.setSpacingAfter(15f);
-                doc.add(title);
+                String auftragsnr = firstAuftragsnummer(entry.getValue());
+                doc.add(buildBlockHeading("Bauvorhaben", entry.getKey(), auftragsnr, titleFont));
                 PdfPTable table = new PdfPTable(new float[] { 2f, 2f, 2f, 2f, 3f, 1.2f, 1.2f, 1.2f, 2f, 2f, 2f, 1f });
                 table.setWidthPercentage(100);
                 String[] headers = { "Projektnummer", "Kunde", "Artikelnummer", "Produkt", "Produkttext", "Form",
@@ -181,14 +172,7 @@ public class BestellungPdfService {
             logo.scaleToFit(150, 70);
             doc.add(logo);
             doc.add(new Paragraph(" "));
-            String infoText = "Bitte stellen Sie je Auftrag eine separate Rechnung aus. " +
-                    "Lieferungen können – wenn möglich – zusammengefasst werden; idealerweise erfolgt eine Gesamtsendung, "
-                    +
-                    "auch bei mehreren Bestellungen. Die benötigten Meter je Profil entnehmen Sie der Anfrage. " +
-                    "Bitte optimieren Sie die Zuschnitte auf Ihre Lagerlängen.\n";
-            Paragraph info = new Paragraph(infoText, FontFactory.getFont(FontFactory.HELVETICA, 10));
-            info.setSpacingAfter(15f);
-            doc.add(info);
+            addRueckverfolgbarkeitsInfobox(doc);
 
             Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, new Color(204, 0, 0));
             Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
@@ -196,11 +180,9 @@ public class BestellungPdfService {
             Color headerBg = new Color(204, 0, 0);
             Color altBg = new Color(245, 245, 245);
 
+            String projektAuftragsnr = firstAuftragsnummer(items);
             for (Map.Entry<String, List<BestellungResponseDto>> entry : byKat.entrySet()) {
-                String heading = entry.getKey();
-                Paragraph title = new Paragraph(heading, titleFont);
-                title.setSpacingAfter(15f);
-                doc.add(title);
+                doc.add(buildBlockHeading(null, entry.getKey(), projektAuftragsnr, titleFont));
                 PdfPTable table = new PdfPTable(new float[] { 2f, 3f, 3f, 1.2f, 1.2f, 1.2f, 2f, 2f, 1f });
                 table.setWidthPercentage(100);
                 String[] headers = { "Artikelnummer", "Produkt", "Produkttext", "Form", "Winkel L", "Winkel R",
@@ -270,6 +252,87 @@ public class BestellungPdfService {
         } catch (IOException e) {
             throw new RuntimeException("PDF generation failed", e);
         }
+    }
+
+    /**
+     * Rückverfolgbarkeits-Infobox oben im Bestell-PDF.
+     * Fordert den Lieferanten auf, die Auftragsnummer des Bestellers auf allen
+     * Folgedokumenten (Auftragsbestätigung, Lieferschein, Rechnung, Werkstoff-/
+     * Prüfzeugnisse) anzugeben – Voraussetzung für die Kennzeichnung nach
+     * Bestellnummer und den Wareneingangs-Abgleich gemäß DIN EN 1090.
+     */
+    private void addRueckverfolgbarkeitsInfobox(Document doc) throws DocumentException {
+        Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, new Color(204, 0, 0));
+        Font bodyFont = FontFactory.getFont(FontFactory.HELVETICA, 9);
+        Font bodyBoldFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9);
+
+        PdfPTable box = new PdfPTable(1);
+        box.setWidthPercentage(100);
+        box.setSpacingAfter(15f);
+
+        PdfPCell cell = new PdfPCell();
+        cell.setBorderColor(new Color(204, 0, 0));
+        cell.setBorderWidth(1.2f);
+        cell.setBackgroundColor(new Color(255, 245, 245));
+        cell.setPadding(10f);
+
+        Paragraph header = new Paragraph("WICHTIG \u2013 Rückverfolgbarkeit nach DIN EN 1090", headerFont);
+        header.setSpacingAfter(6f);
+        cell.addElement(header);
+
+        Paragraph hinweis = new Paragraph();
+        hinweis.add(new Chunk("Bitte geben Sie unsere Auftragsnummer auf ", bodyFont));
+        hinweis.add(new Chunk("ALLEN", bodyBoldFont));
+        hinweis.add(new Chunk(" Dokumenten zum Auftrag an (Auftragsbestätigung, Lieferschein, "
+                + "Rechnung sowie Werkstoff- und Prüfzeugnisse nach EN 10204). "
+                + "Die Auftragsnummer entnehmen Sie bitte der jeweiligen "
+                + "Bauvorhaben-Überschrift in dieser Bestellung.", bodyFont));
+        hinweis.setSpacingAfter(6f);
+        cell.addElement(hinweis);
+
+        Paragraph hinweise = new Paragraph("Hinweise zur Abwicklung:", bodyBoldFont);
+        hinweise.setSpacingAfter(2f);
+        cell.addElement(hinweise);
+
+        cell.addElement(new Paragraph("\u2022  Pro Auftrag bitte eine separate Rechnung ausstellen.", bodyFont));
+        cell.addElement(new Paragraph("\u2022  Lieferungen nach Möglichkeit zu einer Gesamtsendung zusammenfassen.", bodyFont));
+        cell.addElement(new Paragraph("\u2022  Zuschnitte auf Ihre Lagerlängen optimieren (Mengen siehe Anfrage).", bodyFont));
+        cell.addElement(new Paragraph("\u2022  Geforderte Werkstoff-/Prüfzeugnisse siehe Block am Ende dieses PDFs.", bodyFont));
+
+        box.addCell(cell);
+        doc.add(box);
+    }
+
+    /**
+     * Baut die Heading-Zeile für einen Block (Bauvorhaben oder Kategorie).
+     * Ist eine Auftragsnummer vorhanden, wird sie als Callout angehängt, das
+     * den Lieferanten zur Angabe auf Folgedokumenten verpflichtet.
+     */
+    private Paragraph buildBlockHeading(String label, String titleText, String auftragsnummer, Font titleFont) {
+        Font calloutFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, new Color(204, 0, 0));
+        Font hintFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 9, new Color(204, 0, 0));
+
+        String heading = (label != null && !label.isBlank()) ? label + ": " + titleText : titleText;
+        Paragraph title = new Paragraph();
+        title.add(new Chunk(heading, titleFont));
+        if (auftragsnummer != null && !auftragsnummer.isBlank()) {
+            title.add(new Chunk("   \u00b7   ", titleFont));
+            title.add(new Chunk("Unsere Auftragsnr.: " + auftragsnummer, calloutFont));
+            title.add(Chunk.NEWLINE);
+            title.add(new Chunk("\u2192 bitte auf allen Folgedokumenten angeben", hintFont));
+        }
+        title.setSpacingAfter(15f);
+        return title;
+    }
+
+    private String firstAuftragsnummer(List<BestellungResponseDto> items) {
+        if (items == null) return null;
+        for (BestellungResponseDto b : items) {
+            if (b.getProjektNummer() != null && !b.getProjektNummer().isBlank()) {
+                return b.getProjektNummer();
+            }
+        }
+        return null;
     }
 
     private void addEn1090ZeugnisBlock(Document doc, List<BestellungResponseDto> items) throws DocumentException {

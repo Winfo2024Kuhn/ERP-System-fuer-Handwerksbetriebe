@@ -37,6 +37,14 @@ Bevor du Code schreibst, lade dir **zwingend** die passende Dokumentation in dei
 3. **Sprache und Wording in der UI:**
    Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
 
+3a. **Umlaute in allen Human Interfaces (PFLICHT):**
+   In **allen** Texten, die einem Menschen angezeigt werden, sind echte deutsche Umlaute (ä, ö, ü, Ä, Ö, Ü, ß) zu verwenden – niemals ASCII-Ersatzformen wie `ae`, `oe`, `ue`, `ss`.
+   Das gilt für:
+   - Alle UI-Texte (React-Frontends, Buttons, Labels, Tooltips, Fehlermeldungen).
+   - Alle generierten Dokumente (PDFs, E-Mail-Bodies, Exporte).
+   - Alle Benutzer-Nachrichten aus Backend-Services (Exceptions, die bis zum Nutzer durchschlagen).
+   Ausnahme: Nur Identifier (Enum-Values, DB-Spalten, URL-Slugs, Dateinamen, Log-Ausgaben für Entwickler) dürfen ASCII bleiben.
+
 4. **Abschluss jeder Aufgabe (Skill-Execution):**
    Wenn du am Ende einer Aufgabe angekommen bist und Code geschrieben oder refactored hast, führe IMMER diesen Skill / diese Aktion aus:
    `.claude\commands\review-and-ship.md` (Überprüfe den Code auf Typensicherheit, Performance-Bottlenecks, UX-Konsistenz und bereite ihn für den Commit vor).
