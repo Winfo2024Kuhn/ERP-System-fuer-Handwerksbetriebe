@@ -245,4 +245,5 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 |---|---|---|
 | 2026-04-20 | Opus 4.7 | Erkundung (Etappe 0) abgeschlossen, alle Entscheidungen geklärt, V227 SQL geschrieben, Security-Fix vorab (Commit `7072ffb`). Stopp nach Diskussion über Bedarf/Bestellung-Trennung: bleibt für diesen Scope wie ist, Folge-Features B+C separat. |
 | 2026-04-20 | Opus 4.7 | Pläne ins Repo verschoben (Commit `3ef5f98`). Etappe 1 fertig: 4 Entities + 2 Enums + 4 Repositories angelegt, `./mvnw.cmd compile` grün. Commit folgt. |
+| 2026-04-20 | Opus 4.7 | Etappe 2 fertig (Commit `0e52f4a`): TokenGenerator + PreisanfrageService (6 Methoden) + 4 DTOs + PreisanfragePdfGenerator-Strategy-Interface + 23 neue Tests. Komplette Suite grün: 1176 Tests, 0 Failures. Architektur-Entscheidungen: `Optional<PreisanfragePdfGenerator>` entkoppelt von Etappe 3, `EmailServiceFactory` für Test-Injection, explizites `@Autowired` bei Dual-Constructor. |
 
