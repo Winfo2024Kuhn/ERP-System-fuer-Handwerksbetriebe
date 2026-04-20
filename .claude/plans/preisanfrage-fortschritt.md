@@ -263,8 +263,8 @@ Erweitert Etappe 4 um zwei zusätzliche Matching-Stufen und macht den Reply-To-V
   - `238f9f5` feat(artikel-matching): Kategorie-Pfad + Leaf-Check + create_kategorie Tool
   - `c500f70` feat(preisanfrage): KI-Angebotsextraktion + Auto-Trigger + Schema-Fix
   - `33d41d2` feat(preisanfrage): Vergleichs-Matrix + Preise-eintragen-Modal
-  - (Tracker-Update folgt unten)
-- [ ] Push zu `feature/en1090-echeck` (nach Tracker-Commit)
+  - `b620597` docs(preisanfrage): Tracker-Update fuer Etappe 7 (komplett)
+- [x] Push zu `feature/en1090-echeck` (alle 4 Commits auf `origin`)
 
 ### ⏳ Etappe 8: EmailCenter-Badge
 **Commit-Ziel:** `feat(email-center): Badge und Quick-Action für Preisanfragen-Antworten`
