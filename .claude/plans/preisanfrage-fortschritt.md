@@ -5,7 +5,7 @@ hier den aktuellen Stand und hakt erledigte Punkte ab (bzw. ergänzt neue Aufgab
 
 **Originaler Plan:** [preisanfrage-mehrere-lieferanten.md](preisanfrage-mehrere-lieferanten.md)
 **Branch:** `feature/en1090-echeck` (wird vor Merge auf `feature/preisanfrage-multi-lieferant` umgebogen)
-**Letzter Commit dieses Features:** `12fbeae` (Etappe 5: Controller + DTOs + Mapper)
+**Letzter Commit dieses Features:** `8b5bb05` (Etappe 4b: 4-stufige Fallback-Kette fuer Antwort-Zuordnung)
 
 ---
 
@@ -33,6 +33,9 @@ hier den aktuellen Stand und hakt erledigte Punkte ab (bzw. ergänzt neue Aufgab
 | Flyway-Version | V227 ist frei (letzte ist V226) | 2026-04-20 |
 | Empfangs-Postfach Test | `info-bauschlosserei-kuhn@t-online.de` bleibt | 2026-04-20 |
 | Rename `ArtikelInProjekt` | **NICHT jetzt** — separates Thema. Struktur wird in anderen Features ausgebaut (siehe unten "Folge-Features") | 2026-04-20 |
+| Antwort-Zuordnung Strategie | **4-stufige Fallback-Kette**: (1) In-Reply-To, (2) To-Adresse `TOKEN@domain` (Config `preisanfrage.reply-to-domain`, optional), (3) Token-Regex im Betreff, (4) PA-Nummer + Absender-E-Mail-Abgleich | 2026-04-20 |
+| Eigene Domain langfristig | **Ja** — User will eigene Domain (z.B. `bauschlosserei-kuhn.de`) mit Catch-All betreiben. Fallback 2 wird dann aktiviert. Bis dahin: leer in Properties = deaktiviert, Fallbacks 1/3/4 reichen. | 2026-04-20 |
+| Lieferanten-Anweisung | **Mail-Body + PDF-Hinweisbox bitten explizit um E-Mail-Antwort mit PDF-Anhang.** Token/PA-Nummer immer im Betreff abbildbar. Handschriftlich ausgefuellte eingescannte PDFs bleiben manuell — unvermeidbar. | 2026-04-20 |
 
 ---
 
@@ -164,6 +167,32 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 - Token-Regex extrahiert immer nur den sauberen Token — SQL-/HTML-Payloads drumrum landen nie im Repository-Call (explizit getestet).
 - KEIN neuer `EmailZuordnungTyp.PREISANFRAGE_ANTWORT` (bewusste Entscheidung aus Original-Plan 4.8): Die Mail bleibt `LIEFERANT`-zugeordnet, der Link zur Preisanfrage läuft rückwärts über `PreisanfrageLieferant.antwortEmail`.
 
+### ✅ Etappe 4b: 4-stufige Fallback-Kette + Reply-To-Domain
+**Commit-Ziel:** `feat(preisanfrage): 4-stufige Fallback-Kette fuer Antwort-Zuordnung` (Commit `8b5bb05`)
+
+Erweitert Etappe 4 um zwei zusätzliche Matching-Stufen und macht den Reply-To-Versand konfigurierbar, damit auch Lieferanten zugeordnet werden können die **nicht** auf "Antworten" klicken.
+
+- [x] Neuer Config-Key `preisanfrage.reply-to-domain=` in `application.properties` (leer = deaktiviert, via `application-local.properties` überschreibbar)
+- [x] `EmailService.sendEmailAndReturnMessageId` erhält neuen Overload mit `replyTo`-Parameter (alter Overload delegiert mit `null` — vollständig rückwärtskompatibel für bestehende Caller wie `EmailController`)
+- [x] `PreisanfrageService` setzt bei Versand `Reply-To: TOKEN@domain`, **sofern Domain konfiguriert**; Mail-Body zeigt dann zusätzlich die volle Antwortadresse prominent an
+- [x] Mail-Body und PDF-Hinweisbox bitten explizit um E-Mail-Antwort mit PDF-Anhang (Umlaute gemäß CLAUDE.md)
+- [x] `PreisanfrageZuordnungService` mit expliziter Konstruktor-Injection (statt `@RequiredArgsConstructor`) + 4 Matching-Stufen:
+  1. **In-Reply-To** (wie Etappe 4)
+  2. **To-Adresse** `TOKEN@reply-to-domain` — nur aktiv wenn Domain konfiguriert
+  3. **Token-Regex im Betreff** (wie Etappe 4)
+  4. **PA-Nummer im Betreff** (`PA-YYYY-NNN`) + Absender-E-Mail-Abgleich gegen `pal.versendetAn` der zugehörigen Preisanfrage
+- [x] 4 neue Tests: Fallback 2 mit Domain + ohne Domain, Fallback 4 mit Absender-Match + ohne Absender-Match
+- [x] `PreisanfrageServiceTest` Stubs auf neuen 8-Parameter-Overload umgestellt
+- [x] `./mvnw.cmd test` grün — **1242 Tests, 0 Failures** (+4)
+- [x] Commit `8b5bb05` + Push
+
+**Architektur-Notizen:**
+- **Pattern `PA_NUMMER_PATTERN`** nutzt negativen Lookahead `(?!-[A-Z2-9]{5})`, damit Fallback 4 nicht auf eine Volltoken-Zeile triggert und mit Fallback 3 kollidiert (saubere Priorisierung).
+- **Fallback 2 case-insensitiv**: Manche Mail-Clients normalisieren die Empfänger-Adresse (`max.MUSTERMANN@...`), daher `Pattern.CASE_INSENSITIVE` + `.toUpperCase()` vor dem Repository-Call.
+- **Fallback 4 konservativ**: nur Match wenn Absender-Mail genau auf `pal.getVersendetAn()` passt (`equalsIgnoreCase`). Wird eine Antwort von einer anderen Adresse geschickt (häufig bei "info@..."-Postfächern), bleibt es manuell — bewusste Entscheidung, um Fehl-Zuordnungen zu vermeiden.
+- **Domain-Feature ausschaltbar**: Alle 3 Non-Reply-To-Fallbacks (1/3/4) funktionieren auch ohne konfigurierte Domain. Die Domain-Einführung ist additiv, nicht disruptiv.
+- **Langfristig**: Wenn eigene Domain `bauschlosserei-kuhn.de` steht + Catch-All-IMAP läuft → Config-Key setzen → Fallback 2 wird automatisch aktiv. Kein Code-Change nötig.
+
 ### ✅ Etappe 5: Controller + DTOs + Mapper
 **Commit-Ziel:** `feat(preisanfrage): Controller + DTOs + Mapper` (Commit `12fbeae`)
 
@@ -273,4 +302,5 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 | 2026-04-20 | Opus 4.7 | Etappe 3b fertig (Commit `d0d1590`): `BestellungPdfService implements PreisanfragePdfGenerator`, neue Methode `generatePdfForPreisanfrage(palId)` mit Firmenlogo, roter Kopfzeile "PREISANFRAGE {nummer}", Token-Box, Hinweis "Bitte Code angeben", Rückmeldefrist (deutsches Datumsformat) und Positionen-Tabelle mit leerer Spalte "Ihr Preis €/Einheit". Bewusst ohne EN-1090-Infobox/Zeugnis-Block. Konstruktor um `PreisanfrageLieferantRepository` + `PreisanfragePositionRepository` erweitert, `@AllArgsConstructor` durch expliziten Konstruktor ersetzt. Tests auf Factory-Helper `newService()` umgestellt, neuer Test `generatePdfForPreisanfrage_enthaeltTokenUndNummer` assertet Nummer + Token im PDF. **1195 Tests, 0 Failures**. |
 | 2026-04-20 | Opus 4.7 | Etappe 4 fertig (Commit `18c53d6`): neuer `PreisanfrageZuordnungService` mit `tryMatch(Email)` — Primary-Match über `parentEmail.messageId`, Fallback Token-Regex `PA-\d{4}-\d{3}-[A-Z2-9]{5}` im Betreff. Bei Treffer: `antwortEmail` setzen, Status `BEANTWORTET`, `antwortErhaltenAm = now()`, save. `EmailAutoAssignmentService.tryAutoAssign` ruft `tryAssignToPreisanfrage` als erste Regel vor `tryAssignToLieferant` — bei Match zusätzlich `email.assignToLieferant(pal.lieferant)` (Mail bleibt im Lieferanten-Postfach sichtbar). 6 neue Tests im `PreisanfrageZuordnungServiceTest` (inkl. Security-Case für SQL/HTML-Payload-Isolation im Betreff) + 1 neuer Happy-Path im `EmailAutoAssignmentServiceTest` (Vorrang vor Domain-Match). Konstruktor des AutoAssignmentService um `PreisanfrageZuordnungService` erweitert. **1204 Tests, 0 Failures**. |
 | 2026-04-20 | Opus 4.7 | Etappe 5 fertig (Commit `12fbeae`): REST-Schicht komplett — `PreisanfrageController` (10 Endpoints) mit `@Valid`-Input-Validierung, DTO-only-Responses (`PreisanfrageResponseDto`, `PreisanfragePositionDto`, `PreisanfrageLieferantDto`), expliziter `PreisanfrageMapper` im `ProjektMapper`-Stil (kein MapStruct). Service um `findeById`/`listeAlle(filterStatus)`/`abbrechen` erweitert. `UnifiedEmailDto` zeigt jetzt `preisanfrageLieferantRef` → EmailCenter kann Badge "Preisanfrage PA-YYYY-NNN" + Quick-Action "Preise eintragen" rendern (Etappe 8). Neuer Repo-Lookup `PreisanfrageLieferantRepository.findByAntwortEmail_Id`. Fehler-Mapping: `IllegalArgumentException`→404, `IllegalStateException`→409, Bean-Validation→400, `X-Error-Reason`-Header. `parseStatus` liefert bei unbekanntem Enum-Wert `null` (kein 500 bei SQLi-Probe). 27 Controller-Tests + 7 neue Service-Tests (`findeById`/`listeAlle`/`abbrechen` mit Happy-Path + Fehlerfällen). **1238 Tests, 0 Failures**. **Kein `@PreAuthorize` eingeführt** — Projekt nutzt durchgängig globale `SecurityConfig`. |
+| 2026-04-20 | Opus 4.7 | Etappe 4b fertig (Commit `8b5bb05`): User wollte Lieferanten auch dann zuordnen können, wenn sie nicht auf "Antworten" klicken sondern eine neue Mail schreiben. Lösung: 4-stufige Fallback-Kette in `PreisanfrageZuordnungService` (In-Reply-To → To-Adresse `TOKEN@domain` → Token-Regex im Betreff → PA-Nummer + Absender-E-Mail-Abgleich). Neuer Config-Key `preisanfrage.reply-to-domain=` in `application.properties` (leer = deaktiviert), in `application-local.properties` überschreibbar. `EmailService` bekommt neuen Overload `sendEmailAndReturnMessageId(..., replyTo, ...)`; alter 7-Parameter-Overload bleibt rückwärtskompatibel. Mail-Body + PDF-Hinweisbox bitten jetzt explizit um E-Mail-Antwort mit PDF-Anhang (Umlaute gemäß CLAUDE.md). User-Entscheidung: Eigene Domain `bauschlosserei-kuhn.de` kommt langfristig, bis dahin reichen Fallbacks 1/3/4. 4 neue Tests (Fallback 2 mit/ohne Domain, Fallback 4 mit/ohne Absender-Match), 3 `PreisanfrageServiceTest`-Stubs auf neuen 8-Parameter-Overload umgestellt. **1242 Tests, 0 Failures** (+4). `PreisanfrageZuordnungService` wechselt von `@RequiredArgsConstructor` auf expliziten Konstruktor wegen `@Value`-Injection. |
 
