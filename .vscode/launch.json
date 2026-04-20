@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-KalkulationsprogrammApplication<Kalkulationsprogramm>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "org.example.kalkulationsprogramm.KalkulationsprogrammApplication",
+            "projectName": "Kalkulationsprogramm",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env",
+            "vmArgs": " -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=64232 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dspring.jmx.enabled=true -Djava.rmi.server.hostname=localhost -Dspring.application.admin.enabled=true -Dspring.boot.project.name=Kalkulationsprogramm"
+        },
+        {
+            "type": "java",
+            "name": "Spring Boot-VapidKeyGenerator<Kalkulationsprogramm>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "org.example.kalkulationsprogramm.service.VapidKeyGenerator",
+            "projectName": "Kalkulationsprogramm",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
