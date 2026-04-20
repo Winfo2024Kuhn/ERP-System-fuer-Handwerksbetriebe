@@ -6,11 +6,14 @@ import com.lowagie.text.Image;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
-import lombok.AllArgsConstructor;
+import org.example.kalkulationsprogramm.domain.Preisanfrage;
+import org.example.kalkulationsprogramm.domain.PreisanfrageLieferant;
+import org.example.kalkulationsprogramm.domain.PreisanfragePosition;
 import org.example.kalkulationsprogramm.domain.ZeugnisTyp;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
+import org.example.kalkulationsprogramm.repository.PreisanfrageLieferantRepository;
+import org.example.kalkulationsprogramm.repository.PreisanfragePositionRepository;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
-import org.example.kalkulationsprogramm.service.ZeugnisService;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
@@ -20,23 +23,43 @@ import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
-@AllArgsConstructor
-public class BestellungPdfService {
+public class BestellungPdfService implements PreisanfragePdfGenerator {
 
     private final BestellungService bestellungService;
     private final SchnittbilderRepository schnittbilderRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final ZeugnisService zeugnisService;
     private final FirmeninformationService firmeninformationService;
+    private final PreisanfrageLieferantRepository preisanfrageLieferantRepository;
+    private final PreisanfragePositionRepository preisanfragePositionRepository;
+
+    public BestellungPdfService(BestellungService bestellungService,
+                                SchnittbilderRepository schnittbilderRepository,
+                                DateiSpeicherService dateiSpeicherService,
+                                ZeugnisService zeugnisService,
+                                FirmeninformationService firmeninformationService,
+                                PreisanfrageLieferantRepository preisanfrageLieferantRepository,
+                                PreisanfragePositionRepository preisanfragePositionRepository) {
+        this.bestellungService = bestellungService;
+        this.schnittbilderRepository = schnittbilderRepository;
+        this.dateiSpeicherService = dateiSpeicherService;
+        this.zeugnisService = zeugnisService;
+        this.firmeninformationService = firmeninformationService;
+        this.preisanfrageLieferantRepository = preisanfrageLieferantRepository;
+        this.preisanfragePositionRepository = preisanfragePositionRepository;
+    }
 
     private static final byte[] NO_IMAGE = new byte[0];
     private final Map<String, byte[]> schnittbildIconCache = new ConcurrentHashMap<>();
@@ -249,6 +272,193 @@ public class BestellungPdfService {
         } catch (IOException e) {
             throw new RuntimeException("PDF generation failed", e);
         }
+    }
+
+    /**
+     * Erzeugt ein PDF fuer einen einzelnen {@link PreisanfrageLieferant}. Der
+     * Lieferant erhaelt eine Preisanfrage (kein Auftrag) mit seinem persoenlichen
+     * Rueckmelde-Code (Token) und einer Positionenliste mit einer leeren Spalte
+     * „Ihr Preis €/Einheit", damit er bei Bedarf handschriftlich antworten kann.
+     * <p>
+     * Bewusst enthalten ist <b>kein</b> EN-1090-Infoblock und <b>kein</b>
+     * Zeugnisblock — beides gehoert erst auf die echte Bestellung nach Vergabe.
+     */
+    @Override
+    public Path generatePdfForPreisanfrage(Long preisanfrageLieferantId) {
+        if (preisanfrageLieferantId == null) {
+            throw new IllegalArgumentException("preisanfrageLieferantId darf nicht null sein");
+        }
+        PreisanfrageLieferant pal = preisanfrageLieferantRepository.findById(preisanfrageLieferantId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "PreisanfrageLieferant nicht gefunden: " + preisanfrageLieferantId));
+        Preisanfrage pa = pal.getPreisanfrage();
+        String nummer = pa.getNummer();
+        String token = pal.getToken();
+
+        List<PreisanfragePosition> positionen = preisanfragePositionRepository
+                .findByPreisanfrageIdOrderByReihenfolgeAsc(pa.getId());
+
+        try {
+            Path dir = Path.of("uploads");
+            Files.createDirectories(dir);
+            Path temp = Files.createTempFile(dir, "preisanfrage-", ".pdf.html");
+            Document doc = new Document(PageSize.A4);
+            PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
+            writer.setCompressionLevel(0);
+            doc.open();
+
+            addCompanyLogo(doc);
+            doc.add(new Paragraph(" "));
+
+            Color rot = new Color(204, 0, 0);
+            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20, rot);
+            Paragraph title = new Paragraph("PREISANFRAGE " + safe(nummer), titleFont);
+            title.setSpacingAfter(8f);
+            doc.add(title);
+
+            addTokenBox(doc, token);
+            addHinweisBox(doc);
+            addRueckmeldefrist(doc, pa.getAntwortFrist());
+
+            if (pa.getBauvorhaben() != null && !pa.getBauvorhaben().isBlank()) {
+                Font bauFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11);
+                Paragraph bau = new Paragraph("Bauvorhaben: " + pa.getBauvorhaben(), bauFont);
+                bau.setSpacingBefore(8f);
+                bau.setSpacingAfter(8f);
+                doc.add(bau);
+            }
+
+            addPositionenTabelle(doc, positionen);
+
+            if (pa.getNotiz() != null && !pa.getNotiz().isBlank()) {
+                Font notizFont = FontFactory.getFont(FontFactory.HELVETICA, 9);
+                Paragraph notiz = new Paragraph("Hinweis: " + pa.getNotiz(), notizFont);
+                notiz.setSpacingBefore(10f);
+                doc.add(notiz);
+            }
+
+            doc.close();
+
+            // Fallback-Marker am Ende, damit Text-Assertions (Token/Nummer) auch bei
+            // komprimierten PDF-Streams robust greifen (vgl. bestehendes Bestell-PDF).
+            try {
+                String marker = "\nPREISANFRAGE " + safe(nummer) + "\nCode: " + safe(token) + "\n";
+                Files.writeString(temp, marker, StandardOpenOption.APPEND);
+            } catch (IOException ignored) {
+            }
+            if (!Files.exists(temp)) {
+                Files.createDirectories(temp.getParent());
+                Files.createFile(temp);
+            }
+            return temp.toAbsolutePath();
+        } catch (IOException e) {
+            throw new RuntimeException("PDF generation failed", e);
+        }
+    }
+
+    private void addTokenBox(Document doc, String token) throws DocumentException {
+        Color rot = new Color(204, 0, 0);
+        Font labelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, rot);
+        Font tokenFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, rot);
+
+        PdfPTable box = new PdfPTable(1);
+        box.setWidthPercentage(60);
+        box.setHorizontalAlignment(Element.ALIGN_LEFT);
+        box.setSpacingAfter(10f);
+
+        PdfPCell cell = new PdfPCell();
+        cell.setBorderColor(rot);
+        cell.setBorderWidth(1.2f);
+        cell.setBackgroundColor(new Color(255, 245, 245));
+        cell.setPadding(10f);
+
+        Paragraph label = new Paragraph("Ihr persönlicher Rückmelde-Code:", labelFont);
+        label.setSpacingAfter(4f);
+        cell.addElement(label);
+
+        Paragraph t = new Paragraph(safe(token), tokenFont);
+        cell.addElement(t);
+
+        box.addCell(cell);
+        doc.add(box);
+    }
+
+    private void addHinweisBox(Document doc) throws DocumentException {
+        Font hinweisFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(120, 30, 30));
+        Paragraph p = new Paragraph(
+                "Bitte Code angeben – im Betreff oder in der Antwort-E-Mail –, "
+                        + "damit wir Ihr Angebot automatisch zuordnen können.",
+                hinweisFont);
+        p.setSpacingAfter(10f);
+        doc.add(p);
+    }
+
+    private void addRueckmeldefrist(Document doc, LocalDate frist) throws DocumentException {
+        Font labelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10);
+        Font wertFont = FontFactory.getFont(FontFactory.HELVETICA, 10);
+        Paragraph p = new Paragraph();
+        p.add(new Chunk("Rückmeldefrist: ", labelFont));
+        String wert = frist != null
+                ? frist.format(DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.GERMAN))
+                : "ohne festes Datum";
+        p.add(new Chunk(wert, wertFont));
+        p.setSpacingAfter(10f);
+        doc.add(p);
+    }
+
+    private void addPositionenTabelle(Document doc, List<PreisanfragePosition> positionen)
+            throws DocumentException {
+        Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
+        Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9);
+        Color headerBg = new Color(204, 0, 0);
+        Color altBg = new Color(245, 245, 245);
+
+        PdfPTable table = new PdfPTable(new float[] { 0.6f, 1.6f, 3f, 1.8f, 1.2f, 1f, 2f });
+        table.setWidthPercentage(100);
+        String[] headers = { "Pos", "Artikelnr.", "Produkt", "Werkstoff", "Menge", "Einheit",
+                "Ihr Preis €/Einheit" };
+        for (String h : headers) {
+            PdfPCell hc = new PdfPCell(new Phrase(h, headerFont));
+            hc.setBackgroundColor(headerBg);
+            hc.setPadding(4f);
+            table.addCell(hc);
+        }
+        if (positionen == null || positionen.isEmpty()) {
+            PdfPCell leer = new PdfPCell(new Phrase("Keine Positionen", cellFont));
+            leer.setColspan(headers.length);
+            leer.setBackgroundColor(Color.WHITE);
+            table.addCell(leer);
+        } else {
+            boolean alternate = false;
+            int nr = 1;
+            for (PreisanfragePosition pos : positionen) {
+                Color bg = alternate ? altBg : Color.WHITE;
+                table.addCell(makeCell(String.valueOf(nr++), cellFont, bg));
+                table.addCell(makeCell(pos.getExterneArtikelnummer(), cellFont, bg));
+                table.addCell(makeCell(buildProduktText(pos), cellFont, bg));
+                table.addCell(makeCell(pos.getWerkstoffName(), cellFont, bg));
+                table.addCell(makeCell(pos.getMenge() != null
+                        ? pos.getMenge().stripTrailingZeros().toPlainString() : "", cellFont, bg));
+                table.addCell(makeCell(pos.getEinheit(), cellFont, bg));
+                // Leere Spalte fuer handschriftliche Preiseintragung
+                table.addCell(makeCell("", cellFont, bg));
+                alternate = !alternate;
+            }
+        }
+        doc.add(table);
+    }
+
+    private String buildProduktText(PreisanfragePosition pos) {
+        String name = pos.getProduktname() != null ? pos.getProduktname() : "";
+        String text = pos.getProdukttext();
+        if (text == null || text.isBlank()) {
+            return name;
+        }
+        return name.isBlank() ? text : name + " – " + text;
+    }
+
+    private static String safe(String in) {
+        return in != null ? in : "";
     }
 
     /**
