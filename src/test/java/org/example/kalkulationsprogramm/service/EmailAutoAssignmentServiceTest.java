@@ -27,12 +27,13 @@ class EmailAutoAssignmentServiceTest {
     @Mock private ProjektRepository projektRepository;
     @Mock private AnfrageRepository anfrageRepository;
     @Mock private EmailKiClassificationService emailKiClassificationService;
+    @Mock private PreisanfrageZuordnungService preisanfrageZuordnungService;
 
     private EmailAutoAssignmentService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailAutoAssignmentService(emailRepository, lieferantenRepository, projektRepository, anfrageRepository, emailKiClassificationService);
+        service = new EmailAutoAssignmentService(emailRepository, lieferantenRepository, projektRepository, anfrageRepository, emailKiClassificationService, preisanfrageZuordnungService);
     }
 
     private Email erstelleEmail(String fromAddress, String subject) {
@@ -326,6 +327,36 @@ class EmailAutoAssignmentServiceTest {
             boolean result = service.tryAutoAssign(email);
 
             assertThat(result).isFalse();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 2.2.9 Preisanfrage-Antwort hat Vorrang vor Lieferanten-Domain-Match
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class PreisanfrageAntwort {
+
+        @Test
+        void ordnetPreisanfrageAntwortVorLieferantenDomainZu() {
+            Email email = erstelleEmail("vertrieb@stahlhandel.de", "Re: Preisanfrage PA-2026-001-ABCDE");
+            Lieferanten lieferant = erstelleLieferant(42L, "Stahlhandel Mustermann");
+
+            PreisanfrageLieferant pal = new PreisanfrageLieferant();
+            pal.setId(7L);
+            pal.setToken("PA-2026-001-ABCDE");
+            pal.setLieferant(lieferant);
+
+            when(preisanfrageZuordnungService.tryMatch(email)).thenReturn(java.util.Optional.of(pal));
+
+            boolean result = service.tryAutoAssign(email);
+
+            assertThat(result).isTrue();
+            assertThat(email.getZuordnungTyp()).isEqualTo(EmailZuordnungTyp.LIEFERANT);
+            assertThat(email.getLieferant()).isEqualTo(lieferant);
+            verify(emailRepository).save(email);
+            // Lieferanten-Domain-Match darf NICHT mehr ausgelöst werden
+            verify(lieferantenRepository, never()).findByEmailDomain(any());
         }
     }
 }

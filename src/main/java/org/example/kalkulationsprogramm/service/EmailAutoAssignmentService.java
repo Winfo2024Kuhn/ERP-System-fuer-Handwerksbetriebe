@@ -24,11 +24,12 @@ public class EmailAutoAssignmentService {
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
     private final EmailKiClassificationService emailKiClassificationService;
+    private final PreisanfrageZuordnungService preisanfrageZuordnungService;
 
     /**
      * Versucht eine Email automatisch zuzuordnen.
-     * Priorisierung: Lieferant > Projekt > Anfrage
-     * 
+     * Priorisierung: Preisanfrage-Antwort > Lieferant > Projekt > Anfrage
+     *
      * @return true wenn zugeordnet wurde
      */
     @Transactional
@@ -37,17 +38,40 @@ public class EmailAutoAssignmentService {
             return false; // Bereits zugeordnet
         }
 
-        // 1. Lieferant über Domain
+        // 1. Preisanfrage-Antwort (via parentEmail.messageId oder Token im Betreff)
+        if (tryAssignToPreisanfrage(email)) {
+            return true;
+        }
+
+        // 2. Lieferant über Domain
         if (tryAssignToLieferant(email)) {
             return true;
         }
 
-        // 2. Projekt/Anfrage über Kunden-Email
+        // 3. Projekt/Anfrage über Kunden-Email
         if (tryAssignToKundeEntity(email)) {
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Versucht die Email einer offenen Preisanfrage-Position zuzuordnen. Bei Treffer
+     * wird die Email zusätzlich dem Lieferanten zugewiesen, damit sie weiter im
+     * Lieferanten-Postfach sichtbar bleibt.
+     */
+    @Transactional
+    public boolean tryAssignToPreisanfrage(Email email) {
+        return preisanfrageZuordnungService.tryMatch(email)
+                .map(pal -> {
+                    email.assignToLieferant(pal.getLieferant());
+                    emailRepository.save(email);
+                    log.info("[AutoAssign] Email {} -> PreisanfrageLieferant {} (Lieferant: {})",
+                            email.getId(), pal.getId(), pal.getLieferant().getLieferantenname());
+                    return true;
+                })
+                .orElse(false);
     }
 
     /**
