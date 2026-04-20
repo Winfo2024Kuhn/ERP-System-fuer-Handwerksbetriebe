@@ -5,7 +5,7 @@ import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
     FileText, Gem, Home, Layers, List, Mail, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
-    Calendar, CalendarDays, Plane, Shield, Award, ClipboardCheck, FileCheck2, Wrench, Zap
+    Calendar, CalendarDays, Plane, Shield, Award, ClipboardCheck, FileCheck2, Wrench, Zap, Scale
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { NotificationBell } from './NotificationBell';
@@ -88,6 +88,7 @@ const NAVIGATION: NavCategory[] = [
                 items: [
                     { name: 'Bestellungen', href: '/bestellungen', icon: ShoppingCart },
                     { name: 'Bedarf', href: '/bestellungen/bedarf', icon: List },
+                    { name: 'Preisanfragen', href: '/einkauf/preisanfragen', icon: Scale },
                 ]
             }
         ]

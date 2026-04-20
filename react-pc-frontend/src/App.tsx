@@ -36,6 +36,7 @@ import TerminKalender from './pages/TerminKalender';
 import RechnungsuebersichtEditor from './pages/RechnungsuebersichtEditor';
 import FirmaEditor from './pages/FirmaEditor';
 import BestellungEditor from './pages/BestellungEditor';
+import PreisanfragenPage from './pages/PreisanfragenPage';
 import DocumentEditorPage from './pages/DocumentEditorPage';
 import ArbeitszeitartEditor from './pages/ArbeitszeitartEditor';
 import EinstellungenEditor from './pages/EinstellungenEditor';
@@ -84,6 +85,7 @@ export default function App() {
                 <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />
                 <Route path="/bestellungen" element={<ErrorBoundary><BestellungenUebersicht /></ErrorBoundary>} />
                 <Route path="/bestellungen/bedarf" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
+                <Route path="/einkauf/preisanfragen" element={<ErrorBoundary><PreisanfragenPage /></ErrorBoundary>} />
                 <Route path="/kalender" element={<ErrorBoundary><TerminKalender /></ErrorBoundary>} />
                 <Route path="/analyse" element={<ErrorBoundary><ErfolgsanalyseEditor /></ErrorBoundary>} />
                 <Route path="/formulare" element={<ErrorBoundary><FormularwesenEditor /></ErrorBoundary>} />

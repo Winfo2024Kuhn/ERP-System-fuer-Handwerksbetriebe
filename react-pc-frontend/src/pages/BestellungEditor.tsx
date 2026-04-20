@@ -17,6 +17,7 @@ import {
     Pencil,
     Plus,
     RefreshCw,
+    Scale,
     Send,
     Trash2,
     Truck,
@@ -56,6 +57,22 @@ const toEditPosition = (b: Bestellung): EditPosition => ({
     exportiertAm: b.exportiertAm ?? null,
 });
 import { HicadImportModal } from '../components/HicadImportModal';
+import { AngeboteEinholenModal, type BedarfPosition } from '../components/AngeboteEinholenModal';
+
+const toBedarfPosition = (b: Bestellung): BedarfPosition => ({
+    id: b.id,
+    artikelId: b.artikelId ?? null,
+    externeArtikelnummer: b.externeArtikelnummer ?? null,
+    produktname: b.produktname ?? null,
+    produkttext: b.produkttext ?? null,
+    werkstoffName: b.werkstoffName ?? null,
+    menge: b.menge ?? b.stueckzahl ?? null,
+    einheit: b.einheit ?? null,
+    kommentar: b.kommentar ?? null,
+    projektId: b.projektId ?? null,
+    projektName: b.projektName ?? null,
+    lieferantName: b.lieferantName ?? null,
+});
 
 // Statische Icon-Pfade
 const BASE_URL = '/react-textbausteine/';
@@ -759,6 +776,7 @@ interface GruppeCardProps {
     onEmailClick: (lieferantId: number, lieferantName: string) => void;
     onPdfClick: (lieferantId: number) => void;
     onBatchEditClick: (gruppe: Gruppe) => void;
+    onAngeboteEinholenClick: (gruppe: Gruppe) => void;
 }
 
 const GruppeCard: React.FC<GruppeCardProps> = ({
@@ -768,6 +786,7 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
     onEmailClick,
     onPdfClick,
     onBatchEditClick,
+    onAngeboteEinholenClick,
 }) => {
     const [expanded, setExpanded] = useState(true);
 
@@ -855,6 +874,15 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
                             >
                                 <Download className="w-4 h-4 mr-1" />
                                 PDF
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onAngeboteEinholenClick(gruppe)}
+                                title="Angebote bei mehreren Lieferanten einholen"
+                            >
+                                <Scale className="w-4 h-4 mr-1" />
+                                Angebote einholen
                             </Button>
                             <Button
                                 size="sm"
@@ -977,6 +1005,7 @@ export default function BestellungEditor() {
     const [bestellpositionModalOffen, setBestellpositionModalOffen] = useState(false);
     const [hicadImportOffen, setHicadImportOffen] = useState(false);
     const [batchEditGruppe, setBatchEditGruppe] = useState<Gruppe | null>(null);
+    const [angeboteEinholenGruppe, setAngeboteEinholenGruppe] = useState<Gruppe | null>(null);
     const [groupBy, setGroupBy] = useState<GroupBy>('lieferant');
 
     const markiereLieferantAlsExportiert = useCallback(async (lieferantId: number) => {
@@ -1162,6 +1191,7 @@ export default function BestellungEditor() {
                             onEmailClick={handleEmailClick}
                             onPdfClick={handlePdfClick}
                             onBatchEditClick={handleBatchEditClick}
+                            onAngeboteEinholenClick={setAngeboteEinholenGruppe}
                         />
                     ))}
                 </div>
@@ -1200,6 +1230,14 @@ export default function BestellungEditor() {
                     onSuccess={() => handleEmailSuccess(emailModal.lieferantId)}
                 />
             )}
+
+            {/* Angebote-einholen-Modal (Preisanfrage an mehrere Lieferanten) */}
+            <AngeboteEinholenModal
+                open={angeboteEinholenGruppe != null}
+                onClose={() => setAngeboteEinholenGruppe(null)}
+                vorausgewaehltePositionen={angeboteEinholenGruppe?.items.map(toBedarfPosition)}
+                vorschlagBauvorhaben={angeboteEinholenGruppe?.subtitle}
+            />
         </PageLayout>
     );
 }
