@@ -2,7 +2,9 @@ package org.example.kalkulationsprogramm.dto.Preisanfrage;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -28,6 +30,16 @@ public class PreisanfrageErstellenDto {
 
     /** IDs der Lieferanten, an die die Anfrage geschickt wird. Mindestens einer. */
     private List<Long> lieferantIds = new ArrayList<>();
+
+    /**
+     * Optionale Empfaenger-Adresse pro Lieferant (Key = Lieferant-ID, Value =
+     * gewaehlte E-Mail). Fehlt ein Eintrag, faellt der Versand auf die erste
+     * hinterlegte E-Mail des Lieferanten zurueck. Die Adresse muss in den
+     * {@code kundenEmails} des Lieferanten enthalten sein — andernfalls wird
+     * die Anfrage mit {@code IllegalArgumentException} abgelehnt (kein
+     * Free-Text-Versand, kein Injection-Vektor).
+     */
+    private Map<Long, String> empfaengerProLieferant = new HashMap<>();
 
     /** Positionen der Preisanfrage. Mindestens eine. */
     private List<PreisanfragePositionInputDto> positionen = new ArrayList<>();

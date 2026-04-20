@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Scale, Search, Send, Truck, X } from 'lucide-react';
+import { Briefcase, Loader2, Plus, Scale, Send, Truck, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { DatePicker } from './ui/datepicker';
 import { useToast } from './ui/toast';
 import { cn } from '../lib/utils';
+import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
+import { ProjektSearchModal } from './ProjektSearchModal';
 
 /**
  * Schlankes Interface fuer eine Bedarfsposition, die als Position einer
@@ -26,14 +28,6 @@ export interface BedarfPosition {
     lieferantName?: string | null;
 }
 
-interface LieferantListenEintrag {
-    id: number;
-    lieferantenname: string;
-    ort?: string | null;
-    plz?: string | null;
-    istAktiv?: boolean | null;
-}
-
 interface AngeboteEinholenModalProps {
     open: boolean;
     onClose: () => void;
@@ -49,6 +43,9 @@ interface AngeboteEinholenModalProps {
  * Modal zum Einholen von Angeboten bei mehreren Lieferanten gleichzeitig.
  * Erzeugt eine Preisanfrage und versendet sie sofort an alle gewaehlten
  * Lieferanten. Validierung: mindestens 1 Position + 1 Lieferant + Rueckmeldefrist.
+ *
+ * Lieferanten werden ueber das zentrale `LieferantSearchModal` hinzugefuegt,
+ * Projekte ueber das `ProjektSearchModal` — konsistent zum Rest der App.
  */
 export function AngeboteEinholenModal({
     open,
@@ -64,16 +61,23 @@ export function AngeboteEinholenModal({
     const [positionenLoading, setPositionenLoading] = useState(false);
     const [positionenError, setPositionenError] = useState<string | null>(null);
 
-    const [lieferanten, setLieferanten] = useState<LieferantListenEintrag[]>([]);
-    const [lieferantenLoading, setLieferantenLoading] = useState(false);
-    const [lieferantenSuche, setLieferantenSuche] = useState('');
-
     const [selectedPositionIds, setSelectedPositionIds] = useState<Set<number>>(new Set());
-    const [selectedLieferantIds, setSelectedLieferantIds] = useState<Set<number>>(new Set());
+    const [gewaehlteLieferanten, setGewaehlteLieferanten] = useState<LieferantSuchErgebnis[]>([]);
+    /**
+     * Gewaehlte Empfaenger-Adresse je Lieferant. Wird beim Hinzufuegen mit
+     * der ersten hinterlegten `kundenEmails` vorbelegt; der Nutzer kann via
+     * Dropdown eine andere hinterlegte Adresse waehlen. Nie Free-Text — die
+     * Auswahl wird backend-seitig gegen `kundenEmails` validiert.
+     */
+    const [empfaengerMap, setEmpfaengerMap] = useState<Map<number, string>>(new Map());
     const [antwortFrist, setAntwortFrist] = useState('');
     const [notiz, setNotiz] = useState('');
     const [bauvorhaben, setBauvorhaben] = useState('');
+    const [projektId, setProjektId] = useState<number | null>(null);
     const [submitting, setSubmitting] = useState(false);
+
+    const [lieferantSuchOpen, setLieferantSuchOpen] = useState(false);
+    const [projektSuchOpen, setProjektSuchOpen] = useState(false);
 
     const arbeitsPositionen: BedarfPosition[] = useMemo(() => {
         if (vorausgewaehltePositionen && vorausgewaehltePositionen.length > 0) {
@@ -88,13 +92,16 @@ export function AngeboteEinholenModal({
 
         setNotiz('');
         setAntwortFrist(defaultFristIso(7));
-        setLieferantenSuche('');
-        setSelectedLieferantIds(new Set());
+        setGewaehlteLieferanten([]);
+        setEmpfaengerMap(new Map());
+        setLieferantSuchOpen(false);
+        setProjektSuchOpen(false);
 
         const vorschlag = vorschlagBauvorhaben
             ?? firstProjektName(vorausgewaehltePositionen)
             ?? '';
         setBauvorhaben(vorschlag);
+        setProjektId(firstProjektIdVon(vorausgewaehltePositionen));
 
         if (vorausgewaehltePositionen && vorausgewaehltePositionen.length > 0) {
             setSelectedPositionIds(new Set(vorausgewaehltePositionen.map(p => p.id)));
@@ -123,28 +130,6 @@ export function AngeboteEinholenModal({
             .finally(() => setPositionenLoading(false));
     }, [open, vorausgewaehltePositionen, vorschlagBauvorhaben]);
 
-    // Lieferanten laden (einmalig beim Oeffnen)
-    useEffect(() => {
-        if (!open) return;
-
-        setLieferantenLoading(true);
-        fetch('/api/lieferanten?size=500')
-            .then(async res => {
-                if (!res.ok) throw new Error('Lieferanten konnten nicht geladen werden.');
-                return res.json();
-            })
-            .then((data: unknown) => {
-                const raw = (data as { lieferanten?: LieferantListenEintrag[] })?.lieferanten;
-                const list = Array.isArray(raw) ? raw : [];
-                setLieferanten(list.filter(l => l.istAktiv !== false));
-            })
-            .catch(() => {
-                setLieferanten([]);
-                toast.error('Lieferantenliste konnte nicht geladen werden.');
-            })
-            .finally(() => setLieferantenLoading(false));
-    }, [open, toast]);
-
     const togglePosition = useCallback((id: number) => {
         setSelectedPositionIds(prev => {
             const next = new Set(prev);
@@ -153,27 +138,50 @@ export function AngeboteEinholenModal({
         });
     }, []);
 
-    const toggleLieferant = useCallback((id: number) => {
-        setSelectedLieferantIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id); else next.add(id);
+    const lieferantHinzufuegen = useCallback((lieferant: LieferantSuchErgebnis) => {
+        setGewaehlteLieferanten(prev => {
+            if (prev.some(l => l.id === lieferant.id)) return prev;
+            return [...prev, lieferant];
+        });
+        setEmpfaengerMap(prev => {
+            if (prev.has(lieferant.id)) return prev;
+            const ersteMail = (lieferant.kundenEmails ?? []).find(m => m && m.trim().length > 0);
+            if (!ersteMail) return prev;
+            const next = new Map(prev);
+            next.set(lieferant.id, ersteMail);
             return next;
         });
     }, []);
 
-    const gefilterteLieferanten = useMemo(() => {
-        const q = lieferantenSuche.trim().toLowerCase();
-        if (!q) return lieferanten;
-        return lieferanten.filter(l => {
-            const hay = `${l.lieferantenname ?? ''} ${l.ort ?? ''} ${l.plz ?? ''}`.toLowerCase();
-            return hay.includes(q);
+    const lieferantEntfernen = useCallback((lieferantId: number) => {
+        setGewaehlteLieferanten(prev => prev.filter(l => l.id !== lieferantId));
+        setEmpfaengerMap(prev => {
+            if (!prev.has(lieferantId)) return prev;
+            const next = new Map(prev);
+            next.delete(lieferantId);
+            return next;
         });
-    }, [lieferanten, lieferantenSuche]);
+    }, []);
+
+    const setEmpfaengerFuer = useCallback((lieferantId: number, email: string) => {
+        setEmpfaengerMap(prev => {
+            const next = new Map(prev);
+            next.set(lieferantId, email);
+            return next;
+        });
+    }, []);
+
+    const projektUebernehmen = useCallback((p: { id: number; bauvorhaben: string }) => {
+        setProjektId(p.id);
+        if (p.bauvorhaben && p.bauvorhaben.trim().length > 0) {
+            setBauvorhaben(p.bauvorhaben);
+        }
+    }, []);
 
     const canSubmit = (
         !submitting
         && selectedPositionIds.size > 0
-        && selectedLieferantIds.size > 0
+        && gewaehlteLieferanten.length > 0
         && antwortFrist.trim().length > 0
     );
 
@@ -195,12 +203,24 @@ export function AngeboteEinholenModal({
                 reihenfolge: idx + 1,
             }));
 
+        const lieferantIds = gewaehlteLieferanten.map(l => l.id);
+        const empfaengerProLieferant: Record<number, string> = {};
+        gewaehlteLieferanten.forEach(l => {
+            const mail = empfaengerMap.get(l.id);
+            if (mail && mail.trim().length > 0) {
+                empfaengerProLieferant[l.id] = mail;
+            }
+        });
+
+        const effektiveProjektId = projektId ?? firstProjektIdAusAuswahl(arbeitsPositionen, selectedPositionIds);
+
         const payload = {
-            projektId: firstProjektId(arbeitsPositionen, selectedPositionIds),
+            projektId: effektiveProjektId,
             bauvorhaben: bauvorhaben.trim() || null,
             antwortFrist,
             notiz: notiz.trim() || null,
-            lieferantIds: Array.from(selectedLieferantIds),
+            lieferantIds,
+            empfaengerProLieferant,
             positionen,
         };
 
@@ -225,7 +245,7 @@ export function AngeboteEinholenModal({
                 throw new Error(reason);
             }
 
-            toast.success(`Preisanfrage an ${selectedLieferantIds.size} Lieferant${selectedLieferantIds.size === 1 ? '' : 'en'} versendet.`);
+            toast.success(`Preisanfrage an ${lieferantIds.length} Lieferant${lieferantIds.length === 1 ? '' : 'en'} versendet.`);
             onVersendet?.(created.id);
             onClose();
             navigate('/einkauf/preisanfragen');
@@ -275,19 +295,35 @@ export function AngeboteEinholenModal({
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* Bauvorhaben */}
+                    {/* Bauvorhaben / Projekt */}
                     <section>
                         <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="pa-bauvorhaben">
                             Bauvorhaben <span className="text-slate-400 font-normal">(optional)</span>
                         </label>
-                        <input
-                            id="pa-bauvorhaben"
-                            type="text"
-                            value={bauvorhaben}
-                            onChange={e => setBauvorhaben(e.target.value)}
-                            placeholder="z. B. Stahlbau Musterstraße"
-                            className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
-                        />
+                        <div className="flex gap-2">
+                            <input
+                                id="pa-bauvorhaben"
+                                type="text"
+                                value={bauvorhaben}
+                                onChange={e => setBauvorhaben(e.target.value)}
+                                placeholder="z. B. Stahlbau Musterstraße"
+                                className="flex-1 h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setProjektSuchOpen(true)}
+                                className="shrink-0"
+                            >
+                                <Briefcase className="w-4 h-4 mr-1.5" />
+                                Projekt wählen
+                            </Button>
+                        </div>
+                        {projektId != null && (
+                            <p className="text-xs text-slate-500 mt-1">
+                                Verknüpftes Projekt: #{projektId}
+                            </p>
+                        )}
                     </section>
 
                     {/* Positionen */}
@@ -325,24 +361,22 @@ export function AngeboteEinholenModal({
                     <section>
                         <div className="flex items-center justify-between mb-2">
                             <h3 className="text-sm font-semibold text-slate-800">
-                                Lieferanten <span className="text-slate-500 font-normal">({selectedLieferantIds.size} ausgewählt)</span>
+                                Lieferanten <span className="text-slate-500 font-normal">({gewaehlteLieferanten.length} ausgewählt)</span>
                             </h3>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setLieferantSuchOpen(true)}
+                            >
+                                <Plus className="w-4 h-4 mr-1.5" />
+                                Lieferant hinzufügen
+                            </Button>
                         </div>
-                        <div className="relative mb-2">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <input
-                                type="text"
-                                value={lieferantenSuche}
-                                onChange={e => setLieferantenSuche(e.target.value)}
-                                placeholder="Nach Name, Ort oder PLZ suchen…"
-                                className="w-full h-10 pl-9 pr-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
-                            />
-                        </div>
-                        <LieferantenListe
-                            lieferanten={gefilterteLieferanten}
-                            selectedIds={selectedLieferantIds}
-                            onToggle={toggleLieferant}
-                            loading={lieferantenLoading}
+                        <GewaehlteLieferantenListe
+                            lieferanten={gewaehlteLieferanten}
+                            empfaengerMap={empfaengerMap}
+                            onEmpfaengerChange={setEmpfaengerFuer}
+                            onEntfernen={lieferantEntfernen}
                         />
                     </section>
 
@@ -401,6 +435,19 @@ export function AngeboteEinholenModal({
                     </div>
                 </div>
             </div>
+
+            {/* Sub-Modale */}
+            <LieferantSearchModal
+                isOpen={lieferantSuchOpen}
+                onClose={() => setLieferantSuchOpen(false)}
+                onSelect={lieferantHinzufuegen}
+            />
+            <ProjektSearchModal
+                isOpen={projektSuchOpen}
+                onClose={() => setProjektSuchOpen(false)}
+                onSelect={projektUebernehmen}
+                currentProjektId={projektId ?? undefined}
+            />
         </div>
     );
 }
@@ -488,69 +535,82 @@ function PositionenListe({
     );
 }
 
-function LieferantenListe({
+function GewaehlteLieferantenListe({
     lieferanten,
-    selectedIds,
-    onToggle,
-    loading,
+    empfaengerMap,
+    onEmpfaengerChange,
+    onEntfernen,
 }: {
-    lieferanten: LieferantListenEintrag[];
-    selectedIds: Set<number>;
-    onToggle: (id: number) => void;
-    loading: boolean;
+    lieferanten: LieferantSuchErgebnis[];
+    empfaengerMap: Map<number, string>;
+    onEmpfaengerChange: (lieferantId: number, email: string) => void;
+    onEntfernen: (lieferantId: number) => void;
 }) {
-    if (loading && lieferanten.length === 0) {
-        return (
-            <div className="flex items-center justify-center py-8 text-slate-500 text-sm border border-slate-200 rounded-lg bg-slate-50">
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Lieferanten werden geladen…
-            </div>
-        );
-    }
     if (lieferanten.length === 0) {
         return (
             <div className="py-8 text-center text-sm text-slate-500 border border-dashed border-slate-200 rounded-lg bg-slate-50">
-                Keine Lieferanten gefunden.
+                Noch keine Lieferanten ausgewählt — oben auf „Lieferant hinzufügen" klicken.
             </div>
         );
     }
 
     return (
-        <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
-                {lieferanten.map(l => {
-                    const checked = selectedIds.has(l.id);
-                    return (
-                        <label
-                            key={l.id}
-                            className={cn(
-                                'flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors',
-                                checked && 'bg-rose-50'
-                            )}
-                        >
-                            <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => onToggle(l.id)}
-                                className="w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500"
-                                aria-label={`Lieferant ${l.lieferantenname} auswählen`}
-                            />
-                            <Truck className={cn('w-4 h-4', checked ? 'text-rose-600' : 'text-slate-400')} />
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-slate-900 truncate">
-                                    {l.lieferantenname}
-                                </p>
-                                {(l.plz || l.ort) && (
-                                    <p className="text-xs text-slate-500 truncate">
-                                        {[l.plz, l.ort].filter(Boolean).join(' ')}
-                                    </p>
+        <ul className="space-y-2">
+            {lieferanten.map(l => {
+                const mails = (l.kundenEmails ?? []).filter(m => m && m.trim().length > 0);
+                const gewaehlteMail = empfaengerMap.get(l.id) ?? mails[0] ?? '';
+                return (
+                    <li
+                        key={l.id}
+                        className="flex items-center gap-3 px-3 py-2 border border-slate-200 rounded-lg bg-white"
+                    >
+                        <div className="w-9 h-9 rounded-lg bg-rose-100 flex items-center justify-center shrink-0">
+                            <Truck className="w-4 h-4 text-rose-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-900 truncate">
+                                {l.lieferantenname}
+                            </p>
+                            <div className="mt-1 flex items-center gap-2">
+                                <label
+                                    htmlFor={`pa-empfaenger-${l.id}`}
+                                    className="text-xs text-slate-600 shrink-0"
+                                >
+                                    E-Mail an:
+                                </label>
+                                {mails.length === 0 ? (
+                                    <span className="text-xs text-rose-700 italic">
+                                        Keine E-Mail-Adresse hinterlegt
+                                    </span>
+                                ) : mails.length === 1 ? (
+                                    <span className="text-xs text-slate-700 truncate">{mails[0]}</span>
+                                ) : (
+                                    <select
+                                        id={`pa-empfaenger-${l.id}`}
+                                        value={gewaehlteMail}
+                                        onChange={e => onEmpfaengerChange(l.id, e.target.value)}
+                                        className="h-8 px-2 rounded-md border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 max-w-xs truncate"
+                                        aria-label={`Empfänger-Adresse für ${l.lieferantenname}`}
+                                    >
+                                        {mails.map(m => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
                                 )}
                             </div>
-                        </label>
-                    );
-                })}
-            </div>
-        </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => onEntfernen(l.id)}
+                            className="p-1.5 rounded-full text-slate-400 hover:text-rose-700 hover:bg-rose-50 transition-colors shrink-0"
+                            aria-label={`${l.lieferantenname} entfernen`}
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </li>
+                );
+            })}
+        </ul>
     );
 }
 
@@ -573,7 +633,15 @@ function firstProjektName(positionen?: BedarfPosition[]): string | null {
     return null;
 }
 
-function firstProjektId(positionen: BedarfPosition[], selected: Set<number>): number | null {
+function firstProjektIdVon(positionen?: BedarfPosition[]): number | null {
+    if (!positionen) return null;
+    for (const p of positionen) {
+        if (p.projektId != null) return p.projektId;
+    }
+    return null;
+}
+
+function firstProjektIdAusAuswahl(positionen: BedarfPosition[], selected: Set<number>): number | null {
     for (const p of positionen) {
         if (selected.has(p.id) && p.projektId != null) return p.projektId;
     }

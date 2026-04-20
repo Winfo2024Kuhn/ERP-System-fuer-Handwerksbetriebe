@@ -9,11 +9,28 @@ const mockFetch = vi.fn();
 // Typed global fetch override for test environment
 (globalThis as unknown as { fetch: typeof fetch }).fetch = mockFetch as unknown as typeof fetch;
 
-const LIEFERANTEN = [
-    { id: 101, lieferantenname: 'Stahlhandel A', ort: 'Musterstadt', istAktiv: true },
-    { id: 102, lieferantenname: 'Stahlhandel B', ort: 'Musterdorf', istAktiv: true },
-    { id: 103, lieferantenname: 'Stahlhandel C', ort: 'Musterhausen', istAktiv: true },
-];
+const LIEFERANT_A = {
+    id: 101,
+    lieferantenname: 'Stahlhandel A',
+    ort: 'Musterstadt',
+    istAktiv: true,
+    kundenEmails: ['einkauf@stahl-a.example'],
+};
+const LIEFERANT_B = {
+    id: 102,
+    lieferantenname: 'Stahlhandel B',
+    ort: 'Musterdorf',
+    istAktiv: true,
+    kundenEmails: ['haupt@stahl-b.example', 'zweig@stahl-b.example'],
+};
+const LIEFERANT_C = {
+    id: 103,
+    lieferantenname: 'Stahlhandel C',
+    ort: 'Musterhausen',
+    istAktiv: true,
+    kundenEmails: ['info@stahl-c.example'],
+};
+const LIEFERANTEN = [LIEFERANT_A, LIEFERANT_B, LIEFERANT_C];
 
 const VORAUSGEWAEHLT: BedarfPosition[] = [
     {
@@ -65,8 +82,27 @@ function mockDefaultFetch() {
         if (url === '/api/bestellungen/offen') {
             return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
         }
+        if (url.startsWith('/api/projekte/simple')) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
+}
+
+async function lieferantHinzufuegen(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.click(screen.getByRole('button', { name: /Lieferant hinzufügen/i }));
+    // Im Such-Modal: Klick auf den Listen-Button mit dem Lieferantennamen.
+    // Der Name kommt im Such-Modal innerhalb eines <button> vor — das
+    // unterscheidet ihn sowohl von der Liste unten (<p>) als auch vom
+    // Entfernen-Button (aria-label "… entfernen").
+    const suchDialog = await waitFor(() => {
+        const heading = screen.getByRole('heading', { name: /Lieferant auswählen/i });
+        const container = heading.closest('.fixed');
+        if (!container) throw new Error('Such-Modal nicht gefunden');
+        return container as HTMLElement;
+    });
+    const eintrag = await waitFor(() => within(suchDialog).getByText(name));
+    await user.click(eintrag);
 }
 
 describe('AngeboteEinholenModal', () => {
@@ -75,50 +111,36 @@ describe('AngeboteEinholenModal', () => {
         mockDefaultFetch();
     });
 
-    it('Submit-Button ist disabled, solange kein Lieferant ausgewählt ist', async () => {
+    it('Submit-Button ist disabled, solange kein Lieferant ausgewählt ist', () => {
         renderModal();
-
-        await waitFor(() => {
-            expect(screen.getByText('Stahlhandel A')).toBeInTheDocument();
-        });
-
-        // Positionen sind bereits vorausgewählt, Lieferanten noch nicht
         const submitButton = screen.getByRole('button', { name: /Anfrage versenden/i });
         expect(submitButton).toBeDisabled();
     });
 
-    it('erlaubt die Auswahl mehrerer Lieferanten', async () => {
+    it('erlaubt das Hinzufügen mehrerer Lieferanten über das Such-Modal', async () => {
         const user = userEvent.setup();
         renderModal();
 
-        await waitFor(() => {
-            expect(screen.getByText('Stahlhandel A')).toBeInTheDocument();
-        });
+        await lieferantHinzufuegen(user, 'Stahlhandel A');
+        await lieferantHinzufuegen(user, 'Stahlhandel B');
 
-        const checkboxA = screen.getByRole('checkbox', { name: /Stahlhandel A/i });
-        const checkboxB = screen.getByRole('checkbox', { name: /Stahlhandel B/i });
+        // Beide erscheinen in der Liste der gewählten Lieferanten
+        // (1x in der Liste; beim 2. Klick ist das Such-Modal wieder geschlossen)
+        expect(screen.getByText('Stahlhandel A')).toBeInTheDocument();
+        expect(screen.getByText('Stahlhandel B')).toBeInTheDocument();
 
-        await user.click(checkboxA);
-        await user.click(checkboxB);
-
-        expect(checkboxA).toBeChecked();
-        expect(checkboxB).toBeChecked();
-
-        // Zähler im Lieferanten-Heading muss "(2 ausgewählt)" anzeigen
         const headings = screen.getAllByRole('heading', { level: 3 });
         const lieferantenHeading = headings.find(h => /Lieferanten/i.test(h.textContent ?? ''));
         expect(lieferantenHeading?.textContent).toMatch(/2 ausgewählt/);
 
-        // Submit-Button ist jetzt aktiv (Positionen + Lieferanten + Frist = default gesetzt)
         const submitButton = screen.getByRole('button', { name: /Anfrage versenden/i });
         expect(submitButton).toBeEnabled();
     });
 
-    it('ruft beim Submit erst POST /api/preisanfragen und dann /versenden auf', async () => {
+    it('zeigt Dropdown nur bei mehreren E-Mails und liefert die Auswahl im Payload', async () => {
         const user = userEvent.setup();
-
-        // Spezifischer Mock mit Reihenfolge-Tracking
         const callOrder: string[] = [];
+        let capturedBody: unknown = null;
         mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
             const url = typeof input === 'string' ? input : input.toString();
             if (url.startsWith('/api/lieferanten')) {
@@ -130,68 +152,56 @@ describe('AngeboteEinholenModal', () => {
             if (url === '/api/bestellungen/offen') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
             }
+            if (url.startsWith('/api/projekte/simple')) {
+                return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+            }
             if (url === '/api/preisanfragen' && init?.method === 'POST') {
                 callOrder.push('create');
+                capturedBody = JSON.parse(init.body as string);
                 return Promise.resolve({
-                    ok: true,
-                    status: 201,
-                    headers: new Headers(),
+                    ok: true, status: 201, headers: new Headers(),
                     json: () => Promise.resolve({ id: 4711, nummer: 'PA-2026-001' }),
                 });
             }
             if (url === '/api/preisanfragen/4711/versenden' && init?.method === 'POST') {
                 callOrder.push('send');
-                return Promise.resolve({
-                    ok: true,
-                    status: 200,
-                    headers: new Headers(),
-                    json: () => Promise.resolve({}),
-                });
+                return Promise.resolve({ ok: true, status: 200, headers: new Headers(), json: () => Promise.resolve({}) });
             }
             return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
         });
 
-        const { onClose } = renderModal();
-
-        await waitFor(() => {
-            expect(screen.getByText('Stahlhandel A')).toBeInTheDocument();
-        });
-
-        // Zwei Lieferanten wählen
-        await user.click(screen.getByRole('checkbox', { name: /Stahlhandel A/i }));
-        await user.click(screen.getByRole('checkbox', { name: /Stahlhandel C/i }));
-
-        // Senden
-        const submitButton = screen.getByRole('button', { name: /Anfrage versenden/i });
-        expect(submitButton).toBeEnabled();
-        await user.click(submitButton);
-
-        await waitFor(() => {
-            expect(callOrder).toEqual(['create', 'send']);
-        });
-
-        // Body des ersten POST-Requests pruefen
-        const createCall = mockFetch.mock.calls.find(call => {
-            const url = typeof call[0] === 'string' ? call[0] : String(call[0]);
-            return url === '/api/preisanfragen';
-        });
-        expect(createCall).toBeDefined();
-        const body = JSON.parse((createCall?.[1] as RequestInit).body as string);
-        expect(body.lieferantIds).toEqual([101, 103]);
-        expect(body.positionen).toHaveLength(2);
-        expect(body.positionen[0].artikelInProjektId).toBe(501);
-
-        // onClose wurde nach Erfolg aufgerufen
-        await waitFor(() => expect(onClose).toHaveBeenCalled());
-    });
-
-    it('zeigt alle vorausgewählten Positionen als vorausgehakt an', async () => {
         renderModal();
 
-        await waitFor(() => {
-            expect(screen.getByText('Stahlprofil IPE 200')).toBeInTheDocument();
-        });
+        // A (1 E-Mail) + B (2 E-Mails) hinzufügen
+        await lieferantHinzufuegen(user, 'Stahlhandel A');
+        await lieferantHinzufuegen(user, 'Stahlhandel B');
 
+        // Kein Dropdown fuer A (nur 1 Mail) — die Adresse erscheint als Text
+        expect(screen.getByText('einkauf@stahl-a.example')).toBeInTheDocument();
+        expect(screen.queryByRole('combobox', { name: /Empfänger-Adresse für Stahlhandel A/i })).toBeNull();
+
+        // Dropdown fuer B existiert und default ist die erste Mail
+        const selectB = screen.getByRole('combobox', { name: /Empfänger-Adresse für Stahlhandel B/i });
+        expect((selectB as HTMLSelectElement).value).toBe('haupt@stahl-b.example');
+
+        await user.selectOptions(selectB, 'zweig@stahl-b.example');
+        expect((selectB as HTMLSelectElement).value).toBe('zweig@stahl-b.example');
+
+        const submitButton = screen.getByRole('button', { name: /Anfrage versenden/i });
+        await user.click(submitButton);
+
+        await waitFor(() => expect(callOrder).toEqual(['create', 'send']));
+
+        const body = capturedBody as { lieferantIds: number[]; empfaengerProLieferant: Record<string, string> };
+        expect(body.lieferantIds).toEqual([101, 102]);
+        expect(body.empfaengerProLieferant).toEqual({
+            '101': 'einkauf@stahl-a.example',
+            '102': 'zweig@stahl-b.example',
+        });
+    });
+
+    it('zeigt alle vorausgewählten Positionen als vorausgehakt an', () => {
+        renderModal();
         const checkbox1 = screen.getByRole('checkbox', { name: /Stahlprofil IPE 200/i });
         const checkbox2 = screen.getByRole('checkbox', { name: /Flachstahl 50x5/i });
         expect(checkbox1).toBeChecked();
@@ -202,12 +212,8 @@ describe('AngeboteEinholenModal', () => {
         const user = userEvent.setup();
         renderModal();
 
-        await waitFor(() => {
-            expect(screen.getByText('Stahlhandel A')).toBeInTheDocument();
-        });
+        await lieferantHinzufuegen(user, 'Stahlhandel A');
 
-        // Lieferanten wählen, dann alle Positionen abwählen
-        await user.click(screen.getByRole('checkbox', { name: /Stahlhandel A/i }));
         const alleAbwaehlenButton = screen.getByRole('button', { name: /Alle abwählen/i });
         await user.click(alleAbwaehlenButton);
 
@@ -215,36 +221,35 @@ describe('AngeboteEinholenModal', () => {
         expect(submitButton).toBeDisabled();
     });
 
-    it('erlaubt die Suche in der Lieferantenliste', async () => {
+    it('entfernt einen hinzugefügten Lieferanten wieder', async () => {
         const user = userEvent.setup();
         renderModal();
 
-        await waitFor(() => {
-            expect(screen.getByText('Stahlhandel A')).toBeInTheDocument();
-        });
+        await lieferantHinzufuegen(user, 'Stahlhandel A');
+        expect(screen.getByText('Stahlhandel A')).toBeInTheDocument();
 
-        const suche = screen.getByPlaceholderText(/Nach Name, Ort oder PLZ suchen/i);
-        await user.type(suche, 'Handel B');
-
-        // Nur B darf sichtbar bleiben
-        expect(screen.getByText('Stahlhandel B')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /Stahlhandel A entfernen/i }));
         expect(screen.queryByText('Stahlhandel A')).not.toBeInTheDocument();
-        expect(screen.queryByText('Stahlhandel C')).not.toBeInTheDocument();
     });
 
-    it('zeigt die Rückmeldefrist als Pflichtfeld an', async () => {
+    it('zeigt die Rückmeldefrist als Pflichtfeld an', () => {
         renderModal();
-
-        await waitFor(() => {
-            expect(screen.getByText('Stahlhandel A')).toBeInTheDocument();
-        });
-
         const label = screen.getByText(/Rückmeldefrist/);
-        // Das Sternchen "*" markiert Pflichtfeld
         const wrapper = label.closest('div');
         expect(wrapper).not.toBeNull();
         if (wrapper) {
             expect(within(wrapper).getByText('*')).toBeInTheDocument();
         }
+    });
+
+    it('fügt denselben Lieferanten nicht doppelt hinzu', async () => {
+        const user = userEvent.setup();
+        renderModal();
+
+        await lieferantHinzufuegen(user, 'Stahlhandel A');
+        await lieferantHinzufuegen(user, 'Stahlhandel A');
+
+        // Nur 1x in der Liste (Such-Modal ist jetzt zu)
+        expect(screen.getAllByText('Stahlhandel A')).toHaveLength(1);
     });
 });

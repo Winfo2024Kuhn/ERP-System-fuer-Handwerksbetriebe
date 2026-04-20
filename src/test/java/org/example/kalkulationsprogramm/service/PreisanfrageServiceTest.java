@@ -326,6 +326,87 @@ class PreisanfrageServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.erstellen(dto));
     }
 
+    // ------------------------------------------------------------
+    // Empfaenger-Override pro Lieferant
+    // ------------------------------------------------------------
+
+    @Test
+    void erstellen_mitEmpfaengerOverride_setztVersendetAn() {
+        Lieferanten l = lieferantMitMails(10L, "Stahlhandel",
+                "info@example.com", "verkauf@example.com", "chef@example.com");
+        lenient().when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(l));
+        when(preisanfrageRepository.findMaxLfdNrByPrefix(anyString())).thenReturn(0);
+        when(preisanfrageLieferantRepository.existsByToken(anyString())).thenReturn(false);
+        when(preisanfrageRepository.save(any(Preisanfrage.class))).thenAnswer(i -> i.getArgument(0));
+
+        PreisanfrageErstellenDto dto = new PreisanfrageErstellenDto();
+        dto.setLieferantIds(List.of(10L));
+        dto.getEmpfaengerProLieferant().put(10L, "verkauf@example.com");
+        dto.getPositionen().add(position("Stahl", new BigDecimal("1")));
+
+        Preisanfrage pa = service.erstellen(dto);
+        assertEquals("verkauf@example.com", pa.getLieferanten().get(0).getVersendetAn());
+    }
+
+    @Test
+    void erstellen_ohneOverride_nimmtErsteEmail() {
+        Lieferanten l = lieferantMitMails(10L, "Stahlhandel",
+                "info@example.com", "verkauf@example.com");
+        lenient().when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(l));
+        when(preisanfrageRepository.findMaxLfdNrByPrefix(anyString())).thenReturn(0);
+        when(preisanfrageLieferantRepository.existsByToken(anyString())).thenReturn(false);
+        when(preisanfrageRepository.save(any(Preisanfrage.class))).thenAnswer(i -> i.getArgument(0));
+
+        PreisanfrageErstellenDto dto = new PreisanfrageErstellenDto();
+        dto.setLieferantIds(List.of(10L));
+        dto.getPositionen().add(position("Stahl", new BigDecimal("1")));
+
+        Preisanfrage pa = service.erstellen(dto);
+        assertEquals("info@example.com", pa.getLieferanten().get(0).getVersendetAn());
+    }
+
+    @Test
+    void erstellen_mitFremderEmailAdresseWirft() {
+        Lieferanten l = lieferantMitMails(10L, "Stahlhandel", "info@example.com");
+        lenient().when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(l));
+        when(preisanfrageRepository.findMaxLfdNrByPrefix(anyString())).thenReturn(0);
+
+        PreisanfrageErstellenDto dto = new PreisanfrageErstellenDto();
+        dto.setLieferantIds(List.of(10L));
+        dto.getEmpfaengerProLieferant().put(10L, "angreifer@boese.example");
+        dto.getPositionen().add(position("Stahl", new BigDecimal("1")));
+
+        assertThrows(IllegalArgumentException.class, () -> service.erstellen(dto));
+    }
+
+    @Test
+    void versende_nutztGewaehlteAdresseStattErsterEmail() {
+        Preisanfrage pa = baueFertigePreisanfrage(800L);
+        PreisanfrageLieferant pal = pa.getLieferanten().get(0);
+        List<String> mails = new ArrayList<>();
+        mails.add("info@example.com");
+        mails.add("verkauf@example.com");
+        pal.getLieferant().setKundenEmails(mails);
+        pal.setVersendetAn("verkauf@example.com");
+        when(preisanfrageRepository.findById(800L)).thenReturn(Optional.of(pa));
+        when(pdfGenerator.generatePdfForPreisanfrage(any())).thenReturn(Path.of("x.pdf"));
+        try {
+            when(emailService.sendEmailAndReturnMessageId(anyString(), any(), anyString(),
+                    any(), anyString(), anyString(), any(), any())).thenReturn("<mid@local>");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        service.versendeAnAlleLieferanten(800L);
+
+        try {
+            verify(emailService).sendEmailAndReturnMessageId(eq("verkauf@example.com"),
+                    any(), anyString(), any(), anyString(), anyString(), any(), any());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Test
     void versende_ohneEmailAdresseWirft() {
         Preisanfrage pa = baueFertigePreisanfrage(500L);
@@ -523,6 +604,18 @@ class PreisanfrageServiceTest {
         List<String> emails = new ArrayList<>();
         emails.add("max.mustermann@example.com");
         l.setKundenEmails(emails);
+        return l;
+    }
+
+    private static Lieferanten lieferantMitMails(Long id, String name, String... emails) {
+        Lieferanten l = new Lieferanten();
+        l.setId(id);
+        l.setLieferantenname(name);
+        List<String> list = new ArrayList<>();
+        for (String e : emails) {
+            list.add(e);
+        }
+        l.setKundenEmails(list);
         return l;
     }
 

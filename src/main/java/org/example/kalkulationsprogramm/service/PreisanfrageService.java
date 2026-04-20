@@ -187,6 +187,9 @@ public class PreisanfrageService {
             pa.addPosition(pos);
         }
 
+        Map<Long, String> empfaengerOverride = dto.getEmpfaengerProLieferant() != null
+                ? dto.getEmpfaengerProLieferant()
+                : Map.of();
         for (Long lieferantId : dto.getLieferantIds()) {
             Lieferanten lieferant = lieferantenRepository.findById(lieferantId)
                     .orElseThrow(() -> new IllegalArgumentException(
@@ -195,6 +198,7 @@ public class PreisanfrageService {
             pal.setLieferant(lieferant);
             pal.setStatus(PreisanfrageLieferantStatus.VORBEREITET);
             pal.setToken(generiereEindeutigenToken(pa.getNummer()));
+            pal.setVersendetAn(bestimmeEmpfaenger(lieferant, empfaengerOverride.get(lieferantId)));
             pa.addLieferant(pal);
         }
 
@@ -399,7 +403,9 @@ public class PreisanfrageService {
                 "Kein PreisanfragePdfGenerator registriert - Versand nicht moeglich"));
         Path pdf = generator.generatePdfForPreisanfrage(pal.getId());
 
-        String empfaenger = erstenEmpfaengerErmitteln(pal.getLieferant());
+        String empfaenger = pal.getVersendetAn() != null && !pal.getVersendetAn().isBlank()
+                ? pal.getVersendetAn()
+                : erstenEmpfaengerErmitteln(pal.getLieferant());
         if (empfaenger == null) {
             throw new IllegalStateException(
                     "Lieferant hat keine hinterlegte E-Mail-Adresse: "
@@ -482,6 +488,31 @@ public class PreisanfrageService {
                 .filter(s -> s != null && !s.isBlank())
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Waehlt die Empfaenger-Adresse fuer einen Lieferanten. Ist eine
+     * {@code override}-Adresse angegeben, muss sie in {@code lieferant.kundenEmails}
+     * enthalten sein — sonst wird die Anfrage abgelehnt (verhindert Free-Text-
+     * Adressen und damit versehentliches Versenden an beliebige Empfaenger).
+     * Ohne Override wird die erste nicht-leere Adresse genutzt.
+     */
+    private String bestimmeEmpfaenger(Lieferanten lieferant, String override) {
+        if (override != null && !override.isBlank()) {
+            String normalisiert = override.trim();
+            List<String> erlaubte = lieferant.getKundenEmails() != null
+                    ? lieferant.getKundenEmails()
+                    : List.of();
+            boolean bekannt = erlaubte.stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .anyMatch(s -> s.trim().equalsIgnoreCase(normalisiert));
+            if (!bekannt) {
+                throw new IllegalArgumentException(
+                        "Gewaehlte E-Mail ist beim Lieferanten nicht hinterlegt: " + normalisiert);
+            }
+            return normalisiert;
+        }
+        return erstenEmpfaengerErmitteln(lieferant);
     }
 
     private String naechsteNummer() {

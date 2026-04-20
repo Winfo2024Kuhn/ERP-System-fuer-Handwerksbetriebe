@@ -10,6 +10,7 @@ export interface LieferantSuchErgebnis {
     strasse?: string | null;
     vertreter?: string | null;
     istAktiv?: boolean | null;
+    kundenEmails?: string[] | null;
 }
 
 interface LieferantSearchModalProps {
