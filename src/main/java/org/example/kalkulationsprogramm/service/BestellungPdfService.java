@@ -36,6 +36,7 @@ public class BestellungPdfService {
     private final SchnittbilderRepository schnittbilderRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final ZeugnisService zeugnisService;
+    private final FirmeninformationService firmeninformationService;
 
     private static final byte[] NO_IMAGE = new byte[0];
     private final Map<String, byte[]> schnittbildIconCache = new ConcurrentHashMap<>();
@@ -56,9 +57,7 @@ public class BestellungPdfService {
             writer.setCompressionLevel(0);
             doc.open();
 
-            Image logo = Image.getInstance(BestellungPdfService.class.getResource("/static/firmenlogo_icon.png"));
-            logo.scaleToFit(150, 70);
-            doc.add(logo);
+            addCompanyLogo(doc);
             doc.add(new Paragraph(" "));
             addRueckverfolgbarkeitsInfobox(doc);
 
@@ -168,9 +167,7 @@ public class BestellungPdfService {
             writer.setCompressionLevel(0);
             doc.open();
 
-            Image logo = Image.getInstance(BestellungPdfService.class.getResource("/static/firmenlogo_icon.png"));
-            logo.scaleToFit(150, 70);
-            doc.add(logo);
+            addCompanyLogo(doc);
             doc.add(new Paragraph(" "));
             addRueckverfolgbarkeitsInfobox(doc);
 
@@ -252,6 +249,21 @@ public class BestellungPdfService {
         } catch (IOException e) {
             throw new RuntimeException("PDF generation failed", e);
         }
+    }
+
+    /**
+     * Fuegt das hochgeladene Firmenlogo oben im PDF ein. Ist kein Logo hinterlegt
+     * (oder die Datei fehlt), wird das Logo weggelassen – es gibt bewusst
+     * keinen Fallback auf ein Software-Logo, damit niemals ein fremdes Logo
+     * auf Handwerker-Dokumenten erscheint.
+     */
+    private void addCompanyLogo(Document doc) throws DocumentException {
+        Image logo = firmeninformationService.loadLogoImage();
+        if (logo == null) {
+            return;
+        }
+        logo.scaleToFit(150, 70);
+        doc.add(logo);
     }
 
     /**

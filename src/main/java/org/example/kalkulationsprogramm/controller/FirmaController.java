@@ -8,10 +8,14 @@ import org.example.kalkulationsprogramm.domain.KostenstellenTyp;
 import org.example.kalkulationsprogramm.service.FirmeninformationService;
 import org.example.kalkulationsprogramm.service.KostenstelleService;
 import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * REST Controller für Firmenstammdaten, Kostenstellen und Steuerberater.
@@ -35,6 +39,47 @@ public class FirmaController {
     @PutMapping
     public ResponseEntity<FirmeninformationDto> speichernFirmeninformation(@RequestBody FirmeninformationDto dto) {
         return ResponseEntity.ok(firmeninformationService.speichern(dto));
+    }
+
+    // ==================== FIRMENLOGO ====================
+
+    /**
+     * Laedt das Firmenlogo hoch (multipart). Whitelist: PNG, JPEG, WebP.
+     * Der Client-Dateiname wird bewusst ignoriert – wir speichern unter
+     * {@code logo.<ext>}, um Pfad-Traversal komplett auszuschliessen.
+     */
+    @PostMapping(value = "/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadLogo(@RequestParam("datei") MultipartFile datei) {
+        try {
+            FirmeninformationDto dto = firmeninformationService.speichereLogoDatei(datei);
+            return ResponseEntity.ok(dto);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().body(Map.of("message", "Speichern fehlgeschlagen"));
+        }
+    }
+
+    /**
+     * Liefert das aktuell hinterlegte Firmenlogo als Binary-Response.
+     * 404, falls kein Logo gepflegt ist.
+     */
+    @GetMapping("/logo")
+    public ResponseEntity<byte[]> downloadLogo() {
+        byte[] bytes = firmeninformationService.loadLogoBytes();
+        if (bytes == null) {
+            return ResponseEntity.notFound().build();
+        }
+        String contentType = firmeninformationService.ermittleLogoContentType();
+        MediaType mediaType = contentType != null
+                ? MediaType.parseMediaType(contentType)
+                : MediaType.APPLICATION_OCTET_STREAM;
+        return ResponseEntity.ok().contentType(mediaType).body(bytes);
+    }
+
+    @DeleteMapping("/logo")
+    public ResponseEntity<FirmeninformationDto> deleteLogo() {
+        return ResponseEntity.ok(firmeninformationService.loescheLogoDatei());
     }
 
     // ==================== KOSTENSTELLEN ====================

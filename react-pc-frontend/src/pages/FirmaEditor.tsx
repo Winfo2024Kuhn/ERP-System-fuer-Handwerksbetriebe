@@ -329,6 +329,73 @@ export default function FirmaEditor() {
         Promise.all(base).finally(() => setLoading(false));
     }, [loadFirma, loadKostenstellen, loadSteuerberater, loadMeta, loadEn1090Rollen, features.en1090]);
 
+    // Logo-Upload-State: Cache-Buster, damit das <img> nach Upload/Löschen neu lädt
+    const [logoVersion, setLogoVersion] = useState(0);
+    const [logoUploading, setLogoUploading] = useState(false);
+    const logoSrc = useMemo(
+        () => (firma?.logoDateiname ? `/api/firma/logo?v=${logoVersion}` : null),
+        [firma?.logoDateiname, logoVersion]
+    );
+
+    const uploadLogo = async (file: File) => {
+        const erlaubt = ['image/png', 'image/jpeg', 'image/webp'];
+        if (!erlaubt.includes(file.type)) {
+            toast.error('Ungültiger Dateityp – erlaubt sind PNG, JPEG und WebP.');
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            toast.error('Datei zu groß – maximal 2 MB.');
+            return;
+        }
+        setLogoUploading(true);
+        try {
+            const form = new FormData();
+            form.append('datei', file);
+            const res = await fetch('/api/firma/logo', { method: 'POST', body: form });
+            if (res.ok) {
+                const aktualisiert = await res.json();
+                setFirma(prev => (prev ? { ...prev, logoDateiname: aktualisiert.logoDateiname } : prev));
+                setLogoVersion(v => v + 1);
+                toast.success('Firmenlogo gespeichert.');
+            } else {
+                const text = await res.text();
+                try {
+                    const json = JSON.parse(text);
+                    toast.error(json.message || 'Upload fehlgeschlagen.');
+                } catch {
+                    toast.error('Upload fehlgeschlagen.');
+                }
+            }
+        } catch (e) {
+            console.error('Fehler beim Logo-Upload', e);
+            toast.error('Netzwerkfehler beim Hochladen.');
+        } finally {
+            setLogoUploading(false);
+        }
+    };
+
+    const deleteLogo = async () => {
+        if (!await confirmDialog({
+            title: 'Firmenlogo löschen',
+            message: 'Das hinterlegte Firmenlogo wirklich entfernen?',
+            variant: 'danger',
+            confirmLabel: 'Löschen'
+        })) return;
+        try {
+            const res = await fetch('/api/firma/logo', { method: 'DELETE' });
+            if (res.ok) {
+                setFirma(prev => (prev ? { ...prev, logoDateiname: '' } : prev));
+                setLogoVersion(v => v + 1);
+                toast.success('Firmenlogo entfernt.');
+            } else {
+                toast.error('Löschen fehlgeschlagen.');
+            }
+        } catch (e) {
+            console.error('Fehler beim Löschen des Logos', e);
+            toast.error('Netzwerkfehler beim Löschen.');
+        }
+    };
+
     // Save Firmeninformation
     const saveFirma = async () => {
         if (!firma) return;
@@ -693,6 +760,71 @@ export default function FirmaEditor() {
                     {/* Tab Content */}
                     {activeTab === 'firma' && firma && (
                         <Card className="p-6">
+                            {/* Firmenlogo */}
+                            <div className="mb-8 pb-6 border-b">
+                                <h3 className="text-lg font-semibold text-slate-900 mb-4">Firmenlogo</h3>
+                                <div className="flex items-start gap-6">
+                                    <div className="w-40 h-40 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                        {logoSrc ? (
+                                            <img
+                                                src={logoSrc}
+                                                alt="Firmenlogo"
+                                                className="max-w-full max-h-full object-contain"
+                                            />
+                                        ) : (
+                                            <span className="text-xs text-slate-400 text-center px-4">
+                                                Kein Logo hinterlegt
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 space-y-3">
+                                        <p className="text-sm text-slate-600">
+                                            Das hier hochgeladene Logo erscheint auf allen generierten PDFs
+                                            (Angebote, Rechnungen, Bestellungen, Preisanfragen). Formate:
+                                            PNG, JPEG oder WebP, maximal 2&nbsp;MB.
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <label className={cn(
+                                                "inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg cursor-pointer transition",
+                                                logoUploading
+                                                    ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                                                    : "bg-rose-600 text-white hover:bg-rose-700"
+                                            )}>
+                                                {logoUploading ? (
+                                                    <RefreshCw className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                    <Plus className="w-4 h-4" />
+                                                )}
+                                                {firma.logoDateiname ? 'Logo ersetzen' : 'Logo hochladen'}
+                                                <input
+                                                    type="file"
+                                                    accept="image/png,image/jpeg,image/webp"
+                                                    className="hidden"
+                                                    disabled={logoUploading}
+                                                    onChange={e => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) void uploadLogo(file);
+                                                        e.target.value = '';
+                                                    }}
+                                                />
+                                            </label>
+                                            {firma.logoDateiname && (
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={deleteLogo}
+                                                    disabled={logoUploading}
+                                                >
+                                                    <Trash2 className="w-4 h-4 mr-1" />
+                                                    Entfernen
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* Allgemeine Daten */}
                                 <div className="space-y-4">
