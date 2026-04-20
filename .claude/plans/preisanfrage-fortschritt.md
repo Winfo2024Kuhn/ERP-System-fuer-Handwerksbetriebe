@@ -124,14 +124,14 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 ### ⏳ Etappe 3: PDF-Variante + Firmenlogo-Upload (FirmaEditor)
 **Commit-Ziel:** `feat(firma): Firmenlogo-Upload im FirmaEditor` + `feat(preisanfrage): PDF-Variante`
 
-**Firmenlogo-Upload (eigener Sub-Commit vor der PDF-Variante!):**
-- [ ] Endpoint `POST /api/firma/logo` (multipart) in `FirmaController`
-- [ ] Endpoint `GET /api/firma/logo` (liefert Bild-Binary)
-- [ ] Endpoint `DELETE /api/firma/logo`
-- [ ] Upload-Verzeichnis `uploads/firma/logo/` (gitignored prüfen!)
-- [ ] Service-Methode `FirmeninformationService.loadLogoImage()` → liefert iText-Image oder `null`
-- [ ] `BestellungPdfService` Zeile 59 + 171: ersetze Hart-Link durch `loadLogoImage()`
-- [ ] FirmaEditor.tsx: Upload-Feld mit Vorschau + Löschen-Button
+**Firmenlogo-Upload (eigener Sub-Commit vor der PDF-Variante!) — Commit `c4e14c3`:**
+- [x] Endpoint `POST /api/firma/logo` (multipart) in `FirmaController`
+- [x] Endpoint `GET /api/firma/logo` (liefert Bild-Binary)
+- [x] Endpoint `DELETE /api/firma/logo`
+- [x] Upload-Verzeichnis `uploads/firma/logo/` (gitignored prüfen!) — `/uploads` bereits in `.gitignore`
+- [x] Service-Methode `FirmeninformationService.loadLogoImage()` → liefert iText-Image oder `null`
+- [x] `BestellungPdfService` Zeile 59 + 171: ersetze Hart-Link durch `loadLogoImage()`
+- [x] FirmaEditor.tsx: Upload-Feld mit Vorschau + Löschen-Button
 
 **PDF-Variante Preisanfrage:**
 - [ ] `BestellungPdfService.generatePdfForPreisanfrage(palId)` neue Methode
@@ -246,4 +246,5 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 | 2026-04-20 | Opus 4.7 | Erkundung (Etappe 0) abgeschlossen, alle Entscheidungen geklärt, V227 SQL geschrieben, Security-Fix vorab (Commit `7072ffb`). Stopp nach Diskussion über Bedarf/Bestellung-Trennung: bleibt für diesen Scope wie ist, Folge-Features B+C separat. |
 | 2026-04-20 | Opus 4.7 | Pläne ins Repo verschoben (Commit `3ef5f98`). Etappe 1 fertig: 4 Entities + 2 Enums + 4 Repositories angelegt, `./mvnw.cmd compile` grün. Commit folgt. |
 | 2026-04-20 | Opus 4.7 | Etappe 2 fertig (Commit `0e52f4a`): TokenGenerator + PreisanfrageService (6 Methoden) + 4 DTOs + PreisanfragePdfGenerator-Strategy-Interface + 23 neue Tests. Komplette Suite grün: 1176 Tests, 0 Failures. Architektur-Entscheidungen: `Optional<PreisanfragePdfGenerator>` entkoppelt von Etappe 3, `EmailServiceFactory` für Test-Injection, explizites `@Autowired` bei Dual-Constructor. |
+| 2026-04-20 | Opus 4.7 | Etappe 3a fertig (Commit `c4e14c3`): Firmenlogo-Upload mit 3 Endpoints (POST/GET/DELETE `/api/firma/logo`), MIME-Whitelist (PNG/JPEG/WebP), 2-MB-Limit, Pfad-Traversal-Schutz (serverseitiger Zielname `logo.<ext>`, `startsWith`-Check), FirmeninformationService + FirmaController erweitert. BestellungPdfService nutzt jetzt `loadLogoImage()` statt Hard-Link (Option B: kein Software-Fallback). FirmaEditor.tsx: Upload/Vorschau/Delete mit Cache-Busting via `logoVersion`. 18 neue Tests (7 Controller + 11 Service), volle Suite grün: **1194 Tests, 0 Failures**. TypeScript-Check grün (Exit 0). |
 
