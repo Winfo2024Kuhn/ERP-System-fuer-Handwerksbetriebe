@@ -431,13 +431,27 @@ export default function LieferantenEditor() {
             });
 
             if (!res.ok) {
-                const errData = await res.json();
-                toast.error(errData.message || "Speichern fehlgeschlagen");
+                let message = "Speichern fehlgeschlagen";
+                try {
+                    const contentType = res.headers.get("content-type") || "";
+                    if (contentType.includes("application/json")) {
+                        const errData = await res.json();
+                        message = errData.message || errData.detail || message;
+                    } else if (res.status === 409) {
+                        message = "Ein Lieferant mit diesem Namen existiert bereits.";
+                    } else if (res.status >= 500) {
+                        message = "Server-Fehler beim Speichern. Bitte Server neu starten und erneut versuchen.";
+                    }
+                } catch {
+                    // JSON-Parsing fehlgeschlagen, Standardmeldung bleibt
+                }
+                toast.error(message);
                 return;
             }
 
             setIsModalOpen(false);
             setEditingLieferant(null);
+            toast.success(data.id ? "Lieferant aktualisiert." : "Lieferant wurde angelegt.");
 
             if (viewMode === 'detail' && selectedLieferant?.id === data.id) {
                 handleDetail(data);
@@ -446,7 +460,7 @@ export default function LieferantenEditor() {
             }
         } catch (err) {
             console.error(err);
-            toast.error("Ein Fehler ist aufgetreten.");
+            toast.error("Verbindungsfehler – bitte Server und Internetverbindung prüfen.");
         }
     };
 
@@ -799,6 +813,12 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                                 </span>
                             ))}
                         </div>
+                        {(formData.kundenEmails || []).length === 0 && (
+                            <p className="text-xs text-amber-600 flex items-center gap-1.5 mt-1">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                Ohne E-Mail-Adresse werden eingehende Rechnungen diesem Lieferanten nicht automatisch zugeordnet.
+                            </p>
+                        )}
                     </div>
                 </div>
 

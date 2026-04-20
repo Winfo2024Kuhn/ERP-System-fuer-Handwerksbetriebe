@@ -190,7 +190,7 @@ public class LieferantenController {
                     org.example.kalkulationsprogramm.event.EmailAddressChangedEvent.EntityType.LIEFERANT,
                     saved.getId(),
                     saved.getKundenEmails()));
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
         }
         return lieferantMapper.toListItem(saved);
     }
@@ -234,7 +234,7 @@ public class LieferantenController {
                             lieferant.getId(),
                             lieferant.getKundenEmails(),
                             lieferant.getKundenEmails()));
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
         }
 
         LieferantDetailDto detail = lieferantenDetailService.loadDetails(id);
@@ -473,7 +473,7 @@ public class LieferantenController {
                     lieferant.getId(),
                     List.of(normalized),
                     new ArrayList<>(lieferant.getKundenEmails())));
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
         }
 
         return ResponseEntity.ok(Map.of("message", "E-Mail-Adresse gespeichert", "added", true));
