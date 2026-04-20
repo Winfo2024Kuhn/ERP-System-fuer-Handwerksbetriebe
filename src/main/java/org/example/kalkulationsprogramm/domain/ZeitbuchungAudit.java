@@ -79,7 +79,7 @@ public class ZeitbuchungAudit {
 
         /** Über welchen Kanal wurde geändert */
         @Enumerated(EnumType.STRING)
-        @Column(name = "geaendert_via", length = 50, nullable = false)
+        @Column(name = "geaendert_via", columnDefinition = "VARCHAR(50)", nullable = false)
         private ErfassungsQuelle geaendertVia;
 
         /** Begründung für die Änderung (Pflicht bei GEAENDERT/STORNIERT) */
