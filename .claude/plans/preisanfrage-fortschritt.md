@@ -17,6 +17,7 @@ hier den aktuellen Stand und hakt erledigte Punkte ab (bzw. ergänzt neue Aufgab
 4. **Architektur-Entscheidungen NIE still ändern** — immer unten dokumentieren, damit der nächste Agent nicht neu diskutiert.
 5. **Commit-Strategie:** Kleine Commits pro Etappe (siehe Original-Plan Abschnitt 9).
 6. **Vor dem Commit:** `./mvnw.cmd test -q | tail -20` muss grün sein.
+7. Nach jeder Aufgabe Skill: /review-and-ship ausführen
 
 ---
 
@@ -85,21 +86,40 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 - [ ] Spring Boot startet lokal ohne Migration-Fehler (user-seitig zu verifizieren)
 - [x] Commit erstellen — Hash siehe unten im Session-Log
 
-### ⏳ Etappe 2: Service + TokenGenerator + Backend-Tests
+### ✅ Etappe 2: Service + TokenGenerator + Backend-Tests
 **Commit-Ziel:** `feat(preisanfrage): Service + TokenGenerator + Tests`
 
-- [ ] `util/TokenGenerator.java` (Alphabet `A-Z` + `2-9`, ohne 0,O,1,I)
-- [ ] `service/PreisanfrageService.java` mit Methoden:
-  - [ ] `erstellen(PreisanfrageErstellenDto)`
-  - [ ] `versendeAnAlleLieferanten(Long)`
-  - [ ] `versendeAnEinzelnenLieferanten(Long)`
-  - [ ] `getVergleich(Long)` — gibt `PreisanfrageVergleichDto` zurück
-  - [ ] `eintragen(PreisanfrageAngebotEintragenDto)`
-  - [ ] `vergebeAuftrag(Long, Long)` — Umrouten auf Gewinner (siehe Entscheidungen)
-- [ ] Test `PreisanfrageServiceTest.java` (5 Happy-Paths + 1 Fehlerfall pro Methode)
-- [ ] Security-Tests (SQLi in Notiz, XSS, negative IDs)
-- [ ] `./mvnw.cmd test` grün
-- [ ] Commit erstellen
+- [x] `util/TokenGenerator.java` (Alphabet `A-Z` + `2-9`, ohne 0,O,1,I) — mit Retry-Helper
+- [x] `service/PreisanfragePdfGenerator.java` — funktionales Interface, wird in Etappe 3 von `BestellungPdfService` implementiert
+- [x] DTOs minimal (da Service sie in Signaturen braucht):
+  - [x] `PreisanfrageErstellenDto`
+  - [x] `PreisanfragePositionInputDto`
+  - [x] `PreisanfrageAngebotEintragenDto`
+  - [x] `PreisanfrageVergleichDto` (inkl. `LieferantSpalte`, `PositionZeile`, `AngebotsZelle`)
+- [x] `service/PreisanfrageService.java` mit Methoden:
+  - [x] `erstellen(PreisanfrageErstellenDto)`
+  - [x] `versendeAnAlleLieferanten(Long)`
+  - [x] `versendeAnEinzelnenLieferanten(Long)`
+  - [x] `getVergleich(Long)` — gibt `PreisanfrageVergleichDto` zurück
+  - [x] `eintragen(PreisanfrageAngebotEintragenDto)` — aktualisiert autom. Status
+  - [x] `vergebeAuftrag(Long, Long)` — routet `ArtikelInProjekt.lieferant`/`preisProStueck` auf Gewinner um
+  - [x] `listeLieferanten(Long)` Bonus-Methode für spätere Views
+- [x] Test `TokenGeneratorTest.java` (6 Tests — Alphabet, Retry, Null-Guard)
+- [x] Test `PreisanfrageServiceTest.java` (17 Tests — 6 Happy-Paths + 5 Fehlerfälle + 5 Security + Stub-Factory für `EmailService`)
+- [x] Security-Tests (SQLi in Notiz, XSS in Produktname + Lieferantenname/Mail-Body, negative IDs, null-IDs, negative Einzelpreise)
+- [x] `./mvnw.cmd test` grün — **1176 Tests, 0 Failures** (inkl. bestehender Integration-Tests)
+- [x] Commit erstellen — Hash siehe Session-Log
+
+**Architektur-Notizen (für nachfolgende Agenten):**
+- `PreisanfrageService` nutzt `Optional<PreisanfragePdfGenerator>` — Spring injiziert `Optional.empty()`,
+  solange Etappe 3 die Implementierung nicht geliefert hat. Versand schlägt bis dahin mit klarer
+  `IllegalStateException` fehl; Test nutzt Mock.
+- Versand via package-private `EmailServiceFactory` (default: `EmailService::new`),
+  austauschbar im Test — kein echter SMTP-Zugriff in Tests, keine Secrets.
+- `@Autowired` explizit am Produktiv-Konstruktor, weil der Service zwei Konstruktoren hat
+  (zweiter ist nur für Tests, package-private).
+- Nummer-Format final: `PA-{YYYY}-{3-stellige lfdNr}`. Token-Format: `PA-{YYYY}-{lfdNr}-{5 Zeichen aus A-Z+2-9}`.
+- HTML-Mail-Body HTML-escaped Lieferantenname und Token — XSS-Test deckt das ab.
 
 ### ⏳ Etappe 3: PDF-Variante + Firmenlogo-Upload (FirmaEditor)
 **Commit-Ziel:** `feat(firma): Firmenlogo-Upload im FirmaEditor` + `feat(preisanfrage): PDF-Variante`
