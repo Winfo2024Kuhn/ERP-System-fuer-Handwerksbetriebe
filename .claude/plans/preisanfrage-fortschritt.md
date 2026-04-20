@@ -5,7 +5,7 @@ hier den aktuellen Stand und hakt erledigte Punkte ab (bzw. ergänzt neue Aufgab
 
 **Originaler Plan:** [preisanfrage-mehrere-lieferanten.md](preisanfrage-mehrere-lieferanten.md)
 **Branch:** `feature/en1090-echeck` (wird vor Merge auf `feature/preisanfrage-multi-lieferant` umgebogen)
-**Letzter Commit dieses Features:** `18c53d6` (Etappe 4: Preisanfrage-Auto-Zuordnung via parentEmail/Token)
+**Letzter Commit dieses Features:** `12fbeae` (Etappe 5: Controller + DTOs + Mapper)
 
 ---
 
@@ -164,20 +164,32 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 - Token-Regex extrahiert immer nur den sauberen Token — SQL-/HTML-Payloads drumrum landen nie im Repository-Call (explizit getestet).
 - KEIN neuer `EmailZuordnungTyp.PREISANFRAGE_ANTWORT` (bewusste Entscheidung aus Original-Plan 4.8): Die Mail bleibt `LIEFERANT`-zugeordnet, der Link zur Preisanfrage läuft rückwärts über `PreisanfrageLieferant.antwortEmail`.
 
-### ⏳ Etappe 5: Controller + DTOs + Mapper
-**Commit-Ziel:** `feat(preisanfrage): Controller + DTOs + Mapper`
+### ✅ Etappe 5: Controller + DTOs + Mapper
+**Commit-Ziel:** `feat(preisanfrage): Controller + DTOs + Mapper` (Commit `12fbeae`)
 
-- [ ] DTOs unter `dto/Preisanfrage/`:
-  - [ ] `PreisanfrageErstellenDto`
-  - [ ] `PreisanfragePositionDto`
-  - [ ] `PreisanfrageResponseDto`
-  - [ ] `PreisanfrageVergleichDto`
-  - [ ] `PreisanfrageAngebotEintragenDto`
-- [ ] `mapper/PreisanfrageMapper.java`
-- [ ] `controller/PreisanfrageController.java` (10 Endpoints, siehe Original-Plan 4.9)
-- [ ] `UnifiedEmailDto` erweitern um `preisanfrageLieferantRef`
-- [ ] `@WebMvcTest PreisanfrageControllerTest` (Happy-Paths + 404)
-- [ ] Commit erstellen
+- [x] DTOs unter `dto/Preisanfrage/`:
+  - [x] `PreisanfrageErstellenDto` (bereits in Etappe 2 angelegt)
+  - [x] `PreisanfragePositionDto` — neu (Output-DTO für Positionen)
+  - [x] `PreisanfrageResponseDto` — neu (Detail-Ansicht inkl. Lieferanten + Positionen)
+  - [x] `PreisanfrageLieferantDto` — neu (Helper für Response, kein Entity-Leak)
+  - [x] `PreisanfrageVergleichDto` (bereits in Etappe 2 angelegt)
+  - [x] `PreisanfrageAngebotEintragenDto` (bereits in Etappe 2 angelegt)
+- [x] `mapper/PreisanfrageMapper.java` — expliziter `@Component` im `ProjektMapper`-Stil (kein MapStruct), null-safe, Lazy-Relations-freundlich
+- [x] `controller/PreisanfrageController.java` — 10 Endpoints mit `@Valid`, DTO-only Responses, `X-Error-Reason`-Header bei 400/404/409, PDF-Download via `InputStreamResource`
+- [x] Service um `findeById` / `listeAlle(filterStatus)` / `abbrechen(id)` erweitert
+- [x] `UnifiedEmailDto` erweitert um `preisanfrageLieferantRef` (inner DTO `PreisanfrageLieferantRef` mit `preisanfrageId/nummer/palId/lieferantId/lieferantenname`); `UnifiedEmailController` injiziert `PreisanfrageLieferantRepository` und mappt rückwärts via `findByAntwortEmail_Id` in `toListDto`/`toDto`
+- [x] Neuer Repo-Lookup `PreisanfrageLieferantRepository.findByAntwortEmail_Id(Long emailId)`
+- [x] `@WebMvcTest PreisanfrageControllerTest` — 27 Tests: Happy-Paths aller 10 Endpoints, 404 bei `IllegalArgumentException`, 409 bei `IllegalStateException`, 400 bei Bean-Validation-Failures, Security-Cases (XSS in Notiz passt durch — Controller ist Pass-Through, Sanitizing ist Frontend-Rolle; SQLi in Status-Filter → `parseStatus` liefert `null` statt 500; negative/null IDs → 400/404)
+- [x] 7 Service-Unit-Tests für die neuen Methoden (`findeById`/`listeAlle` mit und ohne Status-Filter / `abbrechen` Happy-Path + IllegalState bei VERGEBEN + IllegalArgument bei unbekannter ID)
+- [x] `./mvnw.cmd test` grün — **1238 Tests, 0 Failures**
+- [x] Commit erstellt: `12fbeae`
+
+**Architektur-Notizen (für nachfolgende Agenten):**
+- **Kein `@PreAuthorize`**: Das Projekt nutzt durchgängig keine Method-Security-Annotationen (0 Treffer im Grep). Zugriffsschutz läuft global über `SecurityConfig` (`/api/**` mit Session-Auth). Der neue Controller folgt dem Muster; keine neue Security-Abstraktion einführen.
+- **DTO-Strategy**: `PreisanfrageResponseDto` enthält gezielt NICHT die Angebote/Preise pro Lieferant — die gehören in den `PreisanfrageVergleichDto` (eigener Endpoint `/vergleich`). Sauber getrennt, damit Listen-Views leichtgewichtig bleiben.
+- **Fehler-Mapping im Controller**: `IllegalArgumentException` → 404 (not found), `IllegalStateException` → 409 (conflict), Bean-Validation-Failure → 400. Grund: der Service wirft bewusst nur diese zwei Exception-Typen — so entfallen Custom-Exceptions.
+- **`parseStatus(String)` toleriert Müll**: unbekannter Enum-Wert im Query-Param liefert `null` (= kein Filter) statt 500. Das verhindert, dass ein SQLi-Versuch (`?status=';DROP TABLE--`) zum Server-Error wird.
+- **UnifiedEmailDto-Ruecklink**: Das Feld `preisanfrageLieferantRef` ist **optional** (`null` wenn die E-Mail nichts mit einer Preisanfrage zu tun hat). Für Etappe 8 (EmailCenter-Badge) kann das Frontend direkt darauf mappen, ohne zusätzliche Roundtrips.
 
 ### ⏳ Etappe 6: Frontend Seite + AngeboteEinholenModal
 **Commit-Ziel:** `feat(preisanfrage): Frontend-Seite + AngeboteEinholenModal`
@@ -260,4 +272,5 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 | 2026-04-20 | Opus 4.7 | Etappe 3a fertig (Commit `c4e14c3`): Firmenlogo-Upload mit 3 Endpoints (POST/GET/DELETE `/api/firma/logo`), MIME-Whitelist (PNG/JPEG/WebP), 2-MB-Limit, Pfad-Traversal-Schutz (serverseitiger Zielname `logo.<ext>`, `startsWith`-Check), FirmeninformationService + FirmaController erweitert. BestellungPdfService nutzt jetzt `loadLogoImage()` statt Hard-Link (Option B: kein Software-Fallback). FirmaEditor.tsx: Upload/Vorschau/Delete mit Cache-Busting via `logoVersion`. 18 neue Tests (7 Controller + 11 Service), volle Suite grün: **1194 Tests, 0 Failures**. TypeScript-Check grün (Exit 0). |
 | 2026-04-20 | Opus 4.7 | Etappe 3b fertig (Commit `d0d1590`): `BestellungPdfService implements PreisanfragePdfGenerator`, neue Methode `generatePdfForPreisanfrage(palId)` mit Firmenlogo, roter Kopfzeile "PREISANFRAGE {nummer}", Token-Box, Hinweis "Bitte Code angeben", Rückmeldefrist (deutsches Datumsformat) und Positionen-Tabelle mit leerer Spalte "Ihr Preis €/Einheit". Bewusst ohne EN-1090-Infobox/Zeugnis-Block. Konstruktor um `PreisanfrageLieferantRepository` + `PreisanfragePositionRepository` erweitert, `@AllArgsConstructor` durch expliziten Konstruktor ersetzt. Tests auf Factory-Helper `newService()` umgestellt, neuer Test `generatePdfForPreisanfrage_enthaeltTokenUndNummer` assertet Nummer + Token im PDF. **1195 Tests, 0 Failures**. |
 | 2026-04-20 | Opus 4.7 | Etappe 4 fertig (Commit `18c53d6`): neuer `PreisanfrageZuordnungService` mit `tryMatch(Email)` — Primary-Match über `parentEmail.messageId`, Fallback Token-Regex `PA-\d{4}-\d{3}-[A-Z2-9]{5}` im Betreff. Bei Treffer: `antwortEmail` setzen, Status `BEANTWORTET`, `antwortErhaltenAm = now()`, save. `EmailAutoAssignmentService.tryAutoAssign` ruft `tryAssignToPreisanfrage` als erste Regel vor `tryAssignToLieferant` — bei Match zusätzlich `email.assignToLieferant(pal.lieferant)` (Mail bleibt im Lieferanten-Postfach sichtbar). 6 neue Tests im `PreisanfrageZuordnungServiceTest` (inkl. Security-Case für SQL/HTML-Payload-Isolation im Betreff) + 1 neuer Happy-Path im `EmailAutoAssignmentServiceTest` (Vorrang vor Domain-Match). Konstruktor des AutoAssignmentService um `PreisanfrageZuordnungService` erweitert. **1204 Tests, 0 Failures**. |
+| 2026-04-20 | Opus 4.7 | Etappe 5 fertig (Commit `12fbeae`): REST-Schicht komplett — `PreisanfrageController` (10 Endpoints) mit `@Valid`-Input-Validierung, DTO-only-Responses (`PreisanfrageResponseDto`, `PreisanfragePositionDto`, `PreisanfrageLieferantDto`), expliziter `PreisanfrageMapper` im `ProjektMapper`-Stil (kein MapStruct). Service um `findeById`/`listeAlle(filterStatus)`/`abbrechen` erweitert. `UnifiedEmailDto` zeigt jetzt `preisanfrageLieferantRef` → EmailCenter kann Badge "Preisanfrage PA-YYYY-NNN" + Quick-Action "Preise eintragen" rendern (Etappe 8). Neuer Repo-Lookup `PreisanfrageLieferantRepository.findByAntwortEmail_Id`. Fehler-Mapping: `IllegalArgumentException`→404, `IllegalStateException`→409, Bean-Validation→400, `X-Error-Reason`-Header. `parseStatus` liefert bei unbekanntem Enum-Wert `null` (kein 500 bei SQLi-Probe). 27 Controller-Tests + 7 neue Service-Tests (`findeById`/`listeAlle`/`abbrechen` mit Happy-Path + Fehlerfällen). **1238 Tests, 0 Failures**. **Kein `@PreAuthorize` eingeführt** — Projekt nutzt durchgängig globale `SecurityConfig`. |
 
