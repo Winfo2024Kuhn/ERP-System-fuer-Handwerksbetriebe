@@ -99,6 +99,32 @@ class BestellungPdfServiceTest {
     }
 
     @Test
+    void generatePdfForPreisanfrage_wirftBeiNullId() {
+        BestellungPdfService service = newService(Mockito.mock(BestellungService.class));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.generatePdfForPreisanfrage(null));
+    }
+
+    @Test
+    void generatePdfForPreisanfrage_wirftWennLieferantNichtGefunden() {
+        BestellungService bestellungService = Mockito.mock(BestellungService.class);
+        SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
+        DateiSpeicherService dateiSpeicherService = Mockito.mock(DateiSpeicherService.class);
+        ZeugnisService zeugnisService = Mockito.mock(ZeugnisService.class);
+        FirmeninformationService firmeninformationService = Mockito.mock(FirmeninformationService.class);
+        PreisanfrageLieferantRepository palRepo = Mockito.mock(PreisanfrageLieferantRepository.class);
+        PreisanfragePositionRepository posRepo = Mockito.mock(PreisanfragePositionRepository.class);
+        Mockito.when(palRepo.findById(999L)).thenReturn(Optional.empty());
+
+        BestellungPdfService service = new BestellungPdfService(bestellungService,
+                schnittbilderRepository, dateiSpeicherService, zeugnisService,
+                firmeninformationService, palRepo, posRepo);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.generatePdfForPreisanfrage(999L));
+    }
+
+    @Test
     void generatePdfForPreisanfrage_enthaeltTokenUndNummer() throws Exception {
         BestellungService bestellungService = Mockito.mock(BestellungService.class);
         SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
