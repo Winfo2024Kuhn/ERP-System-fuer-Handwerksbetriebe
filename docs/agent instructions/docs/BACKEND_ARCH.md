@@ -14,7 +14,7 @@
 ## Coding-Regeln
 - **Injection:** Constructor Injection; Lombok `@AllArgsConstructor` ist erlaubt.
 - **SQL:** Nur parametrisierte Queries (`@Query` mit `:param`), kein String-Concat.
-- **Flyway:** Neue Skripte unter `src/main/resources/db/migration/V{N}__{beschreibung}.sql`. Bestehende Migrationen NIEMALS ändern.
+- **Flyway:** Neue Skripte unter `src/main/resources/db/migration/V{N}__{beschreibung}.sql`. Bestehende Migrationen NIEMALS ändern. Sollen immer idempotent sein!! 
 
 ## Architektur-Patterns
 - **Audit-Trail:** GoBD-konform (`ZeitbuchungAudit`, vollständige Snapshots).
