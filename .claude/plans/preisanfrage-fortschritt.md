@@ -5,7 +5,7 @@ hier den aktuellen Stand und hakt erledigte Punkte ab (bzw. ergänzt neue Aufgab
 
 **Originaler Plan:** [preisanfrage-mehrere-lieferanten.md](preisanfrage-mehrere-lieferanten.md)
 **Branch:** `feature/en1090-echeck` (wird vor Merge auf `feature/preisanfrage-multi-lieferant` umgebogen)
-**Letzter Commit dieses Features:** `d0d1590` (Etappe 3b: PDF-Variante Preisanfrage)
+**Letzter Commit dieses Features:** `18c53d6` (Etappe 4: Preisanfrage-Auto-Zuordnung via parentEmail/Token)
 
 ---
 
@@ -147,15 +147,22 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 - [x] `./mvnw.cmd test` grün — **1195 Tests, 0 Failures**
 - [x] Commit (Logo und PDF getrennt: `c4e14c3` + `d0d1590`)
 
-### ⏳ Etappe 4: Auto-Zuordnung via parentEmail
+### ✅ Etappe 4: Auto-Zuordnung via parentEmail
 **Commit-Ziel:** `feat(email): Preisanfrage-Auto-Zuordnung via parentEmail/Token`
 
-- [ ] `service/PreisanfrageZuordnungService.java`
-  - [ ] `tryMatch(Email incoming)` via `parentEmail.messageId` ODER Token-Regex im Betreff
-  - [ ] Bei Match: `PreisanfrageLieferant.antwortEmail = incoming`, Status `BEANTWORTET`
-- [ ] `EmailAutoAssignmentService.tryAutoAssign`: Regel `tryAssignToPreisanfrage` als ERSTE Regel einbauen
-- [ ] Test `PreisanfrageZuordnungServiceTest` (3 Cases: inReplyTo, Token-Fallback, nicht gefunden)
-- [ ] Commit erstellen
+- [x] `service/PreisanfrageZuordnungService.java`
+  - [x] `tryMatch(Email incoming)` via `parentEmail.messageId` ODER Token-Regex im Betreff
+  - [x] Bei Match: `PreisanfrageLieferant.antwortEmail = incoming`, Status `BEANTWORTET`, `antwortErhaltenAm = now()`
+- [x] `EmailAutoAssignmentService.tryAutoAssign`: Regel `tryAssignToPreisanfrage` als ERSTE Regel eingebaut (vor `tryAssignToLieferant`); bei Treffer zusätzlich `email.assignToLieferant(pal.lieferant)`, damit Mail weiter im Lieferanten-Postfach landet.
+- [x] Test `PreisanfrageZuordnungServiceTest` — 6 Cases: parentEmail-Match, Token-Fallback, kein Match, Status/Timestamp-Verify, SQL/HTML-Payload-Isolation, null-Guard
+- [x] `EmailAutoAssignmentServiceTest` um Happy-Path für neue First-Rule erweitert (`@Nested PreisanfrageAntwort`) — verifiziert Vorrang vor Domain-Match
+- [x] Commit `18c53d6`
+
+**Architektur-Notizen:**
+- Token-Pattern als `static final Pattern TOKEN_PATTERN` im Service — kompilierter Regex, einmalig geladen.
+- `tryMatch` ist defensiv: `null`-Guard auf `incoming`, leere/null-Prüfung auf `parentMessageId` und `subject`.
+- Token-Regex extrahiert immer nur den sauberen Token — SQL-/HTML-Payloads drumrum landen nie im Repository-Call (explizit getestet).
+- KEIN neuer `EmailZuordnungTyp.PREISANFRAGE_ANTWORT` (bewusste Entscheidung aus Original-Plan 4.8): Die Mail bleibt `LIEFERANT`-zugeordnet, der Link zur Preisanfrage läuft rückwärts über `PreisanfrageLieferant.antwortEmail`.
 
 ### ⏳ Etappe 5: Controller + DTOs + Mapper
 **Commit-Ziel:** `feat(preisanfrage): Controller + DTOs + Mapper`
@@ -252,4 +259,5 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 | 2026-04-20 | Opus 4.7 | Etappe 2 fertig (Commit `0e52f4a`): TokenGenerator + PreisanfrageService (6 Methoden) + 4 DTOs + PreisanfragePdfGenerator-Strategy-Interface + 23 neue Tests. Komplette Suite grün: 1176 Tests, 0 Failures. Architektur-Entscheidungen: `Optional<PreisanfragePdfGenerator>` entkoppelt von Etappe 3, `EmailServiceFactory` für Test-Injection, explizites `@Autowired` bei Dual-Constructor. |
 | 2026-04-20 | Opus 4.7 | Etappe 3a fertig (Commit `c4e14c3`): Firmenlogo-Upload mit 3 Endpoints (POST/GET/DELETE `/api/firma/logo`), MIME-Whitelist (PNG/JPEG/WebP), 2-MB-Limit, Pfad-Traversal-Schutz (serverseitiger Zielname `logo.<ext>`, `startsWith`-Check), FirmeninformationService + FirmaController erweitert. BestellungPdfService nutzt jetzt `loadLogoImage()` statt Hard-Link (Option B: kein Software-Fallback). FirmaEditor.tsx: Upload/Vorschau/Delete mit Cache-Busting via `logoVersion`. 18 neue Tests (7 Controller + 11 Service), volle Suite grün: **1194 Tests, 0 Failures**. TypeScript-Check grün (Exit 0). |
 | 2026-04-20 | Opus 4.7 | Etappe 3b fertig (Commit `d0d1590`): `BestellungPdfService implements PreisanfragePdfGenerator`, neue Methode `generatePdfForPreisanfrage(palId)` mit Firmenlogo, roter Kopfzeile "PREISANFRAGE {nummer}", Token-Box, Hinweis "Bitte Code angeben", Rückmeldefrist (deutsches Datumsformat) und Positionen-Tabelle mit leerer Spalte "Ihr Preis €/Einheit". Bewusst ohne EN-1090-Infobox/Zeugnis-Block. Konstruktor um `PreisanfrageLieferantRepository` + `PreisanfragePositionRepository` erweitert, `@AllArgsConstructor` durch expliziten Konstruktor ersetzt. Tests auf Factory-Helper `newService()` umgestellt, neuer Test `generatePdfForPreisanfrage_enthaeltTokenUndNummer` assertet Nummer + Token im PDF. **1195 Tests, 0 Failures**. |
+| 2026-04-20 | Opus 4.7 | Etappe 4 fertig (Commit `18c53d6`): neuer `PreisanfrageZuordnungService` mit `tryMatch(Email)` — Primary-Match über `parentEmail.messageId`, Fallback Token-Regex `PA-\d{4}-\d{3}-[A-Z2-9]{5}` im Betreff. Bei Treffer: `antwortEmail` setzen, Status `BEANTWORTET`, `antwortErhaltenAm = now()`, save. `EmailAutoAssignmentService.tryAutoAssign` ruft `tryAssignToPreisanfrage` als erste Regel vor `tryAssignToLieferant` — bei Match zusätzlich `email.assignToLieferant(pal.lieferant)` (Mail bleibt im Lieferanten-Postfach sichtbar). 6 neue Tests im `PreisanfrageZuordnungServiceTest` (inkl. Security-Case für SQL/HTML-Payload-Isolation im Betreff) + 1 neuer Happy-Path im `EmailAutoAssignmentServiceTest` (Vorrang vor Domain-Match). Konstruktor des AutoAssignmentService um `PreisanfrageZuordnungService` erweitert. **1204 Tests, 0 Failures**. |
 
