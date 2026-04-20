@@ -67,23 +67,23 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 - [x] `util/`-Package existiert
 - [x] Tabelle `artikel_in_projekt` bestätigt (kein `bestellung`!)
 
-### 🔄 Etappe 1: DB-Schema V227 + Entities + Repositories
+### ✅ Etappe 1: DB-Schema V227 + Entities + Repositories
 **Commit-Ziel:** `feat(preisanfrage): DB-Schema + Entities + Repositories (V227)`
 
 - [x] `V227__preisanfrage.sql` mit 4 Tabellen + idempotentem FK — angelegt
-- [ ] Entity `Preisanfrage.java`
-- [ ] Entity `PreisanfrageLieferant.java`
-- [ ] Entity `PreisanfragePosition.java`
-- [ ] Entity `PreisanfrageAngebot.java`
-- [ ] Enum `PreisanfrageStatus.java`
-- [ ] Enum `PreisanfrageLieferantStatus.java`
-- [ ] Repo `PreisanfrageRepository.java`
-- [ ] Repo `PreisanfrageLieferantRepository.java`
-- [ ] Repo `PreisanfragePositionRepository.java`
-- [ ] Repo `PreisanfrageAngebotRepository.java`
-- [ ] `./mvnw.cmd compile` grün
-- [ ] Spring Boot startet lokal ohne Migration-Fehler
-- [ ] Commit erstellen
+- [x] Entity `Preisanfrage.java`
+- [x] Entity `PreisanfrageLieferant.java`
+- [x] Entity `PreisanfragePosition.java`
+- [x] Entity `PreisanfrageAngebot.java`
+- [x] Enum `PreisanfrageStatus.java`
+- [x] Enum `PreisanfrageLieferantStatus.java`
+- [x] Repo `PreisanfrageRepository.java`
+- [x] Repo `PreisanfrageLieferantRepository.java`
+- [x] Repo `PreisanfragePositionRepository.java`
+- [x] Repo `PreisanfrageAngebotRepository.java`
+- [x] `./mvnw.cmd compile` grün (BUILD SUCCESS)
+- [ ] Spring Boot startet lokal ohne Migration-Fehler (user-seitig zu verifizieren)
+- [x] Commit erstellen — Hash siehe unten im Session-Log
 
 ### ⏳ Etappe 2: Service + TokenGenerator + Backend-Tests
 **Commit-Ziel:** `feat(preisanfrage): Service + TokenGenerator + Tests`
@@ -224,4 +224,5 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 | Datum | Agent | Was passiert |
 |---|---|---|
 | 2026-04-20 | Opus 4.7 | Erkundung (Etappe 0) abgeschlossen, alle Entscheidungen geklärt, V227 SQL geschrieben, Security-Fix vorab (Commit `7072ffb`). Stopp nach Diskussion über Bedarf/Bestellung-Trennung: bleibt für diesen Scope wie ist, Folge-Features B+C separat. |
+| 2026-04-20 | Opus 4.7 | Pläne ins Repo verschoben (Commit `3ef5f98`). Etappe 1 fertig: 4 Entities + 2 Enums + 4 Repositories angelegt, `./mvnw.cmd compile` grün. Commit folgt. |
 
