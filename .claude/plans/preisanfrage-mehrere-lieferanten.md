@@ -592,8 +592,7 @@ Test-Lieferanten (2–3 Fake-Adressen an eigenes Postfach).
 
 ## 11. Offene Punkte für Folge-Features (bewusst nicht hier)
 
-- **KI-Preis-Extraktion** aus Angebots-PDFs via `GeminiDokumentAnalyseService` → eigener
-  Plan, nachdem manuelle Erfassung bewährt.
+- **KI-Preis-Extraktion** aus Angebots-PDFs → Spezifikation siehe Abschnitt 12.
 - **Automatische Erinnerungs-Mails** bei verstrichener Rückmeldefrist → Scheduled Task.
 - **Verhandlungs-Runde** (zweite Runde an einzelne Lieferanten).
 - **Preis-Historie pro Lieferant** (Trendlinie über mehrere Preisanfragen hinweg).
@@ -601,3 +600,144 @@ Test-Lieferanten (2–3 Fake-Adressen an eigenes Postfach).
 
 Diese Themen explizit **nicht** umsetzen, bis das Core-Feature im Produktivbetrieb
 bewährt ist.
+
+---
+
+## 12. KI-Preis-Extraktion + Artikelstamm-Update (Folge-Feature, Stand 2026-04-20)
+
+Dieser Abschnitt hält User-Entscheidungen fest, damit Etappe 7+ nicht bei Null
+anfängt. **Kern-Policy:** PDFs gehen **immer direkt** an Gemini (`inline_data` mit
+`mime_type=application/pdf`), **niemals** als vorher extrahierter Text. Gemini kann
+PDFs nativ lesen — jedes Text-Preprocessing kostet Genauigkeit (Staffelpreise,
+Tabellen-Layout, Stempel gehen verloren).
+
+### 12.1 Policy: PDF-Direkt-Übergabe (bindend)
+- Einsatz der bestehenden Zentralmethode
+  [`GeminiDokumentAnalyseService.rufGeminiApiMitPrompt(byte[] bytes, String mimeType, String customPrompt, boolean useProModel)`](../../src/main/java/org/example/kalkulationsprogramm/service/GeminiDokumentAnalyseService.java#L585).
+  Die Methode baut `inline_data` mit `mime_type=application/pdf` + base64-data +
+  Custom-Prompt und ist bereits rate-limited / retry-fest.
+- **Kein** `PDFTextStripper`, **kein** Tika, **kein** OCR-Vorfeld. Tika ist auch kein
+  Dependency — der Service macht's korrekt.
+- Gilt ab sofort für **jeden** neuen KI-Aufruf auf Dokumente (Angebote, Rechnungen,
+  Lieferscheine, Werkstoffzeugnisse). Alle bestehenden Aufrufstellen tun das bereits.
+- Für reine Text-Flows (z. B. E-Mail-Verschönerung in `EmailAiService`) bleibt
+  Text-Input erlaubt — dort gibt es keine PDF-Datei.
+
+### 12.2 Trigger: Wann läuft die KI-Preisextraktion?
+Zwei gleichwertige Wege, damit kein Lieferant nachträglich "vergessen" wird:
+
+1. **Manueller Button "Angebote vergleichen"** in der Preisanfrage-Detailansicht
+   (PreisanfragenPage → Card → Aktion). Triggert für **alle**
+   `PreisanfrageLieferant` mit Status `BEANTWORTET` und vorhandener
+   `antwortEmail`, die noch **kein** zugehöriges `PreisanfrageAngebot` haben.
+2. **Auto-Trigger** beim Übergang zu `Preisanfrage.status = VOLLSTAENDIG`
+   (= alle PALs sind `BEANTWORTET`). Der Statuswechsel passiert heute schon im
+   `PreisanfrageService.eintragen(...)`; dort einen Hook setzen, der via neuem
+   `PreisanfrageAngebotsExtraktionService.extrahiereFuerPreisanfrage(id)`
+   asynchron startet (Pattern analog `GeminiDokumentAnalyseService.analyzeAsync`).
+
+Beide Wege rufen denselben Service an — DRY.
+
+### 12.3 Ablauf pro Lieferant (ein Gemini-Call pro Angebots-PDF)
+
+Voraussetzung: `PreisanfrageLieferant.antwortEmail != null` und mindestens ein
+PDF-Anhang in `antwortEmail.getAttachments()`.
+
+1. PDF-Anhang laden (`EmailAttachment.filePath` → `Files.readAllBytes`).
+2. Prompt bauen, der **zwingend** enthält:
+   - Die Liste der Preisanfrage-Positionen inkl. `id`, `produktname`,
+     `externeArtikelnummer`, `werkstoffName`, `menge`, `einheit`. Diese IDs muss
+     Gemini in seinem JSON zurückliefern, damit die Zuordnung ohne Fuzzy-Match
+     sicher ist.
+   - Hinweis: Lieferant darf zusätzliche Positionen nennen (Zuschnitt, Fracht,
+     Verpackung, Mindermenge …). Die landen in einem separaten Feld
+     `zusatzpositionen`, **NICHT** in `angebote`, und werden gemäß Policy 12.4
+     **nicht** im Artikelstamm gelernt.
+3. Aufruf:
+   `geminiService.rufGeminiApiMitPrompt(pdfBytes, "application/pdf", prompt, true)`
+   (Pro-Model, weil Preisgenauigkeit kritisch ist).
+4. Antwort ist strukturiertes JSON. Erwartetes Schema:
+   ```json
+   {
+     "angebote": [
+       { "positionId": 12, "einzelpreis": 1.85, "preiseinheit": "kg",
+         "mwstProzent": 19, "lieferzeitTage": 10, "gueltigBis": "2026-05-30",
+         "bemerkung": "Staffelpreis ab 500 kg" }
+     ],
+     "zusatzpositionen": [
+       { "bezeichnung": "Zuschnitt", "menge": 12, "einheit": "Schnitte",
+         "einzelpreis": 3.50, "positionsTyp": "DIENSTLEISTUNG" }
+     ],
+     "gueltigBis": "2026-05-30",
+     "bemerkung": "Preise netto, ab Werk"
+   }
+   ```
+5. Für jedes Element in `angebote` ein `PreisanfrageAngebot` speichern
+   (`erfasstDurch="ki-extraktion"`). Die manuelle Korrektur bleibt möglich (UI
+   markiert KI-extrahierte Werte mit kleinem Sparkle-Icon + "KI-Vorschlag, bitte
+   prüfen").
+
+### 12.4 Artikelstamm-Update via `ArtikelMatchingAgentService`
+
+Der bestehende [`ArtikelMatchingAgentService`](../../src/main/java/org/example/kalkulationsprogramm/service/ArtikelMatchingAgentService.java)
+ist bereits so gebaut, dass er fast alles tut, was der User beschreibt — für
+Rechnungen. Für Preisanfrage-Angebote wird er **unverändert** wiederverwendet
+(DRY); wir rufen ihn nur zusätzlich nach Schritt 12.3.5 auf, pro gematchter Position
+ein Call:
+
+```java
+JsonNode position = baueMatchingPosition(preisanfragePosition, angebot);
+agentService.matcheOderSchlageAn(position, lieferant, /*quelle*/ null);
+```
+
+**Bereits abgedeckt** im aktuellen Agent/Tool-Service:
+
+| Regel | Umsetzung im Agent | Tool |
+|---|---|---|
+| Schnittkosten / Dienstleistungen / Nebenkosten nie in Artikelstamm | `SYSTEM_PROMPT` listet die Schlüsselwörter (Zuschnitt, Verzinken, Fracht, Pauschale, Skonto …) → Agent antwortet `SKIPPED`. | — |
+| Wenn externe Nr. sich geändert hat: Artikel per Bezeichnung/Werkstoff/Kategorie finden | Agent nutzt `list_werkstoffe` + `list_kategorien` + `search_artikel(werkstoffId, kategorieId, suchtext=Abmessungen)` und verifiziert mit `get_artikel_details`. Bei Match ruft er `update_artikel_preis` → dabei wird die **neue** externe Nr. am Artikel gelernt (`LieferantenArtikelPreise.externeArtikelnummer`). | `search_artikel`, `update_artikel_preis` |
+| Konflikt: externe Nr. zeigt bei diesem Lieferanten bereits auf anderen Artikel | Tool `update_artikel_preis` erkennt das, legt `ArtikelVorschlagTyp.KONFLIKT_EXTERNE_NUMMER` an, aktualisiert **nicht** still. User muss manuell entscheiden. | `update_artikel_preis` |
+| Konfidenz < Schwelle (default 0.85) | Tool legt `MATCH_VORSCHLAG` an statt still zu updaten. | `update_artikel_preis` (intern) |
+| Kein Match → neuen Artikel vorschlagen | `propose_new_artikel` legt einen `ArtikelVorschlag` (Status `PENDING`) an. User reviewt. Beim Bestätigen wird `LieferantenArtikelPreise` inkl. externer Nr. angelegt → beim nächsten Mal ist der Artikel via externe Nr. direkt findbar. | `propose_new_artikel` |
+
+**Für Etappe 7 noch zu ergänzen** (User-Entscheidungen aus dieser Session):
+
+| # | Neue Regel | Was am bestehenden Code zu tun ist |
+|---|---|---|
+| A | **KI bekommt den gesamten Kategorie-Pfad rekursiv**, z. B. `"Metalle > Flachstahl > Baustahl"`, statt nur `"Baustahl"`. | `listKategorien()` in [`ArtikelMatchingToolService`](../../src/main/java/org/example/kalkulationsprogramm/service/ArtikelMatchingToolService.java#L294) erweitern: pro Zeile `id | parentId | isLeaf | pfad` ausgeben. `pfad` rekursiv aus `parentKategorie`-Kette bauen. `isLeaf = (keine Kategorie hat diese id als parentKategorie_id)`. Caching optional, Liste bleibt klein. |
+| B | **Artikel dürfen nur in Leaf-Kategorien eingefügt werden.** | `proposeNewArtikel(args, ctx)` vor dem Save: wenn `kategorieId` gesetzt ist, prüfen ob die Kategorie Leaf ist (`kategorieRepository.existsByParentKategorieId(kategorieId) == false`). Wenn **nicht** leaf → Tool-Return: `"FEHLER: Kategorie {id} '{beschreibung}' hat Unterkategorien. Nutze eine Leaf-Kategorie oder rufe create_kategorie."`. Analog in `updateArtikelPreis` falls die Ziel-Kategorie anders wäre (hier eher unkritisch, da Artikel seine Kategorie schon hat). |
+| C | **Neue Kategorie anlegen, wenn keine passt.** | **Neues Tool** `create_kategorie(beschreibung: STRING, parentKategorieId: INTEGER)` in `ArtikelMatchingToolService`. Implementierung: Duplikat-Check (gleiche `beschreibung` + gleicher `parentKategorie` → existierende zurückgeben, KEIN Insert), sonst neue `Kategorie` anlegen und `id` zurückgeben. Der **Parent-Kategorie-Pfad muss existieren** — neue Hauptkategorien (parentId=null) erfordern zusätzlich Konfidenz ≥ 0.9 + explizite `begruendung`. Side-Effect optional in `ToolSideEffect.KategorieAngelegt(id, pfad)` protokollieren, damit der Service das Ereignis später auswertet. |
+
+**Offene Entscheidung für Etappe 7** (bitte vor Umsetzung klären):
+→ Soll `create_kategorie` die Kategorie **direkt** anlegen (wie oben skizziert,
+Vorteil: kein zusätzliches Vorschlags-Entity) oder einen **`KategorieVorschlag`**
+anlegen, der erst vom User bestätigt werden muss (Vorteil: Stammdaten-Pflege
+bleibt unter menschlicher Kontrolle)? Die Artikel-Logik nutzt bereits Vorschläge
+(`ArtikelVorschlag`), Kategorien wären konsistent dazu.
+
+**Bewusste Entscheidung beibehalten:** Der Agent legt **keine Artikel direkt** an,
+sondern erzeugt immer einen `ArtikelVorschlag`. Grund: Die Kategorie-/Werkstoff-
+Zuordnung muss stimmen, und Falsch-Kategorien verrotten das Stammdaten-Modell
+(Durchschnittspreis-Feature B). Review durch den User ist der Gate. Die bestehende
+`ArtikelVorschlaegeModal`-UI existiert bereits.
+
+### 12.5 Was für Etappe 7 neu zu bauen ist (grobe Punkte)
+1. `listKategorien()` erweitern (A) — 1 Methode, +20 Zeilen, Unit-Test.
+2. `proposeNewArtikel` Leaf-Check (B) — 1 Validierung, +10 Zeilen, Unit-Test.
+3. `create_kategorie`-Tool (C) — neues Tool-Declaration + Dispatcher-Case +
+   Implementierung, ~80 Zeilen, Unit-Test (Happy-Path + Duplikat + null-parent).
+4. `SYSTEM_PROMPT` im `ArtikelMatchingAgentService` um die 3 neuen Regeln
+   erweitern (Pfad lesen, nur Leaf, `create_kategorie` bei Bedarf).
+5. `PreisanfrageAngebotsExtraktionService` (~200 Zeilen) — kapselt 12.3 + 12.4.
+6. REST-Endpoint `POST /api/preisanfragen/{id}/angebote/extrahieren` für den
+   manuellen Button-Trigger.
+7. Hook im `PreisanfrageService.eintragen(...)` für den Auto-Trigger beim
+   Statuswechsel auf `VOLLSTAENDIG`.
+8. Frontend: Button „Angebote aus PDFs auslesen (KI)" in der Preisanfrage-Card
+   + Fortschrittsanzeige (Polling auf `Preisanfrage.status` reicht für V1).
+9. Backend-Tests: Happy-Path (1 PDF, 3 Positionen, alle matched), Fehlerfälle
+   (PDF leer, KI-Antwort abgeschnitten, Zusatzpositionen mit Dienstleistungen →
+   landen NICHT im Artikelstamm, Kategorie existiert nicht → KI legt an).
+10. **Optional** (nicht Blocker): Tool `find_artikel_by_externe_nummer` als
+    zielgerichteter First-Pass vor `search_artikel`. Spart ~1 Tool-Call pro
+    Position.
