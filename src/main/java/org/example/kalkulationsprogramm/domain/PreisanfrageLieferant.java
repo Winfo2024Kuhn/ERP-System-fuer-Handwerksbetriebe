@@ -68,7 +68,7 @@ public class PreisanfrageLieferant {
     private Email antwortEmail;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 40)
+    @Column(nullable = false, length = 40, columnDefinition = "VARCHAR(40)")
     private PreisanfrageLieferantStatus status = PreisanfrageLieferantStatus.VORBEREITET;
 
     @OneToMany(mappedBy = "preisanfrageLieferant", cascade = CascadeType.ALL, orphanRemoval = true)

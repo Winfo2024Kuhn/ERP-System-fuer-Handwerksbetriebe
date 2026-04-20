@@ -55,7 +55,7 @@ public class Preisanfrage {
     private LocalDate antwortFrist;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 40)
+    @Column(nullable = false, length = 40, columnDefinition = "VARCHAR(40)")
     private PreisanfrageStatus status = PreisanfrageStatus.OFFEN;
 
     @Column(columnDefinition = "TEXT")

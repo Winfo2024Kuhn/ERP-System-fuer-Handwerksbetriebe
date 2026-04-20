@@ -14,6 +14,8 @@ import org.example.kalkulationsprogramm.dto.Preisanfrage.PreisanfrageResponseDto
 import org.example.kalkulationsprogramm.dto.Preisanfrage.PreisanfrageVergleichDto;
 import org.example.kalkulationsprogramm.mapper.PreisanfrageMapper;
 import org.example.kalkulationsprogramm.service.BestellungPdfService;
+import org.example.kalkulationsprogramm.service.PreisanfrageAngebotsExtraktionService;
+import org.example.kalkulationsprogramm.service.PreisanfrageAngebotsExtraktionService.ExtraktionsErgebnis;
 import org.example.kalkulationsprogramm.service.PreisanfrageService;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -40,6 +42,7 @@ public class PreisanfrageController {
     private final PreisanfrageService preisanfrageService;
     private final PreisanfrageMapper preisanfrageMapper;
     private final BestellungPdfService bestellungPdfService;
+    private final PreisanfrageAngebotsExtraktionService angebotsExtraktionService;
 
     /** Neue Preisanfrage anlegen. */
     @PostMapping
@@ -149,6 +152,26 @@ public class PreisanfrageController {
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .header("X-Error-Reason", "PDF konnte nicht erzeugt werden")
+                    .build();
+        }
+    }
+
+    /**
+     * Extrahiert Angebotspreise aus Antwort-PDFs per Gemini (PDF-Direkt).
+     * Laeuft synchron; pro Lieferant ein Gemini-Call. Bestehende
+     * {@link PreisanfrageAngebot}-Zeilen werden NICHT ueberschrieben.
+     */
+    @PostMapping("/{id}/angebote/extrahieren")
+    public ResponseEntity<ExtraktionsErgebnis> extrahiereAngebote(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(angebotsExtraktionService.extrahiereFuerPreisanfrage(id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .header("X-Error-Reason", e.getMessage())
+                    .build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .header("X-Error-Reason", e.getMessage())
                     .build();
         }
     }

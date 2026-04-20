@@ -67,6 +67,12 @@ public class PreisanfrageService {
     private final ArtikelInProjektRepository artikelInProjektRepository;
     private final Optional<PreisanfragePdfGenerator> pdfGenerator;
     private final EmailServiceFactory emailServiceFactory;
+    /**
+     * Optional: Auto-Trigger der KI-Angebotsextraktion beim Statuswechsel auf
+     * {@link PreisanfrageStatus#VOLLSTAENDIG}. {@link Optional#empty()} in Tests
+     * oder wenn die Extraktion (noch) nicht konfiguriert ist.
+     */
+    private Optional<PreisanfrageAngebotsExtraktionService> angebotsExtraktion = Optional.empty();
 
     private final String smtpHost;
     private final int smtpPort;
@@ -537,8 +543,20 @@ public class PreisanfrageService {
             neu = PreisanfrageStatus.VOLLSTAENDIG;
         }
         if (pa.getStatus() != neu) {
+            PreisanfrageStatus alt = pa.getStatus();
             pa.setStatus(neu);
             preisanfrageRepository.save(pa);
+            if (neu == PreisanfrageStatus.VOLLSTAENDIG
+                    && alt != PreisanfrageStatus.VOLLSTAENDIG
+                    && angebotsExtraktion.isPresent()) {
+                try {
+                    angebotsExtraktion.get().extrahiereAsync(pa.getId());
+                } catch (RuntimeException e) {
+                    // Hook-Fehler darf den Status-Uebergang nicht scheitern lassen
+                    log.warn("Auto-Trigger Angebotsextraktion fuer preisanfrage={} fehlgeschlagen: {}",
+                            pa.getId(), e.getMessage(), e);
+                }
+            }
         }
     }
 
@@ -618,6 +636,18 @@ public class PreisanfrageService {
     @FunctionalInterface
     interface EmailServiceFactory {
         EmailService create(String host, int port, String username, String password);
+    }
+
+    /**
+     * Setter-Injection (statt Konstruktor) um eine zirkulaere Bean-Abhaengigkeit
+     * zu vermeiden: Der Extraktions-Service nutzt selbst kein {@link PreisanfrageService}
+     * direkt, aber ein Konstruktor-Argument haette nicht-triviale Auswirkungen auf
+     * die existierenden Tests (18 Test-Factory-Aufrufe). Optional, damit Tests ohne
+     * KI-Stack laufen.
+     */
+    @Autowired(required = false)
+    public void setAngebotsExtraktion(PreisanfrageAngebotsExtraktionService angebotsExtraktion) {
+        this.angebotsExtraktion = Optional.ofNullable(angebotsExtraktion);
     }
 
     /** Liefert die Liste der Lieferanten fuer Ueberblick-Ansichten. */

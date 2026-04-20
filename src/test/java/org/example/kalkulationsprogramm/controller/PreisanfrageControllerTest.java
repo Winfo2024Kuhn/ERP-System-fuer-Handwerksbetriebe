@@ -31,6 +31,7 @@ import org.example.kalkulationsprogramm.domain.PreisanfrageStatus;
 import org.example.kalkulationsprogramm.dto.Preisanfrage.PreisanfrageVergleichDto;
 import org.example.kalkulationsprogramm.mapper.PreisanfrageMapper;
 import org.example.kalkulationsprogramm.service.BestellungPdfService;
+import org.example.kalkulationsprogramm.service.PreisanfrageAngebotsExtraktionService;
 import org.example.kalkulationsprogramm.service.PreisanfrageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +61,9 @@ class PreisanfrageControllerTest {
 
     @MockBean
     private BestellungPdfService bestellungPdfService;
+
+    @MockBean
+    private PreisanfrageAngebotsExtraktionService angebotsExtraktionService;
 
     // ─────────────────────────────────────────────────────────────
     // Helfer
@@ -450,5 +454,41 @@ class PreisanfrageControllerTest {
     void buildLieferantHelfer_istVerwendet() {
         PreisanfrageLieferant pal = buildLieferant(1L, "Max Mustermann Stahl GmbH");
         org.junit.jupiter.api.Assertions.assertEquals("PA-2026-001-ABCDE", pal.getToken());
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // POST /api/preisanfragen/{id}/angebote/extrahieren
+    // ─────────────────────────────────────────────────────────────
+
+    @Test
+    void extrahiereAngebote_happyPath_liefertErgebnis() throws Exception {
+        PreisanfrageAngebotsExtraktionService.ExtraktionsErgebnis ergebnis =
+                new PreisanfrageAngebotsExtraktionService.ExtraktionsErgebnis(
+                        2, 5, 0, List.of("PAL#10: 3 Position(en) extrahiert"));
+        when(angebotsExtraktionService.extrahiereFuerPreisanfrage(7L)).thenReturn(ergebnis);
+
+        mockMvc.perform(post("/api/preisanfragen/7/angebote/extrahieren"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verarbeiteteLieferanten").value(2))
+                .andExpect(jsonPath("$.extrahierteAngebote").value(5))
+                .andExpect(jsonPath("$.fehler").value(0));
+    }
+
+    @Test
+    void extrahiereAngebote_unbekannteId_gibt404Zurueck() throws Exception {
+        when(angebotsExtraktionService.extrahiereFuerPreisanfrage(9999L))
+                .thenThrow(new IllegalArgumentException("Preisanfrage nicht gefunden: 9999"));
+
+        mockMvc.perform(post("/api/preisanfragen/9999/angebote/extrahieren"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void extrahiereAngebote_illegalState_gibt409Zurueck() throws Exception {
+        when(angebotsExtraktionService.extrahiereFuerPreisanfrage(5L))
+                .thenThrow(new IllegalStateException("Gemini lieferte leere Antwort fuer PAL 5"));
+
+        mockMvc.perform(post("/api/preisanfragen/5/angebote/extrahieren"))
+                .andExpect(status().isConflict());
     }
 }
