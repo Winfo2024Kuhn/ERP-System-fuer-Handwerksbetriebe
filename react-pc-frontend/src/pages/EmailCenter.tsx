@@ -39,7 +39,9 @@ import {
     ArrowDownAZ,
     ArrowUpAZ,
     CheckCircle2,
-    Loader2
+    Loader2,
+    Scale,
+    Sparkles
 } from 'lucide-react';
 import {
     DndContext,
@@ -63,6 +65,7 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { EmailThreadView } from '../components/EmailThreadView';
 import type { EmailThread } from '../components/EmailThreadView';
+import { PreiseEintragenModal } from '../components/PreiseEintragenModal';
 
 
 /** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
@@ -113,6 +116,20 @@ interface EmailItem {
     parentEmailId?: number;   // null/undefined = Thread-Wurzel
     replyCount?: number;      // Anzahl direkter Antworten
     isStarred?: boolean;
+    // Rückverweis auf Preisanfrage-Lieferant (wenn Mail als Antwort zugeordnet ist)
+    preisanfrageLieferantRef?: PreisanfrageLieferantRef;
+}
+
+/**
+ * Backend-Feld `preisanfrageLieferantRef` aus UnifiedEmailDto. Wird gefüllt, wenn
+ * diese E-Mail als Antwort auf eine versendete Preisanfrage erkannt wurde.
+ */
+interface PreisanfrageLieferantRef {
+    preisanfrageId: number;
+    preisanfrageNummer?: string;
+    palId: number;
+    lieferantId?: number;
+    lieferantenname?: string;
 }
 
 // Folder Types
@@ -498,6 +515,7 @@ export default function EmailCenter() {
     const [replyToEmailId, setReplyToEmailId] = useState<number | undefined>(undefined);
 
     const [showAssignModal, setShowAssignModal] = useState(false);
+    const [preiseEintragenTarget, setPreiseEintragenTarget] = useState<PreisanfrageLieferantRef | null>(null);
     const [folderCounts, setFolderCounts] = useState({
         inbox: 0, sent: 0, drafts: 0, trash: 0, spam: 0, newsletter: 0,
         starred: 0, projects: 0, offers: 0, suppliers: 0, unassigned: 0
@@ -2066,6 +2084,43 @@ export default function EmailCenter() {
                                 </Button>
                             </div>
                         </div>
+                        {selectedEmail.preisanfrageLieferantRef && (
+                            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-9 h-9 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-rose-200">
+                                        <Scale className="w-4 h-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-rose-900 truncate">
+                                            Antwort auf Preisanfrage {selectedEmail.preisanfrageLieferantRef.preisanfrageNummer ?? ''}
+                                        </p>
+                                        <p className="text-xs text-rose-700/80 truncate">
+                                            Lieferant: {selectedEmail.preisanfrageLieferantRef.lieferantenname ?? 'Unbekannt'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => navigate(`/einkauf/preisanfragen?open=${selectedEmail.preisanfrageLieferantRef!.preisanfrageId}`)}
+                                        className="gap-1.5 border-rose-300 text-rose-700 hover:bg-white hover:border-rose-400"
+                                        title="Zur Preisanfrage springen"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        <span className="hidden sm:inline">Öffnen</span>
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setPreiseEintragenTarget(selectedEmail.preisanfrageLieferantRef!)}
+                                        className="gap-1.5 bg-rose-600 text-white hover:bg-rose-700 shadow-sm shadow-rose-200"
+                                    >
+                                        <Sparkles className="w-4 h-4" />
+                                        Preise eintragen
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Thread-Verlauf */}
@@ -2588,6 +2643,15 @@ export default function EmailCenter() {
                                                 {email.zuordnungTyp}
                                             </div>
                                         )}
+                                        {email.preisanfrageLieferantRef && (
+                                            <div
+                                                className="flex items-center gap-1 text-xs font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
+                                                title={`Antwort auf Preisanfrage ${email.preisanfrageLieferantRef.preisanfrageNummer ?? ''}`}
+                                            >
+                                                <Scale className="w-3 h-3" />
+                                                {email.preisanfrageLieferantRef.preisanfrageNummer ?? 'Preisanfrage'}
+                                            </div>
+                                        )}
                                         {draftsByEmailId.has(email.id) && (
                                             <button
                                                 onClick={(e) => {
@@ -2647,6 +2711,17 @@ export default function EmailCenter() {
                 onAssign={handleAssign}
                 emailSubject={selectedEmail?.subject || ''}
                 emailId={selectedEmail?.id}
+            />
+
+            {/* Preise eintragen Modal – für Preisanfrage-Antworten */}
+            <PreiseEintragenModal
+                open={preiseEintragenTarget !== null}
+                onClose={() => setPreiseEintragenTarget(null)}
+                preisanfrageId={preiseEintragenTarget?.preisanfrageId ?? null}
+                preisanfrageLieferantId={preiseEintragenTarget?.palId ?? null}
+                onSaved={() => {
+                    toast.success('Preise gespeichert.');
+                }}
             />
 
             {/* Standard ImageViewer for Images */}

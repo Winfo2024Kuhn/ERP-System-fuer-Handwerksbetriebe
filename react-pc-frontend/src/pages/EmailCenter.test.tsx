@@ -468,4 +468,99 @@ describe('EmailCenter', () => {
             });
         });
     });
+
+    describe('Preisanfrage-Antworten (Badge + Quick-Action)', () => {
+        // Separate Mail-Mocks inkl. preisanfrageLieferantRef – unabhängig vom globalen mockEmails
+        const emailsMitPreisanfrage = [
+            {
+                id: 42, type: 'EMAIL', direction: 'IN' as const,
+                subject: 'Angebot PA-2026-041', sender: 'Stahlhandel B',
+                fromAddress: 'kontakt@stahl-b.example', body: 'Angebot anbei.',
+                sentAt: new Date().toISOString(), isRead: true,
+                zuordnungTyp: 'LIEFERANT', attachments: [],
+                preisanfrageLieferantRef: {
+                    preisanfrageId: 7,
+                    preisanfrageNummer: 'PA-2026-041',
+                    palId: 19,
+                    lieferantId: 3,
+                    lieferantenname: 'Stahlhandel B'
+                }
+            }
+        ];
+
+        function mockPreisanfrageFetch() {
+            const paginate = (items: unknown[]) => ({
+                content: items, page: 0, size: 50, totalElements: items.length, hasMore: false
+            });
+            return vi.fn((url: string, options?: RequestInit) => {
+                const method = options?.method || 'GET';
+                if (method === 'POST' || method === 'DELETE') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+                }
+                const basePath = url.split('?')[0];
+                if (basePath === '/api/emails/inbox') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(paginate(emailsMitPreisanfrage)) });
+                }
+                if (basePath === '/api/emails/stats') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(mockStats) });
+                }
+                if (basePath === '/api/emails/drafts') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+                }
+                if (basePath === '/api/emails/drafts/count') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ count: 0 }) });
+                }
+                if (url.match(/^\/api\/emails\/\d+$/)) {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(emailsMitPreisanfrage[0]) });
+                }
+                if (url.match(/^\/api\/emails\/\d+\/thread$/)) {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ emails: [] }) });
+                }
+                if (basePath === '/api/preisanfragen/7/vergleich') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({
+                            preisanfrageId: 7,
+                            nummer: 'PA-2026-041',
+                            lieferanten: [{ preisanfrageLieferantId: 19, lieferantenname: 'Stahlhandel B' }],
+                            positionen: []
+                        })
+                    });
+                }
+                return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+            });
+        }
+
+        it('zeigt Preisanfrage-Badge in der Listenansicht', async () => {
+            global.fetch = mockPreisanfrageFetch() as unknown as typeof fetch;
+            renderEmailCenter();
+            await waitFor(() => {
+                expect(screen.getByText('Angebot PA-2026-041')).toBeInTheDocument();
+            });
+            // Badge-Text = Preisanfrage-Nummer, erscheint neben dem Listeneintrag
+            const badges = screen.getAllByText('PA-2026-041');
+            expect(badges.length).toBeGreaterThan(0);
+        });
+
+        it('öffnet PreiseEintragenModal beim Klick auf Quick-Action', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            global.fetch = mockPreisanfrageFetch() as unknown as typeof fetch;
+            renderEmailCenter();
+
+            await waitFor(() => expect(screen.getByText('Angebot PA-2026-041')).toBeInTheDocument());
+            await user.click(screen.getByText('Angebot PA-2026-041'));
+
+            // Detail-Banner + Quick-Action-Button sichtbar
+            await waitFor(() => {
+                expect(screen.getByText(/Antwort auf Preisanfrage PA-2026-041/i)).toBeInTheDocument();
+            });
+            const btn = screen.getByRole('button', { name: /Preise eintragen/i });
+            await user.click(btn);
+
+            // Modal-Titel erscheint
+            await waitFor(() => {
+                expect(screen.getByRole('dialog', { name: /Preise eintragen/i })).toBeInTheDocument();
+            });
+        });
+    });
 });
