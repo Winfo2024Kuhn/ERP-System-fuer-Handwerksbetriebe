@@ -5,7 +5,7 @@ hier den aktuellen Stand und hakt erledigte Punkte ab (bzw. ergänzt neue Aufgab
 
 **Originaler Plan:** [preisanfrage-mehrere-lieferanten.md](preisanfrage-mehrere-lieferanten.md)
 **Branch:** `feature/en1090-echeck` (wird vor Merge auf `feature/preisanfrage-multi-lieferant` umgebogen)
-**Letzter Commit dieses Features:** `8b5bb05` (Etappe 4b: 4-stufige Fallback-Kette fuer Antwort-Zuordnung)
+**Letzter Commit dieses Features:** `9013a7c` (Etappe 6: Frontend-Seite + AngeboteEinholenModal)
 
 ---
 
@@ -220,17 +220,20 @@ Erweitert Etappe 4 um zwei zusätzliche Matching-Stufen und macht den Reply-To-V
 - **`parseStatus(String)` toleriert Müll**: unbekannter Enum-Wert im Query-Param liefert `null` (= kein Filter) statt 500. Das verhindert, dass ein SQLi-Versuch (`?status=';DROP TABLE--`) zum Server-Error wird.
 - **UnifiedEmailDto-Ruecklink**: Das Feld `preisanfrageLieferantRef` ist **optional** (`null` wenn die E-Mail nichts mit einer Preisanfrage zu tun hat). Für Etappe 8 (EmailCenter-Badge) kann das Frontend direkt darauf mappen, ohne zusätzliche Roundtrips.
 
-### ⏳ Etappe 6: Frontend Seite + AngeboteEinholenModal
+### ✅ Etappe 6: Frontend Seite + AngeboteEinholenModal
 **Commit-Ziel:** `feat(preisanfrage): Frontend-Seite + AngeboteEinholenModal`
 
-- [ ] `react-pc-frontend/src/pages/PreisanfragenPage.tsx`
-- [ ] Route `/einkauf/preisanfragen` in `App.tsx`
-- [ ] Navigation-Eintrag (vermutlich in Sidebar)
-- [ ] `react-pc-frontend/src/components/AngeboteEinholenModal.tsx`
-- [ ] Button "Angebote einholen" in `BestellungEditor.tsx` (Zeile ~859, neben "E-Mail")
-- [ ] Vitest `AngeboteEinholenModal.test.tsx`
-- [ ] `npm run build` grün
-- [ ] Commit erstellen
+- [x] `react-pc-frontend/src/pages/PreisanfragenPage.tsx` — Status-Tabs, Liste, Empty-State, Abbrechen-Action, Vergleichs-Platzhalter (Toast, kommt in Etappe 7)
+- [x] Route `/einkauf/preisanfragen` in `App.tsx`
+- [x] Navigation-Eintrag in `RibbonNav.tsx` unter Projektmanagement → Einkauf direkt hinter "Bedarf" (Icon: `Scale`)
+- [x] `react-pc-frontend/src/components/AngeboteEinholenModal.tsx` — vorausgewaehlte Positionen ODER Fallback `GET /api/bestellungen/offen`, Multi-Lieferant-Liste mit Suche, Pflicht-`DatePicker`, Notiz, sequenzielles `POST /preisanfragen` + `/versenden`
+- [x] Button "Angebote einholen" in `BestellungEditor.tsx` neben "E-Mail"-Button, uebergibt Gruppe via `toBedarfPosition`-Mapper als `vorausgewaehltePositionen`
+- [x] Vitest `AngeboteEinholenModal.test.tsx` — 7 Tests (Submit-Disabled ohne Lieferant, Multi-Select, Reihenfolge POST create→versenden, vorausgewaehlte Positionen, Disabled bei leerer Position-Liste, Lieferanten-Suche, Pflichtfeld-Markierung)
+- [x] `npm install` fehlende `@xyflow/react` + `@dagrejs/dagre` (pre-existing, nicht durch dieses Feature ausgeloest)
+- [x] `npm run lint` grün (1 unrelated warning in `ArtikelVorschlaegeModal.tsx`)
+- [x] `npm run build` grün (nach npm install)
+- [x] `./mvnw.cmd test` grün — **1242 Tests, 0 Failures** (Backend unveraendert)
+- [x] Commit erstellt: `9013a7c`
 
 ### ⏳ Etappe 7: Vergleichs-Matrix + Preiserfassung
 **Commit-Ziel:** `feat(preisanfrage): Vergleichs-Matrix + manuelle Preiserfassung`
@@ -303,4 +306,5 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 | 2026-04-20 | Opus 4.7 | Etappe 4 fertig (Commit `18c53d6`): neuer `PreisanfrageZuordnungService` mit `tryMatch(Email)` — Primary-Match über `parentEmail.messageId`, Fallback Token-Regex `PA-\d{4}-\d{3}-[A-Z2-9]{5}` im Betreff. Bei Treffer: `antwortEmail` setzen, Status `BEANTWORTET`, `antwortErhaltenAm = now()`, save. `EmailAutoAssignmentService.tryAutoAssign` ruft `tryAssignToPreisanfrage` als erste Regel vor `tryAssignToLieferant` — bei Match zusätzlich `email.assignToLieferant(pal.lieferant)` (Mail bleibt im Lieferanten-Postfach sichtbar). 6 neue Tests im `PreisanfrageZuordnungServiceTest` (inkl. Security-Case für SQL/HTML-Payload-Isolation im Betreff) + 1 neuer Happy-Path im `EmailAutoAssignmentServiceTest` (Vorrang vor Domain-Match). Konstruktor des AutoAssignmentService um `PreisanfrageZuordnungService` erweitert. **1204 Tests, 0 Failures**. |
 | 2026-04-20 | Opus 4.7 | Etappe 5 fertig (Commit `12fbeae`): REST-Schicht komplett — `PreisanfrageController` (10 Endpoints) mit `@Valid`-Input-Validierung, DTO-only-Responses (`PreisanfrageResponseDto`, `PreisanfragePositionDto`, `PreisanfrageLieferantDto`), expliziter `PreisanfrageMapper` im `ProjektMapper`-Stil (kein MapStruct). Service um `findeById`/`listeAlle(filterStatus)`/`abbrechen` erweitert. `UnifiedEmailDto` zeigt jetzt `preisanfrageLieferantRef` → EmailCenter kann Badge "Preisanfrage PA-YYYY-NNN" + Quick-Action "Preise eintragen" rendern (Etappe 8). Neuer Repo-Lookup `PreisanfrageLieferantRepository.findByAntwortEmail_Id`. Fehler-Mapping: `IllegalArgumentException`→404, `IllegalStateException`→409, Bean-Validation→400, `X-Error-Reason`-Header. `parseStatus` liefert bei unbekanntem Enum-Wert `null` (kein 500 bei SQLi-Probe). 27 Controller-Tests + 7 neue Service-Tests (`findeById`/`listeAlle`/`abbrechen` mit Happy-Path + Fehlerfällen). **1238 Tests, 0 Failures**. **Kein `@PreAuthorize` eingeführt** — Projekt nutzt durchgängig globale `SecurityConfig`. |
 | 2026-04-20 | Opus 4.7 | Etappe 4b fertig (Commit `8b5bb05`): User wollte Lieferanten auch dann zuordnen können, wenn sie nicht auf "Antworten" klicken sondern eine neue Mail schreiben. Lösung: 4-stufige Fallback-Kette in `PreisanfrageZuordnungService` (In-Reply-To → To-Adresse `TOKEN@domain` → Token-Regex im Betreff → PA-Nummer + Absender-E-Mail-Abgleich). Neuer Config-Key `preisanfrage.reply-to-domain=` in `application.properties` (leer = deaktiviert), in `application-local.properties` überschreibbar. `EmailService` bekommt neuen Overload `sendEmailAndReturnMessageId(..., replyTo, ...)`; alter 7-Parameter-Overload bleibt rückwärtskompatibel. Mail-Body + PDF-Hinweisbox bitten jetzt explizit um E-Mail-Antwort mit PDF-Anhang (Umlaute gemäß CLAUDE.md). User-Entscheidung: Eigene Domain `bauschlosserei-kuhn.de` kommt langfristig, bis dahin reichen Fallbacks 1/3/4. 4 neue Tests (Fallback 2 mit/ohne Domain, Fallback 4 mit/ohne Absender-Match), 3 `PreisanfrageServiceTest`-Stubs auf neuen 8-Parameter-Overload umgestellt. **1242 Tests, 0 Failures** (+4). `PreisanfrageZuordnungService` wechselt von `@RequiredArgsConstructor` auf expliziten Konstruktor wegen `@Value`-Injection. |
+| 2026-04-20 | Opus 4.7 | Etappe 6 fertig: Frontend-Seite `/einkauf/preisanfragen` + `AngeboteEinholenModal`. Neue Dateien: `PreisanfragenPage.tsx` (Status-Tabs Alle/Offen/Teilweise/Vollständig/Vergeben/Abgebrochen, Card-Liste pro Preisanfrage mit Lieferanten-Pills + PDF-Download, Abbrechen-Action, Vergleichs-Button als Platzhalter-Toast bis Etappe 7), `AngeboteEinholenModal.tsx` (Positionen via Vorauswahl ODER `/api/bestellungen/offen`-Fallback, Multi-Lieferant-Liste mit Suche, `DatePicker` Pflichtfeld, sequenzieller `POST /api/preisanfragen` → `POST /versenden` mit Toast + Navigation), `AngeboteEinholenModal.test.tsx` (7 Vitest-Tests inkl. Reihenfolge der beiden POSTs). Eingegriffen: `App.tsx` (neue Route), `RibbonNav.tsx` (neuer Sidebar-Eintrag "Preisanfragen" mit `Scale`-Icon unter Einkauf hinter "Bedarf"), `BestellungEditor.tsx` (neuer Button "Angebote einholen" neben "E-Mail" pro Bedarf-Gruppe, `toBedarfPosition`-Mapper für DRY). Build-Fix unterwegs: `npm install` weil `@xyflow/react` + `@dagrejs/dagre` aus `package.json` nicht im `node_modules` lagen (pre-existing, nicht durch dieses Feature verursacht — ohne Install schlägt der main-Branch genauso fehl). **Frontend:** lint grün, `npm run build` grün, Vitest `AngeboteEinholenModal` 7/7 grün. **Backend:** unveraendert, 1242 Tests weiterhin grün. |
 
