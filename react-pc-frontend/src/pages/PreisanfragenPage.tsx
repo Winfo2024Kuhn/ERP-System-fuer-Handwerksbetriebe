@@ -6,6 +6,8 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { AngeboteEinholenModal } from '../components/AngeboteEinholenModal';
+import { PreisanfrageVergleichModal } from '../components/PreisanfrageVergleichModal';
+import { PreiseEintragenModal } from '../components/PreiseEintragenModal';
 import { cn } from '../lib/utils';
 
 type PreisanfrageStatus =
@@ -68,6 +70,9 @@ export default function PreisanfragenPage() {
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<StatusFilter['key']>('ALLE');
     const [modalOpen, setModalOpen] = useState(false);
+    const [vergleichFuerId, setVergleichFuerId] = useState<number | null>(null);
+    const [vergleichHintNummer, setVergleichHintNummer] = useState<string>('');
+    const [preiseModal, setPreiseModal] = useState<{ preisanfrageId: number; palId: number } | null>(null);
 
     const load = useCallback(async (statusKey: StatusFilter['key']) => {
         setLoading(true);
@@ -165,6 +170,10 @@ export default function PreisanfragenPage() {
                             key={pa.id}
                             item={pa}
                             onAbbrechen={() => handleAbbrechen(pa.id, pa.nummer)}
+                            onVergleichOeffnen={() => {
+                                setVergleichHintNummer(pa.nummer);
+                                setVergleichFuerId(pa.id);
+                            }}
                         />
                     ))}
                 </div>
@@ -174,6 +183,27 @@ export default function PreisanfragenPage() {
                 open={modalOpen}
                 onClose={() => setModalOpen(false)}
                 onVersendet={() => load(filter)}
+            />
+
+            <PreisanfrageVergleichModal
+                open={vergleichFuerId != null}
+                onClose={() => setVergleichFuerId(null)}
+                preisanfrageId={vergleichFuerId}
+                nummerHint={vergleichHintNummer}
+                onVergeben={() => load(filter)}
+                onPreiseEintragen={(palId) => {
+                    if (vergleichFuerId != null) {
+                        setPreiseModal({ preisanfrageId: vergleichFuerId, palId });
+                    }
+                }}
+            />
+
+            <PreiseEintragenModal
+                open={preiseModal != null}
+                onClose={() => setPreiseModal(null)}
+                preisanfrageId={preiseModal?.preisanfrageId ?? null}
+                preisanfrageLieferantId={preiseModal?.palId ?? null}
+                onSaved={() => load(filter)}
             />
         </PageLayout>
     );
@@ -204,11 +234,12 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 function PreisanfrageCard({
     item,
     onAbbrechen,
+    onVergleichOeffnen,
 }: {
     item: PreisanfrageListeEintrag;
     onAbbrechen: () => void;
+    onVergleichOeffnen: () => void;
 }) {
-    const toast = useToast();
     const beantwortet = item.lieferanten.filter(l => l.status === 'BEANTWORTET').length;
     const istAbgeschlossen = item.status === 'VERGEBEN' || item.status === 'ABGEBROCHEN';
 
@@ -242,8 +273,8 @@ function PreisanfrageCard({
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => toast.info('Die Vergleichs-Matrix wird im nächsten Schritt freigeschaltet.')}
-                        title="Preise nebeneinander vergleichen (folgt)"
+                        onClick={onVergleichOeffnen}
+                        title="Preise nebeneinander vergleichen — günstigster markiert"
                     >
                         <Scale className="w-4 h-4" />
                         Vergleich öffnen
