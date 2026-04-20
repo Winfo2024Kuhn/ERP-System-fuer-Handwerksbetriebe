@@ -104,15 +104,16 @@ class ArtikelMatchingToolServiceTest {
     // ─────────────────────────────────────────────────────────────
 
     @Test
-    void buildFunctionDeclarations_enthaelt_alle_sechs_tools() {
+    void buildFunctionDeclarations_enthaelt_alle_sieben_tools() {
         ArrayNode declarations = service.buildFunctionDeclarations();
 
-        assertThat(declarations).hasSize(6);
+        assertThat(declarations).hasSize(7);
         List<String> names = new ArrayList<>();
         declarations.forEach(n -> names.add(n.path("name").asText()));
         assertThat(names).containsExactlyInAnyOrder(
                 "list_werkstoffe", "list_kategorien", "search_artikel",
-                "get_artikel_details", "update_artikel_preis", "propose_new_artikel");
+                "get_artikel_details", "update_artikel_preis", "propose_new_artikel",
+                "create_kategorie");
 
         // search_artikel hat keine required-Felder (alles optional)
         JsonNode searchDecl = declarations.get(2);
@@ -217,16 +218,32 @@ class ArtikelMatchingToolServiceTest {
         }
 
         @Test
-        void formatiert_kategorien_mit_und_ohne_parent_und_beschreibung() {
+        void formatiert_kategorien_mit_pfad_und_leaf_flag() {
             Kategorie parent = kategorie(1, "Stahl", null);
             Kategorie child = kategorie(2, null, parent);
             when(kategorieRepository.findAll()).thenReturn(List.of(parent, child));
 
             String result = service.listKategorien();
 
-            assertThat(result).startsWith("id | parentId | beschreibung");
-            assertThat(result).contains("1 |  | Stahl");
-            assertThat(result).contains("2 | 1 | ");
+            assertThat(result).startsWith("id | parentId | isLeaf | pfad");
+            // parent hat Kinder -> isLeaf=false
+            assertThat(result).contains("1 |  | false | Stahl");
+            // child ohne Kinder -> isLeaf=true, null-Beschreibung als "?"
+            assertThat(result).contains("2 | 1 | true | Stahl > ?");
+        }
+
+        @Test
+        void pfad_dreifach_verschachtelt() {
+            Kategorie root = kategorie(1, "Metalle", null);
+            Kategorie flach = kategorie(2, "Flachstahl", root);
+            Kategorie bau = kategorie(3, "Baustahl", flach);
+            when(kategorieRepository.findAll()).thenReturn(List.of(root, flach, bau));
+
+            String result = service.listKategorien();
+
+            assertThat(result).contains("3 | 2 | true | Metalle > Flachstahl > Baustahl");
+            assertThat(result).contains("2 | 1 | false | Metalle > Flachstahl");
+            assertThat(result).contains("1 |  | false | Metalle");
         }
     }
 
@@ -1010,5 +1027,187 @@ class ArtikelMatchingToolServiceTest {
                 org.mockito.ArgumentCaptor.forClass(ArtikelVorschlag.class);
         verify(artikelVorschlagRepository).save(captor.capture());
         return captor.getValue();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Leaf-Check in proposeNewArtikel (Etappe 7 / Spec 12.5-B)
+    // ─────────────────────────────────────────────────────────────
+
+    @Nested
+    class ProposeNewArtikel_LeafCheck {
+
+        @Test
+        void non_leaf_kategorie_wird_abgelehnt_und_kein_vorschlag_angelegt() {
+            Kategorie nonLeaf = kategorie(5, "Flachstahl", null);
+            when(kategorieRepository.findById(5)).thenReturn(Optional.of(nonLeaf));
+            when(kategorieRepository.existsByParentKategorie_Id(5)).thenReturn(true);
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("produktname", "Flachstahl 30x5");
+            args.put("kategorieId", 5);
+            args.put("konfidenz", 0.9);
+            args.put("begruendung", "b");
+
+            String result = service.proposeNewArtikel(args, ctx());
+
+            assertThat(result).startsWith("FEHLER:").contains("Flachstahl").contains("Leaf-Kategorie");
+            verify(artikelVorschlagRepository, never()).save(any(ArtikelVorschlag.class));
+        }
+
+        @Test
+        void leaf_kategorie_wird_akzeptiert() {
+            when(artikelVorschlagRepository.save(any(ArtikelVorschlag.class)))
+                    .thenAnswer(i -> {
+                        ArtikelVorschlag v = i.getArgument(0);
+                        v.setId(42L);
+                        return v;
+                    });
+            Kategorie leaf = kategorie(7, "Baustahl", null);
+            when(kategorieRepository.findById(7)).thenReturn(Optional.of(leaf));
+            when(kategorieRepository.existsByParentKategorie_Id(7)).thenReturn(false);
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("produktname", "Baustahl 30x5");
+            args.put("kategorieId", 7);
+            args.put("konfidenz", 0.9);
+            args.put("begruendung", "b");
+
+            String result = service.proposeNewArtikel(args, ctx());
+
+            assertThat(result).startsWith("OK.").contains("42");
+            ArtikelVorschlag saved = captureArtikelVorschlag();
+            assertThat(saved.getVorgeschlageneKategorie()).isEqualTo(leaf);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // create_kategorie (Etappe 7 / Spec 12.5-C)
+    // ─────────────────────────────────────────────────────────────
+
+    @Nested
+    class CreateKategorie {
+
+        @Test
+        void neue_unterkategorie_wird_angelegt_und_seiteneffekt_protokolliert() {
+            Kategorie parent = kategorie(1, "Metalle", null);
+            when(kategorieRepository.findById(1)).thenReturn(Optional.of(parent));
+            when(kategorieRepository.findByParentKategorie_Id(1)).thenReturn(List.of());
+            when(kategorieRepository.save(any(Kategorie.class)))
+                    .thenAnswer(i -> {
+                        Kategorie k = i.getArgument(0);
+                        k.setId(99);
+                        return k;
+                    });
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("beschreibung", "Edelstahl-Rundrohr");
+            args.put("parentKategorieId", 1);
+            args.put("konfidenz", 0.95);
+            args.put("begruendung", "Neue Unterkategorie fuer Edelstahl");
+
+            MatchingToolContext ctx = ctx();
+            String result = service.createKategorie(args, ctx);
+
+            assertThat(result).startsWith("OK.").contains("99");
+            assertThat(ctx.lastEffect())
+                    .isInstanceOf(ToolSideEffect.KategorieAngelegt.class);
+            ToolSideEffect.KategorieAngelegt eff =
+                    (ToolSideEffect.KategorieAngelegt) ctx.lastEffect();
+            assertThat(eff.kategorieId()).isEqualTo(99);
+            assertThat(eff.bereitsExistiert()).isFalse();
+        }
+
+        @Test
+        void duplikat_gibt_existierende_id_zurueck_ohne_insert() {
+            Kategorie parent = kategorie(1, "Metalle", null);
+            Kategorie existierend = kategorie(42, "Flachstahl", parent);
+            when(kategorieRepository.findById(1)).thenReturn(Optional.of(parent));
+            when(kategorieRepository.findByParentKategorie_Id(1))
+                    .thenReturn(List.of(existierend));
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("beschreibung", "flachstahl"); // case-insensitive match
+            args.put("parentKategorieId", 1);
+            args.put("konfidenz", 0.95);
+            args.put("begruendung", "b");
+
+            MatchingToolContext ctx = ctx();
+            String result = service.createKategorie(args, ctx);
+
+            assertThat(result).startsWith("EXISTIERT_BEREITS").contains("42");
+            verify(kategorieRepository, never()).save(any(Kategorie.class));
+            ToolSideEffect.KategorieAngelegt eff =
+                    (ToolSideEffect.KategorieAngelegt) ctx.lastEffect();
+            assertThat(eff.kategorieId()).isEqualTo(42);
+            assertThat(eff.bereitsExistiert()).isTrue();
+        }
+
+        @Test
+        void unbekannter_parent_gibt_fehler() {
+            when(kategorieRepository.findById(999)).thenReturn(Optional.empty());
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("beschreibung", "X");
+            args.put("parentKategorieId", 999);
+            args.put("konfidenz", 0.95);
+            args.put("begruendung", "b");
+
+            String result = service.createKategorie(args, ctx());
+
+            assertThat(result).startsWith("FEHLER:").contains("999");
+            verify(kategorieRepository, never()).save(any(Kategorie.class));
+        }
+
+        @Test
+        void hauptkategorie_ohne_hohe_konfidenz_abgelehnt() {
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("beschreibung", "Neue Hauptkategorie");
+            args.putNull("parentKategorieId");
+            args.put("konfidenz", 0.5); // unter 0.9
+            args.put("begruendung", "b");
+
+            String result = service.createKategorie(args, ctx());
+
+            assertThat(result).startsWith("FEHLER:").contains("Konfidenz");
+            verify(kategorieRepository, never()).save(any(Kategorie.class));
+        }
+
+        @Test
+        void leere_beschreibung_gibt_fehler() {
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("beschreibung", "   ");
+            args.put("konfidenz", 0.95);
+            args.put("begruendung", "b");
+
+            String result = service.createKategorie(args, ctx());
+
+            assertThat(result).isEqualTo("beschreibung fehlt");
+            verify(kategorieRepository, never()).save(any(Kategorie.class));
+        }
+
+        @Test
+        void hauptkategorie_mit_hoher_konfidenz_wird_angelegt() {
+            when(kategorieRepository.findByParentKategorieIsNull()).thenReturn(List.of());
+            when(kategorieRepository.save(any(Kategorie.class)))
+                    .thenAnswer(i -> {
+                        Kategorie k = i.getArgument(0);
+                        k.setId(77);
+                        return k;
+                    });
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("beschreibung", "Neue Hauptkategorie");
+            args.putNull("parentKategorieId");
+            args.put("konfidenz", 0.95);
+            args.put("begruendung", "b");
+
+            MatchingToolContext ctx = ctx();
+            String result = service.createKategorie(args, ctx);
+
+            assertThat(result).startsWith("OK.").contains("77").contains("Hauptkategorie");
+            ToolSideEffect.KategorieAngelegt eff =
+                    (ToolSideEffect.KategorieAngelegt) ctx.lastEffect();
+            assertThat(eff.bereitsExistiert()).isFalse();
+        }
     }
 }

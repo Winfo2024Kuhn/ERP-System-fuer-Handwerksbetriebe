@@ -56,6 +56,9 @@ public class ArtikelMatchingAgentService {
 
             ARBEITSWEISE:
             1. Rufe list_werkstoffe und list_kategorien auf, um das Vokabular zu kennen.
+               list_kategorien liefert jetzt pro Zeile: id | parentId | isLeaf | pfad
+               (z.B. 'Metalle > Flachstahl > Baustahl'). Nutze den PFAD, um die passende Kategorie
+               semantisch korrekt zu waehlen — nicht nur die kurze Beschreibung.
             2. Bestimme aus der Rechnungs-Position den passenden Werkstoff (z.B. 'S235JR') und die
                Kategorie (z.B. 'Flachstahl', 'Rundrohr').
             3. Rufe search_artikel mit werkstoffId + kategorieId + aussagekräftigem Suchtext (Abmessungen!)
@@ -64,8 +67,15 @@ public class ArtikelMatchingAgentService {
                 update_artikel_preis mit hoher Konfidenz (>= 0.85). Das System lernt dabei die
                 externe Artikelnummer dauerhaft.
             4b. Wenn du kein klares Match findest und die Position ein echter Material-Artikel ist:
-                propose_new_artikel mit allen bekannten Feldern.
-            4c. Wenn die Position KEIN Material-Artikel ist, sondern eine DIENSTLEISTUNG oder NEBENKOSTEN
+                propose_new_artikel mit allen bekannten Feldern. WICHTIG: Artikel duerfen NUR in
+                Leaf-Kategorien (isLeaf=true) eingefuegt werden. Non-Leaf-Kategorien werden vom Tool
+                abgelehnt.
+            4c. Wenn KEINE passende Leaf-Kategorie existiert: rufe create_kategorie mit passender
+                Beschreibung + parentKategorieId einer bestehenden Kategorie auf. Das Tool erkennt
+                Duplikate automatisch. Nutze die zurueckgegebene id anschliessend in
+                propose_new_artikel. Lege NIE eine neue Hauptkategorie (parentKategorieId=null) an,
+                wenn eine bestehende passt.
+            4d. Wenn die Position KEIN Material-Artikel ist, sondern eine DIENSTLEISTUNG oder NEBENKOSTEN
                 (Zuschnitt, Brennschnitt, Sägen, Verzinken, Feuerverzinken, Pulverbeschichten, Lackieren,
                 Strahlen, Beschriften, Transport/Fracht, Verpackung, Palette, Mindermenge,
                 Pauschale, Gebühr, Rabatt, Skonto):
@@ -76,6 +86,8 @@ public class ArtikelMatchingAgentService {
               oder nichts tun.
             - Abmessungen (z.B. 30x5, ⌀25) MÜSSEN exakt übereinstimmen, sonst KEIN Match.
             - Werkstoff MUSS übereinstimmen ziemlich genau, sonst KEIN Match. Manchmal steht bei Stahl S235JRH, manchmal S235 — das ist akzeptabel. Aber S355 ist ein anderer Werkstoff, also kein Match zu S235.
+            - Artikel NUR in Leaf-Kategorien. Bei Zweifel lieber create_kategorie fuer eine
+              spezifischere Unterkategorie, statt die Hauptkategorie zu nutzen.
             - Maximal 6 Tool-Aufrufe pro Position. Sei effizient.
             - Antworte am Ende mit EINER Textzeile:
               'UPDATED: <kurze Begründung>' oder 'PROPOSED: <kurze Begründung>' oder 'SKIPPED: <Grund>'.
@@ -91,7 +103,7 @@ public class ArtikelMatchingAgentService {
     @Value("${ai.gemini.api-key:}")
     private String geminiApiKey;
 
-    @Value("${ai.materialstamm.auto-matching.model:gemini-flash-latest}")
+    @Value("${ai.materialstamm.auto-matching.model:gemini-3.1-pro-preview}")
     private String model;
 
     @Value("${ai.materialstamm.auto-matching.konfidenz-schwelle:0.85}")

@@ -53,6 +53,10 @@ public class ArtikelMatchingToolService {
 
     private static final int MAX_ARTIKEL_SEARCH = 20;
     private static final int MAX_ARTIKEL_SEARCH_LIMIT = 50;
+    /** Obergrenze für die Tiefe des Kategorie-Pfad-Resolving (Schutz gegen Zyklen). */
+    private static final int MAX_KATEGORIE_PFAD_TIEFE = 10;
+    /** Mindestkonfidenz, damit die KI eine neue Hauptkategorie (parentId=null) anlegen darf. */
+    private static final double MIN_KONFIDENZ_HAUPTKATEGORIE = 0.9;
 
     private final ObjectMapper objectMapper;
     private final WerkstoffRepository werkstoffRepository;
@@ -94,6 +98,7 @@ public class ArtikelMatchingToolService {
     public sealed interface ToolSideEffect {
         record PreisAktualisiert(Long artikelId, BigDecimal preis, boolean externeNummerGelernt) implements ToolSideEffect {}
         record VorschlagAngelegt(Long vorschlagId, ArtikelVorschlagTyp typ) implements ToolSideEffect {}
+        record KategorieAngelegt(Integer kategorieId, String pfad, boolean bereitsExistiert) implements ToolSideEffect {}
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -109,6 +114,7 @@ public class ArtikelMatchingToolService {
         declarations.add(declareGetArtikelDetails());
         declarations.add(declareUpdateArtikelPreis());
         declarations.add(declareProposeNewArtikel());
+        declarations.add(declareCreateKategorie());
 
         return declarations;
     }
@@ -130,8 +136,9 @@ public class ArtikelMatchingToolService {
         ObjectNode decl = objectMapper.createObjectNode();
         decl.put("name", "list_kategorien");
         decl.put("description",
-                "Listet den Kategorie-Baum (z.B. 'Flachstahl', 'Rundrohr', 'Winkelstahl') mit ID, "
-                        + "Beschreibung und parentId. Nutze dies, um die passende Kategorie für die Position zu finden.");
+                "Listet den Kategorie-Baum als Pfad (z.B. 'Metalle > Flachstahl > Baustahl') mit ID, "
+                        + "parentId und isLeaf-Flag. Artikel duerfen NUR in Leaf-Kategorien (isLeaf=true) "
+                        + "eingefuegt werden. Fehlt eine passende Leaf-Kategorie, nutze create_kategorie.");
         ObjectNode params = objectMapper.createObjectNode();
         params.put("type", "OBJECT");
         params.set("properties", objectMapper.createObjectNode());
@@ -242,6 +249,33 @@ public class ArtikelMatchingToolService {
         return decl;
     }
 
+    private ObjectNode declareCreateKategorie() {
+        ObjectNode decl = objectMapper.createObjectNode();
+        decl.put("name", "create_kategorie");
+        decl.put("description",
+                "Legt eine NEUE Kategorie direkt im Materialstamm an. Nutze dies NUR, wenn list_kategorien "
+                        + "keine passende Leaf-Kategorie enthaelt. Duplikate (gleiche Beschreibung unter gleichem "
+                        + "Parent) werden automatisch erkannt — dann wird die existierende ID zurueckgegeben. "
+                        + "Hauptkategorien (parentKategorieId=null) erfordern Konfidenz >= "
+                        + MIN_KONFIDENZ_HAUPTKATEGORIE + ".");
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("type", "OBJECT");
+        ObjectNode props = objectMapper.createObjectNode();
+        props.set("beschreibung", prop("STRING", "Name der neuen Kategorie, z.B. 'Edelstahl-Rundrohr'"));
+        props.set("parentKategorieId", prop("INTEGER",
+                "ID der Elternkategorie aus list_kategorien. null oder weglassen fuer neue Hauptkategorie."));
+        props.set("konfidenz", prop("NUMBER", "Deine Sicherheit 0.0-1.0 dass diese Kategorie fehlt"));
+        props.set("begruendung", prop("STRING", "Kurze Begruendung (max 500 Zeichen)"));
+        params.set("properties", props);
+        ArrayNode req = objectMapper.createArrayNode();
+        req.add("beschreibung");
+        req.add("konfidenz");
+        req.add("begruendung");
+        params.set("required", req);
+        decl.set("parameters", params);
+        return decl;
+    }
+
     private ObjectNode prop(String type, String description) {
         ObjectNode p = objectMapper.createObjectNode();
         p.put("type", type);
@@ -263,6 +297,7 @@ public class ArtikelMatchingToolService {
                 case "get_artikel_details" -> getArtikelDetails(args);
                 case "update_artikel_preis" -> updateArtikelPreis(args, ctx);
                 case "propose_new_artikel" -> proposeNewArtikel(args, ctx);
+                case "create_kategorie" -> createKategorie(args, ctx);
                 default -> "Unbekanntes Tool: " + toolName;
             };
             log.info("[Tool:{}] OK ({}ms), Ergebnis (gekürzt): {}",
@@ -294,15 +329,52 @@ public class ArtikelMatchingToolService {
     public String listKategorien() {
         List<Kategorie> kategorien = kategorieRepository.findAll();
         if (kategorien.isEmpty()) return "Keine Kategorien vorhanden.";
-        StringBuilder sb = new StringBuilder("id | parentId | beschreibung\n");
+
+        // Index: welche Kategorie hat Kinder? → isLeaf ableitbar ohne Extra-Query pro Zeile
+        java.util.Set<Integer> hatKinder = new java.util.HashSet<>();
+        java.util.Map<Integer, Kategorie> byId = new java.util.HashMap<>();
         for (Kategorie k : kategorien) {
+            byId.put(k.getId(), k);
+            if (k.getParentKategorie() != null && k.getParentKategorie().getId() != null) {
+                hatKinder.add(k.getParentKategorie().getId());
+            }
+        }
+
+        StringBuilder sb = new StringBuilder("id | parentId | isLeaf | pfad\n");
+        for (Kategorie k : kategorien) {
+            Integer parentId = k.getParentKategorie() != null ? k.getParentKategorie().getId() : null;
+            boolean isLeaf = !hatKinder.contains(k.getId());
             sb.append(k.getId()).append(" | ")
-              .append(k.getParentKategorie() != null ? k.getParentKategorie().getId() : "")
+              .append(parentId != null ? parentId : "")
               .append(" | ")
-              .append(k.getBeschreibung() != null ? k.getBeschreibung() : "")
+              .append(isLeaf ? "true" : "false")
+              .append(" | ")
+              .append(buildKategoriePfad(k, byId))
               .append("\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * Baut den vollen Pfad einer Kategorie ("Metalle &gt; Flachstahl &gt; Baustahl").
+     * Nutzt einen In-Memory-Index, damit keine N+1-Queries entstehen.
+     */
+    private static String buildKategoriePfad(Kategorie blatt, java.util.Map<Integer, Kategorie> byId) {
+        java.util.Deque<String> parts = new java.util.ArrayDeque<>();
+        Kategorie cur = blatt;
+        java.util.Set<Integer> gesehen = new java.util.HashSet<>();
+        int tiefe = 0;
+        while (cur != null && tiefe < MAX_KATEGORIE_PFAD_TIEFE) {
+            if (cur.getId() != null && !gesehen.add(cur.getId())) {
+                break; // Schutz gegen Zyklen
+            }
+            parts.push(cur.getBeschreibung() != null ? cur.getBeschreibung() : "?");
+            Kategorie parent = cur.getParentKategorie();
+            if (parent == null || parent.getId() == null) break;
+            cur = byId.getOrDefault(parent.getId(), parent);
+            tiefe++;
+        }
+        return String.join(" > ", parts);
     }
 
     @Transactional(readOnly = true)
@@ -507,6 +579,25 @@ public class ArtikelMatchingToolService {
         double konfidenz = args.path("konfidenz").asDouble(0.0);
         String begruendung = args.path("begruendung").asText("");
 
+        // Leaf-Check: Artikel duerfen nur in Blatt-Kategorien eingefuegt werden.
+        // Unbekannte Kategorie-ID wird toleriert (silent ignore, konsistent zu bisher) —
+        // existierende Non-Leaf-Kategorie wird dagegen strikt abgelehnt.
+        Kategorie kategorie = null;
+        if (args.has("kategorieId") && !args.get("kategorieId").isNull()) {
+            Integer kategorieId = args.get("kategorieId").asInt();
+            Optional<Kategorie> kOpt = kategorieRepository.findById(kategorieId);
+            if (kOpt.isPresent()) {
+                kategorie = kOpt.get();
+                if (kategorieRepository.existsByParentKategorie_Id(kategorieId)) {
+                    return "FEHLER: Kategorie " + kategorieId + " '"
+                            + (kategorie.getBeschreibung() != null ? kategorie.getBeschreibung() : "")
+                            + "' hat Unterkategorien (ist keine Leaf-Kategorie). "
+                            + "Waehle eine Leaf-Kategorie aus list_kategorien (isLeaf=true) oder "
+                            + "lege mit create_kategorie eine neue Unterkategorie an.";
+                }
+            }
+        }
+
         ArtikelVorschlag v = new ArtikelVorschlag();
         v.setTyp(ArtikelVorschlagTyp.NEU_ANLAGE);
         v.setStatus(ArtikelVorschlagStatus.PENDING);
@@ -517,8 +608,8 @@ public class ArtikelMatchingToolService {
         v.setProduktlinie(trimTo(args.path("produktlinie").asText(null), 500));
         v.setProdukttext(trimTo(args.path("produkttext").asText(null), 2000));
 
-        if (args.has("kategorieId") && !args.get("kategorieId").isNull()) {
-            kategorieRepository.findById(args.get("kategorieId").asInt()).ifPresent(v::setVorgeschlageneKategorie);
+        if (kategorie != null) {
+            v.setVorgeschlageneKategorie(kategorie);
         }
         if (args.has("werkstoffId") && !args.get("werkstoffId").isNull()) {
             werkstoffRepository.findById(args.get("werkstoffId").asLong()).ifPresent(v::setVorgeschlagenerWerkstoff);
@@ -536,6 +627,81 @@ public class ArtikelMatchingToolService {
         log.info("KI-Matching: Neu-Anlage-Vorschlag {} für Lieferant {} — '{}' (Konfidenz {})",
                 v.getId(), ctx.lieferant().getId(), produktname, konfidenz);
         return "OK. NEU_ANLAGE-Vorschlag " + v.getId() + " in Review-Queue angelegt.";
+    }
+
+    /**
+     * Legt eine neue Kategorie direkt im Materialstamm an. User-Entscheidung (2026-04-20):
+     * <b>direkte Anlage</b>, kein {@code KategorieVorschlag}-Pattern — Kategorien sind
+     * Strukturdaten, keine Preisdaten; die KI entscheidet autonom.
+     *
+     * <p>Duplikat-Erkennung: gleiche Beschreibung (case-insensitive, getrimmt) unter
+     * demselben Parent &rarr; existierende ID wird zurueckgegeben, kein Insert. Hauptkategorien
+     * (parentId=null) erfordern Konfidenz &ge; {@value #MIN_KONFIDENZ_HAUPTKATEGORIE}.
+     */
+    @Transactional
+    public String createKategorie(JsonNode args, MatchingToolContext ctx) {
+        String beschreibung = args.path("beschreibung").asText("").trim();
+        if (beschreibung.isBlank()) return "beschreibung fehlt";
+        if (beschreibung.length() > 255) beschreibung = beschreibung.substring(0, 255);
+
+        double konfidenz = args.path("konfidenz").asDouble(0.0);
+        String begruendung = args.path("begruendung").asText("");
+
+        Integer parentId = null;
+        Kategorie parent = null;
+        if (args.has("parentKategorieId") && !args.get("parentKategorieId").isNull()) {
+            parentId = args.get("parentKategorieId").asInt();
+            Optional<Kategorie> pOpt = kategorieRepository.findById(parentId);
+            if (pOpt.isEmpty()) {
+                return "FEHLER: Parent-Kategorie " + parentId + " existiert nicht. "
+                        + "Rufe list_kategorien erneut auf.";
+            }
+            parent = pOpt.get();
+        }
+
+        if (parentId == null && konfidenz < MIN_KONFIDENZ_HAUPTKATEGORIE) {
+            return "FEHLER: Neue Hauptkategorie benoetigt Konfidenz >= "
+                    + MIN_KONFIDENZ_HAUPTKATEGORIE + " (erhalten: " + konfidenz + "). "
+                    + "Finde eine passende Oberkategorie oder erhoehe die Sicherheit.";
+        }
+
+        // Duplikat-Check: gleiche Beschreibung unter gleichem Parent?
+        final String beschreibungFinal = beschreibung;
+        final Integer parentIdFinal = parentId;
+        List<Kategorie> kandidaten = (parentIdFinal == null)
+                ? kategorieRepository.findByParentKategorieIsNull()
+                : kategorieRepository.findByParentKategorie_Id(parentIdFinal);
+        Optional<Kategorie> duplikat = kandidaten.stream()
+                .filter(k -> k.getBeschreibung() != null
+                        && k.getBeschreibung().trim().equalsIgnoreCase(beschreibungFinal))
+                .findFirst();
+        if (duplikat.isPresent()) {
+            Kategorie existierend = duplikat.get();
+            if (ctx != null) {
+                ctx.setLastEffect(new ToolSideEffect.KategorieAngelegt(
+                        existierend.getId(), beschreibungFinal, true));
+            }
+            log.info("KI-Matching: create_kategorie — Duplikat '{}' unter parent={} — existierende id={} zurueckgegeben",
+                    beschreibungFinal, parentIdFinal, existierend.getId());
+            return "EXISTIERT_BEREITS: Kategorie '" + beschreibungFinal + "' mit id=" + existierend.getId()
+                    + " ist bereits vorhanden. Nutze diese ID.";
+        }
+
+        Kategorie neu = new Kategorie();
+        neu.setBeschreibung(beschreibungFinal);
+        neu.setParentKategorie(parent);
+        Kategorie gespeichert = kategorieRepository.save(neu);
+
+        if (ctx != null) {
+            ctx.setLastEffect(new ToolSideEffect.KategorieAngelegt(
+                    gespeichert.getId(), beschreibungFinal, false));
+        }
+        log.info("KI-Matching: create_kategorie — neue Kategorie id={} '{}' unter parent={} angelegt "
+                        + "(Konfidenz {}, Grund: {})",
+                gespeichert.getId(), beschreibungFinal, parentIdFinal, konfidenz, trimTo(begruendung, 200));
+        return "OK. Neue Kategorie id=" + gespeichert.getId() + " '" + beschreibungFinal + "' "
+                + (parentIdFinal != null ? "unter parent=" + parentIdFinal : "als Hauptkategorie")
+                + " angelegt. Nutze diese ID fuer propose_new_artikel.";
     }
 
     // ─────────────────────────────────────────────────────────────
