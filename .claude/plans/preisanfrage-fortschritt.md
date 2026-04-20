@@ -5,7 +5,7 @@ hier den aktuellen Stand und hakt erledigte Punkte ab (bzw. ergänzt neue Aufgab
 
 **Originaler Plan:** [preisanfrage-mehrere-lieferanten.md](preisanfrage-mehrere-lieferanten.md)
 **Branch:** `feature/en1090-echeck` (wird vor Merge auf `feature/preisanfrage-multi-lieferant` umgebogen)
-**Letzter Commit dieses Features:** `7072ffb` (Security-Fix, siehe "Parallel erledigt" unten)
+**Letzter Commit dieses Features:** `d0d1590` (Etappe 3b: PDF-Variante Preisanfrage)
 
 ---
 
@@ -121,7 +121,7 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 - Nummer-Format final: `PA-{YYYY}-{3-stellige lfdNr}`. Token-Format: `PA-{YYYY}-{lfdNr}-{5 Zeichen aus A-Z+2-9}`.
 - HTML-Mail-Body HTML-escaped Lieferantenname und Token — XSS-Test deckt das ab.
 
-### ⏳ Etappe 3: PDF-Variante + Firmenlogo-Upload (FirmaEditor)
+### ✅ Etappe 3: PDF-Variante + Firmenlogo-Upload (FirmaEditor)
 **Commit-Ziel:** `feat(firma): Firmenlogo-Upload im FirmaEditor` + `feat(preisanfrage): PDF-Variante`
 
 **Firmenlogo-Upload (eigener Sub-Commit vor der PDF-Variante!) — Commit `c4e14c3`:**
@@ -133,15 +133,19 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 - [x] `BestellungPdfService` Zeile 59 + 171: ersetze Hart-Link durch `loadLogoImage()`
 - [x] FirmaEditor.tsx: Upload-Feld mit Vorschau + Löschen-Button
 
-**PDF-Variante Preisanfrage:**
-- [ ] `BestellungPdfService.generatePdfForPreisanfrage(palId)` neue Methode
-  - [ ] Rote Kopfzeile "PREISANFRAGE {nummer}" + Token-Box
-  - [ ] Hinweis-Box "Bitte Code angeben"
-  - [ ] Rückmeldefrist-Feld
-  - [ ] Positionen-Tabelle mit leerer Spalte "Ihr Preis €/Einheit"
-  - [ ] KEINE EN-1090-Infobox, KEINE Zeugnis-Blöcke
-- [ ] Test `BestellungPdfServiceTest.generatePdfForPreisanfrage_enthaeltTokenUndNummer`
-- [ ] Commit erstellen (zwei Commits, Logo und PDF getrennt)
+**PDF-Variante Preisanfrage — Commit `d0d1590`:**
+- [x] `BestellungPdfService.generatePdfForPreisanfrage(palId)` neue Methode
+  - [x] Rote Kopfzeile "PREISANFRAGE {nummer}" + Token-Box
+  - [x] Hinweis-Box "Bitte Code angeben"
+  - [x] Rückmeldefrist-Feld
+  - [x] Positionen-Tabelle mit leerer Spalte "Ihr Preis €/Einheit"
+  - [x] KEINE EN-1090-Infobox, KEINE Zeugnis-Blöcke
+- [x] `BestellungPdfService implements PreisanfragePdfGenerator` (Interface aus Etappe 2)
+- [x] `PreisanfrageLieferantRepository` + `PreisanfragePositionRepository` via Konstruktor injiziert (expliziter Konstruktor statt `@AllArgsConstructor`)
+- [x] Test `BestellungPdfServiceTest.generatePdfForPreisanfrage_enthaeltTokenUndNummer` — assertet Nummer + Token im PDF-Text
+- [x] Bestehende 3 Tests auf neue Konstruktor-Signatur umgestellt (Factory-Helper `newService()`)
+- [x] `./mvnw.cmd test` grün — **1195 Tests, 0 Failures**
+- [x] Commit (Logo und PDF getrennt: `c4e14c3` + `d0d1590`)
 
 ### ⏳ Etappe 4: Auto-Zuordnung via parentEmail
 **Commit-Ziel:** `feat(email): Preisanfrage-Auto-Zuordnung via parentEmail/Token`
@@ -247,4 +251,5 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 | 2026-04-20 | Opus 4.7 | Pläne ins Repo verschoben (Commit `3ef5f98`). Etappe 1 fertig: 4 Entities + 2 Enums + 4 Repositories angelegt, `./mvnw.cmd compile` grün. Commit folgt. |
 | 2026-04-20 | Opus 4.7 | Etappe 2 fertig (Commit `0e52f4a`): TokenGenerator + PreisanfrageService (6 Methoden) + 4 DTOs + PreisanfragePdfGenerator-Strategy-Interface + 23 neue Tests. Komplette Suite grün: 1176 Tests, 0 Failures. Architektur-Entscheidungen: `Optional<PreisanfragePdfGenerator>` entkoppelt von Etappe 3, `EmailServiceFactory` für Test-Injection, explizites `@Autowired` bei Dual-Constructor. |
 | 2026-04-20 | Opus 4.7 | Etappe 3a fertig (Commit `c4e14c3`): Firmenlogo-Upload mit 3 Endpoints (POST/GET/DELETE `/api/firma/logo`), MIME-Whitelist (PNG/JPEG/WebP), 2-MB-Limit, Pfad-Traversal-Schutz (serverseitiger Zielname `logo.<ext>`, `startsWith`-Check), FirmeninformationService + FirmaController erweitert. BestellungPdfService nutzt jetzt `loadLogoImage()` statt Hard-Link (Option B: kein Software-Fallback). FirmaEditor.tsx: Upload/Vorschau/Delete mit Cache-Busting via `logoVersion`. 18 neue Tests (7 Controller + 11 Service), volle Suite grün: **1194 Tests, 0 Failures**. TypeScript-Check grün (Exit 0). |
+| 2026-04-20 | Opus 4.7 | Etappe 3b fertig (Commit `d0d1590`): `BestellungPdfService implements PreisanfragePdfGenerator`, neue Methode `generatePdfForPreisanfrage(palId)` mit Firmenlogo, roter Kopfzeile "PREISANFRAGE {nummer}", Token-Box, Hinweis "Bitte Code angeben", Rückmeldefrist (deutsches Datumsformat) und Positionen-Tabelle mit leerer Spalte "Ihr Preis €/Einheit". Bewusst ohne EN-1090-Infobox/Zeugnis-Block. Konstruktor um `PreisanfrageLieferantRepository` + `PreisanfragePositionRepository` erweitert, `@AllArgsConstructor` durch expliziten Konstruktor ersetzt. Tests auf Factory-Helper `newService()` umgestellt, neuer Test `generatePdfForPreisanfrage_enthaeltTokenUndNummer` assertet Nummer + Token im PDF. **1195 Tests, 0 Failures**. |
 
