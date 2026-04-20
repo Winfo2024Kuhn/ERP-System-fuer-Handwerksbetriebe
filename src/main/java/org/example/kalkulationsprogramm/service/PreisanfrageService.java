@@ -73,6 +73,7 @@ public class PreisanfrageService {
     private final String smtpUsername;
     private final String smtpPassword;
     private final String fromAddress;
+    private final String replyToDomain;
 
     @Autowired
     public PreisanfrageService(
@@ -88,11 +89,12 @@ public class PreisanfrageService {
             @Value("${smtp.port:465}") int smtpPort,
             @Value("${smtp.username:}") String smtpUsername,
             @Value("${smtp.password:}") String smtpPassword,
-            @Value("${preisanfrage.from-address:${smtp.username:}}") String fromAddress) {
+            @Value("${preisanfrage.from-address:${smtp.username:}}") String fromAddress,
+            @Value("${preisanfrage.reply-to-domain:}") String replyToDomain) {
         this(preisanfrageRepository, preisanfrageLieferantRepository, preisanfragePositionRepository,
                 preisanfrageAngebotRepository, lieferantenRepository, projektRepository,
                 artikelInProjektRepository, pdfGenerator,
-                smtpHost, smtpPort, smtpUsername, smtpPassword, fromAddress,
+                smtpHost, smtpPort, smtpUsername, smtpPassword, fromAddress, replyToDomain,
                 EmailService::new);
     }
 
@@ -114,6 +116,7 @@ public class PreisanfrageService {
             String smtpUsername,
             String smtpPassword,
             String fromAddress,
+            String replyToDomain,
             EmailServiceFactory emailServiceFactory) {
         this.preisanfrageRepository = preisanfrageRepository;
         this.preisanfrageLieferantRepository = preisanfrageLieferantRepository;
@@ -128,6 +131,7 @@ public class PreisanfrageService {
         this.smtpUsername = smtpUsername;
         this.smtpPassword = smtpPassword;
         this.fromAddress = fromAddress;
+        this.replyToDomain = replyToDomain == null ? "" : replyToDomain;
         this.emailServiceFactory = emailServiceFactory;
     }
 
@@ -399,7 +403,8 @@ public class PreisanfrageService {
         String nummer = pal.getPreisanfrage().getNummer();
         String token = pal.getToken();
         String subject = "Preisanfrage " + nummer + " [" + token + "]";
-        String htmlBody = baueMailBody(pal);
+        String replyTo = baueReplyToAdresse(token);
+        String htmlBody = baueMailBody(pal, replyTo);
 
         EmailService service = emailServiceFactory.create(smtpHost, smtpPort, smtpUsername, smtpPassword);
         try {
@@ -407,6 +412,7 @@ public class PreisanfrageService {
                     empfaenger,
                     null,
                     fromAddress,
+                    replyTo,
                     subject,
                     htmlBody,
                     pdf != null ? pdf.toString() : null,
@@ -424,18 +430,31 @@ public class PreisanfrageService {
         }
     }
 
-    private String baueMailBody(PreisanfrageLieferant pal) {
+    private String baueReplyToAdresse(String token) {
+        if (replyToDomain == null || replyToDomain.isBlank()) {
+            return null;
+        }
+        return token + "@" + replyToDomain;
+    }
+
+    private String baueMailBody(PreisanfrageLieferant pal, String replyTo) {
         String lieferantenname = pal.getLieferant() != null
                 ? pal.getLieferant().getLieferantenname()
                 : "Lieferant";
         String nummer = pal.getPreisanfrage().getNummer();
+        String antwortHinweis = replyTo != null
+                ? "<p>Bitte antworten Sie direkt auf diese E-Mail und legen Sie Ihr Angebot als <b>PDF-Anhang</b> bei."
+                        + " Ihre Antwort geht automatisch an:<br>"
+                        + "<b>" + htmlEscape(replyTo) + "</b></p>"
+                : "<p>Bitte antworten Sie auf diese E-Mail und legen Sie Ihr Angebot als <b>PDF-Anhang</b> bei.</p>";
         return "<p>Guten Tag " + htmlEscape(lieferantenname) + ",</p>"
                 + "<p>wir bitten um Ihr Angebot zur Preisanfrage <b>" + htmlEscape(nummer) + "</b>."
-                + " Details entnehmen Sie bitte dem angehaengten PDF.</p>"
-                + "<p>Bitte geben Sie bei Ihrer Antwort den folgenden Rueckmelde-Code an,"
-                + " damit wir Ihr Angebot automatisch zuordnen koennen:</p>"
+                + " Details entnehmen Sie bitte dem angehängten PDF.</p>"
+                + antwortHinweis
+                + "<p>Bitte geben Sie bei Ihrer Antwort den folgenden Rückmelde-Code im Betreff an,"
+                + " damit wir Ihr Angebot automatisch zuordnen können:</p>"
                 + "<p style=\"font-size:16px;\"><b>" + htmlEscape(pal.getToken()) + "</b></p>"
-                + "<p>Vielen Dank und freundliche Gruesse</p>";
+                + "<p>Vielen Dank und freundliche Grüße</p>";
     }
 
     private static String htmlEscape(String in) {

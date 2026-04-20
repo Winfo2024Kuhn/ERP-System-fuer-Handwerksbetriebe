@@ -386,7 +386,8 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
     private void addHinweisBox(Document doc) throws DocumentException {
         Font hinweisFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(120, 30, 30));
         Paragraph p = new Paragraph(
-                "Bitte Code angeben – im Betreff oder in der Antwort-E-Mail –, "
+                "Bitte antworten Sie per E-Mail auf diese Anfrage und legen Sie Ihr Angebot als PDF bei. "
+                        + "Geben Sie dabei den Rückmelde-Code im Betreff an, "
                         + "damit wir Ihr Angebot automatisch zuordnen können.",
                 hinweisFont);
         p.setSpacingAfter(10f);

@@ -90,6 +90,7 @@ class PreisanfrageServiceTest {
                 "sender@example.com",
                 "pw",
                 "sender@example.com",
+                "",
                 emailFactory);
     }
 
@@ -165,7 +166,7 @@ class PreisanfrageServiceTest {
         when(preisanfrageRepository.findById(100L)).thenReturn(Optional.of(pa));
         when(pdfGenerator.generatePdfForPreisanfrage(pal.getId())).thenReturn(Path.of("uploads/test.pdf"));
         when(emailService.sendEmailAndReturnMessageId(
-                anyString(), any(), anyString(), anyString(), anyString(), any(), any()))
+                anyString(), any(), anyString(), any(), anyString(), anyString(), any(), any()))
                 .thenReturn("<abc-123@example.com>");
         when(preisanfrageLieferantRepository.save(any(PreisanfrageLieferant.class)))
                 .thenAnswer(i -> i.getArgument(0));
@@ -181,6 +182,7 @@ class PreisanfrageServiceTest {
                 eq("max.mustermann@example.com"),
                 any(),
                 eq("sender@example.com"),
+                any(), // replyTo: null wenn Domain nicht konfiguriert
                 argThat(subj -> subj.contains(pa.getNummer()) && subj.contains(pal.getToken())),
                 anyString(), any(), any());
     }
@@ -400,14 +402,14 @@ class PreisanfrageServiceTest {
         pal.getLieferant().setLieferantenname("<script>alert(1)</script>");
         when(preisanfrageRepository.findById(800L)).thenReturn(Optional.of(pa));
         when(pdfGenerator.generatePdfForPreisanfrage(pal.getId())).thenReturn(Path.of("x.pdf"));
-        when(emailService.sendEmailAndReturnMessageId(anyString(), any(), anyString(), anyString(), anyString(), any(), any()))
+        when(emailService.sendEmailAndReturnMessageId(anyString(), any(), anyString(), any(), anyString(), anyString(), any(), any()))
                 .thenReturn("<mid@example.com>");
         when(preisanfrageLieferantRepository.save(any(PreisanfrageLieferant.class))).thenAnswer(i -> i.getArgument(0));
 
         service.versendeAnAlleLieferanten(800L);
 
         verify(emailService).sendEmailAndReturnMessageId(
-                anyString(), any(), anyString(), anyString(),
+                anyString(), any(), anyString(), any(), anyString(),
                 argThat((String body) -> !body.contains("<script>") && body.contains("&lt;script&gt;")),
                 any(), any());
     }

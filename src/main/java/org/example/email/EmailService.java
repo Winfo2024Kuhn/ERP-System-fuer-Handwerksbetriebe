@@ -186,10 +186,23 @@ public class EmailService {
         }
     }
 
-    // Sends email and returns Message-ID. Also appends to INBOX.Sent (best effort).
+    // Sends email and returns Message-ID (without Reply-To — backward-compatible overload).
     public String sendEmailAndReturnMessageId(String recipient,
             String cc,
             String fromAddress,
+            String subject,
+            String htmlBody,
+            String attachmentFilePath,
+            String attachmentFileName) throws MessagingException, IOException {
+        return sendEmailAndReturnMessageId(recipient, cc, fromAddress, null, subject, htmlBody,
+                attachmentFilePath, attachmentFileName);
+    }
+
+    // Sends email and returns Message-ID, with optional Reply-To header.
+    public String sendEmailAndReturnMessageId(String recipient,
+            String cc,
+            String fromAddress,
+            String replyTo,
             String subject,
             String htmlBody,
             String attachmentFilePath,
@@ -214,6 +227,9 @@ public class EmailService {
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
         if (cc != null && !cc.isBlank()) {
             message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
+        }
+        if (replyTo != null && !replyTo.isBlank()) {
+            message.setReplyTo(InternetAddress.parse(replyTo));
         }
         message.setSubject(subject, StandardCharsets.UTF_8.name());
 
