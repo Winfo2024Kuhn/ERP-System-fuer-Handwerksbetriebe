@@ -97,9 +97,38 @@ class AusgangsGeschaeftsDokumentServiceTest {
             AusgangsGeschaeftsDokument result = service.erstellen(dto);
 
             assertThat(result.getDokumentNummer()).isNotNull();
-            assertThat(result.getDokumentNummer()).contains("/");
+            assertThat(result.getDokumentNummer())
+                    .matches("^AG-\\d{4}/\\d{2}/\\d{5}$");
             assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
             assertThat(result.getBetreff()).isEqualTo("Testanfrage");
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.CsvSource({
+                "ANGEBOT, AG",
+                "AUFTRAGSBESTAETIGUNG, AB",
+                "RECHNUNG, RE",
+                "TEILRECHNUNG, TR",
+                "ABSCHLAGSRECHNUNG, AR",
+                "SCHLUSSRECHNUNG, SR",
+                "GUTSCHRIFT, GU"
+        })
+        void vergibtKorrektesPraefixProTyp(AusgangsGeschaeftsDokumentTyp typ, String praefix) {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(typ);
+            dto.setBetreff("Test");
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getDokumentNummer())
+                    .matches("^" + praefix + "-\\d{4}/\\d{2}/\\d{5}$");
         }
 
         @Test
@@ -398,6 +427,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(original.isStorniert()).isTrue();
             assertThat(original.getStorniertAm()).isEqualTo(LocalDate.now());
             assertThat(storno.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.STORNO);
+            assertThat(storno.getDokumentNummer()).matches("^ST-\\d{4}/\\d{2}/\\d{5}$");
             assertThat(storno.getBetragNetto()).isEqualByComparingTo(new BigDecimal("-1000.00"));
             assertThat(storno.getBetragBrutto()).isEqualByComparingTo(new BigDecimal("-1190.00"));
             assertThat(storno.isGebucht()).isTrue();

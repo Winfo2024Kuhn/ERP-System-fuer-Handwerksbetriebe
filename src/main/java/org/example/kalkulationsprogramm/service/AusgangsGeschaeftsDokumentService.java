@@ -227,7 +227,7 @@ public class AusgangsGeschaeftsDokumentService {
         }
 
         // Dokumentnummer generieren
-        dokument.setDokumentNummer(generiereNummer());
+        dokument.setDokumentNummer(generiereNummer(dokument.getTyp()));
 
         AusgangsGeschaeftsDokument saved = dokumentRepository.save(dokument);
 
@@ -520,7 +520,7 @@ public class AusgangsGeschaeftsDokumentService {
         AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
         storno.setTyp(AusgangsGeschaeftsDokumentTyp.STORNO);
         storno.setDatum(LocalDate.now());
-        storno.setDokumentNummer(generiereNummer());
+        storno.setDokumentNummer(generiereNummer(AusgangsGeschaeftsDokumentTyp.STORNO));
 
         // Betreff: "Stornorechnung XXXX (zu Rechnung YYYY)"
         String originalTypLabel = switch (original.getTyp()) {
@@ -1019,10 +1019,10 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Generiert eine neue Dokumentnummer im Format YYYY/MM/NNNNN.
-     * Thread-sicher durch pessimistisches Locking.
+     * Generiert eine neue Dokumentnummer im Format {PREFIX}-YYYY/MM/NNNNN.
+     * Thread-sicher durch pessimistisches Locking. Gemeinsamer Monatszähler für alle Typen.
      */
-    private String generiereNummer() {
+    private String generiereNummer(AusgangsGeschaeftsDokumentTyp typ) {
         YearMonth now = YearMonth.now();
         String monatKey = now.format(DateTimeFormatter.ofPattern("yyyy/MM"));
 
@@ -1039,8 +1039,26 @@ public class AusgangsGeschaeftsDokumentService {
         counter.setZaehler(counter.getZaehler() + 1);
         counterRepository.save(counter);
 
-        // Nummer formatieren: YYYY/MM/NNNNN
-        return String.format("%s/%05d", monatKey, counter.getZaehler());
+        // Nummer formatieren: {PREFIX}-YYYY/MM/NNNNN
+        return String.format("%s-%s/%05d", praefixFuer(typ), monatKey, counter.getZaehler());
+    }
+
+    /**
+     * Liefert das Nummernkreis-Präfix für den Dokumenttyp.
+     * AG = Angebot, AB = Auftragsbestätigung, RE = Rechnung, TR = Teilrechnung,
+     * AR = Abschlagsrechnung, SR = Schlussrechnung, GU = Gutschrift, ST = Storno.
+     */
+    private String praefixFuer(AusgangsGeschaeftsDokumentTyp typ) {
+        return switch (typ) {
+            case ANGEBOT -> "AG";
+            case AUFTRAGSBESTAETIGUNG -> "AB";
+            case RECHNUNG -> "RE";
+            case TEILRECHNUNG -> "TR";
+            case ABSCHLAGSRECHNUNG -> "AR";
+            case SCHLUSSRECHNUNG -> "SR";
+            case GUTSCHRIFT -> "GU";
+            case STORNO -> "ST";
+        };
     }
 
     /**
