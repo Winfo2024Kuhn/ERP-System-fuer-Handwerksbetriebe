@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -719,48 +718,4 @@ public class EmailService {
                 .toString();
     }
 
-    /**
-     * Demonstrates usage of the EmailService.
-     */
-    // ...
-
-    // --- Ende der wichtigen SSL-Einstellungen ---
-
-    // Erstellen Sie die Session mit diesen Properties
-    // Session session = Session.getInstance(props, ...);
-    public static void main(String[] args) {
-        // SMTP configuration (replace with real credentials)
-        EmailService service = new EmailService(
-                "securesmtp.t-online.de", // host
-                465, // port
-                "info-bauschlosserei-kuhn@t-online.de", // username
-                "Lini+marviTkom" // password
-        );
-
-        String attachmentPath = "C:/Users/bausc/Downloads/Rechnung2025_05_00004(1.AbschlagsrechnungzuAnfrage2025_05_00001).Pdf"; // path
-                                                                                                                                 // to
-                                                                                                                                 // PDF
-
-        EmailContent content = EmailService.buildInvoiceEmail(
-                attachmentPath,
-                "Sehr geehrte Damen und Herren", // Anrede
-                "Musterkunde", // Kundenname
-                "Musterbauvorhaben", // Bauvorhaben
-                "2025-01", // Projektnummer
-                "Rechnung2025_06_00007", // Rechnungsnummer
-                LocalDate.now(), // Rechnungsdatum
-                LocalDate.now().plusDays(14), // Fälligkeitsdatum
-                "1.234,56 €", // Betrag
-                "Max Mustermann" // Benutzer
-        );
-
-        service.sendEmail(
-                "mkuhn864@gmail.com", // Empfänger
-                null, // CC
-                "bauschlosserei-kuhn@t-online.de", // Absender
-                content.subject(), // Betreff
-                content.htmlBody(), // HTML-Inhalt
-                attachmentPath, // Anhang
-                Path.of(attachmentPath).getFileName().toString());
-    }
 }
