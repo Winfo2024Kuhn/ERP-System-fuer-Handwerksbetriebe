@@ -608,4 +608,44 @@ public class PreisanfrageService {
                 .findByPreisanfrageIdOrderByLieferant_LieferantennameAsc(
                         requirePositiveId(preisanfrageId, "preisanfrageId")));
     }
+
+    /** Einzelne Preisanfrage fuer Detail-Ansichten. */
+    @Transactional(readOnly = true)
+    public Preisanfrage findeById(Long preisanfrageId) {
+        return preisanfrageRepository.findById(requirePositiveId(preisanfrageId, "preisanfrageId"))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Preisanfrage nicht gefunden: " + preisanfrageId));
+    }
+
+    /**
+     * Liefert alle Preisanfragen, optional nach Status gefiltert.
+     * Sortierung: neueste zuerst.
+     */
+    @Transactional(readOnly = true)
+    public List<Preisanfrage> listeAlle(PreisanfrageStatus filterStatus) {
+        if (filterStatus != null) {
+            return preisanfrageRepository.findByStatusOrderByErstelltAmDesc(filterStatus);
+        }
+        return preisanfrageRepository.findAll(
+                org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "erstelltAm"));
+    }
+
+    /**
+     * Bricht eine Preisanfrage ab (Soft-Delete). Bereits vergebene Anfragen
+     * koennen nicht mehr abgebrochen werden.
+     */
+    @Transactional
+    public void abbrechen(Long preisanfrageId) {
+        Preisanfrage pa = preisanfrageRepository.findById(
+                requirePositiveId(preisanfrageId, "preisanfrageId"))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Preisanfrage nicht gefunden: " + preisanfrageId));
+        if (pa.getStatus() == PreisanfrageStatus.VERGEBEN) {
+            throw new IllegalStateException(
+                    "Bereits vergebene Preisanfrage kann nicht mehr abgebrochen werden");
+        }
+        pa.setStatus(PreisanfrageStatus.ABGEBROCHEN);
+        preisanfrageRepository.save(pa);
+    }
 }

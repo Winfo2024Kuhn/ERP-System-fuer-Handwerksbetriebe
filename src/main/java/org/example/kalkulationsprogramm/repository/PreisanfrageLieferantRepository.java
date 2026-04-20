@@ -16,5 +16,12 @@ public interface PreisanfrageLieferantRepository extends JpaRepository<Preisanfr
 
     List<PreisanfrageLieferant> findByPreisanfrageIdOrderByLieferant_LieferantennameAsc(Long preisanfrageId);
 
+    /**
+     * Rueckwaerts-Suche von einer eingegangenen E-Mail zum zugehoerigen
+     * Preisanfrage-Lieferanten. Wird vom EmailCenter fuer das
+     * "Preisanfrage"-Badge + Quick-Action genutzt.
+     */
+    Optional<PreisanfrageLieferant> findByAntwortEmail_Id(Long emailId);
+
     boolean existsByToken(String token);
 }

@@ -88,6 +88,7 @@ public class UnifiedEmailController {
     private final ContactService contactService;
     private final SpamBayesService spamBayesService;
     private final EmailThreadService emailThreadService;
+    private final org.example.kalkulationsprogramm.repository.PreisanfrageLieferantRepository preisanfrageLieferantRepository;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -1651,6 +1652,7 @@ public class UnifiedEmailController {
             dto.setLieferantId(email.getLieferant().getId());
             dto.setLieferantName(email.getLieferant().getLieferantenname());
         }
+        dto.setPreisanfrageLieferantRef(buildPreisanfrageRef(email));
 
         // Compute folder
         dto.setFolder(computeFolder(email));
@@ -1711,6 +1713,7 @@ public class UnifiedEmailController {
             dto.setLieferantId(email.getLieferant().getId());
             dto.setLieferantName(email.getLieferant().getLieferantenname());
         }
+        dto.setPreisanfrageLieferantRef(buildPreisanfrageRef(email));
 
         // Compute folder
         dto.setFolder(computeFolder(email));
@@ -1795,5 +1798,34 @@ public class UnifiedEmailController {
             current = current.getParentEmail();
         }
         return count;
+    }
+
+    /**
+     * Baut die Ruecklink-Info auf eine Preisanfrage-Lieferant-Antwort,
+     * falls die E-Mail als Angebot zugeordnet wurde. Gibt {@code null}
+     * zurueck, wenn keine Zuordnung existiert – dann landet auch nichts
+     * im DTO (Jackson serialisiert null-Felder je nach Config, aber das
+     * Frontend prueft explizit auf Existenz).
+     */
+    private UnifiedEmailDto.PreisanfrageLieferantRef buildPreisanfrageRef(Email email) {
+        if (email == null || email.getId() == null) {
+            return null;
+        }
+        return preisanfrageLieferantRepository.findByAntwortEmail_Id(email.getId())
+                .map(pal -> {
+                    UnifiedEmailDto.PreisanfrageLieferantRef ref =
+                            new UnifiedEmailDto.PreisanfrageLieferantRef();
+                    ref.setPalId(pal.getId());
+                    if (pal.getPreisanfrage() != null) {
+                        ref.setPreisanfrageId(pal.getPreisanfrage().getId());
+                        ref.setPreisanfrageNummer(pal.getPreisanfrage().getNummer());
+                    }
+                    if (pal.getLieferant() != null) {
+                        ref.setLieferantId(pal.getLieferant().getId());
+                        ref.setLieferantenname(pal.getLieferant().getLieferantenname());
+                    }
+                    return ref;
+                })
+                .orElse(null);
     }
 }

@@ -434,6 +434,83 @@ class PreisanfrageServiceTest {
     }
 
     // ------------------------------------------------------------
+    // findeById / listeAlle / abbrechen
+    // ------------------------------------------------------------
+
+    @Test
+    void findeById_liefertEntityBeiTrefferZurueck() {
+        Preisanfrage pa = baueFertigePreisanfrage(500L);
+        when(preisanfrageRepository.findById(500L)).thenReturn(Optional.of(pa));
+
+        Preisanfrage result = service.findeById(500L);
+
+        assertEquals(500L, result.getId());
+    }
+
+    @Test
+    void findeById_unbekannteIdWirftIllegalArgument() {
+        when(preisanfrageRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> service.findeById(999L));
+    }
+
+    @Test
+    void listeAlle_ohneFilterSortiertNachErstelltAmDesc() {
+        Preisanfrage a = baueFertigePreisanfrage(1L);
+        Preisanfrage b = baueFertigePreisanfrage(2L);
+        when(preisanfrageRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(b, a));
+
+        List<Preisanfrage> result = service.listeAlle(null);
+
+        assertEquals(2, result.size());
+        verify(preisanfrageRepository).findAll(any(org.springframework.data.domain.Sort.class));
+        verify(preisanfrageRepository, never()).findByStatusOrderByErstelltAmDesc(any());
+    }
+
+    @Test
+    void listeAlle_mitStatusFilterRuftRepositoryMitStatusAuf() {
+        Preisanfrage pa = baueFertigePreisanfrage(3L);
+        when(preisanfrageRepository.findByStatusOrderByErstelltAmDesc(PreisanfrageStatus.OFFEN))
+                .thenReturn(List.of(pa));
+
+        List<Preisanfrage> result = service.listeAlle(PreisanfrageStatus.OFFEN);
+
+        assertEquals(1, result.size());
+        verify(preisanfrageRepository).findByStatusOrderByErstelltAmDesc(PreisanfrageStatus.OFFEN);
+    }
+
+    @Test
+    void abbrechen_setztStatusAufAbgebrochenUndSpeichert() {
+        Preisanfrage pa = baueFertigePreisanfrage(10L);
+        pa.setStatus(PreisanfrageStatus.TEILWEISE_BEANTWORTET);
+        when(preisanfrageRepository.findById(10L)).thenReturn(Optional.of(pa));
+        when(preisanfrageRepository.save(any(Preisanfrage.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.abbrechen(10L);
+
+        assertEquals(PreisanfrageStatus.ABGEBROCHEN, pa.getStatus());
+        verify(preisanfrageRepository).save(pa);
+    }
+
+    @Test
+    void abbrechen_bereitsVergebenWirftIllegalState() {
+        Preisanfrage pa = baueFertigePreisanfrage(11L);
+        pa.setStatus(PreisanfrageStatus.VERGEBEN);
+        when(preisanfrageRepository.findById(11L)).thenReturn(Optional.of(pa));
+
+        assertThrows(IllegalStateException.class, () -> service.abbrechen(11L));
+        verify(preisanfrageRepository, never()).save(any());
+    }
+
+    @Test
+    void abbrechen_unbekannteIdWirftIllegalArgument() {
+        when(preisanfrageRepository.findById(42L)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> service.abbrechen(42L));
+    }
+
+    // ------------------------------------------------------------
     // Helfer / Stubs
     // ------------------------------------------------------------
 

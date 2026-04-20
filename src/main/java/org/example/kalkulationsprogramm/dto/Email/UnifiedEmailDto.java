@@ -48,6 +48,15 @@ public class UnifiedEmailDto {
     private Long lieferantId;
     private String lieferantName;
 
+    /**
+     * Optionale Ruecklink-Info auf eine Preisanfrage-Lieferanten-Antwort.
+     * Wird gesetzt, wenn die E-Mail ueber parentEmail/Token einem
+     * {@code PreisanfrageLieferant} zugeordnet wurde. Ermoeglicht dem
+     * EmailCenter ein Badge "Preisanfrage PA-YYYY-NNN" + Quick-Action
+     * "Preise eintragen".
+     */
+    private PreisanfrageLieferantRef preisanfrageLieferantRef;
+
     // Ordner-Zuordnung (computed)
     private String folder;
 
@@ -72,5 +81,19 @@ public class UnifiedEmailDto {
         private Long fileSize;
         private String contentId;
         private boolean inline;
+    }
+
+    /**
+     * Leichte Referenz auf eine Preisanfrage-Lieferant-Antwort.
+     * Nur die IDs und die menschenlesbare Nummer werden exponiert, keine
+     * Entity-Felder. Ermoeglicht dem Frontend direkt zu navigieren.
+     */
+    @Data
+    public static class PreisanfrageLieferantRef {
+        private Long preisanfrageId;
+        private String preisanfrageNummer;
+        private Long palId;
+        private Long lieferantId;
+        private String lieferantenname;
     }
 }
