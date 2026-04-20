@@ -68,6 +68,34 @@ Der MCP-Server `notebooklm` ist in `.vscode/mcp.json` konfiguriert und stellt ~3
 3. `mcp_notebooklm_notebook_describe` — KI-Zusammenfassung des Notebooks
 4. `mcp_notebooklm_source_list_drive` / `mcp_notebooklm_source_get_content` — Einzelne Quellen lesen
 
+### Fallback: Wenn die `mcp_notebooklm_*`-Tools NICHT verfügbar sind
+In einer Claude-Code-Session kann es vorkommen, dass der MCP-Server nicht geladen ist
+(ToolSearch für `notebooklm` liefert keine Treffer). In dem Fall das Notebook
+**direkt über die CLI** abfragen – gleicher Code-Pfad, gleiches Ergebnis. Kein Grund,
+ohne Notebook weiterzumachen:
+
+```bash
+# Voraussetzung: uvx im PATH (Git-Bash unter Windows)
+export PATH="/c/Users/User/.local/bin:$PATH"
+
+# Auth prüfen (sollte "Login valid" o.ä. melden)
+uvx --from notebooklm-mcp-cli nlm login --check
+
+# Notebook-Frage stellen
+uvx --from notebooklm-mcp-cli nlm notebook query \
+  917b7857-0d32-43bf-9dec-b5ca1d362800 \
+  "Deine Frage hier (mit ASCII-Umlauten ae/oe/ue wegen Shell-Encoding)" \
+  --timeout 240
+```
+
+Ausgabe ist JSON mit `value.answer` (die Antwort) und `value.references` (wörtliche Zitate
+aus den Quellen). Bei Bedarf mit `| head -120` oder `| tail -80` stückweise lesen, weil
+die Zitate-Liste lang ist.
+
+**Wenn auch das CLI fehlschlägt** (Auth abgelaufen, Browser-Login nötig): dem User Bescheid
+geben und erst nach Re-Login weitermachen — nicht eigenmächtig ohne Notebook liefern,
+wenn der User explizit „mit Notebook" verlangt hat.
+
 ### Setup (falls der Server nicht läuft)
 Falls der MCP-Server nicht erreichbar ist oder Authentifizierungsfehler auftreten:
 
