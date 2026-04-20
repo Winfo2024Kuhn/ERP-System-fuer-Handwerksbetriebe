@@ -281,12 +281,50 @@ Erweitert Etappe 4 um zwei zusätzliche Matching-Stufen und macht den Reply-To-V
 - Kein zusätzlicher Fetch: alles, was der Badge/das Banner braucht (Nummer + Lieferantenname), kommt im bestehenden Inbox-Listing mit.
 - `PreiseEintragenModal` ruft selbst `/api/preisanfragen/{id}/vergleich` — erlaubt Mehrfach-Öffnen ohne State-Leck im EmailCenter.
 
-### ⏳ Etappe 9: Pre-Merge + Review
-- [ ] `/pre-merge` Skill ausführen
-- [ ] Manueller End-to-End-Test (siehe Original-Plan Abschnitt 8)
-- [ ] Security-Smoke (XSS/SQLi)
-- [ ] Commits optional zu PR aufräumen
-- [ ] **Nicht direkt nach main mergen** — PR öffnen
+### ✅ Etappe 9: Pre-Merge-Review (ohne PR)
+**User-Entscheidung (2026-04-20):** Kein eigener PR — Preisanfrage-Feature bleibt auf
+`feature/en1090-echeck` und wird **zusammen mit EN-1090** in einem Rutsch nach `main`
+gemergt. Grund: beide Features teilen sich bereits den Branch, getrennte PRs wären
+nur Merge-Churn.
+
+Pre-Merge-Checks gemäß `/pre-merge`-Skill:
+- [x] **Secrets:** `git diff origin/main...HEAD -- "*.properties"` zeigt nur strukturelle
+      Properties-Änderungen (Logging-Level, Feature-Flags, `preisanfrage.reply-to-domain=`
+      als leerer Default). Kein `application-local.properties` im Diff. Grep nach
+      `password|apiKey|Bearer|sk-|AIza` findet nur `application-local.properties`
+      (ist gitignored, nicht committed).
+- [x] **Frontend:** `npm run lint` (1 pre-existing Warnung in
+      `ArtikelVorschlaegeModal.tsx`), `npm run build` grün, Vitest **178/178 grün**
+      (inkl. 9 Modal-Tests aus Etappe 7 + 2 EmailCenter-Tests aus Etappe 8).
+- [x] **Backend Preisanfrage-Scope:** Isoliert (172/172) grün —
+      `PreisanfrageService`, `PreisanfrageZuordnungService`, `PreisanfrageController`,
+      `PreisanfrageAngebotsExtraktionService`, `TokenGenerator`,
+      `ArtikelMatchingAgentService`, `ArtikelMatchingToolService`,
+      `BestellungPdfService`, `FirmeninformationService`,
+      `EmailAutoAssignmentService`.
+- [!] **Backend Gesamtsuite:** 1264 Tests, 144 Errors — **Context-Contamination in
+      der Gesamt-Suite**. Einzel-Run aller Tests (inkl. des als Erstes scheiternden
+      `FormularTemplateControllerTest`) ist grün. Kein Zusammenhang mit
+      Preisanfrage-Code (Trigger liegt irgendwo in der Test-Reihenfolge, vermutlich
+      eingeschleppt zwischen Etappe 7 und jetzt durch einen ac11aa8-Refactor-Commit).
+      **Vor dem Merge nach `main` muss das separat untersucht werden** — entweder
+      via Test-Isolierung (`@DirtiesContext` an der eigentlichen Kontext-
+      Verschmutzer-Stelle) oder indem der fehlerhafte Commit identifiziert wird.
+      Gilt **nicht** als Blocker für das Preisanfrage-Feature, weil es
+      Feature-unabhängig ist — aber für den EN-1090-Merge blockierend.
+- [x] **Code-Qualität:** Keine TODOs, `System.out.println`, `console.log` oder
+      auskommentierten Code in den Preisanfrage-Dateien (grep im Feature-Scope
+      leer).
+- [x] **DSGVO:** Tests nutzen ausschließlich Dummy-Daten (`Max Mustermann`,
+      `test@example.com`, Musterstraße — verifiziert in Etappe 2/4/5/7).
+- [ ] **Manueller End-to-End-Test** (siehe Original-Plan Abschnitt 8) — bleibt
+      dem User vor dem Haupt-Merge, nicht in Claude-Scope.
+- [x] Commit erstellen — Tracker-Update mit Etappe 9 abgehakt.
+
+**Nächste Schritte** (für den nächsten Agent / den User):
+1. EN-1090-Feature parallel abschließen (andere Etappen auf diesem Branch).
+2. Context-Contamination in der Gesamtsuite lokalisieren (siehe `[!]` oben).
+3. Dann Merge `feature/en1090-echeck` → `main` (User-Entscheidung: ohne PR).
 
 ---
 
@@ -337,6 +375,7 @@ User-Zitat: *„Bedarf-Modul soll dienen alles aus dem Kopf abzuschreiben und da
 | 2026-04-20 | Opus 4.7 | Etappe 4b fertig (Commit `8b5bb05`): User wollte Lieferanten auch dann zuordnen können, wenn sie nicht auf "Antworten" klicken sondern eine neue Mail schreiben. Lösung: 4-stufige Fallback-Kette in `PreisanfrageZuordnungService` (In-Reply-To → To-Adresse `TOKEN@domain` → Token-Regex im Betreff → PA-Nummer + Absender-E-Mail-Abgleich). Neuer Config-Key `preisanfrage.reply-to-domain=` in `application.properties` (leer = deaktiviert), in `application-local.properties` überschreibbar. `EmailService` bekommt neuen Overload `sendEmailAndReturnMessageId(..., replyTo, ...)`; alter 7-Parameter-Overload bleibt rückwärtskompatibel. Mail-Body + PDF-Hinweisbox bitten jetzt explizit um E-Mail-Antwort mit PDF-Anhang (Umlaute gemäß CLAUDE.md). User-Entscheidung: Eigene Domain `bauschlosserei-kuhn.de` kommt langfristig, bis dahin reichen Fallbacks 1/3/4. 4 neue Tests (Fallback 2 mit/ohne Domain, Fallback 4 mit/ohne Absender-Match), 3 `PreisanfrageServiceTest`-Stubs auf neuen 8-Parameter-Overload umgestellt. **1242 Tests, 0 Failures** (+4). `PreisanfrageZuordnungService` wechselt von `@RequiredArgsConstructor` auf expliziten Konstruktor wegen `@Value`-Injection. |
 | 2026-04-20 | Opus 4.7 | Nach Etappe 6: Strategische Entscheidungen fuer Etappe 7+ (KI-Preisvergleich) festgehalten. **PDF-Direkt an Gemini** ist bereits im `GeminiDokumentAnalyseService` so implementiert (`inline_data` + `application/pdf` an 8 Aufrufstellen) — kein Code-Change noetig, nur Policy im Plan zementiert. **Trigger:** Button "Angebote vergleichen" + Auto bei Status `VOLLSTAENDIG`. **Artikelstamm-Update** nutzt bestehenden `ArtikelMatchingAgentService` (DRY), der Dienstleistungen filtert + Fallback-Suche kann. Drei **User-ergaenzte Regeln** fuer Etappe 7: (A) rekursiver Kategorie-Pfad + `isLeaf`-Flag in `list_kategorien`, (B) Leaf-Only-Validierung in `propose_new_artikel`, (C) neues Tool `create_kategorie(beschreibung, parentKategorieId)` mit Duplikat-Check. Offene Frage: direktes Anlegen vs. `KategorieVorschlag`. Siehe Plan-Abschnitt 12. |
 | 2026-04-20 | Opus 4.7 (1M) | Etappe 7 fertig: KI-Preisvergleich + Vergleichs-Matrix + Preiserfassung. **User-Entscheidung:** `create_kategorie` legt direkt in DB an (Option a, keine Vorschlaegen-UI). **Modell-Umstellung:** Matching-Agent nutzt jetzt `gemini-3.1-pro-preview` (Default in `application.properties` + `@Value`-Default). Schema-Fix: Enum-Spalten in `Preisanfrage` + `PreisanfrageLieferant` bekommen `columnDefinition="VARCHAR(40)"`, weil Hibernate 6 sonst gegen MySQL-ENUM validiert und den Start scheitert. **Tool-Service:** `listKategorien()` liefert jetzt `id | parentId | isLeaf | pfad` (rekursiv, In-Memory-Index, zyklussicher), `proposeNewArtikel` Leaf-Check (non-leaf existierend → Fehler, unbekannt → silent ignore), neues Tool `create_kategorie` mit Duplikat-Check + Konfidenz-Schwelle 0.9 fuer Hauptkategorien + `ToolSideEffect.KategorieAngelegt`. **Extraktions-Service:** neuer `PreisanfrageAngebotsExtraktionService` (~420 Zeilen) — pro PAL PDF direkt an Gemini (inline_data, kein Text-Preprocessing), Gemini bekommt Positionsliste mit exakter `positionId` → deterministische Zuordnung ohne Fuzzy-Match. Pro gematchter Material-Position wird zusaetzlich `ArtikelMatchingAgentService.matcheOderSchlageAn(...)` getriggert (DRY, lernt Preise/externe Nr. im Stamm). Zusatzpositionen (Zuschnitt/Fracht/...) werden geloggt aber NICHT im Stamm gelernt. Idempotent: bestehende Angebote werden nicht ueberschrieben. **Hook:** Auto-Trigger in `PreisanfrageService.aktualisiereStatus(...)` beim Uebergang auf `VOLLSTAENDIG` (via `@Autowired(required=false)` Setter-Injection, keine Zirkel-Dependency). **REST:** `POST /api/preisanfragen/{id}/angebote/extrahieren` → 404/409/OK mit `ExtraktionsErgebnis`-Record. **Frontend:** `PreisanfrageVergleichModal` mit Matrix (Positionen Zeilen / Lieferanten Spalten, guenstigster `bg-rose-50 font-bold` + Trophy-Icon, sticky Position-Spalte, Summenzeile, Action-Zeile mit „Preise eintragen" + „Beauftragen", Header-Button „KI-Preise auslesen"). `PreiseEintragenModal` mit Sparkle-Icon + „KI-Vorschlag, bitte pruefen"-Badge. `PreisanfragenPage` bindet beide Modals statt Toast-Platzhalter ein. **Tests:** Backend 1264/1264 (+22: 9 Tool-Service, 11 Extraktions-Service, 3 Controller-Endpoint). Frontend 9/9 neu (5 Vergleich + 4 PreiseEintragen). lint + build grün. |
+| 2026-04-20 | Opus 4.7 | Etappe 9 (Pre-Merge) fertig **ohne PR**. User-Entscheidung: Preisanfrage-Feature wird zusammen mit EN-1090 auf `feature/en1090-echeck` gemergt, kein separater PR. Pre-Merge-Checkliste: Secrets 0, Frontend lint/build/178 Tests grün, Preisanfrage-Backend-Tests 172/172 grün (isoliert), keine TODOs im Feature-Code. **Bekanntes Problem (nicht Feature-verursacht):** Gesamt-Backend-Suite hat 144 Context-Contamination-Errors — `FormularTemplateControllerTest` einzeln grün, aber im Gesamt-Run wird der Spring-Context verseucht und alle nachfolgenden Tests scheitern kaskadierend. Das blockiert den späteren EN-1090-Merge nach `main` und muss separat untersucht werden (wahrscheinlich `@DirtiesContext` fehlt an einer seit Etappe 7 hinzugefügten Test-Klasse). | 
 | 2026-04-20 | Opus 4.7 | Etappe 8 fertig: EmailCenter-Badge + Quick-Action fuer Preisanfrage-Antworten. `EmailCenter.tsx` erweitert um (a) Detail-Banner mit `Scale`-Icon, Nummer + Lieferantenname, "Öffnen"-Link zur Preisanfragen-Seite (`?open={id}`), und "Preise eintragen"-Button der `PreiseEintragenModal` oeffnet; (b) kompaktes Badge in der Listenansicht neben dem Zuordnung-Typ. `EmailItem` um `preisanfrageLieferantRef`-Feld erweitert (Backend liefert das seit Etappe 5). 2 neue Vitest-Cases (Badge-Render + Modal-Öffnen). **Kein Backend-Change** — `UnifiedEmailDto.preisanfrageLieferantRef` war bereits vorhanden. lint + build grün, Vitest 18/18 grün. |
 | 2026-04-20 | Opus 4.7 | Etappe 6 fertig: Frontend-Seite `/einkauf/preisanfragen` + `AngeboteEinholenModal`. Neue Dateien: `PreisanfragenPage.tsx` (Status-Tabs Alle/Offen/Teilweise/Vollständig/Vergeben/Abgebrochen, Card-Liste pro Preisanfrage mit Lieferanten-Pills + PDF-Download, Abbrechen-Action, Vergleichs-Button als Platzhalter-Toast bis Etappe 7), `AngeboteEinholenModal.tsx` (Positionen via Vorauswahl ODER `/api/bestellungen/offen`-Fallback, Multi-Lieferant-Liste mit Suche, `DatePicker` Pflichtfeld, sequenzieller `POST /api/preisanfragen` → `POST /versenden` mit Toast + Navigation), `AngeboteEinholenModal.test.tsx` (7 Vitest-Tests inkl. Reihenfolge der beiden POSTs). Eingegriffen: `App.tsx` (neue Route), `RibbonNav.tsx` (neuer Sidebar-Eintrag "Preisanfragen" mit `Scale`-Icon unter Einkauf hinter "Bedarf"), `BestellungEditor.tsx` (neuer Button "Angebote einholen" neben "E-Mail" pro Bedarf-Gruppe, `toBedarfPosition`-Mapper für DRY). Build-Fix unterwegs: `npm install` weil `@xyflow/react` + `@dagrejs/dagre` aus `package.json` nicht im `node_modules` lagen (pre-existing, nicht durch dieses Feature verursacht — ohne Install schlägt der main-Branch genauso fehl). **Frontend:** lint grün, `npm run build` grün, Vitest `AngeboteEinholenModal` 7/7 grün. **Backend:** unveraendert, 1242 Tests weiterhin grün. |
 
