@@ -84,8 +84,9 @@ public class OfferPriceService {
                                             PreisQuelle.ANGEBOT, code);
                                     if (artikel.getId() != null && lieferant.getId() != null) {
                                         List<ArtikelInProjekt> projektArtikel = artikelInProjektRepository
-                                                .findByArtikel_IdAndLieferant_IdAndBestelltFalse(artikel.getId(),
-                                                        lieferant.getId());
+                                                .findByArtikel_IdAndLieferant_IdAndQuelle(artikel.getId(),
+                                                        lieferant.getId(),
+                                                        org.example.kalkulationsprogramm.domain.BestellQuelle.OFFEN);
                                         for (ArtikelInProjekt aip : projektArtikel) {
                                             BigDecimal p = finalPrice;
                                             if (p != null && aip.getArtikel() != null &&

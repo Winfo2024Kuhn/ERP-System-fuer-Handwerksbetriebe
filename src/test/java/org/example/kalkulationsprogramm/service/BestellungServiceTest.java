@@ -50,7 +50,7 @@ class BestellungServiceTest {
         aip.setArtikel(artikel);
         aip.setKilogramm(new BigDecimal("10.0"));
 
-        when(artikelInProjektRepository.findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc())
+        when(artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         List<BestellungResponseDto> result = service.findeOffeneBestellungen();
@@ -98,7 +98,7 @@ class BestellungServiceTest {
         aip.setArtikel(artikel);
         aip.setLieferant(lieferant);
 
-        when(artikelInProjektRepository.findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc())
+        when(artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         List<BestellungResponseDto> result = service.findeOffeneBestellungen();
@@ -125,7 +125,7 @@ class BestellungServiceTest {
         aip.setArtikel(artikel);
         aip.setLieferant(lieferant);
 
-        when(artikelInProjektRepository.findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc())
+        when(artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         List<BestellungResponseDto> result = service.findeOffeneBestellungen();
@@ -148,7 +148,7 @@ class BestellungServiceTest {
         aip.setStueckzahl(3);
 
         when(artikelInProjektRepository
-                .findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc())
+                .findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         BestellungResponseDto result = service.findeOffeneBestellungen().getFirst();
@@ -172,7 +172,7 @@ class BestellungServiceTest {
         ArtikelInProjekt aip = new ArtikelInProjekt();
         aip.setArtikel(artikel);
 
-        when(artikelInProjektRepository.findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc())
+        when(artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         BestellungResponseDto dto = service.findeOffeneBestellungen().getFirst();

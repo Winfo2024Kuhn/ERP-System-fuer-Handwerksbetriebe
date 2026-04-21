@@ -50,8 +50,8 @@ class BestellungServiceMappingTest {
         aip.setAnschnittWinkelLinks("45");
         aip.setAnschnittWinkelRechts("90");
 
-        when(repo.findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc())
-                .thenReturn(List.of(aip));
+        when(repo.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(
+                BestellQuelle.OFFEN)).thenReturn(List.of(aip));
 
         List<BestellungResponseDto> dtos = service.findeOffeneBestellungen();
         assertEquals(1, dtos.size());

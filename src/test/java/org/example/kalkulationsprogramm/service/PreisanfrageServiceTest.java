@@ -69,6 +69,7 @@ class PreisanfrageServiceTest {
     @Mock private ArtikelInProjektRepository artikelInProjektRepository;
     @Mock private PreisanfragePdfGenerator pdfGenerator;
     @Mock private EmailService emailService;
+    @Mock private BestellauftragService bestellauftragService;
 
     private PreisanfrageService service;
     private StubEmailServiceFactory emailFactory;
@@ -85,6 +86,7 @@ class PreisanfrageServiceTest {
                 projektRepository,
                 artikelInProjektRepository,
                 Optional.of(pdfGenerator),
+                bestellauftragService,
                 "smtp.example.invalid",
                 465,
                 "sender@example.com",

@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.repository;
 
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
+import org.example.kalkulationsprogramm.domain.BestellQuelle;
 import org.example.kalkulationsprogramm.dto.Projekt.MaterialKilogrammDto;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -11,11 +12,19 @@ import java.util.List;
 
 @Repository
 public interface ArtikelInProjektRepository extends JpaRepository<ArtikelInProjekt, Long> {
-    List<ArtikelInProjekt> findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc();
+    /**
+     * Bedarfspositionen, die noch nicht in einem Folgeprozess verarbeitet wurden
+     * (keine Preisanfrage, keine Bestellung, nicht aus Lager entnommen).
+     */
+    List<ArtikelInProjekt> findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(
+            BestellQuelle quelle);
 
-    List<ArtikelInProjekt> findByBestelltFalseAndLieferant_IdOrderByProjekt_BauvorhabenAsc(Long lieferantId);
+    List<ArtikelInProjekt> findByQuelleAndLieferant_IdOrderByProjekt_BauvorhabenAsc(
+            BestellQuelle quelle, Long lieferantId);
 
-    List<ArtikelInProjekt> findByArtikel_IdAndLieferant_IdAndBestelltFalse(Long artikelId, Long lieferantId);
+    /** Bedarfszeilen je Artikel+Lieferant in einem bestimmten Workflow-Zustand. */
+    List<ArtikelInProjekt> findByArtikel_IdAndLieferant_IdAndQuelle(
+            Long artikelId, Long lieferantId, BestellQuelle quelle);
 
     List<ArtikelInProjekt> findByProjekt_Id(Long projektId);
 

@@ -401,7 +401,7 @@ class PreisanfrageControllerTest {
     @Test
     void vergeben_happyPath() throws Exception {
         Preisanfrage pa = buildPreisanfrage(3L);
-        doNothing().when(preisanfrageService).vergebeAuftrag(3L, 8L);
+        when(preisanfrageService.vergebeAuftrag(3L, 8L)).thenReturn(List.of());
         when(preisanfrageService.findeById(3L)).thenReturn(pa);
         when(preisanfrageMapper.toResponseDto(pa)).thenReturn(buildResponseDto(3L));
 

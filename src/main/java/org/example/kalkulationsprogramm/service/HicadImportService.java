@@ -318,7 +318,6 @@ public class HicadImportService {
         ArtikelInProjekt aip = new ArtikelInProjekt();
         aip.setProjekt(projekt);
         aip.setHinzugefuegtAm(LocalDate.now());
-        aip.setBestellt(false);
 
         if (conf.getLieferantId() != null) {
             aip.setLieferant(lieferantenRepository.getReferenceById(conf.getLieferantId()));

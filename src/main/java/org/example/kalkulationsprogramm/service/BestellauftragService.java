@@ -43,7 +43,9 @@ public class BestellauftragService {
 
     /**
      * Erzeugt pro (Lieferant, Projekt)-Gruppe eine Bestellung aus den
-     * uebergebenen AiP-Zeilen. Bereits verknuepfte AiPs werden uebersprungen.
+     * uebergebenen AiP-Zeilen. Status {@link BestellStatus#VERSENDET}
+     * inklusive {@code exportiertAm}/{@code versendetAm} — Kurzform fuer
+     * den klassischen Export-Pfad (PDF/Mail hat schon stattgefunden).
      *
      * @param positionen  zu buendelnde Kalkulationspositionen
      * @param erstellVon  Mitarbeiter, der den Export ausloest (nullable —
@@ -55,6 +57,31 @@ public class BestellauftragService {
     public List<Bestellung> erzeugeBestellungenAusExport(
             List<ArtikelInProjekt> positionen,
             Mitarbeiter erstellVon) {
+        return erzeugeBestellungen(positionen, erstellVon, BestellStatus.VERSENDET);
+    }
+
+    /**
+     * Erzeugt pro (Lieferant, Projekt)-Gruppe eine Bestellung.
+     *
+     * <p>Der {@code status} steuert, wann die Bestellung entsteht:</p>
+     * <ul>
+     *   <li>{@link BestellStatus#ENTWURF} — Bedarfsbuendelung vor Export
+     *       (z.B. Chef legt aus mehreren offenen AiP-Zeilen eine Bestellung
+     *       an, die spaeter erst per PDF versendet wird).</li>
+     *   <li>{@link BestellStatus#VERSENDET} — direkter Versand-Pfad (Export
+     *       oder Preisanfrage-Vergabe per Mail/IDS).</li>
+     * </ul>
+     *
+     * @param positionen zu buendelnde Kalkulationspositionen
+     * @param erstellVon Mitarbeiter, der den Vorgang ausloest (nullable)
+     * @param status     ENTWURF oder VERSENDET
+     * @return die erzeugten Bestellungen
+     */
+    @Transactional
+    public List<Bestellung> erzeugeBestellungen(
+            List<ArtikelInProjekt> positionen,
+            Mitarbeiter erstellVon,
+            BestellStatus status) {
         if (positionen == null || positionen.isEmpty()) {
             return List.of();
         }
@@ -73,25 +100,31 @@ public class BestellauftragService {
         List<Bestellung> ergebnis = new ArrayList<>();
         for (var eintrag : gruppen.entrySet()) {
             List<ArtikelInProjekt> gruppe = eintrag.getValue();
-            Bestellung bestellung = erstelleBestellungFuerGruppe(gruppe, erstellVon);
+            Bestellung bestellung = erstelleBestellungFuerGruppe(gruppe, erstellVon, status);
             ergebnis.add(bestellung);
         }
         return ergebnis;
     }
 
-    private Bestellung erstelleBestellungFuerGruppe(List<ArtikelInProjekt> gruppe, Mitarbeiter erstellVon) {
+    private Bestellung erstelleBestellungFuerGruppe(
+            List<ArtikelInProjekt> gruppe,
+            Mitarbeiter erstellVon,
+            BestellStatus status) {
         ArtikelInProjekt erster = gruppe.get(0);
         Bestellung bestellung = new Bestellung();
         bestellung.setBestellnummer(naechsteBestellnummer());
         bestellung.setLieferant(erster.getLieferant());
         bestellung.setProjekt(erster.getProjekt());
-        bestellung.setStatus(BestellStatus.VERSENDET);
-        bestellung.setBestelltAm(LocalDate.now());
-        bestellung.setVersendetAm(LocalDateTime.now());
-        bestellung.setExportiertAm(LocalDateTime.now());
+        bestellung.setStatus(status);
+        LocalDateTime now = LocalDateTime.now();
+        if (status == BestellStatus.VERSENDET) {
+            bestellung.setBestelltAm(LocalDate.now());
+            bestellung.setVersendetAm(now);
+            bestellung.setExportiertAm(now);
+        }
         bestellung.setErstelltVon(erstellVon);
         bestellung.setErstelltVonName(snapshotName(erstellVon));
-        bestellung.setErstelltAm(LocalDateTime.now());
+        bestellung.setErstelltAm(now);
 
         int positionsnummer = 1;
         for (ArtikelInProjekt aip : gruppe) {

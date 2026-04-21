@@ -464,7 +464,7 @@ class OfferPriceServiceTest {
         Mockito.when(repo.findByExterneArtikelnummerAndLieferantId("PX1", 7L))
                 .thenReturn(Optional.of(artikel));
         Mockito.when(repo.save(artikel)).thenAnswer(i -> i.getArgument(0));
-        Mockito.when(aipRepo.findByArtikel_IdAndLieferant_IdAndBestelltFalse(11L, 7L))
+        Mockito.when(aipRepo.findByArtikel_IdAndLieferant_IdAndQuelle(11L, 7L, BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
         Mockito.when(aipRepo.saveAll(Mockito.any())).thenAnswer(i -> i.getArgument(0));
 

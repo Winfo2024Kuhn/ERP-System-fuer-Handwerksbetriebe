@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.mapper;
 
 import lombok.AllArgsConstructor;
+import org.example.kalkulationsprogramm.domain.BestellQuelle;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektResponseDto;
@@ -112,7 +113,8 @@ public class ProjektMapper {
                             aDto.setWerkstoffName(aip.getArtikel().getWerkstoff().getName());
                         }
                         BigDecimal preisProStueck = aip.getPreisProStueck();
-                        if (!aip.isBestellt() && aip.getLieferantenArtikelPreis() != null
+                        boolean bestellt = aip.getQuelle() == BestellQuelle.BESTELLT;
+                        if (!bestellt && aip.getLieferantenArtikelPreis() != null
                                 && aip.getLieferantenArtikelPreis().getPreis() != null) {
                             BigDecimal lieferantenPreis = aip.getLieferantenArtikelPreis().getPreis();
                             BigDecimal menge = BigDecimal.ZERO;
@@ -133,8 +135,8 @@ public class ProjektMapper {
                         }
                         aDto.setPreisProStueck(preisProStueck);
                         aDto.setHinzugefuegtAm(aip.getHinzugefuegtAm());
-                        aDto.setBestellt(aip.isBestellt());
-                        aDto.setBestelltAm(aip.getBestelltAm());
+                        aDto.setBestellt(bestellt);
+                        aDto.setBestelltAm(null);
                         aDto.setKommentar(aip.getKommentar());
                         aDto.setSchnittForm(aip.getSchnittForm());
                         aDto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());

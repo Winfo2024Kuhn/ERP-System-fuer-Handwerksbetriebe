@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,7 +31,7 @@ public class BestellungService {
 
     public List<BestellungResponseDto> findeOffeneBestellungen() {
         List<BestellungResponseDto> dtos = artikelInProjektRepository
-                .findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc()
+                .findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN)
                 .stream()
                 .map(this::toDto)
                 .toList();
@@ -49,8 +48,7 @@ public class BestellungService {
     public void setBestellt(Long id, boolean bestellt) {
         ArtikelInProjekt aip = artikelInProjektRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Artikel nicht gefunden"));
-        aip.setBestellt(bestellt);
-        aip.setBestelltAm(bestellt ? LocalDate.now() : null);
+        aip.setQuelle(bestellt ? BestellQuelle.BESTELLT : BestellQuelle.OFFEN);
         if (bestellt && aip.getLieferantenArtikelPreis() != null) {
             BigDecimal preis = aip.getLieferantenArtikelPreis().getPreis();
             if (preis != null) {
@@ -150,9 +148,12 @@ public class BestellungService {
         }
         dto.setKilogramm(aip.getKilogramm());
         dto.setFixmassMm(aip.getFixmassMm());
-        dto.setBestellt(aip.isBestellt());
-        dto.setBestelltAm(aip.getBestelltAm());
-        dto.setExportiertAm(aip.getExportiertAm());
+        boolean bestellt = aip.getQuelle() == BestellQuelle.BESTELLT;
+        dto.setBestellt(bestellt);
+        // bestelltAm/exportiertAm liegen nach A2 auf der Bestellung; das DTO
+        // liefert hier nur die Info "Zeile ist im Bestellvorgang".
+        dto.setBestelltAm(null);
+        dto.setExportiertAm(null);
         dto.setSchnittForm(aip.getSchnittForm());
         dto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
         dto.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
@@ -173,7 +174,6 @@ public class BestellungService {
     public BestellungResponseDto manuellePosition(ManuelleBestellpositionDto req) {
         ArtikelInProjekt aip = new ArtikelInProjekt();
         aip.setHinzugefuegtAm(LocalDate.now());
-        aip.setBestellt(false);
 
         if (req.getProjektId() != null) {
             aip.setProjekt(projektRepository.getReferenceById(req.getProjektId()));
@@ -230,17 +230,18 @@ public class BestellungService {
     @Transactional
     public int markiereLieferantAlsExportiert(Long lieferantId) {
         List<ArtikelInProjekt> offene = lieferantId != null
-                ? artikelInProjektRepository.findByBestelltFalseAndLieferant_IdOrderByProjekt_BauvorhabenAsc(lieferantId)
-                : artikelInProjektRepository.findByBestelltFalseOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc()
+                ? artikelInProjektRepository.findByQuelleAndLieferant_IdOrderByProjekt_BauvorhabenAsc(
+                        BestellQuelle.OFFEN, lieferantId)
+                : artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(
+                                BestellQuelle.OFFEN)
                         .stream()
                         .filter(a -> a.getLieferant() == null)
                         .toList();
-        LocalDateTime now = LocalDateTime.now();
         int count = 0;
         List<ArtikelInProjekt> frischExportierte = new java.util.ArrayList<>();
         for (ArtikelInProjekt aip : offene) {
-            if (aip.getExportiertAm() == null) {
-                aip.setExportiertAm(now);
+            if (aip.getQuelle() != BestellQuelle.BESTELLT) {
+                aip.setQuelle(BestellQuelle.BESTELLT);
                 frischExportierte.add(aip);
                 count++;
             }
@@ -262,11 +263,11 @@ public class BestellungService {
     public BestellungResponseDto aktualisierePosition(Long id, ManuelleBestellpositionDto req) {
         ArtikelInProjekt aip = artikelInProjektRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Position nicht gefunden"));
-        if (aip.getExportiertAm() != null) {
-            throw new IllegalStateException("Position wurde bereits exportiert und kann nicht mehr bearbeitet werden");
-        }
-        if (aip.isBestellt()) {
+        if (aip.getQuelle() == BestellQuelle.BESTELLT) {
             throw new IllegalStateException("Bereits bestellte Positionen können nicht bearbeitet werden");
+        }
+        if (aip.getQuelle() == BestellQuelle.AUS_LAGER) {
+            throw new IllegalStateException("Aus dem Lager entnommene Positionen können nicht bearbeitet werden");
         }
 
         aip.setProjekt(req.getProjektId() != null ? projektRepository.getReferenceById(req.getProjektId()) : null);

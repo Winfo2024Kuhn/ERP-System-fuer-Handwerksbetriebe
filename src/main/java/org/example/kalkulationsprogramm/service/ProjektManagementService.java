@@ -853,8 +853,13 @@ ProjektManagementService {
                 aip.setPreisProStueck(preisProEinheit);
                 aip.setHinzugefuegtAm(java.time.LocalDate.now());
                 boolean ausLager = Boolean.TRUE.equals(auswahl.getAusLager());
-                aip.setBestellt(ausLager);
-                aip.setBestelltAm(ausLager ? LocalDate.now() : null);
+                if (ausLager) {
+                    aip.setQuelle(org.example.kalkulationsprogramm.domain.BestellQuelle.AUS_LAGER);
+                    aip.setLagerAbgleichAm(java.time.LocalDateTime.now());
+                } else {
+                    aip.setQuelle(org.example.kalkulationsprogramm.domain.BestellQuelle.OFFEN);
+                    aip.setLagerAbgleichAm(null);
+                }
                 aip.setKommentar(auswahl.getKommentar());
                 // Zuschnitt-Daten nur zulassen, wenn Wurzelkategorie 64/65
                 if (darfSchnittbildVerwenden(artikel)) {

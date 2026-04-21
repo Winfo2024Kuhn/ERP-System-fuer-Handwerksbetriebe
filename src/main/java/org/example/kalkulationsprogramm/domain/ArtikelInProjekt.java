@@ -42,18 +42,10 @@ public class ArtikelInProjekt {
     @Column(nullable = false)
     private LocalDate hinzugefuegtAm;
 
-    @Column(nullable = false)
-    private boolean bestellt = false;
-
     String anschnittWinkelLinks;
     String anschnittWinkelRechts;
     String schnittForm;
     String kommentar;
-
-    private LocalDate bestelltAm;
-
-    @Column(name = "exportiert_am")
-    private LocalDateTime exportiertAm;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lieferant_id")
@@ -92,4 +84,21 @@ public class ArtikelInProjekt {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "kategorie_id")
     private Kategorie kategorie;
+
+    /**
+     * Workflow-Zustand der Bedarfszeile. Treibt die Bedarf-Ansicht
+     * (offen vs. aus Lager abgeharkt vs. in Preisanfrage vs. bestellt).
+     * Der Bestellvorgang selbst lebt auf {@link Bestellung}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "quelle", columnDefinition = "varchar(30)", nullable = false)
+    private BestellQuelle quelle = BestellQuelle.OFFEN;
+
+    /** Zeitpunkt des Lager-Haken durch den Chef (nur gesetzt bei AUS_LAGER). */
+    @Column(name = "lager_abgleich_am")
+    private LocalDateTime lagerAbgleichAm;
+
+    /** GoBD-Snapshot: Name des Chefs beim Lager-Haken (AUS_LAGER). */
+    @Column(name = "lager_abgleich_durch", length = 255)
+    private String lagerAbgleichDurch;
 }

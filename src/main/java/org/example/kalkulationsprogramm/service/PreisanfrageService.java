@@ -16,6 +16,9 @@ import java.util.Optional;
 
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
+import org.example.kalkulationsprogramm.domain.BestellQuelle;
+import org.example.kalkulationsprogramm.domain.BestellStatus;
+import org.example.kalkulationsprogramm.domain.Bestellung;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Preisanfrage;
 import org.example.kalkulationsprogramm.domain.PreisanfrageAngebot;
@@ -67,6 +70,8 @@ public class PreisanfrageService {
     private final ArtikelInProjektRepository artikelInProjektRepository;
     private final Optional<PreisanfragePdfGenerator> pdfGenerator;
     private final EmailServiceFactory emailServiceFactory;
+    /** Erzeugt aus den umgerouteten AiP-Zeilen direkt eine VERSENDET-Bestellung. */
+    private final BestellauftragService bestellauftragService;
     /**
      * Optional: Auto-Trigger der KI-Angebotsextraktion beim Statuswechsel auf
      * {@link PreisanfrageStatus#VOLLSTAENDIG}. {@link Optional#empty()} in Tests
@@ -91,6 +96,7 @@ public class PreisanfrageService {
             ProjektRepository projektRepository,
             ArtikelInProjektRepository artikelInProjektRepository,
             Optional<PreisanfragePdfGenerator> pdfGenerator,
+            BestellauftragService bestellauftragService,
             @Value("${smtp.host:}") String smtpHost,
             @Value("${smtp.port:465}") int smtpPort,
             @Value("${smtp.username:}") String smtpUsername,
@@ -99,7 +105,7 @@ public class PreisanfrageService {
             @Value("${preisanfrage.reply-to-domain:}") String replyToDomain) {
         this(preisanfrageRepository, preisanfrageLieferantRepository, preisanfragePositionRepository,
                 preisanfrageAngebotRepository, lieferantenRepository, projektRepository,
-                artikelInProjektRepository, pdfGenerator,
+                artikelInProjektRepository, pdfGenerator, bestellauftragService,
                 smtpHost, smtpPort, smtpUsername, smtpPassword, fromAddress, replyToDomain,
                 EmailService::new);
     }
@@ -117,6 +123,7 @@ public class PreisanfrageService {
             ProjektRepository projektRepository,
             ArtikelInProjektRepository artikelInProjektRepository,
             Optional<PreisanfragePdfGenerator> pdfGenerator,
+            BestellauftragService bestellauftragService,
             String smtpHost,
             int smtpPort,
             String smtpUsername,
@@ -132,6 +139,7 @@ public class PreisanfrageService {
         this.projektRepository = projektRepository;
         this.artikelInProjektRepository = artikelInProjektRepository;
         this.pdfGenerator = pdfGenerator == null ? Optional.empty() : pdfGenerator;
+        this.bestellauftragService = bestellauftragService;
         this.smtpHost = smtpHost;
         this.smtpPort = smtpPort;
         this.smtpUsername = smtpUsername;
@@ -346,13 +354,21 @@ public class PreisanfrageService {
     }
 
     /**
-     * Vergibt den Auftrag an den Gewinner-Lieferanten: alle verknuepften
-     * {@link ArtikelInProjekt}-Zeilen werden auf diesen Lieferanten umgeroutet
-     * und bekommen den Angebotspreis als {@code preisProStueck}. Es werden
-     * <b>keine</b> neuen Bestell-Zeilen erzeugt (Design-Entscheidung aus Tracker).
+     * Vergibt den Auftrag an den Gewinner-Lieferanten.
+     *
+     * <p>Fachlicher Flow (A2): Die verknuepften {@link ArtikelInProjekt}-Zeilen
+     * werden auf den Gewinner-Lieferanten umgeroutet, bekommen den
+     * Angebotspreis als {@code preisProStueck} und den Status
+     * {@link BestellQuelle#BESTELLT}. Zusaetzlich wird <b>direkt eine
+     * {@link Bestellung}</b> mit Status {@link BestellStatus#VERSENDET}
+     * angelegt — die Vergabe ersetzt den manuellen Export, weil der
+     * Lieferant das Angebot bereits per Mail/IDS kennt.</p>
+     *
+     * @return die erzeugten Bestellungen (kann leer sein, wenn keine
+     *         verknuepften AiP-Zeilen existieren)
      */
     @Transactional
-    public void vergebeAuftrag(Long preisanfrageId, Long preisanfrageLieferantId) {
+    public List<Bestellung> vergebeAuftrag(Long preisanfrageId, Long preisanfrageLieferantId) {
         requirePositiveId(preisanfrageId, "preisanfrageId");
         requirePositiveId(preisanfrageLieferantId, "preisanfrageLieferantId");
         Preisanfrage pa = preisanfrageRepository.findById(preisanfrageId)
@@ -376,6 +392,7 @@ public class PreisanfrageService {
 
         List<PreisanfragePosition> positionen = preisanfragePositionRepository
                 .findByPreisanfrageIdOrderByReihenfolgeAsc(pa.getId());
+        List<ArtikelInProjekt> vergebene = new ArrayList<>();
         for (PreisanfragePosition pos : positionen) {
             ArtikelInProjekt aip = pos.getArtikelInProjekt();
             if (aip == null) {
@@ -386,12 +403,18 @@ public class PreisanfrageService {
             if (a != null && a.getEinzelpreis() != null) {
                 aip.setPreisProStueck(a.getEinzelpreis().setScale(2, java.math.RoundingMode.HALF_UP));
             }
+            aip.setQuelle(BestellQuelle.BESTELLT);
             artikelInProjektRepository.save(aip);
+            vergebene.add(aip);
         }
 
         pa.setVergebenAn(gewinner);
         pa.setStatus(PreisanfrageStatus.VERGEBEN);
         preisanfrageRepository.save(pa);
+
+        // Bestellung direkt als VERSENDET anlegen: Lieferant hat das Angebot
+        // bereits abgegeben, der Auftrag wird ihm per Mail/IDS bestaetigt.
+        return bestellauftragService.erzeugeBestellungen(vergebene, null, BestellStatus.VERSENDET);
     }
 
     // ------------------------------------------------------------

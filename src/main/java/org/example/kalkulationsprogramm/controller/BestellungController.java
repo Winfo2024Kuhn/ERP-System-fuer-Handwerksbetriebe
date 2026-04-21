@@ -8,10 +8,12 @@ import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmRequestDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.PreviewResponseDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.LagerAbgleichRequestDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.ManuelleBestellpositionDto;
 import org.example.kalkulationsprogramm.service.BestellungPdfService;
 import org.example.kalkulationsprogramm.service.BestellungService;
 import org.example.kalkulationsprogramm.service.HicadImportService;
+import org.example.kalkulationsprogramm.service.LagerAbgleichService;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -30,6 +32,7 @@ public class BestellungController {
     private final BestellungService bestellungService;
     private final BestellungPdfService bestellungPdfService;
     private final HicadImportService hicadImportService;
+    private final LagerAbgleichService lagerAbgleichService;
 
     @GetMapping("/offen")
     public List<BestellungResponseDto> offeneBestellungen() {
@@ -90,6 +93,38 @@ public class BestellungController {
     public ResponseEntity<Void> loescheFreiePosition(@PathVariable Long id) {
         bestellungService.loeschePosition(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Chef harkt eine Bedarfszeile als „aus Lager entnommen" ab.
+     * {@code preisProStueck} in der Request ist optional — ohne Wert
+     * greift der gewichtete Durchschnittspreis des Artikels.
+     */
+    @PostMapping("/{id}/aus-lager")
+    public ResponseEntity<Void> ausLager(@PathVariable Long id,
+                                         @RequestBody(required = false) LagerAbgleichRequestDto dto) {
+        try {
+            LagerAbgleichRequestDto req = dto != null ? dto : new LagerAbgleichRequestDto();
+            lagerAbgleichService.markiereAusLager(id, req.getPreisProStueck(), req.getChefName());
+            return ResponseEntity.noContent().build();
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                    .header("X-Error-Reason", e.getMessage())
+                    .build();
+        }
+    }
+
+    /** Macht den Lager-Haken rueckgaengig — Position wird wieder OFFEN. */
+    @DeleteMapping("/{id}/aus-lager")
+    public ResponseEntity<Void> ausLagerZurueck(@PathVariable Long id) {
+        try {
+            lagerAbgleichService.setzeZurueckAufOffen(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
+                    .header("X-Error-Reason", e.getMessage())
+                    .build();
+        }
     }
 
     @PostMapping(value = "/import/hicad/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
