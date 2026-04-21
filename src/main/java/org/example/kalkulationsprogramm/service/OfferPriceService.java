@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class OfferPriceService {
     private final ArtikelRepository artikelRepository;
     private final ArtikelInProjektRepository artikelInProjektRepository;
+    private final ArtikelPreisHookService preisHookService;
     private static final Logger log = LoggerFactory.getLogger(OfferPriceService.class);
 
     @Transactional
@@ -77,6 +79,9 @@ public class OfferPriceService {
                                 try {
                                     artikelRepository.save(artikel);
                                     savedFlag.set(true);
+                                    preisHookService.registriere(artikel, lieferant, finalPrice,
+                                            artikel.getVerrechnungseinheit(),
+                                            PreisQuelle.ANGEBOT, code);
                                     if (artikel.getId() != null && lieferant.getId() != null) {
                                         List<ArtikelInProjekt> projektArtikel = artikelInProjektRepository
                                                 .findByArtikel_IdAndLieferant_IdAndBestelltFalse(artikel.getId(),

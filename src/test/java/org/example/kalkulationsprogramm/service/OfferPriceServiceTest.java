@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -21,8 +23,16 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DataJpaTest
-@Import(OfferPriceService.class)
+@Import({OfferPriceService.class, OfferPriceServiceTest.HookMockConfig.class})
 class OfferPriceServiceTest {
+
+    @TestConfiguration
+    static class HookMockConfig {
+        @Bean
+        ArtikelPreisHookService artikelPreisHookService() {
+            return Mockito.mock(ArtikelPreisHookService.class);
+        }
+    }
 
     @Autowired
     private OfferPriceService offerPriceService;
@@ -218,7 +228,7 @@ class OfferPriceServiceTest {
     void convertsTonPriceForSupplierId4() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
         ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo);
+        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(4L);
@@ -252,7 +262,7 @@ class OfferPriceServiceTest {
     void convertsExplicitTonUnitToKilogramForSupplierId4() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
         ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo);
+        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(4L);
@@ -286,7 +296,7 @@ class OfferPriceServiceTest {
     void convertsTonPriceForSupplierId4WhenUnitBlank() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
         ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo);
+        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(4L);
@@ -399,7 +409,7 @@ class OfferPriceServiceTest {
     void continuesWhenDuplicateEntryOccurs() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
         ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo);
+        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(1L);
@@ -430,7 +440,7 @@ class OfferPriceServiceTest {
     void updatesProjektArtikelWithNewPrice() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
         ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo);
+        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(7L);

@@ -5,6 +5,7 @@ import java.util.List;
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
@@ -26,6 +27,7 @@ public class ArtikelService implements ArtikelServiceContract {
     private final KategorieRepository kategorieRepository;
     private final WerkstoffRepository werkstoffRepository;
     private final LieferantenRepository lieferantenRepository;
+    private final ArtikelPreisHookService preisHookService;
 
     @Transactional
     public Artikel erstelleArtikel(ArtikelCreateDto dto) {
@@ -59,6 +61,11 @@ public class ArtikelService implements ArtikelServiceContract {
             }
             saved.getArtikelpreis().add(preis);
             artikelRepository.save(saved);
+            if (dto.getPreis() != null) {
+                preisHookService.registriere(saved, preis.getLieferant(), dto.getPreis(),
+                        saved.getVerrechnungseinheit(),
+                        PreisQuelle.MANUELL, dto.getExterneArtikelnummer());
+            }
         }
 
         return saved;

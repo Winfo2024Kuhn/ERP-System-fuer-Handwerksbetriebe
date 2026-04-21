@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -98,5 +100,14 @@ public class Artikel
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "werkstoff_id")
     private Werkstoff werkstoff;
+
+    @Column(name = "durchschnittspreis_netto", precision = 12, scale = 4)
+    private BigDecimal durchschnittspreisNetto;
+
+    @Column(name = "durchschnittspreis_menge", precision = 18, scale = 3)
+    private BigDecimal durchschnittspreisMenge;
+
+    @Column(name = "durchschnittspreis_aktualisiert_am")
+    private LocalDateTime durchschnittspreisAktualisiertAm;
 
 }

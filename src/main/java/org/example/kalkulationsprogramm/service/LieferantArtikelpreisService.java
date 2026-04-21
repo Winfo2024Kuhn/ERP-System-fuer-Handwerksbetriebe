@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisDto;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
@@ -31,6 +32,7 @@ public class LieferantArtikelpreisService {
     private final LieferantenRepository lieferantenRepository;
     private final ArtikelRepository artikelRepository;
     private final LieferantArtikelpreisMapper mapper;
+    private final ArtikelPreisHookService preisHookService;
 
     @Transactional(readOnly = true)
     public Page<LieferantArtikelpreisDto> suche(Long lieferantId, String query, Pageable pageable) {
@@ -47,12 +49,18 @@ public class LieferantArtikelpreisService {
         if (lieferantId == null || artikelId == null) {
             return Optional.empty();
         }
+        String normalisierteExterneNummer = normalizeExterneArtikelnummer(externeArtikelnummer);
         return artikelPreiseRepository.findByArtikel_IdAndLieferant_Id(artikelId, lieferantId)
                 .map(entity -> {
                     entity.setPreis(preis);
                     entity.setPreisAenderungsdatum(new Date());
-                    entity.setExterneArtikelnummer(normalizeExterneArtikelnummer(externeArtikelnummer));
-                    return mapper.toDto(artikelPreiseRepository.save(entity));
+                    entity.setExterneArtikelnummer(normalisierteExterneNummer);
+                    LieferantenArtikelPreise gespeichert = artikelPreiseRepository.save(entity);
+                    Artikel a = gespeichert.getArtikel();
+                    preisHookService.registriere(a, gespeichert.getLieferant(), preis,
+                            a != null ? a.getVerrechnungseinheit() : null,
+                            PreisQuelle.MANUELL, normalisierteExterneNummer);
+                    return mapper.toDto(gespeichert);
                 });
     }
 
@@ -76,10 +84,14 @@ public class LieferantArtikelpreisService {
                     neu.setLieferant(lieferant);
                     return neu;
                 });
+        String normalisierteExterneNummer = normalizeExterneArtikelnummer(externeArtikelnummer);
         entity.setPreis(preis);
         entity.setPreisAenderungsdatum(new Date());
-        entity.setExterneArtikelnummer(normalizeExterneArtikelnummer(externeArtikelnummer));
-        return Optional.of(mapper.toDto(artikelPreiseRepository.save(entity)));
+        entity.setExterneArtikelnummer(normalisierteExterneNummer);
+        LieferantenArtikelPreise gespeichert = artikelPreiseRepository.save(entity);
+        preisHookService.registriere(artikel, lieferant, preis, artikel.getVerrechnungseinheit(),
+                PreisQuelle.MANUELL, normalisierteExterneNummer);
+        return Optional.of(mapper.toDto(gespeichert));
     }
 
     private Specification<LieferantenArtikelPreise> byLieferant(Long lieferantId) {

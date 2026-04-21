@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.domain.ArtikelVorschlagStatus;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.dto.ArtikelVorschlagDto;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
@@ -18,6 +19,7 @@ import org.example.kalkulationsprogramm.repository.ArtikelVorschlagRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
+import org.example.kalkulationsprogramm.service.ArtikelPreisHookService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -48,6 +50,7 @@ public class ArtikelVorschlagController {
     private final KategorieRepository kategorieRepository;
     private final WerkstoffRepository werkstoffRepository;
     private final LieferantenArtikelPreiseRepository preiseRepository;
+    private final ArtikelPreisHookService preisHookService;
 
     @GetMapping
     @Transactional(readOnly = true)
@@ -152,6 +155,11 @@ public class ArtikelVorschlagController {
             lap.setPreisAenderungsdatum(new Date());
             gespeichert.getArtikelpreis().add(lap);
             preiseRepository.save(lap);
+            if (v.getEinzelpreis() != null) {
+                preisHookService.registriere(gespeichert, v.getLieferant(), v.getEinzelpreis(),
+                        gespeichert.getVerrechnungseinheit(),
+                        PreisQuelle.VORSCHLAG, v.getExterneArtikelnummer());
+            }
         }
 
         v.setStatus(ArtikelVorschlagStatus.APPROVED);

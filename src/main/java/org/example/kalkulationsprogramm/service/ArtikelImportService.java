@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -36,6 +37,7 @@ public class ArtikelImportService {
     private final LieferantenRepository lieferantenRepository;
     private final org.example.kalkulationsprogramm.repository.KategorieRepository kategorieRepository;
     private final WerkstoffRepository werkstoffRepository;
+    private final ArtikelPreisHookService preisHookService;
 
     private static final Logger log = LoggerFactory.getLogger(ArtikelImportService.class);
 
@@ -223,6 +225,9 @@ public class ArtikelImportService {
                     lap.setPreisAenderungsdatum(new Date());
 
                     artikelRepository.save(currentArtikel);
+                    preisHookService.registriere(currentArtikel, lieferant, preis,
+                            currentArtikel.getVerrechnungseinheit(),
+                            PreisQuelle.KATALOG, externeNr);
                 }
             }
         } catch (IOException e) {

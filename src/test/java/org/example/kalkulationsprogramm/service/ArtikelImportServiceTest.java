@@ -39,6 +39,8 @@ class ArtikelImportServiceTest {
     private KategorieRepository kategorieRepository;
     @Mock
     private WerkstoffRepository werkstoffRepository;
+    @Mock
+    private ArtikelPreisHookService preisHookService;
 
     private ArtikelImportService artikelImportService;
     private ArgumentCaptor<Artikel> artikelCaptor;
@@ -47,7 +49,7 @@ class ArtikelImportServiceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         artikelImportService = new ArtikelImportService(artikelRepository, lieferantenRepository, kategorieRepository,
-                werkstoffRepository);
+                werkstoffRepository, preisHookService);
         artikelCaptor = ArgumentCaptor.forClass(Artikel.class);
     }
 

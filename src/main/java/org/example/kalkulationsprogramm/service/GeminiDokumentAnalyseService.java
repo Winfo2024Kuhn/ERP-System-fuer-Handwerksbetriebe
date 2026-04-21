@@ -24,6 +24,8 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
+import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.domain.Werkstoffzeugnis;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
@@ -64,6 +66,7 @@ public class GeminiDokumentAnalyseService {
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final WerkstoffzeugnisRepository werkstoffzeugnisRepository;
     private final ArtikelMatchingAgentService artikelMatchingAgentService;
+    private final ArtikelPreisHookService preisHookService;
 
     @Value("${ai.materialstamm.auto-matching.enabled:false}")
     private boolean autoMatchingEnabled;
@@ -2776,6 +2779,11 @@ public class GeminiDokumentAnalyseService {
             artikelPreiseRepository.save(lap);
             updated++;
 
+            BigDecimal mengeKg = extrahiereMengeKgAusJson(pos, lap.getArtikel());
+            preisHookService.registriere(lap.getArtikel(), lieferant, preisProKg, mengeKg,
+                    einheitVonArtikel(lap.getArtikel()),
+                    PreisQuelle.RECHNUNG, externeNr, null, null);
+
             log.info("Artikelpreis aktualisiert: {} = {} €/kg (war: {} {})",
                     externeNr, preisProKg, einzelpreis, preiseinheit);
         }
@@ -2833,6 +2841,61 @@ public class GeminiDokumentAnalyseService {
         }
 
         return preis;
+    }
+
+    /** Liefert die Verrechnungseinheit des Artikels oder KILOGRAMM als Fallback. */
+    private Verrechnungseinheit einheitVonArtikel(
+            org.example.kalkulationsprogramm.domain.Artikel artikel) {
+        if (artikel == null || artikel.getVerrechnungseinheit() == null) {
+            return Verrechnungseinheit.KILOGRAMM;
+        }
+        return artikel.getVerrechnungseinheit();
+    }
+
+    /**
+     * Invertiert {@link #normalizePreisZuKg}: rechnet eine Menge aus der
+     * Rechnungseinheit nach kg um. Gibt {@code null} zurueck bei unbekannter
+     * Einheit (besser kein Datenpunkt als ein falsch geschaetzter).
+     */
+    private BigDecimal normalizeMengeZuKg(BigDecimal menge, String einheit) {
+        if (menge == null) return null;
+        if (einheit == null || einheit.isBlank()) return menge; // Annahme: kg
+        String e = einheit.toLowerCase().trim();
+        if (e.contains("tonne") || e.equals("t") || e.equals("to")
+                || e.contains("1000 kg") || e.contains("1000kg")) {
+            return menge.multiply(BigDecimal.valueOf(1000));
+        }
+        if (e.contains("100 kg") || e.contains("100kg")) {
+            return menge.multiply(BigDecimal.valueOf(100));
+        }
+        if (e.equals("kg") || e.contains("kilogramm") || e.contains("kilogram")) {
+            return menge;
+        }
+        if (e.equals("g") || e.contains("gramm")) {
+            return menge.divide(BigDecimal.valueOf(1000), 3, RoundingMode.HALF_UP);
+        }
+        return null;
+    }
+
+    /**
+     * Extrahiert die Rechnungsmenge aus einer JSON-Position und normalisiert
+     * sie nach kg. Liefert nur fuer KILOGRAMM-Artikel eine Menge, sonst
+     * {@code null} — damit der gewichtete Durchschnittspreis nicht mit
+     * Stueck-/Meter-Mengen vergiftet wird.
+     */
+    private BigDecimal extrahiereMengeKgAusJson(JsonNode pos,
+            org.example.kalkulationsprogramm.domain.Artikel artikel) {
+        if (pos == null) return null;
+        if (einheitVonArtikel(artikel) != Verrechnungseinheit.KILOGRAMM) return null;
+        JsonNode mengeNode = pos.get("menge");
+        if (mengeNode == null || mengeNode.isNull()) return null;
+        try {
+            BigDecimal menge = new BigDecimal(mengeNode.asText().replace(',', '.'));
+            String einheit = pos.has("mengeneinheit") ? pos.get("mengeneinheit").asText("kg") : "kg";
+            return normalizeMengeZuKg(menge, einheit);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
@@ -2919,6 +2982,13 @@ public class GeminiDokumentAnalyseService {
             lap.setPreisAenderungsdatum(new Date());
             artikelPreiseRepository.save(lap);
             updated++;
+
+            BigDecimal mengeKg = einheitVonArtikel(lap.getArtikel()) == Verrechnungseinheit.KILOGRAMM
+                    ? normalizeMengeZuKg(pos.getMenge(), pos.getMengeneinheit())
+                    : null;
+            preisHookService.registriere(lap.getArtikel(), lieferant, preisProKg, mengeKg,
+                    einheitVonArtikel(lap.getArtikel()),
+                    PreisQuelle.RECHNUNG, externeNr, null, null);
 
             log.info("[ZUGFeRD-Match] Position {}: Preis aktualisiert → {} €/kg (Rohwert: {} {})",
                     posIndex, preisProKg, pos.getEinzelpreis(), pos.getPreiseinheit());

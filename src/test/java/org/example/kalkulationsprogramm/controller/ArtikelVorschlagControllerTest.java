@@ -30,6 +30,7 @@ import org.example.kalkulationsprogramm.repository.ArtikelVorschlagRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
+import org.example.kalkulationsprogramm.service.ArtikelPreisHookService;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +51,7 @@ class ArtikelVorschlagControllerTest {
     @MockBean private KategorieRepository kategorieRepository;
     @MockBean private WerkstoffRepository werkstoffRepository;
     @MockBean private LieferantenArtikelPreiseRepository preiseRepository;
+    @MockBean private ArtikelPreisHookService preisHookService;
 
     // ─────────────────────────────────────────────────────────────
     // GET /api/artikel-vorschlaege
