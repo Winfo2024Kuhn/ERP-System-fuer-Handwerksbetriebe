@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Plus, Search, FileText, Loader2, ArrowLeft, Save, Check, Info, AlertTriangle,
     ChevronDown, ChevronUp, ChevronRight, X, Sparkles, RotateCcw, Zap, Wind, Gauge,
-    FastForward, CircleDot, BatteryCharging, Thermometer, Sliders, Eye, Gem,
+    FastForward, CircleDot, BatteryCharging, Thermometer, Sliders, Gem,
     ShieldCheck, HardHat, Briefcase, UserPlus, Square, CheckSquare, Printer, Ruler,
-    History, Hammer,
+    History, Hammer, Upload, FileUp, Download,
 } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
+import { VerfahrenGlyph, NahtGlyph, PositionGlyph } from '../components/welding-glyphs';
 
 // ---------------------------------------------------------------------------
 //  Typen & API
@@ -41,6 +42,9 @@ interface Wps {
     gueltigBis?: string;
     erstelltAm?: string;
     lagen?: Lage[];
+    /** 'EDITOR' = im Editor erstellt · 'UPLOAD' = als PDF importiert (read-only) */
+    quelle?: 'EDITOR' | 'UPLOAD';
+    originalDateiname?: string;
 }
 
 interface Mitarbeiter {
@@ -268,115 +272,8 @@ function fmtRange(v: string | number | null | undefined, pct = 0.1): string {
     return `${fmt(lo)}–${fmt(hi)}`;
 }
 
-// ---------------------------------------------------------------------------
-//  SVG-Glyphen (einfache Werkstattsymbole für visuelle Auswahl)
-// ---------------------------------------------------------------------------
-
-type GlyphProps = { className?: string };
-
-const VerfahrenGlyph = ({ letters, className }: GlyphProps & { letters: string }) => (
-    <svg viewBox="0 0 120 90" className={className} fill="none">
-        <rect x="2" y="2" width="116" height="86" rx="8" fill="#f8fafc" stroke="#e2e8f0" />
-        <path d="M10 70 L55 70 L60 55 L65 70 L110 70" stroke="#be123c" strokeWidth="2" strokeLinecap="round" />
-        <circle cx="60" cy="55" r="5" fill="#f43f5e" />
-        <text x="60" y="38" textAnchor="middle" fontFamily="ui-sans-serif, system-ui" fontSize="20" fontWeight="700" fill="#0f172a">{letters}</text>
-    </svg>
-);
-
-const NahtGlyph = ({ kind, className }: GlyphProps & { kind: NahtartDef['id'] }) => {
-    const stroke = '#be123c';
-    const plate = '#cbd5e1';
-    const bg = '#f8fafc';
-    return (
-        <svg viewBox="0 0 120 70" className={className} fill="none">
-            <rect x="2" y="2" width="116" height="66" rx="6" fill={bg} stroke="#e2e8f0" />
-            {kind === 'I' && (
-                <>
-                    <rect x="20" y="30" width="38" height="14" fill={plate} />
-                    <rect x="62" y="30" width="38" height="14" fill={plate} />
-                    <line x1="60" y1="28" x2="60" y2="46" stroke={stroke} strokeWidth="2.5" />
-                </>
-            )}
-            {kind === 'V' && (
-                <>
-                    <polygon points="20,30 55,30 60,44 20,44" fill={plate} />
-                    <polygon points="60,44 65,30 100,30 100,44" fill={plate} />
-                    <path d="M55 30 L60 44 L65 30" stroke={stroke} strokeWidth="2.5" fill="none" />
-                </>
-            )}
-            {kind === 'X' && (
-                <>
-                    <polygon points="20,28 54,28 60,37 54,46 20,46" fill={plate} />
-                    <polygon points="66,28 100,28 100,46 66,46 60,37" fill={plate} />
-                    <path d="M54 28 L60 37 L54 46 M66 28 L60 37 L66 46" stroke={stroke} strokeWidth="2" fill="none" />
-                </>
-            )}
-            {kind === 'Kehl' && (
-                <>
-                    <rect x="12" y="38" width="90" height="10" fill={plate} />
-                    <rect x="50" y="12" width="12" height="28" fill={plate} />
-                    <path d="M50 38 L40 48 M62 38 L72 48" stroke={stroke} strokeWidth="2.5" fill="none" />
-                </>
-            )}
-            {kind === 'HV' && (
-                <>
-                    <rect x="18" y="30" width="40" height="14" fill={plate} />
-                    <polygon points="62,30 100,30 100,44 62,44 58,38" fill={plate} />
-                    <path d="M58 30 L62 38 L58 44" stroke={stroke} strokeWidth="2.5" fill="none" />
-                </>
-            )}
-            {kind === 'DHV' && (
-                <>
-                    <rect x="14" y="38" width="90" height="10" fill={plate} />
-                    <polygon points="52,12 64,12 60,36" fill={plate} />
-                    <polygon points="52,58 64,58 60,38" fill={plate} />
-                    <path d="M52 12 L60 37 L52 58 M64 12 L60 37 L64 58" stroke={stroke} strokeWidth="2" fill="none" />
-                </>
-            )}
-        </svg>
-    );
-};
-
-const PositionGlyph = ({ id, className }: GlyphProps & { id: string }) => {
-    const accent = '#be123c';
-    const plate = '#cbd5e1';
-    return (
-        <svg viewBox="0 0 110 70" className={className} fill="none">
-            <rect x="2" y="2" width="106" height="66" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
-            {id === 'PA' && (<>
-                <rect x="20" y="50" width="70" height="4" fill={plate} />
-                <path d="M40 50 L55 42 L70 50" stroke={accent} strokeWidth="2.5" fill="none" />
-            </>)}
-            {id === 'PB' && (<>
-                <rect x="20" y="50" width="70" height="4" fill={plate} />
-                <rect x="50" y="22" width="4" height="28" fill={plate} />
-                <path d="M50 46 L45 50 M54 46 L59 50" stroke={accent} strokeWidth="2" />
-            </>)}
-            {id === 'PC' && (<>
-                <rect x="20" y="30" width="4" height="30" fill={plate} />
-                <rect x="24" y="42" width="60" height="4" fill={plate} />
-                <path d="M30 42 L55 34 L78 42" stroke={accent} strokeWidth="2.5" fill="none" />
-            </>)}
-            {id === 'PD' && (<>
-                <rect x="20" y="18" width="70" height="4" fill={plate} />
-                <path d="M40 22 L55 30 L70 22" stroke={accent} strokeWidth="2.5" fill="none" />
-            </>)}
-            {id === 'PE' && (<>
-                <rect x="20" y="14" width="70" height="4" fill={plate} />
-                <path d="M45 18 L55 28 L65 18" stroke={accent} strokeWidth="2.5" fill="none" />
-            </>)}
-            {id === 'PF' && (<>
-                <line x1="30" y1="60" x2="80" y2="12" stroke={plate} strokeWidth="4" />
-                <path d="M60 40 L52 32 L65 30 M55 35 L55 35" stroke={accent} strokeWidth="2.5" fill="none" />
-                <path d="M55 46 L60 40" stroke={accent} strokeWidth="3" markerEnd="url(#arr)" />
-            </>)}
-            {id === 'PG' && (<>
-                <line x1="30" y1="12" x2="80" y2="60" stroke={plate} strokeWidth="4" />
-                <path d="M55 36 L62 43" stroke={accent} strokeWidth="3" />
-            </>)}
-        </svg>
-    );
-};
+// Schweißverfahren-, Nahtart- und Positions-Glyphen siehe
+// src/components/welding-glyphs/ (schematische Symbolbilder).
 
 // ---------------------------------------------------------------------------
 //  Bausteine (Pickers, Step-Header, ParamField, Badge, Avatar…)
@@ -816,27 +713,42 @@ const WpsPreviewA4 = ({ form, rec, firma, logoUrl, alleMitarbeiter, alleProjekte
                 </div>
             </div>
 
-            {/* Block 1: Verfahren + Material */}
+            {/* Block 1: Verfahren + Material + Nahtart + Position (mit Glyphen) */}
             <div className="grid grid-cols-2 gap-4 mt-4">
-                <div>
-                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Schweißverfahren</div>
-                    <div className="text-[15px] font-bold text-slate-900">{form.verfahren?.name || '—'}</div>
-                    <div className="text-[10px] text-slate-600">Code {form.verfahren?.code || '—'} · {form.verfahren?.subtitle || ''}</div>
+                <div className="flex items-start gap-2.5">
+                    <div className="w-14 h-11 flex-shrink-0 bg-slate-50 border border-slate-200 rounded overflow-hidden p-0.5">
+                        {form.verfahren ? <VerfahrenGlyph letters={form.verfahren.id} className="w-full h-full" /> : null}
+                    </div>
+                    <div className="min-w-0">
+                        <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Schweißverfahren</div>
+                        <div className="text-[15px] font-bold text-slate-900">{form.verfahren?.name || '—'}</div>
+                        <div className="text-[10px] text-slate-600">Code {form.verfahren?.code || '—'} · {form.verfahren?.subtitle || ''}</div>
+                    </div>
                 </div>
                 <div>
                     <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Grundwerkstoff</div>
                     <div className="text-[15px] font-bold text-slate-900">{form.material?.name || '—'}</div>
                     <div className="text-[10px] text-slate-600 font-mono">{form.material?.norm || ''} · Gr. {form.material?.iso || ''}</div>
                 </div>
-                <div>
-                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nahtart</div>
-                    <div className="text-[15px] font-bold text-slate-900">{form.naht?.name || '—'}</div>
-                    <div className="text-[10px] text-slate-600">{form.naht?.subtitle || ''}</div>
+                <div className="flex items-start gap-2.5">
+                    <div className="w-14 h-11 flex-shrink-0 bg-slate-50 border border-slate-200 rounded overflow-hidden p-0.5">
+                        {form.naht ? <NahtGlyph kind={form.naht.id} className="w-full h-full" /> : null}
+                    </div>
+                    <div className="min-w-0">
+                        <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nahtart</div>
+                        <div className="text-[15px] font-bold text-slate-900">{form.naht?.name || '—'}</div>
+                        <div className="text-[10px] text-slate-600">{form.naht?.subtitle || ''}</div>
+                    </div>
                 </div>
-                <div>
-                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Position (EN ISO 6947)</div>
-                    <div className="text-[15px] font-bold text-slate-900 font-mono">{form.position?.id || '—'}</div>
-                    <div className="text-[10px] text-slate-600">{form.position?.subtitle || ''}</div>
+                <div className="flex items-start gap-2.5">
+                    <div className="w-14 h-11 flex-shrink-0 bg-slate-50 border border-slate-200 rounded overflow-hidden p-0.5">
+                        {form.position ? <PositionGlyph id={form.position.id} nahtartKind={form.naht?.id} className="w-full h-full" /> : null}
+                    </div>
+                    <div className="min-w-0">
+                        <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Position (EN ISO 6947)</div>
+                        <div className="text-[15px] font-bold text-slate-900 font-mono">{form.position?.id || '—'}</div>
+                        <div className="text-[10px] text-slate-600">{form.position?.subtitle || ''}</div>
+                    </div>
                 </div>
             </div>
 
@@ -1208,9 +1120,9 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                 }
             `}</style>
 
-            <div className="flex flex-col h-[calc(100vh-60px)]">
-                {/* Top-Bar */}
-                <div className="flex items-center gap-4 px-6 py-3 bg-white border-b border-slate-200 flex-shrink-0">
+            <div className="flex flex-col">
+                {/* Top-Bar — sticky, damit sie beim globalen Scrollen sichtbar bleibt */}
+                <div className="sticky top-0 z-30 flex items-center gap-4 px-6 py-3 bg-white border-b border-slate-200">
                     <button
                         onClick={onClose}
                         className="inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50"
@@ -1253,10 +1165,10 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                     </button>
                 </div>
 
-                {/* Split-View */}
-                <div className="flex-1 grid grid-cols-[minmax(560px,1.15fr)_minmax(460px,1fr)] min-h-0">
-                    {/* LINKS — Eingabe */}
-                    <div className="overflow-auto bg-slate-50 px-7 pt-6 pb-32">
+                {/* Einspaltiges Layout — globaler Scroller, kein Inline-Scroll */}
+                <div>
+                    {/* Eingabe */}
+                    <div className="bg-slate-50 px-7 pt-6 pb-32 max-w-5xl mx-auto">
                         {/* Bezeichnung */}
                         <div className="mb-7">
                             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -1389,7 +1301,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                                         name={p.id}
                                         subtitle={p.subtitle}
                                         size="sm"
-                                        glyph={<PositionGlyph id={p.id} className="w-full h-full" />}
+                                        glyph={<PositionGlyph id={p.id} nahtartKind={form.naht?.id} className="w-full h-full" />}
                                     />
                                 ))}
                             </div>
@@ -1604,22 +1516,9 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                         </div>
                     </div>
 
-                    {/* RECHTS — Live-Preview */}
-                    <div className="overflow-auto bg-slate-100 border-l border-slate-200 px-7 pt-6 pb-20">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">
-                            <Eye className="w-3 h-3" />
-                            Live-Vorschau · DIN A4 · aktualisiert automatisch
-                        </div>
-                        <div className="mx-auto" style={{ width: A4_W * 0.55, height: A4_H * 0.55, overflow: 'hidden' }}>
-                            <WpsPreviewA4
-                                form={form} rec={rec} firma={firma} logoUrl={logoUrl}
-                                alleMitarbeiter={mitarbeiter} alleProjekte={projekte}
-                                scale={0.55}
-                            />
-                        </div>
-
-                        {/* KI-Schweißaufsicht */}
-                        <div className="mt-5 p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                    {/* KI-Schweißaufsicht — am Ende des Formulars */}
+                    <div className="max-w-5xl mx-auto px-7 pb-10">
+                        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
                             <div className="flex items-center gap-2.5 mb-2.5">
                                 <span className="w-8 h-8 rounded-lg bg-purple-100 text-purple-500 inline-flex items-center justify-center">
                                     <Gem className="w-4 h-4" />
@@ -1719,12 +1618,14 @@ const gueltigkeit = (g?: string) => {
 interface OverviewProps {
     liste: Wps[];
     onNew: () => void;
+    onUpload: () => void;
     onEdit: (w: Wps) => void;
+    onViewPdf: (w: Wps) => void;
     onDelete: (id: number) => void;
     loading: boolean;
 }
 
-const WpsOverview = ({ liste, onNew, onEdit, onDelete, loading }: OverviewProps) => {
+const WpsOverview = ({ liste, onNew, onUpload, onEdit, onViewPdf, onDelete, loading }: OverviewProps) => {
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<string>('alle');
 
@@ -1825,13 +1726,28 @@ const WpsOverview = ({ liste, onNew, onEdit, onDelete, loading }: OverviewProps)
                                 const v = verfahrenFromCode(w.schweissProzes);
                                 const g = gueltigkeit(w.gueltigBis);
                                 const naht = NAHTARTEN.find((n) => n.name === w.nahtart || n.id === w.nahtart);
+                                const isUpload = w.quelle === 'UPLOAD';
+                                const rowClick = () => (isUpload ? onViewPdf(w) : onEdit(w));
                                 return (
                                     <tr
                                         key={w.id}
-                                        onClick={() => onEdit(w)}
+                                        onClick={rowClick}
                                         className="border-b border-slate-100 last:border-0 hover:bg-rose-50/50 cursor-pointer transition-colors"
                                     >
-                                        <td className="py-3.5 px-4 font-mono text-[12px] font-semibold text-slate-700 whitespace-nowrap">{w.wpsNummer}</td>
+                                        <td className="py-3.5 px-4 font-mono text-[12px] font-semibold text-slate-700 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <span>{w.wpsNummer}</span>
+                                                {isUpload && (
+                                                    <span
+                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-semibold uppercase tracking-wide"
+                                                        title="Als PDF importiert – nicht im Editor bearbeitbar"
+                                                    >
+                                                        <FileUp className="w-3 h-3" />
+                                                        Importiert
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="py-3.5 px-4">
                                             <div className="text-sm font-semibold text-slate-900">{w.bezeichnung || <span className="text-slate-400">(ohne Bezeichnung)</span>}</div>
                                             <div className="text-[11px] text-slate-500 mt-0.5">{w.norm} · {w.erstelltAm ? new Date(w.erstelltAm).toLocaleDateString('de-DE') : '—'}</div>
@@ -1876,8 +1792,9 @@ const WpsOverview = ({ liste, onNew, onEdit, onDelete, loading }: OverviewProps)
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={(e) => { e.stopPropagation(); onEdit(w); }}
+                                                onClick={(e) => { e.stopPropagation(); rowClick(); }}
                                                 className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 ml-1"
+                                                title={isUpload ? 'PDF öffnen' : 'Bearbeiten'}
                                             >
                                                 <ChevronRight className="w-4 h-4" />
                                             </button>
@@ -1899,6 +1816,299 @@ const WpsOverview = ({ liste, onNew, onEdit, onDelete, loading }: OverviewProps)
 };
 
 // ---------------------------------------------------------------------------
+//  PDF-Upload-Modal (für extern erstellte Schweißanweisungen)
+// ---------------------------------------------------------------------------
+
+interface UploadModalProps {
+    onClose: () => void;
+    onUploaded: (w: Wps) => void;
+}
+
+const WpsUploadModal = ({ onClose, onUploaded }: UploadModalProps) => {
+    const [file, setFile] = useState<File | null>(null);
+    const [dragOver, setDragOver] = useState(false);
+    const [wpsNummer, setWpsNummer] = useState('');
+    const [bezeichnung, setBezeichnung] = useState('');
+    const [schweissProzes, setSchweissProzes] = useState<string>('');
+    const [grundwerkstoff, setGrundwerkstoff] = useState('');
+    const [nahtart, setNahtart] = useState('');
+    const [gueltigBis, setGueltigBis] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [fehler, setFehler] = useState<string | null>(null);
+
+    const pickFile = (f: File | null) => {
+        setFehler(null);
+        if (!f) { setFile(null); return; }
+        if (!f.name.toLowerCase().endsWith('.pdf')) {
+            setFehler('Nur PDF-Dateien sind erlaubt.');
+            setFile(null);
+            return;
+        }
+        if (f.size > 25 * 1024 * 1024) {
+            setFehler('Datei größer als 25 MB – bitte komprimieren.');
+            setFile(null);
+            return;
+        }
+        setFile(f);
+        // Dateiname als Vorschlag für Bezeichnung, falls noch leer
+        if (!bezeichnung) {
+            setBezeichnung(f.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' '));
+        }
+    };
+
+    const submit = async () => {
+        if (!file || !wpsNummer.trim()) {
+            setFehler('WPS-Nummer und PDF-Datei sind Pflichtfelder.');
+            return;
+        }
+        setBusy(true);
+        setFehler(null);
+        try {
+            const fd = new FormData();
+            fd.append('datei', file);
+            fd.append('wpsNummer', wpsNummer.trim());
+            if (bezeichnung.trim()) fd.append('bezeichnung', bezeichnung.trim());
+            if (schweissProzes) fd.append('schweissProzes', schweissProzes);
+            if (grundwerkstoff) fd.append('grundwerkstoff', grundwerkstoff);
+            if (nahtart) fd.append('nahtart', nahtart);
+            if (gueltigBis) fd.append('gueltigBis', gueltigBis);
+
+            const res = await fetch('/api/wps/upload', { method: 'POST', body: fd });
+            if (!res.ok) {
+                if (res.status === 415) throw new Error('Dateityp nicht unterstützt (nur PDF).');
+                throw new Error(`Upload fehlgeschlagen (HTTP ${res.status}).`);
+            }
+            const saved: Wps = await res.json();
+            onUploaded(saved);
+        } catch (e) {
+            setFehler(e instanceof Error ? e.message : 'Unbekannter Fehler beim Upload.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-white">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                            <FileUp className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <div className="text-base font-bold text-slate-900">Schweißanweisung als PDF importieren</div>
+                            <div className="text-[12px] text-slate-500">Bereits vorhandene WPS (aus anderen Programmen oder vom Schweißfachingenieur) hochladen – nicht im Editor bearbeitbar.</div>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Abbrechen">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="px-5 py-4 overflow-y-auto">
+                    {/* Drop-Zone */}
+                    <label
+                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                        onDragLeave={() => setDragOver(false)}
+                        onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOver(false);
+                            pickFile(e.dataTransfer.files?.[0] ?? null);
+                        }}
+                        className={`block border-2 border-dashed rounded-xl px-5 py-8 text-center cursor-pointer transition-colors ${
+                            dragOver ? 'border-rose-500 bg-rose-50' : file ? 'border-emerald-400 bg-emerald-50/40' : 'border-slate-300 bg-slate-50 hover:border-rose-300'
+                        }`}
+                    >
+                        <input
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            className="hidden"
+                            onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+                        />
+                        {file ? (
+                            <div className="flex flex-col items-center gap-1">
+                                <Check className="w-7 h-7 text-emerald-600" />
+                                <div className="text-sm font-semibold text-slate-900">{file.name}</div>
+                                <div className="text-[11px] text-slate-500">{(file.size / 1024).toFixed(0)} KB</div>
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.preventDefault(); pickFile(null); }}
+                                    className="mt-2 text-[12px] text-rose-600 hover:underline"
+                                >Andere Datei wählen</button>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center gap-1">
+                                <Upload className="w-7 h-7 text-slate-400" />
+                                <div className="text-sm font-semibold text-slate-700">PDF hierher ziehen oder klicken</div>
+                                <div className="text-[11px] text-slate-500">Maximal 25 MB – nur .pdf</div>
+                            </div>
+                        )}
+                    </label>
+
+                    {/* Metadaten */}
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="col-span-2">
+                            <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">WPS-Nummer *</label>
+                            <input
+                                value={wpsNummer}
+                                onChange={(e) => setWpsNummer(e.target.value)}
+                                placeholder="z. B. WPS-2026-014"
+                                className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                            />
+                        </div>
+                        <div className="col-span-2">
+                            <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Bezeichnung</label>
+                            <input
+                                value={bezeichnung}
+                                onChange={(e) => setBezeichnung(e.target.value)}
+                                placeholder="z. B. Geländer Treppenhaus"
+                                className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Verfahren</label>
+                            <select
+                                value={schweissProzes}
+                                onChange={(e) => setSchweissProzes(e.target.value)}
+                                className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                            >
+                                <option value="">— nicht angegeben —</option>
+                                {VERFAHREN.map((v) => (
+                                    <option key={v.id} value={v.code}>{v.code} · {v.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Grundwerkstoff</label>
+                            <select
+                                value={grundwerkstoff}
+                                onChange={(e) => setGrundwerkstoff(e.target.value)}
+                                className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                            >
+                                <option value="">— nicht angegeben —</option>
+                                {MATERIALS.map((m) => (
+                                    <option key={m.id} value={m.name}>{m.name} ({m.group})</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Nahtart</label>
+                            <select
+                                value={nahtart}
+                                onChange={(e) => setNahtart(e.target.value)}
+                                className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                            >
+                                <option value="">— nicht angegeben —</option>
+                                {NAHTARTEN.map((n) => (
+                                    <option key={n.id} value={n.name}>{n.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Gültig bis</label>
+                            <input
+                                type="date"
+                                value={gueltigBis}
+                                onChange={(e) => setGueltigBis(e.target.value)}
+                                className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                            />
+                        </div>
+                    </div>
+
+                    {fehler && (
+                        <div className="mt-3 flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-[13px] text-red-700">
+                            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                            <span>{fehler}</span>
+                        </div>
+                    )}
+
+                    <div className="mt-3 flex items-start gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] text-slate-600">
+                        <Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-slate-400" />
+                        <span>Importierte PDFs werden in der Übersicht mit <strong>„Importiert"</strong> gekennzeichnet. Sie lassen sich öffnen und drucken, aber nicht im WPS-Editor bearbeiten. Für interne, editierbare WPS nutze „Neue WPS".</span>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                    >Abbrechen</button>
+                    <button
+                        type="button"
+                        onClick={submit}
+                        disabled={busy || !file || !wpsNummer.trim()}
+                        className="inline-flex items-center gap-2 px-5 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                        {busy ? 'Wird hochgeladen…' : 'Importieren'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------------------------
+//  PDF-Viewer-Modal (zeigt hochgeladene WPS-PDFs an)
+// ---------------------------------------------------------------------------
+
+interface ViewerProps {
+    wps: Wps;
+    onClose: () => void;
+}
+
+const WpsPdfViewer = ({ wps, onClose }: ViewerProps) => {
+    const pdfUrl = `/api/wps/${wps.id}/dokument`;
+    return (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-white">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+                            <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="text-sm font-bold text-slate-900 truncate">{wps.wpsNummer} · {wps.bezeichnung || 'Importierte Schweißanweisung'}</div>
+                            <div className="text-[11px] text-slate-500 truncate">{wps.originalDateiname || 'PDF-Datei'} · importiert</div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <a
+                            href={pdfUrl}
+                            download={wps.originalDateiname || `${wps.wpsNummer}.pdf`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                            title="PDF herunterladen"
+                        >
+                            <Download className="w-3.5 h-3.5" />
+                            Download
+                        </a>
+                        <button
+                            onClick={() => window.open(pdfUrl, '_blank', 'noopener,noreferrer')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                            title="Im Browser drucken"
+                        >
+                            <Printer className="w-3.5 h-3.5" />
+                            Drucken
+                        </button>
+                        <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Schließen">
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+                <div className="flex-1 bg-slate-100">
+                    <iframe
+                        src={pdfUrl}
+                        title={`WPS ${wps.wpsNummer}`}
+                        className="w-full h-full border-0"
+                    />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------------------------
 //  Root-Komponente
 // ---------------------------------------------------------------------------
 
@@ -1906,6 +2116,8 @@ export default function WpsPage() {
     const [liste, setListe] = useState<Wps[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<Wps | null | 'new'>(null);
+    const [viewing, setViewing] = useState<Wps | null>(null);
+    const [uploading, setUploading] = useState(false);
 
     const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
     const [projekte, setProjekte] = useState<Projekt[]>([]);
@@ -1985,6 +2197,14 @@ export default function WpsPage() {
                         Versionen
                     </button>
                     <button
+                        onClick={() => setUploading(true)}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:border-rose-300 hover:text-rose-600 text-sm font-semibold"
+                        title="Bereits existierende Schweißanweisung als PDF hochladen"
+                    >
+                        <Upload className="w-4 h-4" />
+                        PDF hochladen
+                    </button>
+                    <button
                         onClick={() => setEditing('new')}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 text-sm font-semibold"
                     >
@@ -1997,10 +2217,24 @@ export default function WpsPage() {
             <WpsOverview
                 liste={liste}
                 onNew={() => setEditing('new')}
+                onUpload={() => setUploading(true)}
                 onEdit={(w) => setEditing(w)}
+                onViewPdf={(w) => setViewing(w)}
                 onDelete={handleDelete}
                 loading={loading}
             />
+            {uploading && (
+                <WpsUploadModal
+                    onClose={() => setUploading(false)}
+                    onUploaded={() => { setUploading(false); loadListe(); }}
+                />
+            )}
+            {viewing && (
+                <WpsPdfViewer
+                    wps={viewing}
+                    onClose={() => setViewing(null)}
+                />
+            )}
         </PageLayout>
     );
 }
