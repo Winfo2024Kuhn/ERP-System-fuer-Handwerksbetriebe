@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
+import org.example.kalkulationsprogramm.service.En1090AnforderungenService;
 import org.example.kalkulationsprogramm.service.En1090ReportService;
 import org.example.kalkulationsprogramm.service.En1090ReportService.WpkStatus;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,9 @@ class En1090ControllerTest {
 
     @MockBean
     private En1090ReportService reportService;
+
+    @MockBean
+    private En1090AnforderungenService anforderungenService;
 
     @Test
     void getWpkStatus_alleOk() throws Exception {

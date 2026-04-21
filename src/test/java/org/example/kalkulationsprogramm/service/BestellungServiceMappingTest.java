@@ -26,7 +26,8 @@ class BestellungServiceMappingTest {
         KategorieRepository kategorieRepo = mock(KategorieRepository.class);
         ArtikelRepository artikelRepo = mock(ArtikelRepository.class);
         ZeugnisService zeugnisService = new ZeugnisService(kategorieRepo);
-        BestellungService service = new BestellungService(repo, projektRepo, lieferantenRepo, kategorieRepo, artikelRepo, zeugnisService);
+        BestellauftragService bestellauftragService = mock(BestellauftragService.class);
+        BestellungService service = new BestellungService(repo, projektRepo, lieferantenRepo, kategorieRepo, artikelRepo, zeugnisService, bestellauftragService);
 
         Kategorie kat = new Kategorie();
         kat.setId(2);

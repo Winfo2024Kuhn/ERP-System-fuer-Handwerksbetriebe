@@ -28,6 +28,7 @@ public class BestellungService {
     private final KategorieRepository kategorieRepository;
     private final ArtikelRepository artikelRepository;
     private final ZeugnisService zeugnisService;
+    private final BestellauftragService bestellauftragService;
 
     public List<BestellungResponseDto> findeOffeneBestellungen() {
         List<BestellungResponseDto> dtos = artikelInProjektRepository
@@ -236,14 +237,20 @@ public class BestellungService {
                         .toList();
         LocalDateTime now = LocalDateTime.now();
         int count = 0;
+        List<ArtikelInProjekt> frischExportierte = new java.util.ArrayList<>();
         for (ArtikelInProjekt aip : offene) {
             if (aip.getExportiertAm() == null) {
                 aip.setExportiertAm(now);
+                frischExportierte.add(aip);
                 count++;
             }
         }
         if (count > 0) {
             artikelInProjektRepository.saveAll(offene);
+            // Parallel zur Legacy-Welt: echten Bestellungs-Datensatz
+            // anlegen (pro Projekt/Lieferant-Gruppe eine Bestellung).
+            // Konsumenten wie die Wareneingangskontrolle haengen daran.
+            bestellauftragService.erzeugeBestellungenAusExport(frischExportierte, null);
         }
         return count;
     }

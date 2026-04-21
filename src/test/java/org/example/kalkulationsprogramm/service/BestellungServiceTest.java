@@ -32,13 +32,14 @@ class BestellungServiceTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private KategorieRepository kategorieRepository;
     @Mock private ArtikelRepository artikelRepository;
+    @Mock private BestellauftragService bestellauftragService;
 
     private BestellungService service;
 
     @BeforeEach
     void setup() {
         ZeugnisService zeugnisService = new ZeugnisService(kategorieRepository);
-        service = new BestellungService(artikelInProjektRepository, projektRepository, lieferantenRepository, kategorieRepository, artikelRepository, zeugnisService);
+        service = new BestellungService(artikelInProjektRepository, projektRepository, lieferantenRepository, kategorieRepository, artikelRepository, zeugnisService, bestellauftragService);
     }
 
     @Test
