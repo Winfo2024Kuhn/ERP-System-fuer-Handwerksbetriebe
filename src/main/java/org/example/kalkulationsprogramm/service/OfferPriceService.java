@@ -1,11 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
 import lombok.AllArgsConstructor;
-import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.PreisQuelle;
-import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
-import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +22,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @AllArgsConstructor
 public class OfferPriceService {
     private final ArtikelRepository artikelRepository;
-    private final ArtikelInProjektRepository artikelInProjektRepository;
     private final ArtikelPreisHookService preisHookService;
     private static final Logger log = LoggerFactory.getLogger(OfferPriceService.class);
 
@@ -82,40 +78,10 @@ public class OfferPriceService {
                                     preisHookService.registriere(artikel, lieferant, finalPrice,
                                             artikel.getVerrechnungseinheit(),
                                             PreisQuelle.ANGEBOT, code);
-                                    if (artikel.getId() != null && lieferant.getId() != null) {
-                                        List<ArtikelInProjekt> projektArtikel = artikelInProjektRepository
-                                                .findByArtikel_IdAndLieferant_IdAndQuelle(artikel.getId(),
-                                                        lieferant.getId(),
-                                                        org.example.kalkulationsprogramm.domain.BestellQuelle.OFFEN);
-                                        for (ArtikelInProjekt aip : projektArtikel) {
-                                            BigDecimal p = finalPrice;
-                                            if (p != null && aip.getArtikel() != null &&
-                                                    aip.getArtikel().getVerrechnungseinheit() != null) {
-                                                Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
-                                                switch (ve) {
-                                                    case KILOGRAMM -> {
-                                                        if (aip.getKilogramm() != null) {
-                                                            p = p.multiply(aip.getKilogramm());
-                                                        }
-                                                    }
-                                                    case LAUFENDE_METER, QUADRATMETER -> {
-                                                        if (aip.getMeter() != null) {
-                                                            p = p.multiply(aip.getMeter());
-                                                        }
-                                                    }
-                                                    case STUECK -> {
-                                                        if (aip.getStueckzahl() != null) {
-                                                            p = p.multiply(BigDecimal.valueOf(aip.getStueckzahl()));
-                                                        }
-                                                    }
-                                                }
-                                                aip.setPreisProStueck(p);
-                                            }
-                                        }
-                                        if (!projektArtikel.isEmpty()) {
-                                            artikelInProjektRepository.saveAll(projektArtikel);
-                                        }
-                                    }
+                                    // Nach Stufe A2: kein Propagieren des Angebotspreises auf
+                                    // offene AiP-Zeilen mehr — AiP hat keinen Lieferanten und
+                                    // keinen Preis aus Angeboten; Projekt-Kalkulation laeuft
+                                    // ueber die Eingangsrechnung (interne Bestellnummer).
                                 } catch (DataIntegrityViolationException e) {
                                     log.warn("[OfferPriceService] Duplicate article {} for supplier {}", code, lieferant.getLieferantenname());
                                     unmatched.add(finalItem);

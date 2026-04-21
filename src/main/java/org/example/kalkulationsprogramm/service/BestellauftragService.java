@@ -8,13 +8,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.BestellStatus;
 import org.example.kalkulationsprogramm.domain.Bestellposition;
 import org.example.kalkulationsprogramm.domain.Bestellung;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.BestellungRepository;
 import org.springframework.stereotype.Service;
@@ -42,37 +42,42 @@ public class BestellauftragService {
     private final BestellungRepository bestellungRepository;
 
     /**
-     * Erzeugt pro (Lieferant, Projekt)-Gruppe eine Bestellung aus den
-     * uebergebenen AiP-Zeilen. Status {@link BestellStatus#VERSENDET}
-     * inklusive {@code exportiertAm}/{@code versendetAm} — Kurzform fuer
-     * den klassischen Export-Pfad (PDF/Mail hat schon stattgefunden).
+     * Erzeugt pro Projekt eine Bestellung fuer den uebergebenen Lieferanten.
+     * Status {@link BestellStatus#VERSENDET} inklusive
+     * {@code exportiertAm}/{@code versendetAm} — Kurzform fuer den klassischen
+     * Export-Pfad (PDF/Mail hat schon stattgefunden).
      *
-     * @param positionen  zu buendelnde Kalkulationspositionen
-     * @param erstellVon  Mitarbeiter, der den Export ausloest (nullable —
-     *                    dann nur Snapshot-Name leer/System)
+     * @param positionen zu buendelnde Kalkulationspositionen
+     * @param lieferant  Ziel-Lieferant (nullable — z.B. wenn Bedarf noch keinen
+     *                   festen Lieferanten hat; Bestellung bleibt dann ohne)
+     * @param erstellVon Mitarbeiter, der den Export ausloest (nullable)
      * @return die erzeugten Bestellungen (kann leer sein, wenn alles schon
      *         gebuendelt war)
      */
     @Transactional
     public List<Bestellung> erzeugeBestellungenAusExport(
             List<ArtikelInProjekt> positionen,
+            Lieferanten lieferant,
             Mitarbeiter erstellVon) {
-        return erzeugeBestellungen(positionen, erstellVon, BestellStatus.VERSENDET);
+        return erzeugeBestellungen(positionen, lieferant, erstellVon, BestellStatus.VERSENDET);
     }
 
     /**
-     * Erzeugt pro (Lieferant, Projekt)-Gruppe eine Bestellung.
+     * Erzeugt pro Projekt eine Bestellung fuer den uebergebenen Lieferanten.
+     *
+     * <p>Nach Stufe A2 lebt der Lieferant nicht mehr auf der AiP, sondern
+     * kommt explizit vom Caller (Preisanfrage-Vergabe: Gewinner; Export-Pfad:
+     * vom User gewaehlt). Gruppiert wird daher nur noch nach Projekt.</p>
      *
      * <p>Der {@code status} steuert, wann die Bestellung entsteht:</p>
      * <ul>
-     *   <li>{@link BestellStatus#ENTWURF} — Bedarfsbuendelung vor Export
-     *       (z.B. Chef legt aus mehreren offenen AiP-Zeilen eine Bestellung
-     *       an, die spaeter erst per PDF versendet wird).</li>
+     *   <li>{@link BestellStatus#ENTWURF} — Bedarfsbuendelung vor Export.</li>
      *   <li>{@link BestellStatus#VERSENDET} — direkter Versand-Pfad (Export
      *       oder Preisanfrage-Vergabe per Mail/IDS).</li>
      * </ul>
      *
      * @param positionen zu buendelnde Kalkulationspositionen
+     * @param lieferant  Ziel-Lieferant (nullable)
      * @param erstellVon Mitarbeiter, der den Vorgang ausloest (nullable)
      * @param status     ENTWURF oder VERSENDET
      * @return die erzeugten Bestellungen
@@ -80,27 +85,26 @@ public class BestellauftragService {
     @Transactional
     public List<Bestellung> erzeugeBestellungen(
             List<ArtikelInProjekt> positionen,
+            Lieferanten lieferant,
             Mitarbeiter erstellVon,
             BestellStatus status) {
         if (positionen == null || positionen.isEmpty()) {
             return List.of();
         }
 
-        // Gruppieren nach (lieferant_id, projekt_id). LinkedHashMap fuer
-        // stabile Reihenfolge — wichtig fuer Tests und fuer die
-        // aufsteigende Nummernvergabe.
-        Map<GruppenSchluessel, List<ArtikelInProjekt>> gruppen = new LinkedHashMap<>();
+        // Gruppieren nach projekt_id (Lieferant ist fuer alle Positionen
+        // dieses Aufrufs gleich). LinkedHashMap fuer stabile Reihenfolge —
+        // wichtig fuer Tests und die aufsteigende Nummernvergabe.
+        Map<Long, List<ArtikelInProjekt>> gruppen = new LinkedHashMap<>();
         for (ArtikelInProjekt aip : positionen) {
-            Long lieferantId = aip.getLieferant() != null ? aip.getLieferant().getId() : null;
-            Long projektId   = aip.getProjekt()   != null ? aip.getProjekt().getId()   : null;
-            gruppen.computeIfAbsent(new GruppenSchluessel(lieferantId, projektId),
-                    k -> new ArrayList<>()).add(aip);
+            Long projektId = aip.getProjekt() != null ? aip.getProjekt().getId() : null;
+            gruppen.computeIfAbsent(projektId, k -> new ArrayList<>()).add(aip);
         }
 
         List<Bestellung> ergebnis = new ArrayList<>();
         for (var eintrag : gruppen.entrySet()) {
             List<ArtikelInProjekt> gruppe = eintrag.getValue();
-            Bestellung bestellung = erstelleBestellungFuerGruppe(gruppe, erstellVon, status);
+            Bestellung bestellung = erstelleBestellungFuerGruppe(gruppe, lieferant, erstellVon, status);
             ergebnis.add(bestellung);
         }
         return ergebnis;
@@ -108,12 +112,13 @@ public class BestellauftragService {
 
     private Bestellung erstelleBestellungFuerGruppe(
             List<ArtikelInProjekt> gruppe,
+            Lieferanten lieferant,
             Mitarbeiter erstellVon,
             BestellStatus status) {
         ArtikelInProjekt erster = gruppe.get(0);
         Bestellung bestellung = new Bestellung();
         bestellung.setBestellnummer(naechsteBestellnummer());
-        bestellung.setLieferant(erster.getLieferant());
+        bestellung.setLieferant(lieferant);
         bestellung.setProjekt(erster.getProjekt());
         bestellung.setStatus(status);
         LocalDateTime now = LocalDateTime.now();
@@ -212,14 +217,4 @@ public class BestellauftragService {
         return String.format("%s%04d", prefix, naechste);
     }
 
-    /** Key fuer die Gruppierung nach (lieferant, projekt). */
-    private record GruppenSchluessel(Long lieferantId, Long projektId) {
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof GruppenSchluessel that)) return false;
-            return Objects.equals(lieferantId, that.lieferantId)
-                && Objects.equals(projektId, that.projektId);
-        }
-    }
 }

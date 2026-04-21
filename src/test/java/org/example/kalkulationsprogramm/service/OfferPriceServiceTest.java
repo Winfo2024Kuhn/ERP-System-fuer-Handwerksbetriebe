@@ -2,7 +2,6 @@ package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
-import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.junit.jupiter.api.Test;
@@ -227,8 +226,7 @@ class OfferPriceServiceTest {
     @Test
     void convertsTonPriceForSupplierId4() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
-        ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
+        OfferPriceService service = new OfferPriceService(repo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(4L);
@@ -261,8 +259,7 @@ class OfferPriceServiceTest {
     @Test
     void convertsExplicitTonUnitToKilogramForSupplierId4() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
-        ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
+        OfferPriceService service = new OfferPriceService(repo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(4L);
@@ -295,8 +292,7 @@ class OfferPriceServiceTest {
     @Test
     void convertsTonPriceForSupplierId4WhenUnitBlank() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
-        ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
+        OfferPriceService service = new OfferPriceService(repo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(4L);
@@ -408,8 +404,7 @@ class OfferPriceServiceTest {
     @Test
     void continuesWhenDuplicateEntryOccurs() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
-        ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
+        OfferPriceService service = new OfferPriceService(repo, Mockito.mock(ArtikelPreisHookService.class));
 
         Lieferanten supplier = new Lieferanten();
         supplier.setId(1L);
@@ -436,42 +431,10 @@ class OfferPriceServiceTest {
         assertTrue(result.skipped().isEmpty());
     }
 
-    @Test
-    void updatesProjektArtikelWithNewPrice() {
-        ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
-        ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        OfferPriceService service = new OfferPriceService(repo, aipRepo, Mockito.mock(ArtikelPreisHookService.class));
-
-        Lieferanten supplier = new Lieferanten();
-        supplier.setId(7L);
-        supplier.setLieferantenname("SupProj");
-
-        Artikel artikel = new Artikel();
-        artikel.setId(11L);
-        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
-        LieferantenArtikelPreise price = new LieferantenArtikelPreise();
-        price.setArtikel(artikel);
-        price.setLieferant(supplier);
-        price.setExterneArtikelnummer("PX1");
-        artikel.getArtikelpreis().add(price);
-
-        ArtikelInProjekt aip = new ArtikelInProjekt();
-        aip.setArtikel(artikel);
-        aip.setLieferant(supplier);
-        aip.setStueckzahl(3);
-        aip.setLieferantenArtikelPreis(price);
-
-        Mockito.when(repo.findByExterneArtikelnummerAndLieferantId("PX1", 7L))
-                .thenReturn(Optional.of(artikel));
-        Mockito.when(repo.save(artikel)).thenAnswer(i -> i.getArgument(0));
-        Mockito.when(aipRepo.findByArtikel_IdAndLieferant_IdAndQuelle(11L, 7L, BestellQuelle.OFFEN))
-                .thenReturn(List.of(aip));
-        Mockito.when(aipRepo.saveAll(Mockito.any())).thenAnswer(i -> i.getArgument(0));
-
-        OfferItem item = new OfferItem("PX1", "ST", new BigDecimal("2.00"), null, "Name");
-        service.updatePrices(supplier, new Date(), List.of(item));
-
-        assertEquals(0, aip.getPreisProStueck().compareTo(new BigDecimal("6.00")));
-        assertSame(price, aip.getLieferantenArtikelPreis());
-    }
+    // Hinweis (A2 Phase 1β): Der frühere Test `updatesProjektArtikelWithNewPrice`
+    // prüfte die Propagation neuer Preise auf `ArtikelInProjekt` (setLieferant /
+    // setPreisProStueck / setLieferantenArtikelPreis). Dieser Code-Pfad ist
+    // entfernt — OfferPriceService aktualisiert nur noch den Artikelstamm plus
+    // den ArtikelPreisHook. Die Kalkulation läuft ab jetzt ausschliesslich über
+    // die Eingangsrechnung + Bestellung.
 }

@@ -13,7 +13,6 @@ import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.Saegelist
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +53,6 @@ public class HicadImportService {
     private final HicadSaegelisteParser parser;
     private final ArtikelRepository artikelRepository;
     private final ProjektRepository projektRepository;
-    private final LieferantenRepository lieferantenRepository;
     private final KategorieRepository kategorieRepository;
     private final ArtikelInProjektRepository artikelInProjektRepository;
 
@@ -319,9 +317,9 @@ public class HicadImportService {
         aip.setProjekt(projekt);
         aip.setHinzugefuegtAm(LocalDate.now());
 
-        if (conf.getLieferantId() != null) {
-            aip.setLieferant(lieferantenRepository.getReferenceById(conf.getLieferantId()));
-        }
+        // lieferantId aus dem Confirm-Request wird nach A2 ignoriert — der
+        // Lieferant wird erst beim Anlegen der Bestellung (Preisanfrage-Vergabe
+        // oder manueller Export) auf der Bestellung selbst gesetzt.
         if (conf.getArtikelId() != null) {
             aip.setArtikel(artikelRepository.getReferenceById(conf.getArtikelId()));
         } else if (preview.getArtikelId() != null) {

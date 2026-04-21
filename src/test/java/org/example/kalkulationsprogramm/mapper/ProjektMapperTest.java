@@ -2,7 +2,6 @@ package org.example.kalkulationsprogramm.mapper;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
-import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
@@ -31,7 +30,10 @@ class ProjektMapperTest {
     }
 
     @Test
-    void updatesPreisProStueckWithSupplierPrice() {
+    void usesStoredPreisProStueck() {
+        // Nach A2 Phase 1β: Der ProjektMapper gibt 1:1 den auf der AiP
+        // gespeicherten preisProStueck zurück — kein LieferantenArtikelPreis-
+        // Fallback mehr (Lieferant lebt nicht mehr auf der AiP).
         Projekt projekt = new Projekt();
         Artikel artikel = new Artikel();
         artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
@@ -41,15 +43,10 @@ class ProjektMapperTest {
         aip.setStueckzahl(2);
         aip.setPreisProStueck(new BigDecimal("5"));
 
-        LieferantenArtikelPreise lap = new LieferantenArtikelPreise();
-        lap.setArtikel(artikel);
-        lap.setPreis(new BigDecimal("7"));
-        aip.setLieferantenArtikelPreis(lap);
-
         projekt.getArtikelInProjekt().add(aip);
 
         ProjektResponseDto dto = mapper.toProjektResponseDto(projekt);
-        assertEquals(0, dto.getArtikel().getFirst().getPreisProStueck().compareTo(new BigDecimal("14")));
+        assertEquals(0, dto.getArtikel().getFirst().getPreisProStueck().compareTo(new BigDecimal("5")));
     }
 
     @Test

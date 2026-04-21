@@ -13,18 +13,11 @@ import java.util.List;
 @Repository
 public interface ArtikelInProjektRepository extends JpaRepository<ArtikelInProjekt, Long> {
     /**
-     * Bedarfspositionen, die noch nicht in einem Folgeprozess verarbeitet wurden
-     * (keine Preisanfrage, keine Bestellung, nicht aus Lager entnommen).
+     * Bedarfspositionen in einem bestimmten Workflow-Zustand
+     * (OFFEN, AUS_LAGER, BESTELLT), sortiert nach Projekt.
+     * Lieferant lebt nach Stufe A2 auf der Bestellung, nicht mehr auf der AiP.
      */
-    List<ArtikelInProjekt> findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(
-            BestellQuelle quelle);
-
-    List<ArtikelInProjekt> findByQuelleAndLieferant_IdOrderByProjekt_BauvorhabenAsc(
-            BestellQuelle quelle, Long lieferantId);
-
-    /** Bedarfszeilen je Artikel+Lieferant in einem bestimmten Workflow-Zustand. */
-    List<ArtikelInProjekt> findByArtikel_IdAndLieferant_IdAndQuelle(
-            Long artikelId, Long lieferantId, BestellQuelle quelle);
+    List<ArtikelInProjekt> findByQuelleOrderByProjekt_BauvorhabenAsc(BestellQuelle quelle);
 
     List<ArtikelInProjekt> findByProjekt_Id(Long projektId);
 
@@ -36,4 +29,3 @@ public interface ArtikelInProjektRepository extends JpaRepository<ArtikelInProje
             "GROUP BY w.name")
     List<MaterialKilogrammDto> sumKilogrammByProjektGroupedByWerkstoff(@Param("projektId") Long projektId);
 }
-

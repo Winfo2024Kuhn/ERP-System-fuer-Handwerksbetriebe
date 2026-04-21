@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.domain.ArbeitsgangStundensatz;
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
+import org.example.kalkulationsprogramm.domain.BestellQuelle;
 import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
@@ -151,7 +152,7 @@ class ProjektManagementServiceTest {
         ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
         verify(projektRepository).save(captor.capture());
         ArtikelInProjekt gespeicherter = captor.getValue().getArtikelInProjekt().getFirst();
-        assertEquals(0, gespeicherter.getPreisProStueck().compareTo(new BigDecimal("10")));
+        // preisProStueck ist nach A2 bei OFFEN bewusst null (kommt später aus Rechnung)
         assertEquals(0, gespeicherter.getKilogramm().compareTo(new BigDecimal("6")));
     }
 
@@ -221,7 +222,7 @@ class ProjektManagementServiceTest {
         assertEquals(30, gespeicherter.getStueckzahl());
         assertEquals(0, gespeicherter.getMeter().compareTo(new BigDecimal("180")));
         assertEquals(0, gespeicherter.getKilogramm().compareTo(new BigDecimal("102.60")));
-        assertEquals(0, gespeicherter.getPreisProStueck().compareTo(new BigDecimal("17.10")));
+        // preisProStueck ist nach A2 bei OFFEN bewusst null (kommt später aus Rechnung)
     }
 
     @Test
@@ -457,8 +458,7 @@ class ProjektManagementServiceTest {
         assertEquals(0, saved.getMeter().compareTo(new BigDecimal("1.05")));
         // kg = 0.5 * 1.05 = 0.525
         assertEquals(0, saved.getKilogramm().compareTo(new BigDecimal("0.525")));
-        // preis pro Stueck = 2.00 EUR/kg * 0.5 kg/m * 0.35 m = 0.35 EUR
-        assertEquals(0, saved.getPreisProStueck().compareTo(new BigDecimal("0.35")));
+        // preisProStueck ist nach A2 bei OFFEN bewusst null (kommt später aus Rechnung)
     }
 
     @Test
@@ -489,8 +489,11 @@ class ProjektManagementServiceTest {
         ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
         verify(projektRepository).save(captor.capture());
         ArtikelInProjekt gespeicherter = captor.getValue().getArtikelInProjekt().getFirst();
-        assertNull(gespeicherter.getLieferant());
-        assertNull(gespeicherter.getLieferantenArtikelPreis());
+        // Nach Stufe A2: AiP hat keinen Lieferanten und keinen
+        // LieferantenArtikelPreis mehr — preisProStueck bleibt null, weil
+        // Lager-Haken in diesem Zweig nicht gesetzt wird.
+        assertNull(gespeicherter.getPreisProStueck());
+        assertEquals(BestellQuelle.OFFEN, gespeicherter.getQuelle());
     }
 
     @Test

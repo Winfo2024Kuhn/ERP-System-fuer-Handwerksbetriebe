@@ -845,18 +845,26 @@ ProjektManagementService {
                     aip.setKilogramm(null);
                 }
 
-                BigDecimal preisProEinheit = determineUnitPrice(artikel, basisPreis, meterAuswahl, laengeProStueck,
-                        supportsProfileMeasurements);
-                if (preisProEinheit == null) {
-                    preisProEinheit = basisPreis;
-                }
-                aip.setPreisProStueck(preisProEinheit);
                 aip.setHinzugefuegtAm(java.time.LocalDate.now());
                 boolean ausLager = Boolean.TRUE.equals(auswahl.getAusLager());
                 if (ausLager) {
+                    // Nachkalkulationspreis kommt aus dem Lager-Ø (bzw. manueller
+                    // Eingabe) — siehe LagerAbgleichService. Als Initialwert den
+                    // im Request mitgegebenen Preis nehmen, damit die Kalkulation
+                    // direkt steht; der Lager-Haken kann später überschreiben.
+                    BigDecimal preisProEinheit = determineUnitPrice(artikel, basisPreis, meterAuswahl, laengeProStueck,
+                            supportsProfileMeasurements);
+                    if (preisProEinheit == null) {
+                        preisProEinheit = basisPreis;
+                    }
+                    aip.setPreisProStueck(preisProEinheit);
                     aip.setQuelle(org.example.kalkulationsprogramm.domain.BestellQuelle.AUS_LAGER);
                     aip.setLagerAbgleichAm(java.time.LocalDateTime.now());
                 } else {
+                    // OFFEN: Bedarf steht fest, Preis wird erst durch die
+                    // Eingangsrechnung (über die interne Bestellnummer) oder
+                    // beim späteren Lager-Haken gesetzt.
+                    aip.setPreisProStueck(null);
                     aip.setQuelle(org.example.kalkulationsprogramm.domain.BestellQuelle.OFFEN);
                     aip.setLagerAbgleichAm(null);
                 }
@@ -873,10 +881,6 @@ ProjektManagementService {
                     aip.setSchnittForm(null);
                     aip.setAnschnittWinkelLinks(null);
                     aip.setAnschnittWinkelRechts(null);
-                }
-                aip.setLieferantenArtikelPreis(lap);
-                if (lap != null && lap.getLieferant() != null) {
-                    aip.setLieferant(lap.getLieferant());
                 }
                 projekt.getArtikelInProjekt().add(aip);
             }

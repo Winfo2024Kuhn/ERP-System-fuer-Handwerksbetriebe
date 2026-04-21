@@ -47,17 +47,6 @@ public class ArtikelInProjekt {
     String schnittForm;
     String kommentar;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "lieferant_id")
-    private Lieferanten lieferant;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumns({
-            @JoinColumn(name = "artikel_id", referencedColumnName = "artikel_id", insertable = false, updatable = false),
-            @JoinColumn(name = "lieferant_id", referencedColumnName = "lieferant_id", insertable = false, updatable = false)
-    })
-    private LieferantenArtikelPreise lieferantenArtikelPreis;
-
     // EN 1090: manuell gewähltes oder vorgeschlagenes Zeugnis pro Position
     @Enumerated(EnumType.STRING)
     @Column(name = "zeugnis_anforderung", columnDefinition = "varchar(30)")

@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.controller;
 import java.util.List;
 import java.util.Map;
 
-import org.example.kalkulationsprogramm.domain.ZeugnisTyp;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmRequestDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmResponseDto;
@@ -81,12 +80,6 @@ public class BestellungController {
                     .header("X-Error-Reason", e.getMessage())
                     .build();
         }
-    }
-
-    @PostMapping("/lieferant/{lieferantId}/markiere-exportiert")
-    public ResponseEntity<Map<String, Integer>> markiereLieferantAlsExportiert(@PathVariable Long lieferantId) {
-        int count = bestellungService.markiereLieferantAlsExportiert(lieferantId);
-        return ResponseEntity.ok(Map.of("markiert", count));
     }
 
     @DeleteMapping("/{id}/freitext")

@@ -24,6 +24,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
+import org.example.kalkulationsprogramm.domain.BestellQuelle;
+import org.example.kalkulationsprogramm.domain.BestellStatus;
+import org.example.kalkulationsprogramm.domain.Bestellung;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Preisanfrage;
 import org.example.kalkulationsprogramm.domain.PreisanfrageAngebot;
@@ -274,32 +277,43 @@ class PreisanfrageServiceTest {
 
     @Test
     void vergebeAuftrag_routetArtikelInProjektAufGewinnerUm() {
+        // Nach A2 Phase 1β: vergebeAuftrag setzt weder Lieferant noch
+        // preisProStueck auf der AiP. Der Lieferant lebt jetzt auf der
+        // Bestellung (bestellauftragService), die Kalkulation kommt
+        // später aus der Eingangsrechnung. Auf der AiP wird lediglich
+        // quelle=BESTELLT gesetzt und der BestellauftragService gerufen.
         Preisanfrage pa = baueFertigePreisanfrage(400L);
         PreisanfrageLieferant gewinner = pa.getLieferanten().get(0);
         PreisanfragePosition pos = pa.getPositionen().get(0);
         ArtikelInProjekt aip = new ArtikelInProjekt();
         aip.setId(7777L);
-        aip.setLieferant(lieferant(99L, "Alter Lieferant Mustermann"));
         pos.setArtikelInProjekt(aip);
 
         PreisanfrageAngebot angebot = angebot(gewinner, pos, new BigDecimal("13.7734"));
 
         when(preisanfrageRepository.findById(400L)).thenReturn(Optional.of(pa));
         when(preisanfrageLieferantRepository.findById(gewinner.getId())).thenReturn(Optional.of(gewinner));
-        when(preisanfrageAngebotRepository.findByPreisanfrageLieferantId(gewinner.getId()))
+        lenient().when(preisanfrageAngebotRepository.findByPreisanfrageLieferantId(gewinner.getId()))
                 .thenReturn(List.of(angebot));
         when(preisanfragePositionRepository.findByPreisanfrageIdOrderByReihenfolgeAsc(400L))
                 .thenReturn(new ArrayList<>(pa.getPositionen()));
         when(artikelInProjektRepository.save(any(ArtikelInProjekt.class))).thenAnswer(i -> i.getArgument(0));
         when(preisanfrageRepository.save(any(Preisanfrage.class))).thenAnswer(i -> i.getArgument(0));
+        when(bestellauftragService.erzeugeBestellungen(
+                any(), any(Lieferanten.class), any(), eq(BestellStatus.VERSENDET)))
+                .thenReturn(List.<Bestellung>of());
 
         service.vergebeAuftrag(400L, gewinner.getId());
 
-        assertEquals(gewinner.getLieferant(), aip.getLieferant());
-        // Gerundet auf 2 Nachkommastellen
-        assertEquals(new BigDecimal("13.77"), aip.getPreisProStueck());
+        assertEquals(BestellQuelle.BESTELLT, aip.getQuelle());
+        assertEquals(null, aip.getPreisProStueck());
         assertEquals(PreisanfrageStatus.VERGEBEN, pa.getStatus());
         assertEquals(gewinner, pa.getVergebenAn());
+        verify(bestellauftragService).erzeugeBestellungen(
+                argThat(l -> l.size() == 1 && l.contains(aip)),
+                eq(gewinner.getLieferant()),
+                eq(null),
+                eq(BestellStatus.VERSENDET));
     }
 
     // ------------------------------------------------------------

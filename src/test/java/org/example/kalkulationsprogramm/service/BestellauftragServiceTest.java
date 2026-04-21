@@ -68,9 +68,8 @@ class BestellauftragServiceTest {
         return p;
     }
 
-    private ArtikelInProjekt aip(Lieferanten l, Projekt p) {
+    private ArtikelInProjekt aip(Projekt p) {
         ArtikelInProjekt a = new ArtikelInProjekt();
-        a.setLieferant(l);
         a.setProjekt(p);
         return a;
     }
@@ -79,49 +78,46 @@ class BestellauftragServiceTest {
 
     @Test
     void leereListeErzeugtKeineBestellungen() {
-        List<Bestellung> result = service.erzeugeBestellungenAusExport(List.of(), null);
+        List<Bestellung> result = service.erzeugeBestellungenAusExport(List.of(), null, null);
         assertTrue(result.isEmpty());
         verify(bestellungRepository, times(0)).save(any());
     }
 
     @Test
     void nullListeErzeugtKeineBestellungen() {
-        List<Bestellung> result = service.erzeugeBestellungenAusExport(null, null);
+        List<Bestellung> result = service.erzeugeBestellungenAusExport(null, null, null);
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void gruppierungNachLieferantUndProjekt() {
-        Lieferanten l1 = lieferant(1L, "Stahl AG");
-        Lieferanten l2 = lieferant(2L, "Holz GmbH");
+    void gruppierungNachProjekt() {
+        Lieferanten l = lieferant(1L, "Stahl AG");
         Projekt p1 = projekt(10L);
         Projekt p2 = projekt(20L);
 
-        // 4 AiPs: (l1,p1), (l1,p1), (l2,p1), (l1,p2) → 3 Bestellungen
+        // 3 AiPs auf p1, 1 AiP auf p2 → 2 Bestellungen fuer den Ziel-Lieferanten
         List<ArtikelInProjekt> positionen = List.of(
-                aip(l1, p1),
-                aip(l1, p1),
-                aip(l2, p1),
-                aip(l1, p2)
+                aip(p1), aip(p1), aip(p1), aip(p2)
         );
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        List<Bestellung> result = service.erzeugeBestellungenAusExport(positionen, null);
+        List<Bestellung> result = service.erzeugeBestellungenAusExport(positionen, l, null);
 
-        assertEquals(3, result.size());
-        Bestellung gruppeL1P1 = result.stream()
-                .filter(b -> b.getLieferant().getId().equals(1L) && b.getProjekt().getId().equals(10L))
+        assertEquals(2, result.size());
+        Bestellung gruppeP1 = result.stream()
+                .filter(b -> b.getProjekt().getId().equals(10L))
                 .findFirst().orElseThrow();
-        assertEquals(2, gruppeL1P1.getPositionen().size());
+        assertEquals(3, gruppeP1.getPositionen().size());
+        assertEquals(l, gruppeP1.getLieferant());
     }
 
     @Test
     void gruppierungMitNullLieferantUndNullProjekt() {
-        ArtikelInProjekt a1 = new ArtikelInProjekt(); // Lieferant + Projekt null
-        ArtikelInProjekt a2 = new ArtikelInProjekt(); // ebenfalls null/null
+        ArtikelInProjekt a1 = new ArtikelInProjekt(); // Projekt null
+        ArtikelInProjekt a2 = new ArtikelInProjekt(); // Projekt null
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        List<Bestellung> result = service.erzeugeBestellungenAusExport(List.of(a1, a2), null);
+        List<Bestellung> result = service.erzeugeBestellungenAusExport(List.of(a1, a2), null, null);
 
         assertEquals(1, result.size());
         assertEquals(2, result.getFirst().getPositionen().size());
@@ -140,7 +136,7 @@ class BestellauftragServiceTest {
         Lieferanten l = lieferant(1L, "Stahl AG");
         Projekt p = projekt(10L);
 
-        ArtikelInProjekt a = aip(l, p);
+        ArtikelInProjekt a = aip(p);
         a.setArtikel(artikel);
         a.setStueckzahl(3);
         a.setKilogramm(new BigDecimal("120.50"));
@@ -154,7 +150,7 @@ class BestellauftragServiceTest {
 
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellung bestellung = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst();
+        Bestellung bestellung = service.erzeugeBestellungenAusExport(List.of(a), l, null).getFirst();
         Bestellposition bp = bestellung.getPositionen().getFirst();
 
         assertAll(
@@ -179,10 +175,10 @@ class BestellauftragServiceTest {
     void positionsnummernFortlaufendProBestellung() {
         Lieferanten l = lieferant(1L, "Stahl AG");
         Projekt p = projekt(10L);
-        List<ArtikelInProjekt> positionen = List.of(aip(l, p), aip(l, p), aip(l, p));
+        List<ArtikelInProjekt> positionen = List.of(aip(p), aip(p), aip(p));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellung b = service.erzeugeBestellungenAusExport(positionen, null).getFirst();
+        Bestellung b = service.erzeugeBestellungenAusExport(positionen, l, null).getFirst();
 
         assertEquals(List.of(1, 2, 3),
                 b.getPositionen().stream().map(Bestellposition::getPositionsnummer).toList());
@@ -192,7 +188,7 @@ class BestellauftragServiceTest {
     void freitextPositionOhneArtikel() {
         Lieferanten l = lieferant(1L, "Stahl AG");
         Projekt p = projekt(10L);
-        ArtikelInProjekt a = aip(l, p);
+        ArtikelInProjekt a = aip(p);
         a.setFreitextProduktname("Sonderprofil Ü-Schiene");
         a.setFreitextProdukttext("Spezialanfertigung nach Skizze");
         a.setFreitextMenge(new BigDecimal("7.5"));
@@ -200,7 +196,7 @@ class BestellauftragServiceTest {
 
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellposition bp = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst()
+        Bestellposition bp = service.erzeugeBestellungenAusExport(List.of(a), l, null).getFirst()
                 .getPositionen().getFirst();
 
         assertAll(
@@ -215,13 +211,13 @@ class BestellauftragServiceTest {
     @Test
     void mengeAusMeterWennKeinFreitext() {
         Lieferanten l = lieferant(1L, "Stahl AG");
-        ArtikelInProjekt a = aip(l, projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         a.setMeter(new BigDecimal("12.30"));
         a.setStueckzahl(5); // wird ignoriert, meter hat Vorrang
 
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellposition bp = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst()
+        Bestellposition bp = service.erzeugeBestellungenAusExport(List.of(a), l, null).getFirst()
                 .getPositionen().getFirst();
 
         assertEquals(0, bp.getMenge().compareTo(new BigDecimal("12.30")));
@@ -231,12 +227,12 @@ class BestellauftragServiceTest {
     @Test
     void mengeAusStueckzahlWennKeinMeterUndKeinFreitext() {
         Lieferanten l = lieferant(1L, "Stahl AG");
-        ArtikelInProjekt a = aip(l, projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         a.setStueckzahl(4);
 
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellposition bp = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst()
+        Bestellposition bp = service.erzeugeBestellungenAusExport(List.of(a), l, null).getFirst()
                 .getPositionen().getFirst();
 
         assertEquals(0, bp.getMenge().compareTo(new BigDecimal("4")));
@@ -250,13 +246,13 @@ class BestellauftragServiceTest {
         Artikel artikel = new Artikel();
         artikel.setKategorie(k);
 
-        ArtikelInProjekt a = aip(lieferant(1L, "L"), projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         a.setArtikel(artikel);
         // a.kategorie bewusst nicht gesetzt
 
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellposition bp = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst()
+        Bestellposition bp = service.erzeugeBestellungenAusExport(List.of(a), lieferant(1L, "L"), null).getFirst()
                 .getPositionen().getFirst();
 
         assertEquals(k, bp.getKategorie());
@@ -264,10 +260,10 @@ class BestellauftragServiceTest {
 
     @Test
     void erstelltVonNullLiefertSystemAlsSnapshotName() {
-        ArtikelInProjekt a = aip(lieferant(1L, "L"), projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst();
+        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), lieferant(1L, "L"), null).getFirst();
 
         assertNull(b.getErstelltVon());
         assertEquals("System", b.getErstelltVonName());
@@ -280,10 +276,10 @@ class BestellauftragServiceTest {
         m.setVorname("Max");
         m.setNachname("Mustermann");
 
-        ArtikelInProjekt a = aip(lieferant(1L, "L"), projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), m).getFirst();
+        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), lieferant(1L, "L"), m).getFirst();
 
         assertEquals(m, b.getErstelltVon());
         assertEquals("Max Mustermann", b.getErstelltVonName());
@@ -295,20 +291,20 @@ class BestellauftragServiceTest {
         m.setId(99L);
         // vorname und nachname leer
 
-        ArtikelInProjekt a = aip(lieferant(1L, "L"), projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), m).getFirst();
+        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), lieferant(1L, "L"), m).getFirst();
 
         assertEquals("Mitarbeiter #99", b.getErstelltVonName());
     }
 
     @Test
     void bestellungStatusUndZeitstempelWerdenGesetzt() {
-        ArtikelInProjekt a = aip(lieferant(1L, "L"), projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst();
+        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), lieferant(1L, "L"), null).getFirst();
 
         assertAll(
                 () -> assertEquals(BestellStatus.VERSENDET, b.getStatus()),
@@ -321,10 +317,10 @@ class BestellauftragServiceTest {
 
     @Test
     void bestellnummerSchemaBYyyyNnnnBeiErsterBestellung() {
-        ArtikelInProjekt a = aip(lieferant(1L, "L"), projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst();
+        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), lieferant(1L, "L"), null).getFirst();
 
         assertEquals("B-" + Year.now().getValue() + "-0001", b.getBestellnummer());
     }
@@ -332,11 +328,11 @@ class BestellauftragServiceTest {
     @Test
     void bestellnummerInkrementiertBestehendeLaufendeNummer() {
         String prefix = "B-" + Year.now().getValue() + "-";
-        ArtikelInProjekt a = aip(lieferant(1L, "L"), projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString()))
                 .thenReturn(Optional.of(prefix + "0041"));
 
-        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst();
+        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), lieferant(1L, "L"), null).getFirst();
 
         assertEquals(prefix + "0042", b.getBestellnummer());
     }
@@ -344,25 +340,24 @@ class BestellauftragServiceTest {
     @Test
     void bestellnummerFaelltAuf0001ZurueckBeiKorruptemZaehlstand() {
         String prefix = "B-" + Year.now().getValue() + "-";
-        ArtikelInProjekt a = aip(lieferant(1L, "L"), projekt(10L));
+        ArtikelInProjekt a = aip(projekt(10L));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString()))
                 .thenReturn(Optional.of(prefix + "XXXX"));
 
-        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), null).getFirst();
+        Bestellung b = service.erzeugeBestellungenAusExport(List.of(a), lieferant(1L, "L"), null).getFirst();
 
         assertEquals(prefix + "0001", b.getBestellnummer());
     }
 
     @Test
-    void jedeGruppeWirdEinmalGespeichert() {
-        Lieferanten l1 = lieferant(1L, "L1");
-        Lieferanten l2 = lieferant(2L, "L2");
-        Projekt p = projekt(10L);
+    void jedeProjektGruppeWirdEinmalGespeichert() {
+        Projekt p1 = projekt(10L);
+        Projekt p2 = projekt(20L);
 
-        List<ArtikelInProjekt> positionen = List.of(aip(l1, p), aip(l2, p));
+        List<ArtikelInProjekt> positionen = List.of(aip(p1), aip(p2));
         when(bestellungRepository.findMaxBestellnummerForPrefix(anyString())).thenReturn(Optional.empty());
 
-        service.erzeugeBestellungenAusExport(positionen, null);
+        service.erzeugeBestellungenAusExport(positionen, lieferant(1L, "L1"), null);
 
         ArgumentCaptor<Bestellung> captor = ArgumentCaptor.forClass(Bestellung.class);
         verify(bestellungRepository, times(2)).save(captor.capture());

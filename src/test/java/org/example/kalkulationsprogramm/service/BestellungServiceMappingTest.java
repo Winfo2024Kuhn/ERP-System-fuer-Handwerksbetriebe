@@ -5,7 +5,6 @@ import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.junit.jupiter.api.Test;
 
@@ -22,12 +21,10 @@ class BestellungServiceMappingTest {
     void mapsAnglesAndFormIntoDto() {
         ArtikelInProjektRepository repo = mock(ArtikelInProjektRepository.class);
         ProjektRepository projektRepo = mock(ProjektRepository.class);
-        LieferantenRepository lieferantenRepo = mock(LieferantenRepository.class);
         KategorieRepository kategorieRepo = mock(KategorieRepository.class);
         ArtikelRepository artikelRepo = mock(ArtikelRepository.class);
         ZeugnisService zeugnisService = new ZeugnisService(kategorieRepo);
-        BestellauftragService bestellauftragService = mock(BestellauftragService.class);
-        BestellungService service = new BestellungService(repo, projektRepo, lieferantenRepo, kategorieRepo, artikelRepo, zeugnisService, bestellauftragService);
+        BestellungService service = new BestellungService(repo, projektRepo, kategorieRepo, artikelRepo, zeugnisService);
 
         Kategorie kat = new Kategorie();
         kat.setId(2);
@@ -50,7 +47,7 @@ class BestellungServiceMappingTest {
         aip.setAnschnittWinkelLinks("45");
         aip.setAnschnittWinkelRechts("90");
 
-        when(repo.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(
+        when(repo.findByQuelleOrderByProjekt_BauvorhabenAsc(
                 BestellQuelle.OFFEN)).thenReturn(List.of(aip));
 
         List<BestellungResponseDto> dtos = service.findeOffeneBestellungen();
@@ -62,4 +59,3 @@ class BestellungServiceMappingTest {
         assertEquals("Test", dto.getKommentar());
     }
 }
-

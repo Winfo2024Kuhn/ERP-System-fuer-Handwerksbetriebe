@@ -7,12 +7,10 @@ import org.example.kalkulationsprogramm.dto.Bestellung.ManuelleBestellpositionDt
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -23,15 +21,19 @@ public class BestellungService {
 
     private final ArtikelInProjektRepository artikelInProjektRepository;
     private final ProjektRepository projektRepository;
-    private final LieferantenRepository lieferantenRepository;
     private final KategorieRepository kategorieRepository;
     private final ArtikelRepository artikelRepository;
     private final ZeugnisService zeugnisService;
-    private final BestellauftragService bestellauftragService;
 
+    /**
+     * Offene Bedarfspositionen über alle Projekte, sortiert nach Bauvorhaben.
+     * Nach Stufe A2 hat die AiP keinen Lieferanten mehr — eine
+     * Gruppierung nach Lieferant ist hier nicht mehr möglich. Lieferant-
+     * und Zeugnis-Daten leben auf {@link Bestellung}/{@link Bestellposition}.
+     */
     public List<BestellungResponseDto> findeOffeneBestellungen() {
         List<BestellungResponseDto> dtos = artikelInProjektRepository
-                .findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN)
+                .findByQuelleOrderByProjekt_BauvorhabenAsc(BestellQuelle.OFFEN)
                 .stream()
                 .map(this::toDto)
                 .toList();
@@ -44,40 +46,17 @@ public class BestellungService {
         return dtos;
     }
 
+    /**
+     * Setzt den Workflow-Zustand einer Bedarfsposition manuell auf BESTELLT/OFFEN.
+     * Kein Preis-Write: der Kalkulationspreis kommt später aus der Rechnung
+     * (über die interne Bestellnummer) bzw. beim AUS_LAGER-Haken aus dem
+     * gleitenden Durchschnittspreis des Artikels.
+     */
     @Transactional
     public void setBestellt(Long id, boolean bestellt) {
         ArtikelInProjekt aip = artikelInProjektRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Artikel nicht gefunden"));
         aip.setQuelle(bestellt ? BestellQuelle.BESTELLT : BestellQuelle.OFFEN);
-        if (bestellt && aip.getLieferantenArtikelPreis() != null) {
-            BigDecimal preis = aip.getLieferantenArtikelPreis().getPreis();
-            if (preis != null) {
-                if (aip.getArtikel() != null && aip.getArtikel().getVerrechnungseinheit() != null) {
-                    Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
-                    switch (ve) {
-                        case KILOGRAMM -> {
-                            if (aip.getKilogramm() != null) {
-                                preis = preis.multiply(aip.getKilogramm());
-                            }
-                        }
-                        case LAUFENDE_METER, QUADRATMETER -> {
-                            if (aip.getMeter() != null) {
-                                preis = preis.multiply(aip.getMeter());
-                            }
-                        }
-                        case STUECK -> {
-                            if (aip.getStueckzahl() != null) {
-                                preis = preis.multiply(BigDecimal.valueOf(aip.getStueckzahl()));
-                            }
-                        }
-                    }
-                }
-                aip.setPreisProStueck(preis);
-            } else {
-                aip.setPreisProStueck(null);
-            }
-            aip.setLieferantenArtikelPreis(null);
-        }
         artikelInProjektRepository.save(aip);
     }
 
@@ -118,13 +97,12 @@ public class BestellungService {
                 dto.setRootKategorieName(root.getBeschreibung());
             }
         }
+        // Lieferant lebt nach A2 auf der Bestellung, nicht mehr auf AiP.
+        // Die Platzhalter-Belegung "Werkstoffe" bleibt als UI-Hinweis für Werkstoff-Positionen.
         boolean isWerkstoff = Integer.valueOf(1).equals(dto.getRootKategorieId());
         if (isWerkstoff && aip.getArtikel() != null) {
             dto.setLieferantName("Werkstoffe");
             dto.setLieferantId(null);
-        } else if (aip.getLieferant() != null) {
-            dto.setLieferantName(aip.getLieferant().getLieferantenname());
-            dto.setLieferantId(aip.getLieferant().getId());
         }
         if (aip.getProjekt() != null) {
             dto.setProjektId(aip.getProjekt().getId());
@@ -157,8 +135,10 @@ public class BestellungService {
         dto.setSchnittForm(aip.getSchnittForm());
         dto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
         dto.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
-        // EN 1090
-        dto.setZeugnisAnforderung(aip.getZeugnisAnforderung() != null ? aip.getZeugnisAnforderung().name() : null);
+        // EN 1090: zeugnisAnforderung bleibt am Bedarf und wird in Anfrage/Bestellung kopiert.
+        if (aip.getZeugnisAnforderung() != null) {
+            dto.setZeugnisAnforderung(aip.getZeugnisAnforderung().name());
+        }
         if (aip.getProjekt() != null) dto.setExcKlasse(aip.getProjekt().getExcKlasse());
         dto.setFreiePosition(aip.getArtikel() == null);
         // Kategorie-ID für freie Positionen direkt, sonst über Artikel
@@ -170,6 +150,12 @@ public class BestellungService {
         return dto;
     }
 
+    /**
+     * Manuelle Freitext-Bedarfsposition anlegen (ohne Stammartikel).
+     * lieferantId aus dem Request wird nach A2 ignoriert — Lieferant wird
+     * erst beim Anlegen der Bestellung über die Preisanfrage-Vergabe erfasst.
+     * zeugnisAnforderung bleibt am Bedarf (wird in Anfrage/Bestellung kopiert).
+     */
     @Transactional
     public BestellungResponseDto manuellePosition(ManuelleBestellpositionDto req) {
         ArtikelInProjekt aip = new ArtikelInProjekt();
@@ -177,9 +163,6 @@ public class BestellungService {
 
         if (req.getProjektId() != null) {
             aip.setProjekt(projektRepository.getReferenceById(req.getProjektId()));
-        }
-        if (req.getLieferantId() != null) {
-            aip.setLieferant(lieferantenRepository.getReferenceById(req.getLieferantId()));
         }
         if (req.getKategorieId() != null) {
             aip.setKategorie(kategorieRepository.getReferenceById(req.getKategorieId()));
@@ -224,40 +207,9 @@ public class BestellungService {
     }
 
     /**
-     * Markiert alle offenen Positionen eines Lieferanten als exportiert (PDF-Download oder E-Mail-Versand).
-     * Bereits markierte Positionen werden übersprungen.
-     */
-    @Transactional
-    public int markiereLieferantAlsExportiert(Long lieferantId) {
-        List<ArtikelInProjekt> offene = lieferantId != null
-                ? artikelInProjektRepository.findByQuelleAndLieferant_IdOrderByProjekt_BauvorhabenAsc(
-                        BestellQuelle.OFFEN, lieferantId)
-                : artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(
-                                BestellQuelle.OFFEN)
-                        .stream()
-                        .filter(a -> a.getLieferant() == null)
-                        .toList();
-        int count = 0;
-        List<ArtikelInProjekt> frischExportierte = new java.util.ArrayList<>();
-        for (ArtikelInProjekt aip : offene) {
-            if (aip.getQuelle() != BestellQuelle.BESTELLT) {
-                aip.setQuelle(BestellQuelle.BESTELLT);
-                frischExportierte.add(aip);
-                count++;
-            }
-        }
-        if (count > 0) {
-            artikelInProjektRepository.saveAll(offene);
-            // Parallel zur Legacy-Welt: echten Bestellungs-Datensatz
-            // anlegen (pro Projekt/Lieferant-Gruppe eine Bestellung).
-            // Konsumenten wie die Wareneingangskontrolle haengen daran.
-            bestellauftragService.erzeugeBestellungenAusExport(frischExportierte, null);
-        }
-        return count;
-    }
-
-    /**
-     * Aktualisiert eine Bestellposition. Schlägt fehl, wenn die Position bereits exportiert wurde.
+     * Aktualisiert eine Bedarfsposition. Schlägt fehl, wenn die Position
+     * bereits bestellt oder aus Lager entnommen ist. lieferantId aus dem
+     * Request wird nach A2 ignoriert; zeugnisAnforderung bleibt am Bedarf.
      */
     @Transactional
     public BestellungResponseDto aktualisierePosition(Long id, ManuelleBestellpositionDto req) {
@@ -271,7 +223,6 @@ public class BestellungService {
         }
 
         aip.setProjekt(req.getProjektId() != null ? projektRepository.getReferenceById(req.getProjektId()) : null);
-        aip.setLieferant(req.getLieferantId() != null ? lieferantenRepository.getReferenceById(req.getLieferantId()) : null);
         aip.setKategorie(req.getKategorieId() != null ? kategorieRepository.getReferenceById(req.getKategorieId()) : null);
 
         if (req.getArtikelId() != null) {

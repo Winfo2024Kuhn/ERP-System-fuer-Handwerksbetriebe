@@ -12,7 +12,6 @@ import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProdu
 import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitResponseDto;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Component
@@ -112,28 +111,11 @@ public class ProjektMapper {
                         if (aip.getArtikel() != null && aip.getArtikel().getWerkstoff() != null) {
                             aDto.setWerkstoffName(aip.getArtikel().getWerkstoff().getName());
                         }
-                        BigDecimal preisProStueck = aip.getPreisProStueck();
+                        // Nach Stufe A2: Kalkulationspreis stammt entweder vom gleitenden
+                        // Durchschnitt (AUS_LAGER) oder spaeter aus der Eingangsrechnung.
+                        // Kein LieferantenArtikelPreis-Fallback mehr auf Bedarfsebene.
                         boolean bestellt = aip.getQuelle() == BestellQuelle.BESTELLT;
-                        if (!bestellt && aip.getLieferantenArtikelPreis() != null
-                                && aip.getLieferantenArtikelPreis().getPreis() != null) {
-                            BigDecimal lieferantenPreis = aip.getLieferantenArtikelPreis().getPreis();
-                            BigDecimal menge = BigDecimal.ZERO;
-                            if (aip.getArtikel() != null && aip.getArtikel().getVerrechnungseinheit() != null) {
-                                switch (aip.getArtikel().getVerrechnungseinheit()) {
-                                    case STUECK -> menge = aip.getStueckzahl() != null
-                                            ? BigDecimal.valueOf(aip.getStueckzahl())
-                                            : BigDecimal.ZERO;
-                                    case LAUFENDE_METER, QUADRATMETER -> menge = aip.getMeter() != null
-                                            ? aip.getMeter()
-                                            : BigDecimal.ZERO;
-                                    case KILOGRAMM -> menge = aip.getKilogramm() != null
-                                            ? aip.getKilogramm()
-                                            : BigDecimal.ZERO;
-                                }
-                            }
-                            preisProStueck = lieferantenPreis.multiply(menge);
-                        }
-                        aDto.setPreisProStueck(preisProStueck);
+                        aDto.setPreisProStueck(aip.getPreisProStueck());
                         aDto.setHinzugefuegtAm(aip.getHinzugefuegtAm());
                         aDto.setBestellt(bestellt);
                         aDto.setBestelltAm(null);
@@ -141,9 +123,6 @@ public class ProjektMapper {
                         aDto.setSchnittForm(aip.getSchnittForm());
                         aDto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
                         aDto.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
-                        if (aip.getLieferant() != null) {
-                            aDto.setLieferantName(aip.getLieferant().getLieferantenname());
-                        }
                         return aDto;
                     }).toList();
             dto.setArtikel(artikelDtos);

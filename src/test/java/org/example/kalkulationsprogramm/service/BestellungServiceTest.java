@@ -5,7 +5,6 @@ import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,17 +28,15 @@ class BestellungServiceTest {
 
     @Mock private ArtikelInProjektRepository artikelInProjektRepository;
     @Mock private ProjektRepository projektRepository;
-    @Mock private LieferantenRepository lieferantenRepository;
     @Mock private KategorieRepository kategorieRepository;
     @Mock private ArtikelRepository artikelRepository;
-    @Mock private BestellauftragService bestellauftragService;
 
     private BestellungService service;
 
     @BeforeEach
     void setup() {
         ZeugnisService zeugnisService = new ZeugnisService(kategorieRepository);
-        service = new BestellungService(artikelInProjektRepository, projektRepository, lieferantenRepository, kategorieRepository, artikelRepository, zeugnisService, bestellauftragService);
+        service = new BestellungService(artikelInProjektRepository, projektRepository, kategorieRepository, artikelRepository, zeugnisService);
     }
 
     @Test
@@ -50,7 +47,7 @@ class BestellungServiceTest {
         aip.setArtikel(artikel);
         aip.setKilogramm(new BigDecimal("10.0"));
 
-        when(artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
+        when(artikelInProjektRepository.findByQuelleOrderByProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         List<BestellungResponseDto> result = service.findeOffeneBestellungen();
@@ -60,16 +57,15 @@ class BestellungServiceTest {
     }
 
     @Test
-    void setBestelltHandlesNullPrice() {
+    void setBestelltNullSafeOhneLieferantUndPreis() {
+        // Nach Stufe A2: AiP hat weder Lieferant noch LieferantenArtikelPreis —
+        // setBestellt darf nur die Quelle umschalten und keine Preis-Berechnung
+        // mehr versuchen.
         Artikel artikel = new Artikel();
         artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
         ArtikelInProjekt aip = new ArtikelInProjekt();
         aip.setId(5L);
         aip.setArtikel(artikel);
-        LieferantenArtikelPreise lap = new LieferantenArtikelPreise();
-        lap.setArtikel(new Artikel());
-        lap.setLieferant(new Lieferanten());
-        aip.setLieferantenArtikelPreis(lap);
 
         when(artikelInProjektRepository.findById(5L)).thenReturn(Optional.of(aip));
         when(artikelInProjektRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -77,7 +73,7 @@ class BestellungServiceTest {
         service.setBestellt(5L, true);
 
         assertNull(aip.getPreisProStueck());
-        assertNull(aip.getLieferantenArtikelPreis());
+        assertEquals(BestellQuelle.BESTELLT, aip.getQuelle());
     }
 
     @Test
@@ -90,25 +86,26 @@ class BestellungServiceTest {
 
         Artikel artikel = new Artikel();
         artikel.setKategorie(child);
-        Lieferanten lieferant = new Lieferanten();
-        lieferant.setId(3L);
-        lieferant.setLieferantenname("L3");
 
         ArtikelInProjekt aip = new ArtikelInProjekt();
         aip.setArtikel(artikel);
-        aip.setLieferant(lieferant);
 
-        when(artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
+        when(artikelInProjektRepository.findByQuelleOrderByProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         List<BestellungResponseDto> result = service.findeOffeneBestellungen();
 
+        // Werkstoff-Positionen tragen den Platzhalter "Werkstoffe" im UI —
+        // der Lieferant lebt ab A2 ausschliesslich auf der Bestellung.
         assertEquals("Werkstoffe", result.getFirst().getLieferantName());
         assertNull(result.getFirst().getLieferantId());
     }
 
     @Test
-    void categoryTwoKeepsSupplier() {
+    void nonWerkstoffCategoryLaesstLieferantNameLeer() {
+        // Ohne Lieferant-Feld auf AiP ist der LieferantName in der Bedarf-
+        // Sicht immer leer — sobald der Bedarf in eine Bestellung umgebucht
+        // wird, kommt der Name aus `bestellung.lieferant`.
         Kategorie root = new Kategorie();
         root.setId(2);
         Kategorie child = new Kategorie();
@@ -117,21 +114,17 @@ class BestellungServiceTest {
 
         Artikel artikel = new Artikel();
         artikel.setKategorie(child);
-        Lieferanten lieferant = new Lieferanten();
-        lieferant.setId(5L);
-        lieferant.setLieferantenname("L5");
 
         ArtikelInProjekt aip = new ArtikelInProjekt();
         aip.setArtikel(artikel);
-        aip.setLieferant(lieferant);
 
-        when(artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
+        when(artikelInProjektRepository.findByQuelleOrderByProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         List<BestellungResponseDto> result = service.findeOffeneBestellungen();
 
-        assertEquals("L5", result.getFirst().getLieferantName());
-        assertEquals(5L, result.getFirst().getLieferantId());
+        assertNull(result.getFirst().getLieferantName());
+        assertNull(result.getFirst().getLieferantId());
     }
 
     @Test
@@ -148,7 +141,7 @@ class BestellungServiceTest {
         aip.setStueckzahl(3);
 
         when(artikelInProjektRepository
-                .findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
+                .findByQuelleOrderByProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         BestellungResponseDto result = service.findeOffeneBestellungen().getFirst();
@@ -172,7 +165,7 @@ class BestellungServiceTest {
         ArtikelInProjekt aip = new ArtikelInProjekt();
         aip.setArtikel(artikel);
 
-        when(artikelInProjektRepository.findByQuelleOrderByLieferant_LieferantennameAscProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
+        when(artikelInProjektRepository.findByQuelleOrderByProjekt_BauvorhabenAsc(BestellQuelle.OFFEN))
                 .thenReturn(List.of(aip));
 
         BestellungResponseDto dto = service.findeOffeneBestellungen().getFirst();

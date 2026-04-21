@@ -383,13 +383,6 @@ public class PreisanfrageService {
                     "Gewinner-Lieferant gehoert nicht zu dieser Preisanfrage");
         }
 
-        List<PreisanfrageAngebot> gewinnerAngebote = preisanfrageAngebotRepository
-                .findByPreisanfrageLieferantId(gewinner.getId());
-        Map<Long, PreisanfrageAngebot> angeboteProPosition = new HashMap<>();
-        for (PreisanfrageAngebot a : gewinnerAngebote) {
-            angeboteProPosition.put(a.getPreisanfragePosition().getId(), a);
-        }
-
         List<PreisanfragePosition> positionen = preisanfragePositionRepository
                 .findByPreisanfrageIdOrderByReihenfolgeAsc(pa.getId());
         List<ArtikelInProjekt> vergebene = new ArrayList<>();
@@ -398,11 +391,9 @@ public class PreisanfrageService {
             if (aip == null) {
                 continue;
             }
-            aip.setLieferant(gewinner.getLieferant());
-            PreisanfrageAngebot a = angeboteProPosition.get(pos.getId());
-            if (a != null && a.getEinzelpreis() != null) {
-                aip.setPreisProStueck(a.getEinzelpreis().setScale(2, java.math.RoundingMode.HALF_UP));
-            }
+            // Lieferant lebt nach A2 auf der Bestellung. preisProStueck der AiP
+            // bleibt null — Kalkulation kommt später aus der Eingangsrechnung
+            // (über die interne Bestellnummer), nicht aus dem Angebotspreis.
             aip.setQuelle(BestellQuelle.BESTELLT);
             artikelInProjektRepository.save(aip);
             vergebene.add(aip);
@@ -414,7 +405,8 @@ public class PreisanfrageService {
 
         // Bestellung direkt als VERSENDET anlegen: Lieferant hat das Angebot
         // bereits abgegeben, der Auftrag wird ihm per Mail/IDS bestaetigt.
-        return bestellauftragService.erzeugeBestellungen(vergebene, null, BestellStatus.VERSENDET);
+        return bestellauftragService.erzeugeBestellungen(
+                vergebene, gewinner.getLieferant(), null, BestellStatus.VERSENDET);
     }
 
     // ------------------------------------------------------------
