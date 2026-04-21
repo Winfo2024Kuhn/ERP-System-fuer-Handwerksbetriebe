@@ -17,8 +17,10 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Pflegt den gewichteten Durchschnittspreis pro Artikel.
  *
- * <p>Der Agent ({@code ArtikelMatchingToolService.updateArtikelPreis}) normiert
- * Preise auf €/kg; entsprechend ist auch die Gewichtungsgroesse kg. Formel:
+ * <p>Preis und Menge werden stets in der {@code verrechnungseinheit} des Artikels
+ * gepflegt: ein kg-Artikel fuehrt €/kg * kg, ein Meter-Artikel €/m * m,
+ * ein Stueck-Artikel €/Stueck * Stueck. Der {@link ArtikelPreisHookService}
+ * garantiert, dass nur passende Einheiten hier ankommen. Formel:
  * <pre>
  *   p_neu_ges = (p_alt * m_alt + p_neu * m_neu) / (m_alt + m_neu)
  *   m_neu_ges = m_alt + m_neu

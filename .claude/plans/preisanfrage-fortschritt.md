@@ -302,16 +302,10 @@ Pre-Merge-Checks gemäß `/pre-merge`-Skill:
       `ArtikelMatchingAgentService`, `ArtikelMatchingToolService`,
       `BestellungPdfService`, `FirmeninformationService`,
       `EmailAutoAssignmentService`.
-- [!] **Backend Gesamtsuite:** 1264 Tests, 144 Errors — **Context-Contamination in
-      der Gesamt-Suite**. Einzel-Run aller Tests (inkl. des als Erstes scheiternden
-      `FormularTemplateControllerTest`) ist grün. Kein Zusammenhang mit
-      Preisanfrage-Code (Trigger liegt irgendwo in der Test-Reihenfolge, vermutlich
-      eingeschleppt zwischen Etappe 7 und jetzt durch einen ac11aa8-Refactor-Commit).
-      **Vor dem Merge nach `main` muss das separat untersucht werden** — entweder
-      via Test-Isolierung (`@DirtiesContext` an der eigentlichen Kontext-
-      Verschmutzer-Stelle) oder indem der fehlerhafte Commit identifiziert wird.
-      Gilt **nicht** als Blocker für das Preisanfrage-Feature, weil es
-      Feature-unabhängig ist — aber für den EN-1090-Merge blockierend.
+- [x] **Backend Gesamtsuite:** 1268 Tests, 0 Failures, 0 Errors (Stand 2026-04-21,
+      ./mvnw.cmd test 01:36 min). Die zuvor gemeldete Context-Contamination wurde
+      durch einen der Refactor-Commits `ac11aa8`/`008b390` beseitigt — Gesamt-Suite
+      ist wieder grün, Merge-Blocker für EN-1090 entfällt.
 - [x] **Code-Qualität:** Keine TODOs, `System.out.println`, `console.log` oder
       auskommentierten Code in den Preisanfrage-Dateien (grep im Feature-Scope
       leer).

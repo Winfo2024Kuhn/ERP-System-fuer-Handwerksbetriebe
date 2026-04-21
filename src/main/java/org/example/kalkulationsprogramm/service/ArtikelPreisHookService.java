@@ -23,11 +23,14 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Wird an jeder {@code setPreis(...)}-Stelle aufgerufen und
  * <ul>
  *   <li>schreibt immer einen {@link ArtikelPreisHistorie}-Eintrag (inkl. Einheit),</li>
- *   <li>triggert bei {@code quelle == RECHNUNG} und {@code einheit == KILOGRAMM}
- *       zusaetzlich das gewichtete Update in
- *       {@link ArtikelDurchschnittspreisService}. Fuer andere Einheiten
- *       (LAUFENDE_METER, QUADRATMETER, STUECK) wird der Durchschnittspreis
- *       nicht aktualisiert, da er sonst semantisch vergiftet waere.</li>
+ *   <li>triggert bei {@code quelle == RECHNUNG} zusaetzlich das gewichtete Update
+ *       in {@link ArtikelDurchschnittspreisService} — aber nur, wenn die
+ *       gemeldete Einheit mit der {@code verrechnungseinheit} des Artikels
+ *       uebereinstimmt. Dadurch wird ein kg-Artikel nur durch kg-Rechnungen
+ *       gemittelt, ein Meter-Artikel nur durch Meter-Rechnungen, usw. —
+ *       die Semantik des Durchschnittspreises bleibt pro Artikel konsistent.
+ *       Hat ein Artikel keine Verrechnungseinheit, wird KILOGRAMM angenommen
+ *       (Stahlhandel-Default).</li>
  * </ul>
  *
  * <p>Best-effort: Fehler werden geloggt, nicht geworfen — ein einzelner
@@ -85,8 +88,11 @@ public class ArtikelPreisHookService {
                     artikel.getId(), e.getMessage());
         }
 
+        Verrechnungseinheit artikelEinheit = artikel.getVerrechnungseinheit() != null
+                ? artikel.getVerrechnungseinheit()
+                : Verrechnungseinheit.KILOGRAMM;
         boolean durchschnittRelevant = quelle == PreisQuelle.RECHNUNG
-                && effektiveEinheit == Verrechnungseinheit.KILOGRAMM
+                && effektiveEinheit == artikelEinheit
                 && menge != null
                 && menge.signum() > 0;
         if (durchschnittRelevant) {

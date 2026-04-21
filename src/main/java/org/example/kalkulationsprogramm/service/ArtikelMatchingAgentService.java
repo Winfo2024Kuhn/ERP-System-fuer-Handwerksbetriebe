@@ -66,6 +66,10 @@ public class ArtikelMatchingAgentService {
             4a. Wenn du einen eindeutigen Treffer hast (Werkstoff und Abmessungen identisch):
                 update_artikel_preis mit hoher Konfidenz (>= 0.85). Das System lernt dabei die
                 externe Artikelnummer dauerhaft.
+                WICHTIG: Gib zusätzlich mengeKg mit — normalisiere die Rechnungs-Menge
+                auf kg (t -> x1000, 100kg -> x100, g -> /1000). Das füttert den gewichteten
+                Durchschnittspreis. Bei nicht-kg-Positionen (Stück, Meter, Quadratmeter)
+                mengeKg weglassen — der Durchschnitt wird dann übersprungen.
             4b. Wenn du kein klares Match findest und die Position ein echter Material-Artikel ist:
                 propose_new_artikel mit allen bekannten Feldern. WICHTIG: Artikel duerfen NUR in
                 Leaf-Kategorien (isLeaf=true) eingefuegt werden. Non-Leaf-Kategorien werden vom Tool

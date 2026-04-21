@@ -22,8 +22,11 @@ import org.example.kalkulationsprogramm.domain.ArtikelVorschlag;
 import org.example.kalkulationsprogramm.domain.ArtikelVorschlagTyp;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.Kategorie;
+import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
+import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelVorschlagRepository;
@@ -67,6 +70,7 @@ class ArtikelMatchingToolServiceTest {
     @Mock private LieferantenArtikelPreiseRepository artikelPreiseRepository;
     @Mock private ArtikelVorschlagRepository artikelVorschlagRepository;
     @Mock private EntityManager entityManager;
+    @Mock private ArtikelPreisHookService preisHookService;
 
     @Mock private CriteriaBuilder cb;
     @SuppressWarnings("rawtypes")
@@ -96,7 +100,8 @@ class ArtikelMatchingToolServiceTest {
                 artikelRepository,
                 artikelPreiseRepository,
                 artikelVorschlagRepository,
-                entityManager);
+                entityManager,
+                preisHookService);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -774,6 +779,127 @@ class ArtikelMatchingToolServiceTest {
 
             ToolSideEffect.PreisAktualisiert eff = (ToolSideEffect.PreisAktualisiert) ctx.lastEffect();
             assertThat(eff.externeNummerGelernt()).isFalse();
+        }
+
+        @Test
+        void hook_wird_mit_menge_und_beleg_gerufen_bei_erfolgreichem_update() {
+            Lieferanten lief = lieferant(100L, "Stahl AG");
+            Artikel artikel = artikel(1L, "Test", null, null, null);
+            artikel.setVerrechnungseinheit(Verrechnungseinheit.KILOGRAMM);
+            artikel.setArtikelpreis(new ArrayList<>());
+
+            when(artikelRepository.findById(1L)).thenReturn(Optional.of(artikel));
+            when(artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_Id("X1", 100L))
+                    .thenReturn(Optional.empty());
+            when(artikelPreiseRepository.findByArtikel_IdAndLieferant_Id(1L, 100L))
+                    .thenReturn(Optional.empty());
+            when(artikelPreiseRepository.save(any(LieferantenArtikelPreise.class)))
+                    .thenAnswer(i -> i.getArgument(0));
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("artikelId", 1);
+            args.put("externeArtikelnummer", "X1");
+            args.put("preisProKg", "1.50");
+            args.put("mengeKg", "250");
+            args.put("konfidenz", 0.95);
+            args.put("begruendung", "eindeutig");
+
+            LieferantDokument doc = new LieferantDokument();
+            doc.setId(42L);
+            MatchingToolContext ctx = new MatchingToolContext(lief, doc, BigDecimal.valueOf(0.85));
+
+            service.updateArtikelPreis(args, ctx);
+
+            verify(preisHookService).registriere(
+                    eq(artikel), eq(lief),
+                    eq(new BigDecimal("1.50")), eq(new BigDecimal("250")),
+                    eq(Verrechnungseinheit.KILOGRAMM), eq(PreisQuelle.RECHNUNG),
+                    eq("X1"), eq("42"), eq("eindeutig"));
+        }
+
+        @Test
+        void hook_wird_ohne_menge_gerufen_wenn_mengeKg_fehlt() {
+            Lieferanten lief = lieferant(100L, "Stahl AG");
+            Artikel artikel = artikel(1L, "Test", null, null, null);
+            artikel.setArtikelpreis(new ArrayList<>());
+
+            when(artikelRepository.findById(1L)).thenReturn(Optional.of(artikel));
+            when(artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_Id("X1", 100L))
+                    .thenReturn(Optional.empty());
+            when(artikelPreiseRepository.findByArtikel_IdAndLieferant_Id(1L, 100L))
+                    .thenReturn(Optional.empty());
+            when(artikelPreiseRepository.save(any(LieferantenArtikelPreise.class)))
+                    .thenAnswer(i -> i.getArgument(0));
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("artikelId", 1);
+            args.put("externeArtikelnummer", "X1");
+            args.put("preisProKg", "2.10");
+            args.put("konfidenz", 0.9);
+            args.put("begruendung", "b");
+
+            MatchingToolContext ctx = new MatchingToolContext(lief, null, BigDecimal.valueOf(0.85));
+            service.updateArtikelPreis(args, ctx);
+
+            verify(preisHookService).registriere(
+                    eq(artikel), eq(lief),
+                    eq(new BigDecimal("2.10")), eq(null),
+                    eq(Verrechnungseinheit.KILOGRAMM), eq(PreisQuelle.RECHNUNG),
+                    eq("X1"), eq(null), eq("b"));
+        }
+
+        @Test
+        void hook_wird_nicht_gerufen_bei_konflikt() {
+            Lieferanten lief = lieferant(100L, "Stahl AG");
+            Artikel ziel = artikel(1L, "Ziel", null, null, null);
+            Artikel konflikt = artikel(2L, "Konflikt", null, null, null);
+            LieferantenArtikelPreise vorhanden = lap(konflikt, lief, "X1");
+
+            when(artikelRepository.findById(1L)).thenReturn(Optional.of(ziel));
+            when(artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_Id("X1", 100L))
+                    .thenReturn(Optional.of(vorhanden));
+            when(artikelVorschlagRepository.save(any(ArtikelVorschlag.class)))
+                    .thenAnswer(i -> { ((ArtikelVorschlag) i.getArgument(0)).setId(777L); return i.getArgument(0); });
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("artikelId", 1);
+            args.put("externeArtikelnummer", "X1");
+            args.put("preisProKg", "2.5");
+            args.put("mengeKg", "100");
+            args.put("konfidenz", 0.95);
+            args.put("begruendung", "b");
+
+            MatchingToolContext ctx = new MatchingToolContext(lief, null, BigDecimal.valueOf(0.85));
+            service.updateArtikelPreis(args, ctx);
+
+            verify(preisHookService, never()).registriere(
+                    any(), any(), any(), any(), any(), any(), any(), any(), any());
+        }
+
+        @Test
+        void hook_wird_nicht_gerufen_bei_konfidenz_unter_schwelle() {
+            Lieferanten lief = lieferant(100L, "Stahl AG");
+            Artikel artikel = artikel(1L, "Test", null, null, null);
+
+            when(artikelRepository.findById(1L)).thenReturn(Optional.of(artikel));
+            when(artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_Id("X1", 100L))
+                    .thenReturn(Optional.empty());
+            when(artikelVorschlagRepository.save(any(ArtikelVorschlag.class)))
+                    .thenAnswer(i -> { ((ArtikelVorschlag) i.getArgument(0)).setId(500L); return i.getArgument(0); });
+
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("artikelId", 1);
+            args.put("externeArtikelnummer", "X1");
+            args.put("preisProKg", "2.5");
+            args.put("mengeKg", "100");
+            args.put("konfidenz", 0.5);
+            args.put("begruendung", "unsicher");
+
+            MatchingToolContext ctx = new MatchingToolContext(lief, null, BigDecimal.valueOf(0.85));
+            service.updateArtikelPreis(args, ctx);
+
+            verify(preisHookService, never()).registriere(
+                    any(), any(), any(), any(), any(), any(), any(), any(), any());
         }
     }
 

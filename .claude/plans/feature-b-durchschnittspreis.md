@@ -72,16 +72,25 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert
 - [x] Compile gruen, Tests gruen (14/14)
 - [ ] Commit — ausstehend, User-Freigabe
 
-### Etappe B2: Integration in Matching-Agent
+### Etappe B2: Integration in Matching-Agent ✅
 **Commit-Ziel:** `feat(artikel-matching): Menge erfassen + Durchschnittspreis-Hook`
 
-- [ ] Tool `update_artikel_preis` um Parameter `mengeKg` (NUMBER, required)
-- [ ] `SYSTEM_PROMPT` erweitert: Agent normalisiert Menge auf kg wie den Preis
-- [ ] Nach erfolgreichem `updateArtikelPreis(...)` den Durchschnittspreis-Service rufen
-- [ ] Tool-Test `ArtikelMatchingToolServiceTest` erweitert (Durchschnitt wird gesetzt)
-- [ ] Agent-Test `ArtikelMatchingAgentServiceTest` — mockt Tool, prueft dass mengeKg durchgereicht wird
-- [ ] `./mvnw.cmd test` gruen
-- [ ] Commit
+- [x] Tool `update_artikel_preis` um Parameter `mengeKg` (NUMBER, **optional** — bei Nicht-kg-Positionen weglassen)
+- [x] `SYSTEM_PROMPT` erweitert: Agent normalisiert Menge auf kg wie den Preis
+- [x] Nach erfolgreichem `updateArtikelPreis(...)` wird `ArtikelPreisHookService.registriere(...)` gerufen (quelle=RECHNUNG, einheit=KILOGRAMM). Bei Konflikt/Konfidenz-unter-Schwelle kein Hook-Call.
+- [x] `ArtikelMatchingToolServiceTest` um 4 Hook-Tests ergänzt (Happy-Path mit Menge, ohne Menge, Konflikt, Konfidenz-zu-niedrig)
+- [x] `./mvnw.cmd test` — **1306/0/0** grün
+- [ ] Commit — ausstehend, User-Freigabe
+
+### Etappe B2a (neu): Hook multi-einheiten-fähig ✅
+**Commit-Ziel:** Teil von B2-Commit oder separat.
+
+User-Feedback 2026-04-21: „manchmal ist bei Stahlrohren Preis pro Meter, bei Trägern Preis pro kg, bei Schrauben Preis pro VE". Der Durchschnitts-Trigger im Hook war hardcoded auf KILOGRAMM — zu eng.
+
+**Geändert:**
+- [x] `ArtikelPreisHookService`: Bedingung `einheit == KILOGRAMM` → `einheit == artikel.verrechnungseinheit` (Fallback KG, wenn Artikel keine Einheit hat). Dadurch werden kg-Artikel nur durch kg-Rechnungen, Meter-Artikel nur durch Meter-Rechnungen, Stück-Artikel nur durch Stück-Rechnungen gemittelt — keine Einheiten-Vermischung.
+- [x] `ArtikelDurchschnittspreisService` Javadoc aktualisiert: Durchschnitt läuft in der jeweiligen Verrechnungseinheit des Artikels, nicht zwingend kg.
+- [x] `ArtikelPreisHookServiceTest` um 4 Tests ergänzt (Stück-Artikel, Meter-Artikel, Quadratmeter-Artikel, Artikel-ohne-Einheit-Fallback). Bestehende Stück-/Meter-Tests umbenannt (jetzt: „bei KG-Artikel" für Mismatch-Fall).
 
 ### Etappe B3: Backfill + Admin-Endpoint + Doku
 **Commit-Ziel:** `feat(admin): Durchschnittspreis-Backfill Endpoint + Doku`
@@ -168,3 +177,4 @@ Artikelstamm durchrutschen.
 |---|---|---|
 | 2026-04-21 | Opus 4.7 | Plan-Datei + Admin-Doku angelegt. Trigger-Entscheidung (Matching-Agent statt Bestellung). Etappe B1 wird als naechstes umgesetzt. |
 | 2026-04-21 | Opus 4.7 (Parallel-Agent) | Parallel-Etappe P1 abgeschlossen: V229-Migration (generisch `preis`/`menge`/`einheit` statt ursprünglich geplantem `preis_pro_kg`), `PreisQuelle`-Enum, `ArtikelPreisHistorie`-Entity + Repo, `ArtikelPreisHookService` (16 Unit-Tests grün), Hook an 7 Stellen verdrahtet (OfferPrice / ArtikelImport / LieferantArtikelpreis ×2 / ArtikelService / ArtikelVorschlagController / GeminiDokumentAnalyse ×2). Schema-Refactor nach User-Feedback zu Multi-Einheiten. 4 Tests angepasst, gesamte Suite 1298/0/0. Commit steht aus. |
+| 2026-04-21 | Opus 4.7 | B1+P1 als Bundle-Commit `3dc4dec` gemerged. Anschließend B2 + B2a umgesetzt: Hook jetzt multi-einheiten-fähig (Trigger = `einheit == artikel.verrechnungseinheit`), Matching-Agent-Tool um `mengeKg`-Param + Hook-Call erweitert, SYSTEM_PROMPT ergänzt. Tests: +4 Hook-Multi-Unit, +4 Matching-Tool-Hook. Suite **1306/0/0**. 8. und letzter Preis-Setz-Pfad ist jetzt am Hook angeschlossen. Commit steht aus. |

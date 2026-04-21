@@ -14,6 +14,8 @@ import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
+import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelVorschlagRepository;
@@ -65,6 +67,7 @@ public class ArtikelMatchingToolService {
     private final LieferantenArtikelPreiseRepository artikelPreiseRepository;
     private final ArtikelVorschlagRepository artikelVorschlagRepository;
     private final EntityManager entityManager;
+    private final ArtikelPreisHookService preisHookService;
 
     /**
      * Context pro Matching-Call. Der Agent/Dispatcher setzt lieferant und
@@ -194,13 +197,17 @@ public class ArtikelMatchingToolService {
                         + "die externe Artikelnummer dauerhaft. Ruf dies NUR auf, wenn du dir zu mindestens "
                         + "der Auto-Match-Konfidenzschwelle sicher bist, dass Artikel und Rechnungsposition identisch sind. "
                         + "Falls die externe Nummer bereits auf einen anderen Artikel beim selben Lieferanten zeigt, "
-                        + "wird automatisch ein Konflikt-Vorschlag angelegt statt die Zuordnung zu überschreiben.");
+                        + "wird automatisch ein Konflikt-Vorschlag angelegt statt die Zuordnung zu überschreiben. "
+                        + "Gib zusätzlich mengeKg an, damit der gleitende Durchschnittspreis gewichtet mitlaufen kann.");
         ObjectNode params = objectMapper.createObjectNode();
         params.put("type", "OBJECT");
         ObjectNode props = objectMapper.createObjectNode();
         props.set("artikelId", prop("INTEGER", "ID des Artikels aus search_artikel"));
         props.set("externeArtikelnummer", prop("STRING", "Externe Artikelnummer aus der Rechnung"));
         props.set("preisProKg", prop("NUMBER", "Preis bereits normiert auf €/kg"));
+        props.set("mengeKg", prop("NUMBER",
+                "Menge der Rechnungsposition in kg (normiert wie der Preis: t -> x1000, 100kg -> x100, g -> /1000). "
+                        + "Bei nicht-kg-Artikeln (Stück, Meter, Quadratmeter) weglassen — Durchschnitt wird dann übersprungen."));
         props.set("konfidenz", prop("NUMBER", "Deine Sicherheit 0.0-1.0 dass Artikel und Position identisch sind"));
         props.set("begruendung", prop("STRING", "Kurze Begründung (max 500 Zeichen)"));
         params.set("properties", props);
@@ -471,6 +478,7 @@ public class ArtikelMatchingToolService {
         String preisStr = args.path("preisProKg").asText(null);
         double konfidenz = args.path("konfidenz").asDouble(0.0);
         String begruendung = args.path("begruendung").asText("");
+        BigDecimal mengeKg = parseBig(args, "mengeKg");
 
         if (artikelId == 0) return "artikelId fehlt";
         if (externeNr.isBlank()) return "externeArtikelnummer fehlt";
@@ -561,9 +569,20 @@ public class ArtikelMatchingToolService {
         lap.setPreisAenderungsdatum(new Date());
         artikelPreiseRepository.save(lap);
 
+        // Preis-Hook: schreibt immer Historie (einheit = KILOGRAMM, weil der Agent
+        // bereits auf €/kg normiert) und triggert den gewichteten Durchschnittspreis
+        // nur bei kg-Artikeln (artikel.verrechnungseinheit == KILOGRAMM oder null).
+        // Fuer Meter-/Stueck-/Quadratmeter-Artikel laeuft die Durchschnittspflege
+        // ueber andere Pfade (Rechnungs-JSON mit nativer Einheit).
+        preisHookService.registriere(artikel, lieferant, preis, mengeKg,
+                Verrechnungseinheit.KILOGRAMM, PreisQuelle.RECHNUNG,
+                externeNr,
+                ctx.quelleDokument() != null ? String.valueOf(ctx.quelleDokument().getId()) : null,
+                trimTo(begruendung, 500));
+
         ctx.setLastEffect(new ToolSideEffect.PreisAktualisiert(artikelId, preis, externeNummerGelernt));
-        log.info("KI-Matching: Artikel {} für Lieferant {} aktualisiert — Preis {} €/kg, externeNummerGelernt={}, Konfidenz {}, Grund: {}",
-                artikelId, lieferant.getId(), preis, externeNummerGelernt, konfidenz, begruendung);
+        log.info("KI-Matching: Artikel {} für Lieferant {} aktualisiert — Preis {} €/kg (mengeKg={}), externeNummerGelernt={}, Konfidenz {}, Grund: {}",
+                artikelId, lieferant.getId(), preis, mengeKg, externeNummerGelernt, konfidenz, begruendung);
         return "OK. Artikel " + artikelId + " Preis=" + preis + " €/kg gesetzt. "
                 + (externeNummerGelernt
                     ? "Externe Nummer '" + externeNr + "' dauerhaft gelernt."

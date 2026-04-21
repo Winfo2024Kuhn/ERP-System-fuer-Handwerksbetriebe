@@ -67,7 +67,11 @@ class ArtikelPreisHookServiceTest {
     }
 
     @Test
-    void rechnungStueck_schreibtHistorie_aberKeinDurchschnittsUpdate() {
+    void rechnungStueck_beiKgArtikel_schreibtHistorie_aberKeinDurchschnittsUpdate() {
+        // Artikel ist kg-basiert, Rechnung kommt aber in Stueck → Einheit passt nicht,
+        // Durchschnitt wuerde sonst vergiftet.
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.KILOGRAMM);
+
         hook.registriere(artikel, lieferant, new BigDecimal("0.40"), new BigDecimal("500"),
                 Verrechnungseinheit.STUECK, PreisQuelle.RECHNUNG, "SCHRAUBE-M8", "RE-2026-0002", null);
 
@@ -79,12 +83,61 @@ class ArtikelPreisHookServiceTest {
     }
 
     @Test
-    void rechnungMeter_schreibtHistorie_aberKeinDurchschnittsUpdate() {
+    void rechnungStueck_beiStueckArtikel_aktualisiertDurchschnitt() {
+        // Schraube: Artikel in STUECK gefuehrt, Rechnung in STUECK → Einheit passt.
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+
+        hook.registriere(artikel, lieferant, new BigDecimal("0.40"), new BigDecimal("500"),
+                Verrechnungseinheit.STUECK, PreisQuelle.RECHNUNG, "SCHRAUBE-M8", "RE-2026-0002", null);
+
+        verify(historieRepository).save(any(ArtikelPreisHistorie.class));
+        verify(durchschnittspreisService).aktualisiere(artikel, new BigDecimal("500"), new BigDecimal("0.40"));
+    }
+
+    @Test
+    void rechnungMeter_beiKgArtikel_schreibtHistorie_aberKeinDurchschnittsUpdate() {
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.KILOGRAMM);
+
         hook.registriere(artikel, lieferant, new BigDecimal("12.00"), new BigDecimal("6"),
                 Verrechnungseinheit.LAUFENDE_METER, PreisQuelle.RECHNUNG, "ROHR-50", null, null);
 
         verify(historieRepository, times(1)).save(any(ArtikelPreisHistorie.class));
         verify(durchschnittspreisService, never()).aktualisiere(any(), any(), any());
+    }
+
+    @Test
+    void rechnungMeter_beiMeterArtikel_aktualisiertDurchschnitt() {
+        // Rohr: Artikel in LAUFENDE_METER gefuehrt, Rechnung in Meter → Einheit passt.
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.LAUFENDE_METER);
+
+        hook.registriere(artikel, lieferant, new BigDecimal("12.00"), new BigDecimal("6"),
+                Verrechnungseinheit.LAUFENDE_METER, PreisQuelle.RECHNUNG, "ROHR-50", "RE-2026-0003", null);
+
+        verify(historieRepository).save(any(ArtikelPreisHistorie.class));
+        verify(durchschnittspreisService).aktualisiere(artikel, new BigDecimal("6"), new BigDecimal("12.00"));
+    }
+
+    @Test
+    void rechnungQuadratmeter_beiQuadratmeterArtikel_aktualisiertDurchschnitt() {
+        // Blech: Artikel in QUADRATMETER gefuehrt, Rechnung in qm → Einheit passt.
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.QUADRATMETER);
+
+        hook.registriere(artikel, lieferant, new BigDecimal("25.50"), new BigDecimal("8"),
+                Verrechnungseinheit.QUADRATMETER, PreisQuelle.RECHNUNG, "BLECH-2", null, null);
+
+        verify(historieRepository).save(any(ArtikelPreisHistorie.class));
+        verify(durchschnittspreisService).aktualisiere(artikel, new BigDecimal("8"), new BigDecimal("25.50"));
+    }
+
+    @Test
+    void artikelOhneVerrechnungseinheit_fallbackKilogramm_triggertDurchschnittBeiKg() {
+        // Altbestand: Artikel hat keine verrechnungseinheit gesetzt → Fallback auf KG.
+        artikel.setVerrechnungseinheit(null);
+
+        hook.registriere(artikel, lieferant, new BigDecimal("1.50"), new BigDecimal("100"),
+                Verrechnungseinheit.KILOGRAMM, PreisQuelle.RECHNUNG, "EXT-123", null, null);
+
+        verify(durchschnittspreisService).aktualisiere(artikel, new BigDecimal("100"), new BigDecimal("1.50"));
     }
 
     @Test
