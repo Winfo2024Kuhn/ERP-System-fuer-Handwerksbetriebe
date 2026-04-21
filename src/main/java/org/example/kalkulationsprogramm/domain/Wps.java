@@ -111,6 +111,16 @@ public class Wps {
     @OrderBy("nummer ASC")
     private List<WpsLage> lagen = new ArrayList<>();
 
+    /**
+     * Digitale Freigaben durch die Schweißaufsichtsperson (SAP).
+     * Nach EN ISO 14731 signiert nur die SAP – der Schweißer ist Konsument
+     * der WPS. Bei inhaltlicher Änderung der WPS werden alle Einträge
+     * zurückgesetzt, siehe {@code WpsController#apply}.
+     */
+    @OneToMany(mappedBy = "wps", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("zeitpunkt ASC")
+    private List<WpsFreigabe> freigaben = new ArrayList<>();
+
     @Column(nullable = false)
     private LocalDateTime erstelltAm = LocalDateTime.now();
 }

@@ -9,6 +9,7 @@ import {
 import { PageLayout } from '../components/layout/PageLayout';
 import { VerfahrenGlyph, NahtGlyph, PositionGlyph } from '../components/welding-glyphs';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { useAuth } from '../auth/AuthContext';
 
 // ---------------------------------------------------------------------------
 //  Typen & API
@@ -28,6 +29,13 @@ interface Lage {
     bemerkung?: string;
 }
 
+interface Freigabe {
+    id: number;
+    mitarbeiterId: number | null;
+    mitarbeiterName: string;
+    zeitpunkt: string;
+}
+
 interface Wps {
     id: number;
     wpsNummer: string;
@@ -43,9 +51,17 @@ interface Wps {
     gueltigBis?: string;
     erstelltAm?: string;
     lagen?: Lage[];
+    freigaben?: Freigabe[];
     /** 'EDITOR' = im Editor erstellt · 'UPLOAD' = als PDF importiert (read-only) */
     quelle?: 'EDITOR' | 'UPLOAD';
     originalDateiname?: string;
+}
+
+/** Matcht V219-Seed-Kurztexte: "Schweißaufsicht (SAP)" und "Stellvertreter SAP". */
+function istSapRolle(rollenNames?: string | null): boolean {
+    if (!rollenNames) return false;
+    const s = rollenNames.toLowerCase();
+    return s.includes('aufsicht') || s.includes('stellvertreter sap');
 }
 
 interface Mitarbeiter {
@@ -671,10 +687,11 @@ interface PreviewProps {
     logoUrl: string | null;
     alleMitarbeiter: Mitarbeiter[];
     alleProjekte: Projekt[];
+    freigaben?: Freigabe[];
     scale?: number;
 }
 
-const WpsPreviewA4 = ({ form, rec, firma, logoUrl, alleMitarbeiter, alleProjekte, scale = 1 }: PreviewProps) => {
+const WpsPreviewA4 = ({ form, rec, firma, logoUrl, alleMitarbeiter, alleProjekte, freigaben, scale = 1 }: PreviewProps) => {
     const supervisor = alleMitarbeiter.find((m) => m.id === form.supervisorId);
     const welders = form.welderIds.map((id) => alleMitarbeiter.find((m) => m.id === id)).filter((x): x is Mitarbeiter => !!x);
     const projekte = form.projektIds.map((id) => alleProjekte.find((p) => p.id === id)).filter((x): x is Projekt => !!x);
@@ -857,16 +874,31 @@ const WpsPreviewA4 = ({ form, rec, firma, logoUrl, alleMitarbeiter, alleProjekte
                 </div>
             )}
 
+            {/* Digitale SAP-Freigaben (EN ISO 14731) */}
+            <div className="mt-6 pt-3 border-t border-slate-200">
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Digitale Freigabe · Schweißaufsicht (EN ISO 14731)
+                </div>
+                {freigaben && freigaben.length > 0 ? (
+                    <ul className="text-[10.5px] text-slate-800 space-y-0.5">
+                        {freigaben.map((f) => (
+                            <li key={f.id} className="flex items-baseline gap-2">
+                                <span className="font-bold">✔ {f.mitarbeiterName}</span>
+                                <span className="text-[9.5px] text-slate-500 font-mono">
+                                    freigegeben am {new Date(f.zeitpunkt).toLocaleString('de-DE')}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <div className="text-[10.5px] text-slate-500 italic">
+                        Keine digitale SAP-Freigabe vorhanden — diese WPS ist noch nicht produktiv freigegeben.
+                    </div>
+                )}
+            </div>
+
             {/* Fuß */}
-            <div className="mt-8 pt-4 border-t border-slate-200 grid grid-cols-3 gap-4 text-[9px] text-slate-500">
-                <div>
-                    <div className="h-10 border-b border-slate-300"></div>
-                    <div className="mt-1">Datum · Schweißaufsicht</div>
-                </div>
-                <div>
-                    <div className="h-10 border-b border-slate-300"></div>
-                    <div className="mt-1">Datum · Schweißer</div>
-                </div>
+            <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end text-[9px] text-slate-500">
                 <div className="text-right">
                     <div>Revision: {form.revisionsdatum || '—'}</div>
                     <div>Gültig bis: {form.gueltigBis || 'unbegrenzt'}</div>
@@ -974,6 +1006,18 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
     const [interpass, setInterpass] = useState(250);
     const [save, setSave] = useState<SaveStatus>('idle');
     const [showPdf, setShowPdf] = useState(false);
+    const [freigaben, setFreigaben] = useState<Freigabe[]>(initial?.freigaben ?? []);
+    const [freigabeBusy, setFreigabeBusy] = useState(false);
+    const [freigabeFehler, setFreigabeFehler] = useState<string | null>(null);
+
+    const { user } = useAuth();
+    const currentMitarbeiter = useMemo(
+        () => mitarbeiter.find((m) => user?.mitarbeiter?.id && m.id === user.mitarbeiter.id) ?? null,
+        [mitarbeiter, user],
+    );
+    const istAngemeldeterSap = istSapRolle(currentMitarbeiter?.en1090RolleNames);
+    const hatEigeneFreigabe = freigaben.some((f) => currentMitarbeiter && f.mitarbeiterId === currentMitarbeiter.id);
+    const wpsId = initial?.id ?? null;
 
     const rec = useMemo(() => recommend({
         verfahren: form.verfahren?.id ?? null,
@@ -1089,6 +1133,10 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                 await fetch(`/api/wps/projekt/${pid}/${saved.id}`, { method: 'POST' });
             }
 
+            // Inhaltliche Änderung setzt alle Freigaben zurück (Backend macht das,
+            // wir spiegeln das im UI).
+            setFreigaben(saved.freigaben ?? []);
+
             setSave('saved');
             setTimeout(() => setSave('idle'), 2500);
             onSaved();
@@ -1107,6 +1155,51 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
     };
 
     const doPrint = () => window.print();
+
+    const handleFreigeben = async () => {
+        if (!wpsId || freigabeBusy) return;
+        setFreigabeBusy(true);
+        setFreigabeFehler(null);
+        try {
+            const res = await fetch(`/api/wps/${wpsId}/freigabe`, {
+                method: 'POST',
+                credentials: 'same-origin',
+            });
+            if (!res.ok) {
+                const msg = await res.text();
+                throw new Error(msg || `HTTP ${res.status}`);
+            }
+            const neu: Freigabe = await res.json();
+            setFreigaben((prev) => [...prev, neu]);
+            onSaved();
+        } catch (e) {
+            setFreigabeFehler(e instanceof Error ? e.message : 'Freigabe fehlgeschlagen.');
+        } finally {
+            setFreigabeBusy(false);
+        }
+    };
+
+    const handleFreigabeZuruecknehmen = async (freigabeId: number) => {
+        if (!wpsId || freigabeBusy) return;
+        setFreigabeBusy(true);
+        setFreigabeFehler(null);
+        try {
+            const res = await fetch(`/api/wps/${wpsId}/freigabe/${freigabeId}`, {
+                method: 'DELETE',
+                credentials: 'same-origin',
+            });
+            if (!res.ok) {
+                const msg = await res.text();
+                throw new Error(msg || `HTTP ${res.status}`);
+            }
+            setFreigaben((prev) => prev.filter((f) => f.id !== freigabeId));
+            onSaved();
+        } catch (e) {
+            setFreigabeFehler(e instanceof Error ? e.message : 'Zurücknehmen fehlgeschlagen.');
+        } finally {
+            setFreigabeBusy(false);
+        }
+    };
 
     return (
         <>
@@ -1490,6 +1583,86 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                             />
                         </div>
 
+                        {/* SAP-Freigaben (digitale Unterschrift nach EN ISO 14731) */}
+                        {wpsId && (
+                            <div className="mb-7">
+                                <div className="flex items-center gap-2 mb-2.5">
+                                    <ShieldCheck className="w-4 h-4 text-rose-600" />
+                                    <h3 className="text-[13px] font-bold text-slate-900 uppercase tracking-wider">
+                                        Freigabe durch Schweißaufsicht (SAP)
+                                    </h3>
+                                </div>
+                                <div className="text-[12px] text-slate-600 mb-3">
+                                    Nach EN ISO 14731 muss die Schweißanweisung vor dem Einsatz von der Schweißaufsichtsperson freigegeben werden.
+                                    Jede inhaltliche Änderung setzt bestehende Freigaben zurück.
+                                </div>
+
+                                {freigaben.length === 0 ? (
+                                    <div className="rounded-xl border border-dashed border-slate-300 bg-white text-center py-5 px-4">
+                                        <div className="text-sm font-semibold text-slate-700 mb-1">Noch keine Freigabe</div>
+                                        <div className="text-[12px] text-slate-500">Diese WPS ist noch nicht von einer Schweißaufsicht freigegeben.</div>
+                                    </div>
+                                ) : (
+                                    <ul className="space-y-1.5">
+                                        {freigaben.map((f) => {
+                                            const isOwn = currentMitarbeiter != null && f.mitarbeiterId === currentMitarbeiter.id;
+                                            return (
+                                                <li
+                                                    key={f.id}
+                                                    className="flex items-center gap-3 px-3.5 py-2.5 bg-white border border-green-200 rounded-lg"
+                                                >
+                                                    <span className="w-7 h-7 rounded-full bg-green-100 text-green-600 inline-flex items-center justify-center flex-shrink-0">
+                                                        <Check className="w-4 h-4" />
+                                                    </span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-[13px] font-semibold text-slate-900">{f.mitarbeiterName}</div>
+                                                        <div className="text-[11px] text-slate-500 tabular-nums">
+                                                            Freigabe am {new Date(f.zeitpunkt).toLocaleString('de-DE')}
+                                                        </div>
+                                                    </div>
+                                                    {isOwn && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleFreigabeZuruecknehmen(f.id)}
+                                                            disabled={freigabeBusy}
+                                                            className="text-[12px] font-semibold px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 bg-white hover:border-rose-300 hover:text-rose-600 disabled:opacity-50"
+                                                        >
+                                                            Zurücknehmen
+                                                        </button>
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+
+                                {istAngemeldeterSap && !hatEigeneFreigabe && (
+                                    <button
+                                        type="button"
+                                        onClick={handleFreigeben}
+                                        disabled={freigabeBusy}
+                                        className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-[0_10px_40px_-10px_rgba(225,29,72,0.4)] disabled:opacity-50"
+                                    >
+                                        {freigabeBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                                        Als Schweißaufsicht freigeben
+                                    </button>
+                                )}
+
+                                {!istAngemeldeterSap && (
+                                    <div className="mt-3 text-[12px] text-slate-500 italic">
+                                        Nur angemeldete Schweißaufsichtspersonen können diese WPS freigeben.
+                                    </div>
+                                )}
+
+                                {freigabeFehler && (
+                                    <div className="mt-2 flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-[12px] text-red-700">
+                                        <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                        <span>{freigabeFehler}</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Experten-Parameter */}
                         <div className="mb-7">
                             <button
@@ -1578,6 +1751,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                                 <WpsPreviewA4
                                     form={form} rec={rec} firma={firma} logoUrl={logoUrl}
                                     alleMitarbeiter={mitarbeiter} alleProjekte={projekte}
+                                    freigaben={freigaben}
                                     scale={0.85}
                                 />
                             </div>
@@ -1591,6 +1765,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                 <WpsPreviewA4
                     form={form} rec={rec} firma={firma} logoUrl={logoUrl}
                     alleMitarbeiter={mitarbeiter} alleProjekte={projekte}
+                    freigaben={freigaben}
                 />
             </div>
         </>

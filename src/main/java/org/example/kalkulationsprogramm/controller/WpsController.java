@@ -11,9 +11,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Wps;
+import org.example.kalkulationsprogramm.domain.WpsFreigabe;
 import org.example.kalkulationsprogramm.domain.WpsLage;
 import org.example.kalkulationsprogramm.domain.WpsProjektZuweisung;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
@@ -21,6 +24,9 @@ import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektAutoSourceRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektZuweisungRepository;
 import org.example.kalkulationsprogramm.repository.WpsRepository;
+import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
+import org.example.kalkulationsprogramm.service.WpsFreigabeService;
+import org.example.kalkulationsprogramm.service.WpsFreigabeService.FreigabeException;
 import org.example.kalkulationsprogramm.service.ZertifikatMatchingService;
 import org.example.kalkulationsprogramm.service.ZertifikatMatchingService.QualifizierterSchweisserDto;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +36,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -60,6 +67,8 @@ public class WpsController {
     private final MitarbeiterRepository mitarbeiterRepository;
     private final WpsProjektAutoSourceRepository wpsProjektAutoSourceRepository;
     private final ZertifikatMatchingService zertifikatMatchingService;
+    private final WpsFreigabeService freigabeService;
+    private final FrontendUserProfileService frontendUserProfileService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -84,7 +93,15 @@ public class WpsController {
             String quelle,
             LocalDateTime erstelltAm,
             List<LageResponse> lagen,
+            List<FreigabeResponse> freigaben,
             Long autoZugewiesenDurchLeistungId) {
+    }
+
+    public record FreigabeResponse(
+            Long id,
+            Long mitarbeiterId,
+            String mitarbeiterName,
+            LocalDateTime zeitpunkt) {
     }
 
     public record WpsRequest(
@@ -164,6 +181,8 @@ public class WpsController {
                         l.getGasFlow(),
                         l.getBemerkung()))
                 .toList();
+        List<FreigabeResponse> freigaben = w.getFreigaben() == null ? List.of()
+                : w.getFreigaben().stream().map(this::toFreigabeResponse).toList();
         return new WpsResponse(
                 w.getId(),
                 w.getWpsNummer(),
@@ -182,7 +201,13 @@ public class WpsController {
                 w.getQuelle() != null ? w.getQuelle().name() : Wps.Quelle.EDITOR.name(),
                 w.getErstelltAm(),
                 lagen,
+                freigaben,
                 autoZugewiesenDurchLeistungId);
+    }
+
+    private FreigabeResponse toFreigabeResponse(WpsFreigabe f) {
+        Long mId = f.getMitarbeiter() != null ? f.getMitarbeiter().getId() : null;
+        return new FreigabeResponse(f.getId(), mId, f.getMitarbeiterName(), f.getZeitpunkt());
     }
 
     private ZuweisungResponse toZuweisungResponse(WpsProjektZuweisung z) {
@@ -237,9 +262,73 @@ public class WpsController {
     public ResponseEntity<WpsResponse> update(@PathVariable Long id,
                                                @RequestBody WpsRequest req) {
         return repository.findById(id).map(w -> {
+            // Jede inhaltliche Änderung invalidiert bestehende SAP-Freigaben
+            // (GoBD/EN ISO 14731: eine signierte WPS darf nicht unbemerkt
+            // nachträglich verändert werden).
+            freigabeService.resetAlleFreigaben(w);
             apply(w, req);
             return ResponseEntity.ok(toResponse(repository.save(w)));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    // --- SAP-Freigaben (digitale Unterschrift nach EN ISO 14731) ---
+
+    /**
+     * SAP signiert die WPS digital. Der Mitarbeiter wird entweder über die
+     * Session (PC via FrontendUserPrincipal) oder den Mobile-LoginToken
+     * aufgelöst – so kann dieselbe Endpoint-URL von beiden Frontends genutzt
+     * werden.
+     */
+    @PostMapping("/{id}/freigabe")
+    @Transactional
+    public ResponseEntity<?> freigeben(@PathVariable Long id,
+                                        @RequestParam(value = "token", required = false) String token,
+                                        Authentication authentication) {
+        Mitarbeiter m = resolveMitarbeiter(token, authentication);
+        if (m == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        try {
+            var freigabe = freigabeService.freigeben(id, m);
+            return ResponseEntity.ok(toFreigabeResponse(freigabe));
+        } catch (FreigabeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /**
+     * Der Urheber zieht seine eigene Freigabe zurück. Fremde Freigaben bleiben
+     * unantastbar (Audit-Trail).
+     */
+    @DeleteMapping("/{id}/freigabe/{freigabeId}")
+    @Transactional
+    public ResponseEntity<?> freigabeZuruecknehmen(@PathVariable Long id,
+                                                    @PathVariable Long freigabeId,
+                                                    @RequestParam(value = "token", required = false) String token,
+                                                    Authentication authentication) {
+        Mitarbeiter m = resolveMitarbeiter(token, authentication);
+        if (m == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        try {
+            freigabeService.zuruecknehmen(freigabeId, m);
+            return ResponseEntity.noContent().build();
+        } catch (FreigabeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    private Mitarbeiter resolveMitarbeiter(String token, Authentication authentication) {
+        if (StringUtils.hasText(token)) {
+            Mitarbeiter m = mitarbeiterRepository.findByLoginToken(token).orElse(null);
+            if (m != null) return m;
+        }
+        if (authentication != null && authentication.getPrincipal() instanceof FrontendUserPrincipal principal) {
+            return frontendUserProfileService.findById(principal.getId())
+                    .map(FrontendUserProfile::getMitarbeiter)
+                    .orElse(null);
+        }
+        return null;
     }
 
     @DeleteMapping("/{id}")

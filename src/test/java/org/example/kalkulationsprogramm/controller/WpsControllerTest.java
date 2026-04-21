@@ -1,11 +1,17 @@
 package org.example.kalkulationsprogramm.controller;
 
+import org.example.kalkulationsprogramm.domain.En1090Rolle;
+import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Wps;
+import org.example.kalkulationsprogramm.domain.WpsFreigabe;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektAutoSourceRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektZuweisungRepository;
 import org.example.kalkulationsprogramm.repository.WpsRepository;
+import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
+import org.example.kalkulationsprogramm.service.WpsFreigabeService;
+import org.example.kalkulationsprogramm.service.WpsFreigabeService.FreigabeException;
 import org.example.kalkulationsprogramm.service.ZertifikatMatchingService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -65,6 +71,12 @@ class WpsControllerTest {
 
     @MockBean
     private ZertifikatMatchingService zertifikatMatchingService;
+
+    @MockBean
+    private WpsFreigabeService freigabeService;
+
+    @MockBean
+    private FrontendUserProfileService frontendUserProfileService;
 
     @Test
     void getAll_gibtListeZurueck() throws Exception {
@@ -143,6 +155,90 @@ class WpsControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.wpsNummer").value("WPS-001-REV"));
+    }
+
+    @Test
+    void update_ruftResetAlleFreigabenAuf() throws Exception {
+        // GoBD-Invariante: jede inhaltliche Änderung invalidiert bestehende SAP-Freigaben.
+        Wps wps = createWps(1L);
+        when(repository.findById(1L)).thenReturn(Optional.of(wps));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(put("/api/wps/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "wpsNummer": "WPS-001-REV",
+                                    "norm": "EN ISO 15614-1"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        verify(freigabeService, times(1)).resetAlleFreigaben(wps);
+    }
+
+    // --- SAP-Freigabe-Endpoints ---
+
+    @Test
+    void freigeben_mitLoginToken_erfolgreich() throws Exception {
+        Mitarbeiter sap = createSap(10L);
+        when(mitarbeiterRepository.findByLoginToken("tok-abc")).thenReturn(Optional.of(sap));
+
+        WpsFreigabe gespeicherte = new WpsFreigabe();
+        gespeicherte.setId(77L);
+        gespeicherte.setMitarbeiter(sap);
+        gespeicherte.setMitarbeiterName("Anna Aufsicht");
+        gespeicherte.setZeitpunkt(LocalDateTime.now());
+        when(freigabeService.freigeben(1L, sap)).thenReturn(gespeicherte);
+
+        mockMvc.perform(post("/api/wps/1/freigabe").param("token", "tok-abc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(77))
+                .andExpect(jsonPath("$.mitarbeiterName").value("Anna Aufsicht"));
+    }
+
+    @Test
+    void freigeben_ohneAuthentifizierung_401() throws Exception {
+        mockMvc.perform(post("/api/wps/1/freigabe"))
+                .andExpect(status().isUnauthorized());
+        verify(freigabeService, never()).freigeben(any(), any());
+    }
+
+    @Test
+    void freigeben_serviceWirftFreigabeException_400() throws Exception {
+        Mitarbeiter normal = createMitarbeiter(20L, "Bob", "Bauer");
+        when(mitarbeiterRepository.findByLoginToken("tok-bob")).thenReturn(Optional.of(normal));
+        when(freigabeService.freigeben(1L, normal))
+                .thenThrow(new FreigabeException("Nur eine Schweißaufsichtsperson kann diese Freigabe erteilen."));
+
+        mockMvc.perform(post("/api/wps/1/freigabe").param("token", "tok-bob"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(
+                        org.hamcrest.Matchers.containsString("Schweißaufsichtsperson")));
+    }
+
+    @Test
+    void freigabeZuruecknehmen_mitLoginToken_erfolgreich() throws Exception {
+        Mitarbeiter sap = createSap(10L);
+        when(mitarbeiterRepository.findByLoginToken("tok-abc")).thenReturn(Optional.of(sap));
+
+        mockMvc.perform(delete("/api/wps/1/freigabe/77").param("token", "tok-abc"))
+                .andExpect(status().isNoContent());
+
+        verify(freigabeService, times(1)).zuruecknehmen(77L, sap);
+    }
+
+    @Test
+    void freigabeZuruecknehmen_fremdeFreigabe_400() throws Exception {
+        Mitarbeiter sap = createSap(20L);
+        when(mitarbeiterRepository.findByLoginToken("tok-xyz")).thenReturn(Optional.of(sap));
+        doThrow(new FreigabeException("Nur der Urheber kann eine Freigabe zurückziehen."))
+                .when(freigabeService).zuruecknehmen(77L, sap);
+
+        mockMvc.perform(delete("/api/wps/1/freigabe/77").param("token", "tok-xyz"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(
+                        org.hamcrest.Matchers.containsString("Urheber")));
     }
 
     @Test
@@ -318,5 +414,21 @@ class WpsControllerTest {
         wps.setGueltigBis(LocalDate.now().plusYears(2));
         wps.setErstelltAm(LocalDateTime.now());
         return wps;
+    }
+
+    private Mitarbeiter createMitarbeiter(Long id, String vorname, String nachname) {
+        Mitarbeiter m = new Mitarbeiter();
+        m.setId(id);
+        m.setVorname(vorname);
+        m.setNachname(nachname);
+        return m;
+    }
+
+    private Mitarbeiter createSap(Long id) {
+        Mitarbeiter m = createMitarbeiter(id, "Anna", "Aufsicht");
+        En1090Rolle r = new En1090Rolle();
+        r.setKurztext("Schweißaufsicht (SAP)");
+        m.setEn1090Rollen(new java.util.HashSet<>(java.util.Set.of(r)));
+        return m;
     }
 }
