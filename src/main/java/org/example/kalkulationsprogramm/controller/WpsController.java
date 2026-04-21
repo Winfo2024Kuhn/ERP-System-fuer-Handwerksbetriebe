@@ -1,10 +1,15 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Projekt;
@@ -15,8 +20,15 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektZuweisungRepository;
 import org.example.kalkulationsprogramm.repository.WpsRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,7 +36,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import lombok.RequiredArgsConstructor;
 
@@ -41,6 +55,9 @@ public class WpsController {
     private final ProjektRepository projektRepository;
     private final WpsProjektZuweisungRepository zuweisungRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
+
+    @Value("${file.upload-dir}")
+    private String uploadDir;
 
     // --- Response / Request DTOs ---
 
@@ -59,6 +76,7 @@ public class WpsController {
             LocalDate gueltigBis,
             String originalDateiname,
             String gespeicherterDateiname,
+            String quelle,
             LocalDateTime erstelltAm,
             List<LageResponse> lagen) {
     }
@@ -151,6 +169,7 @@ public class WpsController {
                 w.getGueltigBis(),
                 w.getOriginalDateiname(),
                 w.getGespeicherterDateiname(),
+                w.getQuelle() != null ? w.getQuelle().name() : Wps.Quelle.EDITOR.name(),
                 w.getErstelltAm(),
                 lagen);
     }
@@ -206,11 +225,101 @@ public class WpsController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        if (!repository.existsById(id)) {
+        Wps wps = repository.findById(id).orElse(null);
+        if (wps == null) {
             return ResponseEntity.notFound().build();
+        }
+        // Bei importierten PDF-WPS die Datei mit löschen.
+        if (wps.getGespeicherterDateiname() != null) {
+            try {
+                Path uploadBase = Path.of(uploadDir).toAbsolutePath().normalize();
+                Files.deleteIfExists(uploadBase.resolve(wps.getGespeicherterDateiname()).normalize());
+            } catch (IOException ignored) {
+            }
         }
         repository.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // --- PDF-Import (extern erstellte Schweißanweisungen) ---
+
+    /**
+     * Import einer bereits existierenden Schweißanweisung als PDF.
+     * Die WPS wird mit {@code quelle=UPLOAD} angelegt – der Editor ist gesperrt,
+     * nur Metadaten und das PDF selbst werden angezeigt.
+     */
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<WpsResponse> uploadPdfWps(
+            @RequestParam("datei") MultipartFile datei,
+            @RequestParam("wpsNummer") String wpsNummer,
+            @RequestParam(value = "bezeichnung", required = false) String bezeichnung,
+            @RequestParam(value = "norm", required = false) String norm,
+            @RequestParam(value = "schweissProzes", required = false) String schweissProzes,
+            @RequestParam(value = "grundwerkstoff", required = false) String grundwerkstoff,
+            @RequestParam(value = "nahtart", required = false) String nahtart,
+            @RequestParam(value = "gueltigBis", required = false) String gueltigBis) throws IOException {
+
+        if (datei == null || datei.isEmpty() || wpsNummer == null || wpsNummer.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        String originalFilename = Path.of(
+                StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename())))
+                .getFileName().toString();
+        if (!originalFilename.toLowerCase().endsWith(".pdf")) {
+            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).build();
+        }
+
+        String storedFilename = UUID.randomUUID() + "_" + originalFilename;
+        Path uploadBase = Path.of(uploadDir).toAbsolutePath().normalize();
+        Path targetPath = uploadBase.resolve(storedFilename).normalize();
+        if (!targetPath.startsWith(uploadBase)) {
+            return ResponseEntity.badRequest().build();
+        }
+        Files.createDirectories(uploadBase);
+        datei.transferTo(targetPath);
+
+        Wps w = new Wps();
+        w.setQuelle(Wps.Quelle.UPLOAD);
+        w.setWpsNummer(wpsNummer.trim());
+        w.setBezeichnung(bezeichnung);
+        w.setNorm(norm != null && !norm.isBlank() ? norm.trim() : "EN ISO 15614-1");
+        w.setSchweissProzes(schweissProzes != null && !schweissProzes.isBlank() ? schweissProzes.trim() : "extern");
+        w.setGrundwerkstoff(grundwerkstoff);
+        w.setNahtart(nahtart);
+        if (gueltigBis != null && !gueltigBis.isBlank()) {
+            try {
+                w.setGueltigBis(LocalDate.parse(gueltigBis.trim()));
+            } catch (Exception ignored) {
+                // ungültiges Datum → Feld bleibt null
+            }
+        }
+        w.setOriginalDateiname(originalFilename);
+        w.setGespeicherterDateiname(storedFilename);
+
+        return ResponseEntity.ok(toResponse(repository.save(w)));
+    }
+
+    /**
+     * Streamt die hochgeladene PDF-Datei einer importierten WPS zum Anzeigen im Browser.
+     */
+    @GetMapping("/{id}/dokument")
+    public ResponseEntity<Resource> streamDokument(@PathVariable Long id) {
+        Wps w = repository.findById(id).orElse(null);
+        if (w == null || w.getGespeicherterDateiname() == null) {
+            return ResponseEntity.notFound().build();
+        }
+        Path uploadBase = Path.of(uploadDir).toAbsolutePath().normalize();
+        Path filePath = uploadBase.resolve(w.getGespeicherterDateiname()).normalize();
+        if (!filePath.startsWith(uploadBase) || !Files.exists(filePath)) {
+            return ResponseEntity.notFound().build();
+        }
+        Resource resource = new FileSystemResource(filePath);
+        String filename = w.getOriginalDateiname() != null ? w.getOriginalDateiname() : "wps.pdf";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                .body(resource);
     }
 
     // --- Projekt-Zuweisung (M:N) ---

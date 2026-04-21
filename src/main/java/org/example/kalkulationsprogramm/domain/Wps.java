@@ -11,6 +11,8 @@ import java.util.Set;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -79,6 +81,19 @@ public class Wps {
 
     @Column(length = 500)
     private String originalDateiname;
+
+    /**
+     * Herkunft der WPS:
+     * <ul>
+     *   <li>{@code EDITOR} – mit visuellem WPS-Editor erstellt (alle Parameter/Lagen gepflegt).</li>
+     *   <li>{@code UPLOAD} – als fertiges PDF importiert (read-only, nur Metadaten + Anzeige).</li>
+     * </ul>
+     */
+    public enum Quelle { EDITOR, UPLOAD }
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private Quelle quelle = Quelle.EDITOR;
 
     @ManyToMany
     @JoinTable(

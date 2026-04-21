@@ -4,10 +4,11 @@ import {
     ChevronDown, ChevronUp, ChevronRight, X, Sparkles, RotateCcw, Zap, Wind, Gauge,
     FastForward, CircleDot, BatteryCharging, Thermometer, Sliders, Gem,
     ShieldCheck, HardHat, Briefcase, UserPlus, Square, CheckSquare, Printer, Ruler,
-    History, Hammer, Upload, FileUp, Download,
+    History, Hammer, Upload, FileUp,
 } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { VerfahrenGlyph, NahtGlyph, PositionGlyph } from '../components/welding-glyphs';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 
 // ---------------------------------------------------------------------------
 //  Typen & API
@@ -1704,13 +1705,24 @@ const WpsOverview = ({ liste, onNew, onUpload, onEdit, onViewPdf, onDelete, load
                     <div className="text-center py-20 text-slate-400">
                         <FileText className="w-10 h-10 mx-auto mb-2 opacity-30" />
                         <p className="text-sm">{search || filter !== 'alle' ? 'Keine Treffer' : 'Noch keine WPS angelegt'}</p>
-                        <button
-                            onClick={onNew}
-                            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 text-white text-sm font-semibold rounded-lg hover:bg-rose-700"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Erste WPS anlegen
-                        </button>
+                        {!search && filter === 'alle' && (
+                            <div className="mt-4 flex items-center justify-center gap-2">
+                                <button
+                                    onClick={onNew}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 text-white text-sm font-semibold rounded-lg hover:bg-rose-700"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Erste WPS anlegen
+                                </button>
+                                <button
+                                    onClick={onUpload}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-lg hover:border-rose-300 hover:text-rose-600"
+                                >
+                                    <Upload className="w-4 h-4" />
+                                    PDF importieren
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <table className="w-full">
@@ -2050,65 +2062,6 @@ const WpsUploadModal = ({ onClose, onUploaded }: UploadModalProps) => {
 };
 
 // ---------------------------------------------------------------------------
-//  PDF-Viewer-Modal (zeigt hochgeladene WPS-PDFs an)
-// ---------------------------------------------------------------------------
-
-interface ViewerProps {
-    wps: Wps;
-    onClose: () => void;
-}
-
-const WpsPdfViewer = ({ wps, onClose }: ViewerProps) => {
-    const pdfUrl = `/api/wps/${wps.id}/dokument`;
-    return (
-        <div className="fixed inset-0 z-50 bg-slate-900/80 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-white">
-                    <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
-                            <FileText className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="text-sm font-bold text-slate-900 truncate">{wps.wpsNummer} · {wps.bezeichnung || 'Importierte Schweißanweisung'}</div>
-                            <div className="text-[11px] text-slate-500 truncate">{wps.originalDateiname || 'PDF-Datei'} · importiert</div>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                        <a
-                            href={pdfUrl}
-                            download={wps.originalDateiname || `${wps.wpsNummer}.pdf`}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
-                            title="PDF herunterladen"
-                        >
-                            <Download className="w-3.5 h-3.5" />
-                            Download
-                        </a>
-                        <button
-                            onClick={() => window.open(pdfUrl, '_blank', 'noopener,noreferrer')}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
-                            title="Im Browser drucken"
-                        >
-                            <Printer className="w-3.5 h-3.5" />
-                            Drucken
-                        </button>
-                        <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Schließen">
-                            <X className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
-                <div className="flex-1 bg-slate-100">
-                    <iframe
-                        src={pdfUrl}
-                        title={`WPS ${wps.wpsNummer}`}
-                        className="w-full h-full border-0"
-                    />
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// ---------------------------------------------------------------------------
 //  Root-Komponente
 // ---------------------------------------------------------------------------
 
@@ -2230,8 +2183,11 @@ export default function WpsPage() {
                 />
             )}
             {viewing && (
-                <WpsPdfViewer
-                    wps={viewing}
+                <DocumentPreviewModal
+                    doc={{
+                        url: `/api/wps/${viewing.id}/dokument`,
+                        title: `${viewing.wpsNummer}${viewing.bezeichnung ? ' · ' + viewing.bezeichnung : ''}`,
+                    }}
                     onClose={() => setViewing(null)}
                 />
             )}
