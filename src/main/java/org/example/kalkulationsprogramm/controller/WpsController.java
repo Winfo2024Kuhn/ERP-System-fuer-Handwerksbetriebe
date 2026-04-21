@@ -3,11 +3,13 @@ package org.example.kalkulationsprogramm.controller;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Wps;
+import org.example.kalkulationsprogramm.domain.WpsLage;
 import org.example.kalkulationsprogramm.domain.WpsProjektZuweisung;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -57,7 +59,8 @@ public class WpsController {
             LocalDate gueltigBis,
             String originalDateiname,
             String gespeicherterDateiname,
-            LocalDateTime erstelltAm) {
+            LocalDateTime erstelltAm,
+            List<LageResponse> lagen) {
     }
 
     public record WpsRequest(
@@ -73,7 +76,31 @@ public class WpsController {
             LocalDate revisionsdatum,
             LocalDate gueltigBis,
             String originalDateiname,
-            String gespeicherterDateiname) {
+            String gespeicherterDateiname,
+            List<LageRequest> lagen) {
+    }
+
+    public record LageResponse(
+            Long id,
+            Integer nummer,
+            String typ,
+            BigDecimal currentA,
+            BigDecimal voltageV,
+            BigDecimal wireSpeed,
+            BigDecimal fillerDiaMm,
+            BigDecimal gasFlow,
+            String bemerkung) {
+    }
+
+    public record LageRequest(
+            Integer nummer,
+            String typ,
+            BigDecimal currentA,
+            BigDecimal voltageV,
+            BigDecimal wireSpeed,
+            BigDecimal fillerDiaMm,
+            BigDecimal gasFlow,
+            String bemerkung) {
     }
 
     public record ZuweisungResponse(
@@ -97,6 +124,18 @@ public class WpsController {
     }
 
     private WpsResponse toResponse(Wps w) {
+        List<LageResponse> lagen = w.getLagen().stream()
+                .map(l -> new LageResponse(
+                        l.getId(),
+                        l.getNummer(),
+                        l.getTyp() != null ? l.getTyp().name() : null,
+                        l.getCurrentA(),
+                        l.getVoltageV(),
+                        l.getWireSpeed(),
+                        l.getFillerDiaMm(),
+                        l.getGasFlow(),
+                        l.getBemerkung()))
+                .toList();
         return new WpsResponse(
                 w.getId(),
                 w.getWpsNummer(),
@@ -112,7 +151,8 @@ public class WpsController {
                 w.getGueltigBis(),
                 w.getOriginalDateiname(),
                 w.getGespeicherterDateiname(),
-                w.getErstelltAm());
+                w.getErstelltAm(),
+                lagen);
     }
 
     private ZuweisungResponse toZuweisungResponse(WpsProjektZuweisung z) {
@@ -254,5 +294,41 @@ public class WpsController {
         w.setGueltigBis(req.gueltigBis());
         w.setOriginalDateiname(req.originalDateiname());
         w.setGespeicherterDateiname(req.gespeicherterDateiname());
+        applyLagen(w, req.lagen());
+    }
+
+    /**
+     * Ersetzt die Lagen einer WPS vollständig durch die übergebene Liste.
+     * Wir nutzen {@code orphanRemoval=true}, daher genügt {@code clear() + addAll()}.
+     */
+    private void applyLagen(Wps w, List<LageRequest> lagenReq) {
+        w.getLagen().clear();
+        if (lagenReq == null) return;
+        List<WpsLage> neu = new ArrayList<>();
+        int idx = 1;
+        for (LageRequest r : lagenReq) {
+            WpsLage l = new WpsLage();
+            l.setWps(w);
+            l.setNummer(r.nummer() != null ? r.nummer() : idx);
+            l.setTyp(parseTyp(r.typ()));
+            l.setCurrentA(r.currentA());
+            l.setVoltageV(r.voltageV());
+            l.setWireSpeed(r.wireSpeed());
+            l.setFillerDiaMm(r.fillerDiaMm());
+            l.setGasFlow(r.gasFlow());
+            l.setBemerkung(r.bemerkung());
+            neu.add(l);
+            idx++;
+        }
+        w.getLagen().addAll(neu);
+    }
+
+    private WpsLage.Typ parseTyp(String t) {
+        if (t == null || t.isBlank()) return WpsLage.Typ.FUELL;
+        try {
+            return WpsLage.Typ.valueOf(t.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return WpsLage.Typ.FUELL;
+        }
     }
 }

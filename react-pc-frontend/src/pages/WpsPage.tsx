@@ -12,6 +12,20 @@ import { PageLayout } from '../components/layout/PageLayout';
 //  Typen & API
 // ---------------------------------------------------------------------------
 
+type LageTyp = 'WURZEL' | 'FUELL' | 'DECK';
+
+interface Lage {
+    id?: number;
+    nummer: number;
+    typ: LageTyp;
+    currentA: number | null;
+    voltageV: number | null;
+    wireSpeed: number | null;
+    fillerDiaMm: number | null;
+    gasFlow: number | null;
+    bemerkung?: string;
+}
+
 interface Wps {
     id: number;
     wpsNummer: string;
@@ -26,6 +40,7 @@ interface Wps {
     revisionsdatum?: string;
     gueltigBis?: string;
     erstelltAm?: string;
+    lagen?: Lage[];
 }
 
 interface Mitarbeiter {
@@ -172,6 +187,85 @@ function recommend({ verfahren, material, thickness, naht, position }: Recommend
         gas: '—', gasFlow: null,
         notes: 'Elektroden trocken lagern (basisch: 300°C/2h Rücktrocknung).',
     };
+}
+
+// ---------------------------------------------------------------------------
+//  Lagen-Empfehlung (Wurzel / Füll / Deck) je nach Dicke und Nahtart
+// ---------------------------------------------------------------------------
+
+/**
+ * Ermittelt die empfohlene Anzahl und Typ-Verteilung der Schweißlagen.
+ * Faustregel (EN ISO 15609-1, Praxis):
+ * - t < 3 mm, oder Nahtart 'I' (I-Naht bei Blech): 1 Lage (Decklage reicht)
+ * - Stumpfnähte V/X/HV/DHV ab 3 mm: Wurzel + Deck; ab ~8 mm zusätzlich Fülllagen
+ * - Kehlnaht: 1 Lage bis a ≤ 4 mm; darüber Wurzel + ggf. Füll + Deck
+ */
+function planLagen(thickness: number, naht: string | null): LageTyp[] {
+    if (thickness < 3 || naht === 'I') return ['DECK'];
+    if (naht === 'Kehl') {
+        if (thickness <= 4) return ['DECK'];
+        if (thickness <= 8) return ['WURZEL', 'DECK'];
+        const fuell = Math.max(1, Math.ceil((thickness - 6) / 3));
+        return ['WURZEL', ...Array(fuell).fill('FUELL') as LageTyp[], 'DECK'];
+    }
+    // V / X / HV / DHV — Stumpfnähte
+    if (thickness <= 6) return ['WURZEL', 'DECK'];
+    const fuell = Math.max(1, Math.ceil((thickness - 5) / 3));
+    return ['WURZEL', ...Array(fuell).fill('FUELL') as LageTyp[], 'DECK'];
+}
+
+/**
+ * Leitet pro Lage angepasste Parameter aus der Basis-Empfehlung ab.
+ * - Wurzel: niedrigerer Strom (~80 %), kleinerer Draht/Elektrodenø (eine Stufe kleiner falls möglich)
+ * - Füll:   Basis-Empfehlung (100 %)
+ * - Deck:   mittlerer Strom (~92 %) für saubere Optik
+ */
+function recommendLagen(rec: Recommendation, plan: LageTyp[]): Lage[] {
+    const diaShrink = (d: number): number => {
+        if (d >= 3.2) return d - 0.8;
+        if (d >= 1.2) return Math.max(0.8, Math.round((d - 0.2) * 10) / 10);
+        return d;
+    };
+    return plan.map((typ, i) => {
+        const factor = typ === 'WURZEL' ? 0.8 : typ === 'DECK' ? 0.92 : 1.0;
+        const dia = typ === 'WURZEL' ? diaShrink(rec.fillerDia) : rec.fillerDia;
+        return {
+            nummer: i + 1,
+            typ,
+            currentA: Math.round(rec.current * factor),
+            voltageV: Number((rec.voltage * (typ === 'WURZEL' ? 0.9 : 1)).toFixed(1)),
+            wireSpeed: rec.wireSpeed == null ? null : Number((rec.wireSpeed * factor).toFixed(1)),
+            fillerDiaMm: Number(dia.toFixed(2)),
+            gasFlow: rec.gasFlow,
+            bemerkung: '',
+        };
+    });
+}
+
+const LAGE_LABEL: Record<LageTyp, string> = {
+    WURZEL: 'Wurzellage',
+    FUELL: 'Fülllage',
+    DECK: 'Decklage',
+};
+
+// ---------------------------------------------------------------------------
+//  Bereichs-Formatierung (WPS gibt Parameter immer als Bereich an, EN ISO 15609-1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Formatiert einen Punktwert als Toleranzbereich um ±pct (default 10 %).
+ * Nicht-numerische oder leere Werte werden unverändert als String zurückgegeben.
+ */
+function fmtRange(v: string | number | null | undefined, pct = 0.1): string {
+    if (v == null || v === '') return '—';
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+    if (!Number.isFinite(n)) return String(v);
+    const lo = n * (1 - pct);
+    const hi = n * (1 + pct);
+    const round = n >= 10 ? 1 : 0.1;
+    const r = (x: number) => Math.round(x / round) * round;
+    const fmt = (x: number) => (round === 1 ? String(r(x)) : r(x).toFixed(1).replace('.', ','));
+    return `${fmt(lo)}–${fmt(hi)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,8 +465,10 @@ interface ParamFieldProps {
     rec?: string | number | null;
     onChange: (v: string) => void;
     numeric?: boolean;
+    /** Wenn gesetzt, wird der Wert zusätzlich als Bereich ± pct angezeigt (EN ISO 15609-1). */
+    rangePct?: number;
 }
-const ParamField = ({ label, unit, icon: Icon, value, rec, onChange, numeric = true }: ParamFieldProps) => {
+const ParamField = ({ label, unit, icon: Icon, value, rec, onChange, numeric = true, rangePct }: ParamFieldProps) => {
     const isRec = rec != null && String(value) === String(rec);
     return (
         <div className={`bg-white rounded-xl p-3.5 border transition-all ${isRec ? 'border-rose-200' : 'border-slate-200'} shadow-sm`}>
@@ -408,6 +504,11 @@ const ParamField = ({ label, unit, icon: Icon, value, rec, onChange, numeric = t
             </div>
             {rec != null && !isRec && (
                 <div className="text-[11px] text-slate-500 mt-1">Empfehlung: <span className="text-rose-600 font-semibold">{rec}{unit ? ` ${unit}` : ''}</span></div>
+            )}
+            {rangePct != null && numeric && value !== '' && value != null && (
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                    Bereich: <span className="font-mono font-semibold text-slate-700">{fmtRange(value, rangePct)}{unit ? ` ${unit}` : ''}</span>
+                </div>
             )}
         </div>
     );
@@ -656,7 +757,10 @@ interface PreviewFormState {
     zusatzwerkstoff: string;
     gueltigBis: string;
     revisionsdatum: string;
-    params: Partial<Recommendation>;
+    /** Lagen (Wurzel/Füll/Deck) nach EN ISO 15609-1. Parameter jeweils als Zielwert; Druckbereich ±10 %. */
+    lagen: Lage[];
+    /** Schutzgas (gilt gleichermaßen für alle Lagen, da prozess- nicht lagenabhängig). */
+    gas: string;
     supervisorId: number | null;
     welderIds: number[];
     projektIds: number[];
@@ -676,7 +780,7 @@ const WpsPreviewA4 = ({ form, rec, firma, logoUrl, alleMitarbeiter, alleProjekte
     const supervisor = alleMitarbeiter.find((m) => m.id === form.supervisorId);
     const welders = form.welderIds.map((id) => alleMitarbeiter.find((m) => m.id === id)).filter((x): x is Mitarbeiter => !!x);
     const projekte = form.projektIds.map((id) => alleProjekte.find((p) => p.id === id)).filter((x): x is Projekt => !!x);
-    const val = (k: keyof Recommendation) => (form.params[k] ?? rec?.[k] ?? '—') as string | number;
+    const hasWireSpeed = form.lagen.some((l) => l.wireSpeed != null);
 
     return (
         <div
@@ -736,39 +840,52 @@ const WpsPreviewA4 = ({ form, rec, firma, logoUrl, alleMitarbeiter, alleProjekte
                 </div>
             </div>
 
-            {/* Block 2: Parameter */}
+            {/* Block 2: Schweißlagen-Matrix (EN ISO 15609-1 — Parameter pro Lage als Bereich) */}
             <div className="mt-5">
-                <div className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
-                    Schweißparameter
+                <div className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200 flex items-baseline justify-between">
+                    <span>Schweißlagen & Parameter</span>
+                    <span className="text-[9px] font-normal text-slate-400 normal-case">Blechdicke {form.thickness ?? '—'} mm · Bereiche ± 10 % (Gas ± 15 %)</span>
                 </div>
-                <table className="w-full text-[11px]">
-                    <tbody>
-                        <tr className="border-b border-slate-100">
-                            <td className="py-1.5 w-[40%] text-slate-500">Stromstärke</td>
-                            <td className="py-1.5 font-mono font-bold text-slate-900">{val('current')} A</td>
-                            <td className="py-1.5 w-[15%] text-slate-500">Spannung</td>
-                            <td className="py-1.5 font-mono font-bold text-slate-900">{val('voltage')} V</td>
-                        </tr>
-                        <tr className="border-b border-slate-100">
-                            <td className="py-1.5 text-slate-500">Blechdicke</td>
-                            <td className="py-1.5 font-mono font-bold text-slate-900">{form.thickness ?? '—'} mm</td>
-                            <td className="py-1.5 text-slate-500">Zusatz-Ø</td>
-                            <td className="py-1.5 font-mono font-bold text-slate-900">{val('fillerDia')} mm</td>
-                        </tr>
-                        {rec?.wireSpeed != null && (
-                            <tr className="border-b border-slate-100">
-                                <td className="py-1.5 text-slate-500">Drahtvorschub</td>
-                                <td className="py-1.5 font-mono font-bold text-slate-900">{val('wireSpeed')} m/min</td>
-                                <td className="py-1.5 text-slate-500">Gasmenge</td>
-                                <td className="py-1.5 font-mono font-bold text-slate-900">{val('gasFlow')} l/min</td>
+                {form.lagen.length === 0 ? (
+                    <div className="text-[11px] text-slate-500 italic py-3">Keine Lagen definiert.</div>
+                ) : (
+                    <table className="w-full text-[10.5px] border-collapse">
+                        <thead>
+                            <tr className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                                <th className="py-1 text-left w-[7%]">#</th>
+                                <th className="py-1 text-left w-[18%]">Lage</th>
+                                <th className="py-1 text-right">Strom [A]</th>
+                                <th className="py-1 text-right">Spannung [V]</th>
+                                {hasWireSpeed && <th className="py-1 text-right">Vorschub [m/min]</th>}
+                                <th className="py-1 text-right">Zusatz-Ø [mm]</th>
+                                <th className="py-1 text-right">Gasmenge [l/min]</th>
                             </tr>
-                        )}
-                        <tr className="border-b border-slate-100">
-                            <td className="py-1.5 text-slate-500">Schutzgas</td>
-                            <td className="py-1.5 font-mono font-bold text-slate-900" colSpan={3}>{val('gas')}</td>
+                        </thead>
+                        <tbody>
+                            {form.lagen.map((l) => (
+                                <tr key={l.nummer} className="border-t border-slate-100">
+                                    <td className="py-1 font-mono text-slate-600">{l.nummer}</td>
+                                    <td className="py-1 font-semibold text-slate-800">{LAGE_LABEL[l.typ]}</td>
+                                    <td className="py-1 font-mono font-bold text-slate-900 text-right">{fmtRange(l.currentA, 0.1)}</td>
+                                    <td className="py-1 font-mono font-bold text-slate-900 text-right">{fmtRange(l.voltageV, 0.1)}</td>
+                                    {hasWireSpeed && (
+                                        <td className="py-1 font-mono font-bold text-slate-900 text-right">{l.wireSpeed == null ? '—' : fmtRange(l.wireSpeed, 0.1)}</td>
+                                    )}
+                                    <td className="py-1 font-mono font-bold text-slate-900 text-right">{l.fillerDiaMm ?? '—'}</td>
+                                    <td className="py-1 font-mono font-bold text-slate-900 text-right">{l.gasFlow == null ? '—' : fmtRange(l.gasFlow, 0.15)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+                <table className="w-full text-[11px] mt-2">
+                    <tbody>
+                        <tr className="border-t border-slate-100">
+                            <td className="py-1.5 w-[40%] text-slate-500">Schutzgas</td>
+                            <td className="py-1.5 font-mono font-bold text-slate-900" colSpan={3}>{form.gas || '—'}</td>
                         </tr>
                         {form.zusatzwerkstoff && (
-                            <tr>
+                            <tr className="border-t border-slate-100">
                                 <td className="py-1.5 text-slate-500">Zusatzwerkstoff</td>
                                 <td className="py-1.5 font-bold text-slate-900" colSpan={3}>{form.zusatzwerkstoff}</td>
                             </tr>
@@ -901,7 +1018,8 @@ function buildInitialForm(initial: Wps | null): PreviewFormState {
             zusatzwerkstoff: '',
             gueltigBis: '',
             revisionsdatum: new Date().toISOString().slice(0, 10),
-            params: {},
+            lagen: [],
+            gas: '',
             supervisorId: null,
             welderIds: [],
             projektIds: [],
@@ -918,7 +1036,18 @@ function buildInitialForm(initial: Wps | null): PreviewFormState {
         zusatzwerkstoff: initial.zusatzwerkstoff || '',
         gueltigBis: initial.gueltigBis || '',
         revisionsdatum: initial.revisionsdatum || '',
-        params: {},
+        lagen: (initial.lagen || []).map((l, i) => ({
+            id: l.id,
+            nummer: l.nummer ?? i + 1,
+            typ: l.typ,
+            currentA: l.currentA != null ? Number(l.currentA) : null,
+            voltageV: l.voltageV != null ? Number(l.voltageV) : null,
+            wireSpeed: l.wireSpeed != null ? Number(l.wireSpeed) : null,
+            fillerDiaMm: l.fillerDiaMm != null ? Number(l.fillerDiaMm) : null,
+            gasFlow: l.gasFlow != null ? Number(l.gasFlow) : null,
+            bemerkung: l.bemerkung || '',
+        })),
+        gas: '',
         supervisorId: null,
         welderIds: [],
         projektIds: [],
@@ -958,7 +1087,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
         { done: !!form.material && !!form.thickness },
         { done: !!form.naht },
         { done: !!form.position },
-        { done: !!rec },
+        { done: form.lagen.length > 0 },
         { done: !!form.supervisorId && form.welderIds.length > 0 },
     ];
     const progress = steps.filter((s) => s.done).length;
@@ -966,8 +1095,44 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
     const kiHinweise = buildKiHinweise(form, rec, canGenerate);
 
     const update = (patch: Partial<PreviewFormState>) => setForm((p) => ({ ...p, ...patch }));
-    const updateParam = (k: keyof Recommendation, v: string) => {
-        setForm((p) => ({ ...p, params: { ...p.params, [k]: v === '' ? undefined : (Number.isNaN(Number(v)) ? v : Number(v)) } }));
+
+    /** Einzelnes Feld einer Lage im Formular-State patchen. */
+    const updateLage = (nummer: number, patch: Partial<Lage>) => {
+        setForm((p) => ({
+            ...p,
+            lagen: p.lagen.map((l) => (l.nummer === nummer ? { ...l, ...patch } : l)),
+        }));
+    };
+
+    /** Lage hinzufügen (Typ per Default: wenn keine Wurzel existiert → WURZEL, sonst FUELL). */
+    const addLage = (typ?: LageTyp) => {
+        setForm((p) => {
+            const hasWurzel = p.lagen.some((l) => l.typ === 'WURZEL');
+            const chosen: LageTyp = typ ?? (hasWurzel ? 'FUELL' : 'WURZEL');
+            const nummer = (p.lagen.reduce((m, l) => Math.max(m, l.nummer), 0)) + 1;
+            const base: Lage = rec ? {
+                nummer, typ: chosen,
+                currentA: rec.current, voltageV: rec.voltage,
+                wireSpeed: rec.wireSpeed, fillerDiaMm: rec.fillerDia,
+                gasFlow: rec.gasFlow, bemerkung: '',
+            } : { nummer, typ: chosen, currentA: null, voltageV: null, wireSpeed: null, fillerDiaMm: null, gasFlow: null, bemerkung: '' };
+            return { ...p, lagen: [...p.lagen, base] };
+        });
+    };
+
+    /** Lage entfernen und neu nummerieren. */
+    const removeLage = (nummer: number) => {
+        setForm((p) => ({
+            ...p,
+            lagen: p.lagen.filter((l) => l.nummer !== nummer).map((l, i) => ({ ...l, nummer: i + 1 })),
+        }));
+    };
+
+    /** Alle Lagen durch empfohlenen Plan ersetzen (KI-Vorschlag). */
+    const applyLagenEmpfehlung = () => {
+        if (!rec || !form.thickness || !form.naht) return;
+        const plan = planLagen(form.thickness, form.naht.id);
+        setForm((p) => ({ ...p, lagen: recommendLagen(rec, plan), gas: rec.gas }));
     };
 
     const doSave = useCallback(async (): Promise<Wps | null> => {
@@ -986,6 +1151,16 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                 blechdickeMax: form.thickness,
                 revisionsdatum: form.revisionsdatum || null,
                 gueltigBis: form.gueltigBis || null,
+                lagen: form.lagen.map((l) => ({
+                    nummer: l.nummer,
+                    typ: l.typ,
+                    currentA: l.currentA,
+                    voltageV: l.voltageV,
+                    wireSpeed: l.wireSpeed,
+                    fillerDiaMm: l.fillerDiaMm,
+                    gasFlow: l.gasFlow,
+                    bemerkung: l.bemerkung || null,
+                })),
             };
             const url = initial ? `/api/wps/${initial.id}` : '/api/wps';
             const res = await fetch(url, {
@@ -1103,7 +1278,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                                     <PickerTile
                                         key={v.id}
                                         active={form.verfahren?.id === v.id}
-                                        onClick={() => update({ verfahren: v, params: {} })}
+                                        onClick={() => update({ verfahren: v, lagen: [] })}
                                         code={v.code}
                                         name={v.name}
                                         subtitle={v.subtitle}
@@ -1135,7 +1310,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                                                             <button
                                                                 key={m.id}
                                                                 type="button"
-                                                                onClick={() => update({ material: m, params: {} })}
+                                                                onClick={() => update({ material: m, lagen: [] })}
                                                                 className={`text-left p-3 rounded-lg border-2 transition-all ${active ? 'bg-rose-50 border-rose-600 shadow-[0_10px_40px_-10px_rgba(225,29,72,0.3)]' : 'bg-white border-slate-200 hover:border-rose-200'}`}
                                                             >
                                                                 <div className="text-sm font-bold text-slate-900">{m.name}</div>
@@ -1157,7 +1332,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                                                 <button
                                                     key={t}
                                                     type="button"
-                                                    onClick={() => update({ thickness: t, params: {} })}
+                                                    onClick={() => update({ thickness: t, lagen: [] })}
                                                     className={`min-w-[56px] px-3 py-2 rounded-lg text-sm font-bold tabular-nums transition-all border ${active ? 'bg-rose-600 text-white border-rose-600 shadow-[0_10px_40px_-10px_rgba(225,29,72,0.4)]' : 'bg-white text-slate-800 border-slate-200 hover:border-rose-200'}`}
                                                 >
                                                     {t} <span className="text-[10px] font-medium opacity-70">mm</span>
@@ -1171,7 +1346,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                                         <input
                                             type="number" step="0.5" min="0.5" max="100"
                                             value={form.thickness ?? ''}
-                                            onChange={(e) => update({ thickness: e.target.value === '' ? null : Number(e.target.value), params: {} })}
+                                            onChange={(e) => update({ thickness: e.target.value === '' ? null : Number(e.target.value), lagen: [] })}
                                             className="flex-1 min-w-0 border border-slate-200 rounded px-2 py-1 text-[13px] outline-none"
                                         />
                                         <span className="text-[12px] text-slate-500">mm</span>
@@ -1192,7 +1367,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                                             active={form.naht?.id === n.id}
                                             disabled={!suitable}
                                             badge={!suitable ? 'unüblich' : null}
-                                            onClick={() => update({ naht: n, params: {} })}
+                                            onClick={() => update({ naht: n, lagen: [] })}
                                             name={n.name}
                                             subtitle={n.subtitle}
                                             glyph={<NahtGlyph kind={n.id} className="w-full h-full" />}
@@ -1210,7 +1385,7 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                                     <PickerTile
                                         key={p.id}
                                         active={form.position?.id === p.id}
-                                        onClick={() => update({ position: p, params: {} })}
+                                        onClick={() => update({ position: p, lagen: [] })}
                                         name={p.id}
                                         subtitle={p.subtitle}
                                         size="sm"
@@ -1220,67 +1395,133 @@ const WpsEditor = ({ initial, mitarbeiter, projekte, firma, logoUrl, onClose, on
                             </div>
                         </div>
 
-                        {/* Schritt 5: Parameter */}
+                        {/* Schritt 5: Lagen & Parameter */}
                         <div className="mb-7">
-                            <StepHeader n={5} done={steps[4].done} title="Schweißparameter" hint="Automatisch berechnet — manuell überschreibbar." />
+                            <StepHeader n={5} done={steps[4].done} title="Schweißlagen & Parameter" hint="Pro Lage (Wurzel / Füll / Deck) eigene Parameter — nach EN ISO 15609-1 jeweils als Bereich." />
                             {!rec ? (
                                 <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center py-8 px-4">
                                     <div className="w-11 h-11 mx-auto rounded-xl bg-white border border-slate-200 text-slate-400 flex items-center justify-center mb-3">
                                         <Sparkles className="w-5 h-5" />
                                     </div>
-                                    <div className="text-sm font-semibold text-slate-700 mb-1">Parameter werden automatisch berechnet</div>
-                                    <div className="text-[13px] text-slate-500">Wähle Verfahren, Werkstoff, Blechdicke und Nahtart — dann schlägt das System passende Werte vor.</div>
+                                    <div className="text-sm font-semibold text-slate-700 mb-1">Lagen werden automatisch vorgeschlagen</div>
+                                    <div className="text-[13px] text-slate-500">Wähle Verfahren, Werkstoff, Blechdicke und Nahtart — dann schlägt das System passende Lagen vor.</div>
                                 </div>
                             ) : (
                                 <>
                                     <div className="flex items-start gap-2 mb-3 px-3.5 py-2.5 bg-rose-50 border border-rose-200 rounded-xl">
                                         <Sparkles className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
                                         <div className="text-[13px] text-slate-800 leading-snug flex-1">
-                                            <strong className="text-rose-600">Empfehlung aktiv.</strong>{' '}
-                                            Werte basieren auf <strong>{form.material?.name}</strong>, <strong>{form.thickness} mm</strong>, <strong>{form.verfahren?.name}</strong>{form.naht ? <>, <strong>{form.naht.name}</strong></> : null}.
-                                            Du kannst jeden Wert manuell überschreiben.
+                                            <strong className="text-rose-600">KI-Empfehlung:</strong>{' '}
+                                            {form.thickness && form.naht ? (
+                                                <>Für <strong>{form.thickness} mm</strong>, <strong>{form.naht.name}</strong>, <strong>{form.verfahren?.name}</strong> werden{' '}
+                                                    <strong>{planLagen(form.thickness, form.naht.id).length} Lage{planLagen(form.thickness, form.naht.id).length > 1 ? 'n' : ''}</strong> empfohlen.</>
+                                            ) : 'Wähle erst Blechdicke und Nahtart.'}
                                         </div>
                                         <button
                                             type="button"
-                                            onClick={() => update({ params: {} })}
-                                            className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-md border border-rose-300 bg-white text-rose-700 hover:bg-rose-50 whitespace-nowrap"
+                                            onClick={applyLagenEmpfehlung}
+                                            disabled={!form.thickness || !form.naht}
+                                            className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-md border border-rose-600 bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                         >
-                                            <RotateCcw className="w-3 h-3" />
-                                            Alle zurücksetzen
+                                            <Sparkles className="w-3 h-3" />
+                                            Empfehlung übernehmen
                                         </button>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2.5">
-                                        <ParamField label="Stromstärke" unit="A" icon={Zap}
-                                            value={(form.params.current ?? rec.current) as number}
-                                            rec={rec.current}
-                                            onChange={(v) => updateParam('current', v)} />
-                                        <ParamField label="Spannung" unit="V" icon={BatteryCharging}
-                                            value={(form.params.voltage ?? rec.voltage) as number}
-                                            rec={rec.voltage}
-                                            onChange={(v) => updateParam('voltage', v)} />
-                                        {rec.wireSpeed != null && (
-                                            <ParamField label="Drahtvorschub" unit="m/min" icon={FastForward}
-                                                value={(form.params.wireSpeed ?? rec.wireSpeed) as number}
-                                                rec={rec.wireSpeed}
-                                                onChange={(v) => updateParam('wireSpeed', v)} />
-                                        )}
-                                        <ParamField label="Zusatz-Ø" unit="mm" icon={CircleDot}
-                                            value={(form.params.fillerDia ?? rec.fillerDia) as number}
-                                            rec={rec.fillerDia}
-                                            onChange={(v) => updateParam('fillerDia', v)} />
-                                        {rec.gas !== '—' && (
-                                            <ParamField label="Schutzgas" icon={Wind} numeric={false}
-                                                value={(form.params.gas ?? rec.gas) as string}
-                                                rec={rec.gas}
-                                                onChange={(v) => updateParam('gas', v)} />
-                                        )}
-                                        {rec.gasFlow != null && (
-                                            <ParamField label="Gasmenge" unit="l/min" icon={Gauge}
-                                                value={(form.params.gasFlow ?? rec.gasFlow) as number}
-                                                rec={rec.gasFlow}
-                                                onChange={(v) => updateParam('gasFlow', v)} />
-                                        )}
-                                    </div>
+
+                                    {form.lagen.length === 0 ? (
+                                        <div className="rounded-xl border border-dashed border-slate-300 bg-white text-center py-6 px-4">
+                                            <div className="text-sm font-semibold text-slate-700 mb-1">Noch keine Lagen definiert</div>
+                                            <div className="text-[13px] text-slate-500 mb-3">Übernimm die KI-Empfehlung oder lege manuell Lagen an.</div>
+                                            <button
+                                                type="button"
+                                                onClick={() => addLage()}
+                                                className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" />
+                                                Lage hinzufügen
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {form.lagen.map((l) => (
+                                                <div key={l.nummer} className="bg-white border border-slate-200 rounded-xl p-3">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-600 text-white text-[11px] font-bold">{l.nummer}</span>
+                                                        <select
+                                                            value={l.typ}
+                                                            onChange={(e) => updateLage(l.nummer, { typ: e.target.value as LageTyp })}
+                                                            className="text-[13px] font-semibold text-slate-800 bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-rose-400"
+                                                        >
+                                                            <option value="WURZEL">Wurzellage</option>
+                                                            <option value="FUELL">Fülllage</option>
+                                                            <option value="DECK">Decklage</option>
+                                                        </select>
+                                                        <div className="flex-1" />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeLage(l.nummer)}
+                                                            className="inline-flex items-center gap-1 text-[12px] font-medium px-2 py-1 rounded text-slate-500 hover:text-rose-600 hover:bg-rose-50"
+                                                            title="Lage entfernen"
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <ParamField label="Strom" unit="A" icon={Zap}
+                                                            value={l.currentA ?? ''}
+                                                            rangePct={0.1}
+                                                            onChange={(v) => updateLage(l.nummer, { currentA: v === '' ? null : Number(v) })} />
+                                                        <ParamField label="Spannung" unit="V" icon={BatteryCharging}
+                                                            value={l.voltageV ?? ''}
+                                                            rangePct={0.1}
+                                                            onChange={(v) => updateLage(l.nummer, { voltageV: v === '' ? null : Number(v) })} />
+                                                        <ParamField label="Zusatz-Ø" unit="mm" icon={CircleDot}
+                                                            value={l.fillerDiaMm ?? ''}
+                                                            onChange={(v) => updateLage(l.nummer, { fillerDiaMm: v === '' ? null : Number(v) })} />
+                                                        {rec.wireSpeed != null && (
+                                                            <ParamField label="Drahtvorschub" unit="m/min" icon={FastForward}
+                                                                value={l.wireSpeed ?? ''}
+                                                                rangePct={0.1}
+                                                                onChange={(v) => updateLage(l.nummer, { wireSpeed: v === '' ? null : Number(v) })} />
+                                                        )}
+                                                        {rec.gasFlow != null && (
+                                                            <ParamField label="Gasmenge" unit="l/min" icon={Gauge}
+                                                                value={l.gasFlow ?? ''}
+                                                                rangePct={0.15}
+                                                                onChange={(v) => updateLage(l.nummer, { gasFlow: v === '' ? null : Number(v) })} />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                onClick={() => addLage()}
+                                                className="w-full inline-flex items-center justify-center gap-1.5 text-[13px] font-semibold px-3 py-2 rounded-lg border border-dashed border-slate-300 bg-white text-slate-600 hover:border-rose-300 hover:text-rose-600"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" />
+                                                Weitere Lage hinzufügen
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {rec.gas !== '—' && (
+                                        <div className="mt-3 bg-white border border-slate-200 rounded-xl p-3">
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <Wind className="w-4 h-4 text-rose-600" />
+                                                <span className="text-[13px] font-semibold text-slate-700">Schutzgas (gilt für alle Lagen)</span>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={form.gas || rec.gas}
+                                                onChange={(e) => update({ gas: e.target.value })}
+                                                className="w-full text-[14px] font-semibold text-slate-900 bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-rose-400"
+                                            />
+                                            {form.gas !== rec.gas && (
+                                                <button type="button" onClick={() => update({ gas: rec.gas })} className="mt-1 text-[11px] text-rose-600 hover:underline">Empfehlung: {rec.gas}</button>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {rec.notes && (
                                         <div className="mt-3 px-3.5 py-2.5 bg-amber-50 border border-amber-200 rounded-lg flex gap-2.5">
                                             <Info className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
