@@ -20,6 +20,7 @@ Willkommen in der Dokumentation des Handwerkerprogramms. Hier findest du alle te
 | [LIEFERANTEN_DOKUMENTEN.md](LIEFERANTEN_DOKUMENTEN.md) | Eingangsrechnungen, KI-Erkennung, Freigabeprozess |
 | [ZUGFERD_E_INVOICING.md](ZUGFERD_E_INVOICING.md) | Elektronische Rechnungsstellung nach EU-Norm (ZUGFeRD) |
 | [BESTELLWESEN.md](BESTELLWESEN.md) | Einkauf, Bestellungen, PDF-Generierung |
+| [EINKAUF_WORKFLOWS.md](EINKAUF_WORKFLOWS.md) | End-to-End-Workflows für die Reiter **Bestellungen · Bedarf · Preisanfragen** (Projektmanagement → Einkauf) |
 | [ANGEBOTSWESEN.md](ANGEBOTSWESEN.md) | Angebotserstellung, Kundenmanagement, Konversionsrate |
 | [MONATS_SALDO_CACHING.md](MONATS_SALDO_CACHING.md) | Performance-Optimierung für monatliche Zeitkonto-Salden |
 | [API_REFERENZ.md](API_REFERENZ.md) | REST-Endpoint-Übersicht für alle Module (53 Controller) |
@@ -58,10 +59,11 @@ Im Verzeichnis [`Dokumentation/`](Dokumentation/) befinden sich draw.io-Diagramm
 7. **[LIEFERANTEN_DOKUMENTEN.md](LIEFERANTEN_DOKUMENTEN.md)** – Eingangsrechnungen
 8. **[ZUGFERD_E_INVOICING.md](ZUGFERD_E_INVOICING.md)** – E-Rechnungen
 9. **[BESTELLWESEN.md](BESTELLWESEN.md)** – Einkauf & Bestellungen
-10. **[ANGEBOTSWESEN.md](ANGEBOTSWESEN.md)** – Angebotserstellung
-11. **[ZEITERFASSUNG_WORKFLOWS.md](ZEITERFASSUNG_WORKFLOWS.md)** – Mobile App
-12. **[MONATS_SALDO_CACHING.md](MONATS_SALDO_CACHING.md)** – Performance-Caching
-13. **[API_REFERENZ.md](API_REFERENZ.md)** – REST-Endpoints
+10. **[EINKAUF_WORKFLOWS.md](EINKAUF_WORKFLOWS.md)** – End-to-End (Bestellungen · Bedarf · Preisanfragen)
+11. **[ANGEBOTSWESEN.md](ANGEBOTSWESEN.md)** – Angebotserstellung
+12. **[ZEITERFASSUNG_WORKFLOWS.md](ZEITERFASSUNG_WORKFLOWS.md)** – Mobile App
+13. **[MONATS_SALDO_CACHING.md](MONATS_SALDO_CACHING.md)** – Performance-Caching
+14. **[API_REFERENZ.md](API_REFERENZ.md)** – REST-Endpoints
 
 ---
 

@@ -86,9 +86,9 @@ const NAVIGATION: NavCategory[] = [
             {
                 label: 'Einkauf',
                 items: [
-                    { name: 'Bestellungen', href: '/bestellungen', icon: ShoppingCart },
                     { name: 'Bedarf', href: '/bestellungen/bedarf', icon: List },
                     { name: 'Preisanfragen', href: '/einkauf/preisanfragen', icon: Scale },
+                    { name: 'Bestellungen', href: '/bestellungen', icon: ShoppingCart },
                 ]
             }
         ]
