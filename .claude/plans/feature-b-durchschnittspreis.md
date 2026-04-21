@@ -92,17 +92,17 @@ User-Feedback 2026-04-21: „manchmal ist bei Stahlrohren Preis pro Meter, bei T
 - [x] `ArtikelDurchschnittspreisService` Javadoc aktualisiert: Durchschnitt läuft in der jeweiligen Verrechnungseinheit des Artikels, nicht zwingend kg.
 - [x] `ArtikelPreisHookServiceTest` um 4 Tests ergänzt (Stück-Artikel, Meter-Artikel, Quadratmeter-Artikel, Artikel-ohne-Einheit-Fallback). Bestehende Stück-/Meter-Tests umbenannt (jetzt: „bei KG-Artikel" für Mismatch-Fall).
 
-### Etappe B3: Backfill + Admin-Endpoint + Doku
+### Etappe B3: Backfill + Admin-Endpoint + Doku ✅
 **Commit-Ziel:** `feat(admin): Durchschnittspreis-Backfill Endpoint + Doku`
 
-- [ ] `ArtikelDurchschnittspreisService.backfillAlle()` — einfacher Durchschnitt aller Lieferantenpreise pro Artikel (Historie fehlt, Menge unbekannt → unwuchted). Gibt `BackfillErgebnis(anzahlArtikel, uebersprungen)` zurueck.
-- [ ] `AdminArtikelController` mit `POST /api/admin/artikel/durchschnittspreis/backfill`
-- [ ] Zugriffsschutz via bestehender `SecurityConfig` — gleicher Schutz wie alle `/api/**`
-- [ ] `docs/ADMIN_ENDPOINTS.md` angelegt und den neuen Endpoint dokumentiert
-- [ ] Controller-Test (Happy-Path, 200 mit Ergebnis)
-- [ ] Service-Test Backfill (Artikel ohne Preise, Artikel mit 1 Lieferanten, Artikel mit N Lieferanten)
-- [ ] `./mvnw.cmd test` gruen
-- [ ] Commit
+- [x] `ArtikelDurchschnittspreisService.backfillAlle()` — einfacher Durchschnitt aller Lieferantenpreise pro Artikel (Historie fehlt, Menge unbekannt → unwuchted). Gibt `BackfillErgebnis(verarbeitet, uebersprungen, dauerMs)` zurück. (Bereits in B1 angelegt.)
+- [x] `AdminArtikelController` mit `POST /api/admin/artikel/durchschnittspreis/backfill`
+- [x] Zugriffsschutz via bestehender `SecurityConfig` — gleicher Schutz wie alle `/api/**`
+- [x] `docs/ADMIN_ENDPOINTS.md` angelegt und den neuen Endpoint dokumentiert
+- [x] Controller-Test (Happy-Path, 200 mit Ergebnis + leere-DB-Fall)
+- [x] Service-Test Backfill (Artikel ohne Preise, Artikel mit 1 Lieferanten, Artikel mit N Lieferanten) — bereits in B1.
+- [x] `./mvnw.cmd test` grün
+- [x] Commit
 
 ### Parallel-Etappe P1: Preis-Historie + zentraler Hook-Service ✅
 **Commit-Ziel:** `feat(artikel): Preis-Historie + zentraler Hook-Service (V229)`
