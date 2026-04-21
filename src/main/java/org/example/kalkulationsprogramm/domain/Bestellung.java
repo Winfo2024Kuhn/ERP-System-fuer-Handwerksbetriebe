@@ -67,7 +67,7 @@ public class Bestellung {
     private Projekt projekt;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 30)
+    @Column(name = "status", nullable = false, columnDefinition = "varchar(30)")
     private BestellStatus status = BestellStatus.ENTWURF;
 
     @Column(name = "bestellt_am")

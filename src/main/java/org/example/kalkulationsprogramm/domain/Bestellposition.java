@@ -101,7 +101,7 @@ public class Bestellposition {
 
     // ───── EN 1090 ────────────────────────────────────────────────
     @Enumerated(EnumType.STRING)
-    @Column(name = "zeugnis_anforderung", length = 30)
+    @Column(name = "zeugnis_anforderung", columnDefinition = "varchar(30)")
     private ZeugnisTyp zeugnisAnforderung;
 
     @Column(name = "kommentar", columnDefinition = "TEXT")
