@@ -21,6 +21,8 @@ import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektAutoSourceRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektZuweisungRepository;
 import org.example.kalkulationsprogramm.repository.WpsRepository;
+import org.example.kalkulationsprogramm.service.ZertifikatMatchingService;
+import org.example.kalkulationsprogramm.service.ZertifikatMatchingService.QualifizierterSchweisserDto;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -57,6 +59,7 @@ public class WpsController {
     private final WpsProjektZuweisungRepository zuweisungRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final WpsProjektAutoSourceRepository wpsProjektAutoSourceRepository;
+    private final ZertifikatMatchingService zertifikatMatchingService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -336,6 +339,22 @@ public class WpsController {
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
                 .body(resource);
+    }
+
+    // --- Qualifizierte Schweißer für eine WPS ---
+
+    /**
+     * Liefert alle Schweißer, deren Zertifikate gegen die WPS geprüft wurden.
+     * Enthält qualifizierte ebenso wie abweichende / abgelaufene, damit der
+     * Nutzer im UI nachvollziehen kann, warum jemand nicht passt.
+     */
+    @GetMapping("/{wpsId}/qualifizierte-schweisser")
+    public ResponseEntity<List<QualifizierterSchweisserDto>> getQualifizierteSchweisser(
+            @PathVariable Long wpsId) {
+        if (!repository.existsById(wpsId)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(zertifikatMatchingService.findeQualifizierteSchweisser(wpsId));
     }
 
     // --- Projekt-Zuweisung (M:N) ---

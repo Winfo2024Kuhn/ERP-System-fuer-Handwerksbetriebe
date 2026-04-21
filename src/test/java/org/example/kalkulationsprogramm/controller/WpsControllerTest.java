@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektAutoSourceRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektZuweisungRepository;
 import org.example.kalkulationsprogramm.repository.WpsRepository;
+import org.example.kalkulationsprogramm.service.ZertifikatMatchingService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +62,9 @@ class WpsControllerTest {
 
     @MockBean
     private WpsProjektAutoSourceRepository wpsProjektAutoSourceRepository;
+
+    @MockBean
+    private ZertifikatMatchingService zertifikatMatchingService;
 
     @Test
     void getAll_gibtListeZurueck() throws Exception {
