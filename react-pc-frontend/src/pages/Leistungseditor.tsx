@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FilePlus,
   FileText,
+  Flame,
   Folder,
   FolderOpen,
   Loader2,
@@ -21,6 +22,7 @@ import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { PageLayout } from '../components/layout/PageLayout';
+import { WpsSearchModal, type WpsSuchErgebnis } from '../components/WpsSearchModal';
 import { cn } from '../lib/utils';
 import { type LeistungsFolder, type LeistungsService, type ProduktkategorieDto } from '../types';
 import { useToast } from '../components/ui/toast';
@@ -64,7 +66,7 @@ interface ServiceFormProps {
   service: LeistungsService;
   folders: LeistungsFolder[];
   isCreating: boolean;
-  onSave: (service: LeistungsService) => void;
+  onSave: (service: LeistungsService, wpsIds: number[]) => void;
   onCancel: () => void;
 }
 
@@ -75,6 +77,10 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
   const [unit, setUnit] = useState(service.unit);
   const [folderId, setFolderId] = useState(service.folderId);
   const [error, setError] = useState('');
+
+  const [wpsRefs, setWpsRefs] = useState<WpsSuchErgebnis[]>([]);
+  const [wpsLoading, setWpsLoading] = useState(false);
+  const [wpsModalOpen, setWpsModalOpen] = useState(false);
 
   const folderLabel = useMemo(() => {
     const currentFolder = folders.find((f) => f.id === folderId);
@@ -91,6 +97,30 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
     setError('');
   }, [service]);
 
+  // Verknüpfte WPS laden, sobald eine bestehende Leistung geöffnet wird.
+  useEffect(() => {
+    if (!service.id) {
+      setWpsRefs([]);
+      return;
+    }
+    const controller = new AbortController();
+    setWpsLoading(true);
+    fetch(`/api/leistungen/${service.id}/wps`, { signal: controller.signal })
+      .then(res => res.ok ? res.json() : [])
+      .then((data: WpsSuchErgebnis[]) => setWpsRefs(Array.isArray(data) ? data : []))
+      .catch(err => {
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          console.error('Verknüpfte WPS laden fehlgeschlagen:', err);
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setWpsLoading(false); });
+    return () => controller.abort();
+  }, [service.id]);
+
+  const removeWps = (id: number) => {
+    setWpsRefs(prev => prev.filter(w => w.id !== id));
+  };
+
   const handleSave = () => {
     const parsedPrice = Number.parseFloat(price.replace(',', '.'));
     if (!name.trim() || !description.trim() || !stripHtml(description)) {
@@ -101,7 +131,10 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
       setError('Preis muss eine Zahl sein.');
       return;
     }
-    onSave({ ...service, name: name.trim(), description, price: parsedPrice, unit, folderId });
+    onSave(
+      { ...service, name: name.trim(), description, price: parsedPrice, unit, folderId },
+      wpsRefs.map(w => w.id),
+    );
   };
 
   return (
@@ -165,6 +198,52 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
           <TiptapEditor value={description} onChange={setDescription} />
         </div>
 
+        {/* EN-1090: Leistung ↔ Schweißanweisungen */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Flame className="w-4 h-4 text-rose-600" />
+              <Label className="mb-0">Verknüpfte Schweißanweisungen (EN 1090)</Label>
+              {wpsLoading && <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin" />}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-rose-300 text-rose-700 hover:bg-rose-50"
+              onClick={() => setWpsModalOpen(true)}
+            >
+              <Plus className="w-4 h-4" /> Auswählen
+            </Button>
+          </div>
+          {wpsRefs.length === 0 ? (
+            <p className="text-xs text-slate-400 italic">
+              Keine WPS verknüpft. Wird dem Projekt beim Dokument-Speichern nicht automatisch zugeordnet.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {wpsRefs.map(w => (
+                <span
+                  key={w.id}
+                  className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-xs"
+                  title={[w.schweissProzes, w.grundwerkstoff].filter(Boolean).join(' · ')}
+                >
+                  <span className="font-medium">{w.wpsNummer}</span>
+                  {w.bezeichnung && <span className="text-rose-600/70 truncate max-w-[160px]">{w.bezeichnung}</span>}
+                  <button
+                    type="button"
+                    onClick={() => removeWps(w.id)}
+                    className="p-0.5 rounded-full hover:bg-rose-200 transition-colors"
+                    aria-label={`WPS ${w.wpsNummer} entfernen`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex gap-3 pt-2">
           <Button className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700" size="sm" onClick={handleSave}>
             <Save className="w-4 h-4" /> Speichern
@@ -174,6 +253,20 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
           </Button>
         </div>
       </div>
+      <WpsSearchModal
+        isOpen={wpsModalOpen}
+        onClose={() => setWpsModalOpen(false)}
+        onConfirm={(ausgewaehlt) => {
+          // Merge: bestehende bleiben, neue hinzu, Duplikate raus (per id).
+          setWpsRefs(prev => {
+            const byId = new Map<number, WpsSuchErgebnis>();
+            [...prev, ...ausgewaehlt].forEach(w => byId.set(w.id, w));
+            return Array.from(byId.values()).sort((a, b) =>
+              (a.wpsNummer || '').localeCompare(b.wpsNummer || ''));
+          });
+        }}
+        initialSelectedIds={wpsRefs.map(w => w.id)}
+      />
     </Card>
   );
 };
@@ -563,7 +656,7 @@ export const Leistungseditor: React.FC = () => {
     setEditingFolderId(null);
   };
 
-  const handleSaveService = (service: LeistungsService) => {
+  const handleSaveService = (service: LeistungsService, wpsIds: number[]) => {
     const isNew = isCreating || !service.id;
     const url = isNew ? '/api/leistungen' : `/api/leistungen/${service.id}`;
     fetch(url, {
@@ -581,7 +674,7 @@ export const Leistungseditor: React.FC = () => {
         if (!res.ok) throw new Error('Speichern fehlgeschlagen');
         return res.json();
       })
-      .then((saved: LeistungApiResponse) => {
+      .then(async (saved: LeistungApiResponse) => {
         const normalized: LeistungsService = {
           id: String(saved.id),
           name: saved.name,
@@ -590,6 +683,18 @@ export const Leistungseditor: React.FC = () => {
           folderId: String(saved.folderId ?? ''),
           unit: typeof saved.unit === 'object' ? saved.unit.name : (saved.unit || '')
         };
+        // WPS-Verknüpfung persistieren (Replace-Semantik – leere Liste löscht alle).
+        try {
+          const wpsRes = await fetch(`/api/leistungen/${saved.id}/wps`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wpsIds }),
+          });
+          if (!wpsRes.ok) throw new Error('WPS-Verknüpfung fehlgeschlagen');
+        } catch (err) {
+          console.error(err);
+          toast.warning('Leistung gespeichert, aber WPS-Verknüpfung fehlgeschlagen.');
+        }
         setServices((prev) => isNew ? [...prev, normalized] : prev.map((s) => s.id === normalized.id ? normalized : s));
         setSelectedFolderId(normalized.folderId);
         setEditingService(null);

@@ -29,6 +29,16 @@ public class AusgangsGeschaeftsDokument {
     private Long id;
 
     /**
+     * Transientes Transport-Feld: Anzahl der WPS, die beim letzten
+     * {@code erstellen}/{@code aktualisieren} automatisch über die
+     * Leistung↔WPS-Verknüpfung dem Projekt zugeordnet wurden.
+     * Wird ausschließlich vom {@code LeistungWpsAutoAssignService} gesetzt
+     * und vom Controller in die Response-DTO übernommen (Toast im Frontend).
+     */
+    @Transient
+    private Integer autoZugewieseneWps;
+
+    /**
      * Dokumentnummer im Format YYYY/MM/NNNNN, z.B. "2025/01/00001"
      */
     @Column(nullable = false, unique = true, length = 20)

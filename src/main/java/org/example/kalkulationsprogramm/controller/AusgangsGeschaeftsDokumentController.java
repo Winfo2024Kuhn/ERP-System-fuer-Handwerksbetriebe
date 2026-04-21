@@ -71,7 +71,9 @@ public class AusgangsGeschaeftsDokumentController {
             @RequestBody AusgangsGeschaeftsDokumentErstellenDto dto) {
         try {
             AusgangsGeschaeftsDokument created = service.erstellen(dto);
-            return ResponseEntity.ok(service.findById(created.getId()));
+            var response = service.findById(created.getId());
+            response.setAutoZugewieseneWps(created.getAutoZugewieseneWps());
+            return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -86,7 +88,9 @@ public class AusgangsGeschaeftsDokumentController {
             @RequestBody AusgangsGeschaeftsDokumentUpdateDto dto) {
         try {
             AusgangsGeschaeftsDokument updated = service.aktualisieren(id, dto);
-            return ResponseEntity.ok(service.findById(updated.getId()));
+            var response = service.findById(updated.getId());
+            response.setAutoZugewieseneWps(updated.getAutoZugewieseneWps());
+            return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
             log.error("Fehler beim Aktualisieren von Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());

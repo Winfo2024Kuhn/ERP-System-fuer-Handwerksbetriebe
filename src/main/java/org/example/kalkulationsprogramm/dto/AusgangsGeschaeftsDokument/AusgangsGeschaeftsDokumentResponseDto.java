@@ -56,4 +56,11 @@ public class AusgangsGeschaeftsDokumentResponseDto {
     // Ersteller
     private Long erstelltVonId;
     private String erstelltVonName;
+
+    /**
+     * Anzahl Schweißanweisungen, die durch diesen Save über die
+     * Leistung↔WPS-Verknüpfung automatisch dem Projekt zugeordnet wurden.
+     * Nur bei POST/PUT befüllt; bei GET-Requests null.
+     */
+    private Integer autoZugewieseneWps;
 }

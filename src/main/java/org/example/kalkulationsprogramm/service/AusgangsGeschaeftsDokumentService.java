@@ -68,6 +68,7 @@ public class AusgangsGeschaeftsDokumentService {
     private final ProduktkategorieRepository produktkategorieRepository;
     private final ProjektDokumentRepository projektDokumentRepository;
     private final ZeitbuchungRepository zeitbuchungRepository;
+    private final LeistungWpsAutoAssignService leistungWpsAutoAssignService;
 
     public AusgangsGeschaeftsDokumentService(
             @Value("${file.upload-dir}") String uploadDir,
@@ -80,7 +81,8 @@ public class AusgangsGeschaeftsDokumentService {
             LeistungRepository leistungRepository,
             ProduktkategorieRepository produktkategorieRepository,
             ProjektDokumentRepository projektDokumentRepository,
-            ZeitbuchungRepository zeitbuchungRepository) {
+            ZeitbuchungRepository zeitbuchungRepository,
+            LeistungWpsAutoAssignService leistungWpsAutoAssignService) {
         this.dokumentenSpeicherplatz = Path.of(uploadDir).toAbsolutePath().normalize();
         this.dokumentRepository = dokumentRepository;
         this.counterRepository = counterRepository;
@@ -92,6 +94,7 @@ public class AusgangsGeschaeftsDokumentService {
         this.produktkategorieRepository = produktkategorieRepository;
         this.projektDokumentRepository = projektDokumentRepository;
         this.zeitbuchungRepository = zeitbuchungRepository;
+        this.leistungWpsAutoAssignService = leistungWpsAutoAssignService;
     }
 
     /** Rechnungstypen, die im Abrechnungsverlauf berücksichtigt werden */
@@ -249,6 +252,7 @@ public class AusgangsGeschaeftsDokumentService {
             aktualisiereProjektProduktkategorienAusDokumenten(saved.getAnfrage().getProjekt().getId());
         }
 
+        saved.setAutoZugewieseneWps(autoAssignEn1090Wps(saved));
         return saved;
     }
 
@@ -362,7 +366,25 @@ public class AusgangsGeschaeftsDokumentService {
             aktualisiereProjektProduktkategorienAusDokumenten(saved.getAnfrage().getProjekt().getId());
         }
 
+        saved.setAutoZugewieseneWps(autoAssignEn1090Wps(saved));
         return saved;
+    }
+
+    /**
+     * Hängt alle Schweißanweisungen, die an den im Dokument enthaltenen
+     * Leistungen hinterlegt sind, automatisch an das Projekt des Dokuments.
+     * Reichweite: nur Dokumente mit Projekt-Bezug; für reine Anfrage-Dokumente
+     * (ohne konkretes Projekt) ist EN-1090-Zuordnung nicht sinnvoll.
+     */
+    private int autoAssignEn1090Wps(AusgangsGeschaeftsDokument dokument) {
+        if (dokument == null || dokument.getProjekt() == null
+                || dokument.getPositionenJson() == null) {
+            return 0;
+        }
+        Set<Long> leistungIds = extractLeistungIdsFromPositionenJson(dokument.getPositionenJson());
+        if (leistungIds.isEmpty()) return 0;
+        return leistungWpsAutoAssignService.autoAssignWpsFromLeistungen(
+                dokument.getProjekt().getId(), leistungIds);
     }
 
     /** Dokumenttypen die beim Buchen/Versand gesperrt werden (nur Rechnungen + Gutschrift + Storno) */

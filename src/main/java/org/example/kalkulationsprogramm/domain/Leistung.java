@@ -6,6 +6,8 @@ import lombok.Setter;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Getter
@@ -33,4 +35,17 @@ public class Leistung {
 
     @ManyToOne(fetch = FetchType.LAZY)
     private Produktkategorie kategorie;
+
+    /**
+     * Schweißanweisungen (WPS), die diese Leistung fachlich benötigt.
+     * Wird beim Speichern eines Dokuments ausgewertet, um die WPS
+     * automatisch dem Projekt zuzuordnen (EN 1090 EXC 2).
+     */
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "leistung_wps",
+        joinColumns = @JoinColumn(name = "leistung_id"),
+        inverseJoinColumns = @JoinColumn(name = "wps_id")
+    )
+    private Set<Wps> verknuepfteWps = new HashSet<>();
 }

@@ -735,6 +735,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
+                    const autoWps = Number(updated.autoZugewieseneWps ?? 0);
+                    if (autoWps > 0) {
+                        toast.success(
+                            `${autoWps} Schweißanweisung${autoWps === 1 ? '' : 'en'} automatisch dem Projekt zugeordnet (EN 1090).`,
+                        );
+                    }
                 } else {
                     const errorText = await res.text();
                     console.error('Fehler beim Speichern:', res.status, errorText);
@@ -767,6 +773,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: created.id });
+                    const autoWps = Number(created.autoZugewieseneWps ?? 0);
+                    if (autoWps > 0) {
+                        toast.success(
+                            `${autoWps} Schweißanweisung${autoWps === 1 ? '' : 'en'} automatisch dem Projekt zugeordnet (EN 1090).`,
+                        );
+                    }
                 }
             }
         } catch (err) {

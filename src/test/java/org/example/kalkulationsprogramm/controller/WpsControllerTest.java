@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import org.example.kalkulationsprogramm.domain.Wps;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.WpsProjektAutoSourceRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektZuweisungRepository;
 import org.example.kalkulationsprogramm.repository.WpsRepository;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,9 @@ class WpsControllerTest {
 
     @MockBean
     private MitarbeiterRepository mitarbeiterRepository;
+
+    @MockBean
+    private WpsProjektAutoSourceRepository wpsProjektAutoSourceRepository;
 
     @Test
     void getAll_gibtListeZurueck() throws Exception {

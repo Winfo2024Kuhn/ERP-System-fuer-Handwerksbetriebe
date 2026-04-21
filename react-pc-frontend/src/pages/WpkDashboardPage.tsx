@@ -4,7 +4,7 @@ import { Card } from '../components/ui/card';
 import { Select } from '../components/ui/select-custom';
 import {
     CheckCircle2, AlertTriangle, XCircle, ClipboardCheck, Users, FileText,
-    Cpu, RefreshCw, Plus, Trash2, ChevronRight, X, Wrench,
+    Cpu, RefreshCw, Plus, Trash2, ChevronRight, X, Wrench, Flame,
 } from 'lucide-react';
 import { useFeatures } from '../hooks/useFeatures';
 import { useToast } from '../components/ui/toast';
@@ -35,6 +35,7 @@ interface WpsResponse {
     grundwerkstoff?: string;
     gueltigBis?: string;
     gespeicherterDateiname?: string;
+    autoZugewiesenDurchLeistungId?: number | null;
 }
 
 interface ZuweisungResponse {
@@ -461,6 +462,7 @@ export default function WpkDashboardPage() {
                                                     <th className="text-left px-4 py-2.5 font-semibold text-slate-600">WPS-Nr.</th>
                                                     <th className="text-left px-4 py-2.5 font-semibold text-slate-600">Bezeichnung</th>
                                                     <th className="text-left px-4 py-2.5 font-semibold text-slate-600">Prozess</th>
+                                                    <th className="text-left px-4 py-2.5 font-semibold text-slate-600">Quelle</th>
                                                     <th className="text-left px-4 py-2.5 font-semibold text-slate-600">Gültig bis</th>
                                                     <th className="px-4 py-2.5" aria-label="Aktionen" />
                                                 </tr>
@@ -471,6 +473,20 @@ export default function WpkDashboardPage() {
                                                         <td className="px-4 py-2.5 font-mono font-medium text-rose-700">{wps.wpsNummer}</td>
                                                         <td className="px-4 py-2.5 text-slate-700">{wps.bezeichnung || '–'}</td>
                                                         <td className="px-4 py-2.5 text-slate-500">{wps.schweissProzes}</td>
+                                                        <td className="px-4 py-2.5">
+                                                            {wps.autoZugewiesenDurchLeistungId ? (
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-xs font-medium border border-rose-200"
+                                                                    title="Automatisch über eine Leistung im Angebot/Auftrag zugeordnet"
+                                                                >
+                                                                    <Flame className="w-3 h-3" /> Auto (Leistung)
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
+                                                                    Manuell
+                                                                </span>
+                                                            )}
+                                                        </td>
                                                         <td className="px-4 py-2.5 text-slate-500">
                                                             {wps.gueltigBis ? new Date(wps.gueltigBis).toLocaleDateString('de-DE') : '–'}
                                                         </td>

@@ -18,6 +18,7 @@ import org.example.kalkulationsprogramm.domain.WpsLage;
 import org.example.kalkulationsprogramm.domain.WpsProjektZuweisung;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.WpsProjektAutoSourceRepository;
 import org.example.kalkulationsprogramm.repository.WpsProjektZuweisungRepository;
 import org.example.kalkulationsprogramm.repository.WpsRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,6 +56,7 @@ public class WpsController {
     private final ProjektRepository projektRepository;
     private final WpsProjektZuweisungRepository zuweisungRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
+    private final WpsProjektAutoSourceRepository wpsProjektAutoSourceRepository;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -78,7 +80,8 @@ public class WpsController {
             String gespeicherterDateiname,
             String quelle,
             LocalDateTime erstelltAm,
-            List<LageResponse> lagen) {
+            List<LageResponse> lagen,
+            Long autoZugewiesenDurchLeistungId) {
     }
 
     public record WpsRequest(
@@ -142,6 +145,10 @@ public class WpsController {
     }
 
     private WpsResponse toResponse(Wps w) {
+        return toResponse(w, null);
+    }
+
+    private WpsResponse toResponse(Wps w, Long autoZugewiesenDurchLeistungId) {
         List<LageResponse> lagen = w.getLagen().stream()
                 .map(l -> new LageResponse(
                         l.getId(),
@@ -171,7 +178,8 @@ public class WpsController {
                 w.getGespeicherterDateiname(),
                 w.getQuelle() != null ? w.getQuelle().name() : Wps.Quelle.EDITOR.name(),
                 w.getErstelltAm(),
-                lagen);
+                lagen,
+                autoZugewiesenDurchLeistungId);
     }
 
     private ZuweisungResponse toZuweisungResponse(WpsProjektZuweisung z) {
@@ -204,7 +212,15 @@ public class WpsController {
 
     @GetMapping("/projekt/{projektId}")
     public List<WpsResponse> getByProjekt(@PathVariable Long projektId) {
-        return repository.findByProjektId(projektId).stream().map(this::toResponse).toList();
+        java.util.Map<Long, Long> autoSource = new java.util.HashMap<>();
+        for (var s : wpsProjektAutoSourceRepository.findByProjektId(projektId)) {
+            if (s.getWps() != null && s.getLeistung() != null) {
+                autoSource.putIfAbsent(s.getWps().getId(), s.getLeistung().getId());
+            }
+        }
+        return repository.findByProjektId(projektId).stream()
+                .map(w -> toResponse(w, autoSource.get(w.getId())))
+                .toList();
     }
 
     @PostMapping
