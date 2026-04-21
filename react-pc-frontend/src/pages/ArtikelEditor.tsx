@@ -252,7 +252,7 @@ export default function ArtikelEditor() {
                         title="Vorgeschlagene neue Materialien aus Lieferantenrechnungen pr\u00fcfen"
                     >
                         <Sparkles className="w-4 h-4 mr-2" />
-                        KI-Vorschl\u00e4ge
+                        KI-Vorschläge
                         {pendingCount > 0 && (
                             <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-xs font-semibold">
                                 {pendingCount > 99 ? '99+' : pendingCount}
