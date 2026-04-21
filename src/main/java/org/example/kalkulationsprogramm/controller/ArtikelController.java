@@ -10,18 +10,20 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelPreisHistorie;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelPreisHistorieDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ExterneNummerDto;
 import org.example.kalkulationsprogramm.dto.Artikel.LieferantPreisDto;
+import org.example.kalkulationsprogramm.repository.ArtikelPreisHistorieRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
@@ -57,15 +59,13 @@ public class ArtikelController {
 
     private static final int MAX_PAGE_SIZE = 50;
     private static final Map<String, SortField> SORT_FIELDS = Map.ofEntries(
-            Map.entry("externeArtikelnummer", new SortField("artikelpreis.externeArtikelnummer", true)),
             Map.entry("produktlinie", new SortField("produktlinie", true)),
             Map.entry("produktname", new SortField("produktname", true)),
             Map.entry("produkttext", new SortField("produkttext", true)),
             Map.entry("verpackungseinheit", new SortField("verpackungseinheit", false)),
             Map.entry("werkstoffName", new SortField("werkstoff.name", true)),
-            Map.entry("lieferantenname", new SortField("artikelpreis.lieferant.lieferantenname", true)),
-            Map.entry("preis", new SortField("artikelpreis.preis", false)),
-            Map.entry("preisDatum", new SortField("artikelpreis.preisAenderungsdatum", false)));
+            Map.entry("preis", new SortField("durchschnittspreisNetto", false)),
+            Map.entry("preisDatum", new SortField("durchschnittspreisAktualisiertAm", false)));
 
     private final ArtikelServiceContract artikelService;
     private final ArtikelImportService artikelImportService;
@@ -73,6 +73,7 @@ public class ArtikelController {
     private final LieferantenRepository lieferantenRepository;
     private final KategorieService kategorieService;
     private final WerkstoffRepository werkstoffRepository;
+    private final ArtikelPreisHistorieRepository artikelPreisHistorieRepository;
 
     @PostMapping
     @Transactional
@@ -184,7 +185,7 @@ public class ArtikelController {
                 PageRequest.of(pageIndex, pageSize, buildSort(sort, direction)));
 
         List<ArtikelResponseDto> daten = result.stream()
-                .flatMap(this::mappeArtikelZuDtos)
+                .map(this::toListDto)
                 .filter(Objects::nonNull)
                 .toList();
 
@@ -271,22 +272,86 @@ public class ArtikelController {
         return ResponseEntity.ok().build();
     }
 
-    private Stream<ArtikelResponseDto> mappeArtikelZuDtos(Artikel artikel) {
-        var gruppiert = artikel.getArtikelpreis().stream()
-                .filter(p -> p.getPreis() != null)
-                .collect(Collectors.groupingBy(LieferantenArtikelPreise::getLieferant));
-        if (gruppiert.isEmpty()) {
-            return Stream.of(toDto(artikel, null));
+    @GetMapping("/{id}/preis-historie")
+    @Transactional(readOnly = true)
+    public List<ArtikelPreisHistorieDto> preisHistorie(@PathVariable("id") Long artikelId) {
+        return artikelPreisHistorieRepository.findByArtikel_IdOrderByErfasstAmDesc(artikelId).stream()
+                .map(this::toHistorieDto)
+                .collect(Collectors.toList());
+    }
+
+    private ArtikelPreisHistorieDto toHistorieDto(ArtikelPreisHistorie h) {
+        ArtikelPreisHistorieDto dto = new ArtikelPreisHistorieDto();
+        dto.setId(h.getId());
+        dto.setPreis(h.getPreis());
+        dto.setMenge(h.getMenge());
+        dto.setEinheit(h.getEinheit());
+        dto.setQuelle(h.getQuelle());
+        dto.setExterneNummer(h.getExterneNummer());
+        dto.setBelegReferenz(h.getBelegReferenz());
+        dto.setErfasstAm(h.getErfasstAm());
+        dto.setBemerkung(h.getBemerkung());
+        Lieferanten lieferant = h.getLieferant();
+        if (lieferant != null) {
+            dto.setLieferantId(lieferant.getId());
+            dto.setLieferantName(lieferant.getLieferantenname());
         }
-        return gruppiert.entrySet().stream()
-                .map(entry -> {
-                    var preis = entry.getValue().stream()
-                            .max(Comparator.comparing(
-                                    LieferantenArtikelPreise::getPreisAenderungsdatum,
-                                    Comparator.nullsLast(Comparator.naturalOrder())))
-                            .orElse(null);
-                    return toDto(artikel, preis);
-                });
+        return dto;
+    }
+
+    private ArtikelResponseDto toListDto(Artikel artikel) {
+        ArtikelResponseDto dto = toDto(artikel, null);
+
+        List<LieferantenArtikelPreise> mitLieferant = artikel.getArtikelpreis().stream()
+                .filter(p -> p.getLieferant() != null && p.getPreis() != null)
+                .toList();
+
+        List<LieferantPreisDto> lieferantenpreise = mitLieferant.stream()
+                .collect(Collectors.groupingBy(p -> p.getLieferant().getId()))
+                .values().stream()
+                .map(preise -> preise.stream()
+                        .max(Comparator.comparing(
+                                LieferantenArtikelPreise::getPreisAenderungsdatum,
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                        .orElse(null))
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(LieferantenArtikelPreise::getPreis,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(this::toLieferantPreisDto)
+                .collect(Collectors.toList());
+
+        dto.setLieferantenpreise(lieferantenpreise);
+        dto.setAnzahlLieferanten(lieferantenpreise.size());
+
+        if (!lieferantenpreise.isEmpty()) {
+            LieferantPreisDto best = lieferantenpreise.get(0);
+            dto.setLieferantId(best.getLieferantId());
+            dto.setLieferantenname(best.getLieferantName());
+            dto.setPreis(best.getPreis());
+            dto.setPreisDatum(best.getPreisDatum());
+            if (dto.getExterneArtikelnummer() == null && best.getExterneArtikelnummer() != null) {
+                dto.setExterneArtikelnummer(best.getExterneArtikelnummer());
+            }
+        }
+
+        dto.setDurchschnittspreisNetto(artikel.getDurchschnittspreisNetto());
+        dto.setDurchschnittspreisMenge(artikel.getDurchschnittspreisMenge());
+        dto.setDurchschnittspreisAktualisiertAm(artikel.getDurchschnittspreisAktualisiertAm());
+
+        return dto;
+    }
+
+    private LieferantPreisDto toLieferantPreisDto(LieferantenArtikelPreise preis) {
+        LieferantPreisDto dto = new LieferantPreisDto();
+        Lieferanten lieferant = preis.getLieferant();
+        if (lieferant != null) {
+            dto.setLieferantId(lieferant.getId());
+            dto.setLieferantName(lieferant.getLieferantenname());
+        }
+        dto.setPreis(preis.getPreis());
+        dto.setExterneArtikelnummer(preis.getExterneArtikelnummer());
+        dto.setPreisDatum(preis.getPreisAenderungsdatum());
+        return dto;
     }
 
     private Specification<Artikel> buildArtikelSpecification(String query,

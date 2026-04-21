@@ -238,6 +238,30 @@ export interface Lieferant {
   erfassungsDatum?: string;
 }
 
+export interface ArtikelLieferantPreis {
+  lieferantId: number;
+  lieferantName: string;
+  preis?: number;
+  externeArtikelnummer?: string;
+  preisDatum?: string;
+}
+
+export type PreisQuelle = 'RECHNUNG' | 'ANGEBOT' | 'KATALOG' | 'MANUELL' | 'VORSCHLAG';
+
+export interface ArtikelPreisHistorieEintrag {
+  id: number;
+  preis: number;
+  menge?: number;
+  einheit: string | { name: string; anzeigename?: string };
+  quelle: PreisQuelle;
+  lieferantId?: number;
+  lieferantName?: string;
+  externeNummer?: string;
+  belegReferenz?: string;
+  erfasstAm: string;
+  bemerkung?: string;
+}
+
 export interface Artikel {
   id: number;
   externeArtikelnummer?: string;
@@ -251,6 +275,11 @@ export interface Artikel {
   preisDatum?: string;
   lieferantId?: number;
   lieferantenname?: string;
+  lieferantenpreise?: ArtikelLieferantPreis[];
+  anzahlLieferanten?: number;
+  durchschnittspreisNetto?: number;
+  durchschnittspreisMenge?: number;
+  durchschnittspreisAktualisiertAm?: string;
   kategorieId?: number;
   kategoriePfad?: string;
   werkstoffName?: string;

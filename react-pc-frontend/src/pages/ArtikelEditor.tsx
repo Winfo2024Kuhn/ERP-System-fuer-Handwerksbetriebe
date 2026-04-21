@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Package, Edit2, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus, Sparkles } from "lucide-react";
+import { RefreshCw, Package, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus, Sparkles, TrendingUp } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -10,15 +10,35 @@ import { SupplierSelectModal } from "../components/SupplierSelectModal";
 import { CategoryTreeModal } from "../components/CategoryTreeModal";
 import { CreateArticleModal } from "../components/CreateArticleModal";
 import { ArtikelVorschlaegeModal } from "../components/ArtikelVorschlaegeModal";
+import { ArtikelDetailModal } from "../components/ArtikelDetailModal";
 import { PageLayout } from "../components/layout/PageLayout";
 import { useToast } from '../components/ui/toast';
 
 const PAGE_SIZE = 12;
 
 // Helpers
-const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
-const formatDate = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleDateString('de-DE') : '-';
+const formatCurrency = (val?: number) =>
+  val === undefined || val === null
+    ? '—'
+    : new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(val);
+const formatDateTime = (dateStr?: string) =>
+  dateStr
+    ? new Date(dateStr).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '—';
 const formatKg = (val?: number) => val ? new Intl.NumberFormat('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(val) : '';
+
+const einheitKuerzel = (einheit?: string | { name: string; anzeigename?: string }): string => {
+  const name = typeof einheit === 'string' ? einheit : einheit?.name;
+  switch (name) {
+    case 'KILOGRAMM': return 'kg';
+    case 'LAUFENDE_METER': return 'm';
+    case 'QUADRATMETER': return 'm²';
+    case 'STUECK': return 'Stk';
+    default:
+      if (!einheit) return '';
+      return typeof einheit === 'string' ? einheit : (einheit.anzeigename || einheit.name);
+  }
+};
 
 // ==================== MAIN COMPONENT ====================
 
@@ -30,7 +50,8 @@ export default function ArtikelEditor() {
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
 
-    // Edit state
+    // Detail/Edit state
+    const [detailArtikel, setDetailArtikel] = useState<Artikel | null>(null);
     const [editingArticle, setEditingArticle] = useState<Artikel | null>(null);
     const [editSupplierData, setEditSupplierData] = useState<{ id: number, name: string } | null>(null);
 
@@ -114,6 +135,15 @@ export default function ArtikelEditor() {
         loadArtikel();
     }, [loadArtikel]);
 
+    // Synchronisiere das Detail-Modal mit der neu geladenen Liste (z.B. nach Preis-Save)
+    useEffect(() => {
+        if (!detailArtikel) return;
+        const frisch = artikelList.find(a => a.id === detailArtikel.id);
+        if (frisch && frisch !== detailArtikel) {
+            setDetailArtikel(frisch);
+        }
+    }, [artikelList, detailArtikel]);
+
     const handleFilterChange = (key: string, value: string | number) => {
         setFilters((prev) => ({ ...prev, [key]: value }));
     };
@@ -148,31 +178,33 @@ export default function ArtikelEditor() {
         return `Zeige ${start}-${end} von ${total} Artikeln`;
     }, [loading, total, page, artikelList.length]);
 
-    const openEdit = (artikel: Artikel) => {
+    const openDetail = (artikel: Artikel) => {
+        setDetailArtikel(artikel);
+    };
+
+    const openEditFromDetail = (artikel: Artikel, lieferant: { id: number; name: string } | null) => {
         setEditingArticle(artikel);
-        setEditSupplierData(artikel.lieferantId ? { id: artikel.lieferantId, name: artikel.lieferantenname || '' } : null);
+        setEditSupplierData(lieferant);
     };
 
     const handleSavePrice = async (price: number, exNummer: string) => {
         if (!editingArticle) return;
-
-        // Determine if update or create
-        // If we have a supplierId in editSupplierData, use it.
         if (!editSupplierData) {
             toast.warning("Bitte wählen Sie einen Lieferanten aus.");
             return;
         }
 
         try {
-            const isNewLink = !editingArticle.lieferantId; // Or strictly checking if we are linking a new one
-            // However, API logic:
-            // Update: PUT /api/lieferanten/{supplierId}/artikelpreise/{articleId}
-            // Create: POST /api/lieferanten/{supplierId}/artikelpreise body {artikelId, ...}
+            const hatBereitsPreis = (editingArticle.lieferantenpreise ?? [])
+                .some(lp => lp.lieferantId === editSupplierData.id);
 
-            let res;
-            if (isNewLink) {
-                // Create new price link
-                res = await fetch(`/api/lieferanten/${editSupplierData.id}/artikelpreise`, {
+            const res = hatBereitsPreis
+                ? await fetch(`/api/lieferanten/${editSupplierData.id}/artikelpreise/${editingArticle.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ preis: price, externeArtikelnummer: exNummer })
+                })
+                : await fetch(`/api/lieferanten/${editSupplierData.id}/artikelpreise`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -181,33 +213,6 @@ export default function ArtikelEditor() {
                         externeArtikelnummer: exNummer
                     })
                 });
-            } else {
-                // Update existing - assume supplier didn't change for now or we use the original ID?
-                // If the user changed the supplier (which we might allow), we would need POST if the new supplier doesn't have a price yet.
-                // For simplicity and per requirement "link if not happened", we assume if it happened, we update that one.
-                // But we use editSupplierData.id which is the current one.
-
-                // If editingArticle.lieferantId != editSupplierData.id, we are effectively creating a new price for a new supplier.
-                const supplierChanged = editingArticle.lieferantId !== editSupplierData.id;
-
-                if (supplierChanged) {
-                    res = await fetch(`/api/lieferanten/${editSupplierData.id}/artikelpreise`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            artikelId: editingArticle.id,
-                            preis: price,
-                            externeArtikelnummer: exNummer
-                        })
-                    });
-                } else {
-                    res = await fetch(`/api/lieferanten/${editSupplierData.id}/artikelpreise/${editingArticle.id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ preis: price, externeArtikelnummer: exNummer })
-                    });
-                }
-            }
 
             if (!res.ok) throw new Error('Speichern fehlgeschlagen');
 
@@ -360,45 +365,65 @@ export default function ArtikelEditor() {
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                 <tr>
-                                    <SortableHeader label="Nr." column="externeArtikelnummer" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="Produktlinie" column="produktlinie" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="Name" column="produktname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="Text" column="produkttext" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="VPE" column="verpackungseinheit" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-center" />
                                     <SortableHeader label="Werkstoff" column="werkstoffName" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
-                                    <SortableHeader label="Lieferant" column="lieferantenname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
-                                    <SortableHeader label="kg/m" column="kgProMeter" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
-                                    <SortableHeader label="Preis" column="preis" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
-                                    <SortableHeader label="Datum" column="preisDatum" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
-                                    <th className="px-4 py-3 text-center w-12"></th>
+                                    <th className="px-4 py-3 text-center">Lief.</th>
+                                    <th className="px-4 py-3 text-right">kg/m</th>
+                                    <SortableHeader label="Ø Preis" column="preis" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
+                                    <SortableHeader label="Aktualisiert" column="preisDatum" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {artikelList.map((artikel) => (
-                                    <tr key={artikel.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-4 py-3 font-mono text-xs text-slate-600">{artikel.externeArtikelnummer || '-'}</td>
-                                        <td className="px-4 py-3 text-slate-600">{artikel.produktlinie || '-'}</td>
-                                        <td className="px-4 py-3 font-medium text-slate-900">{artikel.produktname}</td>
-                                        <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={artikel.produkttext}>{artikel.produkttext || '-'}</td>
-                                        <td className="px-4 py-3 text-center text-slate-600">{artikel.verpackungseinheit || '-'}</td>
-                                        <td className="px-4 py-3 text-slate-600">{artikel.werkstoffName || '-'}</td>
-                                        <td className="px-4 py-3 text-slate-600">{artikel.lieferantenname || '-'}</td>
-                                        <td className="px-4 py-3 text-right text-slate-600">{formatKg(artikel.kgProMeter)}</td>
-                                        <td className="px-4 py-3 text-right font-medium text-slate-900">
-                                            {formatCurrency(artikel.preis)} <span className="text-xs font-normal text-slate-400">/ {typeof artikel.verrechnungseinheit === 'object' && artikel.verrechnungseinheit !== null ? (artikel.verrechnungseinheit as { name: string; anzeigename?: string }).anzeigename || (artikel.verrechnungseinheit as { name: string; anzeigename?: string }).name : artikel.verrechnungseinheit}</span>
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-slate-500 text-xs">{formatDate(artikel.preisDatum)}</td>
-                                        <td className="px-4 py-3 text-center">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); openEdit(artikel); }}
-                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                                                title="Preis bearbeiten"
-                                            >
-                                                <Edit2 className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {artikelList.map((artikel) => {
+                                    const einheit = einheitKuerzel(artikel.verrechnungseinheit);
+                                    const anzahl = artikel.anzahlLieferanten ?? artikel.lieferantenpreise?.length ?? 0;
+                                    return (
+                                        <tr
+                                            key={artikel.id}
+                                            className="hover:bg-rose-50/50 cursor-pointer transition-colors"
+                                            onClick={() => openDetail(artikel)}
+                                            role="button"
+                                            tabIndex={0}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    openDetail(artikel);
+                                                }
+                                            }}
+                                            title="Details, Lieferantenpreise und Historie anzeigen"
+                                        >
+                                            <td className="px-4 py-3 text-slate-600">{artikel.produktlinie || '—'}</td>
+                                            <td className="px-4 py-3 font-medium text-slate-900">{artikel.produktname}</td>
+                                            <td className="px-4 py-3 text-slate-500 truncate max-w-[220px]" title={artikel.produkttext}>{artikel.produkttext || '—'}</td>
+                                            <td className="px-4 py-3 text-center text-slate-600">{artikel.verpackungseinheit || '—'}</td>
+                                            <td className="px-4 py-3 text-slate-600">{artikel.werkstoffName || '—'}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={cn(
+                                                    "inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-full text-xs font-semibold",
+                                                    anzahl === 0 ? "bg-slate-100 text-slate-500" : "bg-rose-100 text-rose-800"
+                                                )}>
+                                                    {anzahl}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-slate-600">{formatKg(artikel.kgProMeter)}</td>
+                                            <td className="px-4 py-3 text-right">
+                                                {artikel.durchschnittspreisNetto !== undefined && artikel.durchschnittspreisNetto !== null ? (
+                                                    <span className="inline-flex items-baseline gap-1">
+                                                        <TrendingUp className="w-3 h-3 text-rose-500 self-center" />
+                                                        <span className="font-semibold text-slate-900">{formatCurrency(artikel.durchschnittspreisNetto)}</span>
+                                                        {einheit && <span className="text-xs font-normal text-slate-400">/ {einheit}</span>}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-400 italic text-xs">noch kein Ø</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-slate-500 text-xs">{formatDateTime(artikel.durchschnittspreisAktualisiertAm)}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -423,6 +448,14 @@ export default function ArtikelEditor() {
                 <CreateArticleModal
                     onClose={() => setShowCreateModal(false)}
                     onSave={() => { loadArtikel(); setShowCreateModal(false); }}
+                />
+            )}
+            {detailArtikel && (
+                <ArtikelDetailModal
+                    artikel={detailArtikel}
+                    highlightLieferantName={filters.lieferant || undefined}
+                    onClose={() => setDetailArtikel(null)}
+                    onEditPrice={openEditFromDetail}
                 />
             )}
             {editingArticle && (

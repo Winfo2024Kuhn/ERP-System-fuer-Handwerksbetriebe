@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Date;
 
@@ -27,6 +28,10 @@ public class ArtikelResponseDto {
     private Long lieferantId;
     private String lieferantenname;
     private List<LieferantPreisDto> lieferantenpreise;
+    private int anzahlLieferanten;
+    private BigDecimal durchschnittspreisNetto;
+    private BigDecimal durchschnittspreisMenge;
+    private LocalDateTime durchschnittspreisAktualisiertAm;
     private Long kategorieId;
     private String kategoriePfad;
     private Long parentKategorieId;

@@ -3,11 +3,14 @@ package org.example.kalkulationsprogramm.controller;
 import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelPreisHistorie;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
+import org.example.kalkulationsprogramm.repository.ArtikelPreisHistorieRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
@@ -56,6 +59,9 @@ class ArtikelControllerTest {
 
     @MockBean
     private KategorieService kategorieService;
+
+    @MockBean
+    private ArtikelPreisHistorieRepository artikelPreisHistorieRepository;
 
     @BeforeEach
     void setUp() {
@@ -181,6 +187,94 @@ class ArtikelControllerTest {
                 .andExpect(jsonPath("$", hasSize(2)))
                 .andExpect(jsonPath("$[0]").value("DIN A"))
                 .andExpect(jsonPath("$[1]").value("din B"));
+    }
+
+    @Test
+    void aggregatesMultipleSuppliersIntoOneRowWithAveragePrice() throws Exception {
+        Artikel artikel = new Artikel();
+        artikel.setId(10L);
+        artikel.setProduktname("Rohr 40x40x2");
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.KILOGRAMM);
+        artikel.setDurchschnittspreisNetto(new java.math.BigDecimal("4.8250"));
+        artikel.setDurchschnittspreisMenge(new java.math.BigDecimal("1245.000"));
+        artikel.setDurchschnittspreisAktualisiertAm(java.time.LocalDateTime.of(2026, 4, 21, 10, 0));
+
+        Lieferanten a = new Lieferanten();
+        a.setId(1L);
+        a.setLieferantenname("Stahl GmbH");
+        Lieferanten b = new Lieferanten();
+        b.setId(2L);
+        b.setLieferantenname("Metall AG");
+
+        LieferantenArtikelPreise p1 = new LieferantenArtikelPreise();
+        p1.setArtikel(artikel);
+        p1.setLieferant(a);
+        p1.setPreis(new java.math.BigDecimal("5.20"));
+        p1.setExterneArtikelnummer("A-1");
+        p1.setPreisAenderungsdatum(new java.util.Date());
+        LieferantenArtikelPreise p2 = new LieferantenArtikelPreise();
+        p2.setArtikel(artikel);
+        p2.setLieferant(b);
+        p2.setPreis(new java.math.BigDecimal("4.90"));
+        p2.setExterneArtikelnummer("B-1");
+        p2.setPreisAenderungsdatum(new java.util.Date());
+        artikel.getArtikelpreis().add(p1);
+        artikel.getArtikelpreis().add(p2);
+
+        mockArtikelSuche(List.of(artikel));
+
+        mockMvc.perform(get("/api/artikel"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.artikel", hasSize(1)))
+                .andExpect(jsonPath("$.artikel[0].anzahlLieferanten").value(2))
+                .andExpect(jsonPath("$.artikel[0].lieferantenpreise", hasSize(2)))
+                .andExpect(jsonPath("$.artikel[0].durchschnittspreisNetto").value(4.8250))
+                .andExpect(jsonPath("$.artikel[0].durchschnittspreisMenge").value(1245.000))
+                .andExpect(jsonPath("$.artikel[0].lieferantenname").value("Metall AG"));
+    }
+
+    @Test
+    void returnsPriceHistoryForArticle() throws Exception {
+        Artikel artikel = new Artikel();
+        artikel.setId(42L);
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(7L);
+        lieferant.setLieferantenname("Metall AG");
+
+        ArtikelPreisHistorie eintrag = new ArtikelPreisHistorie();
+        eintrag.setId(100L);
+        eintrag.setArtikel(artikel);
+        eintrag.setLieferant(lieferant);
+        eintrag.setPreis(new java.math.BigDecimal("4.9000"));
+        eintrag.setMenge(new java.math.BigDecimal("500.000"));
+        eintrag.setEinheit(Verrechnungseinheit.KILOGRAMM);
+        eintrag.setQuelle(PreisQuelle.RECHNUNG);
+        eintrag.setExterneNummer("B-1");
+        eintrag.setBelegReferenz("RE-2026-0042");
+        eintrag.setErfasstAm(java.time.LocalDateTime.of(2026, 4, 20, 12, 0));
+
+        when(artikelPreisHistorieRepository.findByArtikel_IdOrderByErfasstAmDesc(42L))
+                .thenReturn(List.of(eintrag));
+
+        mockMvc.perform(get("/api/artikel/42/preis-historie"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].preis").value(4.9000))
+                .andExpect(jsonPath("$[0].menge").value(500.000))
+                .andExpect(jsonPath("$[0].einheit.name").value("KILOGRAMM"))
+                .andExpect(jsonPath("$[0].quelle").value("RECHNUNG"))
+                .andExpect(jsonPath("$[0].lieferantName").value("Metall AG"))
+                .andExpect(jsonPath("$[0].belegReferenz").value("RE-2026-0042"));
+    }
+
+    @Test
+    void returnsEmptyPriceHistoryForUnknownArticle() throws Exception {
+        when(artikelPreisHistorieRepository.findByArtikel_IdOrderByErfasstAmDesc(999L))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/api/artikel/999/preis-historie"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
     }
 
     private void mockArtikelSuche(List<Artikel> artikel) {
