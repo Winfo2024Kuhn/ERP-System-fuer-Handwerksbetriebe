@@ -1,14 +1,14 @@
 {
-  "total_views": 407,
-  "total_unique_visitors": 20,
-  "total_clones": 4177,
-  "total_unique_cloners": 598,
-  "last_view_timestamp": "2026-04-19T00:00:00Z",
-  "last_clone_timestamp": "2026-04-19T00:00:00Z",
+  "total_views": 414,
+  "total_unique_visitors": 21,
+  "total_clones": 5411,
+  "total_unique_cloners": 699,
+  "last_view_timestamp": "2026-04-20T00:00:00Z",
+  "last_clone_timestamp": "2026-04-20T00:00:00Z",
   "referring_sites": [
     {
       "referrer": "github.com",
-      "count": 144,
+      "count": 151,
       "uniques": 3
     },
     {
@@ -31,19 +31,19 @@
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe",
       "title": "Overview",
-      "count": 81,
+      "count": 84,
       "uniques": 5
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/pulse",
       "title": "/pulse",
-      "count": 27,
+      "count": 28,
       "uniques": 3
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/graphs/traffic",
       "title": "/graphs/traffic",
-      "count": 23,
+      "count": 25,
       "uniques": 1
     },
     {
@@ -92,6 +92,6 @@
   "stars": 7,
   "forks": 0,
   "watchers": 2,
-  "open_issues": 20,
-  "updated_at": "2026-04-21T03:05:38Z"
+  "open_issues": 21,
+  "updated_at": "2026-04-22T03:06:05Z"
 }
