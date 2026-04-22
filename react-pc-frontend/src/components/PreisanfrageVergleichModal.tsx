@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 import { cn } from '../lib/utils';
+import DocumentPreviewModal, { type PreviewDoc } from './DocumentPreviewModal';
 
 /**
  * Matrix-Ansicht: Positionen einer Preisanfrage in Zeilen, Lieferanten in Spalten.
@@ -77,6 +78,7 @@ export function PreisanfrageVergleichModal({
     const [fehler, setFehler] = useState<string | null>(null);
     const [vergebend, setVergebend] = useState<number | null>(null);
     const [extrahierend, setExtrahierend] = useState(false);
+    const [pdfPreview, setPdfPreview] = useState<PreviewDoc | null>(null);
 
     const load = useCallback(async () => {
         if (preisanfrageId == null) return;
@@ -146,7 +148,7 @@ export function PreisanfrageVergleichModal({
             title: 'Auftrag vergeben?',
             message:
                 `Soll der Auftrag an ${name} vergeben werden? ` +
-                'Die zugehörigen Bedarfspositionen werden auf diesen Lieferanten umgeroutet und bekommen die Angebotspreise.',
+                'Es wird eine Bestellung angelegt — die PDF-Vorschau öffnet sich direkt danach.',
             confirmLabel: 'Auftrag vergeben',
             cancelLabel: 'Abbrechen',
             variant: 'info',
@@ -162,9 +164,16 @@ export function PreisanfrageVergleichModal({
                 const reason = res.headers.get('X-Error-Reason') ?? `HTTP ${res.status}`;
                 throw new Error(reason);
             }
-            toast.success(`Auftrag an ${name} vergeben.`);
+            toast.success(`Auftrag an ${name} vergeben — Bestellung wurde angelegt.`);
             onVergeben?.();
-            onClose();
+            if (sp.lieferantId != null) {
+                setPdfPreview({
+                    url: `/api/bestellungen/lieferant/${sp.lieferantId}/pdf`,
+                    title: `Bestellung für ${name}`,
+                });
+            } else {
+                onClose();
+            }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Unbekannter Fehler';
             toast.error(`Vergabe fehlgeschlagen: ${msg}`);
@@ -193,6 +202,18 @@ export function PreisanfrageVergleichModal({
     if (!open) return null;
 
     const titel = data?.nummer ?? nummerHint ?? '';
+
+    if (pdfPreview) {
+        return (
+            <DocumentPreviewModal
+                doc={pdfPreview}
+                onClose={() => {
+                    setPdfPreview(null);
+                    onClose();
+                }}
+            />
+        );
+    }
 
     return (
         <div

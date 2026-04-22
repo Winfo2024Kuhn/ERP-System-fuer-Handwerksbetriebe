@@ -588,6 +588,8 @@ export interface ProjektEmail {
   replies?: ProjektEmail[];// Thread: Antworten
 }
 
+export type AipQuelle = 'OFFEN' | 'BESTELLT' | 'AUS_LAGER';
+
 export interface ArtikelInProjekt {
   id: number;
   artikelId: number;
@@ -601,8 +603,10 @@ export interface ArtikelInProjekt {
   kilogramm?: number;
   einzelpreis?: number;
   gesamtpreis?: number;
+  // Nur bei quelle=AUS_LAGER gesetzt (gleitender Durchschnittspreis).
+  // Bei OFFEN/BESTELLT null — Preis kommt später über Eingangsrechnung.
   preisProStueck?: number;
-  lieferantName?: string;
+  quelle?: AipQuelle;
 }
 
 export interface ProjektDetail extends Projekt {

@@ -1436,23 +1436,40 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </div>
 
                     <div className="space-y-3">
-                        <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Artikel aus Lager</h4>
+                        <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Material im Projekt</h4>
                         {projekt.artikel && projekt.artikel.length > 0 ? (
-                            projekt.artikel.map((a) => (
-                                <div key={a.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-100">
-                                    <div>
-                                        <p className="font-medium text-slate-900">{a.produktname || a.beschreibung || 'Artikel'}</p>
-                                        <p className="text-xs text-slate-500 mt-0.5">
-                                            {a.externeArtikelnummer ? `Nr. ${a.externeArtikelnummer} · ` : ''}
-                                            {a.lieferantName ? `${a.lieferantName} · ` : ''}
-                                            {a.stueckzahl ? `${a.stueckzahl} Stück` : a.meter ? `${a.meter} m` : a.kilogramm ? `${a.kilogramm} kg` : '-'}
-                                        </p>
+                            projekt.artikel.map((a) => {
+                                const quelleLabel = a.quelle === 'AUS_LAGER'
+                                    ? { text: 'Aus Lager', cls: 'bg-emerald-100 text-emerald-700' }
+                                    : a.quelle === 'BESTELLT'
+                                        ? { text: 'Bestellt', cls: 'bg-sky-100 text-sky-700' }
+                                        : { text: 'Bedarf offen', cls: 'bg-amber-100 text-amber-700' };
+                                const hatPreis = a.quelle === 'AUS_LAGER' && a.preisProStueck != null;
+                                const menge = a.stueckzahl ? `${a.stueckzahl} Stück` : a.meter ? `${a.meter} m` : a.kilogramm ? `${a.kilogramm} kg` : '-';
+                                return (
+                                    <div key={a.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-100">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <p className="font-medium text-slate-900 truncate">{a.produktname || a.beschreibung || 'Artikel'}</p>
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quelleLabel.cls}`}>
+                                                    {quelleLabel.text}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                {a.externeArtikelnummer ? `Nr. ${a.externeArtikelnummer} · ` : ''}
+                                                {menge}
+                                            </p>
+                                        </div>
+                                        {hatPreis ? (
+                                            <p className="font-semibold text-slate-900">{formatCurrency(a.preisProStueck)}</p>
+                                        ) : (
+                                            <p className="text-xs text-slate-400 italic">wird über Rechnung nachkalkuliert</p>
+                                        )}
                                     </div>
-                                    <p className="font-semibold text-slate-900">{formatCurrency(a.preisProStueck ?? a.gesamtpreis ?? 0)}</p>
-                                </div>
-                            ))
+                                );
+                            })
                         ) : (
-                            <p className="text-slate-500 text-center py-4">Keine Artikel aus dem Lager im Projekt.</p>
+                            <p className="text-slate-500 text-center py-4">Kein Material im Projekt erfasst.</p>
                         )}
                     </div>
 

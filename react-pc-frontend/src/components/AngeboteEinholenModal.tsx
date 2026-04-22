@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, Loader2, Plus, Scale, Send, Truck, X } from 'lucide-react';
+import { Briefcase, FileText, Loader2, Plus, Scale, Send, Truck, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { DatePicker } from './ui/datepicker';
 import { useToast } from './ui/toast';
 import { cn } from '../lib/utils';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
 import { ProjektSearchModal } from './ProjektSearchModal';
+import DocumentPreviewModal, { type PreviewDoc } from './DocumentPreviewModal';
 
 /**
  * Schlankes Interface fuer eine Bedarfsposition, die als Position einer
@@ -79,6 +80,11 @@ export function AngeboteEinholenModal({
     const [lieferantSuchOpen, setLieferantSuchOpen] = useState(false);
     const [projektSuchOpen, setProjektSuchOpen] = useState(false);
 
+    // Entwurf-ID (gesetzt nach PDF-Vorschau) — dann reicht beim Versenden der reine /versenden-Call
+    const [draftPreisanfrageId, setDraftPreisanfrageId] = useState<number | null>(null);
+    const [vorschauLaedt, setVorschauLaedt] = useState(false);
+    const [pdfPreview, setPdfPreview] = useState<PreviewDoc | null>(null);
+
     const arbeitsPositionen: BedarfPosition[] = useMemo(() => {
         if (vorausgewaehltePositionen && vorausgewaehltePositionen.length > 0) {
             return vorausgewaehltePositionen;
@@ -96,6 +102,8 @@ export function AngeboteEinholenModal({
         setEmpfaengerMap(new Map());
         setLieferantSuchOpen(false);
         setProjektSuchOpen(false);
+        setDraftPreisanfrageId(null);
+        setPdfPreview(null);
 
         const vorschlag = vorschlagBauvorhaben
             ?? firstProjektName(vorausgewaehltePositionen)
@@ -129,6 +137,15 @@ export function AngeboteEinholenModal({
             })
             .finally(() => setPositionenLoading(false));
     }, [open, vorausgewaehltePositionen, vorschlagBauvorhaben]);
+
+    // Sobald versandrelevante Eingaben nach einer Vorschau geändert werden,
+    // verwerfen wir den Entwurf — sonst würde beim "Anfrage versenden" die alte
+    // Version gesendet. Der alte Entwurf bleibt im System und kann später gelöscht
+    // oder versendet werden.
+    useEffect(() => {
+        if (!open) return;
+        setDraftPreisanfrageId(null);
+    }, [open, bauvorhaben, projektId, notiz, antwortFrist, selectedPositionIds, gewaehlteLieferanten, empfaengerMap]);
 
     const togglePosition = useCallback((id: number) => {
         setSelectedPositionIds(prev => {
@@ -180,14 +197,13 @@ export function AngeboteEinholenModal({
 
     const canSubmit = (
         !submitting
+        && !vorschauLaedt
         && selectedPositionIds.size > 0
         && gewaehlteLieferanten.length > 0
         && antwortFrist.trim().length > 0
     );
 
-    const handleSubmit = async () => {
-        if (!canSubmit) return;
-
+    const buildPayload = useCallback(() => {
         const positionen = arbeitsPositionen
             .filter(p => selectedPositionIds.has(p.id))
             .map((p, idx) => ({
@@ -214,7 +230,7 @@ export function AngeboteEinholenModal({
 
         const effektiveProjektId = projektId ?? firstProjektIdAusAuswahl(arbeitsPositionen, selectedPositionIds);
 
-        const payload = {
+        return {
             projektId: effektiveProjektId,
             bauvorhaben: bauvorhaben.trim() || null,
             antwortFrist,
@@ -223,21 +239,62 @@ export function AngeboteEinholenModal({
             empfaengerProLieferant,
             positionen,
         };
+    }, [arbeitsPositionen, selectedPositionIds, gewaehlteLieferanten, empfaengerMap, projektId, bauvorhaben, antwortFrist, notiz]);
+
+    const handleVorschau = async () => {
+        if (!canSubmit) return;
+        setVorschauLaedt(true);
+        try {
+            const res = await fetch('/api/preisanfragen', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(buildPayload()),
+            });
+            if (!res.ok) {
+                const reason = res.headers.get('X-Error-Reason') ?? `HTTP ${res.status}`;
+                throw new Error(reason);
+            }
+            const created: { id: number; lieferanten?: Array<{ id: number }> } = await res.json();
+            const ersterPalId = created.lieferanten?.[0]?.id;
+            if (!ersterPalId) {
+                throw new Error('Keine Lieferanten in der angelegten Anfrage.');
+            }
+            setDraftPreisanfrageId(created.id);
+            setPdfPreview({
+                url: `/api/preisanfragen/lieferant/${ersterPalId}/pdf`,
+                title: 'PDF-Vorschau Preisanfrage',
+            });
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Unbekannter Fehler';
+            toast.error(`Vorschau konnte nicht erzeugt werden: ${msg}`);
+        } finally {
+            setVorschauLaedt(false);
+        }
+    };
+
+    const handleSubmit = async () => {
+        if (!canSubmit) return;
+        const lieferantIds = gewaehlteLieferanten.map(l => l.id);
 
         setSubmitting(true);
         try {
-            const createRes = await fetch('/api/preisanfragen', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!createRes.ok) {
-                const reason = createRes.headers.get('X-Error-Reason') ?? `HTTP ${createRes.status}`;
-                throw new Error(reason);
-            }
-            const created: { id: number } = await createRes.json();
+            let preisanfrageId = draftPreisanfrageId;
 
-            const sendRes = await fetch(`/api/preisanfragen/${created.id}/versenden`, {
+            if (preisanfrageId == null) {
+                const createRes = await fetch('/api/preisanfragen', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(buildPayload()),
+                });
+                if (!createRes.ok) {
+                    const reason = createRes.headers.get('X-Error-Reason') ?? `HTTP ${createRes.status}`;
+                    throw new Error(reason);
+                }
+                const created: { id: number } = await createRes.json();
+                preisanfrageId = created.id;
+            }
+
+            const sendRes = await fetch(`/api/preisanfragen/${preisanfrageId}/versenden`, {
                 method: 'POST',
             });
             if (!sendRes.ok) {
@@ -246,7 +303,7 @@ export function AngeboteEinholenModal({
             }
 
             toast.success(`Preisanfrage an ${lieferantIds.length} Lieferant${lieferantIds.length === 1 ? '' : 'en'} versendet.`);
-            onVersendet?.(created.id);
+            onVersendet?.(preisanfrageId);
             onClose();
             navigate('/einkauf/preisanfragen');
         } catch (err: unknown) {
@@ -417,8 +474,22 @@ export function AngeboteEinholenModal({
                         Pro Lieferant wird automatisch eine E-Mail mit eigenem PDF und Rückmelde-Code versendet.
                     </p>
                     <div className="flex items-center gap-2">
-                        <Button variant="ghost" onClick={onClose} disabled={submitting}>
+                        <Button variant="ghost" onClick={onClose} disabled={submitting || vorschauLaedt}>
                             Abbrechen
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleVorschau}
+                            disabled={!canSubmit}
+                            title="Zeigt, wie das PDF für den Lieferanten aussehen wird — es wird noch nichts versendet."
+                        >
+                            {vorschauLaedt ? (
+                                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            ) : (
+                                <FileText className="w-4 h-4 mr-1" />
+                            )}
+                            {vorschauLaedt ? 'Vorschau wird erzeugt…' : 'PDF-Vorschau'}
                         </Button>
                         <Button
                             onClick={handleSubmit}
@@ -448,6 +519,12 @@ export function AngeboteEinholenModal({
                 onSelect={projektUebernehmen}
                 currentProjektId={projektId ?? undefined}
             />
+            {pdfPreview && (
+                <DocumentPreviewModal
+                    doc={pdfPreview}
+                    onClose={() => setPdfPreview(null)}
+                />
+            )}
         </div>
     );
 }

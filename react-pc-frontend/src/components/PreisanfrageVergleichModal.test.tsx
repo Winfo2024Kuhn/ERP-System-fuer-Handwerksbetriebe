@@ -158,15 +158,22 @@ describe('PreisanfrageVergleichModal', () => {
         const confirmBtn = await screen.findByRole('button', { name: /auftrag vergeben/i });
         await user.click(confirmBtn);
 
+        // Nach der Vergabe erscheint die PDF-Vorschau des neu angelegten Auftrags;
+        // onClose kommt erst, wenn der Nutzer die Vorschau schließt.
         await waitFor(() => {
             expect(onVergeben).toHaveBeenCalledTimes(1);
-            expect(onClose).toHaveBeenCalledTimes(1);
+            expect(screen.getByText(/Bestellung für Stahl A/)).toBeInTheDocument();
         });
+        expect(onClose).not.toHaveBeenCalled();
 
         const vergabeCall = mockFetch.mock.calls.find(
             c => String(c[0]).includes('/vergeben/'),
         );
         expect(vergabeCall?.[0]).toContain('/api/preisanfragen/1/vergeben/10');
+
+        // Vorschau per Escape schließen → onClose wird nachgezogen
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     });
 
     it('KI-Preise auslesen triggert POST /angebote/extrahieren und laedt neu', async () => {
