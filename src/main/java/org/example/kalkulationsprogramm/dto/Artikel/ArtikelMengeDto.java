@@ -13,12 +13,12 @@ public class ArtikelMengeDto {
     private String kommentar;
     private Long lieferantId;
     private java.math.BigDecimal preis;
-    // Optional: fuer Profile (Kategorie 1 und Unterkategorien)
+    // Optional: fuer Profile (Kategorie 64/65 und Unterkategorien)
     // Erlaubt Fixzuschnitt-Laenge pro Stueck in Metern und eine Stueckzahl anzugeben
     private java.math.BigDecimal laengeProStueck;
     private Integer stueckzahl;
-    // Zuschnitt-Details (optional)
-    private String schnittForm;
-    private String anschnittWinkelLinks;
-    private String anschnittWinkelRechts;
+    // Zuschnitt-Details (optional, Issue #52): ein Schnittbild + zwei Winkel
+    private Long schnittbildId;
+    private Double anschnittWinkelLinks;
+    private Double anschnittWinkelRechts;
 }

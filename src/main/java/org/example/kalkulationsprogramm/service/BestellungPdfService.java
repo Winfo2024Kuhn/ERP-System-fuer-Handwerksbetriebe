@@ -109,9 +109,9 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
                     table.addCell(makeCell(b.getExterneArtikelnummer(), cellFont, bg));
                     table.addCell(makeCell(b.getProduktname(), cellFont, bg));
                     table.addCell(makeCell(b.getProdukttext(), cellFont, bg));
-                    table.addCell(makeCutCell(b.getSchnittForm(), cellFont, bg));
-                    table.addCell(makeCell(b.getAnschnittWinkelLinks(), cellFont, bg));
-                    table.addCell(makeCell(b.getAnschnittWinkelRechts(), cellFont, bg));
+                    table.addCell(makeCutCell(b.getSchnittbildForm(), cellFont, bg));
+                    table.addCell(makeCell(formatWinkel(b.getAnschnittWinkelLinks()), cellFont, bg));
+                    table.addCell(makeCell(formatWinkel(b.getAnschnittWinkelRechts()), cellFont, bg));
                     table.addCell(makeCell(b.getKommentar(), cellFont, bg));
                     table.addCell(makeCell(b.getWerkstoffName(), cellFont, bg));
                     table.addCell(makeCell(b.getKategorieName(), cellFont, bg));
@@ -218,9 +218,9 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
                     table.addCell(makeCell(b.getExterneArtikelnummer(), cellFont, bg));
                     table.addCell(makeCell(b.getProduktname(), cellFont, bg));
                     table.addCell(makeCell(b.getProdukttext(), cellFont, bg));
-                    table.addCell(makeCutCell(b.getSchnittForm(), cellFont, bg));
-                    table.addCell(makeCell(b.getAnschnittWinkelLinks(), cellFont, bg));
-                    table.addCell(makeCell(b.getAnschnittWinkelRechts(), cellFont, bg));
+                    table.addCell(makeCutCell(b.getSchnittbildForm(), cellFont, bg));
+                    table.addCell(makeCell(formatWinkel(b.getAnschnittWinkelLinks()), cellFont, bg));
+                    table.addCell(makeCell(formatWinkel(b.getAnschnittWinkelRechts()), cellFont, bg));
                     table.addCell(makeCell(b.getWerkstoffName(), cellFont, bg));
                     table.addCell(makeCell(b.getKommentar(), cellFont, bg));
                     table.addCell(makeCell(formatMenge(b), cellFont, bg));
@@ -600,6 +600,12 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
                         doc.add(excP);
                     } catch (DocumentException ignored) {}
                 });
+    }
+
+    private String formatWinkel(Double winkel) {
+        if (winkel == null) return "";
+        if (winkel == winkel.intValue()) return String.valueOf(winkel.intValue()) + "°";
+        return String.format(java.util.Locale.GERMANY, "%.2f°", winkel);
     }
 
     private PdfPCell makeCutCell(String form, Font font, Color bg) {

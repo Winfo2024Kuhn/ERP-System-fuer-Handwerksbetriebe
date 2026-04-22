@@ -42,6 +42,7 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,6 +107,8 @@ class ProjektManagementServiceTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
+    @Mock
+    private SchnittbilderRepository schnittbilderRepository;
 
     private ProjektManagementService service;
 
@@ -120,7 +123,7 @@ class ProjektManagementServiceTest {
                 arbeitsgangRepository, kundeRepository, dateiSpeicherService, projektMapper,
                 anfrageRepository, ZeitbuchungRepository, stundensatzRepository,
                 artikelRepository, artikelInProjektRepository, projektPersistenceService,
-                lieferantenRepository, emailRepository, eventPublisher);
+                lieferantenRepository, emailRepository, schnittbilderRepository, eventPublisher);
         service.setAusgangsGeschaeftsDokumentService(ausgangsGeschaeftsDokumentService);
     }
 

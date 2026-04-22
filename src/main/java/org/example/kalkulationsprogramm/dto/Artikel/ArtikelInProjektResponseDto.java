@@ -24,7 +24,11 @@ public class ArtikelInProjektResponseDto {
     private String kommentar;
     private String lieferantName;
     private String werkstoffName;
-    private String schnittForm;
-    private String anschnittWinkelLinks;
-    private String anschnittWinkelRechts;
+    // Schnittbild (Issue #52): ein gemeinsames Bild fuer links + rechts,
+    // aber jeweils eigener Anschnittwinkel.
+    private Long schnittbildId;
+    private String schnittbildForm;
+    private String schnittbildBildUrl;
+    private Double anschnittWinkelLinks;
+    private Double anschnittWinkelRechts;
 }

@@ -246,8 +246,8 @@ public class HicadImportService {
             aip.setStueckzahl(z.getAnzahl());
             // Fixzuschnitt: Länge in mm gehört in fixmassMm — nicht in Kommentar.
             aip.setFixmassMm(z.getLaengeMm());
-            aip.setAnschnittWinkelLinks(z.getAnschnittSteg());
-            aip.setAnschnittWinkelRechts(z.getAnschnittFlansch());
+            aip.setAnschnittWinkelLinks(parseWinkel(z.getAnschnittSteg()));
+            aip.setAnschnittWinkelRechts(parseWinkel(z.getAnschnittFlansch()));
             aip.setKilogramm(z.getGesamtGewichtKg());
             aip.setKommentar(kommentar(kommentarPrefix,
                     "Pos " + (z.getPosNr() != null ? z.getPosNr() : "-")));
@@ -334,5 +334,18 @@ public class HicadImportService {
     private String kommentar(String prefix, String body) {
         String p = prefix != null && !prefix.isBlank() ? prefix.trim() + " · " : "";
         return p + body;
+    }
+
+    /**
+     * Parst einen Winkel aus der Saegeliste (Excel liefert Strings, teils mit Komma).
+     * Leere/nicht numerische Eingabe -> null.
+     */
+    private Double parseWinkel(String s) {
+        if (s == null || s.isBlank()) return null;
+        try {
+            return Double.parseDouble(s.trim().replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

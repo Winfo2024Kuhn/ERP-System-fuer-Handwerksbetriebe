@@ -156,7 +156,7 @@ public class BestellauftragService {
         bp.setStueckzahl(aip.getStueckzahl());
         bp.setPreisProEinheit(aip.getPreisProStueck());
         bp.setKilogramm(aip.getKilogramm());
-        bp.setSchnittForm(aip.getSchnittForm());
+        bp.setSchnittbild(aip.getSchnittbild());
         bp.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
         bp.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
         bp.setFixmassMm(aip.getFixmassMm());

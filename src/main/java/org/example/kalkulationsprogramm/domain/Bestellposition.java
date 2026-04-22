@@ -87,14 +87,15 @@ public class Bestellposition {
     private BigDecimal kilogramm;
 
     // ───── Fertigungsdetails ──────────────────────────────────────
-    @Column(name = "schnitt_form", length = 255)
-    private String schnittForm;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schnittbild_id")
+    private Schnittbilder schnittbild;
 
-    @Column(name = "anschnitt_winkel_links", length = 50)
-    private String anschnittWinkelLinks;
+    @Column(name = "anschnitt_winkel_links", columnDefinition = "DECIMAL(5,2)")
+    private Double anschnittWinkelLinks;
 
-    @Column(name = "anschnitt_winkel_rechts", length = 50)
-    private String anschnittWinkelRechts;
+    @Column(name = "anschnitt_winkel_rechts", columnDefinition = "DECIMAL(5,2)")
+    private Double anschnittWinkelRechts;
 
     @Column(name = "fixmass_mm")
     private Integer fixmassMm;

@@ -129,9 +129,9 @@ public class StuecklistePdfService {
                             table.addCell(makeCell(calcMmPerStueck(aip), cellFont, bg));
                             String gesamtM = aip.getMeter() != null ? stripZeros(aip.getMeter()) : "";
                             table.addCell(makeCell(gesamtM, cellFont, bg));
-                            table.addCell(makeCutCell(aip.getSchnittForm(), cellFont, bg));
-                            table.addCell(makeCell(nvl(aip.getAnschnittWinkelLinks()), cellFont, bg));
-                            table.addCell(makeCell(nvl(aip.getAnschnittWinkelRechts()), cellFont, bg));
+                            table.addCell(makeCutCell(aip.getSchnittbild() != null ? aip.getSchnittbild().getForm() : null, cellFont, bg));
+                            table.addCell(makeCell(formatWinkel(aip.getAnschnittWinkelLinks()), cellFont, bg));
+                            table.addCell(makeCell(formatWinkel(aip.getAnschnittWinkelRechts()), cellFont, bg));
                             table.addCell(makeCell(nvl(aip.getKommentar()), cellFont, bg));
                             table.addCell(makeCheckboxCell(cellFont, bg));
                             table.addCell(makeCheckboxCell(cellFont, bg));
@@ -202,9 +202,9 @@ public class StuecklistePdfService {
                             String katName = a.getKategorie() != null ? nvl(a.getKategorie().getBeschreibung()) : "";
                             table.addCell(makeCell(katName, cellFont, bg));
                             table.addCell(makeCell(formatMengeAllgemein(aip), cellFont, bg));
-                            table.addCell(makeCutCell(aip.getSchnittForm(), cellFont, bg));
-                            table.addCell(makeCell(nvl(aip.getAnschnittWinkelLinks()), cellFont, bg));
-                            table.addCell(makeCell(nvl(aip.getAnschnittWinkelRechts()), cellFont, bg));
+                            table.addCell(makeCutCell(aip.getSchnittbild() != null ? aip.getSchnittbild().getForm() : null, cellFont, bg));
+                            table.addCell(makeCell(formatWinkel(aip.getAnschnittWinkelLinks()), cellFont, bg));
+                            table.addCell(makeCell(formatWinkel(aip.getAnschnittWinkelRechts()), cellFont, bg));
                             table.addCell(makeCell(nvl(aip.getKommentar()), cellFont, bg));
                             table.addCell(makeCheckboxCell(cellFont, bg));
                             table.addCell(makeCheckboxCell(cellFont, bg));
@@ -265,6 +265,12 @@ public class StuecklistePdfService {
     }
 
     private String nvl(String s) { return s == null ? "" : s; }
+
+    private String formatWinkel(Double winkel) {
+        if (winkel == null) return "";
+        if (winkel == winkel.intValue()) return String.valueOf(winkel.intValue()) + "°";
+        return String.format(java.util.Locale.GERMANY, "%.2f°", winkel);
+    }
 
     private String stripZeros(BigDecimal v) {
         if (v == null) return "";

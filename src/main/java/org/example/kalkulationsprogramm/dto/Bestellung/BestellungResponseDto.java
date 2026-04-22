@@ -36,9 +36,12 @@ public class BestellungResponseDto {
     private java.math.BigDecimal gesamtKilogramm;
     /** Fixmaß pro Stück in Millimetern (optional). */
     private Integer fixmassMm;
-    private String schnittForm;
-    private String anschnittWinkelLinks;
-    private String anschnittWinkelRechts;
+    // Schnittbild (Issue #52): ein gemeinsames Bild, zwei Winkel (Grad, Double)
+    private Long schnittbildId;
+    private String schnittbildForm;
+    private String schnittbildBildUrl;
+    private Double anschnittWinkelLinks;
+    private Double anschnittWinkelRechts;
     // EN 1090
     private String zeugnisAnforderung;
     private String excKlasse;

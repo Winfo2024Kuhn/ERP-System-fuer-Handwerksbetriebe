@@ -95,6 +95,7 @@ ProjektManagementService {
     private final ProjektPersistenceService projektPersistenceService;
     private final LieferantenRepository lieferantenRepository;
     private final EmailRepository emailRepository;
+    private final org.example.kalkulationsprogramm.repository.SchnittbilderRepository schnittbilderRepository;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @lombok.Setter(onMethod_ = @org.springframework.beans.factory.annotation.Autowired)
@@ -119,6 +120,7 @@ ProjektManagementService {
             ProjektPersistenceService projektPersistenceService,
             LieferantenRepository lieferantenRepository,
             EmailRepository emailRepository,
+            org.example.kalkulationsprogramm.repository.SchnittbilderRepository schnittbilderRepository,
             org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.projektRepository = projektRepository;
         this.anfrageNotizRepository = anfrageNotizRepository;
@@ -136,6 +138,7 @@ ProjektManagementService {
         this.projektPersistenceService = projektPersistenceService;
         this.lieferantenRepository = lieferantenRepository;
         this.emailRepository = emailRepository;
+        this.schnittbilderRepository = schnittbilderRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -871,14 +874,14 @@ ProjektManagementService {
                 aip.setKommentar(auswahl.getKommentar());
                 // Zuschnitt-Daten nur zulassen, wenn Wurzelkategorie 64/65
                 if (darfSchnittbildVerwenden(artikel)) {
-                    if (auswahl.getSchnittForm() != null)
-                        aip.setSchnittForm(auswahl.getSchnittForm());
+                    if (auswahl.getSchnittbildId() != null)
+                        aip.setSchnittbild(resolveSchnittbild(auswahl.getSchnittbildId()));
                     if (auswahl.getAnschnittWinkelLinks() != null)
                         aip.setAnschnittWinkelLinks(auswahl.getAnschnittWinkelLinks());
                     if (auswahl.getAnschnittWinkelRechts() != null)
                         aip.setAnschnittWinkelRechts(auswahl.getAnschnittWinkelRechts());
                 } else {
-                    aip.setSchnittForm(null);
+                    aip.setSchnittbild(null);
                     aip.setAnschnittWinkelLinks(null);
                     aip.setAnschnittWinkelRechts(null);
                 }
@@ -981,13 +984,13 @@ ProjektManagementService {
             throw new RuntimeException("Artikel gehört nicht zum Projekt.");
         }
 
-        boolean wantsCutData = (dto.getSchnittForm() != null) || (dto.getAnschnittWinkelLinks() != null)
+        boolean wantsCutData = (dto.getSchnittbildId() != null) || (dto.getAnschnittWinkelLinks() != null)
                 || (dto.getAnschnittWinkelRechts() != null);
         if (wantsCutData && !darfSchnittbildVerwenden(artikelInProjekt.getArtikel())) {
             throw new IllegalArgumentException("Schnittbilder sind nur fuer Kategorien 64/65 erlaubt.");
         }
-        if (dto.getSchnittForm() != null)
-            artikelInProjekt.setSchnittForm(dto.getSchnittForm());
+        if (dto.getSchnittbildId() != null)
+            artikelInProjekt.setSchnittbild(resolveSchnittbild(dto.getSchnittbildId()));
         if (dto.getAnschnittWinkelLinks() != null)
             artikelInProjekt.setAnschnittWinkelLinks(dto.getAnschnittWinkelLinks());
         if (dto.getAnschnittWinkelRechts() != null)
@@ -998,6 +1001,17 @@ ProjektManagementService {
         artikelInProjektRepository.save(artikelInProjekt);
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
+    }
+
+    /**
+     * Loest eine Schnittbild-ID auf die Entity auf. Null-In, Null-Out.
+     * Gueltigkeit (Wurzelkategorie 64/65 etc.) wird vom Controller beim
+     * Laden der Picker-Liste sichergestellt; hier reicht ein einfacher Lookup.
+     */
+    private org.example.kalkulationsprogramm.domain.Schnittbilder resolveSchnittbild(Long id) {
+        if (id == null) return null;
+        return schnittbilderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Schnittbild nicht gefunden: " + id));
     }
 
     private boolean darfSchnittbildVerwenden(Artikel artikel) {

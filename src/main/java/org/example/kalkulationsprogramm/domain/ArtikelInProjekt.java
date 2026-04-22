@@ -42,10 +42,17 @@ public class ArtikelInProjekt {
     @Column(nullable = false)
     private LocalDate hinzugefuegtAm;
 
-    String anschnittWinkelLinks;
-    String anschnittWinkelRechts;
-    String schnittForm;
-    String kommentar;
+    @Column(name = "anschnitt_winkel_links", columnDefinition = "DECIMAL(5,2)")
+    private Double anschnittWinkelLinks;
+
+    @Column(name = "anschnitt_winkel_rechts", columnDefinition = "DECIMAL(5,2)")
+    private Double anschnittWinkelRechts;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schnittbild_id")
+    private Schnittbilder schnittbild;
+
+    private String kommentar;
 
     // EN 1090: manuell gewähltes oder vorgeschlagenes Zeugnis pro Position
     @Enumerated(EnumType.STRING)

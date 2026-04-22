@@ -71,6 +71,17 @@ public class PreisanfragePosition {
     @Column(nullable = false)
     private Integer reihenfolge = 0;
 
+    // ───── Schnittbild + Anschnittwinkel (nur fuer Profile aus Werkstoffen) ─────
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schnittbild_id")
+    private Schnittbilder schnittbild;
+
+    @Column(name = "anschnitt_winkel_links", columnDefinition = "DECIMAL(5,2)")
+    private Double anschnittWinkelLinks;
+
+    @Column(name = "anschnitt_winkel_rechts", columnDefinition = "DECIMAL(5,2)")
+    private Double anschnittWinkelRechts;
+
     @OneToMany(mappedBy = "preisanfragePosition", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PreisanfrageAngebot> angebote = new ArrayList<>();
 }

@@ -6,9 +6,8 @@ import lombok.Setter;
 @Getter
 @Setter
 public class ArtikelInProjektUpdateDto {
-    private String schnittForm;
-    private String anschnittWinkelLinks;
-    private String anschnittWinkelRechts;
+    private Long schnittbildId;
+    private Double anschnittWinkelLinks;
+    private Double anschnittWinkelRechts;
     private String kommentar;
 }
-

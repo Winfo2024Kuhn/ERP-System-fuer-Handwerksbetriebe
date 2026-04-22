@@ -191,6 +191,10 @@ public class PreisanfrageService {
                         .orElseThrow(() -> new IllegalArgumentException(
                                 "Bedarfs-Position nicht gefunden: " + pdto.getArtikelInProjektId()));
                 pos.setArtikelInProjekt(aip);
+                // Schnittbild + Winkel aus AiP uebernehmen (lebende Wahrheit)
+                pos.setSchnittbild(aip.getSchnittbild());
+                pos.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
+                pos.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
             }
             pa.addPosition(pos);
         }

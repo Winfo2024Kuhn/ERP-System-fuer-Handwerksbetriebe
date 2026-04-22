@@ -86,6 +86,13 @@ public class PreisanfrageMapper {
         dto.setMenge(pos.getMenge());
         dto.setEinheit(pos.getEinheit());
         dto.setKommentar(pos.getKommentar());
+        if (pos.getSchnittbild() != null) {
+            dto.setSchnittbildId(pos.getSchnittbild().getId());
+            dto.setSchnittbildForm(pos.getSchnittbild().getForm());
+            dto.setSchnittbildBildUrl(pos.getSchnittbild().getBildUrlSchnittbild());
+        }
+        dto.setAnschnittWinkelLinks(pos.getAnschnittWinkelLinks());
+        dto.setAnschnittWinkelRechts(pos.getAnschnittWinkelRechts());
         return dto;
     }
 }

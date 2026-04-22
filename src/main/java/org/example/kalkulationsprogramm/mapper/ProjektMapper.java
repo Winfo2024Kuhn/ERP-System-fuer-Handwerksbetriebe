@@ -120,7 +120,11 @@ public class ProjektMapper {
                         aDto.setBestellt(bestellt);
                         aDto.setBestelltAm(null);
                         aDto.setKommentar(aip.getKommentar());
-                        aDto.setSchnittForm(aip.getSchnittForm());
+                        if (aip.getSchnittbild() != null) {
+                            aDto.setSchnittbildId(aip.getSchnittbild().getId());
+                            aDto.setSchnittbildForm(aip.getSchnittbild().getForm());
+                            aDto.setSchnittbildBildUrl(aip.getSchnittbild().getBildUrlSchnittbild());
+                        }
                         aDto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
                         aDto.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
                         return aDto;

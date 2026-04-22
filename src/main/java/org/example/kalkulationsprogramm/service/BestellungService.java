@@ -132,7 +132,11 @@ public class BestellungService {
         // liefert hier nur die Info "Zeile ist im Bestellvorgang".
         dto.setBestelltAm(null);
         dto.setExportiertAm(null);
-        dto.setSchnittForm(aip.getSchnittForm());
+        if (aip.getSchnittbild() != null) {
+            dto.setSchnittbildId(aip.getSchnittbild().getId());
+            dto.setSchnittbildForm(aip.getSchnittbild().getForm());
+            dto.setSchnittbildBildUrl(aip.getSchnittbild().getBildUrlSchnittbild());
+        }
         dto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
         dto.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
         // EN 1090: zeugnisAnforderung bleibt am Bedarf und wird in Anfrage/Bestellung kopiert.

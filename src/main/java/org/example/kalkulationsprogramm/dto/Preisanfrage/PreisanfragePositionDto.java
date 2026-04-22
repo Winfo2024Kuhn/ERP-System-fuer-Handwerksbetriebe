@@ -26,4 +26,11 @@ public class PreisanfragePositionDto {
     private BigDecimal menge;
     private String einheit;
     private String kommentar;
+
+    // Schnittbild + zwei Anschnittwinkel (Issue #52)
+    private Long schnittbildId;
+    private String schnittbildForm;
+    private String schnittbildBildUrl;
+    private Double anschnittWinkelLinks;
+    private Double anschnittWinkelRechts;
 }

@@ -27,4 +27,9 @@ public class PreisanfragePositionInputDto {
     private String einheit;
     private String kommentar;
     private Integer reihenfolge;
+
+    // Schnittbild + zwei Anschnittwinkel (Issue #52)
+    private Long schnittbildId;
+    private Double anschnittWinkelLinks;
+    private Double anschnittWinkelRechts;
 }

@@ -43,9 +43,13 @@ class BestellungServiceMappingTest {
         aip.setKilogramm(new BigDecimal("12.5"));
         aip.setHinzugefuegtAm(LocalDate.now());
         aip.setKommentar("Test");
-        aip.setSchnittForm("A");
-        aip.setAnschnittWinkelLinks("45");
-        aip.setAnschnittWinkelRechts("90");
+        Schnittbilder sb = new Schnittbilder();
+        sb.setId(7L);
+        sb.setForm("A");
+        sb.setBildUrlSchnittbild("/uploads/schnittbilder/a.png");
+        aip.setSchnittbild(sb);
+        aip.setAnschnittWinkelLinks(45.0);
+        aip.setAnschnittWinkelRechts(90.0);
 
         when(repo.findByQuelleOrderByProjekt_BauvorhabenAsc(
                 BestellQuelle.OFFEN)).thenReturn(List.of(aip));
@@ -53,9 +57,9 @@ class BestellungServiceMappingTest {
         List<BestellungResponseDto> dtos = service.findeOffeneBestellungen();
         assertEquals(1, dtos.size());
         BestellungResponseDto dto = dtos.getFirst();
-        assertEquals("A", dto.getSchnittForm());
-        assertEquals("45", dto.getAnschnittWinkelLinks());
-        assertEquals("90", dto.getAnschnittWinkelRechts());
+        assertEquals("A", dto.getSchnittbildForm());
+        assertEquals(45.0, dto.getAnschnittWinkelLinks());
+        assertEquals(90.0, dto.getAnschnittWinkelRechts());
         assertEquals("Test", dto.getKommentar());
     }
 }

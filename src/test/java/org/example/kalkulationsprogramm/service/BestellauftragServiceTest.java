@@ -141,9 +141,12 @@ class BestellauftragServiceTest {
         a.setStueckzahl(3);
         a.setKilogramm(new BigDecimal("120.50"));
         a.setPreisProStueck(new BigDecimal("42.00"));
-        a.setSchnittForm("gerade");
-        a.setAnschnittWinkelLinks("45");
-        a.setAnschnittWinkelRechts("30");
+        org.example.kalkulationsprogramm.domain.Schnittbilder sb = new org.example.kalkulationsprogramm.domain.Schnittbilder();
+        sb.setId(7L);
+        sb.setForm("gerade");
+        a.setSchnittbild(sb);
+        a.setAnschnittWinkelLinks(45.0);
+        a.setAnschnittWinkelRechts(30.0);
         a.setFixmassMm(6000);
         a.setZeugnisAnforderung(ZeugnisTyp.APZ_3_1);
         a.setKommentar("bitte sauber sägen");
@@ -160,9 +163,9 @@ class BestellauftragServiceTest {
                 () -> assertEquals(3, bp.getStueckzahl()),
                 () -> assertEquals(0, bp.getKilogramm().compareTo(new BigDecimal("120.50"))),
                 () -> assertEquals(0, bp.getPreisProEinheit().compareTo(new BigDecimal("42.00"))),
-                () -> assertEquals("gerade", bp.getSchnittForm()),
-                () -> assertEquals("45", bp.getAnschnittWinkelLinks()),
-                () -> assertEquals("30", bp.getAnschnittWinkelRechts()),
+                () -> assertEquals(sb, bp.getSchnittbild()),
+                () -> assertEquals(45.0, bp.getAnschnittWinkelLinks()),
+                () -> assertEquals(30.0, bp.getAnschnittWinkelRechts()),
                 () -> assertEquals(6000, bp.getFixmassMm()),
                 () -> assertEquals(ZeugnisTyp.APZ_3_1, bp.getZeugnisAnforderung()),
                 () -> assertEquals("bitte sauber sägen", bp.getKommentar()),
