@@ -67,7 +67,8 @@
       "Read(//tmp/anthropic-design/bedarfsmodul/**)",
       "Read(//c/tmp/anthropic-design/bedarfsmodul/**)",
       "Read(//tmp/anthropic-design/bedarfsmodul/project/**)",
-      "Read(//c/tmp/anthropic-design/bedarfsmodul/project/**)"
+      "Read(//c/tmp/anthropic-design/bedarfsmodul/project/**)",
+      "Bash(gh issue comment 52 --body ' *)"
     ],
     "deny": [
       "Bash(git push --force:*)",
