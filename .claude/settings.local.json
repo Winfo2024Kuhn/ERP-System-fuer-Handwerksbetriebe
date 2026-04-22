@@ -16,12 +16,10 @@
       "Bash(git restore:*)",
       "Bash(git checkout:*)",
       "Bash(git merge --no-ff:*)",
-
       "Bash(./mvnw*)",
       "Bash(./mvnw.cmd*)",
       "Bash(mvn:*)",
       "Bash(mvnw:*)",
-
       "Bash(npm run build)",
       "Bash(npm run build:*)",
       "Bash(npm run dev)",
@@ -41,7 +39,6 @@
       "Bash(npx tsc:*)",
       "Bash(npx eslint:*)",
       "Bash(npx prettier:*)",
-
       "Bash(ls:*)",
       "Bash(pwd)",
       "Bash(cd:*)",
@@ -54,7 +51,6 @@
       "Bash(node --version)",
       "Bash(npm --version)",
       "Bash(java -version)",
-
       "Bash(gh pr view:*)",
       "Bash(gh pr list:*)",
       "Bash(gh pr diff:*)",
@@ -64,7 +60,14 @@
       "Bash(gh issue list:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(python skills/ui-ux-pro-max/scripts/search.py \"ERP construction trade craftsman material parts list operational workflow\" --design-system -p \"Bedarfsmodul Metallbau\")",
+      "Bash(python .claude/skills/ui-ux-pro-max/scripts/search.py \"ERP construction trade craftsman material parts list operational workflow\" --design-system -p \"Bedarfsmodul Metallbau\")",
+      "Bash(tar -xzf pkg.bin)",
+      "Read(//tmp/anthropic-design/bedarfsmodul/**)",
+      "Read(//c/tmp/anthropic-design/bedarfsmodul/**)",
+      "Read(//tmp/anthropic-design/bedarfsmodul/project/**)",
+      "Read(//c/tmp/anthropic-design/bedarfsmodul/project/**)"
     ],
     "deny": [
       "Bash(git push --force:*)",
