@@ -30,8 +30,11 @@ ALTER TABLE artikel_in_projekt
     ADD CONSTRAINT fk_aip_schnittbild
         FOREIGN KEY (schnittbild_id) REFERENCES schnittbilder(id) ON DELETE SET NULL;
 
+-- COLLATE angleichen: schnittbilder.form und die AiP-Alt-Spalte kommen
+-- aus unterschiedlichen Collations (utf8mb4_0900_ai_ci vs. utf8mb4_unicode_ci).
 UPDATE artikel_in_projekt aip
-    JOIN schnittbilder sb ON sb.form = aip.schnitt_form
+    JOIN schnittbilder sb
+      ON sb.form COLLATE utf8mb4_unicode_ci = aip.schnitt_form COLLATE utf8mb4_unicode_ci
 SET aip.schnittbild_id = sb.id
 WHERE aip.schnitt_form IS NOT NULL;
 
@@ -59,7 +62,8 @@ ALTER TABLE bestellposition
         FOREIGN KEY (schnittbild_id) REFERENCES schnittbilder(id) ON DELETE SET NULL;
 
 UPDATE bestellposition bp
-    JOIN schnittbilder sb ON sb.form = bp.schnitt_form
+    JOIN schnittbilder sb
+      ON sb.form COLLATE utf8mb4_unicode_ci = bp.schnitt_form COLLATE utf8mb4_unicode_ci
 SET bp.schnittbild_id = sb.id
 WHERE bp.schnitt_form IS NOT NULL;
 
