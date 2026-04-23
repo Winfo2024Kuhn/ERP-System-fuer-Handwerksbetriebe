@@ -74,7 +74,8 @@
       "Read(//c/xampp/mysql/bin/**)",
       "Read(//c/Program Files/**)",
       "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe\" -h 127.0.0.1 -P 3307 -u Marvin -pgizxup-qetXus-hemne4 kalkulationsprogramm_local_db -e \"SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'kalkulationsprogramm_local_db' AND TABLE_NAME IN \\('artikel_in_projekt','bestellposition','preisanfrage_position'\\) AND \\(COLUMN_NAME LIKE '%schnitt%' OR COLUMN_NAME LIKE '%anschnitt%'\\) ORDER BY TABLE_NAME, COLUMN_NAME;\")",
-      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe\" -h 127.0.0.1 -P 3307 -u Marvin -pgizxup-qetXus-hemne4 kalkulationsprogramm_local_db -e \"SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA='kalkulationsprogramm_local_db' AND REFERENCED_TABLE_NAME='schnittbilder'; SELECT version, description, type, success FROM flyway_schema_history WHERE version LIKE '240%';\")"
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe\" -h 127.0.0.1 -P 3307 -u Marvin -pgizxup-qetXus-hemne4 kalkulationsprogramm_local_db -e \"SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA='kalkulationsprogramm_local_db' AND REFERENCED_TABLE_NAME='schnittbilder'; SELECT version, description, type, success FROM flyway_schema_history WHERE version LIKE '240%';\")",
+      "Bash(curl -s http://localhost:8080/api/bestellungen/offen)"
     ],
     "deny": [
       "Bash(git push --force:*)",
