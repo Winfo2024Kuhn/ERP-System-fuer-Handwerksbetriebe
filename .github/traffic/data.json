@@ -1,14 +1,14 @@
 {
-  "total_views": 414,
-  "total_unique_visitors": 21,
-  "total_clones": 5411,
-  "total_unique_cloners": 699,
-  "last_view_timestamp": "2026-04-20T00:00:00Z",
-  "last_clone_timestamp": "2026-04-20T00:00:00Z",
+  "total_views": 418,
+  "total_unique_visitors": 22,
+  "total_clones": 6927,
+  "total_unique_cloners": 798,
+  "last_view_timestamp": "2026-04-21T00:00:00Z",
+  "last_clone_timestamp": "2026-04-21T00:00:00Z",
   "referring_sites": [
     {
       "referrer": "github.com",
-      "count": 151,
+      "count": 152,
       "uniques": 3
     },
     {
@@ -37,13 +37,13 @@
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/pulse",
       "title": "/pulse",
-      "count": 28,
+      "count": 29,
       "uniques": 3
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/graphs/traffic",
       "title": "/graphs/traffic",
-      "count": 25,
+      "count": 26,
       "uniques": 1
     },
     {
@@ -65,16 +65,16 @@
       "uniques": 1
     },
     {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/issues",
-      "title": "/issues",
-      "count": 8,
-      "uniques": 2
-    },
-    {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions/workflows/traffic.yml",
       "title": "/actions/workflows/traffic.yml",
       "count": 8,
       "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/issues",
+      "title": "/issues",
+      "count": 7,
+      "uniques": 2
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/README.md",
@@ -92,6 +92,6 @@
   "stars": 7,
   "forks": 0,
   "watchers": 2,
-  "open_issues": 21,
-  "updated_at": "2026-04-22T03:06:05Z"
+  "open_issues": 23,
+  "updated_at": "2026-04-23T03:05:51Z"
 }
