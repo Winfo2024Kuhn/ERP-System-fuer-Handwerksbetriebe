@@ -38,8 +38,9 @@ public class BestellungResponseDto {
     private Integer fixmassMm;
     // Schnittbild (Issue #52): ein gemeinsames Bild, zwei Winkel (Grad, Double)
     private Long schnittbildId;
-    private String schnittbildForm;
     private String schnittbildBildUrl;
+    /** Bild der zugehoerigen Achse — fuer PDF-Plot und Anzeige im Bedarfs-UI. */
+    private String schnittAchseBildUrl;
     private Double anschnittWinkelLinks;
     private Double anschnittWinkelRechts;
     // EN 1090

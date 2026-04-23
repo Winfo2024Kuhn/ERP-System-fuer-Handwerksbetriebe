@@ -29,8 +29,8 @@ public class PreisanfragePositionDto {
 
     // Schnittbild + zwei Anschnittwinkel (Issue #52)
     private Long schnittbildId;
-    private String schnittbildForm;
     private String schnittbildBildUrl;
+    private String schnittAchseBildUrl;
     private Double anschnittWinkelLinks;
     private Double anschnittWinkelRechts;
 }

@@ -143,7 +143,7 @@ class BestellauftragServiceTest {
         a.setPreisProStueck(new BigDecimal("42.00"));
         org.example.kalkulationsprogramm.domain.Schnittbilder sb = new org.example.kalkulationsprogramm.domain.Schnittbilder();
         sb.setId(7L);
-        sb.setForm("gerade");
+        sb.setBildUrlSchnittbild("/uploads/schnittbilder/gerade.png");
         a.setSchnittbild(sb);
         a.setAnschnittWinkelLinks(45.0);
         a.setAnschnittWinkelRechts(30.0);

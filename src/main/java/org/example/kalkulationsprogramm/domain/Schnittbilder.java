@@ -12,11 +12,11 @@ public class Schnittbilder
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long id;
-    @Column(nullable = false, unique = true)
+
+    @Column(name = "bild_url_schnittbild", nullable = false, unique = true)
     private String bildUrlSchnittbild;
-    @Column(nullable = false, unique = true)
-    private String form;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Kategorie kategorie;
+    @JoinColumn(name = "schnitt_achse_id", nullable = false)
+    private SchnittAchse schnittAchse;
 }

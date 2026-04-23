@@ -21,4 +21,8 @@ public class ManuelleBestellpositionDto {
     private Integer fixmassMm;
     private String zeugnisAnforderung;
     private String kommentar;
+    /** Sonderzuschnitt: Schnittbild + zwei Winkel. NULL = normaler 90°-Zuschnitt. */
+    private Long schnittbildId;
+    private Double anschnittWinkelLinks;
+    private Double anschnittWinkelRechts;
 }

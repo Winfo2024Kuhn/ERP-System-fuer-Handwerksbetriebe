@@ -13,7 +13,6 @@ import org.example.kalkulationsprogramm.domain.ZeugnisTyp;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.PreisanfrageLieferantRepository;
 import org.example.kalkulationsprogramm.repository.PreisanfragePositionRepository;
-import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
@@ -38,7 +37,6 @@ import java.util.stream.Collectors;
 public class BestellungPdfService implements PreisanfragePdfGenerator {
 
     private final BestellungService bestellungService;
-    private final SchnittbilderRepository schnittbilderRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final ZeugnisService zeugnisService;
     private final FirmeninformationService firmeninformationService;
@@ -46,14 +44,12 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
     private final PreisanfragePositionRepository preisanfragePositionRepository;
 
     public BestellungPdfService(BestellungService bestellungService,
-                                SchnittbilderRepository schnittbilderRepository,
                                 DateiSpeicherService dateiSpeicherService,
                                 ZeugnisService zeugnisService,
                                 FirmeninformationService firmeninformationService,
                                 PreisanfrageLieferantRepository preisanfrageLieferantRepository,
                                 PreisanfragePositionRepository preisanfragePositionRepository) {
         this.bestellungService = bestellungService;
-        this.schnittbilderRepository = schnittbilderRepository;
         this.dateiSpeicherService = dateiSpeicherService;
         this.zeugnisService = zeugnisService;
         this.firmeninformationService = firmeninformationService;
@@ -109,7 +105,7 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
                     table.addCell(makeCell(b.getExterneArtikelnummer(), cellFont, bg));
                     table.addCell(makeCell(b.getProduktname(), cellFont, bg));
                     table.addCell(makeCell(b.getProdukttext(), cellFont, bg));
-                    table.addCell(makeCutCell(b.getSchnittbildForm(), cellFont, bg));
+                    table.addCell(makeCutCell(b.getSchnittAchseBildUrl(), b.getSchnittbildBildUrl(), cellFont, bg));
                     table.addCell(makeCell(formatWinkel(b.getAnschnittWinkelLinks()), cellFont, bg));
                     table.addCell(makeCell(formatWinkel(b.getAnschnittWinkelRechts()), cellFont, bg));
                     table.addCell(makeCell(b.getKommentar(), cellFont, bg));
@@ -218,7 +214,7 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
                     table.addCell(makeCell(b.getExterneArtikelnummer(), cellFont, bg));
                     table.addCell(makeCell(b.getProduktname(), cellFont, bg));
                     table.addCell(makeCell(b.getProdukttext(), cellFont, bg));
-                    table.addCell(makeCutCell(b.getSchnittbildForm(), cellFont, bg));
+                    table.addCell(makeCutCell(b.getSchnittAchseBildUrl(), b.getSchnittbildBildUrl(), cellFont, bg));
                     table.addCell(makeCell(formatWinkel(b.getAnschnittWinkelLinks()), cellFont, bg));
                     table.addCell(makeCell(formatWinkel(b.getAnschnittWinkelRechts()), cellFont, bg));
                     table.addCell(makeCell(b.getWerkstoffName(), cellFont, bg));
@@ -608,54 +604,54 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
         return String.format(java.util.Locale.GERMANY, "%.2f°", winkel);
     }
 
-    private PdfPCell makeCutCell(String form, Font font, Color bg) {
-        if (form == null || form.isBlank()) {
+    /**
+     * Zelle mit Achsen- und Schnitt-Icon uebereinander (beide optional).
+     * Das Achsen-Bild gehoert zur Kategorie, das Schnittbild zeigt den
+     * konkreten Anschnitt. Bei normalem 90°-Zuschnitt ist beides null.
+     */
+    private PdfPCell makeCutCell(String achseUrl, String schnittUrl, Font font, Color bg) {
+        byte[] achseBytes = loadIconByUrl(achseUrl);
+        byte[] schnittBytes = loadIconByUrl(schnittUrl);
+        if (achseBytes == null && schnittBytes == null) {
             return makeCell("", font, bg);
         }
-        byte[] bytes = loadSchnittbildIcon(form);
-        if (bytes == null) {
-            return makeCell("Form " + form, font, bg);
-        }
+        PdfPCell cell = new PdfPCell();
+        cell.setBackgroundColor(bg);
+        cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+        cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        cell.setPadding(2f);
+        addIconElement(cell, achseBytes);
+        addIconElement(cell, schnittBytes);
+        return cell;
+    }
+
+    private void addIconElement(PdfPCell cell, byte[] bytes) {
+        if (bytes == null) return;
         try {
             Image icon = Image.getInstance(bytes);
             icon.scaleToFit(26f, 26f);
             icon.setAlignment(Image.ALIGN_CENTER);
-            PdfPCell cell = new PdfPCell();
-            cell.setBackgroundColor(bg);
-            cell.setHorizontalAlignment(Element.ALIGN_CENTER);
-            cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            cell.setPadding(2f);
             cell.addElement(icon);
-            Paragraph label = new Paragraph("Form " + form, FontFactory.getFont(FontFactory.HELVETICA, 6));
-            label.setAlignment(Element.ALIGN_CENTER);
-            cell.addElement(label);
-            return cell;
-        } catch (Exception e) {
-            return makeCell("Form " + form, font, bg);
+        } catch (Exception ignored) {
+            // Kaputtes Bild -> einfach ueberspringen
         }
     }
 
-    private byte[] loadSchnittbildIcon(String form) {
-        byte[] cached = schnittbildIconCache.get(form);
+    private byte[] loadIconByUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+        byte[] cached = schnittbildIconCache.get(url);
         if (cached != null) {
             return cached == NO_IMAGE ? null : cached;
         }
-        byte[] loaded = fetchSchnittbildIcon(form);
-        schnittbildIconCache.put(form, loaded != null ? loaded : NO_IMAGE);
+        byte[] loaded = fetchIconByUrl(url);
+        schnittbildIconCache.put(url, loaded != null ? loaded : NO_IMAGE);
         return loaded;
     }
 
-    private byte[] fetchSchnittbildIcon(String form) {
+    private byte[] fetchIconByUrl(String url) {
         try {
-            var entity = schnittbilderRepository.findByForm(form);
-            if (entity == null) {
-                return null;
-            }
-            String bildUrl = entity.getBildUrlSchnittbild();
-            String name = extractFilename(bildUrl);
-            if (name == null) {
-                return null;
-            }
+            String name = extractFilename(url);
+            if (name == null) return null;
             var resource = dateiSpeicherService.ladeBildAlsResource(name);
             try (var in = resource.getInputStream()) {
                 return in.readAllBytes();

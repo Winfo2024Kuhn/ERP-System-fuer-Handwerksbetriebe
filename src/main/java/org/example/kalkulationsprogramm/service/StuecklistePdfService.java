@@ -10,7 +10,6 @@ import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
@@ -30,10 +29,10 @@ public class StuecklistePdfService {
 
     private final ProjektRepository projektRepository;
     private final ArtikelInProjektRepository artikelInProjektRepository;
-    private final SchnittbilderRepository schnittbilderRepository;
     private final DateiSpeicherService dateiSpeicherService;
 
     private static final byte[] NO_IMAGE = new byte[0];
+    /** Cache-Key ist die Bild-URL selbst (sowohl fuer Achsen- als auch Schnittbilder). */
     private final Map<String, byte[]> schnittbildIconCache = new ConcurrentHashMap<>();
 
     public byte[] generateForProjekt(Long projektId) {
@@ -129,7 +128,7 @@ public class StuecklistePdfService {
                             table.addCell(makeCell(calcMmPerStueck(aip), cellFont, bg));
                             String gesamtM = aip.getMeter() != null ? stripZeros(aip.getMeter()) : "";
                             table.addCell(makeCell(gesamtM, cellFont, bg));
-                            table.addCell(makeCutCell(aip.getSchnittbild() != null ? aip.getSchnittbild().getForm() : null, cellFont, bg));
+                            table.addCell(makeCutCell(achseBildUrl(aip), schnittBildUrl(aip), cellFont, bg));
                             table.addCell(makeCell(formatWinkel(aip.getAnschnittWinkelLinks()), cellFont, bg));
                             table.addCell(makeCell(formatWinkel(aip.getAnschnittWinkelRechts()), cellFont, bg));
                             table.addCell(makeCell(nvl(aip.getKommentar()), cellFont, bg));
@@ -202,7 +201,7 @@ public class StuecklistePdfService {
                             String katName = a.getKategorie() != null ? nvl(a.getKategorie().getBeschreibung()) : "";
                             table.addCell(makeCell(katName, cellFont, bg));
                             table.addCell(makeCell(formatMengeAllgemein(aip), cellFont, bg));
-                            table.addCell(makeCutCell(aip.getSchnittbild() != null ? aip.getSchnittbild().getForm() : null, cellFont, bg));
+                            table.addCell(makeCutCell(achseBildUrl(aip), schnittBildUrl(aip), cellFont, bg));
                             table.addCell(makeCell(formatWinkel(aip.getAnschnittWinkelLinks()), cellFont, bg));
                             table.addCell(makeCell(formatWinkel(aip.getAnschnittWinkelRechts()), cellFont, bg));
                             table.addCell(makeCell(nvl(aip.getKommentar()), cellFont, bg));
@@ -277,54 +276,64 @@ public class StuecklistePdfService {
         return v.stripTrailingZeros().toPlainString();
     }
 
-    private PdfPCell makeCutCell(String form, Font font, Color bg) {
-        if (form == null || form.isBlank()) {
+    private String achseBildUrl(ArtikelInProjekt aip) {
+        if (aip.getSchnittbild() == null || aip.getSchnittbild().getSchnittAchse() == null) return null;
+        return aip.getSchnittbild().getSchnittAchse().getBildUrl();
+    }
+
+    private String schnittBildUrl(ArtikelInProjekt aip) {
+        if (aip.getSchnittbild() == null) return null;
+        return aip.getSchnittbild().getBildUrlSchnittbild();
+    }
+
+    /**
+     * Zelle mit Achsen- und Schnitt-Icon uebereinander. Beide sind optional —
+     * wenn keines da ist, bleibt die Zelle leer. Das Achsen-Bild gehoert
+     * zur Kategorie, das Schnittbild zeigt den konkreten Anschnitt.
+     */
+    private PdfPCell makeCutCell(String achseUrl, String schnittUrl, Font font, Color bg) {
+        byte[] achseBytes = loadIconByUrl(achseUrl);
+        byte[] schnittBytes = loadIconByUrl(schnittUrl);
+        if (achseBytes == null && schnittBytes == null) {
             return makeCell("", font, bg);
         }
-        byte[] imageBytes = loadSchnittbildIcon(form);
-        if (imageBytes == null) {
-            return makeCell("Form " + form, font, bg);
-        }
+        PdfPCell cell = new PdfPCell();
+        cell.setBackgroundColor(bg);
+        cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+        cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        cell.setPadding(2f);
+        addIconElement(cell, achseBytes);
+        addIconElement(cell, schnittBytes);
+        return cell;
+    }
+
+    private void addIconElement(PdfPCell cell, byte[] bytes) {
+        if (bytes == null) return;
         try {
-            Image icon = Image.getInstance(imageBytes);
+            Image icon = Image.getInstance(bytes);
             icon.scaleToFit(26f, 26f);
             icon.setAlignment(Element.ALIGN_CENTER);
-            PdfPCell cell = new PdfPCell();
-            cell.setBackgroundColor(bg);
-            cell.setHorizontalAlignment(Element.ALIGN_CENTER);
-            cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            cell.setPadding(2f);
             cell.addElement(icon);
-            Paragraph label = new Paragraph("Form " + form, FontFactory.getFont(FontFactory.HELVETICA, 6));
-            label.setAlignment(Element.ALIGN_CENTER);
-            cell.addElement(label);
-            return cell;
-        } catch (Exception e) {
-            return makeCell("Form " + form, font, bg);
+        } catch (Exception ignored) {
+            // Kaputtes Bild -> einfach ueberspringen
         }
     }
 
-    private byte[] loadSchnittbildIcon(String form) {
-        byte[] cached = schnittbildIconCache.get(form);
+    private byte[] loadIconByUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+        byte[] cached = schnittbildIconCache.get(url);
         if (cached != null) {
             return cached == NO_IMAGE ? null : cached;
         }
-        byte[] loaded = fetchSchnittbildIcon(form);
-        schnittbildIconCache.put(form, loaded != null ? loaded : NO_IMAGE);
+        byte[] loaded = fetchIconByUrl(url);
+        schnittbildIconCache.put(url, loaded != null ? loaded : NO_IMAGE);
         return loaded;
     }
 
-    private byte[] fetchSchnittbildIcon(String form) {
+    private byte[] fetchIconByUrl(String url) {
         try {
-            var entity = schnittbilderRepository.findByForm(form);
-            if (entity == null) {
-                return null;
-            }
-            String bildUrl = entity.getBildUrlSchnittbild();
-            String dateiname = extractFilename(bildUrl);
-            if (dateiname == null) {
-                return null;
-            }
+            String dateiname = extractFilename(url);
+            if (dateiname == null) return null;
             var resource = dateiSpeicherService.ladeBildAlsResource(dateiname);
             try (var in = resource.getInputStream()) {
                 return in.readAllBytes();

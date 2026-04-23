@@ -6,7 +6,6 @@ import org.example.kalkulationsprogramm.domain.PreisanfragePosition;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.PreisanfrageLieferantRepository;
 import org.example.kalkulationsprogramm.repository.PreisanfragePositionRepository;
-import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -23,13 +22,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class BestellungPdfServiceTest {
 
     private BestellungPdfService newService(BestellungService bestellungService) {
-        SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
         DateiSpeicherService dateiSpeicherService = Mockito.mock(DateiSpeicherService.class);
         ZeugnisService zeugnisService = Mockito.mock(ZeugnisService.class);
         FirmeninformationService firmeninformationService = Mockito.mock(FirmeninformationService.class);
         PreisanfrageLieferantRepository palRepo = Mockito.mock(PreisanfrageLieferantRepository.class);
         PreisanfragePositionRepository posRepo = Mockito.mock(PreisanfragePositionRepository.class);
-        return new BestellungPdfService(bestellungService, schnittbilderRepository,
+        return new BestellungPdfService(bestellungService,
                 dateiSpeicherService, zeugnisService, firmeninformationService,
                 palRepo, posRepo);
     }
@@ -108,7 +106,6 @@ class BestellungPdfServiceTest {
     @Test
     void generatePdfForPreisanfrage_wirftWennLieferantNichtGefunden() {
         BestellungService bestellungService = Mockito.mock(BestellungService.class);
-        SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
         DateiSpeicherService dateiSpeicherService = Mockito.mock(DateiSpeicherService.class);
         ZeugnisService zeugnisService = Mockito.mock(ZeugnisService.class);
         FirmeninformationService firmeninformationService = Mockito.mock(FirmeninformationService.class);
@@ -117,7 +114,7 @@ class BestellungPdfServiceTest {
         Mockito.when(palRepo.findById(999L)).thenReturn(Optional.empty());
 
         BestellungPdfService service = new BestellungPdfService(bestellungService,
-                schnittbilderRepository, dateiSpeicherService, zeugnisService,
+                dateiSpeicherService, zeugnisService,
                 firmeninformationService, palRepo, posRepo);
 
         assertThrows(IllegalArgumentException.class,
@@ -127,7 +124,6 @@ class BestellungPdfServiceTest {
     @Test
     void generatePdfForPreisanfrage_enthaeltTokenUndNummer() throws Exception {
         BestellungService bestellungService = Mockito.mock(BestellungService.class);
-        SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
         DateiSpeicherService dateiSpeicherService = Mockito.mock(DateiSpeicherService.class);
         ZeugnisService zeugnisService = Mockito.mock(ZeugnisService.class);
         FirmeninformationService firmeninformationService = Mockito.mock(FirmeninformationService.class);
@@ -168,7 +164,7 @@ class BestellungPdfServiceTest {
                 .thenReturn(List.of(pos1, pos2));
 
         BestellungPdfService service = new BestellungPdfService(bestellungService,
-                schnittbilderRepository, dateiSpeicherService, zeugnisService,
+                dateiSpeicherService, zeugnisService,
                 firmeninformationService, palRepo, posRepo);
 
         Path pdf = service.generatePdfForPreisanfrage(99L);

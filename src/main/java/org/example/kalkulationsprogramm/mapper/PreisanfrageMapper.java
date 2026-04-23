@@ -88,8 +88,10 @@ public class PreisanfrageMapper {
         dto.setKommentar(pos.getKommentar());
         if (pos.getSchnittbild() != null) {
             dto.setSchnittbildId(pos.getSchnittbild().getId());
-            dto.setSchnittbildForm(pos.getSchnittbild().getForm());
             dto.setSchnittbildBildUrl(pos.getSchnittbild().getBildUrlSchnittbild());
+            if (pos.getSchnittbild().getSchnittAchse() != null) {
+                dto.setSchnittAchseBildUrl(pos.getSchnittbild().getSchnittAchse().getBildUrl());
+            }
         }
         dto.setAnschnittWinkelLinks(pos.getAnschnittWinkelLinks());
         dto.setAnschnittWinkelRechts(pos.getAnschnittWinkelRechts());

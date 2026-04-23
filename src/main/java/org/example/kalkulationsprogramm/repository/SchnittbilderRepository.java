@@ -6,7 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface SchnittbilderRepository extends JpaRepository<Schnittbilder, Long> {
-    List<Schnittbilder> findByKategorie_Id(Integer kategorieId);
-    Schnittbilder findByForm(String form);
+    List<Schnittbilder> findBySchnittAchse_IdOrderByIdAsc(Long schnittAchseId);
+    List<Schnittbilder> findBySchnittAchse_Kategorie_IdOrderByIdAsc(Integer kategorieId);
 }
-

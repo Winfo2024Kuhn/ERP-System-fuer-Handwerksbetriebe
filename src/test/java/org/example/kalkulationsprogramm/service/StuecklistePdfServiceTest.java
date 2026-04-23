@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -20,7 +19,6 @@ class StuecklistePdfServiceTest {
     void createsPdfWithWerkstoffMm() throws Exception {
         ProjektRepository projektRepository = Mockito.mock(ProjektRepository.class);
         ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
-        SchnittbilderRepository schnittbilderRepository = Mockito.mock(SchnittbilderRepository.class);
         DateiSpeicherService dateiSpeicherService = Mockito.mock(DateiSpeicherService.class);
 
         Projekt p = new Projekt();
@@ -55,7 +53,7 @@ class StuecklistePdfServiceTest {
 
         Mockito.when(aipRepo.findByProjekt_Id(10L)).thenReturn(List.of(aip));
 
-        StuecklistePdfService service = new StuecklistePdfService(projektRepository, aipRepo, schnittbilderRepository, dateiSpeicherService);
+        StuecklistePdfService service = new StuecklistePdfService(projektRepository, aipRepo, dateiSpeicherService);
         byte[] pdf = service.generateForProjekt(10L);
         assertNotNull(pdf);
         assertTrue(pdf.length > 0);

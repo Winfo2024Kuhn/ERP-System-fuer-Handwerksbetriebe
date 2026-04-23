@@ -3,10 +3,13 @@ package org.example.kalkulationsprogramm.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Kategorie;
+import org.example.kalkulationsprogramm.domain.SchnittAchse;
 import org.example.kalkulationsprogramm.domain.Schnittbilder;
 import org.example.kalkulationsprogramm.dto.Schnittbilder.SchnittbildResponseDto;
+import org.example.kalkulationsprogramm.dto.Schnittbilder.SchnittbildUpsertDto;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
+import org.example.kalkulationsprogramm.repository.SchnittAchseRepository;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,51 +24,49 @@ import java.util.stream.Collectors;
 public class SchnittbilderController {
 
     private final SchnittbilderRepository schnittbilderRepository;
+    private final SchnittAchseRepository schnittAchseRepository;
     private final ArtikelRepository artikelRepository;
     private final KategorieRepository kategorieRepository;
 
     /**
-     * Liefert passende Schnittbilder abhängig von Artikel- oder Kategorieauswahl.
-     * Regeln:
-     * - Nur wenn die Wurzelkategorie 64 oder 65 ist (oder deren Unterkategorien)
-     * Priorität der Parameter: artikelId > subKategorieId > kategorieId (Root)
+     * Schnittbild-Liste. Priorität der Parameter:
+     *   schnittAchseId > artikelId > subKategorieId > kategorieId.
+     * Ohne Parameter → leere Liste (Admin soll explizit filtern).
      */
     @GetMapping
     public ResponseEntity<List<SchnittbildResponseDto>> list(
+            @RequestParam(value = "schnittAchseId", required = false) Long schnittAchseId,
             @RequestParam(value = "artikelId", required = false) Long artikelId,
             @RequestParam(value = "subKategorieId", required = false) Integer subKategorieId,
             @RequestParam(value = "kategorieId", required = false) Integer kategorieId
     ) {
-        Integer effectiveRoot = null;
+        List<Schnittbilder> rows;
 
-        if (artikelId != null) {
-            Artikel a = artikelRepository.findById(artikelId).orElse(null);
-            if (a == null || a.getKategorie() == null) {
+        if (schnittAchseId != null) {
+            rows = schnittbilderRepository.findBySchnittAchse_IdOrderByIdAsc(schnittAchseId);
+        } else {
+            Integer effectiveKategorieId = null;
+            if (artikelId != null) {
+                Artikel a = artikelRepository.findById(artikelId).orElse(null);
+                if (a == null || a.getKategorie() == null) {
+                    return ResponseEntity.ok(Collections.emptyList());
+                }
+                effectiveKategorieId = rootKategorieId(a.getKategorie());
+            } else if (subKategorieId != null) {
+                Kategorie k = kategorieRepository.findById(subKategorieId).orElse(null);
+                if (k == null) return ResponseEntity.ok(Collections.emptyList());
+                effectiveKategorieId = rootKategorieId(k);
+            } else if (kategorieId != null) {
+                effectiveKategorieId = kategorieId;
+            }
+
+            if (effectiveKategorieId == null) {
                 return ResponseEntity.ok(Collections.emptyList());
             }
-            Integer rootId = rootKategorieId(a.getKategorie());
-            if (!isAllowedRoot(rootId)) {
-                return ResponseEntity.ok(Collections.emptyList());
-            }
-            effectiveRoot = rootId;
-        } else if (subKategorieId != null) {
-            Kategorie k = kategorieRepository.findById(subKategorieId).orElse(null);
-            if (k == null) return ResponseEntity.ok(Collections.emptyList());
-            Integer rootId = rootKategorieId(k);
-            if (!isAllowedRoot(rootId)) return ResponseEntity.ok(Collections.emptyList());
-            effectiveRoot = rootId;
-        } else if (kategorieId != null) {
-            effectiveRoot = kategorieId;
+            rows = schnittbilderRepository.findBySchnittAchse_Kategorie_IdOrderByIdAsc(effectiveKategorieId);
         }
 
-        if (!isAllowedRoot(effectiveRoot)) {
-            return ResponseEntity.ok(Collections.emptyList());
-        }
-
-        List<SchnittbildResponseDto> result = schnittbilderRepository.findByKategorie_Id(effectiveRoot)
-                .stream()
-                .map(this::toDto)
-                .collect(Collectors.toList());
+        List<SchnittbildResponseDto> result = rows.stream().map(this::toDto).collect(Collectors.toList());
         return ResponseEntity.ok(result);
     }
 
@@ -77,8 +78,44 @@ public class SchnittbilderController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    private boolean isAllowedRoot(Integer id) {
-        return id != null && (id == 64 || id == 65);
+    @PostMapping
+    public ResponseEntity<SchnittbildResponseDto> create(@RequestBody SchnittbildUpsertDto payload) {
+        if (payload.getBildUrlSchnittbild() == null || payload.getBildUrlSchnittbild().isBlank()
+                || payload.getSchnittAchseId() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        SchnittAchse achse = schnittAchseRepository.findById(payload.getSchnittAchseId()).orElse(null);
+        if (achse == null) return ResponseEntity.badRequest().build();
+
+        Schnittbilder sb = new Schnittbilder();
+        sb.setBildUrlSchnittbild(payload.getBildUrlSchnittbild().trim());
+        sb.setSchnittAchse(achse);
+        Schnittbilder saved = schnittbilderRepository.save(sb);
+        return ResponseEntity.ok(toDto(saved));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<SchnittbildResponseDto> update(@PathVariable Long id,
+                                                        @RequestBody SchnittbildUpsertDto payload) {
+        Schnittbilder sb = schnittbilderRepository.findById(id).orElse(null);
+        if (sb == null) return ResponseEntity.notFound().build();
+
+        if (payload.getBildUrlSchnittbild() != null && !payload.getBildUrlSchnittbild().isBlank()) {
+            sb.setBildUrlSchnittbild(payload.getBildUrlSchnittbild().trim());
+        }
+        if (payload.getSchnittAchseId() != null) {
+            SchnittAchse achse = schnittAchseRepository.findById(payload.getSchnittAchseId()).orElse(null);
+            if (achse == null) return ResponseEntity.badRequest().build();
+            sb.setSchnittAchse(achse);
+        }
+        return ResponseEntity.ok(toDto(schnittbilderRepository.save(sb)));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        if (!schnittbilderRepository.existsById(id)) return ResponseEntity.notFound().build();
+        schnittbilderRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
     private Integer rootKategorieId(Kategorie k) {
@@ -91,8 +128,14 @@ public class SchnittbilderController {
         SchnittbildResponseDto dto = new SchnittbildResponseDto();
         dto.setId(s.getId());
         dto.setBildUrlSchnittbild(s.getBildUrlSchnittbild());
-        dto.setForm(s.getForm());
-        dto.setKategorieId(s.getKategorie() != null ? s.getKategorie().getId() : null);
+        SchnittAchse a = s.getSchnittAchse();
+        if (a != null) {
+            dto.setSchnittAchseId(a.getId());
+            dto.setSchnittAchseBildUrl(a.getBildUrl());
+            if (a.getKategorie() != null) {
+                dto.setKategorieId(a.getKategorie().getId());
+            }
+        }
         return dto;
     }
 }

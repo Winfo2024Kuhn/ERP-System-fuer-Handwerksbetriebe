@@ -8,6 +8,7 @@ import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ public class BestellungService {
     private final ProjektRepository projektRepository;
     private final KategorieRepository kategorieRepository;
     private final ArtikelRepository artikelRepository;
+    private final SchnittbilderRepository schnittbilderRepository;
     private final ZeugnisService zeugnisService;
 
     /**
@@ -134,8 +136,10 @@ public class BestellungService {
         dto.setExportiertAm(null);
         if (aip.getSchnittbild() != null) {
             dto.setSchnittbildId(aip.getSchnittbild().getId());
-            dto.setSchnittbildForm(aip.getSchnittbild().getForm());
             dto.setSchnittbildBildUrl(aip.getSchnittbild().getBildUrlSchnittbild());
+            if (aip.getSchnittbild().getSchnittAchse() != null) {
+                dto.setSchnittAchseBildUrl(aip.getSchnittbild().getSchnittAchse().getBildUrl());
+            }
         }
         dto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
         dto.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
@@ -192,6 +196,8 @@ public class BestellungService {
         if (req.getZeugnisAnforderung() != null && !req.getZeugnisAnforderung().isBlank()) {
             aip.setZeugnisAnforderung(ZeugnisTyp.valueOf(req.getZeugnisAnforderung()));
         }
+
+        applySchnittDaten(aip, req);
 
         return toDto(artikelInProjektRepository.save(aip));
     }
@@ -263,6 +269,25 @@ public class BestellungService {
             aip.setZeugnisAnforderung(null);
         }
 
+        applySchnittDaten(aip, req);
+
         return toDto(artikelInProjektRepository.save(aip));
+    }
+
+    /**
+     * Uebernimmt Schnittbild-FK und die beiden Anschnittwinkel vom Request.
+     * Kein Schnittbild im Request = normaler 90°-Zuschnitt → FK und Winkel NULL.
+     * Leere Winkel bei gesetztem Schnittbild werden als 90° interpretiert.
+     */
+    private void applySchnittDaten(ArtikelInProjekt aip, ManuelleBestellpositionDto req) {
+        if (req.getSchnittbildId() != null) {
+            aip.setSchnittbild(schnittbilderRepository.findById(req.getSchnittbildId()).orElse(null));
+            aip.setAnschnittWinkelLinks(req.getAnschnittWinkelLinks() != null ? req.getAnschnittWinkelLinks() : 90.0);
+            aip.setAnschnittWinkelRechts(req.getAnschnittWinkelRechts() != null ? req.getAnschnittWinkelRechts() : 90.0);
+        } else {
+            aip.setSchnittbild(null);
+            aip.setAnschnittWinkelLinks(null);
+            aip.setAnschnittWinkelRechts(null);
+        }
     }
 }

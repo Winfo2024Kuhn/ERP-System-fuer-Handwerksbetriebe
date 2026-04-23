@@ -27,8 +27,8 @@ public class ArtikelInProjektResponseDto {
     // Schnittbild (Issue #52): ein gemeinsames Bild fuer links + rechts,
     // aber jeweils eigener Anschnittwinkel.
     private Long schnittbildId;
-    private String schnittbildForm;
     private String schnittbildBildUrl;
+    private String schnittAchseBildUrl;
     private Double anschnittWinkelLinks;
     private Double anschnittWinkelRechts;
 }
