@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.SchnittAchseRepository;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
+import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 
@@ -23,7 +24,8 @@ class SchnittbilderControllerTest {
     private SchnittbilderController controller(SchnittbilderRepository sbRepo,
                                                SchnittAchseRepository achseRepo) {
         return new SchnittbilderController(sbRepo, achseRepo,
-                mock(ArtikelRepository.class), mock(KategorieRepository.class));
+                mock(ArtikelRepository.class), mock(KategorieRepository.class),
+                mock(DateiSpeicherService.class));
     }
 
     @Test

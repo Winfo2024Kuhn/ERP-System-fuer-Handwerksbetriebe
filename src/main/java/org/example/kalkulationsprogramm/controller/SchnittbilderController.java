@@ -11,8 +11,12 @@ import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.SchnittAchseRepository;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
+import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
 
 import java.util.Collections;
 import java.util.List;
@@ -27,6 +31,26 @@ public class SchnittbilderController {
     private final SchnittAchseRepository schnittAchseRepository;
     private final ArtikelRepository artikelRepository;
     private final KategorieRepository kategorieRepository;
+    private final DateiSpeicherService dateiSpeicherService;
+
+    /**
+     * Bild-Upload für Achsen und Schnittbilder. Nimmt ein Bild entgegen,
+     * speichert es über DateiSpeicherService und liefert die URL zurück,
+     * die anschließend beim Anlegen einer Achse oder eines Schnittbilds
+     * als {@code bildUrl} verwendet wird.
+     */
+    @PostMapping("/upload")
+    public ResponseEntity<Map<String, String>> upload(@RequestParam("datei") MultipartFile datei) {
+        if (datei == null || datei.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            String url = dateiSpeicherService.speichereBild(datei);
+            return ResponseEntity.ok(Map.of("url", url));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 
     /**
      * Schnittbild-Liste. Priorität der Parameter:

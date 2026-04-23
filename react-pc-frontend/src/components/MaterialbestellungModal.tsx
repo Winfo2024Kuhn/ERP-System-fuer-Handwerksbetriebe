@@ -20,6 +20,8 @@ import { ProjektSearchModal } from './ProjektSearchModal';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
 import { ArtikelSearchModal, type ArtikelSuchErgebnis } from './ArtikelSearchModal';
 import { KategoriePicker, type KategorieFlach } from './KategoriePicker';
+import { SonderzuschnittPicker, type SonderzuschnittAuswahl } from './SonderzuschnittPicker';
+import { Scissors } from 'lucide-react';
 
 // ========= Shared Types =========
 interface ProjektRef {
@@ -64,7 +66,17 @@ interface Position {
     kategorieId: number | null;
     menge: string;
     einheit: string;
+    // Zuschnitt: 90° (Standard) vs. Fixzuschnitt vs. Sonderzuschnitt (mit Winkeln).
+    // Sonderzuschnitt impliziert Fixzuschnitt (weil Länge bekannt sein muss).
+    fixzuschnitt: boolean;
+    sonderzuschnitt: boolean;
     fixmassMm: string;                  // in mm, als String wegen Input
+    schnittbildId: number | null;
+    schnittbildBildUrl?: string | null;
+    schnittAchseId: number | null;
+    schnittAchseBildUrl?: string | null;
+    winkelLinks: string;
+    winkelRechts: string;
     zeugnis: string;
     zeugnisVomSystem: string;
     kommentar: string;
@@ -89,7 +101,15 @@ const neuePosition = (): Position => ({
     kategorieId: null,
     menge: '1',
     einheit: 'Stück',
+    fixzuschnitt: false,
+    sonderzuschnitt: false,
     fixmassMm: '',
+    schnittbildId: null,
+    schnittbildBildUrl: null,
+    schnittAchseId: null,
+    schnittAchseBildUrl: null,
+    winkelLinks: '',
+    winkelRechts: '',
     zeugnis: '',
     zeugnisVomSystem: '',
     kommentar: '',
@@ -111,6 +131,11 @@ export interface EditPosition {
     menge?: number | string | null;
     einheit?: string | null;
     fixmassMm?: number | null;
+    schnittbildId?: number | null;
+    schnittbildBildUrl?: string | null;
+    schnittAchseBildUrl?: string | null;
+    anschnittWinkelLinks?: number | null;
+    anschnittWinkelRechts?: number | null;
     zeugnisAnforderung?: string | null;
     kommentar?: string | null;
     projektId?: number | null;
@@ -197,7 +222,14 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 kategorieId: ep.kategorieId ?? null,
                 menge: ep.menge != null ? String(ep.menge) : '1',
                 einheit: ep.einheit || 'Stück',
+                fixzuschnitt: ep.fixmassMm != null,
+                sonderzuschnitt: ep.schnittbildId != null,
                 fixmassMm: ep.fixmassMm != null ? String(ep.fixmassMm) : '',
+                schnittbildId: ep.schnittbildId ?? null,
+                schnittbildBildUrl: ep.schnittbildBildUrl ?? null,
+                schnittAchseBildUrl: ep.schnittAchseBildUrl ?? null,
+                winkelLinks: ep.anschnittWinkelLinks != null ? String(ep.anschnittWinkelLinks) : '',
+                winkelRechts: ep.anschnittWinkelRechts != null ? String(ep.anschnittWinkelRechts) : '',
                 zeugnis: ep.zeugnisAnforderung ?? '',
                 kommentar: ep.kommentar ?? '',
                 perProjektId: ep.projektId ?? null,
@@ -232,7 +264,14 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 kategorieId: editPosition.kategorieId ?? null,
                 menge: editPosition.menge != null ? String(editPosition.menge) : '1',
                 einheit: editPosition.einheit || 'Stück',
+                fixzuschnitt: editPosition.fixmassMm != null,
+                sonderzuschnitt: editPosition.schnittbildId != null,
                 fixmassMm: editPosition.fixmassMm != null ? String(editPosition.fixmassMm) : '',
+                schnittbildId: editPosition.schnittbildId ?? null,
+                schnittbildBildUrl: editPosition.schnittbildBildUrl ?? null,
+                schnittAchseBildUrl: editPosition.schnittAchseBildUrl ?? null,
+                winkelLinks: editPosition.anschnittWinkelLinks != null ? String(editPosition.anschnittWinkelLinks) : '',
+                winkelRechts: editPosition.anschnittWinkelRechts != null ? String(editPosition.anschnittWinkelRechts) : '',
                 zeugnis: editPosition.zeugnisAnforderung ?? '',
                 kommentar: editPosition.kommentar ?? '',
             }]);
@@ -320,6 +359,27 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
         });
     };
 
+    /** Extrahiert die Schnitt-Daten in das Server-Format. Leere Winkel = 90°. */
+    const schnittPayload = (pos: Position) => {
+        const fixmass = pos.fixzuschnitt && pos.fixmassMm ? Number(pos.fixmassMm) : null;
+        if (!pos.sonderzuschnitt || pos.schnittbildId == null) {
+            return {
+                fixmassMm: fixmass,
+                schnittbildId: null,
+                anschnittWinkelLinks: null,
+                anschnittWinkelRechts: null,
+            };
+        }
+        const links = pos.winkelLinks.trim() === '' ? 90 : Number(pos.winkelLinks);
+        const rechts = pos.winkelRechts.trim() === '' ? 90 : Number(pos.winkelRechts);
+        return {
+            fixmassMm: fixmass,
+            schnittbildId: pos.schnittbildId,
+            anschnittWinkelLinks: Number.isNaN(links) ? 90 : links,
+            anschnittWinkelRechts: Number.isNaN(rechts) ? 90 : rechts,
+        };
+    };
+
     const speichern = async () => {
         // Batch-Edit: PUT pro Position (jede Position behält ihren Projekt/Lieferant-Kontext)
         if (istBatchEditModus) {
@@ -350,7 +410,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                     produkttext: pos.produkttext.trim() || null,
                     menge: Number(pos.menge),
                     einheit: pos.einheit.trim() || 'Stück',
-                    fixmassMm: pos.fixmassMm ? Number(pos.fixmassMm) : null,
+                    ...schnittPayload(pos),
                     zeugnisAnforderung: pos.zeugnis || null,
                     kommentar: pos.kommentar.trim() || null,
                 };
@@ -448,7 +508,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                     produkttext: pos.produkttext.trim() || null,
                     menge: Number(pos.menge),
                     einheit: pos.einheit.trim() || 'Stück',
-                    fixmassMm: pos.fixmassMm ? Number(pos.fixmassMm) : null,
+                    ...schnittPayload(pos),
                     zeugnisAnforderung: pos.zeugnis || null,
                     kommentar: pos.kommentar.trim() || null,
                 };
@@ -853,9 +913,9 @@ const PositionRow: React.FC<PositionRowProps> = ({
                         </div>
                     </div>
 
-                    {/* Zeile 2: Menge | Einheit | Fixmaß | Kategorie */}
+                    {/* Zeile 2: Menge | Einheit | Kategorie */}
                     <div className="grid grid-cols-12 gap-3">
-                        <div className="col-span-6 md:col-span-2">
+                        <div className="col-span-6 md:col-span-3">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Menge *</label>
                             <Input
                                 type="number"
@@ -866,7 +926,7 @@ const PositionRow: React.FC<PositionRowProps> = ({
                                 step="any"
                             />
                         </div>
-                        <div className="col-span-6 md:col-span-2">
+                        <div className="col-span-6 md:col-span-3">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Einheit</label>
                             <Select
                                 value={position.einheit}
@@ -874,21 +934,7 @@ const PositionRow: React.FC<PositionRowProps> = ({
                                 options={EINHEITEN}
                             />
                         </div>
-                        <div className="col-span-12 md:col-span-3">
-                            <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
-                                <Ruler className="w-3 h-3" />
-                                Fixmaß (mm)
-                            </label>
-                            <Input
-                                type="number"
-                                value={position.fixmassMm}
-                                onChange={e => onUpdate({ fixmassMm: e.target.value })}
-                                placeholder="z. B. 6000"
-                                min="0"
-                                step="1"
-                            />
-                        </div>
-                        <div className="col-span-12 md:col-span-5">
+                        <div className="col-span-12 md:col-span-6">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Warengruppe</label>
                             <KategoriePicker
                                 kategorien={kategorien}
@@ -898,6 +944,9 @@ const PositionRow: React.FC<PositionRowProps> = ({
                             />
                         </div>
                     </div>
+
+                    {/* Zeile 2b: Zuschnitt — Checkboxen + abhängige Felder */}
+                    <ZuschnittBlock position={position} onUpdate={onUpdate} disabled={disabled} />
 
                     {/* Zeile 3: Zeugnis + Produkttext + Kommentar */}
                     <div className="grid grid-cols-12 gap-3">
@@ -950,6 +999,218 @@ const PositionRow: React.FC<PositionRowProps> = ({
                     </div>
                 )}
             </div>
+        </div>
+    );
+};
+
+// ========= Zuschnitt-Block (Fixzuschnitt + Sonderzuschnitt) =========
+interface ZuschnittBlockProps {
+    position: Position;
+    onUpdate: (patch: Partial<Position>) => void;
+    disabled?: boolean;
+}
+
+const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, disabled = false }) => {
+    const [pickerOffen, setPickerOffen] = useState(false);
+
+    const toggleFixzuschnitt = (checked: boolean) => {
+        if (checked) {
+            onUpdate({ fixzuschnitt: true });
+        } else {
+            // Fixzuschnitt aus → Sonderzuschnitt zwangsweise auch aus + Felder zurücksetzen
+            onUpdate({
+                fixzuschnitt: false,
+                fixmassMm: '',
+                sonderzuschnitt: false,
+                schnittbildId: null,
+                schnittbildBildUrl: null,
+                schnittAchseId: null,
+                schnittAchseBildUrl: null,
+                winkelLinks: '',
+                winkelRechts: '',
+            });
+        }
+    };
+
+    const toggleSonderzuschnitt = (checked: boolean) => {
+        if (checked) {
+            // Sonderzuschnitt aktivieren → Fixzuschnitt zwangsläufig mit an, Picker öffnen
+            onUpdate({ fixzuschnitt: true, sonderzuschnitt: true });
+            setPickerOffen(true);
+        } else {
+            onUpdate({
+                sonderzuschnitt: false,
+                schnittbildId: null,
+                schnittbildBildUrl: null,
+                schnittAchseId: null,
+                schnittAchseBildUrl: null,
+                winkelLinks: '',
+                winkelRechts: '',
+            });
+        }
+    };
+
+    const handlePickerSubmit = (auswahl: SonderzuschnittAuswahl) => {
+        onUpdate({
+            sonderzuschnitt: true,
+            fixzuschnitt: true,
+            schnittbildId: auswahl.schnittbildId,
+            schnittbildBildUrl: auswahl.schnittbildBildUrl,
+            schnittAchseId: auswahl.schnittAchseId,
+            schnittAchseBildUrl: auswahl.schnittAchseBildUrl,
+            winkelLinks: String(auswahl.anschnittWinkelLinks),
+            winkelRechts: String(auswahl.anschnittWinkelRechts),
+        });
+    };
+
+    return (
+        <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-4">
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={position.fixzuschnitt}
+                        onChange={(e) => toggleFixzuschnitt(e.target.checked)}
+                        disabled={disabled}
+                        className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                    <span className="text-sm font-medium text-slate-700 inline-flex items-center gap-1">
+                        <Ruler className="w-3.5 h-3.5 text-slate-500" />
+                        Fixzuschnitt
+                    </span>
+                </label>
+
+                <label
+                    className={cn(
+                        'inline-flex items-center gap-2 select-none',
+                        disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+                    )}
+                >
+                    <input
+                        type="checkbox"
+                        checked={position.sonderzuschnitt}
+                        onChange={(e) => toggleSonderzuschnitt(e.target.checked)}
+                        disabled={disabled}
+                        className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                    <span className="text-sm font-medium text-slate-700 inline-flex items-center gap-1">
+                        <Scissors className="w-3.5 h-3.5 text-slate-500" />
+                        Sonderzuschnitt
+                        <span className="text-xs text-slate-400 font-normal ml-1">
+                            (nicht 90° – Gehrung/Winkel)
+                        </span>
+                    </span>
+                </label>
+            </div>
+
+            {/* Fixmaß-Input (nur wenn Fixzuschnitt aktiv) */}
+            {position.fixzuschnitt && (
+                <div className="grid grid-cols-12 gap-3">
+                    <div className="col-span-12 md:col-span-4">
+                        <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
+                            <Ruler className="w-3 h-3" />
+                            Fixmaß pro Stück (mm) *
+                        </label>
+                        <Input
+                            type="number"
+                            value={position.fixmassMm}
+                            onChange={(e) => onUpdate({ fixmassMm: e.target.value })}
+                            placeholder="z. B. 6000"
+                            min="0"
+                            step="1"
+                            disabled={disabled}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Sonderzuschnitt-Vorschau */}
+            {position.sonderzuschnitt && (
+                <div className="border border-rose-200 rounded-xl p-3 bg-rose-50/40 flex items-center gap-4">
+                    {position.schnittbildId != null ? (
+                        <>
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {position.schnittAchseBildUrl && (
+                                    <img
+                                        src={position.schnittAchseBildUrl}
+                                        alt="Achse"
+                                        className="w-12 h-12 object-contain bg-white border border-rose-200 rounded-lg"
+                                    />
+                                )}
+                                {position.schnittbildBildUrl && (
+                                    <img
+                                        src={position.schnittbildBildUrl}
+                                        alt="Schnittbild"
+                                        className="w-12 h-12 object-contain bg-white border border-rose-200 rounded-lg"
+                                    />
+                                )}
+                                <div className="text-sm">
+                                    <p className="font-medium text-slate-900">
+                                        {position.winkelLinks || '90'}° ·· {position.winkelRechts || '90'}°
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                        Winkel links / rechts
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2 flex-shrink-0">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setPickerOffen(true)}
+                                    disabled={disabled}
+                                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                >
+                                    Anpassen
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => toggleSonderzuschnitt(false)}
+                                    disabled={disabled}
+                                    className="text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                >
+                                    <X className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-between gap-3 w-full">
+                            <p className="text-sm text-slate-600">
+                                Schnittbild und Winkel noch nicht gewählt.
+                            </p>
+                            <Button
+                                size="sm"
+                                onClick={() => setPickerOffen(true)}
+                                disabled={disabled}
+                                className="bg-rose-600 text-white hover:bg-rose-700"
+                            >
+                                Schnittbild wählen
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <SonderzuschnittPicker
+                isOpen={pickerOffen}
+                onClose={() => setPickerOffen(false)}
+                onSubmit={handlePickerSubmit}
+                kategorieId={position.kategorieId}
+                artikelId={position.artikelId}
+                initial={
+                    position.schnittbildId != null
+                        ? {
+                              schnittbildId: position.schnittbildId,
+                              schnittbildBildUrl: position.schnittbildBildUrl ?? undefined,
+                              schnittAchseId: position.schnittAchseId ?? undefined,
+                              schnittAchseBildUrl: position.schnittAchseBildUrl ?? undefined,
+                              anschnittWinkelLinks: position.winkelLinks ? Number(position.winkelLinks) : undefined,
+                              anschnittWinkelRechts: position.winkelRechts ? Number(position.winkelRechts) : undefined,
+                          }
+                        : null
+                }
+            />
         </div>
     );
 };

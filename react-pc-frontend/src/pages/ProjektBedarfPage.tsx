@@ -9,6 +9,7 @@ import {
     Pencil,
     Plus,
     Ruler,
+    Scissors,
     Trash2,
     Truck,
 } from 'lucide-react';
@@ -53,6 +54,11 @@ interface BedarfsZeile {
     kilogramm?: number | null;
     gesamtKilogramm?: number | null;
     fixmassMm?: number | null;
+    schnittbildId?: number | null;
+    schnittbildBildUrl?: string | null;
+    schnittAchseBildUrl?: string | null;
+    anschnittWinkelLinks?: number | null;
+    anschnittWinkelRechts?: number | null;
     zeugnisAnforderung?: string | null;
     excKlasse?: string | null;
     freiePosition?: boolean;
@@ -174,6 +180,11 @@ export default function ProjektBedarfPage() {
             menge: zeile.menge ?? zeile.stueckzahl ?? null,
             einheit: zeile.einheit ?? null,
             fixmassMm: zeile.fixmassMm ?? null,
+            schnittbildId: zeile.schnittbildId ?? null,
+            schnittbildBildUrl: zeile.schnittbildBildUrl ?? null,
+            schnittAchseBildUrl: zeile.schnittAchseBildUrl ?? null,
+            anschnittWinkelLinks: zeile.anschnittWinkelLinks ?? null,
+            anschnittWinkelRechts: zeile.anschnittWinkelRechts ?? null,
             zeugnisAnforderung: zeile.zeugnisAnforderung ?? null,
             kommentar: zeile.kommentar ?? null,
             projektId: zeile.projektId ?? projektIdNum,
@@ -299,9 +310,22 @@ export default function ProjektBedarfPage() {
                                                 {formatMenge(z)}
                                             </td>
                                             <td className="px-4 py-3 text-right text-slate-700 tabular-nums">
-                                                {z.fixmassMm
-                                                    ? <span className="inline-flex items-center gap-1 text-xs"><Ruler className="w-3 h-3 text-slate-400" />{z.fixmassMm} mm</span>
-                                                    : <span className="text-slate-300">—</span>}
+                                                {z.fixmassMm ? (
+                                                    <div className="inline-flex flex-col items-end gap-0.5">
+                                                        <span className="inline-flex items-center gap-1 text-xs">
+                                                            <Ruler className="w-3 h-3 text-slate-400" />
+                                                            {z.fixmassMm} mm
+                                                        </span>
+                                                        {z.schnittbildId != null && (
+                                                            <span className="inline-flex items-center gap-1 text-[11px] text-rose-600">
+                                                                <Scissors className="w-3 h-3" />
+                                                                {(z.anschnittWinkelLinks ?? 90)}° · {(z.anschnittWinkelRechts ?? 90)}°
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-300">—</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-right text-slate-700 tabular-nums">
                                                 {formatKg(z.kilogramm) ?? <span className="text-slate-300">—</span>}
