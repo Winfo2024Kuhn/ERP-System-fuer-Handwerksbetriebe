@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Package, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus, Scissors, Sparkles, TrendingUp } from "lucide-react";
+import { RefreshCw, Package, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus, Sparkles, TrendingUp } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -11,7 +11,6 @@ import { CategoryTreeModal } from "../components/CategoryTreeModal";
 import { CreateArticleModal } from "../components/CreateArticleModal";
 import { ArtikelVorschlaegeModal } from "../components/ArtikelVorschlaegeModal";
 import { ArtikelDetailModal } from "../components/ArtikelDetailModal";
-import { KategorieSchnittbilderModal } from "../components/KategorieSchnittbilderModal";
 import { PageLayout } from "../components/layout/PageLayout";
 import { useToast } from '../components/ui/toast';
 
@@ -60,7 +59,6 @@ export default function ArtikelEditor() {
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showCategoryManagerModal, setShowCategoryManagerModal] = useState(false);
-    const [showSchnittbilderModal, setShowSchnittbilderModal] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showVorschlaegeModal, setShowVorschlaegeModal] = useState(false);
     const [pendingCount, setPendingCount] = useState(0);
@@ -272,20 +270,7 @@ export default function ArtikelEditor() {
                         onClick={() => setShowCategoryManagerModal(true)}
                     >
                         <FolderPlus className="w-4 h-4 mr-2" />
-                        Kategorien anlegen
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                        onClick={() => setShowSchnittbilderModal(true)}
-                        disabled={filters.kategorieId === 0}
-                        title={filters.kategorieId === 0
-                            ? 'Erst Kategorie im Filter wählen'
-                            : `Schnittbilder für "${filters.kategorieName}" verwalten`}
-                    >
-                        <Scissors className="w-4 h-4 mr-2" />
-                        Schnittbilder
+                        Kategorien verwalten
                     </Button>
                     <Button variant="outline" size="sm" onClick={loadArtikel}>
                         <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
@@ -498,12 +483,6 @@ export default function ArtikelEditor() {
                 <CategoryTreeModal
                     mode="manage"
                     onClose={() => setShowCategoryManagerModal(false)}
-                />
-            )}
-            {showSchnittbilderModal && filters.kategorieId !== 0 && (
-                <KategorieSchnittbilderModal
-                    kategorie={{ id: filters.kategorieId, bezeichnung: filters.kategorieName || 'Kategorie' }}
-                    onClose={() => setShowSchnittbilderModal(false)}
                 />
             )}
             {showVorschlaegeModal && (

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, Save, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, Save, Scissors, X } from 'lucide-react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -7,6 +7,7 @@ import { Label } from './ui/label';
 import { cn } from '../lib/utils';
 import { type ProduktkategorieDto } from '../types';
 import { useToast } from './ui/toast';
+import { KategorieSchnittbilderModal } from './KategorieSchnittbilderModal';
 
 interface CategoryTreeModalProps {
     onSelect?: (kategorieId: number, kategorieName: string) => void;
@@ -117,6 +118,7 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
 }) => {
     const toast = useToast();
     const isManageMode = mode === 'manage';
+    const [schnittbilderFuer, setSchnittbilderFuer] = useState<ProduktkategorieDto | null>(null);
 
     const [roots, setRoots] = useState<ProduktkategorieDto[]>([]);
     const [loading, setLoading] = useState(true);
@@ -377,6 +379,41 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
                                         <X className="w-4 h-4 mr-2" /> Schließen
                                     </Button>
                                 </div>
+
+                                {/* Schnittbilder — nur für Leaf-Kategorien (= ohne Unterkategorien),
+                                    weil Artikel nur an Leaf-Kategorien hängen und Achsen/Schnittbilder
+                                    somit immer kontextspezifisch bleiben. */}
+                                {selectedNode && (
+                                    <div className="pt-4 border-t border-slate-100">
+                                        <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">
+                                            Schnittbilder
+                                        </p>
+                                        {selectedNode.leaf === true ? (
+                                            <>
+                                                <p className="text-sm text-slate-600 mb-2">
+                                                    Pflege Achsen und Schnittbilder für
+                                                    <span className="font-medium text-slate-900"> {selectedNode.bezeichnung}</span>.
+                                                </p>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                                    onClick={() => setSchnittbilderFuer(selectedNode)}
+                                                >
+                                                    <Scissors className="w-4 h-4 mr-2" />
+                                                    Schnittbilder verwalten
+                                                </Button>
+                                            </>
+                                        ) : (
+                                            <p className="text-xs text-slate-500">
+                                                Schnittbilder können nur an einer „Leaf"-Kategorie
+                                                (ohne Unterkategorien) hinterlegt werden, weil Artikel
+                                                nur dort zugewiesen sind. Wähle eine Unterkategorie,
+                                                um Schnittbilder zu pflegen.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </Card>
                     </div>
@@ -404,6 +441,13 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
                     </div>
                 )}
             </Card>
+
+            {schnittbilderFuer && (
+                <KategorieSchnittbilderModal
+                    kategorie={{ id: Number(schnittbilderFuer.id), bezeichnung: schnittbilderFuer.bezeichnung }}
+                    onClose={() => setSchnittbilderFuer(null)}
+                />
+            )}
         </div>
     );
 };
