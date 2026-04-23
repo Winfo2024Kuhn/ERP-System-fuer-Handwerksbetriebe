@@ -204,8 +204,14 @@ public class BestellungService {
     public void loeschePosition(Long id) {
         ArtikelInProjekt aip = artikelInProjektRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Position nicht gefunden"));
-        if (aip.getArtikel() != null) {
-            throw new IllegalStateException("Nur freie Positionen können hier gelöscht werden");
+        if (aip.getQuelle() == BestellQuelle.BESTELLT) {
+            throw new IllegalStateException("Bereits bestellte Positionen können nicht gelöscht werden");
+        }
+        if (aip.getQuelle() == BestellQuelle.AUS_LAGER) {
+            throw new IllegalStateException("Aus dem Lager entnommene Positionen können nicht gelöscht werden");
+        }
+        if (aip.getQuelle() == BestellQuelle.IN_ANFRAGE) {
+            throw new IllegalStateException("Positionen in einer laufenden Anfrage können nicht gelöscht werden");
         }
         artikelInProjektRepository.delete(aip);
     }

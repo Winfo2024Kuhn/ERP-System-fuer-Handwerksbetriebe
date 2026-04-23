@@ -84,8 +84,14 @@ public class BestellungController {
 
     @DeleteMapping("/{id}/freitext")
     public ResponseEntity<Void> loescheFreiePosition(@PathVariable Long id) {
-        bestellungService.loeschePosition(id);
-        return ResponseEntity.noContent().build();
+        try {
+            bestellungService.loeschePosition(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                    .header("X-Error-Reason", e.getMessage())
+                    .build();
+        }
     }
 
     /**
