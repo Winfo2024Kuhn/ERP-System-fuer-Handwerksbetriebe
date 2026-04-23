@@ -29,6 +29,11 @@ public class SchnittAchseController {
      * Liefert Achsen zu einer Kategorie oder zu einem Artikel.
      * Priorität: artikelId > subKategorieId > kategorieId.
      * Ohne Parameter → alle Achsen (für Admin-UI).
+     * <p>
+     * Vererbung: Wenn die gewählte Kategorie keine eigenen Achsen hat, wird
+     * die Parent-Kette bis zur Wurzel durchlaufen — die erste Kategorie
+     * mit Achsen gewinnt. Spezifische Unterkategorien überschreiben also die
+     * Eltern vollständig, sobald sie selbst Achsen besitzen.
      */
     @GetMapping
     public ResponseEntity<List<SchnittAchseDto>> list(
@@ -36,28 +41,42 @@ public class SchnittAchseController {
             @RequestParam(value = "subKategorieId", required = false) Integer subKategorieId,
             @RequestParam(value = "kategorieId", required = false) Integer kategorieId
     ) {
-        Integer effectiveKategorieId = null;
+        Kategorie startKategorie = null;
 
         if (artikelId != null) {
             Artikel a = artikelRepository.findById(artikelId).orElse(null);
             if (a == null || a.getKategorie() == null) {
                 return ResponseEntity.ok(Collections.emptyList());
             }
-            effectiveKategorieId = rootKategorieId(a.getKategorie());
+            startKategorie = a.getKategorie();
         } else if (subKategorieId != null) {
-            Kategorie k = kategorieRepository.findById(subKategorieId).orElse(null);
-            if (k == null) return ResponseEntity.ok(Collections.emptyList());
-            effectiveKategorieId = rootKategorieId(k);
+            startKategorie = kategorieRepository.findById(subKategorieId).orElse(null);
+            if (startKategorie == null) return ResponseEntity.ok(Collections.emptyList());
         } else if (kategorieId != null) {
-            effectiveKategorieId = kategorieId;
+            startKategorie = kategorieRepository.findById(kategorieId).orElse(null);
+            if (startKategorie == null) return ResponseEntity.ok(Collections.emptyList());
         }
 
-        List<SchnittAchse> achsen = (effectiveKategorieId == null)
+        List<SchnittAchse> achsen = (startKategorie == null)
                 ? schnittAchseRepository.findAll()
-                : schnittAchseRepository.findByKategorie_IdOrderByIdAsc(effectiveKategorieId);
+                : resolveMitVererbung(startKategorie);
 
         List<SchnittAchseDto> result = achsen.stream().map(this::toDto).collect(Collectors.toList());
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Resolve die Achsen einer Kategorie unter Berücksichtigung der
+     * Parent-Kette. Erste Ebene mit eigenen Achsen gewinnt.
+     */
+    private List<SchnittAchse> resolveMitVererbung(Kategorie start) {
+        Kategorie cur = start;
+        while (cur != null) {
+            List<SchnittAchse> achsen = schnittAchseRepository.findByKategorie_IdOrderByIdAsc(cur.getId());
+            if (!achsen.isEmpty()) return achsen;
+            cur = cur.getParentKategorie();
+        }
+        return Collections.emptyList();
     }
 
     @GetMapping("/{id}")
@@ -106,12 +125,6 @@ public class SchnittAchseController {
         if (!schnittAchseRepository.existsById(id)) return ResponseEntity.notFound().build();
         schnittAchseRepository.deleteById(id);
         return ResponseEntity.noContent().build();
-    }
-
-    private Integer rootKategorieId(Kategorie k) {
-        Kategorie cur = k;
-        while (cur.getParentKategorie() != null) cur = cur.getParentKategorie();
-        return cur.getId();
     }
 
     private SchnittAchseDto toDto(SchnittAchse a) {

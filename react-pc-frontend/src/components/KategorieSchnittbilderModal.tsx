@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Plus, Ruler, Scissors, Trash2, UploadCloud, X } from 'lucide-react';
+import { Info, Loader2, Plus, Ruler, Scissors, Trash2, UploadCloud, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
@@ -68,64 +68,90 @@ export const KategorieSchnittbilderModal: React.FC<Props> = ({ kategorie, onClos
         ladeAchsen();
     }, [ladeAchsen]);
 
+    /** Einzelnes Bild hochladen (intern). Gibt die URL oder null zurück. */
     const uploadBild = useCallback(async (datei: File): Promise<string | null> => {
         const formData = new FormData();
         formData.append('datei', datei);
+        const res = await fetch('/api/schnittbilder/upload', {
+            method: 'POST',
+            body: formData,
+        });
+        if (!res.ok) return null;
+        const data: { url: string } = await res.json();
+        return data.url;
+    }, []);
+
+    /** Lädt ein Bild hoch und legt daraus eine Achse an. Gibt Erfolg zurück. */
+    const erstelleAchseAusBild = useCallback(async (datei: File): Promise<boolean> => {
+        const url = await uploadBild(datei);
+        if (!url) return false;
+        const res = await fetch('/api/schnitt-achsen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bildUrl: url, kategorieId: kategorie.id }),
+        });
+        return res.ok;
+    }, [kategorie.id, uploadBild]);
+
+    /** Lädt ein Bild hoch und legt daraus ein Schnittbild unter einer Achse an. */
+    const erstelleSchnittAusBild = useCallback(async (achseId: number, datei: File): Promise<boolean> => {
+        const url = await uploadBild(datei);
+        if (!url) return false;
+        const res = await fetch('/api/schnittbilder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bildUrlSchnittbild: url, schnittAchseId: achseId }),
+        });
+        return res.ok;
+    }, [uploadBild]);
+
+    const handleAchsenUpload = async (dateien: File[]) => {
+        if (dateien.length === 0) return;
         setUploading(true);
         try {
-            const res = await fetch('/api/schnittbilder/upload', {
-                method: 'POST',
-                body: formData,
-            });
-            if (!res.ok) {
-                const payload = await res.json().catch(() => ({}));
-                toast.error(payload?.error || 'Upload fehlgeschlagen.');
-                return null;
+            const ergebnisse = await Promise.all(dateien.map(erstelleAchseAusBild));
+            const erfolg = ergebnisse.filter(Boolean).length;
+            const fehler = ergebnisse.length - erfolg;
+            if (erfolg > 0) {
+                toast.success(
+                    erfolg === 1 ? 'Achse hinzugefügt.' : `${erfolg} Achsen hinzugefügt.`,
+                );
             }
-            const data: { url: string } = await res.json();
-            return data.url;
-        } catch (err) {
-            console.error(err);
-            toast.error('Upload fehlgeschlagen.');
-            return null;
+            if (fehler > 0) {
+                toast.error(
+                    fehler === 1
+                        ? 'Eine Achse konnte nicht angelegt werden.'
+                        : `${fehler} Achsen konnten nicht angelegt werden.`,
+                );
+            }
+            ladeAchsen();
         } finally {
             setUploading(false);
         }
-    }, [toast]);
-
-    const handleAchseUpload = async (datei: File) => {
-        const url = await uploadBild(datei);
-        if (!url) return;
-        try {
-            const res = await fetch('/api/schnitt-achsen', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bildUrl: url, kategorieId: kategorie.id }),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            toast.success('Achse hinzugefügt.');
-            ladeAchsen();
-        } catch (err) {
-            console.error(err);
-            toast.error('Achse konnte nicht angelegt werden.');
-        }
     };
 
-    const handleSchnittUpload = async (achseId: number, datei: File) => {
-        const url = await uploadBild(datei);
-        if (!url) return;
+    const handleSchnittUpload = async (achseId: number, dateien: File[]) => {
+        if (dateien.length === 0) return;
+        setUploading(true);
         try {
-            const res = await fetch('/api/schnittbilder', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bildUrlSchnittbild: url, schnittAchseId: achseId }),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            toast.success('Schnittbild hinzugefügt.');
+            const ergebnisse = await Promise.all(dateien.map((d) => erstelleSchnittAusBild(achseId, d)));
+            const erfolg = ergebnisse.filter(Boolean).length;
+            const fehler = ergebnisse.length - erfolg;
+            if (erfolg > 0) {
+                toast.success(
+                    erfolg === 1 ? 'Schnittbild hinzugefügt.' : `${erfolg} Schnittbilder hinzugefügt.`,
+                );
+            }
+            if (fehler > 0) {
+                toast.error(
+                    fehler === 1
+                        ? 'Ein Schnittbild konnte nicht angelegt werden.'
+                        : `${fehler} Schnittbilder konnten nicht angelegt werden.`,
+                );
+            }
             ladeAchsen();
-        } catch (err) {
-            console.error(err);
-            toast.error('Schnittbild konnte nicht angelegt werden.');
+        } finally {
+            setUploading(false);
         }
     };
 
@@ -207,16 +233,34 @@ export const KategorieSchnittbilderModal: React.FC<Props> = ({ kategorie, onClos
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {/* Vererbungs-Hinweis — die API liefert bei fehlenden eigenen Achsen
+                        die der nächsten Parent-Kategorie. Wir erkennen das daran, dass
+                        die zurückgelieferten Achsen eine andere kategorieId haben. */}
+                    {!loading && achsen.length > 0 && achsen.every((a) => a.kategorieId !== kategorie.id) && (
+                        <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                            <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                            <div className="text-sm">
+                                <p className="font-medium">Geerbt von einer Oberkategorie</p>
+                                <p className="text-xs mt-0.5">
+                                    {kategorie.bezeichnung} hat noch keine eigenen Achsen — die unten
+                                    gezeigten werden von einer übergeordneten Kategorie geerbt. Wenn du
+                                    hier eine neue Achse anlegst, überschreiben die eigenen Achsen die
+                                    geerbten vollständig.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Neue Achse per Drag & Drop */}
                     <div>
                         <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">
                             Neue Achse hinzufügen
                         </p>
                         <BildDropZone
-                            onFile={handleAchseUpload}
+                            onFiles={handleAchsenUpload}
                             disabled={uploading}
-                            label="Achsen-Bild hier ablegen oder klicken"
-                            hint="Pro Kategorie sind mehrere Achsen möglich (z.B. starke / schwache Achse). PNG, JPG, GIF oder WebP."
+                            label="Achsen-Bild(er) hier ablegen oder klicken"
+                            hint="Mehrere Bilder gleichzeitig möglich — pro Bild wird eine neue Achse angelegt. PNG, JPG, GIF oder WebP."
                             size="lg"
                         />
                     </div>
@@ -248,7 +292,7 @@ export const KategorieSchnittbilderModal: React.FC<Props> = ({ kategorie, onClos
                                                 <img
                                                     src={a.bildUrl}
                                                     alt={`Achse ${a.id}`}
-                                                    className="w-14 h-14 object-contain bg-white border border-slate-200 rounded-lg"
+                                                    className="w-7 h-7 object-contain bg-white border border-slate-200 rounded-lg"
                                                     onError={(e) => {
                                                         (e.currentTarget as HTMLImageElement).style.opacity = '0.3';
                                                     }}
@@ -283,7 +327,7 @@ export const KategorieSchnittbilderModal: React.FC<Props> = ({ kategorie, onClos
                                                             <img
                                                                 src={sb.bildUrlSchnittbild}
                                                                 alt={`Schnittbild ${sb.id}`}
-                                                                className="w-full h-20 object-contain"
+                                                                className="w-full h-10 object-contain"
                                                                 onError={(e) => {
                                                                     (e.currentTarget as HTMLImageElement).style.opacity = '0.3';
                                                                 }}
@@ -302,11 +346,11 @@ export const KategorieSchnittbilderModal: React.FC<Props> = ({ kategorie, onClos
                                                 </div>
                                             )}
 
-                                            {/* Drop-Zone für neues Schnittbild */}
+                                            {/* Drop-Zone für neue Schnittbilder (Multi-Upload) */}
                                             <BildDropZone
-                                                onFile={(f) => handleSchnittUpload(a.id, f)}
+                                                onFiles={(files) => handleSchnittUpload(a.id, files)}
                                                 disabled={uploading}
-                                                label="Schnittbild hinzufügen"
+                                                label="Schnittbild(er) hinzufügen — mehrere gleichzeitig möglich"
                                                 size="sm"
                                             />
                                         </div>
@@ -328,28 +372,32 @@ export const KategorieSchnittbilderModal: React.FC<Props> = ({ kategorie, onClos
     );
 };
 
-// ========= Bild-DropZone =========
+// ========= Bild-DropZone (Multi-Upload) =========
 
 interface BildDropZoneProps {
-    onFile: (file: File) => void;
+    onFiles: (files: File[]) => void;
     disabled?: boolean;
     label: string;
     hint?: string;
     size?: 'sm' | 'lg';
 }
 
-const BildDropZone: React.FC<BildDropZoneProps> = ({ onFile, disabled = false, label, hint, size = 'lg' }) => {
+const BildDropZone: React.FC<BildDropZoneProps> = ({ onFiles, disabled = false, label, hint, size = 'lg' }) => {
     const [dragActive, setDragActive] = useState(false);
     const inputRef = useRef<HTMLInputElement | null>(null);
 
-    const handleFile = (datei: File | undefined | null) => {
-        if (!datei) return;
-        if (!datei.type.startsWith('image/')) {
-            // Backend prüft noch mal, aber sofortiges Feedback hier
+    const handleFiles = (fileList: FileList | null | undefined) => {
+        if (!fileList || fileList.length === 0) return;
+        const alle = Array.from(fileList);
+        const bilder = alle.filter((f) => f.type.startsWith('image/'));
+        if (bilder.length === 0) {
             alert('Bitte nur Bilddateien ablegen (PNG, JPG, GIF, WebP).');
             return;
         }
-        onFile(datei);
+        if (bilder.length < alle.length) {
+            alert(`${alle.length - bilder.length} Datei(en) wurden ignoriert (kein Bildformat).`);
+        }
+        onFiles(bilder);
     };
 
     return (
@@ -361,8 +409,7 @@ const BildDropZone: React.FC<BildDropZoneProps> = ({ onFile, disabled = false, l
                 e.preventDefault();
                 setDragActive(false);
                 if (disabled) return;
-                const datei = e.dataTransfer.files?.[0];
-                handleFile(datei);
+                handleFiles(e.dataTransfer.files);
             }}
             className={cn(
                 'flex flex-col items-center justify-center gap-2 w-full border-2 border-dashed rounded-xl text-center transition-colors select-none',
@@ -378,11 +425,11 @@ const BildDropZone: React.FC<BildDropZoneProps> = ({ onFile, disabled = false, l
                 ref={inputRef}
                 type="file"
                 accept="image/*"
+                multiple
                 className="sr-only"
                 disabled={disabled}
                 onChange={(e) => {
-                    const datei = e.target.files?.[0];
-                    handleFile(datei);
+                    handleFiles(e.target.files);
                     // Damit dieselbe Datei erneut hochgeladen werden kann
                     if (inputRef.current) inputRef.current.value = '';
                 }}
@@ -405,7 +452,7 @@ const BildDropZone: React.FC<BildDropZoneProps> = ({ onFile, disabled = false, l
             {size === 'lg' && (
                 <span className="inline-flex items-center gap-1 text-xs text-rose-600 font-medium mt-1">
                     <Plus className="w-3 h-3" />
-                    Datei auswählen
+                    Dateien auswählen
                 </span>
             )}
         </label>

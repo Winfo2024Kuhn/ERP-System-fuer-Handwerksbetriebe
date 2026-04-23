@@ -222,7 +222,7 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
                                             <img
                                                 src={a.bildUrl}
                                                 alt={`Achse ${a.id}`}
-                                                className="w-full h-20 object-contain"
+                                                className="w-full h-10 object-contain"
                                                 onError={(e) => {
                                                     (e.currentTarget as HTMLImageElement).style.opacity = '0.3';
                                                 }}
@@ -283,7 +283,7 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
                                             <img
                                                 src={sb.bildUrlSchnittbild}
                                                 alt={`Schnittbild ${sb.id}`}
-                                                className="w-full h-20 object-contain"
+                                                className="w-full h-10 object-contain"
                                                 onError={(e) => {
                                                     (e.currentTarget as HTMLImageElement).style.opacity = '0.3';
                                                 }}

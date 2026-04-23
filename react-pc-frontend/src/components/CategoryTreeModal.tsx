@@ -380,38 +380,34 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
                                     </Button>
                                 </div>
 
-                                {/* Schnittbilder — nur für Leaf-Kategorien (= ohne Unterkategorien),
-                                    weil Artikel nur an Leaf-Kategorien hängen und Achsen/Schnittbilder
-                                    somit immer kontextspezifisch bleiben. */}
+                                {/* Schnittbilder: auf jeder Ebene pflegbar. Vererbung greift
+                                    an den Nutz-Endpoints — eine Unterkategorie ohne eigene
+                                    Einträge erbt von der nächsten Parent-Kategorie, die welche
+                                    hat. Sobald sie eigene Einträge bekommt, überschreibt sie
+                                    die geerbten vollständig. */}
                                 {selectedNode && (
                                     <div className="pt-4 border-t border-slate-100">
                                         <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">
                                             Schnittbilder
                                         </p>
-                                        {selectedNode.leaf === true ? (
-                                            <>
-                                                <p className="text-sm text-slate-600 mb-2">
-                                                    Pflege Achsen und Schnittbilder für
-                                                    <span className="font-medium text-slate-900"> {selectedNode.bezeichnung}</span>.
-                                                </p>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                                                    onClick={() => setSchnittbilderFuer(selectedNode)}
-                                                >
-                                                    <Scissors className="w-4 h-4 mr-2" />
-                                                    Schnittbilder verwalten
-                                                </Button>
-                                            </>
-                                        ) : (
-                                            <p className="text-xs text-slate-500">
-                                                Schnittbilder können nur an einer „Leaf"-Kategorie
-                                                (ohne Unterkategorien) hinterlegt werden, weil Artikel
-                                                nur dort zugewiesen sind. Wähle eine Unterkategorie,
-                                                um Schnittbilder zu pflegen.
-                                            </p>
-                                        )}
+                                        <p className="text-sm text-slate-600 mb-2">
+                                            Pflege Achsen und Schnittbilder für
+                                            <span className="font-medium text-slate-900"> {selectedNode.bezeichnung}</span>.
+                                        </p>
+                                        <p className="text-xs text-slate-500 mb-3">
+                                            Achsen dieser Kategorie gelten für alle Unterkategorien —
+                                            außer eine Unterkategorie legt eigene an, dann
+                                            überschreibt sie die geerbten.
+                                        </p>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                            onClick={() => setSchnittbilderFuer(selectedNode)}
+                                        >
+                                            <Scissors className="w-4 h-4 mr-2" />
+                                            Schnittbilder verwalten
+                                        </Button>
                                     </div>
                                 )}
                             </div>

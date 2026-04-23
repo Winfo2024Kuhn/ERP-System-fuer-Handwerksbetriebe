@@ -311,16 +311,36 @@ export default function ProjektBedarfPage() {
                                             </td>
                                             <td className="px-4 py-3 text-right text-slate-700 tabular-nums">
                                                 {z.fixmassMm ? (
-                                                    <div className="inline-flex flex-col items-end gap-0.5">
+                                                    <div className="inline-flex flex-col items-end gap-1">
                                                         <span className="inline-flex items-center gap-1 text-xs">
                                                             <Ruler className="w-3 h-3 text-slate-400" />
                                                             {z.fixmassMm} mm
                                                         </span>
                                                         {z.schnittbildId != null && (
-                                                            <span className="inline-flex items-center gap-1 text-[11px] text-rose-600">
-                                                                <Scissors className="w-3 h-3" />
-                                                                {(z.anschnittWinkelLinks ?? 90)}° · {(z.anschnittWinkelRechts ?? 90)}°
-                                                            </span>
+                                                            <div className="inline-flex items-center gap-1.5">
+                                                                {z.schnittAchseBildUrl && (
+                                                                    <img
+                                                                        src={z.schnittAchseBildUrl}
+                                                                        alt="Schnittachse"
+                                                                        className="h-7 w-auto rounded border border-slate-200 bg-white object-contain mr-1"
+                                                                    />
+                                                                )}
+                                                                <span className="text-[11px] font-medium text-rose-600 tabular-nums">
+                                                                    {(z.anschnittWinkelLinks ?? 90)}°
+                                                                </span>
+                                                                {z.schnittbildBildUrl ? (
+                                                                    <img
+                                                                        src={z.schnittbildBildUrl}
+                                                                        alt="Schnittbild"
+                                                                        className="h-7 w-auto rounded border border-slate-200 bg-white object-contain"
+                                                                    />
+                                                                ) : (
+                                                                    <Scissors className="w-3 h-3 text-rose-600" />
+                                                                )}
+                                                                <span className="text-[11px] font-medium text-rose-600 tabular-nums">
+                                                                    {(z.anschnittWinkelRechts ?? 90)}°
+                                                                </span>
+                                                            </div>
                                                         )}
                                                     </div>
                                                 ) : (

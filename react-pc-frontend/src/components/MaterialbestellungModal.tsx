@@ -466,7 +466,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 produkttext: pos.produkttext.trim() || null,
                 menge: Number(pos.menge),
                 einheit: pos.einheit.trim() || 'Stück',
-                fixmassMm: pos.fixmassMm ? Number(pos.fixmassMm) : null,
+                ...schnittPayload(pos),
                 zeugnisAnforderung: pos.zeugnis || null,
                 kommentar: pos.kommentar.trim() || null,
             };
@@ -1134,14 +1134,14 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
                                     <img
                                         src={position.schnittAchseBildUrl}
                                         alt="Achse"
-                                        className="w-12 h-12 object-contain bg-white border border-rose-200 rounded-lg"
+                                        className="w-6 h-6 object-contain bg-white border border-rose-200 rounded-lg"
                                     />
                                 )}
                                 {position.schnittbildBildUrl && (
                                     <img
                                         src={position.schnittbildBildUrl}
                                         alt="Schnittbild"
-                                        className="w-12 h-12 object-contain bg-white border border-rose-200 rounded-lg"
+                                        className="w-6 h-6 object-contain bg-white border border-rose-200 rounded-lg"
                                     />
                                 )}
                                 <div className="text-sm">

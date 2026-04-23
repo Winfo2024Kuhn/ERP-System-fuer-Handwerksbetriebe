@@ -60,6 +60,39 @@ class SchnittbilderControllerTest {
     }
 
     @Test
+    void list_nachKategorie_erbtVonElternWennKeineEigenenSchnittbilder() {
+        SchnittbilderRepository sbRepo = mock(SchnittbilderRepository.class);
+        Kategorie parent = new Kategorie(); parent.setId(10);
+        Kategorie child = new Kategorie(); child.setId(20); child.setParentKategorie(parent);
+
+        SchnittbilderController ctrl = new SchnittbilderController(sbRepo,
+                mock(SchnittAchseRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ArtikelRepository.class),
+                mockKatRepoMit(child, parent),
+                mock(org.example.kalkulationsprogramm.service.DateiSpeicherService.class));
+
+        when(sbRepo.findBySchnittAchse_Kategorie_IdOrderByIdAsc(20)).thenReturn(List.of());
+        SchnittAchse achse = new SchnittAchse(); achse.setId(1L); achse.setBildUrl("/a.png"); achse.setKategorie(parent);
+        Schnittbilder geerbt = new Schnittbilder();
+        geerbt.setId(55L); geerbt.setBildUrlSchnittbild("/geerbt.png"); geerbt.setSchnittAchse(achse);
+        when(sbRepo.findBySchnittAchse_Kategorie_IdOrderByIdAsc(10)).thenReturn(List.of(geerbt));
+
+        ResponseEntity<List<SchnittbildResponseDto>> resp = ctrl.list(null, null, null, 20);
+
+        assertEquals(1, resp.getBody().size());
+        assertEquals(55L, resp.getBody().get(0).getId());
+    }
+
+    private static org.example.kalkulationsprogramm.repository.KategorieRepository mockKatRepoMit(Kategorie... kats) {
+        org.example.kalkulationsprogramm.repository.KategorieRepository repo =
+                mock(org.example.kalkulationsprogramm.repository.KategorieRepository.class);
+        for (Kategorie k : kats) {
+            when(repo.findById(k.getId())).thenReturn(java.util.Optional.of(k));
+        }
+        return repo;
+    }
+
+    @Test
     void create_ohnePflichtfelder_gibt400() {
         ResponseEntity<SchnittbildResponseDto> resp = controller(
                 mock(SchnittbilderRepository.class), mock(SchnittAchseRepository.class))

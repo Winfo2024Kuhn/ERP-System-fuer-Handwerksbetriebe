@@ -56,6 +56,9 @@ public class SchnittbilderController {
      * Schnittbild-Liste. Priorität der Parameter:
      *   schnittAchseId > artikelId > subKategorieId > kategorieId.
      * Ohne Parameter → leere Liste (Admin soll explizit filtern).
+     * <p>
+     * Bei kategorie-basiertem Zugriff gilt Vererbung wie bei den Achsen:
+     * erste Kategorie in der Parent-Kette, die Schnittbilder hat, gewinnt.
      */
     @GetMapping
     public ResponseEntity<List<SchnittbildResponseDto>> list(
@@ -69,29 +72,44 @@ public class SchnittbilderController {
         if (schnittAchseId != null) {
             rows = schnittbilderRepository.findBySchnittAchse_IdOrderByIdAsc(schnittAchseId);
         } else {
-            Integer effectiveKategorieId = null;
+            Kategorie startKategorie = null;
             if (artikelId != null) {
                 Artikel a = artikelRepository.findById(artikelId).orElse(null);
                 if (a == null || a.getKategorie() == null) {
                     return ResponseEntity.ok(Collections.emptyList());
                 }
-                effectiveKategorieId = rootKategorieId(a.getKategorie());
+                startKategorie = a.getKategorie();
             } else if (subKategorieId != null) {
-                Kategorie k = kategorieRepository.findById(subKategorieId).orElse(null);
-                if (k == null) return ResponseEntity.ok(Collections.emptyList());
-                effectiveKategorieId = rootKategorieId(k);
+                startKategorie = kategorieRepository.findById(subKategorieId).orElse(null);
+                if (startKategorie == null) return ResponseEntity.ok(Collections.emptyList());
             } else if (kategorieId != null) {
-                effectiveKategorieId = kategorieId;
+                startKategorie = kategorieRepository.findById(kategorieId).orElse(null);
+                if (startKategorie == null) return ResponseEntity.ok(Collections.emptyList());
             }
 
-            if (effectiveKategorieId == null) {
+            if (startKategorie == null) {
                 return ResponseEntity.ok(Collections.emptyList());
             }
-            rows = schnittbilderRepository.findBySchnittAchse_Kategorie_IdOrderByIdAsc(effectiveKategorieId);
+            rows = resolveMitVererbung(startKategorie);
         }
 
         List<SchnittbildResponseDto> result = rows.stream().map(this::toDto).collect(Collectors.toList());
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Erste Kategorie in der Parent-Kette, die Schnittbilder besitzt, gewinnt
+     * (gleiche Logik wie bei den Achsen — spezifische Unterkategorien
+     * überschreiben die Eltern vollständig, sobald sie eigene Einträge haben).
+     */
+    private List<Schnittbilder> resolveMitVererbung(Kategorie start) {
+        Kategorie cur = start;
+        while (cur != null) {
+            List<Schnittbilder> found = schnittbilderRepository.findBySchnittAchse_Kategorie_IdOrderByIdAsc(cur.getId());
+            if (!found.isEmpty()) return found;
+            cur = cur.getParentKategorie();
+        }
+        return Collections.emptyList();
     }
 
     @GetMapping("/{id}")
@@ -140,12 +158,6 @@ public class SchnittbilderController {
         if (!schnittbilderRepository.existsById(id)) return ResponseEntity.notFound().build();
         schnittbilderRepository.deleteById(id);
         return ResponseEntity.noContent().build();
-    }
-
-    private Integer rootKategorieId(Kategorie k) {
-        Kategorie cur = k;
-        while (cur.getParentKategorie() != null) cur = cur.getParentKategorie();
-        return cur.getId();
     }
 
     private SchnittbildResponseDto toDto(Schnittbilder s) {

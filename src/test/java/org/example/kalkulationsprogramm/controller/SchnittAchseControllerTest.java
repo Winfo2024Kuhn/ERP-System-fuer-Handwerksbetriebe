@@ -27,18 +27,61 @@ class SchnittAchseControllerTest {
     @Test
     void list_nachKategorie_liefertSortierteAchsen() {
         SchnittAchseRepository repo = mock(SchnittAchseRepository.class);
+        KategorieRepository katRepo = mock(KategorieRepository.class);
         Kategorie kat = new Kategorie(); kat.setId(42);
+        when(katRepo.findById(42)).thenReturn(java.util.Optional.of(kat));
         SchnittAchse a1 = new SchnittAchse(); a1.setId(1L); a1.setBildUrl("/a1.png"); a1.setKategorie(kat);
         SchnittAchse a2 = new SchnittAchse(); a2.setId(2L); a2.setBildUrl("/a2.png"); a2.setKategorie(kat);
         when(repo.findByKategorie_IdOrderByIdAsc(42)).thenReturn(List.of(a1, a2));
 
-        ResponseEntity<List<SchnittAchseDto>> resp = controller(repo,
-                mock(KategorieRepository.class), mock(ArtikelRepository.class))
+        ResponseEntity<List<SchnittAchseDto>> resp = controller(repo, katRepo, mock(ArtikelRepository.class))
                 .list(null, null, 42);
 
         assertEquals(2, resp.getBody().size());
         assertEquals(42, resp.getBody().get(0).getKategorieId());
         assertEquals("/a1.png", resp.getBody().get(0).getBildUrl());
+    }
+
+    @Test
+    void list_nachKategorie_erbtVonElternWennKeineEigenenAchsen() {
+        SchnittAchseRepository repo = mock(SchnittAchseRepository.class);
+        KategorieRepository katRepo = mock(KategorieRepository.class);
+
+        Kategorie parent = new Kategorie(); parent.setId(10);
+        Kategorie child = new Kategorie(); child.setId(20); child.setParentKategorie(parent);
+
+        when(katRepo.findById(20)).thenReturn(java.util.Optional.of(child));
+        when(repo.findByKategorie_IdOrderByIdAsc(20)).thenReturn(List.of()); // Leaf selbst hat nichts
+        SchnittAchse ererbt = new SchnittAchse(); ererbt.setId(99L); ererbt.setBildUrl("/parent.png"); ererbt.setKategorie(parent);
+        when(repo.findByKategorie_IdOrderByIdAsc(10)).thenReturn(List.of(ererbt));
+
+        ResponseEntity<List<SchnittAchseDto>> resp = controller(repo, katRepo, mock(ArtikelRepository.class))
+                .list(null, null, 20);
+
+        assertEquals(1, resp.getBody().size());
+        assertEquals(99L, resp.getBody().get(0).getId());
+        assertEquals(10, resp.getBody().get(0).getKategorieId());
+    }
+
+    @Test
+    void list_nachKategorie_eigenenAchsenUeberschreibenElternVollstaendig() {
+        SchnittAchseRepository repo = mock(SchnittAchseRepository.class);
+        KategorieRepository katRepo = mock(KategorieRepository.class);
+
+        Kategorie parent = new Kategorie(); parent.setId(10);
+        Kategorie child = new Kategorie(); child.setId(20); child.setParentKategorie(parent);
+
+        when(katRepo.findById(20)).thenReturn(java.util.Optional.of(child));
+        SchnittAchse eigen = new SchnittAchse(); eigen.setId(77L); eigen.setBildUrl("/eigen.png"); eigen.setKategorie(child);
+        when(repo.findByKategorie_IdOrderByIdAsc(20)).thenReturn(List.of(eigen));
+
+        ResponseEntity<List<SchnittAchseDto>> resp = controller(repo, katRepo, mock(ArtikelRepository.class))
+                .list(null, null, 20);
+
+        assertEquals(1, resp.getBody().size());
+        assertEquals(77L, resp.getBody().get(0).getId());
+        // Parent-Abfrage darf gar nicht mehr passieren, sobald Kind eigene Achsen hat
+        verify(repo, never()).findByKategorie_IdOrderByIdAsc(10);
     }
 
     @Test
