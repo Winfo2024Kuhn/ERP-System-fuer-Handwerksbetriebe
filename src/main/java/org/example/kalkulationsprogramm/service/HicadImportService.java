@@ -290,7 +290,17 @@ public class HicadImportService {
         // fixmassMm nur bei Fixzuschnitt setzen — bei Stangenware null lassen,
         // damit DB-Queries "fixmass_mm IS NOT NULL" klar Fixzuschnitte identifizieren.
         aip.setFixmassMm(null);
-        aip.setKilogramm(null);
+        // Bei Stangenware leiten wir kg/m aus den Schwester-Zuschnitten ab und
+        // multiplizieren mit Stangenlänge × Anzahl Stäbe — sonst stünde die Zeile
+        // ohne Gewicht in der Bedarfsliste.
+        BigDecimal kgProMeter = berechneKgProMeter(preview);
+        BigDecimal stangenKilogramm = kgProMeter != null
+                ? kgProMeter
+                        .multiply(BigDecimal.valueOf(stangenlaengeM))
+                        .multiply(BigDecimal.valueOf(staebe))
+                        .setScale(2, RoundingMode.HALF_UP)
+                : null;
+        aip.setKilogramm(stangenKilogramm);
 
         int anzahlZuschnitte = preview.getSummeStueck() != null ? preview.getSummeStueck() : 0;
         double verschnittM = plan.verschnittMm() / 1000.0;
@@ -310,6 +320,29 @@ public class HicadImportService {
             aip.setFreitextEinheit("m");
         }
         return artikelInProjektRepository.save(aip).getId();
+    }
+
+    /**
+     * Leitet das Profil-Gewicht je Meter aus den HiCAD-Zuschnitten der Gruppe ab.
+     * Summiert dafür Gesamtgewicht und Gesamtlänge aller Zeilen mit gültigen Werten
+     * und teilt kg / m. Liefert null, wenn die Datenlage nicht reicht.
+     */
+    private BigDecimal berechneKgProMeter(ProfilGruppeDto preview) {
+        if (preview.getZeilen() == null) return null;
+        BigDecimal sumKg = BigDecimal.ZERO;
+        BigDecimal sumM = BigDecimal.ZERO;
+        for (SaegelisteZeileDto z : preview.getZeilen()) {
+            if (z.getGesamtGewichtKg() == null || z.getLaengeMm() == null || z.getAnzahl() == null) continue;
+            if (z.getAnzahl() <= 0 || z.getLaengeMm() <= 0) continue;
+            sumKg = sumKg.add(z.getGesamtGewichtKg());
+            BigDecimal meter = BigDecimal.valueOf(z.getLaengeMm())
+                    .multiply(BigDecimal.valueOf(z.getAnzahl()))
+                    .divide(BigDecimal.valueOf(1000), 6, RoundingMode.HALF_UP);
+            sumM = sumM.add(meter);
+        }
+        return sumM.signum() > 0
+                ? sumKg.divide(sumM, 6, RoundingMode.HALF_UP)
+                : null;
     }
 
     private ArtikelInProjekt baseEintrag(Projekt projekt, ConfirmGruppeDto conf, ProfilGruppeDto preview) {

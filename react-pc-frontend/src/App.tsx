@@ -36,6 +36,8 @@ import TerminKalender from './pages/TerminKalender';
 import RechnungsuebersichtEditor from './pages/RechnungsuebersichtEditor';
 import FirmaEditor from './pages/FirmaEditor';
 import BestellungEditor from './pages/BestellungEditor';
+import BedarfUebersichtPage from './pages/BedarfUebersichtPage';
+import ProjektBedarfPage from './pages/ProjektBedarfPage';
 import PreisanfragenPage from './pages/PreisanfragenPage';
 import DocumentEditorPage from './pages/DocumentEditorPage';
 import ArbeitszeitartEditor from './pages/ArbeitszeitartEditor';
@@ -84,7 +86,9 @@ export default function App() {
                 <Route path="/projekte" element={<ErrorBoundary><ProjektEditor /></ErrorBoundary>} />
                 <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />
                 <Route path="/bestellungen" element={<ErrorBoundary><BestellungenUebersicht /></ErrorBoundary>} />
-                <Route path="/bestellungen/bedarf" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
+                <Route path="/bestellungen/bedarf" element={<ErrorBoundary><BedarfUebersichtPage /></ErrorBoundary>} />
+                <Route path="/bestellungen/bedarf/projekt/:projektId" element={<ErrorBoundary><ProjektBedarfPage /></ErrorBoundary>} />
+                <Route path="/bestellungen/bedarf/legacy" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
                 <Route path="/einkauf/preisanfragen" element={<ErrorBoundary><PreisanfragenPage /></ErrorBoundary>} />
                 <Route path="/kalender" element={<ErrorBoundary><TerminKalender /></ErrorBoundary>} />
                 <Route path="/analyse" element={<ErrorBoundary><ErfolgsanalyseEditor /></ErrorBoundary>} />

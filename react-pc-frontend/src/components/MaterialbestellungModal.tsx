@@ -153,6 +153,10 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     const toast = useToast();
     const istBatchEditModus = editPositions != null && editPositions.length > 0;
     const istEditModus = editPosition != null || istBatchEditModus;
+    // Im Bedarfs-Workflow (Projekt-Detail-Page, Single-Edit) sind Projekt + Lieferant
+    // entweder durch den Aufruf-Kontext fix oder gehören erst zur späteren Bestellung.
+    // Dann blenden wir die beiden Header-Felder aus und Lieferant ist optional.
+    const headerKontextVerstecken = projektSperren || (editPosition != null && !istBatchEditModus);
 
     // Stammdaten
     const [kategorien, setKategorien] = useState<KategorieFlach[]>([]);
@@ -384,7 +388,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
             return;
         }
 
-        if (!lieferant) { toast.warning('Bitte Lieferanten auswählen'); return; }
+        if (!headerKontextVerstecken && !lieferant) { toast.warning('Bitte Lieferanten auswählen'); return; }
         const zuSpeichern = positionen.filter(p => p.produktname.trim() && p.menge && !isNaN(Number(p.menge)));
         if (zuSpeichern.length === 0) { toast.warning('Bitte mindestens eine Position ausfüllen'); return; }
 
@@ -395,7 +399,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
             const pos = zuSpeichern[0];
             const payload = {
                 projektId: projekt?.id ?? null,
-                lieferantId: lieferant.id,
+                lieferantId: lieferant?.id ?? null,
                 kategorieId: pos.kategorieId,
                 artikelId: pos.artikelId,
                 produktname: pos.produktname.trim(),
@@ -437,7 +441,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
             try {
                 const payload = {
                     projektId: projekt?.id ?? null,
-                    lieferantId: lieferant.id,
+                    lieferantId: lieferant?.id ?? null,
                     kategorieId: pos.kategorieId,
                     artikelId: pos.artikelId,
                     produktname: pos.produktname.trim(),
@@ -509,7 +513,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                         <Button variant="ghost" onClick={onClose} disabled={saving}>Abbrechen</Button>
                         <Button
                             onClick={speichern}
-                            disabled={saving || (!istBatchEditModus && !lieferant)}
+                            disabled={saving || (!istBatchEditModus && !headerKontextVerstecken && !lieferant)}
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
                             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
@@ -525,8 +529,9 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                     </div>
                 </div>
 
-                {/* Shared Header-Controls: Projekt + Lieferant (nicht im Batch-Edit-Modus) */}
-                {!istBatchEditModus && (
+                {/* Shared Header-Controls: Projekt + Lieferant (nicht im Batch-Edit-Modus,
+                    nicht im Projekt-Detail-Kontext und nicht im Single-Edit-Modus) */}
+                {!istBatchEditModus && !headerKontextVerstecken && (
                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 shrink-0">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Projekt */}
