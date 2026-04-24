@@ -88,5 +88,9 @@
       "Bash(rm -rf:*)",
       "Bash(rm -fr:*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "notebooklm"
+  ],
+  "enableAllProjectMcpServers": true
 }

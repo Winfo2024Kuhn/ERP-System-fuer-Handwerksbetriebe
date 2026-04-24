@@ -151,9 +151,41 @@ Bitte beheben und /review-and-ship erneut ausführen.
 
 ---
 
+## Phase 4: GitHub-Issues aktualisieren (PFLICHT nach erfolgreichem Push)
+
+Sobald der Push durchgelaufen ist, **MUSST du den `gh-issue-manager`-Agent aufrufen**, damit er die betroffenen GitHub-Issues kommentiert (und auf Rückfrage ggf. schließt).
+
+Nutze dazu das Agent-Tool mit `subagent_type: "gh-issue-manager"` und übergib ihm folgenden Kontext im `prompt`:
+
+- Commit-Hash und Commit-Message des gerade erstellten Commits
+- Branch-Name
+- Liste der geänderten Dateien (`git diff --name-only HEAD~1`)
+- Etwaige Issue-Nummern aus Commit-Message oder Branch-Name (z.B. `#42`)
+
+Beispiel-Prompt an den Agent:
+```
+Review-and-Ship ist abgeschlossen. Kommentiere die betroffenen GitHub-Issues mit einer
+Zusammenfassung der Änderungen.
+
+Commit: <hash>
+Branch: <branch>
+Message: <commit-message>
+Geänderte Dateien:
+<liste>
+
+Referenzierte Issues: <#nummern oder "keine gefunden – bitte via gh issue list suchen">
+
+Schließe Issues NICHT eigenständig – nur kommentieren, ausser der User hat den Abschluss
+vorher explizit bestätigt.
+```
+
+Erst **nach** dem Agent-Aufruf den Abschlussbericht ausgeben.
+
+---
+
 ## Abschlussbericht
 
-Nach erfolgreichem Commit und Push:
+Nach erfolgreichem Commit, Push und Issue-Update:
 ```
 ✅ SHIPPED
 
@@ -161,4 +193,5 @@ Commit: <hash>
 Branch: <branch>
 Geprüfte Checks: [Liste aller bestandenen Checks]
 Push: origin/<branch>
+Issues aktualisiert: [Liste der kommentierten Issue-Nummern oder "keine gefunden"]
 ```
