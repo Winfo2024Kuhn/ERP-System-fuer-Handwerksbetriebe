@@ -8,7 +8,6 @@ import {
     ExternalLink,
     Eye,
     File,
-    FileSpreadsheet,
     Loader2,
     Lock,
     Mail,
@@ -56,7 +55,6 @@ const toEditPosition = (b: Bestellung): EditPosition => ({
     lieferantName: b.lieferantName || null,
     exportiertAm: b.exportiertAm ?? null,
 });
-import { HicadImportModal } from '../components/HicadImportModal';
 import { AngeboteEinholenModal, type BedarfPosition } from '../components/AngeboteEinholenModal';
 
 const toBedarfPosition = (b: Bestellung): BedarfPosition => ({
@@ -1003,7 +1001,6 @@ export default function BestellungEditor() {
     const [loading, setLoading] = useState(true);
     const [emailModal, setEmailModal] = useState<{ lieferantId: number; lieferantName: string } | null>(null);
     const [bestellpositionModalOffen, setBestellpositionModalOffen] = useState(false);
-    const [hicadImportOffen, setHicadImportOffen] = useState(false);
     const [batchEditGruppe, setBatchEditGruppe] = useState<Gruppe | null>(null);
     const [angeboteEinholenGruppe, setAngeboteEinholenGruppe] = useState<Gruppe | null>(null);
     const [groupBy, setGroupBy] = useState<GroupBy>('lieferant');
@@ -1118,14 +1115,6 @@ export default function BestellungEditor() {
             subtitle="Benötigtes Material nach Lieferanten bündeln und als Bestellung versenden."
             actions={
                 <div className="flex items-center gap-2">
-                    <Button
-                        onClick={() => setHicadImportOffen(true)}
-                        variant="outline"
-                        size="sm"
-                    >
-                        <FileSpreadsheet className="w-4 h-4 mr-2" />
-                        HiCAD-Stückliste importieren
-                    </Button>
                     <Button onClick={() => setBestellpositionModalOffen(true)} className="bg-rose-600 text-white hover:bg-rose-700" size="sm">
                         <Plus className="w-4 h-4 mr-2" />
                         Position hinzufügen
@@ -1196,13 +1185,6 @@ export default function BestellungEditor() {
                     ))}
                 </div>
             )}
-
-            {/* HiCAD-Stücklisten-Import */}
-            <HicadImportModal
-                isOpen={hicadImportOffen}
-                onClose={() => setHicadImportOffen(false)}
-                onSuccess={loadBestellungen}
-            />
 
             {/* Manuelle Bestellposition */}
             <MaterialbestellungModal

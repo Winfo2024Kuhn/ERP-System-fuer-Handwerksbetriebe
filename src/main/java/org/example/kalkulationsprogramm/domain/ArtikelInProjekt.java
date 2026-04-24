@@ -52,6 +52,29 @@ public class ArtikelInProjekt {
     @JoinColumn(name = "schnittbild_id")
     private Schnittbilder schnittbild;
 
+    /**
+     * URL des Anschnittbilds "Steg" aus dem HiCAD-Sägelisten-Import (pro Position individuell,
+     * deshalb nicht über {@link #schnittbild} im Stamm, sondern direkt an der Bedarfsposition).
+     */
+    @Column(name = "anschnittbild_steg_url", length = 500)
+    private String anschnittbildStegUrl;
+
+    @Column(name = "anschnittbild_flansch_url", length = 500)
+    private String anschnittbildFlanschUrl;
+
+    /**
+     * Rohtext aus der HiCAD-Excel-Zelle "Anschnitt (Steg)" / "Anschnitt (Flansch)".
+     * Enthält die zwei Winkel pro Zelle (z.B. "27.6°   27.6°"). Wird als String
+     * geführt, weil {@link #anschnittWinkelLinks}/{@link #anschnittWinkelRechts}
+     * nur zwei Werte insgesamt halten, HiCAD aber vier hat (Steg-Start/Ende,
+     * Flansch-Start/Ende).
+     */
+    @Column(name = "anschnitt_steg_text", length = 80)
+    private String anschnittStegText;
+
+    @Column(name = "anschnitt_flansch_text", length = 80)
+    private String anschnittFlanschText;
+
     private String kommentar;
 
     // EN 1090: manuell gewähltes oder vorgeschlagenes Zeugnis pro Position

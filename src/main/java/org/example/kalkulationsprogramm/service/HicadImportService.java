@@ -7,6 +7,8 @@ import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmGruppeDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmRequestDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmResponseDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.OptimiereRequestDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.OptimiereResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.PreviewResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ProfilGruppeDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.SaegelisteZeileDto;
@@ -55,12 +57,16 @@ public class HicadImportService {
     private final ProjektRepository projektRepository;
     private final KategorieRepository kategorieRepository;
     private final ArtikelInProjektRepository artikelInProjektRepository;
+    private final DateiSpeicherService dateiSpeicherService;
 
     // ========================= PREVIEW =========================
 
     @Transactional(readOnly = true)
     public PreviewResponseDto preview(MultipartFile file) throws IOException {
-        HicadSaegelisteParser.ParseResult parsed = parser.parse(file.getInputStream());
+        // Bilder aus der Excel werden direkt beim Parsen persistiert; der Sink liefert die URL.
+        HicadSaegelisteParser.ParseResult parsed = parser.parse(
+                file.getInputStream(),
+                (bytes, ext) -> dateiSpeicherService.speichereBildAusBytes(bytes, ext));
         PreviewResponseDto preview = parsed.header();
         List<SaegelisteZeileDto> zeilen = parsed.zeilen();
 
@@ -191,6 +197,29 @@ public class HicadImportService {
         return new StangenPlan(belegung.size(), belegtMm, verschnittMm, ueberlange);
     }
 
+    // ========================= OPTIMIERE (Ad-hoc) =========================
+
+    /**
+     * Ad-hoc-Neuberechnung der Zuschnitt-Optimierung für eine einzelne Gruppe.
+     * Wird aufgerufen, wenn der User im UI die Stangenlänge ändert und die Vorschau live
+     * aktualisiert werden soll — ohne die Datei erneut hochzuladen.
+     */
+    public OptimiereResponseDto optimiere(OptimiereRequestDto req) {
+        if (req.getZeilen() == null || req.getZeilen().isEmpty()) {
+            throw new IllegalArgumentException("Keine Zuschnitte übergeben.");
+        }
+        long stangenlaengeM = req.getStangenlaengeM() != null && req.getStangenlaengeM() > 0
+                ? req.getStangenlaengeM()
+                : FALLBACK_STANGEN_M;
+        StangenPlan plan = optimiereStangen(req.getZeilen(), stangenlaengeM);
+        OptimiereResponseDto resp = new OptimiereResponseDto();
+        resp.setAnzahlStangen(plan.anzahlStangen());
+        resp.setBelegtMm(plan.belegtMm());
+        resp.setVerschnittMm(plan.verschnittMm());
+        resp.setUeberlange(plan.ueberlange());
+        return resp;
+    }
+
     // ========================= CONFIRM =========================
 
     @Transactional
@@ -246,8 +275,15 @@ public class HicadImportService {
             aip.setStueckzahl(z.getAnzahl());
             // Fixzuschnitt: Länge in mm gehört in fixmassMm — nicht in Kommentar.
             aip.setFixmassMm(z.getLaengeMm());
-            aip.setAnschnittWinkelLinks(parseWinkel(z.getAnschnittSteg()));
-            aip.setAnschnittWinkelRechts(parseWinkel(z.getAnschnittFlansch()));
+            // Schnittbilder + Winkel-Rohtext kommen direkt aus der HiCAD-Excel.
+            // Die Double-Felder anschnittWinkelLinks/Rechts bleiben hier null —
+            // HiCAD liefert bis zu vier Winkel pro Zeile (Steg-Start/Ende + Flansch
+            // Start/Ende), die nicht in zwei Felder passen. Wir führen stattdessen
+            // die normalisierten Strings "27.6° 27.6°" / "26.9° 13.4°" mit.
+            aip.setAnschnittbildStegUrl(z.getAnschnittbildStegUrl());
+            aip.setAnschnittbildFlanschUrl(z.getAnschnittbildFlanschUrl());
+            aip.setAnschnittStegText(normalisiereAnschnittText(z.getAnschnittSteg()));
+            aip.setAnschnittFlanschText(normalisiereAnschnittText(z.getAnschnittFlansch()));
             aip.setKilogramm(z.getGesamtGewichtKg());
             aip.setKommentar(kommentar(kommentarPrefix,
                     "Pos " + (z.getPosNr() != null ? z.getPosNr() : "-")));
@@ -370,15 +406,13 @@ public class HicadImportService {
     }
 
     /**
-     * Parst einen Winkel aus der Saegeliste (Excel liefert Strings, teils mit Komma).
-     * Leere/nicht numerische Eingabe -> null.
+     * Normalisiert den HiCAD-Anschnitt-Zellentext, z.B. "27.6°                27.6°"
+     * zu "27.6° 27.6°". Mehrfach-Whitespaces werden zu einem Leerzeichen kollabiert,
+     * Leer/Null bleibt null.
      */
-    private Double parseWinkel(String s) {
-        if (s == null || s.isBlank()) return null;
-        try {
-            return Double.parseDouble(s.trim().replace(',', '.'));
-        } catch (NumberFormatException e) {
-            return null;
-        }
+    private String normalisiereAnschnittText(String s) {
+        if (s == null) return null;
+        String t = s.trim().replaceAll("\\s+", " ");
+        return t.isEmpty() ? null : t;
     }
 }

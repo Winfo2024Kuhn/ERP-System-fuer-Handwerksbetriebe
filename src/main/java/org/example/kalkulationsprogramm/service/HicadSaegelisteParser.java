@@ -1,6 +1,10 @@
 package org.example.kalkulationsprogramm.service;
 
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFDrawing;
+import org.apache.poi.xssf.usermodel.XSSFPicture;
+import org.apache.poi.xssf.usermodel.XSSFShape;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.PreviewResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.SaegelisteZeileDto;
@@ -66,8 +70,12 @@ public class HicadSaegelisteParser {
     /**
      * Parsed eine HiCAD-Sägeliste-Datei und füllt den Header + die rohen Zeilen.
      * Gruppierung/Matching geschieht im Service, nicht hier.
+     *
+     * <p>Bilder aus den Anschnitt-Spalten werden per {@code bildSink} an den Aufrufer
+     * delegiert (der Parser weiß nichts von Disk-Speicher). Der Sink liefert die URL,
+     * die dann in der zugehörigen {@link SaegelisteZeileDto} landet.
      */
-    public ParseResult parse(InputStream in) throws IOException {
+    public ParseResult parse(InputStream in, BildSink bildSink) throws IOException {
         try (Workbook wb = new XSSFWorkbook(in)) {
             Sheet sheet = findSaegelisteSheet(wb);
             if (sheet == null) {
@@ -90,17 +98,83 @@ public class HicadSaegelisteParser {
             Map<String, Integer> colIdx = mapColumns(sheet.getRow(headerRowIdx));
 
             DataFormatter df = new DataFormatter(Locale.GERMANY);
+            // rowIdx (0-basiert) → Zeile im Ergebnis, um Bilder nachträglich zuzuordnen
+            Map<Integer, SaegelisteZeileDto> zeilenByRow = new HashMap<>();
             for (int r = headerRowIdx + 1; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
                 SaegelisteZeileDto z = parseZeile(row, colIdx, df);
                 if (z != null) {
                     zeilen.add(z);
+                    zeilenByRow.put(r, z);
                 }
+            }
+
+            // Bilder aus dem Drawing-Patriarch extrahieren und per Sink persistieren
+            if (sheet instanceof XSSFSheet xssfSheet) {
+                extrahiereAnschnittBilder(xssfSheet, colIdx, zeilenByRow, bildSink);
             }
 
             return new ParseResult(preview, zeilen);
         }
+    }
+
+    /** Rückwärtskompatible Variante ohne Bild-Extraktion. */
+    public ParseResult parse(InputStream in) throws IOException {
+        return parse(in, (bytes, ext) -> null);
+    }
+
+    private void extrahiereAnschnittBilder(XSSFSheet sheet, Map<String, Integer> colIdx,
+                                           Map<Integer, SaegelisteZeileDto> zeilenByRow,
+                                           BildSink bildSink) {
+        XSSFDrawing drawing = sheet.getDrawingPatriarch();
+        if (drawing == null) return;
+
+        Integer stegCol = colIdx.get("anschnittSteg");
+        Integer flanschCol = colIdx.get("anschnittFlansch");
+        if (stegCol == null && flanschCol == null) return;
+
+        for (XSSFShape shape : drawing.getShapes()) {
+            if (!(shape instanceof XSSFPicture pic)) continue;
+            ClientAnchor anchor = pic.getClientAnchor();
+            if (anchor == null) continue;
+            int row = anchor.getRow1();
+            int col = anchor.getCol1();
+            SaegelisteZeileDto zeile = zeilenByRow.get(row);
+            if (zeile == null) continue; // Bild gehört nicht zu einer Datenzeile (z.B. HiCAD-Logo)
+
+            PictureData data = pic.getPictureData();
+            if (data == null) continue;
+            byte[] bytes = data.getData();
+            if (bytes == null || bytes.length == 0) continue;
+            String ext = data.suggestFileExtension();
+            if (ext == null || ext.isBlank()) ext = "png";
+
+            String url;
+            try {
+                url = bildSink.schreibe(bytes, ext);
+            } catch (Exception e) {
+                log.warn("Konnte Schnittbild aus Zeile {} nicht ablegen: {}", row, e.getMessage());
+                continue;
+            }
+            if (url == null) continue;
+
+            if (stegCol != null && col == stegCol) {
+                zeile.setAnschnittbildStegUrl(url);
+            } else if (flanschCol != null && col == flanschCol) {
+                zeile.setAnschnittbildFlanschUrl(url);
+            }
+        }
+    }
+
+    /**
+     * Callback zur Persistenz eines eingebetteten Schnittbilds — Parser delegiert ans
+     * aufrufende Service, damit er Dateisystem-frei bleibt.
+     */
+    @FunctionalInterface
+    public interface BildSink {
+        /** Schreibt das Bild und liefert seine URL, oder {@code null} bei Fehler/Skip. */
+        String schreibe(byte[] bytes, String ext) throws IOException;
     }
 
     private Sheet findSaegelisteSheet(Workbook wb) {

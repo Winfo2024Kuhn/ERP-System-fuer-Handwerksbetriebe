@@ -57,6 +57,10 @@ interface BedarfsZeile {
     schnittbildId?: number | null;
     schnittbildBildUrl?: string | null;
     schnittAchseBildUrl?: string | null;
+    anschnittbildStegUrl?: string | null;
+    anschnittbildFlanschUrl?: string | null;
+    anschnittStegText?: string | null;
+    anschnittFlanschText?: string | null;
     anschnittWinkelLinks?: number | null;
     anschnittWinkelRechts?: number | null;
     zeugnisAnforderung?: string | null;
@@ -223,6 +227,7 @@ export default function ProjektBedarfPage() {
                     <Button
                         variant="outline"
                         onClick={() => setHicadOffen(true)}
+                        disabled={!projekt}
                     >
                         <FileSpreadsheet className="w-4 h-4" />
                         HiCAD-Import
@@ -316,7 +321,25 @@ export default function ProjektBedarfPage() {
                                                             <Ruler className="w-3 h-3 text-slate-400" />
                                                             {z.fixmassMm} mm
                                                         </span>
-                                                        {z.schnittbildId != null && (
+                                                        {/* HiCAD-Anschnittbilder (aus Excel übernommen) haben Vorrang vor dem Stamm-Schnittbild. */}
+                                                        {(z.anschnittbildStegUrl || z.anschnittbildFlanschUrl) ? (
+                                                            <div className="inline-flex flex-col items-end gap-1">
+                                                                {(z.anschnittbildStegUrl || z.anschnittStegText) && (
+                                                                    <HicadAnschnitt
+                                                                        label="Steg"
+                                                                        bildUrl={z.anschnittbildStegUrl}
+                                                                        winkelText={z.anschnittStegText}
+                                                                    />
+                                                                )}
+                                                                {(z.anschnittbildFlanschUrl || z.anschnittFlanschText) && (
+                                                                    <HicadAnschnitt
+                                                                        label="Flansch"
+                                                                        bildUrl={z.anschnittbildFlanschUrl}
+                                                                        winkelText={z.anschnittFlanschText}
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        ) : z.schnittbildId != null ? (
                                                             <div className="inline-flex items-center gap-1.5">
                                                                 {z.schnittAchseBildUrl && (
                                                                     <img
@@ -341,7 +364,7 @@ export default function ProjektBedarfPage() {
                                                                     {(z.anschnittWinkelRechts ?? 90)}°
                                                                 </span>
                                                             </div>
-                                                        )}
+                                                        ) : null}
                                                     </div>
                                                 ) : (
                                                     <span className="text-slate-300">—</span>
@@ -385,11 +408,18 @@ export default function ProjektBedarfPage() {
             )}
 
             {/* Modals */}
-            <HicadImportModal
-                isOpen={hicadOffen}
-                onClose={() => setHicadOffen(false)}
-                onSuccess={() => { setHicadOffen(false); ladeZeilen(); }}
-            />
+            {projekt && (
+                <HicadImportModal
+                    isOpen={hicadOffen}
+                    onClose={() => setHicadOffen(false)}
+                    onSuccess={() => { setHicadOffen(false); ladeZeilen(); }}
+                    projekt={{
+                        id: projekt.id,
+                        bauvorhaben: projekt.bauvorhaben ?? `Projekt #${projekt.id}`,
+                        auftragsnummer: projekt.auftragsnummer,
+                    }}
+                />
+            )}
             <MaterialbestellungModal
                 isOpen={materialOffen}
                 onClose={() => { setMaterialOffen(false); setEditZeile(null); }}
@@ -399,6 +429,41 @@ export default function ProjektBedarfPage() {
                 editPosition={editZeile}
             />
         </PageLayout>
+    );
+}
+
+function HicadAnschnitt({
+    label,
+    bildUrl,
+    winkelText,
+}: {
+    label: 'Steg' | 'Flansch';
+    bildUrl?: string | null;
+    winkelText?: string | null;
+}) {
+    // HiCAD-Zelle: "27.6° 27.6°" (Start/Ende des Zuschnitts) — trennen für Bild-flankierende Anzeige
+    const teile = (winkelText ?? '').split(/\s+/).filter(Boolean);
+    const links = teile[0] ?? null;
+    const rechts = teile.length > 1 ? teile[teile.length - 1] : null;
+    return (
+        <div
+            className="inline-flex items-center gap-1"
+            title={`Anschnitt ${label}${winkelText ? ` · ${winkelText}` : ''}`}
+        >
+            {links && (
+                <span className="text-[11px] font-medium text-rose-600 tabular-nums">{links}</span>
+            )}
+            {bildUrl && (
+                <img
+                    src={bildUrl}
+                    alt={`Anschnitt ${label}`}
+                    className="h-6 w-auto rounded border border-slate-200 bg-white object-contain"
+                />
+            )}
+            {rechts && (
+                <span className="text-[11px] font-medium text-rose-600 tabular-nums">{rechts}</span>
+            )}
+        </div>
     );
 }
 

@@ -41,6 +41,12 @@ public class BestellungResponseDto {
     private String schnittbildBildUrl;
     /** Bild der zugehoerigen Achse — fuer PDF-Plot und Anzeige im Bedarfs-UI. */
     private String schnittAchseBildUrl;
+    /** HiCAD-Anschnittbilder: 1:1 aus der Excel-Zelle, unabhängig vom Stamm-Schnittbild. */
+    private String anschnittbildStegUrl;
+    private String anschnittbildFlanschUrl;
+    /** HiCAD-Winkel-Rohtexte (pro Zelle zwei Winkel, z.B. "27.6° 27.6°"). */
+    private String anschnittStegText;
+    private String anschnittFlanschText;
     private Double anschnittWinkelLinks;
     private Double anschnittWinkelRechts;
     // EN 1090

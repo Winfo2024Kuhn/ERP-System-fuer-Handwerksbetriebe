@@ -6,6 +6,8 @@ import java.util.Map;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmRequestDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.ConfirmResponseDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.OptimiereRequestDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.OptimiereResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.HicadImportDtos.PreviewResponseDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.LagerAbgleichRequestDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.ManuelleBestellpositionDto;
@@ -148,6 +150,17 @@ public class BestellungController {
     public ResponseEntity<ConfirmResponseDto> hicadConfirm(@RequestBody ConfirmRequestDto req) {
         try {
             return ResponseEntity.ok(hicadImportService.confirm(req));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .header("X-Error-Reason", e.getMessage())
+                    .build();
+        }
+    }
+
+    @PostMapping(value = "/import/hicad/optimiere", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<OptimiereResponseDto> hicadOptimiere(@RequestBody OptimiereRequestDto req) {
+        try {
+            return ResponseEntity.ok(hicadImportService.optimiere(req));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest()
                     .header("X-Error-Reason", e.getMessage())

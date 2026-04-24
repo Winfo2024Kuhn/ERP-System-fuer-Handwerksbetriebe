@@ -1545,6 +1545,33 @@ public class DateiSpeicherService {
     }
 
     /**
+     * Byte-Array-Variante von {@link #speichereBild(MultipartFile)}. Wird z.B. beim
+     * HiCAD-Sägelisten-Import verwendet, um eingebettete Excel-Bilder abzulegen, ohne
+     * sie vorher in ein MultipartFile zu verpacken.
+     *
+     * @param bytes Rohe Bilddaten
+     * @param extension Dateiendung ohne Punkt ("png", "jpg", "jpeg")
+     * @return Web-Pfad zum Bild, z.B. "/api/images/xyz.png"
+     */
+    public String speichereBildAusBytes(byte[] bytes, String extension) {
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("Bild-Bytes fehlen.");
+        }
+        String ext = extension == null ? "png" : extension.toLowerCase(Locale.ROOT).replace(".", "").trim();
+        if (!List.of("png", "jpg", "jpeg", "gif", "webp").contains(ext)) {
+            ext = "png";
+        }
+        String speichername = generiereEinzigartigenDateinamen("hicad." + ext);
+        Path zielPfad = resolveAndValidate(this.bilderSpeicherplatz, speichername);
+        try {
+            Files.write(zielPfad, bytes);
+        } catch (IOException e) {
+            throw new RuntimeException("Bild konnte nicht gespeichert werden.", e);
+        }
+        return "/api/images/" + speichername;
+    }
+
+    /**
      * NEU: Lädt eine gespeicherte Bilddatei als Resource.
      *
      * @param dateiname Der einzigartige Name der Datei auf der Festplatte.

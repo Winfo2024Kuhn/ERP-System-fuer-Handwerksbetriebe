@@ -141,6 +141,10 @@ public class BestellungService {
                 dto.setSchnittAchseBildUrl(aip.getSchnittbild().getSchnittAchse().getBildUrl());
             }
         }
+        dto.setAnschnittbildStegUrl(aip.getAnschnittbildStegUrl());
+        dto.setAnschnittbildFlanschUrl(aip.getAnschnittbildFlanschUrl());
+        dto.setAnschnittStegText(aip.getAnschnittStegText());
+        dto.setAnschnittFlanschText(aip.getAnschnittFlanschText());
         dto.setAnschnittWinkelLinks(aip.getAnschnittWinkelLinks());
         dto.setAnschnittWinkelRechts(aip.getAnschnittWinkelRechts());
         // EN 1090: zeugnisAnforderung bleibt am Bedarf und wird in Anfrage/Bestellung kopiert.

@@ -29,6 +29,14 @@ public final class HicadImportDtos {
         private String anschnittFlansch;
         private BigDecimal gewichtProStueckKg;
         private BigDecimal gesamtGewichtKg;
+
+        /**
+         * URL des Schnittbilds aus der HiCAD-Spalte "Anschnitt (Steg)" bzw. "(Flansch)".
+         * Wird beim Preview gesetzt, wenn die Excel-Zelle ein eingebettetes Bild hatte —
+         * der Preview-Service schreibt die Bytes sofort nach uploads/hicad-schnittbilder/.
+         */
+        private String anschnittbildStegUrl;
+        private String anschnittbildFlanschUrl;
     }
 
     /**
@@ -130,5 +138,28 @@ public final class HicadImportDtos {
     public static class ConfirmResponseDto {
         private int angelegtePositionen;
         private List<Long> positionIds;
+    }
+
+    /**
+     * Request für die Ad-hoc-Neuberechnung der Zuschnitt-Optimierung einer einzelnen Gruppe —
+     * z.B. wenn der User im UI die Stangenlänge ändert (12 m → 6 m).
+     */
+    @Getter
+    @Setter
+    public static class OptimiereRequestDto {
+        private Long stangenlaengeM;
+        private List<SaegelisteZeileDto> zeilen;
+    }
+
+    /**
+     * Response der Zuschnitt-Optimierung (FFD).
+     */
+    @Getter
+    @Setter
+    public static class OptimiereResponseDto {
+        private int anzahlStangen;
+        private long belegtMm;
+        private long verschnittMm;
+        private int ueberlange;
     }
 }

@@ -7,12 +7,15 @@ import {
     Check,
     ChevronLeft,
     ChevronRight,
+    Truck,
+    Folder,
 } from 'lucide-react';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import { Button } from './ui/button';
-import { KategoriePicker, type KategorieFlach } from './KategoriePicker';
+import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
+import { KategorieSearchModal } from './KategorieSearchModal';
 import { cn } from '../lib/utils';
 
 export interface ArtikelSuchErgebnis {
@@ -74,6 +77,11 @@ export function ArtikelSearchModal({
     const [filterProduktlinie, setFilterProduktlinie] = useState('');
     const [filterWerkstoff, setFilterWerkstoff] = useState('');
     const [filterKategorieId, setFilterKategorieId] = useState<number | null>(null);
+    const [filterKategoriePfad, setFilterKategoriePfad] = useState<string>('');
+
+    // Sub-Modals
+    const [lieferantPickerOffen, setLieferantPickerOffen] = useState(false);
+    const [kategoriePickerOffen, setKategoriePickerOffen] = useState(false);
 
     // Sort & Pagination
     const [sortColumn, setSortColumn] = useState('produktname');
@@ -84,7 +92,6 @@ export function ArtikelSearchModal({
     const [werkstoffOptions, setWerkstoffOptions] = useState<{ value: string; label: string }[]>([
         { value: '', label: 'Alle Werkstoffe' },
     ]);
-    const [kategorien, setKategorien] = useState<KategorieFlach[]>([]);
 
     // Ergebnisse
     const [artikel, setArtikel] = useState<ArtikelSuchErgebnis[]>([]);
@@ -97,7 +104,7 @@ export function ArtikelSearchModal({
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
-    // Stammdaten laden beim Öffnen
+    // Stammdaten laden beim Öffnen (Werkstoffe — Kategorien kommen aus KategorieSearchModal)
     useEffect(() => {
         if (!isOpen) return;
         fetch('/api/artikel/werkstoffe')
@@ -111,11 +118,6 @@ export function ArtikelSearchModal({
                 }
             })
             .catch(console.error);
-
-        fetch('/api/kategorien')
-            .then(res => res.json())
-            .then(data => setKategorien(Array.isArray(data) ? data : []))
-            .catch(console.error);
     }, [isOpen]);
 
     // Reset beim Öffnen
@@ -126,6 +128,7 @@ export function ArtikelSearchModal({
         setFilterProduktlinie('');
         setFilterWerkstoff('');
         setFilterKategorieId(null);
+        setFilterKategoriePfad('');
         setSortColumn('produktname');
         setSortDirection('asc');
         setPage(0);
@@ -218,6 +221,7 @@ export function ArtikelSearchModal({
         setFilterProduktlinie('');
         setFilterWerkstoff('');
         setFilterKategorieId(null);
+        setFilterKategoriePfad('');
     };
 
     const handleBestaetigen = () => {
@@ -298,25 +302,27 @@ export function ArtikelSearchModal({
                     </div>
                     <div>
                         <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Lieferant</Label>
-                        <Input
-                            value={filterLieferant}
-                            onChange={e => setFilterLieferant(e.target.value)}
+                        <PickerButton
+                            icon={<Truck className="w-4 h-4" />}
                             placeholder="Alle Lieferanten"
+                            value={filterLieferant}
+                            onOpen={() => setLieferantPickerOffen(true)}
+                            onClear={() => setFilterLieferant('')}
                             disabled={!!lieferantName}
-                            className={cn('mt-1', lieferantName && 'bg-slate-100 cursor-not-allowed')}
                         />
                     </div>
                     <div>
                         <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Kategorie</Label>
-                        <div className="mt-1">
-                            <KategoriePicker
-                                kategorien={kategorien}
-                                value={filterKategorieId}
-                                onChange={id => setFilterKategorieId(id)}
-                                placeholder="Alle Kategorien"
-                                allowClear
-                            />
-                        </div>
+                        <PickerButton
+                            icon={<Folder className="w-4 h-4" />}
+                            placeholder="Alle Kategorien"
+                            value={filterKategoriePfad}
+                            onOpen={() => setKategoriePickerOffen(true)}
+                            onClear={() => {
+                                setFilterKategorieId(null);
+                                setFilterKategoriePfad('');
+                            }}
+                        />
                     </div>
                     <div>
                         <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Werkstoff</Label>
@@ -520,6 +526,72 @@ export function ArtikelSearchModal({
                     </Button>
                 </div>
             </div>
+
+            {/* Sub-Modals: Lieferant + Kategorie */}
+            <LieferantSearchModal
+                isOpen={lieferantPickerOffen}
+                onClose={() => setLieferantPickerOffen(false)}
+                onSelect={(l: LieferantSuchErgebnis) => {
+                    setFilterLieferant(l.lieferantenname);
+                    setLieferantPickerOffen(false);
+                }}
+            />
+            <KategorieSearchModal
+                isOpen={kategoriePickerOffen}
+                onClose={() => setKategoriePickerOffen(false)}
+                onSelect={(k, pfad) => {
+                    setFilterKategorieId(k.id);
+                    setFilterKategoriePfad(pfad || k.beschreibung);
+                    setKategoriePickerOffen(false);
+                }}
+                currentKategorieId={filterKategorieId}
+            />
+        </div>
+    );
+}
+
+interface PickerButtonProps {
+    icon: React.ReactNode;
+    placeholder: string;
+    value: string;
+    onOpen: () => void;
+    onClear: () => void;
+    disabled?: boolean;
+}
+
+function PickerButton({ icon, placeholder, value, onOpen, onClear, disabled }: PickerButtonProps) {
+    const hatWert = value.trim().length > 0;
+    return (
+        <div
+            className={cn(
+                'mt-1 h-10 flex items-center rounded-md border border-slate-200 bg-white text-sm transition-colors',
+                disabled && 'bg-slate-100 cursor-not-allowed opacity-70',
+                !disabled && 'hover:border-rose-300 focus-within:ring-2 focus-within:ring-rose-500 focus-within:border-rose-500',
+            )}
+        >
+            <button
+                type="button"
+                onClick={disabled ? undefined : onOpen}
+                disabled={disabled}
+                className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 text-left disabled:cursor-not-allowed"
+            >
+                <span className={cn('shrink-0', hatWert ? 'text-rose-600' : 'text-slate-400')}>
+                    {icon}
+                </span>
+                <span className={cn('truncate', hatWert ? 'text-slate-900' : 'text-slate-400')}>
+                    {hatWert ? value : placeholder}
+                </span>
+            </button>
+            {hatWert && !disabled && (
+                <button
+                    type="button"
+                    onClick={onClear}
+                    className="px-2 h-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-r-md"
+                    aria-label="Auswahl entfernen"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+            )}
         </div>
     );
 }

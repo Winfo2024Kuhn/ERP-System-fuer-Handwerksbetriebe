@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Briefcase,
     CheckCircle2,
@@ -8,7 +8,6 @@ import {
     Package,
     Ruler,
     Scissors,
-    Search,
     Truck,
     Upload,
     X,
@@ -17,7 +16,6 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { useToast } from './ui/toast';
 import { cn } from '../lib/utils';
-import { ProjektSearchModal } from './ProjektSearchModal';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
 import { ArtikelSearchModal, type ArtikelSuchErgebnis } from './ArtikelSearchModal';
 
@@ -32,6 +30,9 @@ interface SaegelisteZeile {
     anschnittFlansch?: string;
     gewichtProStueckKg?: number;
     gesamtGewichtKg?: number;
+    /** URLs der Schnittbilder aus der HiCAD-Excel (null, wenn nicht vorhanden). */
+    anschnittbildStegUrl?: string | null;
+    anschnittbildFlanschUrl?: string | null;
 }
 
 interface ProfilGruppe {
@@ -80,30 +81,33 @@ interface HicadImportModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
+    projekt: ProjektRef;
 }
 
 const formatNumber = (val: number | null | undefined, digits = 2) =>
     val != null ? val.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '-';
 
-export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModalProps) {
+export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadImportModalProps) {
     const toast = useToast();
 
     const [file, setFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [preview, setPreview] = useState<PreviewResponse | null>(null);
-    const [projekt, setProjekt] = useState<ProjektRef | null>(null);
     const [entscheidungen, setEntscheidungen] = useState<Record<string, GruppenEntscheidung>>({});
 
     // Picker-States
-    const [projektPickerOffen, setProjektPickerOffen] = useState(false);
     const [lieferantPickerFuer, setLieferantPickerFuer] = useState<string | null>(null);
     const [artikelPickerFuer, setArtikelPickerFuer] = useState<string | null>(null);
+
+    // Live-Neuberechnung der Zuschnitt-Optimierung (FFD) bei Stangenlaengen-Aenderung
+    const [optimiereLaufend, setOptimiereLaufend] = useState<Record<string, boolean>>({});
+    const optimiereTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+    const optimiereReqId = useRef<Record<string, number>>({});
 
     const reset = useCallback(() => {
         setFile(null);
         setPreview(null);
-        setProjekt(null);
         setEntscheidungen({});
         setUploading(false);
         setSubmitting(false);
@@ -149,13 +153,11 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
             });
             setEntscheidungen(init);
 
-            // Erkanntes Projekt übernehmen
-            if (data.erkannteProjektId && data.erkannteProjektName) {
-                setProjekt({
-                    id: data.erkannteProjektId,
-                    bauvorhaben: data.erkannteProjektName,
-                    auftragsnummer: data.auftragsnummer,
-                });
+            // Warnung, falls HiCAD-Datei ein anderes Projekt erkennt
+            if (data.erkannteProjektId && data.erkannteProjektId !== projekt.id) {
+                toast.warning(
+                    `HiCAD-Datei verweist auf Projekt „${data.erkannteProjektName ?? '?'}" – Import erfolgt trotzdem auf „${projekt.bauvorhaben}".`,
+                );
             }
         } catch (err) {
             console.error(err);
@@ -168,10 +170,6 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
     // ==================== CONFIRM ====================
     const handleConfirm = async () => {
         if (!preview) return;
-        if (!projekt) {
-            toast.warning('Bitte ein Projekt zuordnen');
-            return;
-        }
 
         // Gruppen, bei denen kein Artikel gematcht ist UND kein Lieferant zugeordnet → warnen
         const ohneLieferant = preview.gruppen.filter(
@@ -232,6 +230,53 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
         setEntscheidungen(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }));
     };
 
+    // Debounced FFD-Neuberechnung beim Backend (400 ms) — überschreibt berechneteStaebe.
+    const scheduleOptimize = useCallback((groupKey: string, stangenlaengeM: number) => {
+        const existing = optimiereTimers.current[groupKey];
+        if (existing) clearTimeout(existing);
+        optimiereTimers.current[groupKey] = setTimeout(async () => {
+            const gruppe = preview?.gruppen.find(g => g.groupKey === groupKey);
+            if (!gruppe || !stangenlaengeM || stangenlaengeM <= 0) return;
+            const myReqId = (optimiereReqId.current[groupKey] ?? 0) + 1;
+            optimiereReqId.current[groupKey] = myReqId;
+            setOptimiereLaufend(prev => ({ ...prev, [groupKey]: true }));
+            try {
+                const res = await fetch('/api/bestellungen/import/hicad/optimiere', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stangenlaengeM, zeilen: gruppe.zeilen }),
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data: { anzahlStangen: number; verschnittMm: number; ueberlange: number } = await res.json();
+                // Stale-Response ignorieren (falls inzwischen ein neuerer Request lief)
+                if (optimiereReqId.current[groupKey] !== myReqId) return;
+                setPreview(prev => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        gruppen: prev.gruppen.map(g =>
+                            g.groupKey === groupKey ? { ...g, berechneteStaebe: data.anzahlStangen } : g,
+                        ),
+                    };
+                });
+            } catch (err) {
+                console.warn('Zuschnitt-Optimierung fehlgeschlagen', err);
+            } finally {
+                if (optimiereReqId.current[groupKey] === myReqId) {
+                    setOptimiereLaufend(prev => ({ ...prev, [groupKey]: false }));
+                }
+            }
+        }, 400);
+    }, [preview]);
+
+    // Timer aufräumen beim Unmount
+    useEffect(() => {
+        const timers = optimiereTimers.current;
+        return () => {
+            Object.values(timers).forEach(clearTimeout);
+        };
+    }, []);
+
     if (!isOpen) return null;
 
     const hatPreview = preview != null;
@@ -287,7 +332,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
                                 </Button>
                                 <Button
                                     onClick={handleConfirm}
-                                    disabled={submitting || !projekt}
+                                    disabled={submitting}
                                     className="bg-rose-600 text-white hover:bg-rose-700"
                                 >
                                     {submitting ? (
@@ -393,57 +438,32 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
                     {/* Preview-Bereich */}
                     {hatPreview && preview && (
                         <>
-                            {/* Shared Header-Controls: Meta + Projekt */}
+                            {/* Shared Header-Controls: Meta + Projekt-Info */}
                             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
-                                {/* Meta-Infos */}
+                                {/* Meta-Infos aus HiCAD-Datei */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                     <MetaField label="Auftragsnr." value={preview.auftragsnummer} mono />
                                     <MetaField label="Auftragstext" value={preview.auftragstext} />
                                     <MetaField label="Kunde" value={preview.kunde} />
                                 </div>
 
-                                {/* Projekt */}
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
-                                    Projekt für alle Positionen *
-                                </label>
-                                <button
-                                    type="button"
-                                    onClick={() => setProjektPickerOffen(true)}
-                                    className={cn(
-                                        'w-full flex items-center gap-3 px-3 py-2.5 border rounded-lg text-left transition-colors group',
-                                        projekt
-                                            ? 'border-rose-300 bg-white hover:border-rose-400'
-                                            : 'border-dashed border-amber-300 bg-amber-50/50 hover:border-rose-300 hover:bg-rose-50',
-                                    )}
-                                >
-                                    <Briefcase
-                                        className={cn(
-                                            'w-5 h-5 flex-shrink-0',
-                                            projekt ? 'text-rose-600' : 'text-amber-500',
-                                        )}
-                                    />
+                                {/* Projekt (fest aus Seiten-Kontext) */}
+                                <div className="flex items-center gap-3 px-3 py-2.5 border border-rose-200 bg-white rounded-lg">
+                                    <Briefcase className="w-5 h-5 flex-shrink-0 text-rose-600" />
                                     <div className="flex-1 min-w-0">
-                                        {projekt ? (
-                                            <>
-                                                <p className="font-medium text-slate-900 truncate">
-                                                    {projekt.bauvorhaben}
-                                                </p>
-                                                {projekt.auftragsnummer && (
-                                                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                                                        <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">
-                                                            {projekt.auftragsnummer}
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <span className="text-amber-700 font-medium">
-                                                Projekt auswählen →
-                                            </span>
-                                        )}
+                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                            Import in Projekt
+                                        </p>
+                                        <p className="font-medium text-slate-900 truncate">
+                                            {projekt.bauvorhaben}
+                                        </p>
                                     </div>
-                                    <Search className="w-4 h-4 text-slate-400 group-hover:text-rose-500 flex-shrink-0" />
-                                </button>
+                                    {projekt.auftragsnummer && (
+                                        <span className="font-mono text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded">
+                                            {projekt.auftragsnummer}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Gruppen-Bereich */}
@@ -613,19 +633,37 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
                                                                     min={1}
                                                                     step={1}
                                                                     value={stangeM}
-                                                                    onChange={ev =>
+                                                                    onChange={ev => {
+                                                                        const neu = parseInt(ev.target.value, 10) || null;
                                                                         updateEntscheidung(g.groupKey, {
-                                                                            stangenlaengeM:
-                                                                                parseInt(ev.target.value, 10) || null,
-                                                                        })
-                                                                    }
+                                                                            stangenlaengeM: neu,
+                                                                        });
+                                                                        if (neu && neu > 0) {
+                                                                            scheduleOptimize(g.groupKey, neu);
+                                                                        }
+                                                                    }}
                                                                     className="w-20 h-8 text-sm"
                                                                 />
                                                                 <span>m</span>
+                                                                {g.verpackungseinheitM != null &&
+                                                                    stangeM !== g.verpackungseinheitM && (
+                                                                        <span className="text-xs text-slate-400">
+                                                                            (Standard: {g.verpackungseinheitM} m)
+                                                                        </span>
+                                                                    )}
                                                             </label>
                                                             <span className="text-slate-300">=</span>
                                                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-600 text-white text-sm font-semibold">
-                                                                {staebe} {staebe === 1 ? 'Stange' : 'Stangen'} bestellen
+                                                                {optimiereLaufend[g.groupKey] ? (
+                                                                    <>
+                                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                        Optimiere…
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        {staebe} {staebe === 1 ? 'Stange' : 'Stangen'} bestellen
+                                                                    </>
+                                                                )}
                                                             </span>
                                                         </div>
                                                     </div>
@@ -634,23 +672,31 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
                                                 {/* Zuschnitt-Liste bei Fixzuschnitt */}
                                                 {!aggregieren && (
                                                     <div className="mt-3 flex flex-wrap gap-1.5">
-                                                        {g.zeilen.map((z, idx) => (
-                                                            <span
-                                                                key={idx}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-slate-50 border border-slate-200 text-slate-700 font-medium"
-                                                            >
-                                                                <span className="text-rose-600 font-semibold">
-                                                                    {z.anzahl}×
-                                                                </span>
-                                                                <span>{z.laengeMm} mm</span>
-                                                                {(z.anschnittSteg || z.anschnittFlansch) && (
-                                                                    <span className="text-slate-400 ml-0.5">
-                                                                        ({z.anschnittSteg || '-'}/
-                                                                        {z.anschnittFlansch || '-'})
+                                                        {g.zeilen.map((z, idx) => {
+                                                            const hatAnschnitt = !!(
+                                                                z.anschnittbildStegUrl ||
+                                                                z.anschnittbildFlanschUrl ||
+                                                                z.anschnittSteg ||
+                                                                z.anschnittFlansch
+                                                            );
+                                                            return (
+                                                                <span
+                                                                    key={idx}
+                                                                    className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-md bg-slate-50 border border-slate-200 text-slate-700 font-medium"
+                                                                >
+                                                                    <span className="text-rose-600 font-semibold">
+                                                                        {z.anzahl}×
                                                                     </span>
-                                                                )}
-                                                            </span>
-                                                        ))}
+                                                                    <span>{z.laengeMm} mm</span>
+                                                                    {hatAnschnitt && (
+                                                                        <span className="inline-flex items-center gap-1 pl-1 ml-0.5 border-l border-slate-200">
+                                                                            <AnschnittChip label="Steg" text={z.anschnittSteg} bildUrl={z.anschnittbildStegUrl} />
+                                                                            <AnschnittChip label="Flansch" text={z.anschnittFlansch} bildUrl={z.anschnittbildFlanschUrl} />
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                            );
+                                                        })}
                                                     </div>
                                                 )}
                                             </div>
@@ -664,17 +710,6 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
             </div>
 
             {/* Sub-Modals */}
-            <ProjektSearchModal
-                isOpen={projektPickerOffen}
-                onClose={() => setProjektPickerOffen(false)}
-                onSelect={(p: ProjektRef) => {
-                    setProjekt(p);
-                    setProjektPickerOffen(false);
-                }}
-                currentProjektId={projekt?.id}
-                nurOffene
-            />
-
             <LieferantSearchModal
                 isOpen={lieferantPickerFuer != null}
                 onClose={() => setLieferantPickerFuer(null)}
@@ -707,6 +742,35 @@ export function HicadImportModal({ isOpen, onClose, onSuccess }: HicadImportModa
 }
 
 // ==================== SUB-COMPONENTS ====================
+function AnschnittChip({
+    label,
+    text,
+    bildUrl,
+}: {
+    label: 'Steg' | 'Flansch';
+    text?: string | null;
+    bildUrl?: string | null;
+}) {
+    if (!text && !bildUrl) return null;
+    // HiCAD-Zelle: "27.6° 27.6°" → links und rechts vom Bild je ein Winkel
+    const teile = (text ?? '').split(/\s+/).filter(Boolean);
+    const links = teile[0] ?? null;
+    const rechts = teile.length > 1 ? teile[teile.length - 1] : null;
+    return (
+        <span className="inline-flex items-center gap-0.5" title={`Anschnitt ${label}`}>
+            {links && <span className="text-[10px] text-rose-600 tabular-nums">{links}</span>}
+            {bildUrl && (
+                <img
+                    src={bildUrl}
+                    alt={`Anschnitt ${label}`}
+                    className="h-5 w-auto rounded bg-white border border-slate-200 object-contain"
+                />
+            )}
+            {rechts && <span className="text-[10px] text-rose-600 tabular-nums">{rechts}</span>}
+        </span>
+    );
+}
+
 function MetaField({
     label,
     value,
