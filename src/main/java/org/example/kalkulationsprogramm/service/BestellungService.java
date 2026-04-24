@@ -105,6 +105,20 @@ public class BestellungService {
         if (isWerkstoff && aip.getArtikel() != null) {
             dto.setLieferantName("Werkstoffe");
             dto.setLieferantId(null);
+        } else if (!isWerkstoff && aip.getArtikel() != null) {
+            // Bei Nicht-Werkstoffen den Lieferanten aus der ersten
+            // LieferantenArtikelPreise-Verknuepfung ziehen — der Mitarbeiter
+            // sieht so im Bedarf/PDF, wer das Teil normalerweise liefert.
+            aip.getArtikel().getArtikelpreis().stream()
+                    .filter(lap -> lap.getExterneArtikelnummer() != null
+                            && !lap.getExterneArtikelnummer().isBlank())
+                    .findFirst()
+                    .ifPresent(lap -> {
+                        if (lap.getLieferant() != null) {
+                            dto.setLieferantId(lap.getLieferant().getId());
+                            dto.setLieferantName(lap.getLieferant().getLieferantenname());
+                        }
+                    });
         }
         if (aip.getProjekt() != null) {
             dto.setProjektId(aip.getProjekt().getId());

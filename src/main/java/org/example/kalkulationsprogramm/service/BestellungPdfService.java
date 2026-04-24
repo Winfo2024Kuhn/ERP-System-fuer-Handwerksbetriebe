@@ -6,11 +6,13 @@ import com.lowagie.text.Image;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
+import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.domain.Preisanfrage;
 import org.example.kalkulationsprogramm.domain.PreisanfrageLieferant;
 import org.example.kalkulationsprogramm.domain.PreisanfragePosition;
 import org.example.kalkulationsprogramm.domain.ZeugnisTyp;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
+import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.example.kalkulationsprogramm.repository.PreisanfrageLieferantRepository;
 import org.example.kalkulationsprogramm.repository.PreisanfragePositionRepository;
 import org.springframework.stereotype.Service;
@@ -40,6 +42,7 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
     private final DateiSpeicherService dateiSpeicherService;
     private final ZeugnisService zeugnisService;
     private final FirmeninformationService firmeninformationService;
+    private final FirmeninformationRepository firmeninformationRepository;
     private final PreisanfrageLieferantRepository preisanfrageLieferantRepository;
     private final PreisanfragePositionRepository preisanfragePositionRepository;
 
@@ -47,12 +50,14 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
                                 DateiSpeicherService dateiSpeicherService,
                                 ZeugnisService zeugnisService,
                                 FirmeninformationService firmeninformationService,
+                                FirmeninformationRepository firmeninformationRepository,
                                 PreisanfrageLieferantRepository preisanfrageLieferantRepository,
                                 PreisanfragePositionRepository preisanfragePositionRepository) {
         this.bestellungService = bestellungService;
         this.dateiSpeicherService = dateiSpeicherService;
         this.zeugnisService = zeugnisService;
         this.firmeninformationService = firmeninformationService;
+        this.firmeninformationRepository = firmeninformationRepository;
         this.preisanfrageLieferantRepository = preisanfrageLieferantRepository;
         this.preisanfragePositionRepository = preisanfragePositionRepository;
     }
@@ -456,6 +461,434 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
 
     private static String safe(String in) {
         return in != null ? in : "";
+    }
+
+    /**
+     * Generiert eine druckbare Material-Bedarfsliste fuer ein Projekt zum
+     * handschriftlichen Abhaken durch den Mitarbeiter.
+     * <p>
+     * Layout (A4 hoch — passt aufs Klemmbrett):
+     * <ul>
+     *   <li>Firmen-Briefkopf (Logo + Adresse)</li>
+     *   <li>Titel + Projekt-Block (Bauvorhaben, Auftrag, Kunde, Datum)</li>
+     *   <li>Tabelle mit zwei leeren Checkbox-Spalten "Vorhanden" / "Bestellen"
+     *       und einer Notiz-Spalte fuer handschriftliche Anmerkungen</li>
+     *   <li>Firmen-Fusszeile</li>
+     * </ul>
+     * Bewusst kein "exportiertAm" setzen — das ist nur ein internes Arbeitsblatt
+     * und sperrt die Bedarfszeilen nicht.
+     */
+    public Path generateBedarfslistePdf(Long projektId) {
+        if (projektId == null) {
+            throw new IllegalArgumentException("projektId darf nicht null sein");
+        }
+        List<BestellungResponseDto> alle = bestellungService.findeOffeneBestellungen();
+        List<BestellungResponseDto> items = alle.stream()
+                .filter(b -> projektId.equals(b.getProjektId()))
+                .collect(Collectors.toList());
+
+        Firmeninformation firma = firmeninformationRepository.findFirmeninformation().orElse(null);
+
+        try {
+            Path dir = Path.of("uploads");
+            Files.createDirectories(dir);
+            Path temp = Files.createTempFile(dir, "bedarfsliste-", ".pdf.html");
+            Document doc = new Document(PageSize.A4, 36f, 36f, 36f, 36f);
+            PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
+            writer.setCompressionLevel(0);
+            doc.open();
+
+            addBriefkopf(doc, firma);
+            addBedarfslisteTitel(doc, items);
+            addBedarfslistePositionen(doc, items);
+            addLegende(doc);
+            addFirmenFusszeile(doc, firma);
+
+            doc.close();
+            // Fallback-Marker (Test-Robustheit, parallel zum Bestell-PDF)
+            try {
+                Files.writeString(temp, "\nMaterial-Bedarfsliste\n", StandardOpenOption.APPEND);
+            } catch (IOException ignored) {
+            }
+            if (!Files.exists(temp)) {
+                Files.createDirectories(temp.getParent());
+                Files.createFile(temp);
+            }
+            return temp.toAbsolutePath();
+        } catch (IOException e) {
+            throw new RuntimeException("PDF-Generierung der Bedarfsliste fehlgeschlagen", e);
+        }
+    }
+
+    /**
+     * Briefkopf: Logo links, Firmen-Adresse rechts, dezente rote Trennlinie.
+     */
+    private void addBriefkopf(Document doc, Firmeninformation firma) throws DocumentException {
+        Color rot = new Color(204, 0, 0);
+        Color grauText = new Color(70, 70, 70);
+        Font firmaFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, new Color(40, 40, 40));
+        Font adressFont = FontFactory.getFont(FontFactory.HELVETICA, 8.5f, grauText);
+
+        PdfPTable kopf = new PdfPTable(new float[] { 1.4f, 1f });
+        kopf.setWidthPercentage(100);
+        kopf.getDefaultCell().setBorder(PdfPCell.NO_BORDER);
+
+        // Logo
+        PdfPCell logoCell = new PdfPCell();
+        logoCell.setBorder(PdfPCell.NO_BORDER);
+        logoCell.setVerticalAlignment(Element.ALIGN_TOP);
+        Image logo = firmeninformationService.loadLogoImage();
+        if (logo != null) {
+            logo.scaleToFit(160, 70);
+            logoCell.addElement(logo);
+        }
+        kopf.addCell(logoCell);
+
+        // Adressblock
+        PdfPCell adresseCell = new PdfPCell();
+        adresseCell.setBorder(PdfPCell.NO_BORDER);
+        adresseCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        if (firma != null) {
+            Paragraph fname = new Paragraph(safe(firma.getFirmenname()), firmaFont);
+            fname.setAlignment(Element.ALIGN_RIGHT);
+            adresseCell.addElement(fname);
+            String adressZeile = joinNonBlank(" · ", firma.getStrasse(),
+                    joinNonBlank(" ", firma.getPlz(), firma.getOrt()));
+            if (!adressZeile.isBlank()) {
+                Paragraph p = new Paragraph(adressZeile, adressFont);
+                p.setAlignment(Element.ALIGN_RIGHT);
+                adresseCell.addElement(p);
+            }
+            String kontaktZeile = joinNonBlank(" · ",
+                    firma.getTelefon() != null && !firma.getTelefon().isBlank()
+                            ? "Tel. " + firma.getTelefon() : null,
+                    firma.getEmail(),
+                    firma.getWebsite());
+            if (!kontaktZeile.isBlank()) {
+                Paragraph p = new Paragraph(kontaktZeile, adressFont);
+                p.setAlignment(Element.ALIGN_RIGHT);
+                adresseCell.addElement(p);
+            }
+        }
+        kopf.addCell(adresseCell);
+        doc.add(kopf);
+
+        // Trennlinie (dünn, rot)
+        PdfPTable linie = new PdfPTable(1);
+        linie.setWidthPercentage(100);
+        linie.setSpacingBefore(8f);
+        linie.setSpacingAfter(12f);
+        PdfPCell ll = new PdfPCell(new Phrase(" "));
+        ll.setBorder(PdfPCell.NO_BORDER);
+        ll.setBorderWidthBottom(1.2f);
+        ll.setBorderColorBottom(rot);
+        ll.setFixedHeight(2f);
+        linie.addCell(ll);
+        doc.add(linie);
+    }
+
+    /**
+     * Titel + Projekt-Stammblock (Bauvorhaben, Auftrag, Kunde, Datum, Anzahl).
+     */
+    private void addBedarfslisteTitel(Document doc, List<BestellungResponseDto> items) throws DocumentException {
+        Color rot = new Color(204, 0, 0);
+        Color grau = new Color(110, 110, 110);
+        Font titelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, rot);
+        Font subFont = FontFactory.getFont(FontFactory.HELVETICA, 9, grau);
+        Font labelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, grau);
+        Font wertFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(30, 30, 30));
+
+        Paragraph titel = new Paragraph("Material-Bedarfsliste", titelFont);
+        titel.setSpacingAfter(2f);
+        doc.add(titel);
+
+        Paragraph sub = new Paragraph("Arbeitsblatt zum Abhaken — Vorhanden / Bestellen", subFont);
+        sub.setSpacingAfter(10f);
+        doc.add(sub);
+
+        // Projekt-Block in 2x4 Layout (Label/Wert)
+        BestellungResponseDto first = items.isEmpty() ? null : items.get(0);
+        String bauvorhaben = first != null ? safe(first.getProjektName()) : "";
+        String auftrag = first != null ? safe(first.getProjektNummer()) : "";
+        String kunde = first != null ? safe(first.getKundenName()) : "";
+        String datum = LocalDate.now().format(DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.GERMAN));
+        String anzahl = items.size() + (items.size() == 1 ? " Position" : " Positionen");
+
+        PdfPTable infoBox = new PdfPTable(new float[] { 1f, 2f, 1f, 2f });
+        infoBox.setWidthPercentage(100);
+        infoBox.setSpacingAfter(14f);
+        Color boxBg = new Color(250, 248, 248);
+        Color boxBorder = new Color(220, 200, 200);
+        addInfoZelle(infoBox, "Bauvorhaben", bauvorhaben.isBlank() ? "—" : bauvorhaben,
+                labelFont, wertFont, boxBg, boxBorder);
+        addInfoZelle(infoBox, "Auftragsnummer", auftrag.isBlank() ? "—" : auftrag,
+                labelFont, wertFont, boxBg, boxBorder);
+        addInfoZelle(infoBox, "Kunde", kunde.isBlank() ? "—" : kunde,
+                labelFont, wertFont, boxBg, boxBorder);
+        addInfoZelle(infoBox, "Erstellt am", datum, labelFont, wertFont, boxBg, boxBorder);
+        addInfoZelle(infoBox, "Umfang", anzahl, labelFont, wertFont, boxBg, boxBorder);
+        addInfoZelle(infoBox, "Bearbeiter", "", labelFont, wertFont, boxBg, boxBorder);
+        addInfoZelle(infoBox, "Datum / Unterschrift", "", labelFont, wertFont, boxBg, boxBorder);
+        addInfoZelle(infoBox, "Status", "in Bearbeitung", labelFont, wertFont, boxBg, boxBorder);
+        doc.add(infoBox);
+    }
+
+    private void addInfoZelle(PdfPTable table, String label, String wert,
+                              Font labelFont, Font wertFont, Color bg, Color border) {
+        PdfPCell cell = new PdfPCell();
+        cell.setBackgroundColor(bg);
+        cell.setBorderColor(border);
+        cell.setBorderWidth(0.6f);
+        cell.setPadding(6f);
+        Paragraph l = new Paragraph(label.toUpperCase(Locale.GERMAN), labelFont);
+        l.setSpacingAfter(2f);
+        cell.addElement(l);
+        cell.addElement(new Paragraph(wert, wertFont));
+        table.addCell(cell);
+    }
+
+    /**
+     * Hauptliste: pro Bedarfszeile eine Tabellenzeile mit
+     * leeren Checkbox-Zellen ("Vorhanden" / "Bestellen") und Notiz-Spalte.
+     */
+    private void addBedarfslistePositionen(Document doc, List<BestellungResponseDto> items)
+            throws DocumentException {
+        Color rot = new Color(204, 0, 0);
+        Color headerBg = new Color(204, 0, 0);
+        Color altBg = new Color(248, 248, 248);
+        Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.WHITE);
+        Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9);
+        Font cellBoldFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, new Color(30, 30, 30));
+        Font cellDimFont = FontFactory.getFont(FontFactory.HELVETICA, 8, new Color(110, 110, 110));
+
+        PdfPTable table = new PdfPTable(new float[] { 0.5f, 3.5f, 1.2f, 1.0f, 1.0f, 1.0f, 1.0f, 2.0f });
+        table.setWidthPercentage(100);
+        table.setHeaderRows(1);
+        table.setKeepTogether(false);
+        String[] headers = { "Pos", "Material / Werkstoff", "Menge", "Fixmaß",
+                "Gewicht", "Vorhanden", "Bestellen", "Notiz" };
+        for (int i = 0; i < headers.length; i++) {
+            PdfPCell hc = new PdfPCell(new Phrase(headers[i], headerFont));
+            hc.setBackgroundColor(headerBg);
+            hc.setPadding(6f);
+            hc.setBorderColor(headerBg);
+            hc.setHorizontalAlignment(i == 0 || i >= 2 ? Element.ALIGN_CENTER : Element.ALIGN_LEFT);
+            table.addCell(hc);
+        }
+
+        if (items.isEmpty()) {
+            PdfPCell leer = new PdfPCell(new Phrase(
+                    "Für dieses Projekt sind aktuell keine offenen Bedarfspositionen erfasst.",
+                    cellDimFont));
+            leer.setColspan(headers.length);
+            leer.setPadding(20f);
+            leer.setHorizontalAlignment(Element.ALIGN_CENTER);
+            leer.setBackgroundColor(Color.WHITE);
+            table.addCell(leer);
+            doc.add(table);
+            return;
+        }
+
+        Color zellRand = new Color(220, 220, 220);
+        boolean alternate = false;
+        int nr = 1;
+        for (BestellungResponseDto b : items) {
+            Color bg = alternate ? altBg : Color.WHITE;
+
+            // Pos
+            table.addCell(makeListenCell(String.valueOf(nr++), cellFont, bg, zellRand,
+                    Element.ALIGN_CENTER));
+
+            // Material/Werkstoff (zweizeilig)
+            PdfPCell matCell = new PdfPCell();
+            matCell.setBackgroundColor(bg);
+            matCell.setBorderColor(zellRand);
+            matCell.setPadding(5f);
+            String produkt = safe(b.getProduktname());
+            if (produkt.isBlank()) produkt = "Unbenannt";
+            Paragraph pProdukt = new Paragraph(produkt, cellBoldFont);
+            matCell.addElement(pProdukt);
+            String produkttext = safe(b.getProdukttext());
+            if (!produkttext.isBlank()) {
+                matCell.addElement(new Paragraph(produkttext, cellFont));
+            }
+            String werkstoff = safe(b.getWerkstoffName());
+            String kategorie = safe(b.getKategorieName());
+            String detailZeile = joinNonBlank(" · ",
+                    werkstoff.isBlank() ? null : werkstoff,
+                    kategorie.isBlank() ? null : kategorie);
+            if (!detailZeile.isBlank()) {
+                matCell.addElement(new Paragraph(detailZeile, cellDimFont));
+            }
+            String externNr = safe(b.getExterneArtikelnummer());
+            String lieferantName = safe(b.getLieferantName());
+            boolean istWerkstoff = b.getRootKategorieId() != null && b.getRootKategorieId() == 1;
+            if (!istWerkstoff && (!externNr.isBlank() || !lieferantName.isBlank())) {
+                // Bei Nicht-Werkstoff-Artikeln zeigen wir Lieferant + dessen
+                // Artikelnummer kombiniert: der Mitarbeiter sieht sofort, wer
+                // das Teil liefert und unter welcher Nummer er es findet.
+                String zeile = joinNonBlank(" · ",
+                        lieferantName.isBlank() ? null : lieferantName,
+                        externNr.isBlank() ? null : "Lief.-Art-Nr.: " + externNr);
+                matCell.addElement(new Paragraph(zeile, cellDimFont));
+            } else if (istWerkstoff) {
+                // Werkstoffe sind lieferanten-neutral — wird erst bei der
+                // Preisanfrage festgelegt.
+                Font hinweisFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 8,
+                        new Color(140, 90, 90));
+                matCell.addElement(new Paragraph("Werkstoff – Lieferant offen", hinweisFont));
+            }
+            table.addCell(matCell);
+
+            // Menge
+            table.addCell(makeListenCell(formatMenge(b), cellFont, bg, zellRand, Element.ALIGN_CENTER));
+
+            // Fixmaß
+            String fixmass = b.getFixmassMm() != null && b.getFixmassMm() > 0
+                    ? b.getFixmassMm() + " mm" : "—";
+            table.addCell(makeListenCell(fixmass, cellFont, bg, zellRand, Element.ALIGN_CENTER));
+
+            // Gewicht
+            String gewicht = formatKg(b.getKilogramm());
+            table.addCell(makeListenCell(gewicht, cellFont, bg, zellRand, Element.ALIGN_CENTER));
+
+            // Checkbox "Vorhanden"
+            table.addCell(makeCheckboxCell(bg, zellRand, rot));
+            // Checkbox "Bestellen"
+            table.addCell(makeCheckboxCell(bg, zellRand, rot));
+
+            // Notiz (leere Zelle für handschriftliche Anmerkungen)
+            PdfPCell notiz = new PdfPCell(new Phrase(" "));
+            notiz.setBackgroundColor(bg);
+            notiz.setBorderColor(zellRand);
+            notiz.setMinimumHeight(28f);
+            table.addCell(notiz);
+
+            alternate = !alternate;
+        }
+
+        doc.add(table);
+    }
+
+    private PdfPCell makeListenCell(String text, Font font, Color bg, Color rand, int hAlign) {
+        PdfPCell cell = new PdfPCell(new Phrase(text != null ? text : "", font));
+        cell.setBackgroundColor(bg);
+        cell.setBorderColor(rand);
+        cell.setPadding(5f);
+        cell.setMinimumHeight(28f);
+        cell.setHorizontalAlignment(hAlign);
+        cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        return cell;
+    }
+
+    /**
+     * Druckbare Checkbox: leeres Quadrat (14×14pt) mit Rahmen, mittig in der Zelle.
+     * Bewusst kein Unicode-Symbol (☐) — Helvetica-Standard hat das Glyph
+     * nicht, was zu fehlenden Zeichen im PDF fuehrt.
+     * Die innere Tabelle wird auf 14pt fixiert ({@code setLockedWidth}),
+     * damit die Box echt quadratisch wird und nicht in die Spaltenbreite
+     * "ausfliesst".
+     */
+    private PdfPCell makeCheckboxCell(Color bg, Color rand, Color boxColor) {
+        PdfPTable inner = new PdfPTable(1);
+        try {
+            inner.setTotalWidth(new float[] { 14f });
+            inner.setLockedWidth(true);
+        } catch (DocumentException ignored) {
+            // setTotalWidth darf hier nicht werfen, da nur eine Spalte
+        }
+        inner.setHorizontalAlignment(Element.ALIGN_CENTER);
+        PdfPCell box = new PdfPCell(new Phrase(" "));
+        box.setBorderColor(boxColor);
+        box.setBorderWidth(1.2f);
+        box.setFixedHeight(14f);
+        box.setBackgroundColor(Color.WHITE);
+        inner.addCell(box);
+
+        PdfPCell wrapper = new PdfPCell(inner);
+        wrapper.setBackgroundColor(bg);
+        wrapper.setBorderColor(rand);
+        wrapper.setPadding(6f);
+        wrapper.setHorizontalAlignment(Element.ALIGN_CENTER);
+        wrapper.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        wrapper.setMinimumHeight(28f);
+        return wrapper;
+    }
+
+    private void addLegende(Document doc) throws DocumentException {
+        Font legendeFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 8, new Color(110, 110, 110));
+        Paragraph p = new Paragraph(
+                "Hinweis: „Vorhanden“ = aus Lager / Restbestand verfügbar. "
+                        + "„Bestellen“ = muss eingekauft werden — diese Positionen werden "
+                        + "anschließend in eine Preisanfrage übernommen.",
+                legendeFont);
+        p.setSpacingBefore(10f);
+        doc.add(p);
+    }
+
+    private void addFirmenFusszeile(Document doc, Firmeninformation firma) throws DocumentException {
+        if (firma == null) return;
+        Color grau = new Color(140, 140, 140);
+        Font fussFont = FontFactory.getFont(FontFactory.HELVETICA, 7.5f, grau);
+
+        // Trennlinie oberhalb
+        PdfPTable linie = new PdfPTable(1);
+        linie.setWidthPercentage(100);
+        linie.setSpacingBefore(18f);
+        linie.setSpacingAfter(4f);
+        PdfPCell ll = new PdfPCell(new Phrase(" "));
+        ll.setBorder(PdfPCell.NO_BORDER);
+        ll.setBorderWidthTop(0.6f);
+        ll.setBorderColorTop(new Color(220, 200, 200));
+        ll.setFixedHeight(2f);
+        linie.addCell(ll);
+        doc.add(linie);
+
+        String zeile1 = joinNonBlank(" · ",
+                firma.getFirmenname(),
+                firma.getGeschaeftsfuehrer() != null && !firma.getGeschaeftsfuehrer().isBlank()
+                        ? "GF " + firma.getGeschaeftsfuehrer() : null,
+                firma.getSteuernummer() != null && !firma.getSteuernummer().isBlank()
+                        ? "St-Nr. " + firma.getSteuernummer() : null,
+                firma.getUstIdNr() != null && !firma.getUstIdNr().isBlank()
+                        ? "USt-IdNr. " + firma.getUstIdNr() : null);
+        if (!zeile1.isBlank()) {
+            Paragraph p1 = new Paragraph(zeile1, fussFont);
+            p1.setAlignment(Element.ALIGN_CENTER);
+            doc.add(p1);
+        }
+        String zeile2 = joinNonBlank(" · ",
+                firma.getBankName(),
+                firma.getIban() != null && !firma.getIban().isBlank() ? "IBAN " + firma.getIban() : null,
+                firma.getBic() != null && !firma.getBic().isBlank() ? "BIC " + firma.getBic() : null);
+        if (!zeile2.isBlank()) {
+            Paragraph p2 = new Paragraph(zeile2, fussFont);
+            p2.setAlignment(Element.ALIGN_CENTER);
+            doc.add(p2);
+        }
+        if (firma.getFusszeileText() != null && !firma.getFusszeileText().isBlank()) {
+            Paragraph p3 = new Paragraph(firma.getFusszeileText(), fussFont);
+            p3.setAlignment(Element.ALIGN_CENTER);
+            p3.setSpacingBefore(2f);
+            doc.add(p3);
+        }
+    }
+
+    private String joinNonBlank(String sep, String... teile) {
+        if (teile == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String t : teile) {
+            if (t == null || t.isBlank()) continue;
+            if (sb.length() > 0) sb.append(sep);
+            sb.append(t);
+        }
+        return sb.toString();
+    }
+
+    /** Formatiert Kilogramm wie im Frontend (1 Nachkommastelle, "—" wenn leer/0). */
+    private String formatKg(java.math.BigDecimal kg) {
+        if (kg == null || kg.signum() <= 0) return "—";
+        return String.format(java.util.Locale.GERMANY, "%.1f kg", kg);
     }
 
     /**

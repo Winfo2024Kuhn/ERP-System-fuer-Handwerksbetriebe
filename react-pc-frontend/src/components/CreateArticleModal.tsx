@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { X, Search } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { X, Search, Info } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -20,6 +20,17 @@ const VERRECHNUNGSEINHEITEN = [
     { value: "STUECK", label: "Stück" }
 ];
 
+// Wurzel-Kategorie "Werkstoffe" — siehe project memory: Werkstoffe sind
+// lieferanten-neutral (werden bei mehreren Lieferanten angefragt). Backend
+// verwirft Lieferantendaten in ArtikelService.erstelleArtikel ohnehin.
+const ROOT_KATEGORIE_WERKSTOFFE = 1;
+
+interface KategorieDto {
+    id: number;
+    beschreibung: string;
+    parentId: number | null;
+}
+
 export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps) {
     const toast = useToast();
     const [formData, setFormData] = useState({
@@ -39,12 +50,36 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
         lieferantName: ""
     });
 
-    // We need Werkstoff IDs actually. The current props pass strings. 
+    // We need Werkstoff IDs actually. The current props pass strings.
     // Let's fetch proper Werkstoff objects map.
     const [werkstoffe, setWerkstoffe] = useState<{id: number, name: string}[]>([]);
+    const [kategorien, setKategorien] = useState<KategorieDto[]>([]);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    // Set aller Kategorie-Ids, deren Wurzel "Werkstoffe" ist —
+    // wird aus dem Kategorie-Baum hochtraversiert und einmal gecacht.
+    const werkstoffKategorieIds = useMemo(() => {
+        const byId = new Map<number, KategorieDto>(kategorien.map(k => [k.id, k]));
+        const istUnterWerkstoffWurzel = (id: number): boolean => {
+            let current: KategorieDto | undefined = byId.get(id);
+            const seen = new Set<number>();
+            while (current && current.parentId != null && !seen.has(current.id)) {
+                seen.add(current.id);
+                current = byId.get(current.parentId);
+            }
+            return current?.id === ROOT_KATEGORIE_WERKSTOFFE;
+        };
+        const result = new Set<number>();
+        for (const k of kategorien) {
+            if (istUnterWerkstoffWurzel(k.id)) result.add(k.id);
+        }
+        return result;
+    }, [kategorien]);
+
+    const istWerkstoff = formData.kategorieId > 0
+        && werkstoffKategorieIds.has(formData.kategorieId);
 
     useEffect(() => {
         // Fetch full werkstoff objects to get IDs
@@ -85,6 +120,15 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
         fetch('/artikel/werkstoffe/details').then(r => r.json()).then(d => setWerkstoffe(d)).catch(() => {});
     }, []);
 
+    // Kategorien-Baum laden, damit wir Werkstoff-Kategorien serverseitig
+    // sauber erkennen koennen (rekursiv via parentId).
+    useEffect(() => {
+        fetch('/api/kategorien')
+            .then(r => r.ok ? r.json() : [])
+            .then((data: KategorieDto[]) => setKategorien(Array.isArray(data) ? data : []))
+            .catch(() => setKategorien([]));
+    }, []);
+
     const handleChange = (key: string, value: string | number | boolean | null) => {
         setFormData(prev => ({ ...prev, [key]: value }));
     };
@@ -97,18 +141,21 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
         
         setLoading(true);
         try {
+            // Bei Werkstoff-Kategorien: Lieferanten-Daten gar nicht mit
+            // hochsenden — sie wuerden vom Backend (ArtikelService) ohnehin
+            // verworfen. Konsistente UX zur ausgeblendeten Eingabe.
             const payload = {
                 produktname: formData.produktname,
                 produktlinie: formData.produktlinie,
                 produkttext: formData.produkttext,
-                externeArtikelnummer: formData.externeArtikelnummer,
+                externeArtikelnummer: istWerkstoff ? "" : formData.externeArtikelnummer,
                 verpackungseinheit: formData.verpackungseinheit,
                 preiseinheit: formData.preiseinheit,
                 verrechnungseinheit: formData.verrechnungseinheit,
                 kategorieId: formData.kategorieId || null,
                 werkstoffId: formData.werkstoffId || null,
-                preis: formData.preis,
-                lieferantId: formData.lieferantId || null
+                preis: istWerkstoff ? null : formData.preis,
+                lieferantId: istWerkstoff ? null : (formData.lieferantId || null)
             };
 
             const res = await fetch('/artikel', {
@@ -167,18 +214,20 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-1.5">
-                            <Label>Artikelnummer (Extern)</Label>
-                            <Input 
-                                value={formData.externeArtikelnummer} 
-                                onChange={e => handleChange('externeArtikelnummer', e.target.value)} 
-                                placeholder="Lieferanten-Nr." 
-                            />
-                        </div>
+                    <div className={`grid grid-cols-1 ${istWerkstoff ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-4`}>
+                        {!istWerkstoff && (
+                            <div className="space-y-1.5">
+                                <Label>Artikelnummer (Extern)</Label>
+                                <Input
+                                    value={formData.externeArtikelnummer}
+                                    onChange={e => handleChange('externeArtikelnummer', e.target.value)}
+                                    placeholder="Lieferanten-Nr."
+                                />
+                            </div>
+                        )}
                         <div className="space-y-1.5">
                             <Label>Kategorie</Label>
-                            <div 
+                            <div
                                 className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50"
                                 onClick={() => setShowCategoryModal(true)}
                             >
@@ -188,18 +237,31 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         </div>
                         <div className="space-y-1.5">
                             <Label>Werkstoff</Label>
-                            <Select 
-                                options={werkstoffSelectOptions} 
-                                value={String(formData.werkstoffId || "")} 
+                            <Select
+                                options={werkstoffSelectOptions}
+                                value={String(formData.werkstoffId || "")}
                                 onChange={v => {
                                     const w = werkstoffe.find(x => String(x.id) === v);
                                     handleChange('werkstoffId', Number(v));
                                     handleChange('werkstoffName', w?.name || "");
-                                }} 
-                                placeholder="Werkstoff wählen" 
+                                }}
+                                placeholder="Werkstoff wählen"
                             />
                         </div>
                     </div>
+
+                    {istWerkstoff && (
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <div>
+                                <p className="font-medium">Werkstoff – lieferanten-neutral</p>
+                                <p className="text-xs text-amber-700 mt-0.5">
+                                    Lieferanten-Artikelnummer, Preis und Lieferant werden bei Werkstoffen nicht hinterlegt.
+                                    Sie werden später per Preisanfrage bei mehreren Lieferanten ermittelt.
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-100">
                         <div className="space-y-1.5">
@@ -229,38 +291,40 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <Label>Preis (€)</Label>
-                            <Input 
-                                type="number" 
-                                step="0.01"
-                                value={formData.preis} 
-                                onChange={e => handleChange('preis', parseFloat(e.target.value) || 0)} 
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label>Lieferant (Optional)</Label>
-                            <div 
-                                className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50"
-                                onClick={() => setShowSupplierModal(true)}
-                            >
-                                <span className="truncate">{formData.lieferantName || "Lieferant wählen"}</span>
-                                {formData.lieferantId ? (
-                                    <X 
-                                        className="w-4 h-4 text-slate-400 hover:text-red-500" 
-                                        onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            handleChange('lieferantId', 0); 
-                                            handleChange('lieferantName', ""); 
-                                        }} 
-                                    />
-                                ) : (
-                                    <Search className="w-4 h-4 text-slate-400" />
-                                )}
+                    {!istWerkstoff && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <Label>Preis (€)</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={formData.preis}
+                                    onChange={e => handleChange('preis', parseFloat(e.target.value) || 0)}
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>Lieferant (Optional)</Label>
+                                <div
+                                    className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50"
+                                    onClick={() => setShowSupplierModal(true)}
+                                >
+                                    <span className="truncate">{formData.lieferantName || "Lieferant wählen"}</span>
+                                    {formData.lieferantId ? (
+                                        <X
+                                            className="w-4 h-4 text-slate-400 hover:text-red-500"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleChange('lieferantId', 0);
+                                                handleChange('lieferantName', "");
+                                            }}
+                                        />
+                                    ) : (
+                                        <Search className="w-4 h-4 text-slate-400" />
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-xl">

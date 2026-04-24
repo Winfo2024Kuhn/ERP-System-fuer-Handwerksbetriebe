@@ -56,6 +56,25 @@ public class BestellungController {
                 .body(res);
     }
 
+    /**
+     * Druckbare Material-Bedarfsliste fuer ein Projekt. Dient als
+     * Arbeitsblatt: der Mitarbeiter geht durchs Lager und harkt
+     * "Vorhanden" / "Bestellen" handschriftlich ab. Anschliessend
+     * werden die Haken am PC erfasst und die zu bestellenden
+     * Positionen in eine Preisanfrage uebernommen.
+     */
+    @GetMapping("/projekt/{projektId}/bedarfsliste-pdf")
+    public ResponseEntity<Resource> bedarfslistePdfForProjekt(@PathVariable Long projektId)
+            throws java.io.IOException {
+        java.nio.file.Path pdf = bestellungPdfService.generateBedarfslistePdf(projektId);
+        Resource res = new InputStreamResource(java.nio.file.Files.newInputStream(pdf));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename=bedarfsliste-projekt-" + projektId + ".pdf")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(res);
+    }
+
     @GetMapping("/lieferant/{lieferantId}/pdf")
     public ResponseEntity<Resource> pdfForLieferant(@PathVariable Long lieferantId) throws java.io.IOException {
         java.nio.file.Path pdf = bestellungPdfService.generatePdfForLieferant(lieferantId);
