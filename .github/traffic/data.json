@@ -1,14 +1,14 @@
 {
-  "total_views": 418,
-  "total_unique_visitors": 22,
-  "total_clones": 7580,
-  "total_unique_cloners": 914,
-  "last_view_timestamp": "2026-04-23T00:00:00Z",
-  "last_clone_timestamp": "2026-04-23T00:00:00Z",
+  "total_views": 419,
+  "total_unique_visitors": 23,
+  "total_clones": 7881,
+  "total_unique_cloners": 988,
+  "last_view_timestamp": "2026-04-24T00:00:00Z",
+  "last_clone_timestamp": "2026-04-24T00:00:00Z",
   "referring_sites": [
     {
       "referrer": "github.com",
-      "count": 124,
+      "count": 100,
       "uniques": 2
     },
     {
@@ -26,37 +26,37 @@
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe",
       "title": "Overview",
-      "count": 73,
-      "uniques": 3
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/pulse",
-      "title": "/pulse",
-      "count": 23,
+      "count": 60,
       "uniques": 2
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/graphs/traffic",
       "title": "/graphs/traffic",
-      "count": 23,
+      "count": 22,
       "uniques": 1
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions",
       "title": "/actions",
-      "count": 22,
+      "count": 20,
       "uniques": 2
     },
     {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/agents",
-      "title": "/agents",
-      "count": 9,
-      "uniques": 1
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/pulse",
+      "title": "/pulse",
+      "count": 20,
+      "uniques": 2
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions/workflows/traffic.yml",
       "title": "/actions/workflows/traffic.yml",
-      "count": 8,
+      "count": 7,
+      "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/agents",
+      "title": "/agents",
+      "count": 7,
       "uniques": 1
     },
     {
@@ -88,5 +88,5 @@
   "forks": 0,
   "watchers": 2,
   "open_issues": 24,
-  "updated_at": "2026-04-25T03:04:34Z"
+  "updated_at": "2026-04-26T03:06:16Z"
 }
