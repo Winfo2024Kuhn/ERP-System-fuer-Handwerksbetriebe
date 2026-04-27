@@ -52,7 +52,11 @@ export type AddressAutocompleteProps = {
 };
 
 const PHOTON_URL = 'https://photon.komoot.io/api/';
-const DEFAULT_COUNTRIES = ['de', 'at', 'ch'];
+const DEFAULT_COUNTRIES = ['de'];
+const DEBOUNCE_MS = 120;
+const RESULT_LIMIT = 5;
+const DE_BIAS_LAT = 51.1657;
+const DE_BIAS_LON = 10.4515;
 
 function mapFeature(feature: PhotonFeature): Suggestion | null {
     const props = feature.properties || {};
@@ -92,7 +96,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     className,
     inputClassName,
     countryCodes = DEFAULT_COUNTRIES,
-    minChars = 3
+    minChars = 2
 }) => {
     const idPrefix = useId();
     const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -122,8 +126,9 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             const controller = new AbortController();
             abortRef.current = controller;
             setLoading(true);
+            setOpen(true);
             try {
-                const url = `${PHOTON_URL}?q=${encodeURIComponent(query)}&lang=de&limit=6`;
+                const url = `${PHOTON_URL}?q=${encodeURIComponent(query)}&lang=de&limit=${RESULT_LIMIT}&lat=${DE_BIAS_LAT}&lon=${DE_BIAS_LON}`;
                 const res = await fetch(url, { signal: controller.signal });
                 if (!res.ok) throw new Error(`Photon ${res.status}`);
                 const data = (await res.json()) as { features?: PhotonFeature[] };
@@ -172,7 +177,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         }
         debounceRef.current = window.setTimeout(() => {
             void runSearch(query);
-        }, 280);
+        }, DEBOUNCE_MS);
         return () => {
             if (debounceRef.current) window.clearTimeout(debounceRef.current);
         };

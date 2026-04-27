@@ -72,9 +72,9 @@ describe('AddressAutocomplete', () => {
         expect(onChange).toHaveBeenCalledWith({ strasse: 'A', plz: '', ort: '' });
     });
 
-    it('triggert keinen Fetch unter minChars (default 3)', async () => {
+    it('triggert keinen Fetch unter minChars (default 2)', async () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
-        renderComponent({ strasse: 'Mu' });
+        renderComponent({ strasse: 'M' });
         await act(async () => {
             await vi.advanceTimersByTimeAsync(500);
         });
