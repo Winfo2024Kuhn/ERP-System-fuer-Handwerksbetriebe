@@ -75,6 +75,7 @@ public class LieferantenController {
     private final LieferantenRepository lieferantenRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final org.example.kalkulationsprogramm.repository.KostenstelleRepository kostenstelleRepository;
+    private final org.example.kalkulationsprogramm.service.LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     private final LieferantMapper lieferantMapper;
     private final LieferantEmailResolver lieferantEmailResolver;
     private final LieferantenDetailService lieferantenDetailService;
@@ -864,7 +865,14 @@ public class LieferantenController {
                 // Log but don't fail
             }
 
-            // 5. DTO zurückgeben
+            // 5. Auto-Zuweisung der Standard-Kostenstelle (falls beim Lieferanten hinterlegt)
+            try {
+                standardKostenstelleAutoAssigner.applyIfApplicable(dokument);
+            } catch (Exception e) {
+                // Log but don't fail
+            }
+
+            // 6. DTO zurückgeben
             return ResponseEntity.ok(dokumentService.getDokumentById(dokument.getId()));
 
         } catch (Exception e) {

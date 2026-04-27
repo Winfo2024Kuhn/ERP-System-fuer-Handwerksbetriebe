@@ -51,6 +51,7 @@ public class LieferantDokumentService {
         private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
         @Lazy
         private final GeminiDokumentAnalyseService geminiService;
+        private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
 
         @Value("${upload.path:uploads}")
         private String uploadPath;
@@ -271,6 +272,8 @@ public class LieferantDokumentService {
                                 gd = geschaeftsdokumentRepository.saveAndFlush(gd);
                                 dokument.setGeschaeftsdaten(gd);
                                 dokument = dokumentRepository.saveAndFlush(dokument);
+
+                                standardKostenstelleAutoAssigner.applyIfApplicable(dokument);
                         } else {
                                 log.warn("Analyse ergab keine Ergebnisse für Dokument {}", dokument.getId());
                         }
