@@ -31,6 +31,21 @@ const photonResponse = {
     ]
 };
 
+function jsonResponse(body: unknown): Response {
+    return {
+        ok: true,
+        json: async () => body
+    } as Response;
+}
+
+function mockUrlRouter(routes: { photon: unknown; nominatim: unknown }) {
+    mockFetch.mockImplementation((url: string) => {
+        if (url.includes('photon.komoot.io')) return Promise.resolve(jsonResponse(routes.photon));
+        if (url.includes('nominatim')) return Promise.resolve(jsonResponse(routes.nominatim));
+        return Promise.resolve(jsonResponse({}));
+    });
+}
+
 function renderComponent(initial: Partial<AddressValue> = {}) {
     const value: AddressValue = { strasse: '', plz: '', ort: '', ...initial };
     const onChange = vi.fn();
@@ -41,10 +56,7 @@ function renderComponent(initial: Partial<AddressValue> = {}) {
 describe('AddressAutocomplete', () => {
     beforeEach(() => {
         mockFetch.mockReset();
-        mockFetch.mockResolvedValue({
-            ok: true,
-            json: async () => photonResponse
-        } as Response);
+        mockUrlRouter({ photon: photonResponse, nominatim: [] });
     });
 
     afterEach(() => {
@@ -72,25 +84,26 @@ describe('AddressAutocomplete', () => {
         expect(onChange).toHaveBeenCalledWith({ strasse: 'A', plz: '', ort: '' });
     });
 
-    it('triggert keinen Fetch unter minChars (default 2)', async () => {
+    it('triggert keinen Fetch unter minChars', async () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
-        renderComponent({ strasse: 'M' });
+        renderComponent({ strasse: 'Mu' });
         await act(async () => {
             await vi.advanceTimersByTimeAsync(500);
         });
         expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('ruft Photon-API nach Debounce auf', async () => {
+    it('fragt Photon UND Nominatim parallel an (Race-Strategie)', async () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
         renderComponent({ strasse: 'Musterstraße 12' });
         await act(async () => {
             await vi.advanceTimersByTimeAsync(400);
         });
-        await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
-        const url = mockFetch.mock.calls[0][0] as string;
-        expect(url).toContain('photon.komoot.io');
-        expect(url).toContain(encodeURIComponent('Musterstraße 12'));
+        await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+        const calledUrls = mockFetch.mock.calls.map(c => c[0] as string);
+        expect(calledUrls.some(u => u.includes('photon.komoot.io'))).toBe(true);
+        expect(calledUrls.some(u => u.includes('nominatim'))).toBe(true);
+        expect(calledUrls.some(u => u.includes(encodeURIComponent('Musterstraße 12')))).toBe(true);
     });
 
     it('zeigt Vorschläge im Dropdown nach erfolgreicher Suche', async () => {
@@ -150,17 +163,17 @@ describe('AddressAutocomplete', () => {
         expect(screen.queryByText('Ort')).not.toBeInTheDocument();
     });
 
-    it('filtert Ergebnisse nach erlaubten Ländercodes', async () => {
+    it('filtert Ergebnisse nach erlaubten Ländercodes (Photon)', async () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
-        mockFetch.mockResolvedValue({
-            ok: true,
-            json: async () => ({
+        mockUrlRouter({
+            photon: {
                 features: [
                     { properties: { street: 'Foreign Rd', city: 'Paris', countrycode: 'FR' } },
                     { properties: { street: 'Hauptstr.', housenumber: '5', postcode: '10115', city: 'Berlin', countrycode: 'DE' } }
                 ]
-            })
-        } as Response);
+            },
+            nominatim: []
+        });
 
         renderComponent({ strasse: 'Hauptstr' });
         await act(async () => {
@@ -168,5 +181,31 @@ describe('AddressAutocomplete', () => {
         });
         await waitFor(() => expect(screen.getByText('Hauptstr. 5')).toBeInTheDocument());
         expect(screen.queryByText('Foreign Rd')).not.toBeInTheDocument();
+    });
+
+    it('nutzt Nominatim-Treffer wenn Photon leer zurückkommt', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        mockUrlRouter({
+            photon: { features: [] },
+            nominatim: [
+                {
+                    address: {
+                        road: 'Friedenstraße',
+                        house_number: '17',
+                        postcode: '97259',
+                        village: 'Greußenheim',
+                        country: 'Deutschland',
+                        country_code: 'de'
+                    }
+                }
+            ]
+        });
+
+        renderComponent({ strasse: 'Friedenstraße 17 Greußenheim' });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(400);
+        });
+        await waitFor(() => expect(screen.getByText('Friedenstraße 17')).toBeInTheDocument());
+        expect(screen.getByText('97259 Greußenheim, Deutschland')).toBeInTheDocument();
     });
 });

@@ -9,29 +9,12 @@ export type AddressValue = {
     ort: string;
 };
 
-type PhotonProperties = {
-    street?: string;
-    housenumber?: string;
-    postcode?: string;
-    city?: string;
-    locality?: string;
-    name?: string;
-    district?: string;
-    state?: string;
-    country?: string;
-    countrycode?: string;
-    osm_value?: string;
-    type?: string;
-};
-
-type PhotonFeature = {
-    properties: PhotonProperties;
-};
-
 type Suggestion = {
     key: string;
     primary: string;
     secondary: string;
+    source: 'photon' | 'nominatim';
+    countryCode: string;
     value: AddressValue;
 };
 
@@ -53,10 +36,12 @@ export type AddressAutocompleteProps = {
 };
 
 const PHOTON_URL = 'https://photon.komoot.io/api/';
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const DEFAULT_COUNTRIES = ['de'];
 const DEBOUNCE_MS = 150;
+const REQUEST_TIMEOUT_MS = 6000;
 const RESULT_LIMIT = 6;
-const CACHE_MAX = 50;
+const CACHE_MAX = 80;
 const queryCache = new Map<string, Suggestion[]>();
 
 function rememberInCache(key: string, items: Suggestion[]) {
@@ -67,28 +52,100 @@ function rememberInCache(key: string, items: Suggestion[]) {
     }
 }
 
-function mapFeature(feature: PhotonFeature): Suggestion | null {
-    const props = feature.properties || {};
-    const ort = props.city || props.locality || props.name || '';
-    const strasseParts = [props.street, props.housenumber].filter(Boolean);
-    const strasse = strasseParts.join(' ');
+type PhotonProperties = {
+    street?: string;
+    housenumber?: string;
+    postcode?: string;
+    city?: string;
+    locality?: string;
+    name?: string;
+    country?: string;
+    countrycode?: string;
+};
 
-    if (!ort && !strasse && !props.postcode) return null;
+type PhotonFeature = { properties: PhotonProperties };
 
-    const primaryParts = strasse ? [strasse] : [props.name || ''].filter(Boolean);
-    const secondaryParts = [props.postcode, ort].filter(Boolean).join(' ');
-    const country = props.country ? `, ${props.country}` : '';
-
-    return {
-        key: `${strasse}|${props.postcode || ''}|${ort}|${props.state || ''}|${props.country || ''}`,
-        primary: primaryParts.join(' ') || ort,
-        secondary: `${secondaryParts}${country}`.trim(),
-        value: {
-            strasse,
-            plz: props.postcode || '',
-            ort
-        }
+type NominatimItem = {
+    display_name?: string;
+    address?: {
+        road?: string;
+        pedestrian?: string;
+        footway?: string;
+        house_number?: string;
+        postcode?: string;
+        city?: string;
+        town?: string;
+        village?: string;
+        municipality?: string;
+        suburb?: string;
+        country?: string;
+        country_code?: string;
     };
+};
+
+function mapPhotonFeature(f: PhotonFeature): Suggestion | null {
+    const p = f.properties || {};
+    const ort = p.city || p.locality || p.name || '';
+    const strasse = [p.street, p.housenumber].filter(Boolean).join(' ');
+    if (!ort && !strasse && !p.postcode) return null;
+    const primary = strasse || p.name || ort;
+    const secondary = [[p.postcode, ort].filter(Boolean).join(' '), p.country].filter(Boolean).join(', ');
+    return {
+        key: `${strasse}|${p.postcode || ''}|${ort}|${p.country || ''}`,
+        primary,
+        secondary,
+        source: 'photon',
+        countryCode: (p.countrycode || '').toLowerCase(),
+        value: { strasse, plz: p.postcode || '', ort }
+    };
+}
+
+function mapNominatimItem(it: NominatimItem): Suggestion | null {
+    const a = it.address || {};
+    const street = a.road || a.pedestrian || a.footway || '';
+    const house = a.house_number || '';
+    const strasse = [street, house].filter(Boolean).join(' ');
+    const ort = a.city || a.town || a.village || a.municipality || a.suburb || '';
+    if (!ort && !strasse && !a.postcode) return null;
+    const primary = strasse || ort;
+    const secondary = [[a.postcode, ort].filter(Boolean).join(' '), a.country].filter(Boolean).join(', ');
+    return {
+        key: `${strasse}|${a.postcode || ''}|${ort}|${a.country || ''}`,
+        primary,
+        secondary,
+        source: 'nominatim',
+        countryCode: (a.country_code || '').toLowerCase(),
+        value: { strasse, plz: a.postcode || '', ort }
+    };
+}
+
+function dedupe(items: Suggestion[]): Suggestion[] {
+    const seen = new Set<string>();
+    const out: Suggestion[] = [];
+    for (const s of items) {
+        if (!seen.has(s.key)) {
+            seen.add(s.key);
+            out.push(s);
+        }
+    }
+    return out;
+}
+
+async function searchPhoton(query: string, signal: AbortSignal): Promise<Suggestion[]> {
+    const url = `${PHOTON_URL}?q=${encodeURIComponent(query)}&lang=de&limit=${RESULT_LIMIT}`;
+    const res = await fetch(url, { signal });
+    if (!res.ok) throw new Error(`Photon ${res.status}`);
+    const data = (await res.json()) as { features?: PhotonFeature[] };
+    return (data.features || []).map(mapPhotonFeature).filter((s): s is Suggestion => s !== null);
+}
+
+async function searchNominatim(query: string, signal: AbortSignal, countries: string[]): Promise<Suggestion[]> {
+    const cc = countries.length > 0 ? `&countrycodes=${countries.map(c => c.toLowerCase()).join(',')}` : '';
+    const url = `${NOMINATIM_URL}?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=${RESULT_LIMIT}&accept-language=de${cc}`;
+    const res = await fetch(url, { signal, headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`Nominatim ${res.status}`);
+    const data = (await res.json()) as NominatimItem[];
+    return data.map(mapNominatimItem).filter((s): s is Suggestion => s !== null);
 }
 
 export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
@@ -111,21 +168,38 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [activeIdx, setActiveIdx] = useState(-1);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
     const debounceRef = useRef<number | null>(null);
+    const timeoutRef = useRef<number | null>(null);
     const skipNextSearchRef = useRef(false);
 
-    const allowedCountries = useMemo(
-        () => new Set(countryCodes.map(c => c.toLowerCase())),
+    const countriesKey = useMemo(
+        () => [...countryCodes].map(c => c.toLowerCase()).sort().join(','),
         [countryCodes]
     );
 
     const cacheKey = useCallback(
-        (q: string) => `${[...allowedCountries].sort().join(',')}|${q.toLowerCase()}`,
-        [allowedCountries]
+        (q: string) => `${countriesKey}|${q.toLowerCase()}`,
+        [countriesKey]
+    );
+
+    const allowedCountries = useMemo(
+        () => countryCodes.map(c => c.toLowerCase()),
+        [countryCodes]
+    );
+
+    const allowedSet = useMemo(() => new Set(allowedCountries), [allowedCountries]);
+
+    const filterByCountry = useCallback(
+        (items: Suggestion[]) => {
+            if (allowedSet.size === 0) return items;
+            return items.filter(s => !s.countryCode || allowedSet.has(s.countryCode));
+        },
+        [allowedSet]
     );
 
     const updateField = useCallback(
@@ -133,25 +207,6 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             onChange({ ...value, ...patch });
         },
         [onChange, value]
-    );
-
-    const filterAndDedupe = useCallback(
-        (features: PhotonFeature[]): Suggestion[] => {
-            const items = features
-                .filter(f => {
-                    const cc = (f.properties?.countrycode || '').toLowerCase();
-                    return !cc || allowedCountries.has(cc);
-                })
-                .map(mapFeature)
-                .filter((s): s is Suggestion => s !== null);
-            const seen = new Set<string>();
-            return items.filter(s => {
-                if (seen.has(s.key)) return false;
-                seen.add(s.key);
-                return true;
-            });
-        },
-        [allowedCountries]
     );
 
     const runSearch = useCallback(
@@ -163,32 +218,77 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
                 setOpen(true);
                 setActiveIdx(-1);
                 setLoading(false);
+                setErrorMsg(null);
                 return;
             }
 
             if (abortRef.current) abortRef.current.abort();
+            if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+
             const controller = new AbortController();
             abortRef.current = controller;
+            let didTimeout = false;
+            timeoutRef.current = window.setTimeout(() => {
+                didTimeout = true;
+                controller.abort();
+            }, REQUEST_TIMEOUT_MS);
+
             setLoading(true);
             setOpen(true);
+            setErrorMsg(null);
+
+            const wrap = (p: Promise<Suggestion[]>) =>
+                p.then(items => {
+                    if (items.length === 0) throw new Error('empty');
+                    return items;
+                });
+
+            const cleanup = () => {
+                if (timeoutRef.current) {
+                    window.clearTimeout(timeoutRef.current);
+                    timeoutRef.current = null;
+                }
+                if (abortRef.current === controller) {
+                    abortRef.current = null;
+                }
+            };
+
             try {
-                const url = `${PHOTON_URL}?q=${encodeURIComponent(query)}&lang=de&limit=${RESULT_LIMIT}`;
-                const res = await fetch(url, { signal: controller.signal });
-                if (!res.ok) throw new Error(`Photon ${res.status}`);
-                const data = (await res.json()) as { features?: PhotonFeature[] };
-                const unique = filterAndDedupe(data.features || []);
+                const items = await Promise.any([
+                    wrap(searchPhoton(query, controller.signal).then(filterByCountry)),
+                    wrap(searchNominatim(query, controller.signal, allowedCountries))
+                ]);
+                const unique = dedupe(items);
                 rememberInCache(ck, unique);
                 setSuggestions(unique);
                 setActiveIdx(-1);
+                setErrorMsg(null);
+                controller.abort();
             } catch (err) {
-                if ((err as { name?: string })?.name !== 'AbortError') {
+                if (didTimeout) {
                     setSuggestions([]);
+                    setErrorMsg('Suchdienst antwortet nicht. Bitte manuell eintragen.');
+                } else if (err instanceof AggregateError) {
+                    const allEmpty = err.errors.every(e =>
+                        e instanceof Error && e.message === 'empty'
+                    );
+                    setSuggestions([]);
+                    if (!allEmpty) {
+                        setErrorMsg('Suchdienst nicht erreichbar. Bitte manuell eintragen.');
+                    }
+                } else {
+                    const name = (err as { name?: string })?.name;
+                    if (name !== 'AbortError') {
+                        setSuggestions([]);
+                        setErrorMsg('Suchdienst nicht erreichbar. Bitte manuell eintragen.');
+                    }
                 }
             } finally {
+                cleanup();
                 setLoading(false);
             }
         },
-        [cacheKey, filterAndDedupe]
+        [cacheKey, allowedCountries, filterByCountry]
     );
 
     useEffect(() => {
@@ -202,7 +302,19 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             setSuggestions([]);
             setOpen(false);
             setLoading(false);
+            setErrorMsg(null);
             return;
+        }
+        const cached = queryCache.get(cacheKey(query));
+        if (cached) {
+            setSuggestions(cached);
+            setOpen(true);
+            setLoading(false);
+            setErrorMsg(null);
+        } else {
+            setLoading(true);
+            setErrorMsg(null);
+            setOpen(true);
         }
         debounceRef.current = window.setTimeout(() => {
             void runSearch(query);
@@ -210,7 +322,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         return () => {
             if (debounceRef.current) window.clearTimeout(debounceRef.current);
         };
-    }, [value.strasse, minChars, runSearch]);
+    }, [value.strasse, minChars, runSearch, cacheKey]);
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -223,7 +335,9 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         return () => document.removeEventListener('mousedown', handleClick);
     }, []);
 
-    const showDropdown = open && !disabled && (suggestions.length > 0 || loading || (value.strasse.trim().length >= minChars));
+    const showDropdown = open && !disabled && (
+        suggestions.length > 0 || loading || errorMsg !== null || value.strasse.trim().length >= minChars
+    );
 
     useLayoutEffect(() => {
         if (!showDropdown || !wrapperRef.current) return;
@@ -243,7 +357,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             window.removeEventListener('scroll', updatePosition, true);
             window.removeEventListener('resize', updatePosition);
         };
-    }, [showDropdown, suggestions.length]);
+    }, [showDropdown, suggestions.length, loading, errorMsg]);
 
     const selectSuggestion = (s: Suggestion) => {
         skipNextSearchRef.current = true;
@@ -347,45 +461,57 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
                 <div
                     ref={dropdownRef}
                     style={{ position: 'fixed', zIndex: 1000 }}
-                    className="bg-white border border-slate-200 rounded-lg shadow-xl max-h-72 overflow-y-auto"
+                    className="bg-white border border-slate-200 rounded-lg shadow-xl max-h-80 overflow-hidden flex flex-col"
                 >
-                    {suggestions.length === 0 && loading && (
-                        <div className="px-3 py-3 text-sm text-slate-500 flex items-center gap-2">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Suche Adressen...
+                    {loading && (
+                        <div className="h-1 w-full bg-rose-100 overflow-hidden shrink-0 relative">
+                            <div className="address-loader-bar absolute top-0 h-full bg-rose-500 rounded-full" />
                         </div>
                     )}
-                    {suggestions.length === 0 && !loading && (
-                        <div className="px-3 py-3 text-sm text-slate-500">
-                            Keine Vorschläge — du kannst die Adresse manuell eintragen.
-                        </div>
-                    )}
-                    {suggestions.map((s, idx) => (
-                        <button
-                            key={s.key + idx}
-                            type="button"
-                            onMouseDown={e => {
-                                e.preventDefault();
-                                selectSuggestion(s);
-                            }}
-                            onMouseEnter={() => setActiveIdx(idx)}
-                            className={cn(
-                                'w-full text-left px-3 py-2 text-sm flex items-start gap-2 border-b border-slate-100 last:border-b-0',
-                                idx === activeIdx ? 'bg-rose-50' : 'hover:bg-slate-50'
-                            )}
-                        >
-                            <MapPin className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
-                            <div className="min-w-0">
-                                <div className="text-slate-900 truncate">{s.primary}</div>
-                                {s.secondary && (
-                                    <div className="text-xs text-slate-500 truncate">{s.secondary}</div>
-                                )}
+                    <div className="overflow-y-auto">
+                        {suggestions.length === 0 && loading && (
+                            <div className="px-3 py-3 text-sm text-slate-500 flex items-center gap-2">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Suche Adressen ...
                             </div>
-                        </button>
-                    ))}
+                        )}
+                        {suggestions.length === 0 && !loading && errorMsg && (
+                            <div className="px-3 py-3 text-sm text-amber-700 bg-amber-50">
+                                {errorMsg}
+                            </div>
+                        )}
+                        {suggestions.length === 0 && !loading && !errorMsg && (
+                            <div className="px-3 py-3 text-sm text-slate-500">
+                                Keine Vorschläge — du kannst die Adresse manuell eintragen.
+                            </div>
+                        )}
+                        {suggestions.map((s, idx) => (
+                            <button
+                                key={s.key + idx}
+                                type="button"
+                                onMouseDown={e => {
+                                    e.preventDefault();
+                                    selectSuggestion(s);
+                                }}
+                                onMouseEnter={() => setActiveIdx(idx)}
+                                className={cn(
+                                    'w-full text-left px-3 py-2 text-sm flex items-start gap-2 border-b border-slate-100 last:border-b-0',
+                                    idx === activeIdx ? 'bg-rose-50' : 'hover:bg-slate-50'
+                                )}
+                            >
+                                <MapPin className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+                                <div className="min-w-0">
+                                    <div className="text-slate-900 truncate">{s.primary}</div>
+                                    {s.secondary && (
+                                        <div className="text-xs text-slate-500 truncate">{s.secondary}</div>
+                                    )}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
                     {suggestions.length > 0 && (
-                        <div className="px-3 py-1.5 text-[10px] text-slate-400 bg-slate-50 border-t border-slate-100">
-                            Vorschläge von OpenStreetMap (Photon)
+                        <div className="px-3 py-1.5 text-[10px] text-slate-400 bg-slate-50 border-t border-slate-100 shrink-0">
+                            Vorschläge von OpenStreetMap
                         </div>
                     )}
                 </div>,
