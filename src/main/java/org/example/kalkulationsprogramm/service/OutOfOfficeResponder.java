@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.OutOfOfficeSchedule;
+import org.example.email.ImapAppendService;
 import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.example.kalkulationsprogramm.service.mail.HtmlMailSender;
@@ -38,6 +39,7 @@ public class OutOfOfficeResponder {
     private final EmailSignatureService emailSignatureService;
     private final HtmlMailSender mailSender;
     private final SystemSettingsService systemSettingsService;
+    private final ImapAppendService imapAppendService;
 
     @Transactional(readOnly = true)
     public void handleIncomingEmail(String fromAddress, String originalSubject) {
@@ -77,7 +79,7 @@ public class OutOfOfficeResponder {
 
             // Append to IMAP Sent folder so it appears in Outlook
             try {
-                org.example.email.ImapAppendService.appendToSent(
+                imapAppendService.appendToSent(
                         defaultFromAddress,
                         java.util.List.of(fromAddress),
                         subject,

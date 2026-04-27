@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.email.ImapAppendService;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.OutOfOfficeSchedule;
 import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
@@ -22,6 +23,7 @@ class OutOfOfficeResponderTest {
     private EmailSignatureService emailSignatureService;
     private HtmlMailSender mailSender;
     private SystemSettingsService systemSettingsService;
+    private ImapAppendService imapAppendService;
     private OutOfOfficeResponder responder;
 
     @BeforeEach
@@ -30,9 +32,10 @@ class OutOfOfficeResponderTest {
         emailSignatureService = mock(EmailSignatureService.class);
         mailSender = mock(HtmlMailSender.class);
         systemSettingsService = mock(SystemSettingsService.class);
+        imapAppendService = mock(ImapAppendService.class);
         when(systemSettingsService.getSmtpUsername()).thenReturn("info@example.com");
 
-        responder = new OutOfOfficeResponder(repository, emailSignatureService, mailSender, systemSettingsService);
+        responder = new OutOfOfficeResponder(repository, emailSignatureService, mailSender, systemSettingsService, imapAppendService);
     }
 
     @Test

@@ -13,7 +13,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @EnableScheduling
 @EnableAsync
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {
+        "org.example.kalkulationsprogramm",
+        "org.example.email"
+})
 public class KalkulationsprogrammApplication
 {
 

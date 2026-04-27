@@ -8,6 +8,11 @@ import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.util.ByteArrayDataSource;
 
+import org.example.kalkulationsprogramm.service.SystemSettingsService;
+import org.springframework.stereotype.Service;
+
+import lombok.RequiredArgsConstructor;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -17,32 +22,31 @@ import java.time.ZoneId;
 import java.util.*;
 
 /**
- * Minimal helper to append already-sent emails to the IMAP "Sent" folder.
- * This is used for messages created in the in-app email thread (Verlauf), so
- * they are also visible in the external mail client. No SMTP sending here.
+ * Hängt bereits versendete E-Mails an den IMAP-„Sent"-Ordner an, damit sie
+ * auch im externen Mail-Client sichtbar sind. Versendet selbst nichts via SMTP.
+ *
+ * Zugangsdaten kommen aus dem {@link SystemSettingsService} (DB), nicht mehr
+ * aus Umgebungsvariablen.
  */
-public final class ImapAppendService {
+@Service
+@RequiredArgsConstructor
+public class ImapAppendService {
 
-    private ImapAppendService() {}
+    private final SystemSettingsService systemSettingsService;
 
-    public static void appendToSent(String from,
-                                    List<String> to,
-                                    String subject,
-                                    String htmlBody,
-                                    List<File> attachments,
-                                    LocalDateTime sentAt) {
-        String user = System.getenv("IMAP_USER");
-        String pass = System.getenv("IMAP_PASSWORD");
-        if (user == null || pass == null) {
+    public void appendToSent(String from,
+                             List<String> to,
+                             String subject,
+                             String htmlBody,
+                             List<File> attachments,
+                             LocalDateTime sentAt) {
+        if (!systemSettingsService.isImapConfigured()) {
             return; // IMAP not configured -> skip silently
         }
-        String host = Optional.ofNullable(System.getenv("IMAP_HOST")).filter(s -> !s.isBlank())
-                .orElse("secureimap.t-online.de");
-        int port = 993;
-        String portEnv = System.getenv("IMAP_PORT");
-        if (portEnv != null) {
-            try { port = Integer.parseInt(portEnv); } catch (NumberFormatException ignored) {}
-        }
+        String user = systemSettingsService.getImapUsername();
+        String pass = systemSettingsService.getImapPassword();
+        String host = systemSettingsService.getImapHost();
+        int port = systemSettingsService.getImapPort();
 
         try {
             Properties props = new Properties();
@@ -129,7 +133,7 @@ public final class ImapAppendService {
         }
     }
 
-    private static Folder getSentFolder(Store store) throws MessagingException {
+    private Folder getSentFolder(Store store) throws MessagingException {
         // Try common sent names in order
         String[] candidates = new String[] {
                 "INBOX.Sent", "Sent", "Sent Items", "INBOX.Sent Items"
@@ -177,43 +181,5 @@ public final class ImapAppendService {
         if (lower.endsWith(".txt")) return "text/plain";
         if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
         return "application/octet-stream";
-    }
-
-    /**
-     * Append a fully constructed message to the IMAP "Sent" folder.
-     * Uses the same IMAP environment variables as {@link #appendToSent(String, List, String, String, List, LocalDateTime)}.
-     * If credentials are missing, this method returns without error.
-     */
-    public static void appendToSent(MimeMessage message) {
-        if (message == null) return;
-        String user = System.getenv("IMAP_USER");
-        String pass = System.getenv("IMAP_PASSWORD");
-        if (user == null || pass == null) {
-            return; // IMAP not configured -> skip silently
-        }
-        String host = Optional.ofNullable(System.getenv("IMAP_HOST")).filter(s -> !s.isBlank())
-                .orElse("secureimap.t-online.de");
-        int port = 993;
-        String portEnv = System.getenv("IMAP_PORT");
-        if (portEnv != null) {
-            try { port = Integer.parseInt(portEnv); } catch (NumberFormatException ignored) {}
-        }
-        try {
-            Properties props = new Properties();
-            props.put("mail.store.protocol", "imaps");
-            props.put("mail.imaps.ssl.enable", "true");
-            Session session = Session.getInstance(props);
-
-            try (Store store = session.getStore("imaps")) {
-                store.connect(host, port, user, pass);
-                Folder sent = getSentFolder(store);
-                if (sent != null) {
-                    sent.open(Folder.READ_WRITE);
-                    sent.appendMessages(new Message[]{message});
-                    sent.close(false);
-                }
-            }
-        } catch (Exception ignored) {
-        }
     }
 }
