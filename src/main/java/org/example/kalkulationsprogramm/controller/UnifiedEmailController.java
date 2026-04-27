@@ -514,8 +514,10 @@ public class UnifiedEmailController {
     @GetMapping("/unassigned")
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getUnassignedEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findUnassigned().stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -574,11 +576,13 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> searchEmails(
             @RequestParam("q") String query,
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "50") int limit) {
         if (query == null || query.trim().length() < 2) {
             return List.of();
         }
         return emailRepository.searchGlobal(query.trim()).stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -590,7 +594,9 @@ public class UnifiedEmailController {
 
     @GetMapping("/inbox")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getInboxEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getInboxEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
         // Get IDs of "Nicht zugeordnet" emails to exclude from inbox
         Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
                 .map(Email::getId)
@@ -598,6 +604,7 @@ public class UnifiedEmailController {
 
         return emailRepository.findInboxFiltered().stream()
                 .filter(e -> !unassignedIds.contains(e.getId())) // Exclude "Nicht zugeordnet"
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -606,8 +613,10 @@ public class UnifiedEmailController {
     @GetMapping("/projects")
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getProjectFolderEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findProjectEmails().stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -615,8 +624,11 @@ public class UnifiedEmailController {
 
     @GetMapping("/offers")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getOfferFolderEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getOfferFolderEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findAnfrageEmails().stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -625,8 +637,10 @@ public class UnifiedEmailController {
     @GetMapping("/suppliers")
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getSupplierFolderEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findLieferantEmails().stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -634,9 +648,12 @@ public class UnifiedEmailController {
 
     @GetMapping("/sent")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getSentEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getSentEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
                 .filter(e -> e.getDeletedAt() == null)
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -644,8 +661,11 @@ public class UnifiedEmailController {
 
     @GetMapping("/trash")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getTrashEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getTrashEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -653,8 +673,11 @@ public class UnifiedEmailController {
 
     @GetMapping("/spam")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getSpamEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getSpamEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findSpam().stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -662,8 +685,11 @@ public class UnifiedEmailController {
 
     @GetMapping("/newsletter")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getNewsletterEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getNewsletterEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findNewsletter().stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -671,8 +697,11 @@ public class UnifiedEmailController {
 
     @GetMapping("/starred")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getStarredEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getStarredEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return emailRepository.findStarred().stream()
+                .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -840,6 +869,11 @@ public class UnifiedEmailController {
             log.error("Fehler beim Löschen vom Mailserver: {}", e.getMessage());
             // Wir machen weiter mit DB-Löschung
         }
+
+        // Replies vom Parent loesen (FK-Constraint), per Bulk-UPDATE statt
+        // managed Collection -> verhindert ObjectDeletedException.
+        emailRepository.detachRepliesFromParent(id);
+        emailRepository.flush();
 
         emailRepository.delete(email);
         log.info("Email {} permanent gelöscht", id);
@@ -1036,20 +1070,27 @@ public class UnifiedEmailController {
     // ═══════════════════════════════════════════════════════════════
 
     @GetMapping("/stats")
+    @Transactional(readOnly = true)
     public FolderStatsDto getStats() {
         FolderStatsDto stats = new FolderStatsDto();
 
-        // Get unassigned email IDs to exclude from inbox count
-        Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
+        // Liste der "Nicht zugeordnet"-IDs (werden aus Posteingang ausgeschlossen)
+        List<Email> unassignedList = emailRepository.findUnassigned();
+        Set<Long> unassignedIds = unassignedList.stream()
                 .map(Email::getId)
                 .collect(Collectors.toSet());
 
-        // Count unread in inbox, excluding "Nicht zugeordnet" emails
-        long inboxUnread = emailRepository.findInboxFiltered().stream()
+        // Posteingang: einmal laden und sowohl Total als auch Unread daraus ableiten
+        List<Email> inboxList = emailRepository.findInboxFiltered();
+        long inboxTotal = inboxList.stream()
+                .filter(e -> !unassignedIds.contains(e.getId()))
+                .count();
+        long inboxUnread = inboxList.stream()
                 .filter(e -> !unassignedIds.contains(e.getId()))
                 .filter(e -> !e.isRead())
                 .count();
         stats.setInboxCount(inboxUnread);
+        stats.setInboxTotal(inboxTotal);
 
         // Other unread counts
         stats.setProjectCount(emailRepository.countProjectEmailsUnread());
@@ -1067,6 +1108,18 @@ public class UnifiedEmailController {
         stats.setUnassignedCount(emailRepository.countUnassigned());
         stats.setInquiriesCount(emailRepository.countPotentialInquiries());
         stats.setStarredCount(emailRepository.countStarredUnread());
+
+        // Gesamt-Counts pro Ordner – via existierenden Listen-Queries (alle bereits sortiert/gefiltert)
+        stats.setUnassignedTotal(unassignedList.size());
+        stats.setSentTotal(emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
+                .filter(e -> e.getDeletedAt() == null).count());
+        stats.setTrashTotal(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().size());
+        stats.setSpamTotal(emailRepository.findSpam().size());
+        stats.setNewsletterTotal(emailRepository.findNewsletter().size());
+        stats.setStarredTotal(emailRepository.findStarred().size());
+        stats.setProjectTotal(emailRepository.findProjectEmails().size());
+        stats.setOfferTotal(emailRepository.findAnfrageEmails().size());
+        stats.setSupplierTotal(emailRepository.findLieferantEmails().size());
 
         return stats;
     }

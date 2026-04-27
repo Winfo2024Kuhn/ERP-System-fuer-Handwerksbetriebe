@@ -466,13 +466,19 @@ export default function EmailCenter() {
     const [globalSearchResults, setGlobalSearchResults] = useState<EmailItem[]>([]);
     const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
     const [loading, setLoading] = useState(false);
+    // Pagination – seitenweise Nachladen pro Ordner (Infinite Scroll)
+    const PAGE_SIZE = 50;
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [searchHasMore, setSearchHasMore] = useState(false);
+    const [searchLoadingMore, setSearchLoadingMore] = useState(false);
     const [selectedEmail, setSelectedEmail] = useState<EmailItem | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const lastSelectedIdRef = useRef<number | null>(null);
     const deepLinkFolderSwitchRef = useRef(false);
 
     // Folder cache: stale-while-revalidate – show cached data instantly, refresh in background
-    const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; timestamp: number }>>(new Map());
+    const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; hasMore: boolean; timestamp: number }>>(new Map());
     // Ref to guard against stale async responses when switching folders quickly
     const activeFolderRef = useRef<FolderType>(activeFolder);
     // IDs die gerade optimistisch entfernt werden (Spam, Löschen, Blockieren) – verhindert
@@ -503,8 +509,12 @@ export default function EmailCenter() {
         inbox: 0, sent: 0, drafts: 0, trash: 0, spam: 0, newsletter: 0,
         starred: 0, projects: 0, offers: 0, suppliers: 0, unassigned: 0
     });
+    // Gesamt-Counts pro Ordner (fuer Footer "X von Y")
+    const [folderTotals, setFolderTotals] = useState<Record<string, number>>({});
     const [expandedFilters, setExpandedFilters] = useState(true);
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
+    // Sentinel fuer Infinite Scroll am Ende der Email-Liste
+    const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
     const [showSettings, setShowSettings] = useState(false);
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
     const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all');
@@ -671,6 +681,7 @@ export default function EmailCenter() {
         const folderAtCallTime = activeFolder;
         if (activeFolder === 'drafts') {
             setEmails([]);
+            setHasMore(false);
             setLoading(false);
             return;
         }
@@ -687,12 +698,14 @@ export default function EmailCenter() {
             'suppliers': '/api/emails/suppliers',
             'unassigned': '/api/emails/unassigned',
         };
-        const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
+        const base = endpointMap[activeFolder] || '/api/emails/inbox';
+        const endpoint = `${base}?offset=0&limit=${PAGE_SIZE}`;
 
         // Show cached data instantly if available
         const cached = folderCacheRef.current.get(activeFolder);
         if (cached) {
             setEmails(cached.emails);
+            setHasMore(cached.hasMore);
             // Only show loading spinner if cache is older than 2 minutes
             const isStale = Date.now() - cached.timestamp > 120_000;
             if (!isStale) {
@@ -703,6 +716,7 @@ export default function EmailCenter() {
             }
         } else {
             setLoading(true);
+            setHasMore(false);
         }
 
         try {
@@ -724,18 +738,80 @@ export default function EmailCenter() {
                     });
                 }
 
+                const more = data.length >= PAGE_SIZE;
                 setEmails(data);
-                folderCacheRef.current.set(activeFolder, { emails: data, timestamp: Date.now() });
+                setHasMore(more);
+                folderCacheRef.current.set(activeFolder, { emails: data, hasMore: more, timestamp: Date.now() });
             } else {
-                if (!cached) setEmails([]);
+                if (!cached) { setEmails([]); setHasMore(false); }
             }
         } catch (err) {
             console.error('Failed to load emails', err);
-            if (!cached) setEmails([]);
+            if (!cached) { setEmails([]); setHasMore(false); }
         } finally {
             setLoading(false);
         }
     }, [activeFolder]);
+
+    // Naechste Seite asynchron nachladen (Infinite Scroll)
+    const loadMoreEmails = useCallback(async () => {
+        if (activeFolder === 'drafts') return;
+        if (loadingMore || loading || !hasMore) return;
+
+        const folderAtCallTime = activeFolder;
+        const offset = emails.length;
+
+        const endpointMap: Record<string, string> = {
+            'inbox': '/api/emails/inbox',
+            'sent': '/api/emails/sent',
+            'trash': '/api/emails/trash',
+            'spam': '/api/emails/spam',
+            'newsletter': '/api/emails/newsletter',
+            'starred': '/api/emails/starred',
+            'projects': '/api/emails/projects',
+            'offers': '/api/emails/offers',
+            'suppliers': '/api/emails/suppliers',
+            'unassigned': '/api/emails/unassigned',
+        };
+        const base = endpointMap[activeFolder] || '/api/emails/inbox';
+        const endpoint = `${base}?offset=${offset}&limit=${PAGE_SIZE}`;
+
+        setLoadingMore(true);
+        try {
+            const res = await fetch(endpoint);
+            if (activeFolderRef.current !== folderAtCallTime) return;
+            if (!res.ok) { setHasMore(false); return; }
+
+            let data = await res.json();
+            if (!Array.isArray(data)) data = [];
+
+            if (activeFolder === 'spam' || activeFolder === 'newsletter') {
+                data = data.filter((email: EmailItem) => {
+                    const hasAssignment =
+                        (email.zuordnungTyp && email.zuordnungTyp !== 'KEINE') ||
+                        email.projektId ||
+                        email.anfrageId ||
+                        email.lieferantId;
+                    return !hasAssignment;
+                });
+            }
+
+            // Duplikate vermeiden (Race-Condition mit silent-refresh)
+            setEmails(prev => {
+                const existing = new Set(prev.map(e => e.id));
+                const fresh = data.filter((e: EmailItem) => !existing.has(e.id));
+                const merged = [...prev, ...fresh];
+                const more = data.length >= PAGE_SIZE;
+                folderCacheRef.current.set(activeFolder, { emails: merged, hasMore: more, timestamp: Date.now() });
+                setHasMore(more);
+                return merged;
+            });
+        } catch (err) {
+            console.error('Failed to load more emails', err);
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [activeFolder, emails.length, hasMore, loading, loadingMore]);
 
     // Load stats for folder counts
     const loadStats = useCallback(async () => {
@@ -764,13 +840,26 @@ export default function EmailCenter() {
                     offers: stats.offerCount || 0,
                     suppliers: stats.supplierCount || 0
                 });
+                setFolderTotals({
+                    inbox: stats.inboxTotal || 0,
+                    sent: stats.sentTotal || 0,
+                    drafts: draftCount,
+                    trash: stats.trashTotal || 0,
+                    spam: stats.spamTotal || 0,
+                    newsletter: stats.newsletterTotal || 0,
+                    starred: stats.starredTotal || 0,
+                    unassigned: stats.unassignedTotal || 0,
+                    projects: stats.projectTotal || 0,
+                    offers: stats.offerTotal || 0,
+                    suppliers: stats.supplierTotal || 0
+                });
             }
         } catch (err) {
             console.error('Failed to load stats', err);
         }
     }, []);
 
-    // Silent refresh: merges new emails without resetting scroll position or selection
+    // Silent refresh: refreshed das aktuell sichtbare Slice (limit = bisherige Anzahl, mind. PAGE_SIZE)
     const refreshEmailsSilently = useCallback(async () => {
         try {
             if (activeFolder === 'drafts') {
@@ -790,7 +879,9 @@ export default function EmailCenter() {
                 'suppliers': '/api/emails/suppliers',
                 'unassigned': '/api/emails/unassigned',
             };
-            const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
+            const base = endpointMap[activeFolder] || '/api/emails/inbox';
+            const refreshLimit = Math.max(emails.length, PAGE_SIZE);
+            const endpoint = `${base}?offset=0&limit=${refreshLimit}`;
             const res = await fetch(endpoint);
             if (activeFolderRef.current !== activeFolder) return; // folder changed, discard stale response
             if (res.ok) {
@@ -808,13 +899,15 @@ export default function EmailCenter() {
                     });
                 }
 
+                const more = data.length >= refreshLimit;
                 setEmails(data);
-                folderCacheRef.current.set(activeFolder, { emails: data, timestamp: Date.now() });
+                setHasMore(more);
+                folderCacheRef.current.set(activeFolder, { emails: data, hasMore: more, timestamp: Date.now() });
             }
         } catch (err) {
             console.error('Silent refresh failed', err);
         }
-    }, [activeFolder, loadDrafts]);
+    }, [activeFolder, emails.length, loadDrafts]);
 
     // Load emails + stats when folder changes (single effect, no duplicates)
     // Drafts werden immer geladen, damit das Entwurf-Badge in allen Ordnern sichtbar ist
@@ -1399,32 +1492,80 @@ export default function EmailCenter() {
         });
     }, [selectedEmail, inlineAttachmentIds]);
 
-    // Global search with debounce
+    // Global search with debounce – laedt erste Seite
     useEffect(() => {
         if (!isGlobalSearch || !searchQuery.trim() || searchQuery.trim().length < 2) {
             setGlobalSearchResults([]);
+            setSearchHasMore(false);
             setGlobalSearchLoading(false);
             return;
         }
         setGlobalSearchLoading(true);
         const timeout = setTimeout(async () => {
             try {
-                const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=0&limit=${PAGE_SIZE}`);
                 if (res.ok) {
                     const data = await res.json();
-                    setGlobalSearchResults(Array.isArray(data) ? data : []);
+                    const arr: EmailItem[] = Array.isArray(data) ? data : [];
+                    setGlobalSearchResults(arr);
+                    setSearchHasMore(arr.length >= PAGE_SIZE);
                 } else {
                     setGlobalSearchResults([]);
+                    setSearchHasMore(false);
                 }
             } catch (err) {
                 console.error('Global search failed:', err);
                 setGlobalSearchResults([]);
+                setSearchHasMore(false);
             } finally {
                 setGlobalSearchLoading(false);
             }
         }, 350);
         return () => clearTimeout(timeout);
     }, [isGlobalSearch, searchQuery]);
+
+    // Naechste Seite der globalen Suche nachladen
+    const loadMoreSearch = useCallback(async () => {
+        if (!isGlobalSearch || !searchQuery.trim() || searchQuery.trim().length < 2) return;
+        if (searchLoadingMore || globalSearchLoading || !searchHasMore) return;
+        const offset = globalSearchResults.length;
+        setSearchLoadingMore(true);
+        try {
+            const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=${offset}&limit=${PAGE_SIZE}`);
+            if (!res.ok) { setSearchHasMore(false); return; }
+            const data = await res.json();
+            const arr: EmailItem[] = Array.isArray(data) ? data : [];
+            setGlobalSearchResults(prev => {
+                const existing = new Set(prev.map(e => e.id));
+                const fresh = arr.filter(e => !existing.has(e.id));
+                return [...prev, ...fresh];
+            });
+            setSearchHasMore(arr.length >= PAGE_SIZE);
+        } catch (err) {
+            console.error('Load more search failed:', err);
+        } finally {
+            setSearchLoadingMore(false);
+        }
+    }, [isGlobalSearch, searchQuery, searchLoadingMore, globalSearchLoading, searchHasMore, globalSearchResults.length]);
+
+    // IntersectionObserver: triggert loadMore wenn Sentinel sichtbar wird
+    useEffect(() => {
+        const node = loadMoreSentinelRef.current;
+        if (!node) return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (!entries[0]?.isIntersecting) return;
+                if (isGlobalSearch) {
+                    loadMoreSearch();
+                } else {
+                    loadMoreEmails();
+                }
+            },
+            { rootMargin: '200px 0px' } // Vorlaufzeit, damit's "ganz am Ende" gefuehlt asynchron startet
+        );
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [isGlobalSearch, loadMoreEmails, loadMoreSearch, hasMore, searchHasMore, emails.length, globalSearchResults.length]);
 
     // Filter emails by search
     // Bei Ordner-Ansicht nur Thread-Wurzeln anzeigen (parentEmailId == null),
@@ -2539,6 +2680,21 @@ export default function EmailCenter() {
                                 </div>
                                 </DraggableEmailWrapper>
                             ))}
+                            {/* Infinite-Scroll Sentinel + "Lade mehr"-Indikator (nur in Email-Listenansicht) */}
+                            {!isDraftFolderView && (
+                                <div ref={loadMoreSentinelRef} className="px-4 py-3 text-center">
+                                    {(isGlobalSearch ? searchLoadingMore : loadingMore) ? (
+                                        <div className="inline-flex items-center gap-2 text-xs text-slate-400">
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            Weitere Nachrichten werden geladen...
+                                        </div>
+                                    ) : (isGlobalSearch ? !searchHasMore : !hasMore) ? (
+                                        <span className="text-xs text-slate-300">Ende der Liste</span>
+                                    ) : (
+                                        <span className="text-xs text-slate-400">Scroll fuer weitere Nachrichten</span>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -2547,7 +2703,18 @@ export default function EmailCenter() {
                 <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between gap-2">
                     <span>
                         {isGlobalSearch && <Globe className="w-3 h-3 inline mr-1 text-rose-500" />}
-                        {visibleItemCount} {visibleItemCount === 1 ? (isDraftFolderView ? 'Entwurf' : 'Nachricht') : (isDraftFolderView ? 'Entwürfe' : 'Nachrichten')}
+                        {(() => {
+                            const total = isGlobalSearch
+                                ? null
+                                : (folderTotals[activeFolder] ?? null);
+                            const noun = visibleItemCount === 1
+                                ? (isDraftFolderView ? 'Entwurf' : 'Nachricht')
+                                : (isDraftFolderView ? 'Entwürfe' : 'Nachrichten');
+                            if (total != null && total > visibleItemCount) {
+                                return `${visibleItemCount} von ${total} ${noun}`;
+                            }
+                            return `${visibleItemCount} ${noun}`;
+                        })()}
                     </span>
                     <div className="flex items-center gap-2">
                         {!isDraftFolderView && selectedIds.size > 0 && (

@@ -868,6 +868,8 @@ public class EmailImportService {
 
     /**
      * Löscht eine E-Mail permanent vom IMAP-Server.
+     * IMAP-Zugangsdaten werden – wie beim Import – aus den System-Einstellungen (DB)
+     * gelesen, nicht mehr aus Umgebungsvariablen.
      */
     public void deleteEmailFromServer(Email email) {
         if (email.getMessageId() == null) {
@@ -875,15 +877,13 @@ public class EmailImportService {
             return;
         }
 
-        String user = System.getenv("IMAP_USER");
-        String pass = System.getenv("IMAP_PASSWORD");
-        if (user == null || user.isBlank() || pass == null || pass.isBlank()) {
-            log.debug("[EmailDeletion] IMAP_USER/PASSWORD nicht konfiguriert, überspringe Server-Löschung");
+        String user = systemSettingsService.getImapUsername();
+        String pass = systemSettingsService.getImapPassword();
+        String host = systemSettingsService.getImapHost();
+        int port = systemSettingsService.getImapPort();
+        if (user == null || user.isBlank() || pass == null || pass.isBlank() || host == null || host.isBlank()) {
+            log.debug("[EmailDeletion] IMAP-Zugangsdaten fehlen (System-Einstellungen), überspringe Server-Löschung");
             return;
-        }
-        String host = System.getenv("IMAP_HOST");
-        if (host == null || host.isBlank()) {
-            host = "secureimap.t-online.de";
         }
 
         Properties props = new Properties();
@@ -895,7 +895,11 @@ public class EmailImportService {
         try {
             Session session = Session.getInstance(props);
             Store store = session.getStore("imaps");
-            store.connect(host, user, pass);
+            if (port > 0) {
+                store.connect(host, port, user, pass);
+            } else {
+                store.connect(host, user, pass);
+            }
 
             boolean deleted = false;
 

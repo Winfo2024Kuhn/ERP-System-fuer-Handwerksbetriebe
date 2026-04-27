@@ -137,13 +137,12 @@ public class EmailCleanupService {
             // 1. Vom Server löschen
             emailImportService.deleteEmailFromServer(email);
 
-            // 2. Kind-Emails (Replies) von diesem Parent lösen, um FK-Constraint zu vermeiden
-            List<Email> replies = email.getReplies();
-            if (replies != null && !replies.isEmpty()) {
-                for (Email reply : replies) {
-                    reply.setParentEmail(null);
-                }
-                emailRepository.saveAll(replies);
+            // 2. Kind-Emails (Replies) von diesem Parent lösen, um FK-Constraint zu vermeiden.
+            //    Bulk-UPDATE statt managed Collection: vermeidet ObjectDeletedException, wenn
+            //    Replies in derselben Transaktion bereits gelöscht wurden (Lazy-Collection
+            //    haelt sonst stale Referenzen, saveAll wuerde sie via merge wiederbeleben).
+            if (email.getId() != null) {
+                emailRepository.detachRepliesFromParent(email.getId());
                 emailRepository.flush();
             }
 
