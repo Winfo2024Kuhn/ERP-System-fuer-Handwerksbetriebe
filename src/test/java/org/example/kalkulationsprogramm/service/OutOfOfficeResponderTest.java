@@ -7,7 +7,6 @@ import org.example.kalkulationsprogramm.service.mail.HtmlMailSender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.File;
 import java.time.LocalDate;
@@ -22,6 +21,7 @@ class OutOfOfficeResponderTest {
     private OutOfOfficeScheduleRepository repository;
     private EmailSignatureService emailSignatureService;
     private HtmlMailSender mailSender;
+    private SystemSettingsService systemSettingsService;
     private OutOfOfficeResponder responder;
 
     @BeforeEach
@@ -29,9 +29,10 @@ class OutOfOfficeResponderTest {
         repository = mock(OutOfOfficeScheduleRepository.class);
         emailSignatureService = mock(EmailSignatureService.class);
         mailSender = mock(HtmlMailSender.class);
+        systemSettingsService = mock(SystemSettingsService.class);
+        when(systemSettingsService.getSmtpUsername()).thenReturn("info@example.com");
 
-        responder = new OutOfOfficeResponder(repository, emailSignatureService, mailSender);
-        ReflectionTestUtils.setField(responder, "defaultFromAddress", "info@example.com");
+        responder = new OutOfOfficeResponder(repository, emailSignatureService, mailSender, systemSettingsService);
     }
 
     @Test

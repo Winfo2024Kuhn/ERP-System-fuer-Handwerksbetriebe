@@ -7,29 +7,20 @@ import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Properties;
 
 @Component
+@RequiredArgsConstructor
 public class SmtpHtmlMailSender implements HtmlMailSender {
 
-    @Value("${smtp.host}")
-    private String smtpHost;
-
-    @Value("${smtp.port}")
-    private int smtpPort;
-
-    @Value("${smtp.username}")
-    private String smtpUsername;
-
-    @Value("${smtp.password}")
-    private String smtpPassword;
+    private final SystemSettingsService systemSettingsService;
 
     @Override
     public void send(String fromAddress,
@@ -40,6 +31,14 @@ public class SmtpHtmlMailSender implements HtmlMailSender {
         if (toAddress == null || toAddress.isBlank()) {
             return;
         }
+
+        // SMTP-Zugangsdaten zur Laufzeit lesen, damit Aenderungen im
+        // System-Setup ohne Spring-Neustart wirksam werden.
+        final String smtpHost = systemSettingsService.getSmtpHost();
+        final int smtpPort = systemSettingsService.getSmtpPort();
+        final String smtpUsername = systemSettingsService.getSmtpUsername();
+        final String smtpPassword = systemSettingsService.getSmtpPassword();
+
         Properties props = new Properties();
         props.put("mail.smtp.host", smtpHost);
         props.put("mail.smtp.port", String.valueOf(smtpPort));

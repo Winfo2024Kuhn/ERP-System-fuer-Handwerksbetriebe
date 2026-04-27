@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.EmailAiService;
 import org.example.kalkulationsprogramm.service.EmailSignatureService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
+import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -61,6 +62,9 @@ class EmailControllerTest {
 
     @MockBean
     private DateiSpeicherService dateiSpeicherService;
+
+    @MockBean
+    private SystemSettingsService systemSettingsService;
 
     @Nested
     @DisplayName("POST /api/email/beautify")

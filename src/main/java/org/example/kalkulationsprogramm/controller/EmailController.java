@@ -28,6 +28,7 @@ import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.EmailAiService;
 import org.example.kalkulationsprogramm.service.EmailSignatureService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
+import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
@@ -53,18 +54,7 @@ public class EmailController {
     private final EmailSignatureService emailSignatureService;
     private final FrontendUserProfileService frontendUserProfileService;
     private final DateiSpeicherService dateiSpeicherService;
-
-    @Value("${smtp.host}")
-    private String smtpHost;
-
-    @Value("${smtp.port}")
-    private int smtpPort;
-
-    @Value("${smtp.username}")
-    private String smtpUsername;
-
-    @Value("${smtp.password}")
-    private String smtpPassword;
+    private final SystemSettingsService systemSettingsService;
 
     @Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -323,7 +313,11 @@ public class EmailController {
         String path = storedPath.toString();
         String userName = resolveUserName(request.getBenutzer(), request.getFrontendUserId());
 
-        EmailService service = new EmailService(smtpHost, smtpPort, smtpUsername, smtpPassword);
+        EmailService service = new EmailService(
+                systemSettingsService.getSmtpHost(),
+                systemSettingsService.getSmtpPort(),
+                systemSettingsService.getSmtpUsername(),
+                systemSettingsService.getSmtpPassword());
         String messageId;
         try {
             String finalHtml = Optional.ofNullable(request.getHtmlBody()).orElse("");
@@ -421,7 +415,11 @@ public class EmailController {
         }
         String path = storedPath.toString();
         String userName = resolveUserName(request.getBenutzer(), request.getFrontendUserId());
-        EmailService service = new EmailService(smtpHost, smtpPort, smtpUsername, smtpPassword);
+        EmailService service = new EmailService(
+                systemSettingsService.getSmtpHost(),
+                systemSettingsService.getSmtpPort(),
+                systemSettingsService.getSmtpUsername(),
+                systemSettingsService.getSmtpPassword());
         String messageId;
         try {
             String finalHtml = Optional.ofNullable(request.getHtmlBody()).orElse("");

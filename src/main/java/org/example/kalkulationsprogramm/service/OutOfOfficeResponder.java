@@ -8,7 +8,6 @@ import org.example.kalkulationsprogramm.domain.OutOfOfficeSchedule;
 import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.example.kalkulationsprogramm.service.mail.HtmlMailSender;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,16 +37,17 @@ public class OutOfOfficeResponder {
     private final OutOfOfficeScheduleRepository scheduleRepository;
     private final EmailSignatureService emailSignatureService;
     private final HtmlMailSender mailSender;
-
-    @Value("${smtp.username}")
-    private String defaultFromAddress;
+    private final SystemSettingsService systemSettingsService;
 
     @Transactional(readOnly = true)
     public void handleIncomingEmail(String fromAddress, String originalSubject) {
         if (!StringUtils.hasText(fromAddress)) {
             return;
         }
-        if (defaultFromAddress != null && fromAddress.equalsIgnoreCase(defaultFromAddress)) {
+        // Absenderadresse zur Laufzeit lesen, damit Aenderungen im
+        // System-Setup ohne Spring-Neustart wirksam werden.
+        String defaultFromAddress = systemSettingsService.getSmtpUsername();
+        if (StringUtils.hasText(defaultFromAddress) && fromAddress.equalsIgnoreCase(defaultFromAddress)) {
             return;
         }
         Optional<OutOfOfficeSchedule> scheduleOpt = scheduleRepository
