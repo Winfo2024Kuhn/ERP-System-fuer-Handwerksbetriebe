@@ -71,6 +71,7 @@ public class BestellungService {
             dto.setExterneArtikelnummer(aip.getArtikel().getExterneArtikelnummer());
             dto.setProduktname(aip.getArtikel().getProduktname());
             dto.setProdukttext(aip.getArtikel().getProdukttext());
+            dto.setVerpackungseinheit(aip.getArtikel().getVerpackungseinheit());
             dto.setKommentar(aip.getKommentar());
             if (aip.getArtikel().getWerkstoff() != null) {
                 dto.setWerkstoffName(aip.getArtikel().getWerkstoff().getName());

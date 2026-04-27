@@ -36,6 +36,8 @@ public class BestellungResponseDto {
     private java.math.BigDecimal gesamtKilogramm;
     /** Fixmaß pro Stück in Millimetern (optional). */
     private Integer fixmassMm;
+    /** Verpackungseinheit (Stangenlänge in Metern) aus dem Artikelstamm — nur bei Werkstoffen ohne Fixmaß sinnvoll. */
+    private Long verpackungseinheit;
     // Schnittbild (Issue #52): ein gemeinsames Bild, zwei Winkel (Grad, Double)
     private Long schnittbildId;
     private String schnittbildBildUrl;

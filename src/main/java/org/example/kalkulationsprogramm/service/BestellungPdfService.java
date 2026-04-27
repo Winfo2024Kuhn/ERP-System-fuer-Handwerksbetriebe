@@ -493,7 +493,8 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
             Path dir = Path.of("uploads");
             Files.createDirectories(dir);
             Path temp = Files.createTempFile(dir, "bedarfsliste-", ".pdf.html");
-            Document doc = new Document(PageSize.A4, 36f, 36f, 36f, 36f);
+            // Querformat — mehr Spalten passen ohne Umbruch (inkl. VPE für Stangenware).
+            Document doc = new Document(PageSize.A4.rotate(), 36f, 36f, 36f, 36f);
             PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
             writer.setCompressionLevel(0);
             doc.open();
@@ -661,12 +662,13 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
         Font cellBoldFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, new Color(30, 30, 30));
         Font cellDimFont = FontFactory.getFont(FontFactory.HELVETICA, 8, new Color(110, 110, 110));
 
-        PdfPTable table = new PdfPTable(new float[] { 0.5f, 3.5f, 1.2f, 1.0f, 1.0f, 1.0f, 1.0f, 2.0f });
+        PdfPTable table = new PdfPTable(
+                new float[] { 0.5f, 3.5f, 1.0f, 0.9f, 0.9f, 0.9f, 1.0f, 1.4f, 1.0f, 1.6f });
         table.setWidthPercentage(100);
         table.setHeaderRows(1);
         table.setKeepTogether(false);
         String[] headers = { "Pos", "Material / Werkstoff", "Menge", "Fixmaß",
-                "Gewicht", "Vorhanden", "Bestellen", "Notiz" };
+                "VPE", "Gewicht", "Vorhanden", "Teilw. (Stk)", "Bestellen", "Notiz" };
         for (int i = 0; i < headers.length; i++) {
             PdfPCell hc = new PdfPCell(new Phrase(headers[i], headerFont));
             hc.setBackgroundColor(headerBg);
@@ -744,9 +746,17 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
             table.addCell(makeListenCell(formatMenge(b), cellFont, bg, zellRand, Element.ALIGN_CENTER));
 
             // Fixmaß
-            String fixmass = b.getFixmassMm() != null && b.getFixmassMm() > 0
-                    ? b.getFixmassMm() + " mm" : "—";
+            boolean hatFixmass = b.getFixmassMm() != null && b.getFixmassMm() > 0;
+            String fixmass = hatFixmass ? b.getFixmassMm() + " mm" : "—";
             table.addCell(makeListenCell(fixmass, cellFont, bg, zellRand, Element.ALIGN_CENTER));
+
+            // Verpackungseinheit (Stangenlänge in m) — nur für Werkstoffe ohne Fixmaß
+            // sinnvoll: Stangenware wird in voller Länge eingekauft, Fixzuschnitte
+            // dagegen kommen schon auf Maß und brauchen keine VPE-Angabe.
+            String vpe = (!hatFixmass && istWerkstoff
+                    && b.getVerpackungseinheit() != null && b.getVerpackungseinheit() > 0)
+                    ? b.getVerpackungseinheit() + " m" : "—";
+            table.addCell(makeListenCell(vpe, cellFont, bg, zellRand, Element.ALIGN_CENTER));
 
             // Gewicht
             String gewicht = formatKg(b.getKilogramm());
@@ -754,6 +764,8 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
 
             // Checkbox "Vorhanden"
             table.addCell(makeCheckboxCell(bg, zellRand, rot));
+            // "Teilweise vorhanden" — Checkbox + handschriftliches Stk-Feld
+            table.addCell(makeTeilweiseCell(bg, zellRand, rot, cellDimFont));
             // Checkbox "Bestellen"
             table.addCell(makeCheckboxCell(bg, zellRand, rot));
 
@@ -815,11 +827,56 @@ public class BestellungPdfService implements PreisanfragePdfGenerator {
         return wrapper;
     }
 
+    /**
+     * "Teilweise vorhanden"-Zelle: kleine Checkbox links, daneben eine
+     * Schreiblinie fuer die handschriftliche Stueckzahl mit "Stk"-Hinweis.
+     */
+    private PdfPCell makeTeilweiseCell(Color bg, Color rand, Color boxColor, Font hintFont) {
+        PdfPTable inner = new PdfPTable(new float[] { 0.7f, 1.6f, 0.7f });
+        inner.setWidthPercentage(100);
+
+        // Box
+        PdfPCell box = new PdfPCell(new Phrase(" "));
+        box.setBorderColor(boxColor);
+        box.setBorderWidth(1.2f);
+        box.setFixedHeight(14f);
+        box.setBackgroundColor(Color.WHITE);
+        inner.addCell(box);
+
+        // Schreiblinie fuer die Stueckzahl
+        PdfPCell linie = new PdfPCell(new Phrase(" "));
+        linie.setBorder(PdfPCell.NO_BORDER);
+        linie.setBorderWidthBottom(0.8f);
+        linie.setBorderColorBottom(new Color(120, 120, 120));
+        linie.setFixedHeight(14f);
+        linie.setBackgroundColor(Color.WHITE);
+        inner.addCell(linie);
+
+        // "Stk"-Hinweis
+        PdfPCell stk = new PdfPCell(new Phrase("Stk", hintFont));
+        stk.setBorder(PdfPCell.NO_BORDER);
+        stk.setHorizontalAlignment(Element.ALIGN_LEFT);
+        stk.setVerticalAlignment(Element.ALIGN_BOTTOM);
+        stk.setPaddingLeft(2f);
+        stk.setBackgroundColor(bg);
+        inner.addCell(stk);
+
+        PdfPCell wrapper = new PdfPCell(inner);
+        wrapper.setBackgroundColor(bg);
+        wrapper.setBorderColor(rand);
+        wrapper.setPadding(6f);
+        wrapper.setHorizontalAlignment(Element.ALIGN_CENTER);
+        wrapper.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        wrapper.setMinimumHeight(28f);
+        return wrapper;
+    }
+
     private void addLegende(Document doc) throws DocumentException {
         Font legendeFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 8, new Color(110, 110, 110));
         Paragraph p = new Paragraph(
-                "Hinweis: „Vorhanden“ = aus Lager / Restbestand verfügbar. "
-                        + "„Bestellen“ = muss eingekauft werden — diese Positionen werden "
+                "Hinweis: „Vorhanden“ = aus Lager / Restbestand komplett verfügbar. "
+                        + "„Teilw.“ = teilweise vorhanden, fehlende Stückzahl bitte in das Feld eintragen. "
+                        + "„Bestellen“ = muss komplett eingekauft werden — diese Positionen werden "
                         + "anschließend in eine Preisanfrage übernommen.",
                 legendeFont);
         p.setSpacingBefore(10f);
