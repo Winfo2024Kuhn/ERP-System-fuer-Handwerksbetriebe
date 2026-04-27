@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { ArrowLeft, Search, ScanLine, Upload, FileText, Loader2, X, ChevronRight, Calendar, Hash, Save } from 'lucide-react'
+import { ArrowLeft, Search, ScanLine, Upload, FileText, Loader2, X, ChevronRight, Calendar, Hash, Save, User } from 'lucide-react'
 import ScannerModal from '../components/ScannerModal'
 import MobileDatePicker from '../components/MobileDatePicker'
 import { NotificationService } from '../services/NotificationService'
@@ -17,6 +17,7 @@ interface Lieferschein {
     gespeicherterDateiname?: string
     uploadDatum: string
     typ: string
+    uploadedByName?: string
     geschaeftsdaten?: {
         dokumentNummer?: string
         dokumentDatum?: string
@@ -392,7 +393,7 @@ export default function LieferantLieferscheinePage() {
                                         {new Date(doc.uploadDatum).toLocaleDateString('de-DE')}
                                     </span>
                                 </div>
-                                <div className="flex items-center gap-4 text-sm text-slate-500">
+                                <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
                                     {doc.geschaeftsdaten?.dokumentDatum && (
                                         <span className="flex items-center gap-1">
                                             <Calendar className="w-3 h-3" />
@@ -401,6 +402,12 @@ export default function LieferantLieferscheinePage() {
                                     )}
                                     {doc.geschaeftsdaten?.bestellnummer && (
                                         <span className="truncate">Ref: {doc.geschaeftsdaten.bestellnummer}</span>
+                                    )}
+                                    {doc.uploadedByName && (
+                                        <span className="flex items-center gap-1 truncate">
+                                            <User className="w-3 h-3" />
+                                            {doc.uploadedByName}
+                                        </span>
                                     )}
                                 </div>
                             </div>

@@ -155,14 +155,46 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
         return `${strasse || ''} ${plz || ''} ${ort || ''}`
     }
 
+    const openExternalMap = (address: string, navigation: boolean) => {
+        const encoded = encodeURIComponent(address)
+        const ua = navigator.userAgent || ''
+        const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as unknown as { MSStream?: unknown }).MSStream
+        const isAndroid = /Android/.test(ua)
+        if (isIOS) {
+            const gmaps = navigation ? `comgooglemaps://?daddr=${encoded}` : `comgooglemaps://?q=${encoded}`
+            const apple = navigation ? `maps://?daddr=${encoded}` : `maps://?q=${encoded}`
+            let didHide = false
+            const onVis = () => { if (document.hidden) didHide = true }
+            document.addEventListener('visibilitychange', onVis)
+            window.location.href = gmaps
+            window.setTimeout(() => {
+                document.removeEventListener('visibilitychange', onVis)
+                if (!didHide) window.location.href = apple
+            }, 1200)
+            return
+        }
+        if (isAndroid) {
+            window.location.href = `geo:0,0?q=${encoded}`
+            return
+        }
+        window.open(
+            navigation
+                ? `https://www.google.com/maps/dir/?api=1&destination=${encoded}`
+                : `https://www.google.com/maps/search/?api=1&query=${encoded}`,
+            '_blank'
+        )
+    }
+
     const openMaps = () => {
-        const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(getAddress())}`
-        window.open(url, '_blank')
+        const address = getAddress().trim()
+        if (!address) return
+        openExternalMap(address, false)
     }
 
     const openNavigation = () => {
-        const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getAddress())}`
-        window.open(url, '_blank')
+        const address = getAddress().trim()
+        if (!address) return
+        openExternalMap(address, true)
     }
 
     const openViewer = (idx: number) => {
