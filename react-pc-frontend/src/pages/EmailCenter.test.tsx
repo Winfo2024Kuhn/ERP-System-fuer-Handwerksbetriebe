@@ -343,7 +343,7 @@ describe('EmailCenter', () => {
                 expect(screen.getAllByTitle('Als Spam markieren').length).toBeGreaterThan(0);
             });
 
-            // Mehrere Spam-Buttons möglich (Listenansicht + Detailansicht) – letzten nehmen
+            // Spam-Button im Detail-Header anklicken – nutzt mark-spam (lernt das Spam-Modell)
             const spamButtons = screen.getAllByTitle('Als Spam markieren');
             await user.click(spamButtons[spamButtons.length - 1]);
 
@@ -352,11 +352,9 @@ describe('EmailCenter', () => {
                 expect(screen.queryByText('Angebot für Treppe')).not.toBeInTheDocument();
             });
 
-            // API should have been called with bulk move-to-folder
-            expect(fetchMock).toHaveBeenCalledWith('/api/emails/bulk/move-to-folder', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: [1], targetFolder: 'spam' })
+            // API should have been called with mark-spam (nicht move-to-folder, damit das Spam-Modell lernt)
+            expect(fetchMock).toHaveBeenCalledWith('/api/emails/1/mark-spam', {
+                method: 'POST'
             });
         });
 

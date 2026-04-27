@@ -50,6 +50,12 @@ public class OutOfOfficeResponder {
         if (StringUtils.hasText(defaultFromAddress) && fromAddress.equalsIgnoreCase(defaultFromAddress)) {
             return;
         }
+        // Nie an RFC 2606 reservierte Test-Domains antworten (example.com/.org/.net,
+        // .test, .invalid, .localhost). Verhindert versehentliche Test-Mails im Posteingang.
+        if (isReservedTestAddress(fromAddress)) {
+            log.debug("OOO-Antwort an Test-Adresse {} unterdrueckt.", maskAddress(fromAddress));
+            return;
+        }
         Optional<OutOfOfficeSchedule> scheduleOpt = scheduleRepository
                 .findFirstByActiveTrueAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderByStartAtDesc(
                         LocalDate.now(), LocalDate.now());
@@ -134,6 +140,28 @@ public class OutOfOfficeResponder {
             return "";
         }
         return DATE_TIME_FORMATTER.format(value);
+    }
+
+    /**
+     * Prueft auf RFC 2606 reservierte Test-/Beispiel-Domains.
+     * Verhindert, dass Auto-Reply-Mails an Dummy-Adressen aus Test-Daten
+     * (z.B. info@example.com aus Tests) wirklich versendet werden.
+     */
+    private boolean isReservedTestAddress(String address) {
+        String lower = address.toLowerCase().trim();
+        int at = lower.lastIndexOf('@');
+        if (at < 0 || at == lower.length() - 1) return false;
+        String domain = lower.substring(at + 1);
+        // Adresse kann in Form "Name <user@example.com>" sein
+        if (domain.endsWith(">")) domain = domain.substring(0, domain.length() - 1);
+        return domain.equals("example.com")
+                || domain.equals("example.org")
+                || domain.equals("example.net")
+                || domain.endsWith(".example")
+                || domain.endsWith(".test")
+                || domain.endsWith(".invalid")
+                || domain.endsWith(".localhost")
+                || domain.equals("localhost");
     }
 
     private String maskAddress(String address) {

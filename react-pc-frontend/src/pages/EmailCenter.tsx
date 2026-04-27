@@ -417,13 +417,15 @@ function DroppableFolderButton({
 
 interface DraggableEmailWrapperProps {
     emailId: number;
+    disabled?: boolean;
     children: React.ReactNode;
 }
 
-function DraggableEmailWrapper({ emailId, children }: DraggableEmailWrapperProps) {
+function DraggableEmailWrapper({ emailId, disabled, children }: DraggableEmailWrapperProps) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `email-${emailId}`,
-        data: { emailId }
+        data: { emailId },
+        disabled
     });
     return (
         <div
@@ -505,6 +507,7 @@ export default function EmailCenter() {
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
     const [showSettings, setShowSettings] = useState(false);
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+    const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all');
     const [forwardEmail, setForwardEmail] = useState<EmailItem | null>(null);
 
     // Drafts
@@ -1440,9 +1443,15 @@ export default function EmailCenter() {
                 !e.parentEmailId && (
                     e.subject?.toLowerCase().includes(q) ||
                     e.fromAddress?.toLowerCase().includes(q) ||
-                    getSenderName(e).toLowerCase().includes(q)
+                    e.recipient?.toLowerCase().includes(q) ||
+                    e.body?.toLowerCase().includes(q) ||
+                    getDisplayName(e).toLowerCase().includes(q)
                 )
             );
+        }
+        // Filter nach Lese-Status (Gesendet/Entwürfe haben kein sinnvolles Read-Konzept)
+        if (readFilter !== 'all' && activeFolder !== 'sent') {
+            base = base.filter(e => readFilter === 'unread' ? !e.isRead : !!e.isRead);
         }
         // Sort by date
         return [...base].sort((a, b) => {
@@ -1450,7 +1459,7 @@ export default function EmailCenter() {
             const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
             return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
         });
-    }, [emails, searchQuery, isGlobalSearch, globalSearchResults, sortOrder]);
+    }, [emails, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder]);
 
     const filteredDrafts = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
@@ -1603,14 +1612,16 @@ export default function EmailCenter() {
                     </div>
 
                     <div className="flex flex-col gap-2 w-full max-w-xs">
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowAssignModal(true)}
-                            className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                        >
-                            <FolderPlus className="w-4 h-4" />
-                            Zuordnen ({selectedIds.size})
-                        </Button>
+                        {activeFolder !== 'sent' && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowAssignModal(true)}
+                                className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                            >
+                                <FolderPlus className="w-4 h-4" />
+                                Zuordnen ({selectedIds.size})
+                            </Button>
+                        )}
 
                         {activeFolder === 'trash' && (
                             <Button
@@ -1623,25 +1634,27 @@ export default function EmailCenter() {
                             </Button>
                         )}
 
-                        {/* Verschieben nach – alle 4 Ordner außer dem aktuellen */}
-                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2 space-y-1">
-                            <div className="flex items-center gap-1.5 px-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                <FolderInput className="w-3 h-3" />
-                                Verschieben nach
+                        {/* Verschieben nach – im Gesendet-Ordner ausgeblendet */}
+                        {activeFolder !== 'sent' && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2 space-y-1">
+                                <div className="flex items-center gap-1.5 px-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                    <FolderInput className="w-3 h-3" />
+                                    Verschieben nach
+                                </div>
+                                <div className="grid grid-cols-2 gap-1">
+                                    {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
+                                        <button
+                                            key={t.id}
+                                            onClick={() => handleMoveToFolder(t.id, bulkIds)}
+                                            className="flex items-center gap-1.5 px-2 py-2 rounded-md text-xs font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 border border-transparent hover:border-rose-200 transition-all cursor-pointer"
+                                        >
+                                            <t.icon className="w-3.5 h-3.5" />
+                                            <span className="truncate">{t.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
-                                    <button
-                                        key={t.id}
-                                        onClick={() => handleMoveToFolder(t.id, bulkIds)}
-                                        className="flex items-center gap-1.5 px-2 py-2 rounded-md text-xs font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 border border-transparent hover:border-rose-200 transition-all cursor-pointer"
-                                    >
-                                        <t.icon className="w-3.5 h-3.5" />
-                                        <span className="truncate">{t.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                        )}
 
                         {activeFolder === 'spam' ? (
                             <Button
@@ -1679,7 +1692,7 @@ export default function EmailCenter() {
                                     Newsletter bestätigen ({selectedIds.size})
                                 </Button>
                             </>
-                        ) : activeFolder !== 'trash' && (
+                        ) : activeFolder !== 'trash' && activeFolder !== 'sent' && (
                             <Button
                                 variant="outline"
                                 onClick={() => handleMarkSpam(bulkIds)}
@@ -1690,14 +1703,16 @@ export default function EmailCenter() {
                             </Button>
                         )}
 
-                        <Button
-                            variant="outline"
-                            onClick={() => handleBlockSender(bulkIds)}
-                            className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
-                        >
-                            <ShieldAlert className="w-4 h-4" />
-                            Absender sperren ({selectedIds.size})
-                        </Button>
+                        {activeFolder !== 'sent' && (
+                            <Button
+                                variant="outline"
+                                onClick={() => handleBlockSender(bulkIds)}
+                                className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                            >
+                                <ShieldAlert className="w-4 h-4" />
+                                Absender sperren ({selectedIds.size})
+                            </Button>
+                        )}
 
                         <div className="h-px bg-slate-200 my-1" />
 
@@ -1777,46 +1792,48 @@ export default function EmailCenter() {
                                         Wiederherstellen
                                     </Button>
                                 )}
-                                {/* Verschieben nach – Dropdown */}
-                                <div className="relative">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setMoveMenuAt(moveMenuAt === 'detail' ? null : 'detail')}
-                                        className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1"
-                                        title="Verschieben nach..."
-                                    >
-                                        <FolderInput className="w-4 h-4" />
-                                        <ChevronDown className="w-3 h-3" />
-                                    </Button>
-                                    {moveMenuAt === 'detail' && (
-                                        <>
-                                            <div
-                                                className="fixed inset-0 z-40"
-                                                onClick={() => setMoveMenuAt(null)}
-                                            />
-                                            <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 p-1.5 z-50 min-w-[200px]">
-                                                <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                                    <FolderInput className="w-3 h-3" />
-                                                    Verschieben nach
+                                {/* Verschieben nach – Dropdown (im Gesendet-Ordner ausgeblendet) */}
+                                {activeFolder !== 'sent' && (
+                                    <div className="relative">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setMoveMenuAt(moveMenuAt === 'detail' ? null : 'detail')}
+                                            className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1"
+                                            title="Verschieben nach..."
+                                        >
+                                            <FolderInput className="w-4 h-4" />
+                                            <ChevronDown className="w-3 h-3" />
+                                        </Button>
+                                        {moveMenuAt === 'detail' && (
+                                            <>
+                                                <div
+                                                    className="fixed inset-0 z-40"
+                                                    onClick={() => setMoveMenuAt(null)}
+                                                />
+                                                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 p-1.5 z-50 min-w-[200px]">
+                                                    <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                        <FolderInput className="w-3 h-3" />
+                                                        Verschieben nach
+                                                    </div>
+                                                    {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
+                                                        <button
+                                                            key={t.id}
+                                                            onClick={() => {
+                                                                setMoveMenuAt(null);
+                                                                handleMoveToFolder(t.id, [selectedEmail.id]);
+                                                            }}
+                                                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
+                                                        >
+                                                            <t.icon className="w-4 h-4 text-rose-500" />
+                                                            {t.label}
+                                                        </button>
+                                                    ))}
                                                 </div>
-                                                {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
-                                                    <button
-                                                        key={t.id}
-                                                        onClick={() => {
-                                                            setMoveMenuAt(null);
-                                                            handleMoveToFolder(t.id, [selectedEmail.id]);
-                                                        }}
-                                                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
-                                                    >
-                                                        <t.icon className="w-4 h-4 text-rose-500" />
-                                                        {t.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
                                 {activeFolder === 'spam' ? (
                                     <Button
                                         variant="ghost"
@@ -1857,7 +1874,7 @@ export default function EmailCenter() {
                                             <CheckCircle2 className="w-4 h-4" />
                                         </Button>
                                     </>
-                                ) : activeFolder !== 'trash' && (
+                                ) : activeFolder !== 'trash' && activeFolder !== 'sent' && (
                                     <Button
                                         variant="ghost"
                                         size="sm"
@@ -1868,15 +1885,17 @@ export default function EmailCenter() {
                                         <ShieldX className="w-4 h-4" />
                                     </Button>
                                 )}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleBlockSender()}
-                                    className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                    title="Absender sperren"
-                                >
-                                    <ShieldAlert className="w-4 h-4" />
-                                </Button>
+                                {activeFolder !== 'sent' && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleBlockSender()}
+                                        className="text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                        title="Absender sperren"
+                                    >
+                                        <ShieldAlert className="w-4 h-4" />
+                                    </Button>
+                                )}
                                 {(activeFolder === 'spam' || activeFolder === 'newsletter') && (
                                     <Button
                                         variant="outline"
@@ -1886,17 +1905,6 @@ export default function EmailCenter() {
                                         title="In Posteingang verschieben (kein Spam)"
                                     >
                                         <Inbox className="w-4 h-4" /> Kein Spam
-                                    </Button>
-                                )}
-                                {activeFolder !== 'spam' && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleMoveToFolder('spam', [selectedEmail.id])}
-                                        className="text-slate-500 hover:text-orange-600 hover:bg-orange-50"
-                                        title="Als Spam markieren"
-                                    >
-                                        <AlertCircle className="w-4 h-4" />
                                     </Button>
                                 )}
                                 <Button
@@ -1913,14 +1921,16 @@ export default function EmailCenter() {
                                 >
                                     <Star className={cn("w-4 h-4", selectedEmail.isStarred && "fill-amber-400")} />
                                 </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleReply(selectedEmail)}
-                                    className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                >
-                                    <Reply className="w-4 h-4" /> Antworten
-                                </Button>
+                                {activeFolder !== 'sent' && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleReply(selectedEmail)}
+                                        className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                                    >
+                                        <Reply className="w-4 h-4" /> Antworten
+                                    </Button>
+                                )}
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -1947,15 +1957,17 @@ export default function EmailCenter() {
                                         <span className="text-xs">ZIP</span>
                                     </Button>
                                 )}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setShowAssignModal(true)}
-                                    className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                >
-                                    <FolderPlus className="w-4 h-4" />
-                                    Zuordnen
-                                </Button>
+                                {activeFolder !== 'sent' && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setShowAssignModal(true)}
+                                        className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                                    >
+                                        <FolderPlus className="w-4 h-4" />
+                                        Zuordnen
+                                    </Button>
+                                )}
                                 <Button
                                     variant="ghost"
                                     size="sm"
@@ -2314,6 +2326,29 @@ export default function EmailCenter() {
                             {sortOrder === 'desc' ? <ArrowDownAZ className="w-3.5 h-3.5" /> : <ArrowUpAZ className="w-3.5 h-3.5" />}
                         </button>
                     </div>
+                    {/* Lese-Filter (im Gesendet-Ordner ausgeblendet) */}
+                    {activeFolder !== 'sent' && !isDraftFolderView && (
+                        <div className="flex items-center gap-1 bg-slate-50 rounded-md p-0.5">
+                            {([
+                                { id: 'all' as const, label: 'Alle' },
+                                { id: 'unread' as const, label: 'Ungelesen' },
+                                { id: 'read' as const, label: 'Gelesen' }
+                            ]).map(opt => (
+                                <button
+                                    key={opt.id}
+                                    onClick={() => setReadFilter(opt.id)}
+                                    className={cn(
+                                        "flex-1 px-2 py-1 rounded text-xs font-medium transition-all cursor-pointer",
+                                        readFilter === opt.id
+                                            ? "bg-white text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                            : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Global search info banner */}
@@ -2406,7 +2441,7 @@ export default function EmailCenter() {
                                     </div>
                                 </div>
                             )) : filteredEmails.map(email => (
-                                <DraggableEmailWrapper key={email.id} emailId={email.id}>
+                                <DraggableEmailWrapper key={email.id} emailId={email.id} disabled={activeFolder === 'sent'}>
                                 <div
                                     onClick={(e) => handleEmailClick(e, email)}
                                     className={cn(

@@ -5,9 +5,9 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.service.EmailClassificationGeminiClient;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService.ClassificationResult;
-import org.example.kalkulationsprogramm.service.OllamaService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -34,7 +34,7 @@ class EmailKiClassificationControllerTest {
     private MockMvc mockMvc;
 
     @MockBean
-    private OllamaService ollamaService;
+    private EmailClassificationGeminiClient geminiClient;
 
     @MockBean
     private EmailKiClassificationService classificationService;
@@ -49,24 +49,24 @@ class EmailKiClassificationControllerTest {
     private AnfrageRepository anfrageRepository;
 
     @Test
-    void getStatus_returnsOllamaState() throws Exception {
-        when(ollamaService.isEnabled()).thenReturn(true);
-        when(ollamaService.isAvailable()).thenReturn(true);
+    void getStatus_returnsGeminiEnabledState() throws Exception {
+        when(geminiClient.isEnabled()).thenReturn(true);
 
         mockMvc.perform(get("/api/email-ki/status"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ollamaEnabled").value(true))
-                .andExpect(jsonPath("$.ollamaAvailable").value(true));
+                .andExpect(jsonPath("$.provider").value("gemini"))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.available").value(true));
     }
 
     @Test
-    void getStatus_ollamaDown_returnsFalse() throws Exception {
-        when(ollamaService.isEnabled()).thenReturn(true);
-        when(ollamaService.isAvailable()).thenReturn(false);
+    void getStatus_geminiMissingKey_returnsDisabled() throws Exception {
+        when(geminiClient.isEnabled()).thenReturn(false);
 
         mockMvc.perform(get("/api/email-ki/status"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ollamaAvailable").value(false));
+                .andExpect(jsonPath("$.enabled").value(false))
+                .andExpect(jsonPath("$.available").value(false));
     }
 
     @Test

@@ -13,7 +13,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * KI-gestützte Email-Klassifizierung via lokalem Ollama-Modell.
+ * KI-gestützte Email-Klassifizierung via Google Gemini.
  * <p>
  * Wird aktiviert, wenn bei der automatischen Zuordnung mehrere Projekte/Anfragen
  * als Kandidaten in Frage kommen und die regelbasierte Schlagwortsuche keine
@@ -24,13 +24,16 @@ import java.util.stream.Collectors;
  * 2. Pro Kandidat: Key-Value-Steckbrief + bisheriger Email-Verlauf
  * 3. KI analysiert die eingehende Email im Kontext aller Kandidaten
  * 4. KI gibt den Schlüssel (Key) des passenden Kandidaten zurück
+ * <p>
+ * Das genutzte Gemini-Modell ist konfigurierbar über
+ * {@code ai.gemini.model.email-classification} (Standard: {@code gemini-2.5-flash-lite}).
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class EmailKiClassificationService {
 
-    private final OllamaService ollamaService;
+    private final EmailClassificationGeminiClient geminiClient;
     private final EmailRepository emailRepository;
     private final ObjectMapper objectMapper;
 
@@ -124,9 +127,9 @@ public class EmailKiClassificationService {
      */
     @Transactional(readOnly = true)
     public ClassificationResult classify(Email email, List<Projekt> projekte, List<Anfrage> anfragen) {
-        if (!ollamaService.isEnabled()) {
-            log.debug("[KI-Classify] Ollama deaktiviert – überspringe KI-Zuordnung");
-            return ClassificationResult.none("Ollama deaktiviert");
+        if (!geminiClient.isEnabled()) {
+            log.debug("[KI-Classify] Gemini deaktiviert (kein API-Key) – überspringe KI-Zuordnung");
+            return ClassificationResult.none("Gemini deaktiviert");
         }
 
         if (projekte.isEmpty() && anfragen.isEmpty()) {
@@ -135,7 +138,7 @@ public class EmailKiClassificationService {
 
         try {
             String userPrompt = buildUserPrompt(email, projekte, anfragen);
-            String response = ollamaService.chat(CLASSIFICATION_SYSTEM_PROMPT, userPrompt);
+            String response = geminiClient.chat(CLASSIFICATION_SYSTEM_PROMPT, userPrompt);
             return parseResponse(response, projekte, anfragen);
         } catch (Exception e) {
             log.warn("[KI-Classify] Fehler bei KI-Klassifizierung: {}", e.getMessage());
