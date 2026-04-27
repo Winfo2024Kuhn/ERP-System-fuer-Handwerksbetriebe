@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,10 @@ public class KiHilfeService {
     /** Result of a chat call including optional web sources from Google Search grounding. */
     public record ChatResult(String reply, List<SourceLink> sources) {}
     public record SourceLink(String title, String url) {}
+
+    private static final int MAX_TOOL_ITERATIONS = 10; // Vermeidung von Endlosschleifen bei Tool-Nutzung
+    private static final int MAX_RATE_LIMIT_RETRIES = 2;
+    private static final long DEFAULT_RATE_LIMIT_WAIT_MS = 30_000;
 
     private static final String BASE_SYSTEM_PROMPT = """
             Du bist der KI-Assistent für das Kalkulationsprogramm der Bauschlosserei Kuhn.
@@ -118,6 +123,62 @@ public class KiHilfeService {
             
             PRINZIP: Nur Fakten aus dem FRONTEND-Code. Backend-Code ≠ UI-Verfügbarkeit. Lieber nur einen
             korrekten Weg nennen als zwei Wege, von denen einer erfunden ist.
+            
+            ## Werkzeuge (Function Calling)
+            Du hast Zugriff auf folgende Werkzeuge, die du bei Bedarf aufrufen kannst:
+            
+            1. **search_code(query)** - Durchsucht den Quellcode per Vektor-Suche. Nutze dies wenn du
+               herausfinden willst, welche Buttons/Formulare auf einer Seite existieren, oder Backend-Logik finden willst.
+            2. **read_file(path)** - Liest eine einzelne Datei. Nutze dies wenn du den genauen Quellcode
+               einer bestimmten Komponente oder Konfigurationsdatei brauchst.
+            3. **list_files(directory)** - Listet Dateien in einem Verzeichnis. Nutze dies um die Projektstruktur
+               zu erkunden.
+            4. **query_database(sql)** - Fuehrt ein READ-ONLY SELECT auf der Datenbank aus. Nutze dies um
+               Schema-Informationen oder konkrete Daten abzufragen (z.B. Tabellenstruktur, Anzahl Datensaetze).
+            5. **search_emails(query)** - Durchsucht E-Mails nach Betreff, Absender, Empfaenger oder Inhalt.
+               Gibt Treffer mit Direkt-Links zum EmailCenter zurueck. Nutze dies IMMER wenn der Benutzer
+               nach einer bestimmten E-Mail fragt oder E-Mails zu einem Thema sucht.
+               Die Links im Format [E-Mail oeffnen](/emails/folder/id) werden als klickbare Links dargestellt.
+            6. **run_python(code)** - Fuehrt ein Python-Skript aus und gibt die Ausgabe zurueck.
+               Nutze dies fuer:
+               - Mathematische Berechnungen (Kalkulation, Prozentrechnung, Flaechenberechnung, Materialkosten)
+               - Statistische Auswertungen (Durchschnitt, Median, Standardabweichung)
+               - Datenverarbeitung von query_database-Ergebnissen (Summen, Gruppierungen, Pivots)
+               - Einheitenumrechnungen (mm→m, kg→t, etc.)
+               - Datumsberechnungen (Arbeitstage, Fristen, Differenzen)
+               Verfuegbare Module: math, statistics, datetime, decimal, fractions, json, csv, re, collections, itertools.
+               Verwende print() fuer die Ausgabe. Kein Dateizugriff, kein Netzwerk.
+            
+            REGELN fuer Werkzeug-Nutzung:
+            - Nutze search_code ZUERST, bevor du eine Behauptung ueber UI-Elemente aufstellst
+            - Nutze read_file wenn du den EXAKTEN Code einer Komponente brauchst
+            - Nutze query_database NUR wenn der Benutzer nach Daten fragt
+            - Nutze search_emails wenn der Benutzer nach E-Mails fragt oder Mails zu einem Thema sucht
+            - Nutze run_python fuer Berechnungen, Auswertungen und Datenverarbeitung
+            - POWER-KOMBINATION: query_database + run_python = Daten abfragen UND direkt auswerten/berechnen
+            - Du kannst mehrere Werkzeuge nacheinander aufrufen um deine Antwort zu verbessern
+            - Wenn du bereits relevanten Code im Kontext hast, musst du NICHT nochmal suchen
+            
+            ## EFFIZIENZ (Antwortzeit minimieren!)
+            Jeder Tool-Aufruf kostet 2-3 Sekunden Wartezeit fuer den Benutzer!
+            - MAXIMAL 3-5 Tool-Aufrufe pro Antwort. Plane deine Abfragen VORHER.
+            - Das vollstaendige Datenbank-Schema steht im System-Prompt. Frage NIEMALS INFORMATION_SCHEMA, DESCRIBE oder SHOW COLUMNS ab!
+            - Nutze JOINs und Subqueries: Eine komplexe Abfrage statt 5 einfache.
+            - Kombiniere Datenabfrage + Berechnung: 1x query_database + 1x run_python = fertig.
+            - Wenn der Kontext (RAG, Seitenkontext) bereits genug Info enthaelt, antworte DIREKT ohne Tools.
+            
+            ## Projekt-Darstellung (PFLICHTFELDER bei Projektdaten!)
+            Wenn du Projekte in Tabellen oder Listen anzeigst, muessen IMMER diese Felder enthalten sein:
+            - **Auftragsnummer** (projekt.auftragsnummer) — damit der Benutzer das Projekt eindeutig identifizieren kann
+            - **Kundenname** (JOIN auf kunde-Tabelle ueber projekt.kunde_id) — damit klar ist, WELCHER Kunde
+            - **Kundenadresse** (kunde.strasse, kunde.plz, kunde.ort) — fuer raeumliche Zuordnung
+            - **Bauvorhaben** (projekt.bauvorhaben) — Projektbezeichnung
+            Baue die SQL-Abfrage von Anfang an mit JOIN auf die kunde-Tabelle:
+            ```sql
+            SELECT p.auftragsnummer, p.bauvorhaben, k.name AS kunde, CONCAT(k.strasse, ', ', k.plz, ' ', k.ort) AS adresse, ...
+            FROM projekt p LEFT JOIN kunde k ON p.kunde_id = k.id
+            ```
+            NIEMALS nur bauvorhaben und ID allein anzeigen — das reicht einem Menschen nicht zur Identifikation!
             
             ## Web-Suche & Allgemeinwissen
             Du hast Zugriff auf die Google-Suche (googleSearch Tool) und kannst aktuelle Informationen aus dem Internet abrufen.
@@ -216,6 +277,7 @@ public class KiHilfeService {
     private final ObjectMapper objectMapper;
     private final CodebaseIndexService codebaseIndexService;
     private final LocalRagService localRagService;
+    private final KiToolService kiToolService;
     private final SystemSettingsService systemSettingsService;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -233,50 +295,73 @@ public class KiHilfeService {
     @Value("${ai.ki-hilfe.web-search-enabled:true}")
     private boolean webSearchEnabled;
 
+    /** Exception thrown when a chat request is cancelled by the user. */
+    public static class CancelledException extends IOException {
+        public CancelledException() { super("KI-Anfrage wurde abgebrochen"); }
+    }
+
     public record ChatMessage(String role, String text) {}
 
     /**
      * Build system prompt with RAG context (if available) or full codebase fallback.
+     * Includes database schema overview to eliminate INFORMATION_SCHEMA exploration queries.
      */
     private String buildSystemPrompt(String ragContext) {
-        if (ragContext != null && !ragContext.isBlank()) {
-            return BASE_SYSTEM_PROMPT +
-                    "\n\n## Relevanter Quellcode (per Vektor-Suche gefunden)\n" +
-                    "Die folgenden Code-Abschnitte wurden automatisch als relevant fuer die aktuelle Frage identifiziert. " +
-                    "Abschnitte mit '>>> AKTUELLE SEITE DES BENUTZERS <<<' zeigen den EXAKTEN Quellcode der Seite, " +
-                    "auf der sich der Benutzer GERADE befindet. Diese Abschnitte haben HOECHSTE Prioritaet: " +
-                    "Nur Buttons, Tabs, Formulare und Funktionen die IN DIESEM CODE vorkommen, existieren auf dieser Seite. " +
-                    "Beschreibe NUR das, was du im Code der aktuellen Seite tatsaechlich siehst.\n\n" +
-                    ragContext;
+        StringBuilder prompt = new StringBuilder(BASE_SYSTEM_PROMPT);
+
+        // Inject database schema so the LLM can write queries directly without exploring
+        String schemaOverview = kiToolService.getSchemaOverview();
+        if (schemaOverview != null && !schemaOverview.isBlank()) {
+            prompt.append("\n\n## Datenbank-Schema (VOLLSTAENDIG - frage NICHT INFORMATION_SCHEMA ab!)\n")
+                  .append("PK = Primary Key, FK = Foreign Key (Verweis auf andere Tabelle).\n")
+                  .append("Schreibe DIREKT dein SELECT mit JOINs auf die benoetigten Tabellen.\n\n")
+                  .append(schemaOverview);
         }
 
-        // Fallback: full codebase index
-        String index = codebaseIndexService.getIndex();
-        if (index == null || index.isEmpty()) {
-            return BASE_SYSTEM_PROMPT;
+        if (ragContext != null && !ragContext.isBlank()) {
+            prompt.append("\n\n## Relevanter Quellcode (per Vektor-Suche gefunden)\n")
+                  .append("Die folgenden Code-Abschnitte wurden automatisch als relevant fuer die aktuelle Frage identifiziert. ")
+                  .append("Abschnitte mit '>>> AKTUELLE SEITE DES BENUTZERS <<<' zeigen den EXAKTEN Quellcode der Seite, ")
+                  .append("auf der sich der Benutzer GERADE befindet. Diese Abschnitte haben HOECHSTE Prioritaet: ")
+                  .append("Nur Buttons, Tabs, Formulare und Funktionen die IN DIESEM CODE vorkommen, existieren auf dieser Seite. ")
+                  .append("Beschreibe NUR das, was du im Code der aktuellen Seite tatsaechlich siehst.\n\n")
+                  .append(ragContext);
+        } else {
+            // Fallback: full codebase index
+            String index = codebaseIndexService.getIndex();
+            if (index != null && !index.isEmpty()) {
+                prompt.append("\n\n## Frontend-Quellcode & Dokumentation (Read-Only Wissensbasis)\n")
+                      .append("Im Folgenden findest du den KOMPLETTEN Frontend-Quellcode des Kalkulationsprogramms: ")
+                      .append("Alle React-Seiten (Pages), UI-Komponenten, Navigation (App.tsx Routing), ")
+                      .append("Hooks, Hilfsfunktionen und die Projekt-Dokumentation. ")
+                      .append("Nutze diesen Code, um Benutzern zu erklären, wie sie sich im Programm ")
+                      .append("zurechtfinden, welche Funktionen auf welcher Seite verfügbar sind, ")
+                      .append("und wie Workflows Schritt für Schritt ablaufen.\n\n")
+                      .append(index);
+            }
         }
-        return BASE_SYSTEM_PROMPT +
-                "\n\n## Frontend-Quellcode & Dokumentation (Read-Only Wissensbasis)\n" +
-                "Im Folgenden findest du den KOMPLETTEN Frontend-Quellcode des Kalkulationsprogramms: " +
-                "Alle React-Seiten (Pages), UI-Komponenten, Navigation (App.tsx Routing), " +
-                "Hooks, Hilfsfunktionen und die Projekt-Dokumentation. " +
-                "Nutze diesen Code, um Benutzern zu erklären, wie sie sich im Programm " +
-                "zurechtfinden, welche Funktionen auf welcher Seite verfügbar sind, " +
-                "und wie Workflows Schritt für Schritt ablaufen.\n\n" +
-                index;
+
+        return prompt.toString();
     }
 
     /**
      * Chat without page context (backward-compatible).
      */
     public ChatResult chat(List<ChatMessage> messages) throws IOException, InterruptedException {
-        return chat(messages, null);
+        return chat(messages, null, new AtomicBoolean(false));
     }
 
     /**
      * Chat with optional page context for RAG-enhanced responses.
      */
     public ChatResult chat(List<ChatMessage> messages, PageContext pageContext) throws IOException, InterruptedException {
+        return chat(messages, pageContext, new AtomicBoolean(false));
+    }
+
+    /**
+     * Chat with optional page context and cancellation token.
+     */
+    public ChatResult chat(List<ChatMessage> messages, PageContext pageContext, AtomicBoolean cancelled) throws IOException, InterruptedException {
         // Key zur Laufzeit aus System-Setup lesen.
         String geminiApiKey = systemSettingsService.getGeminiApiKey();
         if (geminiApiKey == null || geminiApiKey.isBlank()) {
@@ -381,37 +466,76 @@ public class KiHilfeService {
         config.put("maxOutputTokens", maxOutputTokens);
         requestBody.set("generationConfig", config);
 
-        // Google Search grounding tool – allows Gemini to search the web
+        // Tools: Google Search grounding + agentic function calling tools
+        ArrayNode tools = objectMapper.createArrayNode();
         if (webSearchEnabled) {
-            ArrayNode tools = objectMapper.createArrayNode();
             ObjectNode searchTool = objectMapper.createObjectNode();
             searchTool.set("googleSearch", objectMapper.createObjectNode());
             tools.add(searchTool);
-            requestBody.set("tools", tools);
+        }
+        // Add function calling tools (search_code, read_file, list_files, query_database)
+        ObjectNode functionTool = objectMapper.createObjectNode();
+        functionTool.set("functionDeclarations", kiToolService.buildFunctionDeclarations());
+        tools.add(functionTool);
+        requestBody.set("tools", tools);
+
+        // Required when combining built-in tools (googleSearch) with function calling
+        if (webSearchEnabled) {
+            ObjectNode toolConfig = objectMapper.createObjectNode();
+            toolConfig.put("includeServerSideToolInvocations", true);
+            requestBody.set("toolConfig", toolConfig);
         }
 
-        String body = objectMapper.writeValueAsString(requestBody);
+        // Agentic loop: call Gemini, execute tool calls, feed results back
+        List<SourceLink> allSources = new ArrayList<>();
 
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(60))
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .build();
+        for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+            // Check cancellation at start of each iteration
+            if (cancelled.get()) {
+                log.info("  -> KI-Anfrage abgebrochen durch Benutzer (Iteration {})", iteration + 1);
+                throw new CancelledException();
+            }
 
-        HttpResponse<String> response = httpClient.send(request,
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            String body = objectMapper.writeValueAsString(requestBody);
 
-        if (response.statusCode() != 200) {
-            log.error("Gemini KI-Hilfe API Error {}: {}", response.statusCode(), response.body());
-            throw new IOException("KI-Hilfe nicht verfügbar (Fehler " + response.statusCode() + ")");
-        }
+            HttpResponse<String> response = null;
+            for (int retry = 0; retry <= MAX_RATE_LIMIT_RETRIES; retry++) {
+                HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                        .header("Content-Type", "application/json")
+                        .timeout(Duration.ofSeconds(60))
+                        .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                        .build();
 
-        JsonNode root = objectMapper.readTree(response.body());
+                response = httpClient.send(request,
+                        HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
-        // Debug: log grounding metadata presence
-        JsonNode candidates = root.path("candidates");
-        if (candidates.isArray() && !candidates.isEmpty()) {
+                if (response.statusCode() != 429 || retry == MAX_RATE_LIMIT_RETRIES) {
+                    break;
+                }
+
+                long waitMs = parseRetryDelay(response.body());
+                log.warn("  -> Rate-Limit (429) bei Iteration {}, warte {} ms vor Retry {}/{}",
+                        iteration + 1, waitMs, retry + 1, MAX_RATE_LIMIT_RETRIES);
+                Thread.sleep(waitMs);
+            }
+
+            if (response.statusCode() != 200) {
+                log.error("Gemini KI-Hilfe API Error {}: {}", response.statusCode(), response.body());
+                throw new IOException("KI-Hilfe nicht verfügbar (Fehler " + response.statusCode() + ")");
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode candidates = root.path("candidates");
+            if (!candidates.isArray() || candidates.isEmpty()) {
+                throw new IOException("Keine Antwort von der KI erhalten");
+            }
+
             JsonNode candidate = candidates.get(0);
+
+            // Collect grounding sources from this iteration
+            allSources.addAll(extractGroundingSources(candidate));
+
+            // Log grounding metadata
             JsonNode gm = candidate.path("groundingMetadata");
             if (!gm.isMissingNode()) {
                 JsonNode queries = gm.path("webSearchQueries");
@@ -421,34 +545,128 @@ public class KiHilfeService {
             }
 
             JsonNode partsNode = candidate.path("content").path("parts");
-            if (partsNode.isArray() && !partsNode.isEmpty()) {
-                // Collect text from all parts (some may be function call results)
-                StringBuilder replyBuilder = new StringBuilder();
-                for (JsonNode part : partsNode) {
-                    String partText = part.path("text").asText("");
-                    if (!partText.isEmpty()) {
-                        if (replyBuilder.length() > 0) replyBuilder.append("\n");
-                        replyBuilder.append(partText);
-                    }
-                }
-                String replyText = replyBuilder.toString();
+            if (!partsNode.isArray() || partsNode.isEmpty()) {
+                throw new IOException("Keine Antwort von der KI erhalten");
+            }
 
-                if (replyText.isEmpty()) {
+            // Check if any part contains a function call
+            List<JsonNode> functionCalls = new ArrayList<>();
+            StringBuilder textReply = new StringBuilder();
+            for (JsonNode part : partsNode) {
+                if (part.has("functionCall")) {
+                    functionCalls.add(part.get("functionCall"));
+                }
+                String partText = part.path("text").asText("");
+                if (!partText.isEmpty()) {
+                    if (!textReply.isEmpty()) textReply.append("\n");
+                    textReply.append(partText);
+                }
+            }
+
+            // No function calls → return final text response
+            if (functionCalls.isEmpty()) {
+                if (textReply.isEmpty()) {
                     throw new IOException("Keine Textantwort von der KI erhalten");
                 }
 
-                // Extract grounding sources from Google Search results
-                List<SourceLink> sources = extractGroundingSources(candidate);
-                if (!sources.isEmpty()) {
-                    log.info("  -> {} Web-Quellen aus Google Search Grounding extrahiert", sources.size());
-                    sources.forEach(s -> log.info("    - [{}] {}", s.title(), s.url()));
+                if (!allSources.isEmpty()) {
+                    log.info("  -> {} Web-Quellen aus Google Search Grounding extrahiert", allSources.size());
+                    allSources.forEach(s -> log.info("    - [{}] {}", s.title(), s.url()));
+                }
+                log.info("  -> Agentic loop beendet nach {} Iteration(en)", iteration + 1);
+                return new ChatResult(textReply.toString(), allSources);
+            }
+
+            // Execute function calls and build response
+            log.info("  -> Iteration {}: {} Function Call(s) empfangen", iteration + 1, functionCalls.size());
+
+            // Append the model's response (with function calls) to contents
+            ObjectNode modelMsg = objectMapper.createObjectNode().put("role", "model");
+            modelMsg.set("parts", partsNode.deepCopy());
+            contents.add(modelMsg);
+
+            // Build function response parts
+            ObjectNode functionResponseMsg = objectMapper.createObjectNode().put("role", "user");
+            ArrayNode responseParts = objectMapper.createArrayNode();
+
+            for (JsonNode fc : functionCalls) {
+                // Check cancellation before each tool execution
+                if (cancelled.get()) {
+                    log.info("  -> KI-Anfrage abgebrochen vor Tool-Ausfuehrung");
+                    throw new CancelledException();
                 }
 
-                return new ChatResult(replyText, sources);
+                String toolName = fc.path("name").asText();
+                JsonNode args = fc.path("args");
+                log.info("    -> Fuehre Tool '{}' aus mit Args: {}", toolName, args);
+
+                String result = kiToolService.executeTool(toolName, args);
+
+                // Truncate very large results
+                if (result.length() > 15_000) {
+                    result = result.substring(0, 15_000) + "\n... (abgeschnitten)";
+                }
+                log.info("    <- Tool '{}' Ergebnis: {} Zeichen", toolName, result.length());
+
+                ObjectNode frPart = objectMapper.createObjectNode();
+                ObjectNode functionResponse = objectMapper.createObjectNode();
+                functionResponse.put("name", toolName);
+                ObjectNode responseContent = objectMapper.createObjectNode();
+                responseContent.put("result", result);
+                functionResponse.set("response", responseContent);
+                frPart.set("functionResponse", functionResponse);
+                responseParts.add(frPart);
             }
+
+            functionResponseMsg.set("parts", responseParts);
+            contents.add(functionResponseMsg);
+
+            // Update requestBody contents for next iteration
+            requestBody.set("contents", contents);
         }
 
-        throw new IOException("Keine Antwort von der KI erhalten");
+        // Max iterations reached - one final call without tools to force a text response
+        log.warn("  -> Max Tool-Iterationen ({}) erreicht, erzwinge Text-Antwort", MAX_TOOL_ITERATIONS);
+        requestBody.remove("tools");
+        requestBody.remove("toolConfig");
+
+        // Add explicit instruction to summarize findings as text
+        ObjectNode forceTextMsg = objectMapper.createObjectNode().put("role", "user");
+        ArrayNode forceTextParts = objectMapper.createArrayNode();
+        forceTextParts.add(objectMapper.createObjectNode().put("text",
+                "Bitte fasse jetzt deine bisherigen Erkenntnisse zusammen und antworte dem Benutzer in normalem Text. Rufe KEINE weiteren Tools auf."));
+        forceTextMsg.set("parts", forceTextParts);
+        contents.add(forceTextMsg);
+        requestBody.set("contents", contents);
+
+        String body = objectMapper.writeValueAsString(requestBody);
+        HttpRequest finalRequest = HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(60))
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> finalResponse = httpClient.send(finalRequest,
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (finalResponse.statusCode() != 200) {
+            throw new IOException("KI-Hilfe nicht verfügbar (Fehler " + finalResponse.statusCode() + ")");
+        }
+        JsonNode finalRoot = objectMapper.readTree(finalResponse.body());
+        JsonNode finalParts = finalRoot.path("candidates").path(0).path("content").path("parts");
+        StringBuilder finalText = new StringBuilder();
+        if (finalParts.isArray()) {
+            for (JsonNode part : finalParts) {
+                String t = part.path("text").asText("");
+                if (!t.isEmpty()) {
+                    if (!finalText.isEmpty()) finalText.append("\n");
+                    finalText.append(t);
+                }
+            }
+        }
+        if (finalText.isEmpty()) {
+            throw new IOException("Keine Antwort von der KI erhalten");
+        }
+        allSources.addAll(extractGroundingSources(finalRoot.path("candidates").path(0)));
+        return new ChatResult(finalText.toString(), allSources);
     }
 
     /**
@@ -507,5 +725,30 @@ public class KiHilfeService {
             }
         }
         return sources;
+    }
+
+    /**
+     * Parses the retryDelay from a Gemini 429 response body.
+     * Expects format like "28s" or "15.784s" in the RetryInfo detail.
+     */
+    private long parseRetryDelay(String responseBody) {
+        try {
+            JsonNode root = objectMapper.readTree(responseBody);
+            JsonNode details = root.path("error").path("details");
+            if (details.isArray()) {
+                for (JsonNode detail : details) {
+                    if ("type.googleapis.com/google.rpc.RetryInfo".equals(detail.path("@type").asText())) {
+                        String delay = detail.path("retryDelay").asText("");
+                        if (delay.endsWith("s")) {
+                            double seconds = Double.parseDouble(delay.substring(0, delay.length() - 1));
+                            return Math.max(1000, (long) (seconds * 1000) + 1000); // add 1s buffer
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Konnte retryDelay nicht parsen: {}", e.getMessage());
+        }
+        return DEFAULT_RATE_LIMIT_WAIT_MS;
     }
 }
