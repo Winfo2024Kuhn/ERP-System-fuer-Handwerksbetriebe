@@ -24,6 +24,8 @@ public class LieferantDetailDto {
     private Boolean istAktiv;
     private LocalDate startZusammenarbeit;
     private List<String> kundenEmails;
+    private Long standardKostenstelleId;
+    private String standardKostenstelleName;
     private LieferantStatistikDto statistik;
     private List<LieferantArtikelpreisDto> artikelpreise;
     private List<LieferantKommunikationDto> kommunikation;

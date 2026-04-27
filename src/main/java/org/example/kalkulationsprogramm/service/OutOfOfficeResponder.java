@@ -5,10 +5,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.OutOfOfficeSchedule;
+import org.example.email.ImapAppendService;
 import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.example.kalkulationsprogramm.service.mail.HtmlMailSender;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,16 +38,24 @@ public class OutOfOfficeResponder {
     private final OutOfOfficeScheduleRepository scheduleRepository;
     private final EmailSignatureService emailSignatureService;
     private final HtmlMailSender mailSender;
-
-    @Value("${smtp.username}")
-    private String defaultFromAddress;
+    private final SystemSettingsService systemSettingsService;
+    private final ImapAppendService imapAppendService;
 
     @Transactional(readOnly = true)
     public void handleIncomingEmail(String fromAddress, String originalSubject) {
         if (!StringUtils.hasText(fromAddress)) {
             return;
         }
-        if (defaultFromAddress != null && fromAddress.equalsIgnoreCase(defaultFromAddress)) {
+        // Absenderadresse zur Laufzeit lesen, damit Aenderungen im
+        // System-Setup ohne Spring-Neustart wirksam werden.
+        String defaultFromAddress = systemSettingsService.getSmtpUsername();
+        if (StringUtils.hasText(defaultFromAddress) && fromAddress.equalsIgnoreCase(defaultFromAddress)) {
+            return;
+        }
+        // Nie an RFC 2606 reservierte Test-Domains antworten (example.com/.org/.net,
+        // .test, .invalid, .localhost). Verhindert versehentliche Test-Mails im Posteingang.
+        if (isReservedTestAddress(fromAddress)) {
+            log.debug("OOO-Antwort an Test-Adresse {} unterdrueckt.", maskAddress(fromAddress));
             return;
         }
         Optional<OutOfOfficeSchedule> scheduleOpt = scheduleRepository
@@ -71,7 +79,7 @@ public class OutOfOfficeResponder {
 
             // Append to IMAP Sent folder so it appears in Outlook
             try {
-                org.example.email.ImapAppendService.appendToSent(
+                imapAppendService.appendToSent(
                         defaultFromAddress,
                         java.util.List.of(fromAddress),
                         subject,
@@ -134,6 +142,28 @@ public class OutOfOfficeResponder {
             return "";
         }
         return DATE_TIME_FORMATTER.format(value);
+    }
+
+    /**
+     * Prueft auf RFC 2606 reservierte Test-/Beispiel-Domains.
+     * Verhindert, dass Auto-Reply-Mails an Dummy-Adressen aus Test-Daten
+     * (z.B. info@example.com aus Tests) wirklich versendet werden.
+     */
+    private boolean isReservedTestAddress(String address) {
+        String lower = address.toLowerCase().trim();
+        int at = lower.lastIndexOf('@');
+        if (at < 0 || at == lower.length() - 1) return false;
+        String domain = lower.substring(at + 1);
+        // Adresse kann in Form "Name <user@example.com>" sein
+        if (domain.endsWith(">")) domain = domain.substring(0, domain.length() - 1);
+        return domain.equals("example.com")
+                || domain.equals("example.org")
+                || domain.equals("example.net")
+                || domain.endsWith(".example")
+                || domain.endsWith(".test")
+                || domain.endsWith(".invalid")
+                || domain.endsWith(".localhost")
+                || domain.equals("localhost");
     }
 
     private String maskAddress(String address) {

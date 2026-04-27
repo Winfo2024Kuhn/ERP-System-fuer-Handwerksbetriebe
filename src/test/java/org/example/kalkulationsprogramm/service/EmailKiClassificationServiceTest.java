@@ -28,7 +28,7 @@ import static org.mockito.Mockito.*;
 class EmailKiClassificationServiceTest {
 
     @Mock
-    private OllamaService ollamaService;
+    private EmailClassificationGeminiClient ollamaService;
 
     @Mock
     private EmailRepository emailRepository;

@@ -32,12 +32,10 @@ public class QdrantRagService {
     private static final int EMBEDDING_DIMENSION = 768;
 
     private final ObjectMapper objectMapper;
+    private final SystemSettingsService systemSettingsService;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
-
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
 
     @Value("${ai.rag.qdrant.host:localhost}")
     private String qdrantHost;
@@ -57,8 +55,9 @@ public class QdrantRagService {
     @Value("${ai.rag.enabled:false}")
     private boolean ragEnabled;
 
-    public QdrantRagService(ObjectMapper objectMapper) {
+    public QdrantRagService(ObjectMapper objectMapper, SystemSettingsService systemSettingsService) {
         this.objectMapper = objectMapper;
+        this.systemSettingsService = systemSettingsService;
     }
 
     public record CodeChunkResult(
@@ -120,7 +119,8 @@ public class QdrantRagService {
      * Embed a query string using Gemini text-embedding-004.
      */
     private List<Double> embedQuery(String query) throws IOException, InterruptedException {
-        String url = GEMINI_EMBED_URL.formatted(geminiApiKey);
+        // Key zur Laufzeit aus System-Setup lesen.
+        String url = GEMINI_EMBED_URL.formatted(systemSettingsService.getGeminiApiKey());
 
         ObjectNode requestBody = objectMapper.createObjectNode();
         ObjectNode content = objectMapper.createObjectNode();

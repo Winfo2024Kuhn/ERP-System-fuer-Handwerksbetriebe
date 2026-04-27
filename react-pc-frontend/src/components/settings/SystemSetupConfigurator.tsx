@@ -2,11 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import {
     Brain,
     CheckCircle,
+    ChevronDown,
+    ChevronUp,
     Eye,
     EyeOff,
+    Inbox,
     Loader2,
     Mail,
     Save,
+    Send,
+    Settings2,
     TestTube,
     XCircle
 } from 'lucide-react';
@@ -38,6 +43,13 @@ interface SmtpSettings {
     passwordSet: boolean;
 }
 
+interface ImapSettings {
+    host: string;
+    port: number;
+    username: string;
+    passwordSet: boolean;
+}
+
 interface TestResult {
     success: boolean;
     message: string;
@@ -52,8 +64,18 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
 
     const [loading, setLoading] = useState(true);
 
+    // Einfache Einrichtung: E-Mail + Passwort gelten gleichzeitig für Versand und Empfang.
+    const [accountEmail, setAccountEmail] = useState('');
+    const [accountPassword, setAccountPassword] = useState('');
+    const [accountShowPassword, setAccountShowPassword] = useState(false);
+    const [accountSaving, setAccountSaving] = useState(false);
+    const [accountPasswordSet, setAccountPasswordSet] = useState(false);
+
+    // Erweitert: Server-Einstellungen separat pro Protokoll
+    const [advancedOpen, setAdvancedOpen] = useState(false);
+
     const [smtpSettings, setSmtpSettings] = useState<SmtpSettings>({
-        host: '',
+        host: 'securesmtp.t-online.de',
         port: 465,
         username: '',
         passwordSet: false,
@@ -65,6 +87,18 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     const [smtpTesting, setSmtpTesting] = useState(false);
     const [smtpTestResult, setSmtpTestResult] = useState<TestResult | null>(null);
 
+    const [imapSettings, setImapSettings] = useState<ImapSettings>({
+        host: 'secureimap.t-online.de',
+        port: 993,
+        username: '',
+        passwordSet: false,
+    });
+    const [imapPassword, setImapPassword] = useState('');
+    const [imapShowPassword, setImapShowPassword] = useState(false);
+    const [imapSaving, setImapSaving] = useState(false);
+    const [imapTesting, setImapTesting] = useState(false);
+    const [imapTestResult, setImapTestResult] = useState<TestResult | null>(null);
+
     const [geminiApiKeySet, setGeminiApiKeySet] = useState(false);
     const [geminiApiKey, setGeminiApiKey] = useState('');
     const [geminiShowKey, setGeminiShowKey] = useState(false);
@@ -75,18 +109,32 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     const loadSettings = useCallback(async () => {
         setLoading(true);
         try {
-            const [smtpRes, geminiRes] = await Promise.all([
+            const [smtpRes, imapRes, geminiRes] = await Promise.all([
                 fetch('/api/settings/smtp'),
+                fetch('/api/settings/imap'),
                 fetch('/api/settings/gemini'),
             ]);
 
             if (smtpRes.ok) {
                 const smtpData = await smtpRes.json();
                 setSmtpSettings({
-                    host: smtpData.host || '',
+                    host: smtpData.host || 'securesmtp.t-online.de',
                     port: smtpData.port || 465,
                     username: smtpData.username || '',
                     passwordSet: !!smtpData.passwordSet,
+                });
+                // Einfache Einrichtung spiegelt die SMTP-Daten wider
+                setAccountEmail(smtpData.username || '');
+                setAccountPasswordSet(!!smtpData.passwordSet);
+            }
+
+            if (imapRes.ok) {
+                const imapData = await imapRes.json();
+                setImapSettings({
+                    host: imapData.host || 'secureimap.t-online.de',
+                    port: imapData.port || 993,
+                    username: imapData.username || '',
+                    passwordSet: !!imapData.passwordSet,
                 });
             }
 
@@ -105,6 +153,40 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     useEffect(() => {
         loadSettings();
     }, [loadSettings]);
+
+    const handleSaveAccount = async () => {
+        if (!accountEmail.trim()) {
+            toast.error('Bitte E-Mail-Adresse eintragen.');
+            return;
+        }
+        if (!accountPasswordSet && !accountPassword.trim()) {
+            toast.error('Bitte Passwort eintragen.');
+            return;
+        }
+        setAccountSaving(true);
+        try {
+            const res = await fetch('/api/settings/email-account', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: accountEmail.trim(),
+                    password: accountPassword || undefined,
+                }),
+            });
+            if (res.ok) {
+                toast.success('E-Mail-Konto gespeichert.');
+                setAccountPassword('');
+                await loadSettings();
+                onSaved?.();
+            } else {
+                toast.error(await parseErrorMessage(res, 'E-Mail-Konto konnte nicht gespeichert werden.'));
+            }
+        } catch {
+            toast.error('Verbindung zum Server fehlgeschlagen.');
+        } finally {
+            setAccountSaving(false);
+        }
+    };
 
     const handleSaveSmtp = async () => {
         setSmtpSaving(true);
@@ -165,6 +247,65 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
             toast.error('Verbindung zum Server fehlgeschlagen.');
         } finally {
             setSmtpTesting(false);
+        }
+    };
+
+    const handleSaveImap = async () => {
+        setImapSaving(true);
+        try {
+            const res = await fetch('/api/settings/imap', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    host: imapSettings.host,
+                    port: imapSettings.port,
+                    username: imapSettings.username,
+                    password: imapPassword || undefined,
+                }),
+            });
+            if (res.ok) {
+                toast.success('IMAP-Einstellungen gespeichert.');
+                setImapPassword('');
+                await loadSettings();
+                onSaved?.();
+            } else {
+                toast.error(await parseErrorMessage(res, 'IMAP konnte nicht gespeichert werden.'));
+            }
+        } catch {
+            toast.error('Verbindung zum Server fehlgeschlagen.');
+        } finally {
+            setImapSaving(false);
+        }
+    };
+
+    const handleTestImap = async () => {
+        setImapTesting(true);
+        setImapTestResult(null);
+        try {
+            const res = await fetch('/api/settings/imap/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    host: imapSettings.host,
+                    port: imapSettings.port,
+                    username: imapSettings.username,
+                    password: imapPassword || undefined,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setImapTestResult(data);
+                if (data.success) toast.success(data.message);
+                else toast.error(data.message);
+            } else {
+                setImapTestResult({ success: false, message: 'IMAP-Test fehlgeschlagen.' });
+                toast.error('IMAP-Test fehlgeschlagen.');
+            }
+        } catch {
+            setImapTestResult({ success: false, message: 'Verbindung zum Server fehlgeschlagen.' });
+            toast.error('Verbindung zum Server fehlgeschlagen.');
+        } finally {
+            setImapTesting(false);
         }
     };
 
@@ -235,107 +376,361 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
 
     return (
         <div className="space-y-6">
+            {/* === Einfache Einrichtung: E-Mail-Konto === */}
             <Card className="p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
                     <Mail className="w-5 h-5 text-rose-600" />
-                    E-Mail Server (SMTP)
+                    E-Mail-Konto
                 </h3>
                 <p className="text-sm text-slate-500 mb-5">
-                    Für Rechnungen, Angebote und Benachrichtigungen muss ein erreichbarer SMTP-Server hinterlegt sein.
+                    E-Mail-Adresse und Passwort hinterlegen – damit kann das System E-Mails versenden (z.B. Rechnungen,
+                    Angebote) und neue Nachrichten aus Ihrem Postfach abholen.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <Label>SMTP Server</Label>
-                        <Input
-                            placeholder="z.B. smtp.ionos.de"
-                            value={smtpSettings.host}
-                            onChange={(e) => setSmtpSettings((prev) => ({ ...prev, host: e.target.value }))}
-                        />
-                    </div>
-                    <div>
-                        <Label>Port</Label>
-                        <Input
-                            type="number"
-                            value={smtpSettings.port}
-                            onChange={(e) => setSmtpSettings((prev) => ({ ...prev, port: parseInt(e.target.value, 10) || 465 }))}
-                        />
-                    </div>
-                    <div>
-                        <Label>Benutzername / E-Mail</Label>
+                        <Label>E-Mail-Adresse</Label>
                         <Input
                             placeholder="info@firma.de"
-                            value={smtpSettings.username}
-                            onChange={(e) => setSmtpSettings((prev) => ({ ...prev, username: e.target.value }))}
+                            value={accountEmail}
+                            onChange={(e) => setAccountEmail(e.target.value)}
+                            autoComplete="username"
                         />
                     </div>
                     <div>
                         <Label>
                             Passwort
-                            {smtpSettings.passwordSet && !smtpPassword && (
+                            {accountPasswordSet && !accountPassword && (
                                 <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
                             )}
                         </Label>
                         <div className="relative">
                             <Input
-                                type={smtpShowPassword ? 'text' : 'password'}
-                                value={smtpPassword}
-                                onChange={(e) => setSmtpPassword(e.target.value)}
-                                placeholder={smtpSettings.passwordSet ? '(leer lassen = unverändert)' : 'SMTP Passwort'}
+                                type={accountShowPassword ? 'text' : 'password'}
+                                value={accountPassword}
+                                onChange={(e) => setAccountPassword(e.target.value)}
+                                placeholder={accountPasswordSet ? '(leer lassen = unverändert)' : 'Mailbox-Passwort'}
+                                autoComplete="new-password"
                             />
                             <button
                                 type="button"
                                 className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                onClick={() => setSmtpShowPassword((prev) => !prev)}
+                                onClick={() => setAccountShowPassword((prev) => !prev)}
                             >
-                                {smtpShowPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                {accountShowPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-slate-100">
-                    <Label>Test-E-Mail Empfänger (optional)</Label>
-                    <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                        <Input
-                            placeholder="test@example.com"
-                            value={smtpTestRecipient}
-                            onChange={(e) => setSmtpTestRecipient(e.target.value)}
-                            className="sm:max-w-md"
-                        />
-                        <Button variant="outline" onClick={handleTestSmtp} disabled={smtpTesting || !smtpSettings.host}>
-                            {smtpTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
-                            {smtpTesting ? 'Teste...' : 'Server testen'}
-                        </Button>
-                    </div>
-
-                    {smtpTestResult && (
-                        <div
-                            className={cn(
-                                'mt-3 p-3 rounded-lg flex items-start gap-2 text-sm',
-                                smtpTestResult.success ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'
-                            )}
-                        >
-                            {smtpTestResult.success ? (
-                                <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            ) : (
-                                <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            )}
-                            {smtpTestResult.message}
-                        </div>
-                    )}
-                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                    Bei den meisten Anbietern (T-Online, IONOS, Strato, Gmail) sind Versand und Empfang mit den gleichen
+                    Zugangsdaten erreichbar. Für abweichende Server siehe „Server-Einstellungen (Erweitert)" unten.
+                </p>
 
                 <div className="flex justify-end mt-6">
                     <Button
-                        onClick={handleSaveSmtp}
-                        disabled={smtpSaving || !smtpSettings.host.trim() || !smtpSettings.username.trim()}
+                        onClick={handleSaveAccount}
+                        disabled={accountSaving || !accountEmail.trim() || (!accountPasswordSet && !accountPassword.trim())}
                         className="bg-rose-600 text-white hover:bg-rose-700"
                     >
-                        {smtpSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        SMTP speichern
+                        {accountSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        Konto speichern
                     </Button>
                 </div>
+            </Card>
+
+            {/* === Erweitert: Server-Einstellungen separat === */}
+            <Card className="p-0 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setAdvancedOpen((prev) => !prev)}
+                    className="w-full flex items-center justify-between gap-2 p-4 hover:bg-rose-50/50 transition-colors text-left"
+                >
+                    <div className="flex items-center gap-2">
+                        <Settings2 className="w-5 h-5 text-rose-600" />
+                        <span className="font-semibold text-slate-900">Server-Einstellungen (Erweitert)</span>
+                        <span className="text-xs text-slate-500 hidden sm:inline">
+                            – nur ändern wenn Sie wissen, was Sie tun
+                        </span>
+                    </div>
+                    {advancedOpen ? (
+                        <ChevronUp className="w-5 h-5 text-slate-500" />
+                    ) : (
+                        <ChevronDown className="w-5 h-5 text-slate-500" />
+                    )}
+                </button>
+
+                {advancedOpen && (
+                    <div className="border-t border-slate-100 p-6 space-y-8">
+                        {/* SMTP (Versand) */}
+                        <section>
+                            <h4 className="text-base font-semibold text-slate-900 mb-1 flex items-center gap-2">
+                                <Send className="w-4 h-4 text-rose-600" />
+                                Versand-Server (SMTP)
+                            </h4>
+                            <p className="text-sm text-slate-500 mb-4">
+                                Wird genutzt, um E-Mails aus dem System zu verschicken.
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <Label>SMTP Server</Label>
+                                    <Input
+                                        placeholder="z.B. securesmtp.t-online.de"
+                                        value={smtpSettings.host}
+                                        onChange={(e) => setSmtpSettings((prev) => ({ ...prev, host: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Port</Label>
+                                    <Input
+                                        type="number"
+                                        value={smtpSettings.port}
+                                        onChange={(e) =>
+                                            setSmtpSettings((prev) => ({
+                                                ...prev,
+                                                port: parseInt(e.target.value, 10) || 465,
+                                            }))
+                                        }
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">465 = SSL (empfohlen), 587 = STARTTLS</p>
+                                </div>
+                                <div>
+                                    <Label>Benutzername / E-Mail</Label>
+                                    <Input
+                                        placeholder="info@firma.de"
+                                        value={smtpSettings.username}
+                                        onChange={(e) =>
+                                            setSmtpSettings((prev) => ({ ...prev, username: e.target.value }))
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <Label>
+                                        Passwort
+                                        {smtpSettings.passwordSet && !smtpPassword && (
+                                            <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
+                                        )}
+                                    </Label>
+                                    <div className="relative">
+                                        <Input
+                                            type={smtpShowPassword ? 'text' : 'password'}
+                                            value={smtpPassword}
+                                            onChange={(e) => setSmtpPassword(e.target.value)}
+                                            placeholder={
+                                                smtpSettings.passwordSet
+                                                    ? '(leer lassen = unverändert)'
+                                                    : 'SMTP Passwort'
+                                            }
+                                            autoComplete="new-password"
+                                        />
+                                        <button
+                                            type="button"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                            onClick={() => setSmtpShowPassword((prev) => !prev)}
+                                        >
+                                            {smtpShowPassword ? (
+                                                <EyeOff className="w-4 h-4" />
+                                            ) : (
+                                                <Eye className="w-4 h-4" />
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 pt-4 border-t border-slate-100">
+                                <Label>Test-E-Mail Empfänger (optional)</Label>
+                                <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                                    <Input
+                                        placeholder="test@example.com"
+                                        value={smtpTestRecipient}
+                                        onChange={(e) => setSmtpTestRecipient(e.target.value)}
+                                        className="sm:max-w-md"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        onClick={handleTestSmtp}
+                                        disabled={smtpTesting || !smtpSettings.host}
+                                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    >
+                                        {smtpTesting ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                            <TestTube className="w-4 h-4" />
+                                        )}
+                                        {smtpTesting ? 'Teste...' : 'SMTP testen'}
+                                    </Button>
+                                </div>
+
+                                {smtpTestResult && (
+                                    <div
+                                        className={cn(
+                                            'mt-3 p-3 rounded-lg flex items-start gap-2 text-sm',
+                                            smtpTestResult.success
+                                                ? 'bg-emerald-50 text-emerald-800'
+                                                : 'bg-red-50 text-red-800'
+                                        )}
+                                    >
+                                        {smtpTestResult.success ? (
+                                            <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                        ) : (
+                                            <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                        )}
+                                        {smtpTestResult.message}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex justify-end mt-6">
+                                <Button
+                                    onClick={handleSaveSmtp}
+                                    disabled={
+                                        smtpSaving || !smtpSettings.host.trim() || !smtpSettings.username.trim()
+                                    }
+                                    className="bg-rose-600 text-white hover:bg-rose-700"
+                                >
+                                    {smtpSaving ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <Save className="w-4 h-4" />
+                                    )}
+                                    SMTP speichern
+                                </Button>
+                            </div>
+                        </section>
+
+                        {/* IMAP (Empfang) */}
+                        <section className="pt-6 border-t border-slate-100">
+                            <h4 className="text-base font-semibold text-slate-900 mb-1 flex items-center gap-2">
+                                <Inbox className="w-4 h-4 text-rose-600" />
+                                Empfangs-Server (IMAP)
+                            </h4>
+                            <p className="text-sm text-slate-500 mb-4">
+                                Wird genutzt, um neue Nachrichten aus Ihrem Postfach in das System zu importieren.
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <Label>IMAP Server</Label>
+                                    <Input
+                                        placeholder="z.B. secureimap.t-online.de"
+                                        value={imapSettings.host}
+                                        onChange={(e) => setImapSettings((prev) => ({ ...prev, host: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Port</Label>
+                                    <Input
+                                        type="number"
+                                        value={imapSettings.port}
+                                        onChange={(e) =>
+                                            setImapSettings((prev) => ({
+                                                ...prev,
+                                                port: parseInt(e.target.value, 10) || 993,
+                                            }))
+                                        }
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">993 = SSL (empfohlen)</p>
+                                </div>
+                                <div>
+                                    <Label>Benutzername / E-Mail</Label>
+                                    <Input
+                                        placeholder="info@firma.de"
+                                        value={imapSettings.username}
+                                        onChange={(e) =>
+                                            setImapSettings((prev) => ({ ...prev, username: e.target.value }))
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <Label>
+                                        Passwort
+                                        {imapSettings.passwordSet && !imapPassword && (
+                                            <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
+                                        )}
+                                    </Label>
+                                    <div className="relative">
+                                        <Input
+                                            type={imapShowPassword ? 'text' : 'password'}
+                                            value={imapPassword}
+                                            onChange={(e) => setImapPassword(e.target.value)}
+                                            placeholder={
+                                                imapSettings.passwordSet
+                                                    ? '(leer lassen = unverändert)'
+                                                    : 'IMAP Passwort'
+                                            }
+                                            autoComplete="new-password"
+                                        />
+                                        <button
+                                            type="button"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                            onClick={() => setImapShowPassword((prev) => !prev)}
+                                        >
+                                            {imapShowPassword ? (
+                                                <EyeOff className="w-4 h-4" />
+                                            ) : (
+                                                <Eye className="w-4 h-4" />
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-2 sm:items-center">
+                                <Button
+                                    variant="outline"
+                                    onClick={handleTestImap}
+                                    disabled={imapTesting || !imapSettings.host || !imapSettings.username}
+                                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                >
+                                    {imapTesting ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <TestTube className="w-4 h-4" />
+                                    )}
+                                    {imapTesting ? 'Teste...' : 'IMAP testen'}
+                                </Button>
+
+                                {imapTestResult && (
+                                    <div
+                                        className={cn(
+                                            'p-3 rounded-lg flex items-start gap-2 text-sm flex-1',
+                                            imapTestResult.success
+                                                ? 'bg-emerald-50 text-emerald-800'
+                                                : 'bg-red-50 text-red-800'
+                                        )}
+                                    >
+                                        {imapTestResult.success ? (
+                                            <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                        ) : (
+                                            <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                        )}
+                                        {imapTestResult.message}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex justify-end mt-6">
+                                <Button
+                                    onClick={handleSaveImap}
+                                    disabled={
+                                        imapSaving || !imapSettings.host.trim() || !imapSettings.username.trim()
+                                    }
+                                    className="bg-rose-600 text-white hover:bg-rose-700"
+                                >
+                                    {imapSaving ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <Save className="w-4 h-4" />
+                                    )}
+                                    IMAP speichern
+                                </Button>
+                            </div>
+                        </section>
+                    </div>
+                )}
             </Card>
 
             <Card className="p-6">

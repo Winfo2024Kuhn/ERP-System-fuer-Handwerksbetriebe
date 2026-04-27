@@ -94,9 +94,6 @@ public class LocalRagService {
     private final CopyOnWriteArrayList<ChunkEntry> vectorStore = new CopyOnWriteArrayList<>();
     private volatile boolean ready = false;
 
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
-
     @Value("${ai.rag.enabled:false}")
     private boolean ragEnabled;
 
@@ -109,8 +106,11 @@ public class LocalRagService {
     @Value("${user.dir}")
     private String projectRoot;
 
-    public LocalRagService(ObjectMapper objectMapper) {
+    private final SystemSettingsService systemSettingsService;
+
+    public LocalRagService(ObjectMapper objectMapper, SystemSettingsService systemSettingsService) {
         this.objectMapper = objectMapper;
+        this.systemSettingsService = systemSettingsService;
     }
 
     // ── Data structures ──
@@ -302,6 +302,8 @@ public class LocalRagService {
             log.info("Lokales RAG ist deaktiviert (ai.rag.enabled=false)");
             return;
         }
+        // Key zur Laufzeit aus System-Setup lesen.
+        String geminiApiKey = systemSettingsService.getGeminiApiKey();
         if (geminiApiKey == null || geminiApiKey.isBlank()) {
             log.warn("Lokales RAG: Gemini API Key fehlt, RAG deaktiviert");
             ragEnabled = false;
@@ -638,7 +640,7 @@ public class LocalRagService {
     }
 
     private double[] embedSingle(String text, String taskType) throws IOException, InterruptedException {
-        String url = GEMINI_EMBED_URL.formatted(geminiApiKey);
+        String url = GEMINI_EMBED_URL.formatted(systemSettingsService.getGeminiApiKey());
 
         ObjectNode body = objectMapper.createObjectNode();
         ObjectNode content = objectMapper.createObjectNode();
@@ -671,7 +673,7 @@ public class LocalRagService {
     }
 
     private List<double[]> embedBatch(List<String> texts) throws IOException, InterruptedException {
-        String url = GEMINI_BATCH_EMBED_URL.formatted(geminiApiKey);
+        String url = GEMINI_BATCH_EMBED_URL.formatted(systemSettingsService.getGeminiApiKey());
 
         ObjectNode body = objectMapper.createObjectNode();
         ArrayNode requests = objectMapper.createArrayNode();

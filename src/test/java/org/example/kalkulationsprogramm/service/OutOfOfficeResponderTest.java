@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.email.ImapAppendService;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.OutOfOfficeSchedule;
 import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
@@ -7,7 +8,6 @@ import org.example.kalkulationsprogramm.service.mail.HtmlMailSender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.File;
 import java.time.LocalDate;
@@ -22,6 +22,8 @@ class OutOfOfficeResponderTest {
     private OutOfOfficeScheduleRepository repository;
     private EmailSignatureService emailSignatureService;
     private HtmlMailSender mailSender;
+    private SystemSettingsService systemSettingsService;
+    private ImapAppendService imapAppendService;
     private OutOfOfficeResponder responder;
 
     @BeforeEach
@@ -29,9 +31,11 @@ class OutOfOfficeResponderTest {
         repository = mock(OutOfOfficeScheduleRepository.class);
         emailSignatureService = mock(EmailSignatureService.class);
         mailSender = mock(HtmlMailSender.class);
+        systemSettingsService = mock(SystemSettingsService.class);
+        imapAppendService = mock(ImapAppendService.class);
+        when(systemSettingsService.getSmtpUsername()).thenReturn("info@example.com");
 
-        responder = new OutOfOfficeResponder(repository, emailSignatureService, mailSender);
-        ReflectionTestUtils.setField(responder, "defaultFromAddress", "info@example.com");
+        responder = new OutOfOfficeResponder(repository, emailSignatureService, mailSender, systemSettingsService, imapAppendService);
     }
 
     @Test
@@ -53,11 +57,11 @@ class OutOfOfficeResponderTest {
         when(emailSignatureService.renderSignatureHtmlForEmail(signature, null)).thenReturn("<div>LG</div>");
         when(emailSignatureService.buildInlineCidFileMap(signature)).thenReturn(Map.of());
 
-        responder.handleIncomingEmail("kunde@example.com", "Ihre Anfrage");
+        responder.handleIncomingEmail("kunde@kundenfirma.de", "Ihre Anfrage");
 
         ArgumentCaptor<String> subjectCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(mailSender).send(eq("info@example.com"), eq("kunde@example.com"), subjectCaptor.capture(), bodyCaptor.capture(), eq(Map.<String, File>of()));
+        verify(mailSender).send(eq("info@example.com"), eq("kunde@kundenfirma.de"), subjectCaptor.capture(), bodyCaptor.capture(), eq(Map.<String, File>of()));
         assertThat(subjectCaptor.getValue()).contains("Betriebsurlaub");
         assertThat(bodyCaptor.getValue()).contains("Ich bin von");
         assertThat(bodyCaptor.getValue()).contains("<div>LG</div>");
@@ -68,8 +72,25 @@ class OutOfOfficeResponderTest {
         when(repository.findFirstByActiveTrueAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderByStartAtDesc(any(), any()))
                 .thenReturn(Optional.empty());
 
-        responder.handleIncomingEmail("kunde@example.com", "Anfrage");
+        responder.handleIncomingEmail("kunde@kundenfirma.de", "Anfrage");
 
         verifyNoInteractions(mailSender);
+    }
+
+    /**
+     * Regression: Auto-Reply darf niemals an RFC 2606 reservierte Test-Domains
+     * (example.com, .test, .invalid, .localhost) versendet werden. Verhindert,
+     * dass aus Test-/Demo-Daten echte Mails entstehen, die in einem echten
+     * Postfach landen koennten.
+     */
+    @Test
+    void skipsWhenSenderIsReservedTestDomain() {
+        responder.handleIncomingEmail("kunde@example.com", "Test");
+        responder.handleIncomingEmail("user@subdomain.test", "Test");
+        responder.handleIncomingEmail("foo@localhost", "Test");
+
+        verifyNoInteractions(mailSender);
+        // Schedule wird gar nicht erst abgefragt (Guard kommt davor)
+        verifyNoInteractions(repository);
     }
 }

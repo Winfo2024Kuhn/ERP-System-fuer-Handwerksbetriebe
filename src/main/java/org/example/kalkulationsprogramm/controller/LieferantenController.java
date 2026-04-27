@@ -74,6 +74,8 @@ public class LieferantenController {
 
     private final LieferantenRepository lieferantenRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
+    private final org.example.kalkulationsprogramm.repository.KostenstelleRepository kostenstelleRepository;
+    private final org.example.kalkulationsprogramm.service.LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     private final LieferantMapper lieferantMapper;
     private final LieferantEmailResolver lieferantEmailResolver;
     private final LieferantenDetailService lieferantenDetailService;
@@ -181,6 +183,7 @@ public class LieferantenController {
         lieferant.setIstAktiv(request.getIstAktiv() != null ? request.getIstAktiv() : Boolean.TRUE);
         lieferant.setStartZusammenarbeit(toDate(request.getStartZusammenarbeit()));
         lieferant.setKundenEmails(new ArrayList<>(normalizeEmails(request.getKundenEmails())));
+        lieferant.setStandardKostenstelle(resolveKostenstelle(request.getStandardKostenstelleId()));
 
         Lieferanten saved = lieferantenRepository.save(lieferant);
         try {
@@ -223,6 +226,7 @@ public class LieferantenController {
         lieferant.setIstAktiv(request.getIstAktiv() != null ? request.getIstAktiv() : Boolean.TRUE);
         lieferant.setStartZusammenarbeit(toDate(request.getStartZusammenarbeit()));
         lieferant.setKundenEmails(new ArrayList<>(normalizeEmails(request.getKundenEmails())));
+        lieferant.setStandardKostenstelle(resolveKostenstelle(request.getStandardKostenstelleId()));
 
         lieferantenRepository.save(lieferant);
         try {
@@ -500,6 +504,15 @@ public class LieferantenController {
             return null;
         }
         return Date.from(value.atStartOfDay(ZoneId.systemDefault()).toInstant());
+    }
+
+    private org.example.kalkulationsprogramm.domain.Kostenstelle resolveKostenstelle(Long id) {
+        if (id == null) {
+            return null;
+        }
+        return kostenstelleRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Kostenstelle mit ID " + id + " nicht gefunden."));
     }
 
     private List<String> normalizeEmails(List<String> emails) {
@@ -852,7 +865,14 @@ public class LieferantenController {
                 // Log but don't fail
             }
 
-            // 5. DTO zurückgeben
+            // 5. Auto-Zuweisung der Standard-Kostenstelle (falls beim Lieferanten hinterlegt)
+            try {
+                standardKostenstelleAutoAssigner.applyIfApplicable(dokument);
+            } catch (Exception e) {
+                // Log but don't fail
+            }
+
+            // 6. DTO zurückgeben
             return ResponseEntity.ok(dokumentService.getDokumentById(dokument.getId()));
 
         } catch (Exception e) {

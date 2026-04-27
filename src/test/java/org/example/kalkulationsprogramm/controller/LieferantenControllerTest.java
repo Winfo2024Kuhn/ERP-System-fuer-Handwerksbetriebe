@@ -76,6 +76,10 @@ class LieferantenControllerTest {
   private LieferantNotizRepository lieferantNotizRepository;
   @MockBean
   private LieferantBildRepository lieferantBildRepository;
+  @MockBean
+  private org.example.kalkulationsprogramm.repository.KostenstelleRepository kostenstelleRepository;
+  @MockBean
+  private org.example.kalkulationsprogramm.service.LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
 
   @Test
   void returnsAllEmails() throws Exception {

@@ -38,6 +38,7 @@ public class EmailAttachmentProcessingService {
     private final LieferantenRepository lieferantenRepository;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final GeminiDokumentAnalyseService geminiAnalyseService;
+    private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
 
     // Self-injection für transactional proxy calls auf eigene Methoden
     // Setter-Injection um zirkuläre Abhängigkeit zu vermeiden
@@ -192,6 +193,14 @@ public class EmailAttachmentProcessingService {
         // Relink Logic (nachträgliche Verknüpfung)
         if (geschaeftsdaten != null) {
             geminiAnalyseService.performRelink(dokument);
+        }
+
+        // Auto-Zuweisung der Standard-Kostenstelle (falls beim Lieferanten hinterlegt)
+        try {
+            standardKostenstelleAutoAssigner.applyIfApplicable(dokument);
+        } catch (Exception e) {
+            log.warn("Auto-Zuweisung Standard-Kostenstelle fehlgeschlagen für Dokument {}: {}",
+                    dokument.getId(), e.getMessage());
         }
 
         // 5. Attachment verknüpfen

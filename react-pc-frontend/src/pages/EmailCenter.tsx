@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import {
@@ -38,10 +38,7 @@ import {
     FolderInput,
     ArrowDownAZ,
     ArrowUpAZ,
-    CheckCircle2,
-    Loader2,
-    Scale,
-    Sparkles
+    CheckCircle2
 } from 'lucide-react';
 import {
     DndContext,
@@ -65,7 +62,6 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { EmailThreadView } from '../components/EmailThreadView';
 import type { EmailThread } from '../components/EmailThreadView';
-import { PreiseEintragenModal } from '../components/PreiseEintragenModal';
 
 
 /** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
@@ -116,20 +112,6 @@ interface EmailItem {
     parentEmailId?: number;   // null/undefined = Thread-Wurzel
     replyCount?: number;      // Anzahl direkter Antworten
     isStarred?: boolean;
-    // Rückverweis auf Preisanfrage-Lieferant (wenn Mail als Antwort zugeordnet ist)
-    preisanfrageLieferantRef?: PreisanfrageLieferantRef;
-}
-
-/**
- * Backend-Feld `preisanfrageLieferantRef` aus UnifiedEmailDto. Wird gefüllt, wenn
- * diese E-Mail als Antwort auf eine versendete Preisanfrage erkannt wurde.
- */
-interface PreisanfrageLieferantRef {
-    preisanfrageId: number;
-    preisanfrageNummer?: string;
-    palId: number;
-    lieferantId?: number;
-    lieferantenname?: string;
 }
 
 // Folder Types
@@ -435,13 +417,15 @@ function DroppableFolderButton({
 
 interface DraggableEmailWrapperProps {
     emailId: number;
+    disabled?: boolean;
     children: React.ReactNode;
 }
 
-function DraggableEmailWrapper({ emailId, children }: DraggableEmailWrapperProps) {
+function DraggableEmailWrapper({ emailId, disabled, children }: DraggableEmailWrapperProps) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `email-${emailId}`,
-        data: { emailId }
+        data: { emailId },
+        disabled
     });
     return (
         <div
@@ -488,7 +472,7 @@ export default function EmailCenter() {
     const deepLinkFolderSwitchRef = useRef(false);
 
     // Folder cache: stale-while-revalidate – show cached data instantly, refresh in background
-    const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; timestamp: number; hasMore?: boolean; totalElements?: number }>>(new Map());
+    const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; timestamp: number }>>(new Map());
     // Ref to guard against stale async responses when switching folders quickly
     const activeFolderRef = useRef<FolderType>(activeFolder);
     // IDs die gerade optimistisch entfernt werden (Spam, Löschen, Blockieren) – verhindert
@@ -515,7 +499,6 @@ export default function EmailCenter() {
     const [replyToEmailId, setReplyToEmailId] = useState<number | undefined>(undefined);
 
     const [showAssignModal, setShowAssignModal] = useState(false);
-    const [preiseEintragenTarget, setPreiseEintragenTarget] = useState<PreisanfrageLieferantRef | null>(null);
     const [folderCounts, setFolderCounts] = useState({
         inbox: 0, sent: 0, drafts: 0, trash: 0, spam: 0, newsletter: 0,
         starred: 0, projects: 0, offers: 0, suppliers: 0, unassigned: 0
@@ -524,16 +507,8 @@ export default function EmailCenter() {
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
     const [showSettings, setShowSettings] = useState(false);
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+    const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all');
     const [forwardEmail, setForwardEmail] = useState<EmailItem | null>(null);
-
-    // Pagination state for infinite scroll
-    const PAGE_SIZE = 50;
-    const [, setCurrentPage] = useState(0);
-    const [hasMore, setHasMore] = useState(false);
-    const [loadingMore, setLoadingMore] = useState(false);
-    const [totalElements, setTotalElements] = useState(0);
-    const currentPageRef = useRef(0);
-    const sentinelRef = useRef<HTMLDivElement>(null);
 
     // Drafts
     interface DraftItem { id: number; recipient?: string; cc?: string; subject?: string; body?: string; fromAddress?: string; replyEmailId?: number; projektId?: number; anfrageId?: number; updatedAt?: string; }
@@ -691,16 +666,12 @@ export default function EmailCenter() {
         }
     };
 
-    // Load emails based on folder and filter – stale-while-revalidate with pagination
+    // Load emails based on folder and filter – stale-while-revalidate
     const loadEmails = useCallback(async () => {
         const folderAtCallTime = activeFolder;
         if (activeFolder === 'drafts') {
             setEmails([]);
             setLoading(false);
-            setHasMore(false);
-            setTotalElements(0);
-            setCurrentPage(0);
-            currentPageRef.current = 0;
             return;
         }
 
@@ -722,11 +693,10 @@ export default function EmailCenter() {
         const cached = folderCacheRef.current.get(activeFolder);
         if (cached) {
             setEmails(cached.emails);
-            setHasMore(cached.hasMore ?? false);
-            setTotalElements(cached.totalElements ?? cached.emails.length);
             // Only show loading spinner if cache is older than 2 minutes
             const isStale = Date.now() - cached.timestamp > 120_000;
             if (!isStale) {
+                // Fresh enough – still revalidate silently
                 setLoading(false);
             } else {
                 setLoading(true);
@@ -735,22 +705,16 @@ export default function EmailCenter() {
             setLoading(true);
         }
 
-        // Reset pagination for fresh load
-        setCurrentPage(0);
-        currentPageRef.current = 0;
-
         try {
-            const res = await fetch(`${endpoint}?page=0&size=${PAGE_SIZE}&sortDir=${sortOrder}`);
+            const res = await fetch(endpoint);
             if (activeFolderRef.current !== folderAtCallTime) return; // folder changed, discard stale response
             if (res.ok) {
-                const responseData = await res.json();
-                let emailList: EmailItem[] = responseData.content || [];
-                const serverHasMore = responseData.hasMore ?? false;
-                const serverTotal = responseData.totalElements ?? emailList.length;
+                let data = await res.json();
+                if (!Array.isArray(data)) data = [];
 
                 // Fix: Zugeordnete Emails dürfen niemals in Spam oder Newsletter landen
                 if (activeFolder === 'spam' || activeFolder === 'newsletter') {
-                    emailList = emailList.filter((email: EmailItem) => {
+                    data = data.filter((email: EmailItem) => {
                         const hasAssignment =
                             (email.zuordnungTyp && email.zuordnungTyp !== 'KEINE') ||
                             email.projektId ||
@@ -760,25 +724,18 @@ export default function EmailCenter() {
                     });
                 }
 
-                setEmails(emailList);
-                setHasMore(serverHasMore);
-                setTotalElements(serverTotal);
-                folderCacheRef.current.set(activeFolder, {
-                    emails: emailList, timestamp: Date.now(),
-                    hasMore: serverHasMore, totalElements: serverTotal
-                });
+                setEmails(data);
+                folderCacheRef.current.set(activeFolder, { emails: data, timestamp: Date.now() });
             } else {
                 if (!cached) setEmails([]);
-                setHasMore(false);
             }
         } catch (err) {
             console.error('Failed to load emails', err);
             if (!cached) setEmails([]);
-            setHasMore(false);
         } finally {
             setLoading(false);
         }
-    }, [activeFolder, sortOrder]);
+    }, [activeFolder]);
 
     // Load stats for folder counts
     const loadStats = useCallback(async () => {
@@ -834,16 +791,14 @@ export default function EmailCenter() {
                 'unassigned': '/api/emails/unassigned',
             };
             const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
-            // Refresh all pages the user has loaded so far
-            const loadedPages = currentPageRef.current + 1;
-            const res = await fetch(`${endpoint}?page=0&size=${loadedPages * PAGE_SIZE}&sortDir=${sortOrder}`);
+            const res = await fetch(endpoint);
             if (activeFolderRef.current !== activeFolder) return; // folder changed, discard stale response
             if (res.ok) {
-                const responseData = await res.json();
-                let emailList: EmailItem[] = responseData.content || [];
+                let data = await res.json();
+                if (!Array.isArray(data)) data = [];
 
                 if (activeFolder === 'spam' || activeFolder === 'newsletter') {
-                    emailList = emailList.filter((email: EmailItem) => {
+                    data = data.filter((email: EmailItem) => {
                         const hasAssignment =
                             (email.zuordnungTyp && email.zuordnungTyp !== 'KEINE') ||
                             email.projektId ||
@@ -853,80 +808,13 @@ export default function EmailCenter() {
                     });
                 }
 
-                setEmails(emailList);
-                setHasMore(responseData.hasMore ?? false);
-                setTotalElements(responseData.totalElements ?? emailList.length);
-                folderCacheRef.current.set(activeFolder, {
-                    emails: emailList, timestamp: Date.now(),
-                    hasMore: responseData.hasMore ?? false,
-                    totalElements: responseData.totalElements ?? emailList.length
-                });
+                setEmails(data);
+                folderCacheRef.current.set(activeFolder, { emails: data, timestamp: Date.now() });
             }
         } catch (err) {
             console.error('Silent refresh failed', err);
         }
-    }, [activeFolder, loadDrafts, sortOrder]);
-
-    // Load more emails (next page) for infinite scroll
-    const loadMoreEmails = useCallback(async () => {
-        if (loadingMore || !hasMore || activeFolder === 'drafts') return;
-        setLoadingMore(true);
-        const nextPage = currentPageRef.current + 1;
-        const endpointMap: Record<string, string> = {
-            'inbox': '/api/emails/inbox',
-            'sent': '/api/emails/sent',
-            'trash': '/api/emails/trash',
-            'spam': '/api/emails/spam',
-            'newsletter': '/api/emails/newsletter',
-            'starred': '/api/emails/starred',
-            'projects': '/api/emails/projects',
-            'offers': '/api/emails/offers',
-            'suppliers': '/api/emails/suppliers',
-            'unassigned': '/api/emails/unassigned',
-        };
-        const endpoint = endpointMap[activeFolder] || '/api/emails/inbox';
-        try {
-            const res = await fetch(`${endpoint}?page=${nextPage}&size=${PAGE_SIZE}&sortDir=${sortOrder}`);
-            if (activeFolderRef.current !== activeFolder) return;
-            if (res.ok) {
-                const responseData = await res.json();
-                let newEmails: EmailItem[] = responseData.content || [];
-
-                if (activeFolder === 'spam' || activeFolder === 'newsletter') {
-                    newEmails = newEmails.filter((email: EmailItem) => {
-                        const hasAssignment =
-                            (email.zuordnungTyp && email.zuordnungTyp !== 'KEINE') ||
-                            email.projektId ||
-                            email.anfrageId ||
-                            email.lieferantId;
-                        return !hasAssignment;
-                    });
-                }
-
-                setEmails(prev => [...prev, ...newEmails]);
-                setHasMore(responseData.hasMore ?? false);
-                setTotalElements(responseData.totalElements ?? 0);
-                setCurrentPage(nextPage);
-                currentPageRef.current = nextPage;
-            }
-        } catch (err) {
-            console.error('Failed to load more emails', err);
-        } finally {
-            setLoadingMore(false);
-        }
-    }, [loadingMore, hasMore, activeFolder, sortOrder]);
-
-    // IntersectionObserver for infinite scroll sentinel
-    useEffect(() => {
-        const sentinel = sentinelRef.current;
-        if (!sentinel) return;
-        const observer = new IntersectionObserver(
-            ([entry]) => { if (entry.isIntersecting) loadMoreEmails(); },
-            { rootMargin: '300px' }
-        );
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, [loadMoreEmails]);
+    }, [activeFolder, loadDrafts]);
 
     // Load emails + stats when folder changes (single effect, no duplicates)
     // Drafts werden immer geladen, damit das Entwurf-Badge in allen Ordnern sichtbar ist
@@ -1547,12 +1435,6 @@ export default function EmailCenter() {
         let base: EmailItem[];
         if (isGlobalSearch) {
             base = globalSearchResults;
-            // Global search is not paginated – sort client-side
-            return [...base].sort((a, b) => {
-                const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
-                const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
-                return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-            });
         } else if (!searchQuery.trim()) {
             base = emails.filter(e => !e.parentEmailId);
         } else {
@@ -1561,13 +1443,23 @@ export default function EmailCenter() {
                 !e.parentEmailId && (
                     e.subject?.toLowerCase().includes(q) ||
                     e.fromAddress?.toLowerCase().includes(q) ||
-                    getSenderName(e).toLowerCase().includes(q)
+                    e.recipient?.toLowerCase().includes(q) ||
+                    e.body?.toLowerCase().includes(q) ||
+                    getDisplayName(e).toLowerCase().includes(q)
                 )
             );
         }
-        // Backend already handles sort order – preserve order
-        return base;
-    }, [emails, searchQuery, isGlobalSearch, globalSearchResults, sortOrder]);
+        // Filter nach Lese-Status (Gesendet/Entwürfe haben kein sinnvolles Read-Konzept)
+        if (readFilter !== 'all' && activeFolder !== 'sent') {
+            base = base.filter(e => readFilter === 'unread' ? !e.isRead : !!e.isRead);
+        }
+        // Sort by date
+        return [...base].sort((a, b) => {
+            const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+            const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+    }, [emails, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder]);
 
     const filteredDrafts = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
@@ -1720,14 +1612,16 @@ export default function EmailCenter() {
                     </div>
 
                     <div className="flex flex-col gap-2 w-full max-w-xs">
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowAssignModal(true)}
-                            className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                        >
-                            <FolderPlus className="w-4 h-4" />
-                            Zuordnen ({selectedIds.size})
-                        </Button>
+                        {activeFolder !== 'sent' && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowAssignModal(true)}
+                                className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                            >
+                                <FolderPlus className="w-4 h-4" />
+                                Zuordnen ({selectedIds.size})
+                            </Button>
+                        )}
 
                         {activeFolder === 'trash' && (
                             <Button
@@ -1740,25 +1634,27 @@ export default function EmailCenter() {
                             </Button>
                         )}
 
-                        {/* Verschieben nach – alle 4 Ordner außer dem aktuellen */}
-                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2 space-y-1">
-                            <div className="flex items-center gap-1.5 px-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                <FolderInput className="w-3 h-3" />
-                                Verschieben nach
+                        {/* Verschieben nach – im Gesendet-Ordner ausgeblendet */}
+                        {activeFolder !== 'sent' && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2 space-y-1">
+                                <div className="flex items-center gap-1.5 px-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                    <FolderInput className="w-3 h-3" />
+                                    Verschieben nach
+                                </div>
+                                <div className="grid grid-cols-2 gap-1">
+                                    {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
+                                        <button
+                                            key={t.id}
+                                            onClick={() => handleMoveToFolder(t.id, bulkIds)}
+                                            className="flex items-center gap-1.5 px-2 py-2 rounded-md text-xs font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 border border-transparent hover:border-rose-200 transition-all cursor-pointer"
+                                        >
+                                            <t.icon className="w-3.5 h-3.5" />
+                                            <span className="truncate">{t.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
-                                    <button
-                                        key={t.id}
-                                        onClick={() => handleMoveToFolder(t.id, bulkIds)}
-                                        className="flex items-center gap-1.5 px-2 py-2 rounded-md text-xs font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 border border-transparent hover:border-rose-200 transition-all cursor-pointer"
-                                    >
-                                        <t.icon className="w-3.5 h-3.5" />
-                                        <span className="truncate">{t.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                        )}
 
                         {activeFolder === 'spam' ? (
                             <Button
@@ -1796,7 +1692,7 @@ export default function EmailCenter() {
                                     Newsletter bestätigen ({selectedIds.size})
                                 </Button>
                             </>
-                        ) : activeFolder !== 'trash' && (
+                        ) : activeFolder !== 'trash' && activeFolder !== 'sent' && (
                             <Button
                                 variant="outline"
                                 onClick={() => handleMarkSpam(bulkIds)}
@@ -1807,14 +1703,16 @@ export default function EmailCenter() {
                             </Button>
                         )}
 
-                        <Button
-                            variant="outline"
-                            onClick={() => handleBlockSender(bulkIds)}
-                            className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
-                        >
-                            <ShieldAlert className="w-4 h-4" />
-                            Absender sperren ({selectedIds.size})
-                        </Button>
+                        {activeFolder !== 'sent' && (
+                            <Button
+                                variant="outline"
+                                onClick={() => handleBlockSender(bulkIds)}
+                                className="w-full gap-2 justify-start h-11 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                            >
+                                <ShieldAlert className="w-4 h-4" />
+                                Absender sperren ({selectedIds.size})
+                            </Button>
+                        )}
 
                         <div className="h-px bg-slate-200 my-1" />
 
@@ -1894,46 +1792,48 @@ export default function EmailCenter() {
                                         Wiederherstellen
                                     </Button>
                                 )}
-                                {/* Verschieben nach – Dropdown */}
-                                <div className="relative">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setMoveMenuAt(moveMenuAt === 'detail' ? null : 'detail')}
-                                        className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1"
-                                        title="Verschieben nach..."
-                                    >
-                                        <FolderInput className="w-4 h-4" />
-                                        <ChevronDown className="w-3 h-3" />
-                                    </Button>
-                                    {moveMenuAt === 'detail' && (
-                                        <>
-                                            <div
-                                                className="fixed inset-0 z-40"
-                                                onClick={() => setMoveMenuAt(null)}
-                                            />
-                                            <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 p-1.5 z-50 min-w-[200px]">
-                                                <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                                    <FolderInput className="w-3 h-3" />
-                                                    Verschieben nach
+                                {/* Verschieben nach – Dropdown (im Gesendet-Ordner ausgeblendet) */}
+                                {activeFolder !== 'sent' && (
+                                    <div className="relative">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setMoveMenuAt(moveMenuAt === 'detail' ? null : 'detail')}
+                                            className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1"
+                                            title="Verschieben nach..."
+                                        >
+                                            <FolderInput className="w-4 h-4" />
+                                            <ChevronDown className="w-3 h-3" />
+                                        </Button>
+                                        {moveMenuAt === 'detail' && (
+                                            <>
+                                                <div
+                                                    className="fixed inset-0 z-40"
+                                                    onClick={() => setMoveMenuAt(null)}
+                                                />
+                                                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 p-1.5 z-50 min-w-[200px]">
+                                                    <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                        <FolderInput className="w-3 h-3" />
+                                                        Verschieben nach
+                                                    </div>
+                                                    {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
+                                                        <button
+                                                            key={t.id}
+                                                            onClick={() => {
+                                                                setMoveMenuAt(null);
+                                                                handleMoveToFolder(t.id, [selectedEmail.id]);
+                                                            }}
+                                                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
+                                                        >
+                                                            <t.icon className="w-4 h-4 text-rose-500" />
+                                                            {t.label}
+                                                        </button>
+                                                    ))}
                                                 </div>
-                                                {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
-                                                    <button
-                                                        key={t.id}
-                                                        onClick={() => {
-                                                            setMoveMenuAt(null);
-                                                            handleMoveToFolder(t.id, [selectedEmail.id]);
-                                                        }}
-                                                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
-                                                    >
-                                                        <t.icon className="w-4 h-4 text-rose-500" />
-                                                        {t.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
                                 {activeFolder === 'spam' ? (
                                     <Button
                                         variant="ghost"
@@ -1974,7 +1874,7 @@ export default function EmailCenter() {
                                             <CheckCircle2 className="w-4 h-4" />
                                         </Button>
                                     </>
-                                ) : activeFolder !== 'trash' && (
+                                ) : activeFolder !== 'trash' && activeFolder !== 'sent' && (
                                     <Button
                                         variant="ghost"
                                         size="sm"
@@ -1985,15 +1885,17 @@ export default function EmailCenter() {
                                         <ShieldX className="w-4 h-4" />
                                     </Button>
                                 )}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleBlockSender()}
-                                    className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                    title="Absender sperren"
-                                >
-                                    <ShieldAlert className="w-4 h-4" />
-                                </Button>
+                                {activeFolder !== 'sent' && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleBlockSender()}
+                                        className="text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                        title="Absender sperren"
+                                    >
+                                        <ShieldAlert className="w-4 h-4" />
+                                    </Button>
+                                )}
                                 {(activeFolder === 'spam' || activeFolder === 'newsletter') && (
                                     <Button
                                         variant="outline"
@@ -2003,17 +1905,6 @@ export default function EmailCenter() {
                                         title="In Posteingang verschieben (kein Spam)"
                                     >
                                         <Inbox className="w-4 h-4" /> Kein Spam
-                                    </Button>
-                                )}
-                                {activeFolder !== 'spam' && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleMoveToFolder('spam', [selectedEmail.id])}
-                                        className="text-slate-500 hover:text-orange-600 hover:bg-orange-50"
-                                        title="Als Spam markieren"
-                                    >
-                                        <AlertCircle className="w-4 h-4" />
                                     </Button>
                                 )}
                                 <Button
@@ -2030,14 +1921,16 @@ export default function EmailCenter() {
                                 >
                                     <Star className={cn("w-4 h-4", selectedEmail.isStarred && "fill-amber-400")} />
                                 </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleReply(selectedEmail)}
-                                    className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                >
-                                    <Reply className="w-4 h-4" /> Antworten
-                                </Button>
+                                {activeFolder !== 'sent' && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleReply(selectedEmail)}
+                                        className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                                    >
+                                        <Reply className="w-4 h-4" /> Antworten
+                                    </Button>
+                                )}
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -2064,15 +1957,17 @@ export default function EmailCenter() {
                                         <span className="text-xs">ZIP</span>
                                     </Button>
                                 )}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setShowAssignModal(true)}
-                                    className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                >
-                                    <FolderPlus className="w-4 h-4" />
-                                    Zuordnen
-                                </Button>
+                                {activeFolder !== 'sent' && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setShowAssignModal(true)}
+                                        className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                                    >
+                                        <FolderPlus className="w-4 h-4" />
+                                        Zuordnen
+                                    </Button>
+                                )}
                                 <Button
                                     variant="ghost"
                                     size="sm"
@@ -2084,43 +1979,6 @@ export default function EmailCenter() {
                                 </Button>
                             </div>
                         </div>
-                        {selectedEmail.preisanfrageLieferantRef && (
-                            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-9 h-9 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-rose-200">
-                                        <Scale className="w-4 h-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-semibold text-rose-900 truncate">
-                                            Antwort auf Preisanfrage {selectedEmail.preisanfrageLieferantRef.preisanfrageNummer ?? ''}
-                                        </p>
-                                        <p className="text-xs text-rose-700/80 truncate">
-                                            Lieferant: {selectedEmail.preisanfrageLieferantRef.lieferantenname ?? 'Unbekannt'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => navigate(`/einkauf/preisanfragen?open=${selectedEmail.preisanfrageLieferantRef!.preisanfrageId}`)}
-                                        className="gap-1.5 border-rose-300 text-rose-700 hover:bg-white hover:border-rose-400"
-                                        title="Zur Preisanfrage springen"
-                                    >
-                                        <FileText className="w-4 h-4" />
-                                        <span className="hidden sm:inline">Öffnen</span>
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => setPreiseEintragenTarget(selectedEmail.preisanfrageLieferantRef!)}
-                                        className="gap-1.5 bg-rose-600 text-white hover:bg-rose-700 shadow-sm shadow-rose-200"
-                                    >
-                                        <Sparkles className="w-4 h-4" />
-                                        Preise eintragen
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     {/* Thread-Verlauf */}
@@ -2458,10 +2316,7 @@ export default function EmailCenter() {
                         </button>
                         {/* Sort toggle */}
                         <button
-                            onClick={() => {
-                                folderCacheRef.current.delete(activeFolder);
-                                setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc');
-                            }}
+                            onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
                             className={cn(
                                 "flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer shrink-0",
                                 "text-slate-500 hover:bg-rose-50 hover:text-rose-600"
@@ -2471,6 +2326,29 @@ export default function EmailCenter() {
                             {sortOrder === 'desc' ? <ArrowDownAZ className="w-3.5 h-3.5" /> : <ArrowUpAZ className="w-3.5 h-3.5" />}
                         </button>
                     </div>
+                    {/* Lese-Filter (im Gesendet-Ordner ausgeblendet) */}
+                    {activeFolder !== 'sent' && !isDraftFolderView && (
+                        <div className="flex items-center gap-1 bg-slate-50 rounded-md p-0.5">
+                            {([
+                                { id: 'all' as const, label: 'Alle' },
+                                { id: 'unread' as const, label: 'Ungelesen' },
+                                { id: 'read' as const, label: 'Gelesen' }
+                            ]).map(opt => (
+                                <button
+                                    key={opt.id}
+                                    onClick={() => setReadFilter(opt.id)}
+                                    className={cn(
+                                        "flex-1 px-2 py-1 rounded text-xs font-medium transition-all cursor-pointer",
+                                        readFilter === opt.id
+                                            ? "bg-white text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                            : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Global search info banner */}
@@ -2563,7 +2441,7 @@ export default function EmailCenter() {
                                     </div>
                                 </div>
                             )) : filteredEmails.map(email => (
-                                <DraggableEmailWrapper key={email.id} emailId={email.id}>
+                                <DraggableEmailWrapper key={email.id} emailId={email.id} disabled={activeFolder === 'sent'}>
                                 <div
                                     onClick={(e) => handleEmailClick(e, email)}
                                     className={cn(
@@ -2643,15 +2521,6 @@ export default function EmailCenter() {
                                                 {email.zuordnungTyp}
                                             </div>
                                         )}
-                                        {email.preisanfrageLieferantRef && (
-                                            <div
-                                                className="flex items-center gap-1 text-xs font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
-                                                title={`Antwort auf Preisanfrage ${email.preisanfrageLieferantRef.preisanfrageNummer ?? ''}`}
-                                            >
-                                                <Scale className="w-3 h-3" />
-                                                {email.preisanfrageLieferantRef.preisanfrageNummer ?? 'Preisanfrage'}
-                                            </div>
-                                        )}
                                         {draftsByEmailId.has(email.id) && (
                                             <button
                                                 onClick={(e) => {
@@ -2672,24 +2541,13 @@ export default function EmailCenter() {
                             ))}
                         </div>
                     )}
-                    {/* Infinite scroll sentinel + loading indicator */}
-                    {!isDraftFolderView && !isGlobalSearch && hasMore && (
-                        <div ref={sentinelRef} className="flex items-center justify-center py-4 gap-2 text-slate-400">
-                            {loadingMore && (
-                                <>
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    <span className="text-xs">Weitere E-Mails werden geladen...</span>
-                                </>
-                            )}
-                        </div>
-                    )}
                 </div>
 
                 {/* Footer Status */}
                 <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between gap-2">
                     <span>
                         {isGlobalSearch && <Globe className="w-3 h-3 inline mr-1 text-rose-500" />}
-                        {visibleItemCount}{!isDraftFolderView && !isGlobalSearch && totalElements > visibleItemCount ? ` / ${totalElements}` : ''} {visibleItemCount === 1 ? (isDraftFolderView ? 'Entwurf' : 'Nachricht') : (isDraftFolderView ? 'Entwürfe' : 'Nachrichten')}
+                        {visibleItemCount} {visibleItemCount === 1 ? (isDraftFolderView ? 'Entwurf' : 'Nachricht') : (isDraftFolderView ? 'Entwürfe' : 'Nachrichten')}
                     </span>
                     <div className="flex items-center gap-2">
                         {!isDraftFolderView && selectedIds.size > 0 && (
@@ -2711,17 +2569,6 @@ export default function EmailCenter() {
                 onAssign={handleAssign}
                 emailSubject={selectedEmail?.subject || ''}
                 emailId={selectedEmail?.id}
-            />
-
-            {/* Preise eintragen Modal – für Preisanfrage-Antworten */}
-            <PreiseEintragenModal
-                open={preiseEintragenTarget !== null}
-                onClose={() => setPreiseEintragenTarget(null)}
-                preisanfrageId={preiseEintragenTarget?.preisanfrageId ?? null}
-                preisanfrageLieferantId={preiseEintragenTarget?.palId ?? null}
-                onSaved={() => {
-                    toast.success('Preise gespeichert.');
-                }}
             />
 
             {/* Standard ImageViewer for Images */}

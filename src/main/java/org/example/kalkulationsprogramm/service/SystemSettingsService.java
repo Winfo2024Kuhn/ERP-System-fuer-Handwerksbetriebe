@@ -22,6 +22,7 @@ import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
 import jakarta.mail.PasswordAuthentication;
 import jakarta.mail.Session;
+import jakarta.mail.Store;
 import jakarta.mail.Transport;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
@@ -48,6 +49,14 @@ public class SystemSettingsService {
     private String defaultSmtpUsername;
     @Value("${smtp.password:}")
     private String defaultSmtpPassword;
+    @Value("${imap.host:secureimap.t-online.de}")
+    private String defaultImapHost;
+    @Value("${imap.port:993}")
+    private int defaultImapPort;
+    @Value("${imap.username:}")
+    private String defaultImapUsername;
+    @Value("${imap.password:}")
+    private String defaultImapPassword;
     @Value("${ai.gemini.api-key:}")
     private String defaultGeminiApiKey;
 
@@ -83,6 +92,41 @@ public class SystemSettingsService {
         return sanitizeValue(get("smtp.password", defaultSmtpPassword));
     }
 
+    public String getImapHost() {
+        String val = sanitizeValue(get("imap.host", defaultImapHost));
+        return val.isBlank() ? "secureimap.t-online.de" : val;
+    }
+
+    public int getImapPort() {
+        String val = get("imap.port", String.valueOf(defaultImapPort));
+        try {
+            int port = Integer.parseInt(val);
+            return port > 0 ? port : 993;
+        } catch (NumberFormatException e) {
+            return 993;
+        }
+    }
+
+    public String getImapUsername() {
+        // Bei T-Online & Co. ist der IMAP-Benutzer identisch mit der SMTP-E-Mail.
+        // Falls kein eigener IMAP-Wert hinterlegt ist, nehmen wir den SMTP-Benutzer.
+        String val = sanitizeValue(get("imap.username", defaultImapUsername));
+        return val.isBlank() ? getSmtpUsername() : val;
+    }
+
+    public String getImapPassword() {
+        // Analog zum Benutzer: Fallback auf das SMTP-Passwort.
+        String val = sanitizeValue(get("imap.password", defaultImapPassword));
+        return val.isBlank() ? getSmtpPassword() : val;
+    }
+
+    public boolean isImapConfigured() {
+        return hasConfiguredValue(getImapHost())
+                && getImapPort() > 0
+                && hasConfiguredValue(getImapUsername())
+                && hasConfiguredValue(getImapPassword());
+    }
+
     public String getGeminiApiKey() {
         return sanitizeValue(get("ai.gemini.api-key", defaultGeminiApiKey));
     }
@@ -108,6 +152,10 @@ public class SystemSettingsService {
         settings.put("smtp.port", String.valueOf(getSmtpPort()));
         settings.put("smtp.username", getSmtpUsername());
         settings.put("smtp.password", maskValue(getSmtpPassword()));
+        settings.put("imap.host", getImapHost());
+        settings.put("imap.port", String.valueOf(getImapPort()));
+        settings.put("imap.username", getImapUsername());
+        settings.put("imap.password", maskValue(getImapPassword()));
         settings.put("ai.gemini.api-key", maskValue(getGeminiApiKey()));
 
         return settings;
@@ -133,6 +181,32 @@ public class SystemSettingsService {
         save("smtp.username", username, "SMTP Benutzername / E-Mail-Adresse");
         save("smtp.password", password, "SMTP Passwort");
         log.info("SMTP-Einstellungen aktualisiert (Host: {}, Port: {}, User: {})", host, port, username);
+    }
+
+    @Transactional
+    public void saveImapSettings(String host, int port, String username, String password) {
+        save("imap.host", host, "IMAP Mail-Server Hostname");
+        save("imap.port", String.valueOf(port), "IMAP Port (993 = SSL)");
+        save("imap.username", username, "IMAP Benutzername / E-Mail-Adresse");
+        save("imap.password", password, "IMAP Passwort");
+        log.info("IMAP-Einstellungen aktualisiert (Host: {}, Port: {}, User: {})", host, port, username);
+    }
+
+    /**
+     * Speichert E-Mail-Adresse und Passwort gleichzeitig für SMTP- und IMAP-Zugang.
+     * Hosts/Ports bleiben unangetastet, damit der Nutzer sie unter "Erweitert" separat
+     * konfigurieren kann. Bei den meisten Providern (T-Online, IONOS, Strato, Gmail)
+     * sind Benutzer und Passwort für beide Dienste identisch.
+     */
+    @Transactional
+    public void saveEmailAccount(String email, String password) {
+        save("smtp.username", email, "SMTP Benutzername / E-Mail-Adresse");
+        save("imap.username", email, "IMAP Benutzername / E-Mail-Adresse");
+        if (password != null && !password.isBlank()) {
+            save("smtp.password", password, "SMTP Passwort");
+            save("imap.password", password, "IMAP Passwort");
+        }
+        log.info("E-Mail-Konto aktualisiert (User: {})", email);
     }
 
     @Transactional
@@ -190,6 +264,39 @@ public class SystemSettingsService {
             return TestResult.failure("Authentifizierung fehlgeschlagen. Benutzername oder Passwort falsch.");
         } catch (MessagingException e) {
             log.warn("SMTP-Verbindung fehlgeschlagen: {}", e.getMessage());
+            return TestResult.failure("Verbindung fehlgeschlagen: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Testet die IMAP-Verbindung mit den angegebenen Zugangsdaten.
+     */
+    public TestResult testImap(String host, int port, String username, String password) {
+        if (host == null || host.isBlank()) {
+            return TestResult.failure("Bitte einen IMAP-Server angeben.");
+        }
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            return TestResult.failure("Benutzername und Passwort sind erforderlich.");
+        }
+
+        Properties props = new Properties();
+        props.put("mail.store.protocol", "imaps");
+        props.put("mail.imaps.ssl.enable", "true");
+        props.put("mail.imaps.connectiontimeout", "10000");
+        props.put("mail.imaps.timeout", "10000");
+        props.put("mail.mime.address.strict", "false");
+
+        try {
+            Session session = Session.getInstance(props);
+            try (Store store = session.getStore("imaps")) {
+                store.connect(host, port, username, password);
+                return TestResult.success("IMAP-Verbindung erfolgreich hergestellt.");
+            }
+        } catch (AuthenticationFailedException e) {
+            log.warn("IMAP-Auth fehlgeschlagen: {}", e.getMessage());
+            return TestResult.failure("Authentifizierung fehlgeschlagen. Benutzername oder Passwort falsch.");
+        } catch (MessagingException e) {
+            log.warn("IMAP-Verbindung fehlgeschlagen: {}", e.getMessage());
             return TestResult.failure("Verbindung fehlgeschlagen: " + e.getMessage());
         }
     }

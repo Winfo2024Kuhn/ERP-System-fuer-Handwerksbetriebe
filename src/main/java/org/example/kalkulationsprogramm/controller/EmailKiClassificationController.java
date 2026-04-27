@@ -6,9 +6,9 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.service.EmailClassificationGeminiClient;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService.ClassificationResult;
-import org.example.kalkulationsprogramm.service.OllamaService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,7 +18,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * REST-Controller zum Testen der KI-basierten Email-Klassifizierung via Ollama.
+ * REST-Controller zum Testen der KI-basierten Email-Klassifizierung via Gemini.
  */
 @Slf4j
 @RestController
@@ -26,21 +26,22 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class EmailKiClassificationController {
 
-    private final OllamaService ollamaService;
+    private final EmailClassificationGeminiClient geminiClient;
     private final EmailKiClassificationService classificationService;
     private final EmailRepository emailRepository;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
 
     /**
-     * Prüft ob der Ollama-Server erreichbar ist.
+     * Status der KI-Email-Zuordnung (Gemini-API verfuegbar?).
      */
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getStatus() {
-        boolean available = ollamaService.isAvailable();
+        boolean enabled = geminiClient.isEnabled();
         return ResponseEntity.ok(Map.of(
-                "ollamaEnabled", ollamaService.isEnabled(),
-                "ollamaAvailable", available
+                "provider", "gemini",
+                "enabled", enabled,
+                "available", enabled
         ));
     }
 

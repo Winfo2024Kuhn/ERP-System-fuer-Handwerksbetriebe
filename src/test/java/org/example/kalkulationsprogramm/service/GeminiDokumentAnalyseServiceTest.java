@@ -15,7 +15,6 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.example.kalkulationsprogramm.repository.WerkstoffzeugnisRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -36,9 +35,7 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private ZugferdExtractorService zugferdExtractorService;
     @Mock private LieferantenArtikelPreiseRepository artikelPreiseRepository;
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
-    @Mock private WerkstoffzeugnisRepository werkstoffzeugnisRepository;
-    @Mock private ArtikelMatchingAgentService artikelMatchingAgentService;
-    @Mock private ArtikelPreisHookService preisHookService;
+    @Mock private SystemSettingsService systemSettingsService;
 
     private GeminiDokumentAnalyseService service;
 
@@ -51,9 +48,7 @@ class GeminiDokumentAnalyseServiceTest {
                 zugferdExtractorService,
                 artikelPreiseRepository,
                 lieferantGeschaeftsdokumentRepository,
-                werkstoffzeugnisRepository,
-                artikelMatchingAgentService,
-                preisHookService
+                systemSettingsService
         );
     }
 

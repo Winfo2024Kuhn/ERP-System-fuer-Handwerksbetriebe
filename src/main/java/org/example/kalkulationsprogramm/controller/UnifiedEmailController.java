@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.controller;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -88,41 +87,10 @@ public class UnifiedEmailController {
     private final ContactService contactService;
     private final SpamBayesService spamBayesService;
     private final EmailThreadService emailThreadService;
-    private final org.example.kalkulationsprogramm.repository.PreisanfrageLieferantRepository preisanfrageLieferantRepository;
+    private final org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
-
-    // ═══════════════════════════════════════════════════════════════
-    // PAGINATION HELPER
-    // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * Paginiert eine Liste von Emails und gibt eine Map mit content, page, size,
-     * totalElements und hasMore zurück.
-     * Unterstützt sortDir=asc|desc (Standard: desc = neueste zuerst).
-     */
-    private Map<String, Object> paginateEmails(List<Email> allEmails, int page, int size,
-                                                String sortDir,
-                                                java.util.function.Function<Email, UnifiedEmailDto> mapper) {
-        if ("asc".equalsIgnoreCase(sortDir)) {
-            allEmails = new ArrayList<>(allEmails);
-            Collections.reverse(allEmails);
-        }
-        long totalElements = allEmails.size();
-        List<UnifiedEmailDto> content = allEmails.stream()
-                .skip((long) page * size)
-                .limit(size)
-                .map(mapper)
-                .collect(Collectors.toList());
-        return Map.of(
-                "content", content,
-                "page", page,
-                "size", size,
-                "totalElements", totalElements,
-                "hasMore", (long) (page + 1) * size < totalElements
-        );
-    }
 
     @GetMapping("/{emailId}/attachments/{attachmentId}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadAttachment(
@@ -545,11 +513,12 @@ public class UnifiedEmailController {
 
     @GetMapping("/unassigned")
     @Transactional(readOnly = true)
-    public Map<String, Object> getUnassignedEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findUnassigned(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getUnassignedEmails(
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findUnassigned().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -558,11 +527,11 @@ public class UnifiedEmailController {
 
     @GetMapping("/inquiries")
     @Transactional(readOnly = true)
-    public Map<String, Object> getInquiryEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findPotentialInquiries(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getInquiryEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findPotentialInquiries().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -621,94 +590,92 @@ public class UnifiedEmailController {
 
     @GetMapping("/inbox")
     @Transactional(readOnly = true)
-    public Map<String, Object> getInboxEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
+    public List<UnifiedEmailDto> getInboxEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
         // Get IDs of "Nicht zugeordnet" emails to exclude from inbox
         Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
                 .map(Email::getId)
                 .collect(Collectors.toSet());
 
-        List<Email> filtered = emailRepository.findInboxFiltered().stream()
-                .filter(e -> !unassignedIds.contains(e.getId()))
+        return emailRepository.findInboxFiltered().stream()
+                .filter(e -> !unassignedIds.contains(e.getId())) // Exclude "Nicht zugeordnet"
+                .limit(limit)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
-        return paginateEmails(filtered, page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/projects")
     @Transactional(readOnly = true)
-    public Map<String, Object> getProjectFolderEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findProjectEmails(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getProjectFolderEmails(
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findProjectEmails().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     @GetMapping("/offers")
     @Transactional(readOnly = true)
-    public Map<String, Object> getOfferFolderEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findAnfrageEmails(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getOfferFolderEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findAnfrageEmails().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     @GetMapping("/suppliers")
     @Transactional(readOnly = true)
-    public Map<String, Object> getSupplierFolderEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findLieferantEmails(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getSupplierFolderEmails(
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findLieferantEmails().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     @GetMapping("/sent")
     @Transactional(readOnly = true)
-    public Map<String, Object> getSentEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        List<Email> filtered = emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
+    public List<UnifiedEmailDto> getSentEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
                 .filter(e -> e.getDeletedAt() == null)
+                .limit(limit)
+                .map(this::toListDto)
                 .collect(Collectors.toList());
-        return paginateEmails(filtered, page, size, sortDir, this::toListDto);
     }
 
     @GetMapping("/trash")
     @Transactional(readOnly = true)
-    public Map<String, Object> getTrashEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getTrashEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     @GetMapping("/spam")
     @Transactional(readOnly = true)
-    public Map<String, Object> getSpamEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findSpam(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getSpamEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findSpam().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     @GetMapping("/newsletter")
     @Transactional(readOnly = true)
-    public Map<String, Object> getNewsletterEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findNewsletter(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getNewsletterEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findNewsletter().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     @GetMapping("/starred")
     @Transactional(readOnly = true)
-    public Map<String, Object> getStarredEmails(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-        return paginateEmails(emailRepository.findStarred(), page, size, sortDir, this::toListDto);
+    public List<UnifiedEmailDto> getStarredEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return emailRepository.findStarred().stream()
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1236,14 +1203,6 @@ public class UnifiedEmailController {
     // E-MAIL SENDEN / ANTWORTEN
     // ═══════════════════════════════════════════════════════════════
 
-    @org.springframework.beans.factory.annotation.Value("${spring.mail.host:}")
-    private String smtpHost;
-    @org.springframework.beans.factory.annotation.Value("${spring.mail.port:587}")
-    private int smtpPort;
-    @org.springframework.beans.factory.annotation.Value("${spring.mail.username:}")
-    private String smtpUsername;
-    @org.springframework.beans.factory.annotation.Value("${spring.mail.password:}")
-    private String smtpPassword;
 
     @PostMapping(value = "/send", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @Transactional
@@ -1253,9 +1212,13 @@ public class UnifiedEmailController {
             @RequestPart(value = "dokumentId", required = false) String dokumentIdStr) {
 
         try {
-            // E-Mail senden via SMTP
-            org.example.email.EmailService emailService = new org.example.email.EmailService(smtpHost, smtpPort,
-                    smtpUsername, smtpPassword);
+            // E-Mail senden via SMTP – Zugangsdaten zur Laufzeit aus System-Setup (DB) lesen,
+            // damit Änderungen ohne Backend-Neustart wirksam werden.
+            org.example.email.EmailService emailService = new org.example.email.EmailService(
+                    systemSettingsService.getSmtpHost(),
+                    systemSettingsService.getSmtpPort(),
+                    systemSettingsService.getSmtpUsername(),
+                    systemSettingsService.getSmtpPassword());
 
             // Attachments vorbereiten
             List<String> attachmentPaths = new ArrayList<>();
@@ -1492,9 +1455,13 @@ public class UnifiedEmailController {
         }
 
         try {
-            // E-Mail senden via SMTP
-            org.example.email.EmailService emailService = new org.example.email.EmailService(smtpHost, smtpPort,
-                    smtpUsername, smtpPassword);
+            // E-Mail senden via SMTP – Zugangsdaten zur Laufzeit aus System-Setup (DB) lesen,
+            // damit Änderungen ohne Backend-Neustart wirksam werden.
+            org.example.email.EmailService emailService = new org.example.email.EmailService(
+                    systemSettingsService.getSmtpHost(),
+                    systemSettingsService.getSmtpPort(),
+                    systemSettingsService.getSmtpUsername(),
+                    systemSettingsService.getSmtpPassword());
 
             // Attachments vorbereiten
             List<String> attachmentPaths = new ArrayList<>();
@@ -1652,7 +1619,6 @@ public class UnifiedEmailController {
             dto.setLieferantId(email.getLieferant().getId());
             dto.setLieferantName(email.getLieferant().getLieferantenname());
         }
-        dto.setPreisanfrageLieferantRef(buildPreisanfrageRef(email));
 
         // Compute folder
         dto.setFolder(computeFolder(email));
@@ -1713,7 +1679,6 @@ public class UnifiedEmailController {
             dto.setLieferantId(email.getLieferant().getId());
             dto.setLieferantName(email.getLieferant().getLieferantenname());
         }
-        dto.setPreisanfrageLieferantRef(buildPreisanfrageRef(email));
 
         // Compute folder
         dto.setFolder(computeFolder(email));
@@ -1798,34 +1763,5 @@ public class UnifiedEmailController {
             current = current.getParentEmail();
         }
         return count;
-    }
-
-    /**
-     * Baut die Ruecklink-Info auf eine Preisanfrage-Lieferant-Antwort,
-     * falls die E-Mail als Angebot zugeordnet wurde. Gibt {@code null}
-     * zurueck, wenn keine Zuordnung existiert – dann landet auch nichts
-     * im DTO (Jackson serialisiert null-Felder je nach Config, aber das
-     * Frontend prueft explizit auf Existenz).
-     */
-    private UnifiedEmailDto.PreisanfrageLieferantRef buildPreisanfrageRef(Email email) {
-        if (email == null || email.getId() == null) {
-            return null;
-        }
-        return preisanfrageLieferantRepository.findByAntwortEmail_Id(email.getId())
-                .map(pal -> {
-                    UnifiedEmailDto.PreisanfrageLieferantRef ref =
-                            new UnifiedEmailDto.PreisanfrageLieferantRef();
-                    ref.setPalId(pal.getId());
-                    if (pal.getPreisanfrage() != null) {
-                        ref.setPreisanfrageId(pal.getPreisanfrage().getId());
-                        ref.setPreisanfrageNummer(pal.getPreisanfrage().getNummer());
-                    }
-                    if (pal.getLieferant() != null) {
-                        ref.setLieferantId(pal.getLieferant().getId());
-                        ref.setLieferantenname(pal.getLieferant().getLieferantenname());
-                    }
-                    return ref;
-                })
-                .orElse(null);
     }
 }

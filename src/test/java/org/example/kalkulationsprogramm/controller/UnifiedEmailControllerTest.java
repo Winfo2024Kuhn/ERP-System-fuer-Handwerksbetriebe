@@ -73,7 +73,7 @@ class UnifiedEmailControllerTest {
     @MockBean private ContactService contactService;
     @MockBean private SpamBayesService spamBayesService;
     @MockBean private EmailThreadService emailThreadService;
-    @MockBean private org.example.kalkulationsprogramm.repository.PreisanfrageLieferantRepository preisanfrageLieferantRepository;
+    @MockBean private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
 
     private Email createTestEmail(Long id, String subject, String from) {
         Email email = new Email();
@@ -274,9 +274,7 @@ class UnifiedEmailControllerTest {
 
             mockMvc.perform(get("/api/emails/inbox"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.content[0].subject").value("Hallo"))
-                    .andExpect(jsonPath("$.hasMore").value(false))
-                    .andExpect(jsonPath("$.totalElements").value(1));
+                    .andExpect(jsonPath("$[0].subject").value("Hallo"));
         }
     }
 

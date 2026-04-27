@@ -24,15 +24,11 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
-import org.example.kalkulationsprogramm.domain.PreisQuelle;
-import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
-import org.example.kalkulationsprogramm.domain.Werkstoffzeugnis;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.example.kalkulationsprogramm.repository.WerkstoffzeugnisRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,12 +60,7 @@ public class GeminiDokumentAnalyseService {
     private final ZugferdExtractorService zugferdExtractorService;
     private final LieferantenArtikelPreiseRepository artikelPreiseRepository;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
-    private final WerkstoffzeugnisRepository werkstoffzeugnisRepository;
-    private final ArtikelMatchingAgentService artikelMatchingAgentService;
-    private final ArtikelPreisHookService preisHookService;
-
-    @Value("${ai.materialstamm.auto-matching.enabled:false}")
-    private boolean autoMatchingEnabled;
+    private final SystemSettingsService systemSettingsService;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -87,9 +78,6 @@ public class GeminiDokumentAnalyseService {
     private static final int MAX_RETRIES = 3;
     private static final long INITIAL_RETRY_DELAY_MS = 2000; // 2 seconds, doubles each retry
 
-    @Value("${ai.gemini.api-key}")
-    private String geminiApiKey;
-
     @Value("${ai.gemini.model.dokument-analyse:gemini-3-flash-preview}")
     private String geminiModel;
 
@@ -98,9 +86,6 @@ public class GeminiDokumentAnalyseService {
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
-
-    @Value("${en1090.features.enabled:false}")
-    private boolean en1090FeaturesEnabled;
 
     private static final String SYSTEM_PROMPT_DOKUMENT_ANALYSE = """
             Du bist ein Experte für die Analyse von deutschen Geschäftsdokumenten.
@@ -139,19 +124,6 @@ public class GeminiDokumentAnalyseService {
                - Dokumentiert gelieferte Waren
                - Hat KEINEN Gesamtbetrag mit MwSt, oft nur Stückzahlen
 
-            3a. WERKSTOFFZEUGNIS (WICHTIG - NICHT als SONSTIG klassifizieren!):
-               - Titel/Inhalt enthält: "Werkstoffzeugnis", "Materialzeugnis", "Prüfzeugnis",
-                 "Mill Certificate", "Test Certificate", "Material Test Report",
-                 "EN 10204", "DIN EN ISO 10204", "Zeugnis nach EN 10204"
-               - Erkennungsmerkmale: Abschnitt "3.1" oder "3.2" als Zeugnistyp,
-                 chem. Analyse-Tabelle (C, Si, Mn, P, S, Cr, Ni, Mo Werte),
-                 mechanische Kennwerte (Streckgrenze, Zugfestigkeit, Dehnung, Kerbschlagarbeit),
-                 Schmelznummer/Charge, Materialbezeichnung (z.B. S235, S355, 1.4301, St37)
-               - dokumentNummer = Schmelznummer oder Prüfnummer des Zertifikats
-               - istGeschaeftsdokument = false (kein Buchungsvorgang)
-               - KEINE Beträge extrahieren (betragNetto/Brutto = null)
-               - confidence = 0.9 wenn eindeutig erkannt
-
             4. RECHNUNG:
                - Titel enthält: "Rechnung", "Invoice", "Faktura"
                - Typische Nummern: RE-..., R-..., Rechnung-Nr..., Invoice-Nr...
@@ -169,17 +141,17 @@ public class GeminiDokumentAnalyseService {
                - Kataloge, Produktinformationen, Werbematerial
                - Newsletter, Rundschreiben, Infoschreiben
                - Allgemeine Korrespondenz ohne Geschäftsvorgang
-               - Technische Datenblätter (NICHT Werkstoffzeugnisse - diese sind WERKSTOFFZEUGNIS!)
-               - ALLES was NICHT Angebot/AB/Lieferschein/Werkstoffzeugnis/Rechnung/Gutschrift ist
+               - Technische Datenblätter, Zertifikate
+               - ALLES was NICHT Angebot/AB/Lieferschein/Rechnung/Gutschrift ist
                - WICHTIG: Wenn du dir nicht sicher bist ob es ein Geschäftsdokument ist,
                  dann wähle SONSTIG und setze confidence auf 0.0!
 
             EXTRAHIERE die folgenden Informationen als JSON:
 
             {
-                "dokumentTyp": "ANGEBOT|AUFTRAGSBESTAETIGUNG|LIEFERSCHEIN|WERKSTOFFZEUGNIS|RECHNUNG|GUTSCHRIFT|SONSTIG (ggf. mit Vermerk ' (Kopie)')",
+                "dokumentTyp": "ANGEBOT|AUFTRAGSBESTAETIGUNG|LIEFERSCHEIN|RECHNUNG|GUTSCHRIFT|SONSTIG (ggf. mit Vermerk ' (Kopie)')",
                 "istGeschaeftsdokument": true/false,
-                "dokumentNummer": "Die Dokumentnummer/Schmelznummer (exakt wie im Dokument, OHNE Leerzeichen) oder null",
+                "dokumentNummer": "Die Dokumentnummer (exakt wie im Dokument) oder null",
                 "dokumentDatum": "YYYY-MM-DD oder null",
                 "betragNetto": 1234.56 oder null,
                 "betragBrutto": 1469.33 oder null,
@@ -194,25 +166,11 @@ public class GeminiDokumentAnalyseService {
                 "skontoProzent": 2.0 oder null,
                 "nettoTage": 30 oder null,
                 "confidence": 0.0-1.0,
-                "artikelPositionen": [
-                    {
-                        "externeArtikelnummer": "Art.-Nr. vom Lieferanten oder null",
-                        "bezeichnung": "vollständige Beschreibung inkl. Abmessungen",
-                        "menge": 10.0,
-                        "mengeneinheit": "kg|m|Stk|...",
-                        "einzelpreis": 1.23,
-                        "preiseinheit": "kg|t|100kg|Stk",
-                        "positionsTyp": "ARTIKEL|ZUSCHNITT|FRACHT|VERPACKUNG|DIENSTLEISTUNG|SONSTIGE"
-                    }
-                ],
+                "artikelPositionen": [...],
                 "lieferantName": "Name des Lieferanten/Absenders",
                 "lieferantStrasse": "Straße und Hausnummer",
                 "lieferantPlz": "Postleitzahl",
-                "lieferantOrt": "Ort",
-                "schmelzNummer": "Schmelznummer/Charge bei WERKSTOFFZEUGNIS, sonst null",
-                "materialGuete": "Werkstoffgüte bei WERKSTOFFZEUGNIS (z.B. S355J2, 1.4301), sonst null",
-                "normTyp": "EN-10204-Zeugnistyp bei WERKSTOFFZEUGNIS (z.B. 3.1 oder 3.2), sonst null",
-                "lieferscheinNummer": "Lieferschein-Nr. die im WERKSTOFFZEUGNIS referenziert wird (z.B. 90406834/01), sonst null"
+                "lieferantOrt": "Ort"
             }
 
             WICHTIG FÜR NICHT-GESCHÄFTSDOKUMENTE:
@@ -220,36 +178,11 @@ public class GeminiDokumentAnalyseService {
             - Wenn dokumentTyp = "SONSTIG", dann sind alle anderen Felder (dokumentNummer, betrag etc.) = null
             - confidence sollte bei SONSTIG = 0.0 sein, da keine relevanten Daten extrahiert werden
 
-            WICHTIG FÜR WERKSTOFFZEUGNISSE:
-            - Wenn dokumentTyp = "WERKSTOFFZEUGNIS", dann setze istGeschaeftsdokument = false
-            - dokumentNummer = Schmelznummer oder Prüfnummer (OHNE Leerzeichen!)
-            - schmelzNummer = Schmelznummer/Charge (identisch mit dokumentNummer falls Schmelznummer)
-            - materialGuete = Werkstoffgüte/Materialbezeichnung (z.B. S235JR, S355J2, 1.4301, St37-2)
-            - normTyp = EN-10204-Zeugnistyp: "2.1", "2.2", "3.1" oder "3.2" (Standard: "3.1")
-            - lieferscheinNummer = Lieferschein-Nr. falls im Zeugnis vorhanden (z.B. bei Krönlein: "Lieferschein-Nr. 90406834/01")
-              Suche nach: "Lieferschein-Nr.", "Lieferschein", "Delivery Note", "LS-Nr."
-              ACHTUNG: Nicht verwechseln mit Auftrags-Nr. oder Bestellnummer! Nur explizite Lieferschein-Nummern extrahieren.
-            - bestellnummer = Bestellnummer/Auftragsnummer falls vorhanden (z.B. "Ihre Bestellung: LBE 1521374 / 8510")
-            - betragNetto/betragBrutto = null (keine Geldbeträge)
-            - dokumentDatum = Prüfdatum oder Ausstellungsdatum des Zertifikats
-            - confidence = 0.9 wenn eindeutig
-
             ARTIKELPOSITIONEN EXTRAKTION (WICHTIG für Rechnungen):
             - Extrahiere ALLE Positionen mit Artikelnummer/Materialnummer
             - Die externe Artikelnummer ist oft eine Materialnummer wie "12345" oder "MAT-001"
             - Die Preiseinheit ist entscheidend: "€/t" = pro Tonne, "€/100kg" = pro 100kg, "€/kg" = pro kg
             - Falls keine Preiseinheit erkennbar, nimm "kg" an
-
-            POSITIONS-TYP KLASSIFIZIERUNG (pro Position Pflichtfeld):
-            - "ARTIKEL" = echter Material-/Stahl-/Bauteil-Artikel (Flachstahl, Rundrohr, Blech, Schrauben, …)
-            - "ZUSCHNITT" = Säge-, Brennschnitt-, Plasma-, Laser-Kosten oder Schnittkostenpauschale
-            - "FRACHT" = Transport, Versand, Logistik, Spedition, Kleinmengenzuschlag Transport
-            - "VERPACKUNG" = Palette, Einwegpalette, Umverpackung, Verpackungspauschale
-            - "DIENSTLEISTUNG" = Oberflächenbehandlung/Veredelung (Verzinken, Feuerverzinken, Pulverbeschichten,
-               Lackieren, Strahlen, Beschriften, Bohren, Biegen etc.) oder reine Lohnarbeit
-            - "SONSTIGE" = Gebühren, Rabatte, Skonto, Mindermengenzuschlag, alles andere Nicht-Material
-            WICHTIG: Nur "ARTIKEL" darf im Materialstamm landen — alle anderen Typen sind nur
-            Abrechnungspositionen und werden beim Artikel-Matching ignoriert.
 
             ZAHLUNGSBEDINGUNGEN ERKENNUNG (SEHR WICHTIG!):
             Typische Muster auf deutschen Rechnungen:
@@ -602,6 +535,8 @@ public class GeminiDokumentAnalyseService {
 
             String base64Data = Base64.getEncoder().encodeToString(bytes);
             String modelToUse = useProModel ? geminiProModel : geminiModel;
+            // Key zur Laufzeit aus System-Setup lesen.
+            String geminiApiKey = systemSettingsService.getGeminiApiKey();
             String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelToUse
                     + ":generateContent?key=" + geminiApiKey;
 
@@ -747,7 +682,7 @@ public class GeminiDokumentAnalyseService {
 
             return org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse.builder()
                     .dokumentTyp(typ)
-                    .dokumentNummer(zugferd.getRechnungsnummer() != null ? zugferd.getRechnungsnummer().replaceAll("\\s+", "") : null)
+                    .dokumentNummer(zugferd.getRechnungsnummer())
                     .dokumentDatum(zugferd.getRechnungsdatum())
                     .betragNetto(zugferd.getBetragNetto())
                     .betragBrutto(zugferd.getBetrag())
@@ -807,7 +742,7 @@ public class GeminiDokumentAnalyseService {
 
             return org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse.builder()
                     .dokumentTyp(LieferantDokumentTyp.RECHNUNG)
-                    .dokumentNummer(dokumentNummer != null ? dokumentNummer.replaceAll("\\s+", "") : null)
+                    .dokumentNummer(dokumentNummer)
                     .dokumentDatum(dokumentDatum)
                     .betragBrutto(betragBrutto)
                     .aiConfidence(1.0)
@@ -867,8 +802,6 @@ public class GeminiDokumentAnalyseService {
             String typStr = json.has("dokumentTyp") ? json.get("dokumentTyp").asText(null) : null;
             if (typStr != null) {
                 typStr = typStr.replace(" (Kopie)", "").trim();
-                // KI gibt ggf. Nummer mit Leerzeichen zurück – normalisieren
-                typStr = typStr.replaceAll("\\s+", "_").toUpperCase();
                 try {
                     builder.dokumentTyp(LieferantDokumentTyp.valueOf(typStr));
                 } catch (Exception e) {
@@ -878,9 +811,9 @@ public class GeminiDokumentAnalyseService {
                 builder.dokumentTyp(LieferantDokumentTyp.RECHNUNG);
             }
 
-            // Dokumentnummer – Leerzeichen entfernen für zuverlässiges Dokumentketten-Matching
+            // Dokumentnummer
             if (json.has("dokumentNummer") && !json.get("dokumentNummer").isNull()) {
-                builder.dokumentNummer(json.get("dokumentNummer").asText().replaceAll("\\s+", ""));
+                builder.dokumentNummer(json.get("dokumentNummer").asText());
             }
 
             // Datum
@@ -974,20 +907,6 @@ public class GeminiDokumentAnalyseService {
                 builder.aiConfidence(0.8);
             }
 
-            // Werkstoffzeugnis-spezifische Felder
-            if (json.has("schmelzNummer") && !json.get("schmelzNummer").isNull()) {
-                builder.schmelzNummer(json.get("schmelzNummer").asText().trim());
-            }
-            if (json.has("materialGuete") && !json.get("materialGuete").isNull()) {
-                builder.materialGuete(json.get("materialGuete").asText().trim());
-            }
-            if (json.has("normTyp") && !json.get("normTyp").isNull()) {
-                builder.normTyp(json.get("normTyp").asText().trim());
-            }
-            if (json.has("lieferscheinNummer") && !json.get("lieferscheinNummer").isNull()) {
-                builder.lieferscheinNummer(json.get("lieferscheinNummer").asText().trim());
-            }
-
             builder.analyseQuelle("KI");
 
             return builder.build();
@@ -1062,31 +981,24 @@ public class GeminiDokumentAnalyseService {
             LieferantGeschaeftsdokument geschaeftsdaten = null;
 
             // 1. Prüfe auf ZUGFeRD-PDF oder XML
-            log.info("[Analyse] Dokument {} ('{}') Lieferant={} autoMatchingEnabled={}",
-                    freshDokument.getId(), dateiname,
-                    freshDokument.getLieferant() != null ? freshDokument.getLieferant().getId() + "/" + freshDokument.getLieferant().getLieferantenname() : "NULL",
-                    autoMatchingEnabled);
             if (dateiname != null) {
                 String lower = dateiname.toLowerCase();
 
                 if (lower.endsWith(".pdf")) {
-                    log.info("[Analyse] PDF erkannt → versuche ZUGFeRD-Extraktion");
+                    // Versuche ZUGFeRD-Extraktion
                     geschaeftsdaten = versucheZugferdExtraktion(dateiPfad, dateiname, freshDokument);
-                    log.info("[Analyse] ZUGFeRD-Extraktion Ergebnis: {}",
-                            geschaeftsdaten != null ? "OK (DokNr=" + geschaeftsdaten.getDokumentNummer() + ")" : "NULL (kein ZUGFeRD)");
                 } else if (lower.endsWith(".xml")) {
-                    log.info("[Analyse] XML erkannt → versuche XML-Extraktion");
+                    // Versuche XML-Extraktion (XRechnung, ZUGFeRD-XML)
                     geschaeftsdaten = versucheXmlExtraktion(
                             leseXmlDateiSicher(dateiPfad, explicitPath != null),
                             freshDokument,
                             dateiPfad.getFileName().toString());
-                    log.info("[Analyse] XML-Extraktion Ergebnis: {}", geschaeftsdaten != null ? "OK" : "NULL");
                 }
             }
 
             // 2. Falls keine strukturierten Daten, Fallback auf KI
             if (geschaeftsdaten == null) {
-                log.info("[Analyse] Keine ZUGFeRD/XML-Daten gefunden → Fallback auf KI-Analyse für Dokument {}",
+                log.info("Keine ZUGFeRD/XML-Daten gefunden, verwende KI-Analyse für Dokument {}",
                         freshDokument.getId());
                 geschaeftsdaten = analysierePerKi(freshDokument, dateiPfad);
             }
@@ -1173,24 +1085,6 @@ public class GeminiDokumentAnalyseService {
             freshDokument.setGeschaeftsdaten(savedGeschaeftsdaten);
             dokumentRepository.saveAndFlush(freshDokument);
 
-            // KI-Pfad: Artikelpreise aus AI-JSON aktualisieren (analog ZUGFeRD-Pfad)
-            if (savedGeschaeftsdaten.getAiRawJson() != null && freshDokument.getLieferant() != null) {
-                try {
-                    JsonNode aiJson = objectMapper.readTree(savedGeschaeftsdaten.getAiRawJson());
-                    verarbeiteArtikelPositionen(aiJson, freshDokument.getLieferant(), freshDokument);
-                } catch (Exception e) {
-                    log.warn("Artikelpreis-Update aus KI-JSON fehlgeschlagen: {}", e.getMessage());
-                }
-            }
-
-            // Werkstoffzeugnis auto-erstellen wenn KI den Typ erkannt hat
-            // Nur wenn EN 1090 Feature-Flag aktiv (en1090.features.enabled=true)
-            if (en1090FeaturesEnabled && savedGeschaeftsdaten.getDetectedTyp() == LieferantDokumentTyp.WERKSTOFFZEUGNIS) {
-                erstelleOderSplitteWerkstoffzeugnisse(freshDokument, savedGeschaeftsdaten, dateiPfad);
-            } else if (!en1090FeaturesEnabled && savedGeschaeftsdaten.getDetectedTyp() == LieferantDokumentTyp.WERKSTOFFZEUGNIS) {
-                log.debug("Werkstoffzeugnis-Erstellung übersprungen (en1090.features.enabled=false) für Dokument {}", freshDokument.getId());
-            }
-
             log.info("Dokument {} erfolgreich analysiert: {} (Quelle: {}, Confidence: {})",
                     freshDokument.getId(),
                     geschaeftsdaten.getDokumentNummer(),
@@ -1238,8 +1132,7 @@ public class GeminiDokumentAnalyseService {
                     gd.setDokument(dokument);
                 }
             }
-            // Leerzeichen entfernen für zuverlässiges Dokumentketten-Matching
-            gd.setDokumentNummer(zugferd.getRechnungsnummer() != null ? zugferd.getRechnungsnummer().replaceAll("\\s+", "") : null);
+            gd.setDokumentNummer(zugferd.getRechnungsnummer());
             gd.setDokumentDatum(zugferd.getRechnungsdatum());
             gd.setBetragBrutto(zugferd.getBetrag());
             gd.setAiConfidence(1.0); // Strukturierte Daten = 100% Confidence
@@ -1295,20 +1188,8 @@ public class GeminiDokumentAnalyseService {
             }
 
             // Artikelpositionen verarbeiten und Preise aktualisieren
-            int posCount = zugferd.getArtikelPositionen() != null ? zugferd.getArtikelPositionen().size() : -1;
-            log.info("[ZUGFeRD] Positions-Pipeline: dokument={} lieferant={} artikelPositionen={} autoMatchingEnabled={}",
-                    dokument != null ? dokument.getId() : "NULL",
-                    (dokument != null && dokument.getLieferant() != null)
-                            ? dokument.getLieferant().getId() + "/" + dokument.getLieferant().getLieferantenname()
-                            : "NULL",
-                    posCount, autoMatchingEnabled);
             if (dokument != null && dokument.getLieferant() != null && zugferd.getArtikelPositionen() != null) {
-                verarbeiteZugferdArtikelPositionen(zugferd.getArtikelPositionen(), dokument.getLieferant(), dokument);
-            } else {
-                log.warn("[ZUGFeRD] verarbeiteZugferdArtikelPositionen ÜBERSPRUNGEN — Grund: dokument={} lieferant={} positionen={}",
-                        dokument != null,
-                        dokument != null && dokument.getLieferant() != null,
-                        zugferd.getArtikelPositionen() != null);
+                verarbeiteZugferdArtikelPositionen(zugferd.getArtikelPositionen(), dokument.getLieferant());
             }
 
             return gd;
@@ -1362,9 +1243,8 @@ public class GeminiDokumentAnalyseService {
             gd.setDatenquelle("XML");
             gd.setAnalysiertAm(LocalDateTime.now());
 
-            // Dokumentnummer extrahieren – Leerzeichen entfernen
-            String rawXmlNummer = extractXmlValue(xmlContent, "ID", "InvoiceNumber", "ram:ID");
-            gd.setDokumentNummer(rawXmlNummer != null ? rawXmlNummer.replaceAll("\\s+", "") : null);
+            // Dokumentnummer extrahieren
+            gd.setDokumentNummer(extractXmlValue(xmlContent, "ID", "InvoiceNumber", "ram:ID"));
 
             // Betrag extrahieren
             String betrag = extractXmlValue(xmlContent, "GrandTotalAmount", "PayableAmount", "ram:GrandTotalAmount");
@@ -2001,290 +1881,6 @@ public class GeminiDokumentAnalyseService {
         performRelink(neuesDokument);
     }
 
-    /**
-     * Erstellt automatisch einen Werkstoffzeugnis-Eintrag wenn die KI ein Dokument
-     * als WERKSTOFFZEUGNIS klassifiziert hat. Extrahiert Schmelznummer, Materialguete
-     * und Norm-Typ aus dem AI-Raw-JSON.
-     * Verknüpft automatisch mit dem zugehörigen Lieferschein (über Lieferschein-Nr.
-     * oder Bestellnummer als Fallback).
-     */
-    private void erstelleWerkstoffzeugnisAusDokument(LieferantDokument dokument,
-            LieferantGeschaeftsdokument geschaeftsdaten) {
-        try {
-            // Prüfe ob bereits ein Werkstoffzeugnis für dieses Dokument existiert
-            if (werkstoffzeugnisRepository.findByLieferantDokumentId(dokument.getId()).isPresent()) {
-                log.debug("Werkstoffzeugnis für Dokument {} existiert bereits", dokument.getId());
-                return;
-            }
-
-            Werkstoffzeugnis wz = new Werkstoffzeugnis();
-            wz.setLieferantDokument(dokument);
-            wz.setLieferant(dokument.getLieferant());
-
-            // Schmelznummer = dokumentNummer (bereits extrahiert)
-            if (geschaeftsdaten.getDokumentNummer() != null) {
-                wz.setSchmelzNummer(geschaeftsdaten.getDokumentNummer());
-            }
-
-            // Prüfdatum = dokumentDatum
-            if (geschaeftsdaten.getDokumentDatum() != null) {
-                wz.setPruefDatum(geschaeftsdaten.getDokumentDatum());
-            }
-
-            // Werkstoffzeugnis-spezifische Felder aus AI-Raw-JSON extrahieren
-            String lieferscheinNummer = null;
-            if (geschaeftsdaten.getAiRawJson() != null) {
-                try {
-                    var json = objectMapper.readTree(geschaeftsdaten.getAiRawJson());
-
-                    if (json.has("schmelzNummer") && !json.get("schmelzNummer").isNull()) {
-                        wz.setSchmelzNummer(json.get("schmelzNummer").asText().trim());
-                    }
-                    if (json.has("materialGuete") && !json.get("materialGuete").isNull()) {
-                        wz.setMaterialGuete(json.get("materialGuete").asText().trim());
-                    }
-                    if (json.has("normTyp") && !json.get("normTyp").isNull()) {
-                        wz.setNormTyp(json.get("normTyp").asText().trim());
-                    }
-                    if (json.has("lieferscheinNummer") && !json.get("lieferscheinNummer").isNull()) {
-                        lieferscheinNummer = json.get("lieferscheinNummer").asText().trim();
-                    }
-                } catch (Exception e) {
-                    log.debug("Konnte Werkstoffzeugnis-Felder nicht aus JSON parsen: {}", e.getMessage());
-                }
-            }
-
-            // Lieferschein-Verknüpfung: 1. Lieferschein-Nr., 2. Bestellnummer als Fallback
-            LieferantDokument lieferschein = sucheLieferscheinFuerWerkstoffzeugnis(
-                    dokument.getLieferant().getId(), lieferscheinNummer, geschaeftsdaten.getBestellnummer());
-            if (lieferschein != null) {
-                wz.setLieferscheinDokument(lieferschein);
-                log.info("Werkstoffzeugnis automatisch mit Lieferschein {} verknüpft (Dok-ID: {})",
-                        lieferschein.getGeschaeftsdaten() != null
-                                ? lieferschein.getGeschaeftsdaten().getDokumentNummer() : "?",
-                        lieferschein.getId());
-            }
-
-            werkstoffzeugnisRepository.save(wz);
-            log.info("Werkstoffzeugnis automatisch erstellt für Dokument {} (Schmelz-Nr: {}, Güte: {}, Norm: {})",
-                    dokument.getId(), wz.getSchmelzNummer(), wz.getMaterialGuete(), wz.getNormTyp());
-
-        } catch (Exception e) {
-            log.warn("Fehler beim automatischen Erstellen des Werkstoffzeugnisses für Dokument {}: {}",
-                    dokument.getId(), e.getMessage());
-        }
-    }
-
-    /**
-     * Erstellt Werkstoffzeugnis-Einträge aus einem Dokument.
-     * Bei PDFs mit mehreren Seiten: Gemini fragen ob mehrere Zertifikate enthalten sind.
-     * Wenn ja: PDF splitten, für jedes Zertifikat ein separates LieferantDokument + Werkstoffzeugnis anlegen.
-     * Wenn nein: Einzelne Erstellung via erstelleWerkstoffzeugnisAusDokument (bestehende Logik).
-     */
-    private void erstelleOderSplitteWerkstoffzeugnisse(LieferantDokument dokument,
-            LieferantGeschaeftsdokument geschaeftsdaten, Path dateiPfad) {
-        try {
-            String dateiname = dokument.getEffektiverDateiname();
-
-            // Nur PDFs mit mehr als einer Seite können mehrere Zertifikate enthalten
-            if (dateiname == null || !dateiname.toLowerCase().endsWith(".pdf")
-                    || dateiPfad == null || !Files.exists(dateiPfad)) {
-                erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
-                return;
-            }
-
-            byte[] pdfBytes = Files.readAllBytes(dateiPfad);
-            int totalPages;
-            try (var pdDoc = org.apache.pdfbox.Loader.loadPDF(pdfBytes)) {
-                totalPages = pdDoc.getNumberOfPages();
-            }
-
-            if (totalPages <= 1) {
-                // Einzelseite: kein Split möglich
-                erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
-                return;
-            }
-
-            // Gemini fragen: Wie viele separate Werkstoffzeugnisse enthält dieses PDF?
-            String jsonResponse = rufGeminiApiMitPrompt(pdfBytes, "application/pdf",
-                    buildMultiWerkstoffzeugnisPrompt());
-
-            if (jsonResponse == null) {
-                erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
-                return;
-            }
-
-            var jsonArray = objectMapper.readTree(jsonResponse);
-            if (!jsonArray.isArray() || jsonArray.size() <= 1) {
-                // Nur ein Zertifikat erkannt → bestehende Einzellogik
-                erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
-                return;
-            }
-
-            log.info("Multi-Werkstoffzeugnis-PDF erkannt: {} Zertifikate in Dokument {}",
-                    jsonArray.size(), dokument.getId());
-
-            // Upload-Verzeichnis sicherstellen
-            Path uploadDir = Path.of(uploadPath, "lieferanten",
-                    String.valueOf(dokument.getLieferant().getId()));
-            Files.createDirectories(uploadDir);
-
-            int wzIndex = 0;
-            try (var originalPdf = org.apache.pdfbox.Loader.loadPDF(dateiPfad.toFile())) {
-                for (var wzNode : jsonArray) {
-                    wzIndex++;
-                    String pageRange = wzNode.has("seiten") ? wzNode.get("seiten").asText() : "alle";
-
-                    // PDF-Seiten für dieses Zertifikat extrahieren
-                    int[] pages = parsePageRange(pageRange, totalPages);
-                    byte[] splitBytes = extractPages(originalPdf, pages);
-
-                    // Split-PDF in Upload-Verzeichnis speichern
-                    String splitFilename = java.util.UUID.randomUUID() + "_wz" + wzIndex + ".pdf";
-                    Files.write(uploadDir.resolve(splitFilename), splitBytes);
-
-                    // Neues LieferantDokument für die Split-Seiten anlegen
-                    LieferantDokument splitDok = new LieferantDokument();
-                    splitDok.setLieferant(dokument.getLieferant());
-                    splitDok.setTyp(LieferantDokumentTyp.WERKSTOFFZEUGNIS);
-                    splitDok.setGespeicherterDateiname(splitFilename);
-                    String origName = dokument.getOriginalDateiname() != null
-                            ? dokument.getOriginalDateiname() : dateiname;
-                    splitDok.setOriginalDateiname(origName + " [WZ " + wzIndex + "/" + jsonArray.size() + "]");
-                    splitDok = dokumentRepository.saveAndFlush(splitDok);
-
-                    // Werkstoffzeugnis direkt aus dem JSON-Node befüllen
-                    Werkstoffzeugnis wz = new Werkstoffzeugnis();
-                    wz.setLieferantDokument(splitDok);
-                    wz.setLieferant(dokument.getLieferant());
-
-                    if (wzNode.has("schmelzNummer") && !wzNode.get("schmelzNummer").isNull()) {
-                        wz.setSchmelzNummer(wzNode.get("schmelzNummer").asText().trim());
-                    }
-                    if (wzNode.has("materialGuete") && !wzNode.get("materialGuete").isNull()) {
-                        wz.setMaterialGuete(wzNode.get("materialGuete").asText().trim());
-                    }
-                    if (wzNode.has("normTyp") && !wzNode.get("normTyp").isNull()) {
-                        wz.setNormTyp(wzNode.get("normTyp").asText().trim());
-                    }
-                    if (wzNode.has("pruefDatum") && !wzNode.get("pruefDatum").isNull()) {
-                        wz.setPruefDatum(parseDateFlexibel(wzNode.get("pruefDatum").asText()));
-                    }
-
-                    // Lieferschein-Verknüpfung aus dem JSON
-                    String lieferscheinNr = wzNode.has("lieferscheinNummer")
-                            && !wzNode.get("lieferscheinNummer").isNull()
-                                    ? wzNode.get("lieferscheinNummer").asText().trim() : null;
-                    String bestellNr = wzNode.has("bestellnummer") && !wzNode.get("bestellnummer").isNull()
-                            ? wzNode.get("bestellnummer").asText().trim() : null;
-
-                    LieferantDokument lieferschein = sucheLieferscheinFuerWerkstoffzeugnis(
-                            dokument.getLieferant().getId(), lieferscheinNr, bestellNr);
-                    if (lieferschein != null) {
-                        wz.setLieferscheinDokument(lieferschein);
-                    }
-
-                    werkstoffzeugnisRepository.save(wz);
-                    log.info("Werkstoffzeugnis {}/{} erstellt: Schmelz={}, Güte={}, Seiten={}",
-                            wzIndex, jsonArray.size(), wz.getSchmelzNummer(), wz.getMaterialGuete(), pageRange);
-                }
-            }
-
-            log.info("Multi-Werkstoffzeugnis-Split abgeschlossen: {} Zertifikate aus Dokument {}",
-                    wzIndex, dokument.getId());
-
-        } catch (Exception e) {
-            log.error("Fehler beim Multi-Werkstoffzeugnis-Split für Dokument {}: {}",
-                    dokument.getId(), e.getMessage(), e);
-            // Fallback: Einzelerstellung mit den bereits vorhandenen Geschäftsdaten
-            erstelleWerkstoffzeugnisAusDokument(dokument, geschaeftsdaten);
-        }
-    }
-
-    /**
-     * Prompt für Gemini: Erkennung mehrerer Werkstoffzeugnisse in einem PDF.
-     * Analoge Logik zu buildMultiDocumentPrompt(), aber für EN 10204 Material-Zeugnisse.
-     */
-    private String buildMultiWerkstoffzeugnisPrompt() {
-        return """
-                Analysiere dieses PDF-Dokument. Es könnte MEHRERE SEPARATE Werkstoffzeugnisse (Material Test Reports / EN 10204) enthalten.
-
-                WICHTIG: Prüfe ob jede Seite ein eigenes, separates Werkstoffzeugnis ist (unterschiedliche Schmelznummern, Materialien oder Zertifikatsnummern).
-
-                Antworte NUR mit einem JSON-Array. Für JEDES erkannte Werkstoffzeugnis ein Objekt:
-                [
-                  {
-                    "seiten": "1",
-                    "schmelzNummer": "...",
-                    "materialGuete": "...",
-                    "normTyp": "...",
-                    "pruefDatum": "YYYY-MM-DD",
-                    "lieferscheinNummer": "...",
-                    "bestellnummer": "..."
-                  }
-                ]
-
-                "seiten" enthält die Seitennummern dieses Werkstoffzeugnisses (z.B. "1", "2-3", "4").
-                "schmelzNummer" ist die Schmelze- oder Chargennummer des Stahls/Materials.
-                "materialGuete" ist die Werkstoffbezeichnung (z.B. "S355J2+N", "S235JR", "42CrMo4").
-                "normTyp" ist der Zertifikatstyp nach DIN EN 10204 (z.B. "3.1", "2.2", "EN 10204 3.1").
-                "pruefDatum" ist das Prüf- oder Ausstellungsdatum im Format YYYY-MM-DD.
-                "lieferscheinNummer" ist die referenzierte Lieferscheinnummer (null wenn nicht vorhanden).
-                "bestellnummer" ist die referenzierte Bestellnummer (null wenn nicht vorhanden).
-
-                Setze leer erkannte Felder auf null – nie raten.
-                Wenn NUR EIN Werkstoffzeugnis vorhanden ist, gib trotzdem ein Array mit einem Element zurück.
-                """;
-    }
-
-    /**
-     * Sucht den passenden Lieferschein zu einem Werkstoffzeugnis.
-     *            2. Bestellnummer-Fallback (z.B. SWT: "LBE 1521374 / 8510")
-     */
-    private LieferantDokument sucheLieferscheinFuerWerkstoffzeugnis(
-            Long lieferantId, String lieferscheinNummer, String bestellnummer) {
-        // 1. Versuche über explizite Lieferschein-Nr. zu finden
-        if (lieferscheinNummer != null && !lieferscheinNummer.isBlank()) {
-            String cleanNr = lieferscheinNummer.replaceAll("\\s+", "");
-            var treffer = lieferantGeschaeftsdokumentRepository
-                    .findByLieferantIdAndDokumentNummer(lieferantId, cleanNr);
-            for (var gd : treffer) {
-                if (gd.getDokument() != null
-                        && gd.getDokument().getTyp() == LieferantDokumentTyp.LIEFERSCHEIN) {
-                    return gd.getDokument();
-                }
-            }
-            // Auch ohne Whitespace-Bereinigung versuchen (Original-Nr.)
-            if (!cleanNr.equals(lieferscheinNummer)) {
-                treffer = lieferantGeschaeftsdokumentRepository
-                        .findByLieferantIdAndDokumentNummer(lieferantId, lieferscheinNummer);
-                for (var gd : treffer) {
-                    if (gd.getDokument() != null
-                            && gd.getDokument().getTyp() == LieferantDokumentTyp.LIEFERSCHEIN) {
-                        return gd.getDokument();
-                    }
-                }
-            }
-        }
-
-        // 2. Fallback: Suche Lieferschein über Bestellnummer
-        if (bestellnummer != null && !bestellnummer.isBlank()) {
-            String cleanBnr = bestellnummer.replaceAll("\\s+", "");
-            var alleDokumente = dokumentRepository
-                    .findByLieferantIdAndTypOrderByUploadDatumDesc(lieferantId, LieferantDokumentTyp.LIEFERSCHEIN);
-            for (var dok : alleDokumente) {
-                if (dok.getGeschaeftsdaten() != null && dok.getGeschaeftsdaten().getBestellnummer() != null) {
-                    String dokBnr = dok.getGeschaeftsdaten().getBestellnummer().replaceAll("\\s+", "");
-                    if (dokBnr.equalsIgnoreCase(cleanBnr)) {
-                        return dok;
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
     private String getMimeType(LieferantDokument dokument) {
         String dateiname = dokument.getEffektiverDateiname();
         if (dateiname == null)
@@ -2358,6 +1954,8 @@ public class GeminiDokumentAnalyseService {
             log.debug("[Gemini API] Starte Dokumentanalyse API-Aufruf (Lock erworben, Model: {})",
                     useProModel ? "Pro" : "Standard");
 
+            // Key zur Laufzeit aus System-Setup lesen.
+            String geminiApiKey = systemSettingsService.getGeminiApiKey();
             if (geminiApiKey == null || geminiApiKey.isBlank()) {
                 log.warn("Gemini API Key nicht konfiguriert");
                 return null;
@@ -2557,9 +2155,9 @@ public class GeminiDokumentAnalyseService {
                 }
             }
 
-            // Dokumentnummer – Leerzeichen entfernen für zuverlässiges Dokumentketten-Matching
+            // Dokumentnummer
             if (json.has("dokumentNummer") && !json.get("dokumentNummer").isNull()) {
-                gd.setDokumentNummer(json.get("dokumentNummer").asText().replaceAll("\\s+", ""));
+                gd.setDokumentNummer(json.get("dokumentNummer").asText().trim());
             }
 
             // Datum
@@ -2698,7 +2296,7 @@ public class GeminiDokumentAnalyseService {
      * Datenbank.
      * Nur Artikel mit bekannter externeArtikelnummer werden aktualisiert.
      */
-    private void verarbeiteArtikelPositionen(JsonNode json, Lieferanten lieferant, LieferantDokument quelle) {
+    private void verarbeiteArtikelPositionen(JsonNode json, Lieferanten lieferant) {
         if (lieferant == null) {
             log.debug("Kein Lieferant - überspringe Artikelpreis-Update");
             return;
@@ -2715,19 +2313,8 @@ public class GeminiDokumentAnalyseService {
 
         int updated = 0;
         int skipped = 0;
-        int agentMatched = 0;
-        int agentVorgeschlagen = 0;
 
         for (JsonNode pos : positionen) {
-            // Dienstleistungen / Nebenkosten nicht als Materialposition behandeln
-            String positionsTyp = pos.has("positionsTyp") ? pos.get("positionsTyp").asText("ARTIKEL") : "ARTIKEL";
-            if (!"ARTIKEL".equalsIgnoreCase(positionsTyp)) {
-                log.debug("Position übersprungen (Typ={}): {}", positionsTyp,
-                        pos.has("bezeichnung") ? pos.get("bezeichnung").asText("") : "");
-                skipped++;
-                continue;
-            }
-
             String externeNr = pos.has("externeArtikelnummer") ? pos.get("externeArtikelnummer").asText(null) : null;
             if (externeNr == null || externeNr.isBlank()) {
                 skipped++;
@@ -2739,15 +2326,6 @@ public class GeminiDokumentAnalyseService {
                     externeNr.trim(), lieferant.getId());
 
             if (lapOpt.isEmpty()) {
-                if (autoMatchingEnabled) {
-                    var ergebnis = artikelMatchingAgentService.matcheOderSchlageAn(pos, lieferant, quelle);
-                    switch (ergebnis.ergebnis()) {
-                        case PREIS_AKTUALISIERT -> { agentMatched++; log.info("Agent-Match: {}", ergebnis.hinweis()); }
-                        case VORSCHLAG_ANGELEGT -> { agentVorgeschlagen++; log.info("Agent-Vorschlag: {}", ergebnis.hinweis()); }
-                        case SKIPPED, FEHLER -> { skipped++; log.debug("Agent-Skip: {}", ergebnis.hinweis()); }
-                    }
-                    continue;
-                }
                 log.debug("Artikel nicht gefunden: {} für Lieferant {}", externeNr, lieferant.getLieferantenname());
                 skipped++;
                 continue;
@@ -2779,18 +2357,12 @@ public class GeminiDokumentAnalyseService {
             artikelPreiseRepository.save(lap);
             updated++;
 
-            BigDecimal mengeKg = extrahiereMengeKgAusJson(pos, lap.getArtikel());
-            preisHookService.registriere(lap.getArtikel(), lieferant, preisProKg, mengeKg,
-                    einheitVonArtikel(lap.getArtikel()),
-                    PreisQuelle.RECHNUNG, externeNr, null, null);
-
             log.info("Artikelpreis aktualisiert: {} = {} €/kg (war: {} {})",
                     externeNr, preisProKg, einzelpreis, preiseinheit);
         }
 
-        if (updated > 0 || skipped > 0 || agentMatched > 0 || agentVorgeschlagen > 0) {
-            log.info("Artikelpreise verarbeitet: {} aktualisiert, {} übersprungen, Agent: {} Matches, {} Vorschläge",
-                    updated, skipped, agentMatched, agentVorgeschlagen);
+        if (updated > 0 || skipped > 0) {
+            log.info("Artikelpreise verarbeitet: {} aktualisiert, {} übersprungen", updated, skipped);
         }
     }
 
@@ -2843,61 +2415,6 @@ public class GeminiDokumentAnalyseService {
         return preis;
     }
 
-    /** Liefert die Verrechnungseinheit des Artikels oder KILOGRAMM als Fallback. */
-    private Verrechnungseinheit einheitVonArtikel(
-            org.example.kalkulationsprogramm.domain.Artikel artikel) {
-        if (artikel == null || artikel.getVerrechnungseinheit() == null) {
-            return Verrechnungseinheit.KILOGRAMM;
-        }
-        return artikel.getVerrechnungseinheit();
-    }
-
-    /**
-     * Invertiert {@link #normalizePreisZuKg}: rechnet eine Menge aus der
-     * Rechnungseinheit nach kg um. Gibt {@code null} zurueck bei unbekannter
-     * Einheit (besser kein Datenpunkt als ein falsch geschaetzter).
-     */
-    private BigDecimal normalizeMengeZuKg(BigDecimal menge, String einheit) {
-        if (menge == null) return null;
-        if (einheit == null || einheit.isBlank()) return menge; // Annahme: kg
-        String e = einheit.toLowerCase().trim();
-        if (e.contains("tonne") || e.equals("t") || e.equals("to")
-                || e.contains("1000 kg") || e.contains("1000kg")) {
-            return menge.multiply(BigDecimal.valueOf(1000));
-        }
-        if (e.contains("100 kg") || e.contains("100kg")) {
-            return menge.multiply(BigDecimal.valueOf(100));
-        }
-        if (e.equals("kg") || e.contains("kilogramm") || e.contains("kilogram")) {
-            return menge;
-        }
-        if (e.equals("g") || e.contains("gramm")) {
-            return menge.divide(BigDecimal.valueOf(1000), 3, RoundingMode.HALF_UP);
-        }
-        return null;
-    }
-
-    /**
-     * Extrahiert die Rechnungsmenge aus einer JSON-Position und normalisiert
-     * sie nach kg. Liefert nur fuer KILOGRAMM-Artikel eine Menge, sonst
-     * {@code null} — damit der gewichtete Durchschnittspreis nicht mit
-     * Stueck-/Meter-Mengen vergiftet wird.
-     */
-    private BigDecimal extrahiereMengeKgAusJson(JsonNode pos,
-            org.example.kalkulationsprogramm.domain.Artikel artikel) {
-        if (pos == null) return null;
-        if (einheitVonArtikel(artikel) != Verrechnungseinheit.KILOGRAMM) return null;
-        JsonNode mengeNode = pos.get("menge");
-        if (mengeNode == null || mengeNode.isNull()) return null;
-        try {
-            BigDecimal menge = new BigDecimal(mengeNode.asText().replace(',', '.'));
-            String einheit = pos.has("mengeneinheit") ? pos.get("mengeneinheit").asText("kg") : "kg";
-            return normalizeMengeZuKg(menge, einheit);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
     /**
      * Verarbeitet Artikelpositionen aus strukturierten ZUGFeRD-Daten und
      * aktualisiert Preise.
@@ -2905,97 +2422,60 @@ public class GeminiDokumentAnalyseService {
      */
     private void verarbeiteZugferdArtikelPositionen(
             java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen,
-            Lieferanten lieferant,
-            LieferantDokument quelle) {
+            Lieferanten lieferant) {
         if (lieferant == null || positionen == null || positionen.isEmpty()) {
-            log.warn("[ZUGFeRD-Match] Frühzeitiger Abbruch: lieferant={} positionen={}",
-                    lieferant != null, positionen != null ? positionen.size() : "null");
             return;
         }
 
-        log.info("[ZUGFeRD-Match] Starte Verarbeitung von {} Positionen für Lieferant {}/{} (autoMatchingEnabled={})",
-                positionen.size(), lieferant.getId(), lieferant.getLieferantenname(), autoMatchingEnabled);
-
         int updated = 0;
         int skipped = 0;
-        int agentMatched = 0;
-        int agentVorgeschlagen = 0;
-        int posIndex = 0;
 
         for (var pos : positionen) {
-            posIndex++;
             String externeNr = pos.getExterneArtikelnummer();
-            String bez = pos.getBezeichnung();
-            log.info("[ZUGFeRD-Match] Position {}/{}: externeNr='{}' bezeichnung='{}' menge={} {} preis={} {}",
-                    posIndex, positionen.size(), externeNr, bez, pos.getMenge(), pos.getMengeneinheit(),
-                    pos.getEinzelpreis(), pos.getPreiseinheit());
-
             if (externeNr == null || externeNr.isBlank()) {
-                log.info("[ZUGFeRD-Match] Position {}: keine externe Nummer → SKIP", posIndex);
                 skipped++;
                 continue;
             }
 
+            // Suche in LieferantenArtikelPreise nach externeArtikelnummer + lieferantId
             var lapOpt = artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_Id(
                     externeNr.trim(), lieferant.getId());
 
             if (lapOpt.isEmpty()) {
-                log.info("[ZUGFeRD-Match] Position {}: externe Nummer '{}' NICHT in DB für Lieferant {} — autoMatchingEnabled={}",
-                        posIndex, externeNr, lieferant.getId(), autoMatchingEnabled);
-                if (autoMatchingEnabled) {
-                    log.info("[ZUGFeRD-Match] Position {}: triggere KI-Agent", posIndex);
-                    JsonNode posJson = objectMapper.valueToTree(pos);
-                    var ergebnis = artikelMatchingAgentService.matcheOderSchlageAn(posJson, lieferant, quelle);
-                    log.info("[ZUGFeRD-Match] Position {}: Agent-Ergebnis={} hinweis='{}'",
-                            posIndex, ergebnis.ergebnis(), ergebnis.hinweis());
-                    switch (ergebnis.ergebnis()) {
-                        case PREIS_AKTUALISIERT -> agentMatched++;
-                        case VORSCHLAG_ANGELEGT -> agentVorgeschlagen++;
-                        case SKIPPED, FEHLER -> skipped++;
-                    }
-                    continue;
-                }
-                log.info("[ZUGFeRD-Match] Position {}: Agent DEAKTIVIERT (Flag off) → SKIP", posIndex);
+                log.debug("ZUGFeRD-Artikel nicht in DB: {} für Lieferant {}", externeNr,
+                        lieferant.getLieferantenname());
                 skipped++;
                 continue;
             }
-
-            log.info("[ZUGFeRD-Match] Position {}: externe Nummer '{}' GEFUNDEN (Artikel-ID={}) → Preis-Update",
-                    posIndex, externeNr, lapOpt.get().getArtikel() != null ? lapOpt.get().getArtikel().getId() : "?");
 
             if (pos.getEinzelpreis() == null) {
-                log.info("[ZUGFeRD-Match] Position {}: kein Einzelpreis → SKIP", posIndex);
                 skipped++;
                 continue;
             }
 
+            // Normalisiere Preis auf €/kg
             BigDecimal preisProKg = normalizePreisZuKg(pos.getEinzelpreis(), pos.getPreiseinheit());
             if (preisProKg == null) {
-                log.warn("[ZUGFeRD-Match] Position {}: Preisnormalisierung fehlgeschlagen ({} {}) → SKIP",
-                        posIndex, pos.getEinzelpreis(), pos.getPreiseinheit());
+                log.debug("ZUGFeRD-Preis außerhalb Bereich für {}: {} {}",
+                        externeNr, pos.getEinzelpreis(), pos.getPreiseinheit());
                 skipped++;
                 continue;
             }
 
+            // Update LieferantenArtikelPreise
             LieferantenArtikelPreise lap = lapOpt.get();
             lap.setPreis(preisProKg);
             lap.setPreisAenderungsdatum(new Date());
             artikelPreiseRepository.save(lap);
             updated++;
 
-            BigDecimal mengeKg = einheitVonArtikel(lap.getArtikel()) == Verrechnungseinheit.KILOGRAMM
-                    ? normalizeMengeZuKg(pos.getMenge(), pos.getMengeneinheit())
-                    : null;
-            preisHookService.registriere(lap.getArtikel(), lieferant, preisProKg, mengeKg,
-                    einheitVonArtikel(lap.getArtikel()),
-                    PreisQuelle.RECHNUNG, externeNr, null, null);
-
-            log.info("[ZUGFeRD-Match] Position {}: Preis aktualisiert → {} €/kg (Rohwert: {} {})",
-                    posIndex, preisProKg, pos.getEinzelpreis(), pos.getPreiseinheit());
+            log.info("ZUGFeRD-Artikelpreis aktualisiert: {} = {} €/kg (war: {} {})",
+                    externeNr, preisProKg, pos.getEinzelpreis(), pos.getPreiseinheit());
         }
 
-        log.info("[ZUGFeRD-Match] FERTIG: {} Positionen insgesamt → {} Exakt-Match aktualisiert, {} Agent-Matches, {} Agent-Vorschläge, {} übersprungen",
-                positionen.size(), updated, agentMatched, agentVorgeschlagen, skipped);
+        if (updated > 0 || skipped > 0) {
+            log.info("ZUGFeRD-Artikelpreise: {} aktualisiert, {} übersprungen", updated, skipped);
+        }
     }
 
     /**

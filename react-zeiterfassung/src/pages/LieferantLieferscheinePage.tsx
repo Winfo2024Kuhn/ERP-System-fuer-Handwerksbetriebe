@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { ArrowLeft, Search, ScanLine, Upload, FileText, Loader2, X, ChevronRight, Calendar, Hash, Save, CheckSquare, Square } from 'lucide-react'
+import { ArrowLeft, Search, ScanLine, Upload, FileText, Loader2, X, ChevronRight, Calendar, Hash, Save, User } from 'lucide-react'
 import ScannerModal from '../components/ScannerModal'
 import MobileDatePicker from '../components/MobileDatePicker'
 import { NotificationService } from '../services/NotificationService'
@@ -17,7 +17,7 @@ interface Lieferschein {
     gespeicherterDateiname?: string
     uploadDatum: string
     typ: string
-    wareGeprueft?: boolean
+    uploadedByName?: string
     geschaeftsdaten?: {
         dokumentNummer?: string
         dokumentDatum?: string
@@ -42,11 +42,6 @@ interface AnalyzeResponse {
     skontoTage?: number
     skontoProzent?: number
     nettoTage?: number
-    // Werkstoffzeugnis-spezifisch (EN 10204)
-    schmelzNummer?: string
-    materialGuete?: string
-    normTyp?: string
-    lieferscheinNummer?: string
 }
 
 interface MultiInvoiceResponse {
@@ -151,10 +146,10 @@ export default function LieferantLieferscheinePage() {
                     const result = data[0].analyzeResponse
 
 
-                    // Initialize Form Data — preserve WERKSTOFFZEUGNIS type if detected
+                    // Initialize Form Data
                     setFormData({
                         ...result,
-                        dokumentTyp: result.dokumentTyp === 'WERKSTOFFZEUGNIS' ? 'WERKSTOFFZEUGNIS' : 'LIEFERSCHEIN'
+                        dokumentTyp: 'LIEFERSCHEIN' // Force Lieferschein context
                     })
                     setVerifying(true)
                 } else {
@@ -204,26 +199,29 @@ export default function LieferantLieferscheinePage() {
         }
     }
 
-    const toggleWareGeprueft = async (e: React.MouseEvent, doc: Lieferschein) => {
-        e.stopPropagation()
-        const token = localStorage.getItem('zeiterfassung_token')
-        const neuerWert = !doc.wareGeprueft
-        setLieferscheine(prev => prev.map(d => d.id === doc.id ? { ...d, wareGeprueft: neuerWert } : d))
-        try {
-            await fetch(`/api/lieferant-dokumente/${doc.id}/ware-geprueft?token=${token}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ wareGeprueft: neuerWert })
-            })
-        } catch (err) {
-            console.error(err)
-            setLieferscheine(prev => prev.map(d => d.id === doc.id ? { ...d, wareGeprueft: !neuerWert } : d))
-        }
-    }
-
     const openDocument = (doc: Lieferschein) => {
+        // Construct standard download/view URL
+        // Assuming /files/lieferanten/{id}/{filename} or similar. 
+        // Or check where `src` comes from. Usually `OfflineService` handles URLs or there's a simple path
+        // In this project (based on other pages), it might be /api/dokumente/download/...
+        // But let's assume standard static path or api endpoint.
+        // Actually, looking at LieferantDokumentDto, it has `gespeicherterDateiname`.
+        // Let's rely on backend serving it via `uploads` or controller.
+        // Quick fix: open full Image Viewer or just new tab if PDF.
         if (doc.gespeicherterDateiname) {
+            // Try standard endpoint
             const token = localStorage.getItem('zeiterfassung_token')
+            // Backend likely needs an endpoint to serve file by ID or path
+            // Assuming controller has `GET /api/lieferanten/{id}/dokumente/{docId}/content` ?
+            // Or static resource.
+            // Given the context, let's look at `LieferantenPage` which does not seem to open docs yet?
+            // Ah, `LieferantenPage.tsx` just has buttons, no list of documents logic there except "Dokumente" header.
+
+            // Let's use a generic API download link if possible, or static serving.
+            // Usually: /api/files/...?
+            // Let's Assume: /api/lieferanten/{id}/dokumente/{docId}/download
+
+            // Wait, I don't have doc ID in my simplified `Lieferschein` interface? Yes I do `id`.
             const url = `/api/lieferanten/${lieferantId}/dokumente/${doc.id}/download?token=${token}`
             window.open(url, '_blank')
         }
@@ -294,61 +292,8 @@ export default function LieferantLieferscheinePage() {
                             />
                         </div>
 
-                        {/* Werkstoffzeugnis-spezifische Felder */}
-                        {formData.dokumentTyp === 'WERKSTOFFZEUGNIS' && (
-                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
-                                <p className="text-sm font-semibold text-amber-800">Werkstoffzeugnis (EN 10204)</p>
-                                <div>
-                                    <label className="block text-xs text-amber-700 mb-1">Schmelznummer</label>
-                                    <input
-                                        type="text"
-                                        value={formData.schmelzNummer || formData.dokumentNummer || ''}
-                                        onChange={e => setFormData({ ...formData, schmelzNummer: e.target.value })}
-                                        className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
-                                        placeholder="z.B. 123456"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-amber-700 mb-1">Werkstoffgüte</label>
-                                    <input
-                                        type="text"
-                                        value={formData.materialGuete || ''}
-                                        onChange={e => setFormData({ ...formData, materialGuete: e.target.value })}
-                                        className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
-                                        placeholder="z.B. S355J2, 1.4301"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-amber-700 mb-1">Zeugnistyp (EN 10204)</label>
-                                    <div className="flex gap-2">
-                                        {['2.1', '2.2', '3.1', '3.2'].map(typ => (
-                                            <button
-                                                key={typ}
-                                                type="button"
-                                                onClick={() => setFormData({ ...formData, normTyp: typ })}
-                                                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                                    (formData.normTyp || '3.1') === typ
-                                                        ? 'bg-amber-600 text-white'
-                                                        : 'bg-white border border-amber-200 text-amber-800 hover:bg-amber-50'
-                                                }`}
-                                            >
-                                                {typ}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-amber-700 mb-1">Lieferschein-Nr. (Verknüpfung)</label>
-                                    <input
-                                        type="text"
-                                        value={formData.lieferscheinNummer || ''}
-                                        onChange={e => setFormData({ ...formData, lieferscheinNummer: e.target.value })}
-                                        className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
-                                        placeholder="z.B. 90406834/01 (falls vorhanden)"
-                                    />
-                                </div>
-                            </div>
-                        )}
+                        {/* Hidden fields for internal logic */}
+                        {/* We default to LIEFERSCHEIN, so we don't show type selector unless necessary */}
                     </div>
                 </div>
 
@@ -448,7 +393,7 @@ export default function LieferantLieferscheinePage() {
                                         {new Date(doc.uploadDatum).toLocaleDateString('de-DE')}
                                     </span>
                                 </div>
-                                <div className="flex items-center gap-4 text-sm text-slate-500">
+                                <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
                                     {doc.geschaeftsdaten?.dokumentDatum && (
                                         <span className="flex items-center gap-1">
                                             <Calendar className="w-3 h-3" />
@@ -458,15 +403,14 @@ export default function LieferantLieferscheinePage() {
                                     {doc.geschaeftsdaten?.bestellnummer && (
                                         <span className="truncate">Ref: {doc.geschaeftsdaten.bestellnummer}</span>
                                     )}
+                                    {doc.uploadedByName && (
+                                        <span className="flex items-center gap-1 truncate">
+                                            <User className="w-3 h-3" />
+                                            {doc.uploadedByName}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
-                            <button
-                                onClick={(e) => toggleWareGeprueft(e, doc)}
-                                className={`p-1.5 rounded-lg flex-shrink-0 transition-colors ${doc.wareGeprueft ? 'text-green-600' : 'text-slate-300 hover:text-slate-500'}`}
-                                title={doc.wareGeprueft ? 'Ware geprüft' : 'Noch nicht geprüft'}
-                            >
-                                {doc.wareGeprueft ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
-                            </button>
                             <ChevronRight className="w-5 h-5 text-slate-300" />
                         </button>
                     ))

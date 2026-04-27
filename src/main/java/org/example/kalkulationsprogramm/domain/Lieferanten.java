@@ -45,4 +45,13 @@ public class Lieferanten {
     @OneToMany(mappedBy = "lieferant", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<LieferantenArtikelPreise> artikelpreise = new ArrayList<>();
 
+    /**
+     * Standard-Kostenstelle für diesen Lieferanten.
+     * Wird beim Anlegen neuer Bestellungen / Eingangsrechnungen vorgeschlagen,
+     * damit der Nutzer wiederkehrende Zuordnungen (z.B. "Apple" → "IT") nicht jedes Mal manuell setzen muss.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "standard_kostenstelle_id")
+    private Kostenstelle standardKostenstelle;
+
 }

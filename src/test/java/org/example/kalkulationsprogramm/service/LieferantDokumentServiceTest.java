@@ -36,6 +36,8 @@ class LieferantDokumentServiceTest {
     private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     @Mock
     private GeminiDokumentAnalyseService geminiService;
+    @Mock
+    private LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
 
     @InjectMocks
     private LieferantDokumentService service;

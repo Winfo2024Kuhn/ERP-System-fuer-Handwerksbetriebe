@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle } from "lucide-react";
+import { Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle, Package } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -17,6 +17,7 @@ import { DetailLayout } from "../components/DetailLayout";
 import { PageLayout } from "../components/layout/PageLayout";
 import { Select } from "../components/ui/select-custom";
 import { useToast } from '../components/ui/toast';
+import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
 
 const LIEFERANT_TYPES = [
     { value: "STAHL", label: "Stahl" },
@@ -254,6 +255,17 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                     <div>
                         <p className="text-xs text-slate-500">Vertreter</p>
                         <p className="font-medium text-slate-900">{lieferant.vertreter || '-'}</p>
+                    </div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                        <Package className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <p className="text-xs text-slate-500">Standard-Kostenstelle</p>
+                        <p className="font-medium text-slate-900">
+                            {lieferant.standardKostenstelleName || <span className="text-slate-400">Keine zugewiesen</span>}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -667,6 +679,7 @@ function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; o
 function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; onClose: () => void; onSave: (l: Lieferant) => void }) {
     const [formData, setFormData] = useState<Lieferant>({ ...lieferant });
     const [newEmail, setNewEmail] = useState("");
+    const [showKostenstelleModal, setShowKostenstelleModal] = useState(false);
 
     const handleChange = (field: keyof Lieferant, value: Lieferant[keyof Lieferant]) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -731,6 +744,35 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                                 onChange={(e) => handleChange("eigeneKundennummer", e.target.value)}
                                 placeholder="z.B. K-123456"
                             />
+                        </div>
+                        <div className="md:col-span-2 space-y-1.5">
+                            <Label>Standard-Kostenstelle</Label>
+                            <p className="text-xs text-slate-400 -mt-1">
+                                Wird bei neuen Bestellungen / Eingangsrechnungen automatisch vorgeschlagen.
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <div className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 flex items-center gap-2">
+                                    <Package className="w-4 h-4 text-slate-400 shrink-0" />
+                                    {formData.standardKostenstelleName ? (
+                                        <span>{formData.standardKostenstelleName}</span>
+                                    ) : (
+                                        <span className="text-slate-400">Keine zugewiesen</span>
+                                    )}
+                                </div>
+                                <Button type="button" variant="outline" onClick={() => setShowKostenstelleModal(true)}>
+                                    {formData.standardKostenstelleName ? "Ändern" : "Auswählen"}
+                                </Button>
+                                {formData.standardKostenstelleId != null && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        onClick={() => setFormData(prev => ({ ...prev, standardKostenstelleId: null, standardKostenstelleName: undefined }))}
+                                        title="Kostenstelle entfernen"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -838,6 +880,19 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                     }} className="bg-rose-600 hover:bg-rose-700 text-white">Speichern</Button>
                 </div>
             </div>
+            {showKostenstelleModal && (
+                <KostenstelleSelectModal
+                    onClose={() => setShowKostenstelleModal(false)}
+                    onSelect={(k) => {
+                        setFormData(prev => ({
+                            ...prev,
+                            standardKostenstelleId: k.id,
+                            standardKostenstelleName: k.bezeichnung,
+                        }));
+                        setShowKostenstelleModal(false);
+                    }}
+                />
+            )}
         </div>
     );
 }

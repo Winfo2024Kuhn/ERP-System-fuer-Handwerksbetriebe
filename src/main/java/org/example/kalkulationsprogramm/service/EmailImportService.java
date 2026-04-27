@@ -67,6 +67,7 @@ public class EmailImportService {
     private final SpamFilterService spamFilterService;
     private final SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
     private final LieferantenRepository lieferantenRepository;
+    private final SystemSettingsService systemSettingsService;
 
     // Self-Injection für transactional proxy: importMessage muss durch den
     // Spring-Proxy laufen, damit @Transactional pro Mail eine eigene
@@ -97,10 +98,8 @@ public class EmailImportService {
         if (!emailFeaturesEnabled) {
             return;
         }
-        String user = System.getenv("IMAP_USER");
-        String pass = System.getenv("IMAP_PASSWORD");
-        if (user == null || pass == null) {
-            log.debug("[EmailImport] IMAP_USER/PASSWORD nicht konfiguriert");
+        if (!systemSettingsService.isImapConfigured()) {
+            log.debug("[EmailImport] IMAP nicht konfiguriert (siehe System-Einstellungen → E-Mail)");
             return;
         }
 
@@ -122,13 +121,14 @@ public class EmailImportService {
      * minutenlangen Transaktion laufen und Connections blockieren.
      */
     public int doImport() {
-        String user = System.getenv("IMAP_USER");
-        String pass = System.getenv("IMAP_PASSWORD");
-        String host = System.getenv("IMAP_HOST");
-        if (host == null || host.isBlank()) {
-            host = "secureimap.t-online.de";
+        String user = systemSettingsService.getImapUsername();
+        String pass = systemSettingsService.getImapPassword();
+        String host = systemSettingsService.getImapHost();
+        int port = systemSettingsService.getImapPort();
+        if (user == null || user.isBlank() || pass == null || pass.isBlank()) {
+            log.debug("[EmailImport] IMAP-Zugangsdaten fehlen");
+            return 0;
         }
-        int port = 993;
 
         Properties props = new Properties();
         props.put("mail.store.protocol", "imaps");

@@ -31,6 +31,10 @@ public class LieferantMapper {
         dto.setMobiltelefon(lieferant.getMobiltelefon());
         dto.setIstAktiv(lieferant.getIstAktiv());
         dto.setKundenEmails(lieferant.getKundenEmails());
+        if (lieferant.getStandardKostenstelle() != null) {
+            dto.setStandardKostenstelleId(lieferant.getStandardKostenstelle().getId());
+            dto.setStandardKostenstelleName(lieferant.getStandardKostenstelle().getBezeichnung());
+        }
         return dto;
     }
 
