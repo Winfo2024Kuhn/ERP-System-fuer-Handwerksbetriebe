@@ -60,6 +60,7 @@ public class GeminiDokumentAnalyseService {
     private final ZugferdExtractorService zugferdExtractorService;
     private final LieferantenArtikelPreiseRepository artikelPreiseRepository;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
+    private final SystemSettingsService systemSettingsService;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -76,9 +77,6 @@ public class GeminiDokumentAnalyseService {
     // Retry configuration for transient failures
     private static final int MAX_RETRIES = 3;
     private static final long INITIAL_RETRY_DELAY_MS = 2000; // 2 seconds, doubles each retry
-
-    @Value("${ai.gemini.api-key}")
-    private String geminiApiKey;
 
     @Value("${ai.gemini.model.dokument-analyse:gemini-3-flash-preview}")
     private String geminiModel;
@@ -537,6 +535,8 @@ public class GeminiDokumentAnalyseService {
 
             String base64Data = Base64.getEncoder().encodeToString(bytes);
             String modelToUse = useProModel ? geminiProModel : geminiModel;
+            // Key zur Laufzeit aus System-Setup lesen.
+            String geminiApiKey = systemSettingsService.getGeminiApiKey();
             String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelToUse
                     + ":generateContent?key=" + geminiApiKey;
 
@@ -1954,6 +1954,8 @@ public class GeminiDokumentAnalyseService {
             log.debug("[Gemini API] Starte Dokumentanalyse API-Aufruf (Lock erworben, Model: {})",
                     useProModel ? "Pro" : "Standard");
 
+            // Key zur Laufzeit aus System-Setup lesen.
+            String geminiApiKey = systemSettingsService.getGeminiApiKey();
             if (geminiApiKey == null || geminiApiKey.isBlank()) {
                 log.warn("Gemini API Key nicht konfiguriert");
                 return null;

@@ -35,6 +35,7 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private ZugferdExtractorService zugferdExtractorService;
     @Mock private LieferantenArtikelPreiseRepository artikelPreiseRepository;
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
+    @Mock private SystemSettingsService systemSettingsService;
 
     private GeminiDokumentAnalyseService service;
 
@@ -46,7 +47,8 @@ class GeminiDokumentAnalyseServiceTest {
                 dokumentRepository,
                 zugferdExtractorService,
                 artikelPreiseRepository,
-                lieferantGeschaeftsdokumentRepository
+                lieferantGeschaeftsdokumentRepository,
+                systemSettingsService
         );
     }
 

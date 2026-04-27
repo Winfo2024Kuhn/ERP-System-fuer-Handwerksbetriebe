@@ -23,12 +23,10 @@ import java.util.Base64;
 public class GeminiScannerService {
 
     private final ObjectMapper objectMapper;
+    private final SystemSettingsService systemSettingsService;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
-
-    @Value("${ai.gemini.api-key}")
-    private String geminiApiKey;
 
     @Value("${ai.gemini.model.scanner:gemini-3-flash-preview}")
     private String geminiModel;
@@ -56,6 +54,8 @@ public class GeminiScannerService {
 
     public String generateFilename(byte[] imageBytes) {
         try {
+            // Key zur Laufzeit aus System-Setup lesen.
+            String geminiApiKey = systemSettingsService.getGeminiApiKey();
             if (geminiApiKey == null || geminiApiKey.isBlank())
                 return "Scan_" + System.currentTimeMillis();
 

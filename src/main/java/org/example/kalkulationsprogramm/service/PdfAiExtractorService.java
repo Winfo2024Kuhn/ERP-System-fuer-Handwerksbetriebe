@@ -110,6 +110,7 @@ public class PdfAiExtractorService {
     private static final int PDF_RENDER_DPI = 150;
 
     private final ObjectMapper objectMapper;
+    private final SystemSettingsService systemSettingsService;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
@@ -120,9 +121,6 @@ public class PdfAiExtractorService {
     private String aiBackend;
 
     // ========== GEMINI API ==========
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
-
     @Value("${ai.gemini.model.pdf-extractor:gemini-3-flash-preview}")
     private String geminiModel;
 
@@ -177,9 +175,10 @@ public class PdfAiExtractorService {
 
     private Optional<ZugferdDaten> callGeminiApiWithPdf(String base64Pdf, String systemPrompt) {
         try {
-            // API Key Prüfung
+            // Key zur Laufzeit aus System-Setup lesen.
+            String geminiApiKey = systemSettingsService.getGeminiApiKey();
             if (geminiApiKey == null || geminiApiKey.isBlank() || geminiApiKey.equals("DEIN_API_KEY_HIER")) {
-                log.error("[PdfAI/Gemini] Kein API-Key! Setze in application.properties: ai.gemini.api-key=...");
+                log.error("[PdfAI/Gemini] Kein API-Key! Im System-Setup hinterlegen.");
                 return Optional.empty();
             }
 

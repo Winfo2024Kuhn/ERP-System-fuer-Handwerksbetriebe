@@ -37,15 +37,13 @@ public class EmailAiService {
             "Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im Format { \"email\": \"...\" }, wobei der Wert der verbesserte E-Mail-Text als HTML (ohne <html>/<body> Tags, nur <p>...) ist.";
 
     private final ObjectMapper objectMapper;
+    private final SystemSettingsService systemSettingsService;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(60))
             .build();
 
     @Value("${ai.email.model:gemini-3-flash-preview}")
     private String model;
-
-    @Value("${ai.gemini.api-key:}")
-    private String geminiApiKey;
 
     @Value("${ai.email.temperature:0.2}")
     private double temperature;
@@ -118,6 +116,9 @@ public class EmailAiService {
 
     private String rufGeminiApi(String userMessage) {
         try {
+            // Key zur Laufzeit aus System-Setup lesen, damit Aenderungen
+            // ohne Spring-Neustart wirksam werden.
+            String geminiApiKey = systemSettingsService.getGeminiApiKey();
             if (geminiApiKey == null || geminiApiKey.isBlank()) {
                 throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
             }
