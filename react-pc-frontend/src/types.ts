@@ -236,6 +236,8 @@ export interface Lieferant {
   bearbeiter?: string;
   kundenEmails?: string[];
   erfassungsDatum?: string;
+  standardKostenstelleId?: number | null;
+  standardKostenstelleName?: string;
 }
 
 export interface Artikel {

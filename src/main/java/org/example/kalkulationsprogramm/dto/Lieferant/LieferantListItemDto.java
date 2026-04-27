@@ -21,4 +21,6 @@ public class LieferantListItemDto {
     private List<String> kundenEmails;
     private Integer lieferzeit; // Durchschnittliche Lieferzeit in Tagen (berechnet aus ABs)
     private Integer bestellungen; // Anzahl Auftragsbestätigungen (berechnet)
+    private Long standardKostenstelleId;
+    private String standardKostenstelleName;
 }

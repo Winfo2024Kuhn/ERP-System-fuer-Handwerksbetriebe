@@ -76,6 +76,8 @@ class LieferantenControllerTest {
   private LieferantNotizRepository lieferantNotizRepository;
   @MockBean
   private LieferantBildRepository lieferantBildRepository;
+  @MockBean
+  private org.example.kalkulationsprogramm.repository.KostenstelleRepository kostenstelleRepository;
 
   @Test
   void returnsAllEmails() throws Exception {

@@ -48,4 +48,9 @@ public class LieferantCreateRequestDto {
     private LocalDate startZusammenarbeit;
 
     private List<@Email(message = "Ungültige E-Mail-Adresse.") @Size(max = 255, message = "E-Mail ist zu lang.") String> kundenEmails;
+
+    /**
+     * Optionale Standard-Kostenstelle. Wird bei späteren Zuordnungen automatisch vorgeschlagen.
+     */
+    private Long standardKostenstelleId;
 }
