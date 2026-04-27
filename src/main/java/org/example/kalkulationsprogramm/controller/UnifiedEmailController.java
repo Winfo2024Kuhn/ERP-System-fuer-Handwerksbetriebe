@@ -87,6 +87,7 @@ public class UnifiedEmailController {
     private final ContactService contactService;
     private final SpamBayesService spamBayesService;
     private final EmailThreadService emailThreadService;
+    private final org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -1202,14 +1203,6 @@ public class UnifiedEmailController {
     // E-MAIL SENDEN / ANTWORTEN
     // ═══════════════════════════════════════════════════════════════
 
-    @org.springframework.beans.factory.annotation.Value("${spring.mail.host:}")
-    private String smtpHost;
-    @org.springframework.beans.factory.annotation.Value("${spring.mail.port:587}")
-    private int smtpPort;
-    @org.springframework.beans.factory.annotation.Value("${spring.mail.username:}")
-    private String smtpUsername;
-    @org.springframework.beans.factory.annotation.Value("${spring.mail.password:}")
-    private String smtpPassword;
 
     @PostMapping(value = "/send", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @Transactional
@@ -1219,9 +1212,13 @@ public class UnifiedEmailController {
             @RequestPart(value = "dokumentId", required = false) String dokumentIdStr) {
 
         try {
-            // E-Mail senden via SMTP
-            org.example.email.EmailService emailService = new org.example.email.EmailService(smtpHost, smtpPort,
-                    smtpUsername, smtpPassword);
+            // E-Mail senden via SMTP – Zugangsdaten zur Laufzeit aus System-Setup (DB) lesen,
+            // damit Änderungen ohne Backend-Neustart wirksam werden.
+            org.example.email.EmailService emailService = new org.example.email.EmailService(
+                    systemSettingsService.getSmtpHost(),
+                    systemSettingsService.getSmtpPort(),
+                    systemSettingsService.getSmtpUsername(),
+                    systemSettingsService.getSmtpPassword());
 
             // Attachments vorbereiten
             List<String> attachmentPaths = new ArrayList<>();
@@ -1458,9 +1455,13 @@ public class UnifiedEmailController {
         }
 
         try {
-            // E-Mail senden via SMTP
-            org.example.email.EmailService emailService = new org.example.email.EmailService(smtpHost, smtpPort,
-                    smtpUsername, smtpPassword);
+            // E-Mail senden via SMTP – Zugangsdaten zur Laufzeit aus System-Setup (DB) lesen,
+            // damit Änderungen ohne Backend-Neustart wirksam werden.
+            org.example.email.EmailService emailService = new org.example.email.EmailService(
+                    systemSettingsService.getSmtpHost(),
+                    systemSettingsService.getSmtpPort(),
+                    systemSettingsService.getSmtpUsername(),
+                    systemSettingsService.getSmtpPassword());
 
             // Attachments vorbereiten
             List<String> attachmentPaths = new ArrayList<>();

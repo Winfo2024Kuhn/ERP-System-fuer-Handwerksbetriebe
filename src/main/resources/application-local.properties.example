@@ -9,19 +9,12 @@ spring.datasource.url=jdbc:mysql://localhost:3307/kalkulationsprogramm_db?useUni
 spring.datasource.username=DEIN_DB_BENUTZERNAME
 spring.datasource.password=DEIN_DB_PASSWORT
 
-# ========== SMTP (E-Mail-Versand) ==========
-smtp.host=smtp.example.com
-smtp.port=465
-smtp.username=deine-email@example.com
-smtp.password=DEIN_SMTP_PASSWORT
-
-spring.mail.host=smtp.example.com
-spring.mail.port=465
-spring.mail.username=deine-email@example.com
-spring.mail.password=DEIN_SMTP_PASSWORT
-
-# ========== Gemini API ==========
-ai.gemini.api-key=DEIN_GEMINI_API_KEY
+# ========== E-Mail (SMTP/IMAP) und Gemini API Key ==========
+# Diese Werte werden NICHT mehr in Properties hinterlegt.
+# Trage sie nach dem ersten Start in der UI unter
+#   System-Einstellungen → E-Mail-Konto / KI Gemini
+# ein – sie werden in der Datenbank-Tabelle system_setting gespeichert
+# und können dort jederzeit ohne Backend-Neustart geändert werden.
 
 # ========== HiCAD Netzwerkpfade (optional) ==========
 #hicad.network-url=\\\\DEIN_SERVER\\CADdrawings
