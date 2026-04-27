@@ -18,6 +18,7 @@ import { PageLayout } from "../components/layout/PageLayout";
 import { Select } from "../components/ui/select-custom";
 import { useToast } from '../components/ui/toast';
 import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
+import { AddressAutocomplete } from "../components/AddressAutocomplete";
 
 const LIEFERANT_TYPES = [
     { value: "STAHL", label: "Stahl" },
@@ -762,35 +763,26 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="md:col-span-2 space-y-1.5">
-                            <Label>Straße</Label>
-                            <Input
-                                value={formData.strasse || ""}
-                                onChange={(e) => handleChange("strasse", e.target.value)}
-                            />
+                    <AddressAutocomplete
+                        value={{
+                            strasse: formData.strasse || "",
+                            plz: formData.plz || "",
+                            ort: formData.ort || ""
+                        }}
+                        onChange={(next) => setFormData(prev => ({
+                            ...prev,
+                            strasse: next.strasse,
+                            plz: next.plz,
+                            ort: next.ort
+                        }))}
+                    />
+
+                    <div className="space-y-1.5">
+                        <Label>Lieferzeit Ø (Tage)</Label>
+                        <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
+                            {formData.lieferzeit || "—"}
                         </div>
-                        <div className="space-y-1.5">
-                            <Label>PLZ</Label>
-                            <Input
-                                value={formData.plz || ""}
-                                onChange={(e) => handleChange("plz", e.target.value)}
-                            />
-                        </div>
-                        <div className="md:col-span-2 space-y-1.5">
-                            <Label>Ort</Label>
-                            <Input
-                                value={formData.ort || ""}
-                                onChange={(e) => handleChange("ort", e.target.value)}
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label>Lieferzeit Ø (Tage)</Label>
-                            <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
-                                {formData.lieferzeit || "—"}
-                            </div>
-                            <p className="text-xs text-slate-400">Wird automatisch aus Auftragsbestätigungen berechnet</p>
-                        </div>
+                        <p className="text-xs text-slate-400">Wird automatisch aus Auftragsbestätigungen berechnet</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-4">

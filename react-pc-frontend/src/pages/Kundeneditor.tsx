@@ -22,6 +22,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { type KundeDetail } from '../types';
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
+import { AddressAutocomplete } from '../components/AddressAutocomplete';
 import { EmailsTab } from '../components/EmailsTab';
 import { DetailLayout } from '../components/DetailLayout';
 import { Select } from '../components/ui/select-custom';
@@ -427,19 +428,21 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
                         </div>
                     </div>
 
+                    <AddressAutocomplete
+                        value={{
+                            strasse: formData.strasse || '',
+                            plz: formData.plz || '',
+                            ort: formData.ort || ''
+                        }}
+                        onChange={next => setFormData(prev => ({
+                            ...prev,
+                            strasse: next.strasse,
+                            plz: next.plz,
+                            ort: next.ort
+                        }))}
+                    />
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="md:col-span-2">
-                            <Label htmlFor="strasse">Straße</Label>
-                            <Input id="strasse" value={formData.strasse || ''} onChange={e => handleChange('strasse', e.target.value)} placeholder="Straße Hausnr." />
-                        </div>
-                        <div>
-                            <Label htmlFor="plz">PLZ</Label>
-                            <Input id="plz" value={formData.plz || ''} onChange={e => handleChange('plz', e.target.value)} placeholder="PLZ" />
-                        </div>
-                        <div className="md:col-span-2">
-                            <Label htmlFor="ort">Ort</Label>
-                            <Input id="ort" value={formData.ort || ''} onChange={e => handleChange('ort', e.target.value)} placeholder="Ort" />
-                        </div>
                         <div>
                             <Label htmlFor="zahlungsziel">Zahlungsziel (Tage)</Label>
                             <Input id="zahlungsziel" type="number" min={0} value={formData.zahlungsziel ?? 8} onChange={e => handleChange('zahlungsziel', parseInt(e.target.value, 10) || 8)} placeholder="8" />

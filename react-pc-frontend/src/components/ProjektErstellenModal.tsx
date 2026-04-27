@@ -4,6 +4,7 @@ import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, Chevron
 import { Select } from './ui/select-custom';
 import { CategoryMultiSelectModal } from './CategoryMultiSelectModal';
 import { EmailListInput } from './EmailListInput';
+import { AddressAutocomplete } from './AddressAutocomplete';
 import type { Kunde, Anfrage } from '../types';
 
 interface SelectedCategory {
@@ -396,38 +397,19 @@ const KundeAnlegenView: React.FC<{
                 </div>
 
                 {/* Adresse */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Straße</label>
-                        <input
-                            type="text"
-                            value={formData.strasse}
-                            onChange={e => setFormData(prev => ({ ...prev, strasse: e.target.value }))}
-                            placeholder="Straße + Hausnummer"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">PLZ</label>
-                            <input
-                                type="text"
-                                value={formData.plz}
-                                onChange={e => setFormData(prev => ({ ...prev, plz: e.target.value }))}
-                                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Ort</label>
-                            <input
-                                type="text"
-                                value={formData.ort}
-                                onChange={e => setFormData(prev => ({ ...prev, ort: e.target.value }))}
-                                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                            />
-                        </div>
-                    </div>
-                </div>
+                <AddressAutocomplete
+                    value={{
+                        strasse: formData.strasse,
+                        plz: formData.plz,
+                        ort: formData.ort
+                    }}
+                    onChange={next => setFormData(prev => ({
+                        ...prev,
+                        strasse: next.strasse,
+                        plz: next.plz,
+                        ort: next.ort
+                    }))}
+                />
 
                 {/* Zahlungsziel */}
                 <div className="w-1/3">
@@ -1398,42 +1380,20 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                         </span>
                                     </label>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div className="md:col-span-2">
-                                        <input
-                                            type="text"
-                                            value={formData.strasse || ''}
-                                            onChange={e => {
-                                                handleInputChange('strasse', e.target.value);
-                                                if (useKundeAdresse) setUseKundeAdresse(false);
-                                            }}
-                                            placeholder="Straße"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <input
-                                            type="text"
-                                            value={formData.plz || ''}
-                                            onChange={e => {
-                                                handleInputChange('plz', e.target.value);
-                                                if (useKundeAdresse) setUseKundeAdresse(false);
-                                            }}
-                                            placeholder="PLZ"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={formData.ort || ''}
-                                            onChange={e => {
-                                                handleInputChange('ort', e.target.value);
-                                                if (useKundeAdresse) setUseKundeAdresse(false);
-                                            }}
-                                            placeholder="Ort"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                        />
-                                    </div>
-                                </div>
+                                <AddressAutocomplete
+                                    showLabels={false}
+                                    value={{
+                                        strasse: formData.strasse || '',
+                                        plz: formData.plz || '',
+                                        ort: formData.ort || ''
+                                    }}
+                                    onChange={next => {
+                                        handleInputChange('strasse', next.strasse);
+                                        handleInputChange('plz', next.plz);
+                                        handleInputChange('ort', next.ort);
+                                        if (useKundeAdresse) setUseKundeAdresse(false);
+                                    }}
+                                />
                             </div>
                         </div>
                     )}

@@ -35,6 +35,7 @@ import { Input } from "../components/ui/input";
 import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import { DocumentManager } from "../components/DocumentManager";
 import { EmailListInput } from "../components/EmailListInput";
+import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import type {
     Anfrage,
     AnfrageDetail,
@@ -514,39 +515,19 @@ const KundeAnlegenView: React.FC<{
                 </div>
 
                 {/* Adresse */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Straße</label>
-                        <input
-                            type="text"
-                            value={formData.strasse}
-                            onChange={e => setFormData(prev => ({ ...prev, strasse: e.target.value }))}
-                            placeholder="Straße + Hausnummer"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">PLZ</label>
-                        <input
-                            type="text"
-                            value={formData.plz}
-                            onChange={e => setFormData(prev => ({ ...prev, plz: e.target.value }))}
-                            placeholder="PLZ"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Ort</label>
-                    <input
-                        type="text"
-                        value={formData.ort}
-                        onChange={e => setFormData(prev => ({ ...prev, ort: e.target.value }))}
-                        placeholder="Ort"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                </div>
+                <AddressAutocomplete
+                    value={{
+                        strasse: formData.strasse,
+                        plz: formData.plz,
+                        ort: formData.ort
+                    }}
+                    onChange={next => setFormData(prev => ({
+                        ...prev,
+                        strasse: next.strasse,
+                        plz: next.plz,
+                        ort: next.ort
+                    }))}
+                />
 
                 {/* Zahlungsziel */}
                 <div>
@@ -820,38 +801,23 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                                         </label>
                                     )}
                                 </div>
-                                <div className="grid grid-cols-3 gap-3 mb-3">
-                                    <div className="col-span-2">
-                                        <Input
-                                            value={formData.projektStrasse}
-                                            onChange={e => {
-                                                setFormData(prev => ({ ...prev, projektStrasse: e.target.value }));
-                                                setAdresseGleichKunde(false);
-                                            }}
-                                            placeholder="Straße"
-                                            disabled={adresseGleichKunde}
-                                        />
-                                    </div>
-                                    <div>
-                                        <Input
-                                            value={formData.projektPlz}
-                                            onChange={e => {
-                                                setFormData(prev => ({ ...prev, projektPlz: e.target.value }));
-                                                setAdresseGleichKunde(false);
-                                            }}
-                                            placeholder="PLZ"
-                                            disabled={adresseGleichKunde}
-                                        />
-                                    </div>
-                                </div>
-                                <Input
-                                    value={formData.projektOrt}
-                                    onChange={e => {
-                                        setFormData(prev => ({ ...prev, projektOrt: e.target.value }));
+                                <AddressAutocomplete
+                                    showLabels={false}
+                                    disabled={adresseGleichKunde}
+                                    value={{
+                                        strasse: formData.projektStrasse,
+                                        plz: formData.projektPlz,
+                                        ort: formData.projektOrt
+                                    }}
+                                    onChange={next => {
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            projektStrasse: next.strasse,
+                                            projektPlz: next.plz,
+                                            projektOrt: next.ort
+                                        }));
                                         setAdresseGleichKunde(false);
                                     }}
-                                    placeholder="Ort"
-                                    disabled={adresseGleichKunde}
                                 />
                             </div>
 
