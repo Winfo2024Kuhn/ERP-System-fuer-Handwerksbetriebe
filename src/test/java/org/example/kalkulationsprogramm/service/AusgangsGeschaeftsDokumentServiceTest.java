@@ -18,7 +18,11 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentCounter;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.Leistung;
+import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
@@ -621,6 +625,115 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
             assertThat(verlauf.getBereitsAbgerechnet()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(new BigDecimal("10000.00"));
+        }
+    }
+
+    @Nested
+    class KategorieVorschlagFuerAnfrage {
+
+        private Produktkategorie kategorieRohbau;
+        private Produktkategorie kategorieFliesen;
+
+        @BeforeEach
+        void setUpKategorien() {
+            kategorieRohbau = new Produktkategorie();
+            kategorieRohbau.setId(10L);
+            kategorieRohbau.setBezeichnung("Rohbau");
+            kategorieRohbau.setVerrechnungseinheit(Verrechnungseinheit.QUADRATMETER);
+
+            kategorieFliesen = new Produktkategorie();
+            kategorieFliesen.setId(20L);
+            kategorieFliesen.setBezeichnung("Fliesen");
+            kategorieFliesen.setVerrechnungseinheit(Verrechnungseinheit.QUADRATMETER);
+        }
+
+        private AusgangsGeschaeftsDokument dok(AusgangsGeschaeftsDokumentTyp typ, String positionenJson) {
+            AusgangsGeschaeftsDokument d = new AusgangsGeschaeftsDokument();
+            d.setTyp(typ);
+            d.setPositionenJson(positionenJson);
+            d.setStorniert(false);
+            return d;
+        }
+
+        private Leistung leistung(Long id, Produktkategorie kategorie) {
+            Leistung l = new Leistung();
+            l.setId(id);
+            l.setBezeichnung("Leistung " + id);
+            l.setEinheit(Verrechnungseinheit.QUADRATMETER);
+            l.setPreis(BigDecimal.TEN);
+            l.setKategorie(kategorie);
+            return l;
+        }
+
+        @Test
+        void liefertLeereListeWennKeineDokumente() {
+            when(dokumentRepository.findByAnfrageIdOrderByDatumDesc(99L))
+                    .thenReturn(Collections.emptyList());
+
+            List<KategorieVorschlagDto> result = service.berechneKategorieVorschlagFuerAnfrage(99L);
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        void aggregiertMengenAusAngebot() {
+            String json = "[{\"type\":\"SERVICE\",\"leistungId\":1,\"quantity\":5}," +
+                          "{\"type\":\"SERVICE\",\"leistungId\":2,\"quantity\":3}]";
+            when(dokumentRepository.findByAnfrageIdOrderByDatumDesc(1L))
+                    .thenReturn(List.of(dok(AusgangsGeschaeftsDokumentTyp.ANGEBOT, json)));
+            when(leistungRepository.findAllById(any()))
+                    .thenReturn(List.of(leistung(1L, kategorieRohbau), leistung(2L, kategorieFliesen)));
+            when(produktkategorieRepository.findAllById(any()))
+                    .thenReturn(List.of(kategorieRohbau, kategorieFliesen));
+
+            List<KategorieVorschlagDto> result = service.berechneKategorieVorschlagFuerAnfrage(1L);
+
+            assertThat(result).hasSize(2);
+            assertThat(result).extracting(KategorieVorschlagDto::getQuelle)
+                    .containsOnly(AusgangsGeschaeftsDokumentTyp.ANGEBOT.name());
+            assertThat(result).extracting(KategorieVorschlagDto::getKategorieId, KategorieVorschlagDto::getMenge)
+                    .containsExactlyInAnyOrder(
+                            org.assertj.core.groups.Tuple.tuple(10L, new BigDecimal("5.0")),
+                            org.assertj.core.groups.Tuple.tuple(20L, new BigDecimal("3.0")));
+        }
+
+        @Test
+        void abHatVorrangVorAngebot() {
+            String angebotJson = "[{\"type\":\"SERVICE\",\"leistungId\":1,\"quantity\":99}]";
+            String abJson = "[{\"type\":\"SERVICE\",\"leistungId\":1,\"quantity\":7}]";
+            when(dokumentRepository.findByAnfrageIdOrderByDatumDesc(1L)).thenReturn(List.of(
+                    dok(AusgangsGeschaeftsDokumentTyp.ANGEBOT, angebotJson),
+                    dok(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, abJson)));
+            when(leistungRepository.findAllById(any()))
+                    .thenReturn(List.of(leistung(1L, kategorieRohbau)));
+            when(produktkategorieRepository.findAllById(any())).thenReturn(List.of(kategorieRohbau));
+
+            List<KategorieVorschlagDto> result = service.berechneKategorieVorschlagFuerAnfrage(1L);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getMenge()).isEqualByComparingTo(new BigDecimal("7"));
+            assertThat(result.get(0).getQuelle())
+                    .isEqualTo(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG.name());
+        }
+
+        @Test
+        void ignoriertOptionaleUndStorniertePositionen() {
+            String json = "[{\"type\":\"SERVICE\",\"leistungId\":1,\"quantity\":5,\"optional\":true}," +
+                          "{\"type\":\"SERVICE\",\"leistungId\":2,\"quantity\":4}]";
+            AusgangsGeschaeftsDokument storniert = dok(AusgangsGeschaeftsDokumentTyp.ANGEBOT,
+                    "[{\"type\":\"SERVICE\",\"leistungId\":1,\"quantity\":100}]");
+            storniert.setStorniert(true);
+            when(dokumentRepository.findByAnfrageIdOrderByDatumDesc(1L))
+                    .thenReturn(List.of(storniert, dok(AusgangsGeschaeftsDokumentTyp.ANGEBOT, json)));
+            when(leistungRepository.findAllById(any()))
+                    .thenReturn(List.of(leistung(2L, kategorieFliesen)));
+            when(produktkategorieRepository.findAllById(any())).thenReturn(List.of(kategorieFliesen));
+
+            List<KategorieVorschlagDto> result = service.berechneKategorieVorschlagFuerAnfrage(1L);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getKategorieId()).isEqualTo(20L);
+            assertThat(result.get(0).getMenge()).isEqualByComparingTo(new BigDecimal("4"));
         }
     }
 }

@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizBildRepository;
@@ -20,6 +21,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.AnfrageService;
+import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
@@ -42,6 +44,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AnfrageController {
     private final AnfrageService anfrageService;
+    private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
     private final DateiSpeicherService dateiSpeicherService;
     private final ZugferdErstellService zugferdErstellService;
     private final ZugferdExtractorService zugferdExtractorService;
@@ -313,6 +316,16 @@ public class AnfrageController {
         }
         dto.setAnfrageIds(java.util.List.of(anfrage.getId()));
         return ResponseEntity.ok(dto);
+    }
+
+    /**
+     * Liefert die aus dem Angebot bzw. der Auftragsbestätigung abgeleiteten
+     * Produktkategorien (inkl. aggregierter Mengen) als Vorschlag für die
+     * Projektanlage. Wenn eine AB existiert, hat sie Vorrang vor dem Angebot.
+     */
+    @GetMapping("/{id}/produktkategorien-vorschlag")
+    public ResponseEntity<List<KategorieVorschlagDto>> produktkategorienVorschlag(@PathVariable Long id) {
+        return ResponseEntity.ok(ausgangsGeschaeftsDokumentService.berechneKategorieVorschlagFuerAnfrage(id));
     }
 
     private AnfrageDokumentResponseDto mappeDokumentZuDto(AnfrageDokument dokument) {

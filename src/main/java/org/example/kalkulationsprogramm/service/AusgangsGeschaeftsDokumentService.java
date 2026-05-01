@@ -33,6 +33,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.Abrechnun
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -1403,6 +1404,86 @@ public class AusgangsGeschaeftsDokumentService {
         projektRepository.save(projekt);
         log.info("ProjektProduktkategorien für Projekt {} aktualisiert: {} Kategorien",
                 projektId, kategorieMengen.size());
+    }
+
+    /**
+     * Liefert für eine Anfrage einen Vorschlag der Produktkategorien (inkl. aggregierter Mengen),
+     * die sich aus den Leistungen der zugehörigen Auftragsbestätigungen bzw. – falls keine AB
+     * existiert – aus dem Angebot ergeben.
+     *
+     * Wird beim Anlegen eines Projekts aus einer Anfrage als Vorbelegung verwendet.
+     * Es werden ausschließlich Leaf-Kategorien zurückgegeben.
+     */
+    @Transactional(readOnly = true)
+    public List<KategorieVorschlagDto> berechneKategorieVorschlagFuerAnfrage(Long anfrageId) {
+        if (anfrageId == null) return List.of();
+
+        List<AusgangsGeschaeftsDokument> aktive = dokumentRepository.findByAnfrageIdOrderByDatumDesc(anfrageId).stream()
+                .filter(d -> !d.isStorniert())
+                .filter(d -> KATEGORIE_RELEVANTE_TYPEN.contains(d.getTyp()))
+                .toList();
+
+        // ABs haben Priorität – wenn vorhanden, nur diese verwenden
+        List<AusgangsGeschaeftsDokument> abs = aktive.stream()
+                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG)
+                .toList();
+
+        List<AusgangsGeschaeftsDokument> effektive = abs.isEmpty()
+                ? aktive.stream()
+                    .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.ANGEBOT)
+                    .toList()
+                : abs;
+
+        if (effektive.isEmpty()) return List.of();
+
+        String quelle = abs.isEmpty()
+                ? AusgangsGeschaeftsDokumentTyp.ANGEBOT.name()
+                : AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG.name();
+
+        Map<Long, BigDecimal> leistungMengen = new java.util.HashMap<>();
+        for (AusgangsGeschaeftsDokument dok : effektive) {
+            extractLeistungMengenFromPositionenJson(dok.getPositionenJson(), leistungMengen);
+        }
+        if (leistungMengen.isEmpty()) return List.of();
+
+        // Leistung → aggregierte Menge ihrer Kategorie
+        Map<Long, BigDecimal> kategorieMengen = new java.util.HashMap<>();
+        List<Leistung> leistungen = leistungRepository.findAllById(leistungMengen.keySet());
+        for (Leistung l : leistungen) {
+            if (l.getKategorie() != null) {
+                kategorieMengen.merge(l.getKategorie().getId(),
+                        leistungMengen.getOrDefault(l.getId(), BigDecimal.ZERO),
+                        BigDecimal::add);
+            }
+        }
+        if (kategorieMengen.isEmpty()) return List.of();
+
+        List<Produktkategorie> kategorien = produktkategorieRepository.findAllById(kategorieMengen.keySet());
+        return kategorien.stream()
+                // Nur Leaf-Kategorien zurückgeben (gefordert vom Nutzer)
+                .filter(k -> k.getUnterkategorien() == null || k.getUnterkategorien().isEmpty())
+                .map(k -> {
+                    KategorieVorschlagDto dto = new KategorieVorschlagDto();
+                    dto.setKategorieId(k.getId());
+                    dto.setBezeichnung(k.getBezeichnung());
+                    dto.setPfad(bauePfad(k));
+                    dto.setVerrechnungseinheit(k.getVerrechnungseinheit());
+                    dto.setMenge(kategorieMengen.getOrDefault(k.getId(), BigDecimal.ZERO));
+                    dto.setQuelle(quelle);
+                    return dto;
+                })
+                .sorted((a, b) -> a.getPfad().compareToIgnoreCase(b.getPfad()))
+                .toList();
+    }
+
+    private String bauePfad(Produktkategorie kategorie) {
+        java.util.Deque<String> namen = new java.util.ArrayDeque<>();
+        Produktkategorie current = kategorie;
+        while (current != null) {
+            namen.addFirst(current.getBezeichnung());
+            current = current.getUebergeordneteKategorie();
+        }
+        return String.join(" > ", namen);
     }
 
     /**

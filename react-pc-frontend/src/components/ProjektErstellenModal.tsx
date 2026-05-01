@@ -696,6 +696,36 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         }
     }, [isOpen, editProjekt, loadNaechsteAuftragsnummer]);
 
+    // Beim Auswählen einer Anfrage: Produktkategorien aus AB/Angebot vorschlagen
+    // (immer Leaf-Kategorien, AB hat Vorrang vor Angebot). Im Edit-Modus nicht überschreiben.
+    useEffect(() => {
+        if (!selectedAnfrage || isEditMode) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`/api/anfragen/${selectedAnfrage.id}/produktkategorien-vorschlag`);
+                if (!res.ok) return;
+                const data: Array<{
+                    kategorieId: number;
+                    bezeichnung: string;
+                    pfad?: string;
+                    verrechnungseinheit?: { name: string; anzeigename: string };
+                    menge: number;
+                }> = await res.json();
+                if (cancelled) return;
+                setSelectedCategories(data.map(v => ({
+                    id: v.kategorieId,
+                    bezeichnung: v.pfad || v.bezeichnung,
+                    menge: v.menge,
+                    verrechnungseinheit: v.verrechnungseinheit?.anzeigename || v.verrechnungseinheit?.name || '',
+                })));
+            } catch (err) {
+                console.error('Kategorie-Vorschlag konnte nicht geladen werden:', err);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [selectedAnfrage, isEditMode]);
+
     // When Anfrage is selected, prefill form including Kunde
     useEffect(() => {
         if (selectedAnfrage) {
