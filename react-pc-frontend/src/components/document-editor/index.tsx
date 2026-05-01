@@ -1509,7 +1509,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     body: JSON.stringify({
                         dokumentTyp: dokumentTyp,
                         anrede: anredeEnumToText(kontextDaten.anrede),
-                        kundenName: kontextDaten.ansprechpartner || '',
+                        kundenName: kontextDaten.kundenName || '',
+                        ansprechpartner: kontextDaten.ansprechpartner || '',
                         bauvorhaben: kontextDaten.projektBauvorhaben || betreff || '',
                         projektnummer: kontextDaten.projektnummer || '',
                         dokumentnummer: dokumentNummer || '',

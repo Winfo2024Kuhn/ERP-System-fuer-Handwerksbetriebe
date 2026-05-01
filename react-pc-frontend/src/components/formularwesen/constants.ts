@@ -17,7 +17,7 @@ export const SAMPLE_DATA: Record<string, string> = {
     projektnummer: 'PRJ-2025-0815',
     kundennummer: 'KD-10023',
     kundenadresse: 'Beispiel GmbH\nFrau Erika Muster\nHauptstraße 12\n97070 Würzburg',
-    kundenname: 'Beispiel GmbH, Frau Erika Muster',
+    kundenname: 'Beispiel GmbH',
     dokumenttyp: 'Rechnung',
     datum: '01.12.2025',
     seitenzahl: '1 / 2',

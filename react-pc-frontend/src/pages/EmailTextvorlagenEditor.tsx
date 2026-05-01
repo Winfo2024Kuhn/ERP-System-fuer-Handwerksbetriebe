@@ -47,7 +47,8 @@ const PREVIEW_BADGE_CLASSES =
 
 const SAMPLE_CONTEXT: Record<string, string> = {
   ANREDE: 'Sehr geehrter Herr Mustermann',
-  KUNDENNAME: 'Max Mustermann',
+  KUNDENNAME: 'Mustermann GmbH',
+  ANSPRECHPARTNER: 'Max Mustermann',
   BAUVORHABEN: 'Einfamilienhaus Musterstraße 1',
   PROJEKTNUMMER: '2026-05-00012',
   DOKUMENTNUMMER: 'RG-2026-0042',

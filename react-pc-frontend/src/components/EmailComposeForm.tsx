@@ -458,7 +458,8 @@ export function EmailComposeForm({
                 requestBody = {
                     dokumentTyp,
                     anrede: kundeAnrede,
-                    kundenName: anfrage.kundenAnsprechpartner || anfrage.kundenName || '',
+                    kundenName: anfrage.kundenName || '',
+                    ansprechpartner: anfrage.kundenAnsprechpartner || '',
                     bauvorhaben: anfrage.bauvorhaben || '',
                     projektnummer: '',
                     dokumentnummer: dokument.rechnungsnummer || '',
@@ -467,12 +468,14 @@ export function EmailComposeForm({
                 };
             } else if (effectiveProjekt) {
                 // Projekt-Kontext (Prop oder vom Backend geladenes Projekt)
-                const kundenName = effectiveProjekt.kundeDto?.ansprechspartner || effectiveProjekt.kundeDto?.name || effectiveProjekt.kunde || '';
+                const kundenName = effectiveProjekt.kundeDto?.name || effectiveProjekt.kunde || '';
+                const ansprechpartner = effectiveProjekt.kundeDto?.ansprechspartner || '';
                 const kundeAnrede = anredeEnumToText(effectiveProjekt.kundeDto?.anrede);
                 requestBody = {
                     dokumentTyp,
                     anrede: kundeAnrede,
                     kundenName,
+                    ansprechpartner,
                     bauvorhaben: effectiveProjekt.bauvorhaben || '',
                     projektnummer: effectiveProjekt.auftragsnummer || '',
                     dokumentnummer: dokument.rechnungsnummer || '',

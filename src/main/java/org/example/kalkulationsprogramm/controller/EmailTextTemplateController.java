@@ -35,7 +35,8 @@ public class EmailTextTemplateController {
 
     private static final List<Map<String, String>> PLACEHOLDERS = List.of(
             Map.of("token", "{{ANREDE}}", "label", "Anrede (z. B. Sehr geehrter Herr Müller)"),
-            Map.of("token", "{{KUNDENNAME}}", "label", "Kundenname"),
+            Map.of("token", "{{KUNDENNAME}}", "label", "Kundenname (Firma / Name des Kunden)"),
+            Map.of("token", "{{ANSPRECHPARTNER}}", "label", "Ansprechpartner (Person beim Kunden)"),
             Map.of("token", "{{BAUVORHABEN}}", "label", "Bauvorhaben"),
             Map.of("token", "{{PROJEKTNUMMER}}", "label", "Projektnummer"),
             Map.of("token", "{{DOKUMENTNUMMER}}", "label", "Dokumentnummer (Rechnung/Auftrag/Anfrage)"),

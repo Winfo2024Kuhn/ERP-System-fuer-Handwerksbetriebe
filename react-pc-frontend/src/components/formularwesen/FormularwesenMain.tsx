@@ -110,7 +110,7 @@ export default function FormularwesenMain() {
                 ...(kunde?.name ? { kundenname: kunde.name } : {}),
                 ...(adressParts.length > 0 ? { kundenadresse: adressParts.join('\n') } : {}),
                 ...(kunde?.anrede ? { anrede: kunde.anrede } : {}),
-                ...(kunde?.ansprechpartner ? { ansprechpartner: kunde.ansprechpartner } : {}),
+                ...((kunde?.ansprechpartner || kunde?.ansprechspartner) ? { ansprechpartner: kunde.ansprechpartner || kunde.ansprechspartner || '' } : {}),
                 ...(projekt?.bauvorhaben ? { bauvorhaben: projekt.bauvorhaben } : {}),
                 ...(projekt?.auftragsnummer ? { dokumentnummer: projekt.auftragsnummer } : {}),
                 ...(projekt?.id ? { projektnummer: `PRJ-${projekt.id}` } : {}),

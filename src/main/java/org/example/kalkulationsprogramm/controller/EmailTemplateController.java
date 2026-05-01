@@ -55,6 +55,7 @@ public class EmailTemplateController {
         Map<String, String> ctx = new HashMap<>();
         ctx.put("ANREDE", nullToEmpty(req.getAnrede(), "Sehr geehrte Damen und Herren"));
         ctx.put("KUNDENNAME", nullToEmpty(req.getKundenName(), ""));
+        ctx.put("ANSPRECHPARTNER", nullToEmpty(req.getAnsprechpartner(), ""));
         ctx.put("BAUVORHABEN", nullToEmpty(req.getBauvorhaben(), ""));
         ctx.put("PROJEKTNUMMER", nullToEmpty(req.getProjektnummer(), ""));
         ctx.put("DOKUMENTNUMMER", nullToEmpty(req.getDokumentnummer(), ""));
@@ -149,6 +150,7 @@ public class EmailTemplateController {
         private String dokumentTyp;
         private String anrede;
         private String kundenName;
+        private String ansprechpartner;
         private String bauvorhaben;
         private String projektnummer;
         private String dokumentnummer;
