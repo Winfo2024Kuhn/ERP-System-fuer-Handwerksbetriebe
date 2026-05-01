@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
-    FileText, Gem, Home, Layers, List, Mail, Package, Settings,
+    FileText, Gem, Home, Layers, List, Mail, MailPlus, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
     Calendar, CalendarDays, Plane, Shield
 } from 'lucide-react';
@@ -130,6 +130,7 @@ const NAVIGATION: NavCategory[] = [
                 label: 'E-Mail',
                 items: [
                     { name: 'E-Mail Center', href: '/emails/inbox', icon: Mail },
+                    { name: 'E-Mail Vorlagen', href: '/email-textvorlagen', icon: MailPlus },
                 ]
             },
 

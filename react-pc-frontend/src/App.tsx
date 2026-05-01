@@ -21,6 +21,7 @@ import ErfolgsanalyseEditor from './pages/ErfolgsanalyseEditor';
 import FormularwesenEditor from './pages/FormularwesenEditor';
 import OffenePostenEditor from './pages/OffenePostenEditor';
 import EmailCenter from './pages/EmailCenter';
+import EmailTextvorlagenEditor from './pages/EmailTextvorlagenEditor';
 
 import MietabrechnungEditor from './pages/MietabrechnungEditor';
 import BenutzerEditor from './pages/BenutzerEditor';
@@ -85,6 +86,7 @@ export default function App() {
                 <Route path="/emails" element={<Navigate to="/emails/inbox" replace />} />
                 <Route path="/emails/:folder" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
                 <Route path="/emails/:folder/:emailId" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
+                <Route path="/email-textvorlagen" element={<ErrorBoundary><EmailTextvorlagenEditor /></ErrorBoundary>} />
 
                 <Route path="/miete" element={<ErrorBoundary><MietabrechnungEditor /></ErrorBoundary>} />
                 <Route path="/benutzer" element={<RequireAdmin><ErrorBoundary><BenutzerEditor /></ErrorBoundary></RequireAdmin>} />
