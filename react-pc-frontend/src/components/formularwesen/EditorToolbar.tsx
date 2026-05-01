@@ -1,4 +1,4 @@
-import { ArrowLeft, Save, Eye, RotateCcw, Check, Pencil, Undo2 } from 'lucide-react';
+import { ArrowLeft, Save, Eye, RotateCcw, Check, Pencil, Undo2, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../ui/button';
 
@@ -12,6 +12,8 @@ interface EditorToolbarProps {
     onRename: (name: string) => void;
     onUndo: () => void;
     canUndo: boolean;
+    onOpenTextbausteinDefaults?: () => void;
+    textbausteinDefaultsDisabled?: boolean;
 }
 
 /** Top toolbar for the template editor — shows template name, save, preview, back */
@@ -23,7 +25,9 @@ export default function EditorToolbar({
     onReset,
     onRename,
     onUndo,
-    canUndo
+    canUndo,
+    onOpenTextbausteinDefaults,
+    textbausteinDefaultsDisabled,
 }: EditorToolbarProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState('');
@@ -102,6 +106,19 @@ export default function EditorToolbar({
                 >
                     <RotateCcw className="w-3.5 h-3.5" />
                 </Button>
+                {onOpenTextbausteinDefaults && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onOpenTextbausteinDefaults}
+                        disabled={textbausteinDefaultsDisabled}
+                        title={textbausteinDefaultsDisabled
+                            ? 'Vorlage zuerst speichern, um Standard-Texte festzulegen'
+                            : 'Standard-Texte je Dokumenttyp festlegen'}
+                    >
+                        <FileText className="w-3.5 h-3.5 mr-1" />Standard-Texte
+                    </Button>
+                )}
                 <Button
                     variant="outline"
                     size="sm"

@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.dto.Formular.FormularTemplateSelectionRe
 import org.example.kalkulationsprogramm.dto.Formular.FormularTemplateUpdateRequest;
 import org.example.kalkulationsprogramm.service.FormularTemplateService;
 import org.example.kalkulationsprogramm.service.FormularTemplateService.NamedTemplateData;
+import org.example.kalkulationsprogramm.service.FormularTextbausteinDefaultService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,9 @@ class FormularTemplateControllerTest {
 
     @MockBean
     private FormularTemplateService formularTemplateService;
+
+    @MockBean
+    private FormularTextbausteinDefaultService textbausteinDefaultService;
 
     @Nested
     @DisplayName("GET /api/formulare/template")

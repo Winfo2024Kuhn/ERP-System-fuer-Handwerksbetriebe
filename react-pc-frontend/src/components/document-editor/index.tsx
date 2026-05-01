@@ -672,8 +672,91 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         loadVorlagen();
     }, []);
 
-    // Textbausteine are NOT auto-inserted for new documents.
-    // Users add them manually via the "Textbaustein" picker button in the toolbar.
+    // --- Auto-Load Standard-Textbausteine je Dokumenttyp ---
+    // Beim Anlegen eines neuen Dokuments oder beim Wechsel des Dokumenttyps werden
+    // die in der Vorlage konfigurierten Vor-/Nachtexte automatisch als TEXT-Bloecke
+    // vor bzw. nach den Leistungen eingefuegt. Manuell hinzugefuegte Texte
+    // (textbausteinRolle == undefined) bleiben dabei erhalten.
+    const lastAppliedDefaultsTypRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (loading) return;
+        if (dokumentId) return; // Bestehendes Dokument: keine Auto-Defaults
+        if (!dokumentTyp) return;
+
+        // Warten, bis der Kontext (Kunde / Projekt) geladen ist, damit
+        // {{KUNDENNAME}}, {{BAUVORHABEN}} etc. korrekt aufgeloest werden.
+        const kontextBereit = !!kontextDaten.kundenName
+            || !!kontextDaten.projektnummer
+            || !!kontextDaten.projektBauvorhaben
+            || !!kontextDaten.kundennummer;
+        if (!kontextBereit && !!(projektId || anfrageId)) return;
+
+        if (lastAppliedDefaultsTypRef.current === dokumentTyp) return;
+        const typLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp;
+
+        let aborted = false;
+        (async () => {
+            try {
+                const tplRes = await fetch(
+                    `/api/formulare/templates/selection?dokumenttyp=${encodeURIComponent(typLabel)}`,
+                );
+                if (aborted || tplRes.status !== 200) return;
+                const templateName = (await tplRes.text()).trim();
+                if (!templateName) return;
+
+                const dfRes = await fetch(
+                    `/api/formulare/templates/${encodeURIComponent(templateName)}/textbaustein-defaults/resolve?dokumenttyp=${encodeURIComponent(typLabel)}`,
+                );
+                if (aborted || !dfRes.ok) return;
+                const data: {
+                    vortexte: Array<{ id: number; name: string; html?: string; beschreibung?: string }>;
+                    nachtexte: Array<{ id: number; name: string; html?: string; beschreibung?: string }>;
+                } = await dfRes.json();
+
+                if (aborted) return;
+                const buildBlock = (item: { id: number; html?: string; beschreibung?: string }, rolle: 'VOR' | 'NACH'): DocBlock => {
+                    const rawHtml = item.html || item.beschreibung || '';
+                    const resolvedHtml = replacePlaceholders(rawHtml, false);
+                    return {
+                        id: crypto.randomUUID(),
+                        type: 'TEXT',
+                        content: resolvedHtml,
+                        fontSize: 10,
+                        fett: false,
+                        textbausteinRolle: rolle,
+                        textbausteinId: item.id,
+                    };
+                };
+
+                const vorBlocks = data.vortexte.map(v => buildBlock(v, 'VOR'));
+                const nachBlocks = data.nachtexte.map(n => buildBlock(n, 'NACH'));
+
+                lastAppliedDefaultsTypRef.current = dokumentTyp;
+                if (vorBlocks.length === 0 && nachBlocks.length === 0) return;
+
+                setBlocks(prev => {
+                    // Vorhandene Default-Bloecke entfernen, manuell eingefuegte Texte bleiben
+                    const cleaned = prev.filter(b => b.textbausteinRolle == null);
+                    const firstLeistungIdx = cleaned.findIndex(
+                        b => b.type === 'SERVICE' || b.type === 'SECTION_HEADER',
+                    );
+                    if (firstLeistungIdx === -1) {
+                        // Noch keine Leistungen: Vor- und Nachtexte einfach anhaengen
+                        return [...cleaned, ...vorBlocks, ...nachBlocks];
+                    }
+                    return [
+                        ...cleaned.slice(0, firstLeistungIdx),
+                        ...vorBlocks,
+                        ...cleaned.slice(firstLeistungIdx),
+                        ...nachBlocks,
+                    ];
+                });
+            } catch {
+                // Stumm: fehlende Defaults sind kein Fehler.
+            }
+        })();
+        return () => { aborted = true; };
+    }, [loading, dokumentId, dokumentTyp, replacePlaceholders, kontextDaten, projektId, anfrageId]);
 
     const syncDocumentIdInUrl = useCallback((savedDocumentId?: number) => {
         if (!savedDocumentId) return;

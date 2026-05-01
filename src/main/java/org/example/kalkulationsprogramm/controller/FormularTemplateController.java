@@ -10,8 +10,11 @@ import org.example.kalkulationsprogramm.dto.Formular.FormularTemplateSaveRequest
 import org.example.kalkulationsprogramm.dto.Formular.FormularTemplateUpdateRequest;
 import org.example.kalkulationsprogramm.dto.Formular.FormularTemplateSelectionRequest;
 import org.example.kalkulationsprogramm.dto.Formular.FormularTemplateRenameRequest;
+import org.example.kalkulationsprogramm.dto.Formular.FormularTextbausteinDefaultsDto;
+import org.example.kalkulationsprogramm.dto.Formular.FormularTextbausteinResolvedDto;
 import org.example.kalkulationsprogramm.service.FormularTemplateService;
 import org.example.kalkulationsprogramm.service.FormularTemplateService.NamedTemplateData;
+import org.example.kalkulationsprogramm.service.FormularTextbausteinDefaultService;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -32,6 +35,7 @@ import java.util.Optional;
 public class FormularTemplateController {
 
     private final FormularTemplateService formularTemplateService;
+    private final FormularTextbausteinDefaultService textbausteinDefaultService;
 
     @GetMapping("/api/formulare/template")
     public FormularTemplateDto getTemplate(@RequestParam(name = "preset", required = false) String preset) {
@@ -157,6 +161,35 @@ public class FormularTemplateController {
     @PostMapping("/api/formulare/dokumentnummer")
     public ResponseEntity<String> generateDokumentnummer() {
         return ResponseEntity.ok(formularTemplateService.generateDokumentnummer());
+    }
+
+    /** Default-Textbausteine pro Dokumenttyp einer Vorlage laden. */
+    @GetMapping("/api/formulare/templates/{name}/textbaustein-defaults")
+    public ResponseEntity<FormularTextbausteinDefaultsDto> getTextbausteinDefaults(@PathVariable String name) {
+        return ResponseEntity.ok(textbausteinDefaultService.loadDefaults(name));
+    }
+
+    /** Default-Textbausteine fuer eine Vorlage komplett ersetzen. */
+    @PutMapping("/api/formulare/templates/{name}/textbaustein-defaults")
+    public ResponseEntity<FormularTextbausteinDefaultsDto> setTextbausteinDefaults(
+            @PathVariable String name,
+            @RequestBody FormularTextbausteinDefaultsDto request) {
+        textbausteinDefaultService.replaceDefaults(name, request);
+        return ResponseEntity.ok(textbausteinDefaultService.loadDefaults(name));
+    }
+
+    /**
+     * Liefert die aufzuloesenden Vor-/Nachtexte fuer einen konkreten Dokumenttyp.
+     * Wird vom DocumentEditor beim Neuanlegen oder Umwandeln aufgerufen,
+     * um die konfigurierten Standard-Bausteine als Text-Bloecke einzufuegen.
+     */
+    @GetMapping("/api/formulare/templates/{name}/textbaustein-defaults/resolve")
+    public ResponseEntity<FormularTextbausteinResolvedDto> resolveTextbausteinDefaults(
+            @PathVariable String name,
+            @RequestParam String dokumenttyp) {
+        FormularTextbausteinDefaultService.DefaultsForDokumenttyp result =
+                textbausteinDefaultService.loadForDokumenttyp(name, dokumenttyp);
+        return ResponseEntity.ok(FormularTextbausteinResolvedDto.from(result.vortexte(), result.nachtexte()));
     }
 
     private FormularTemplateDto toDto(NamedTemplateData data) {

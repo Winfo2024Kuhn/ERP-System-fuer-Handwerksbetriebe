@@ -70,7 +70,6 @@ describe('PhoneInput', () => {
     });
 
     it('leert das Feld bei Blur wenn nur die vorgeschlagene Vorwahl drin steht', async () => {
-        const user = userEvent.setup();
         render(<Wrapper autoPrefillAreaCode plz="30163" />);
         const input = screen.getByLabelText('phone') as HTMLInputElement;
         expect(input.value.startsWith('0511')).toBe(true);

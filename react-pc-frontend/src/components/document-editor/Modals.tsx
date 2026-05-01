@@ -1,10 +1,12 @@
-import { AlertTriangle, Search, FileText, Wrench, Clock, X, Plus, Printer, Star, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2, Eye } from 'lucide-react';
+import { AlertTriangle, Search, Wrench, Clock, X, Printer, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2, Eye } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import type { TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto } from './types';
-import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from '../../types';
-import type { AusgangsGeschaeftsDokumentTyp, ProduktkategorieDto } from '../../types';
+import type { LeistungApiDto, ArbeitszeitartApiDto } from './types';
+import type { ProduktkategorieDto } from '../../types';
 import { cn } from '../../lib/utils';
+
+// Re-export des ausgelagerten TextbausteinPickerModal fuer Rueckwaertskompatibilitaet
+export { TextbausteinPickerModal } from '../textbaustein/TextbausteinPickerModal';
 
 /** Strips HTML tags from a string */
 function stripHtml(html: string): string {
@@ -254,166 +256,6 @@ function PickerModal({
                 {children}
             </div>
         </div>
-    );
-}
-
-/** Textbaustein Picker Modal */
-export function TextbausteinPickerModal({
-    textbausteine,
-    onSelect,
-    onClose,
-    dokumentTyp,
-}: {
-    textbausteine: TextbausteinApiDto[];
-    onSelect: (tb: TextbausteinApiDto) => void;
-    onClose: () => void;
-    dokumentTyp?: AusgangsGeschaeftsDokumentTyp;
-}) {
-    const [search, setSearch] = useState('');
-
-    // Get the label for the current document type (e.g. "Anfrage", "Rechnung")
-    const dokumentTypLabel = dokumentTyp
-        ? AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp
-        : null;
-
-    // Filter by search, then split into matching/rest
-    const { matching, rest } = useMemo(() => {
-        let items = textbausteine;
-        if (search) {
-            const q = search.toLowerCase();
-            items = items.filter(tb =>
-                tb.name.toLowerCase().includes(q) || (tb.beschreibung || '').toLowerCase().includes(q)
-            );
-        }
-
-        if (!dokumentTypLabel) {
-            return { matching: [] as TextbausteinApiDto[], rest: items };
-        }
-
-        const matchGroup: TextbausteinApiDto[] = [];
-        const restGroup: TextbausteinApiDto[] = [];
-
-        items.forEach(tb => {
-            const hasMatch = tb.dokumenttypen?.some((dt: string) =>
-                dt.toLowerCase() === dokumentTyp!.toLowerCase() ||
-                dt.toLowerCase() === dokumentTypLabel.toLowerCase()
-            );
-            if (hasMatch) {
-                matchGroup.push(tb);
-            } else {
-                restGroup.push(tb);
-            }
-        });
-
-        return { matching: matchGroup, rest: restGroup };
-    }, [textbausteine, search, dokumentTyp, dokumentTypLabel]);
-
-    const totalCount = matching.length + rest.length;
-    const [hoveredTb, setHoveredTb] = useState<{ id: number; rect: DOMRect } | null>(null);
-    const hoveredTbData = hoveredTb ? [...matching, ...rest].find(tb => tb.id === hoveredTb.id) : null;
-    const hoveredTbText = hoveredTbData?.html || hoveredTbData?.beschreibung || '';
-
-    const renderItem = (tb: TextbausteinApiDto, isRecommended: boolean) => (
-        <button
-            key={tb.id}
-            onClick={() => onSelect(tb)}
-            onMouseEnter={(e) => setHoveredTb({ id: tb.id, rect: e.currentTarget.getBoundingClientRect() })}
-            onMouseLeave={() => setHoveredTb(null)}
-            className={`w-full group p-3 text-left rounded-xl transition-all duration-150 ${
-                isRecommended
-                    ? 'bg-rose-50/60 hover:bg-rose-50 border border-rose-200 hover:border-rose-300'
-                    : 'bg-white hover:bg-rose-50 border border-slate-150 hover:border-rose-200'
-            }`}
-        >
-            <div className="flex items-start gap-3">
-                <div className={`mt-0.5 p-1.5 rounded-lg transition-colors flex-shrink-0 ${
-                    isRecommended
-                        ? 'bg-rose-100 group-hover:bg-rose-200'
-                        : 'bg-slate-100 group-hover:bg-rose-100'
-                }`}>
-                    <FileText className={`w-3.5 h-3.5 ${
-                        isRecommended
-                            ? 'text-rose-500'
-                            : 'text-slate-400 group-hover:text-rose-500'
-                    }`} />
-                </div>
-                <div className="min-w-0 flex-1">
-                    <span className={`text-sm font-medium block truncate ${
-                        isRecommended
-                            ? 'text-rose-700 group-hover:text-rose-800'
-                            : 'text-slate-700 group-hover:text-rose-700'
-                    }`}>
-                        {tb.name}
-                    </span>
-                    {tb.beschreibung && (
-                        <span className="text-xs text-slate-400 block truncate mt-0.5">
-                            {stripHtml(tb.beschreibung).slice(0, 80)}
-                        </span>
-                    )}
-                </div>
-                <Plus className="w-4 h-4 text-slate-300 group-hover:text-rose-400 flex-shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-        </button>
-    );
-
-    return (
-        <PickerModal title="Textbaustein einfügen" icon={<FileText className="w-4 h-4 text-rose-600" />} onClose={onClose}>
-            {/* Search */}
-            <div className="px-5 pt-3 pb-2 flex-shrink-0">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Textbaustein suchen…"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        autoFocus
-                        className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 placeholder:text-slate-400 transition-all"
-                    />
-                </div>
-            </div>
-            {/* List */}
-            <div className="flex-1 overflow-y-auto px-5 pb-4 min-h-0">
-                {totalCount === 0 ? (
-                    <div className="py-10 text-center">
-                        <Search className="w-10 h-10 text-slate-200 mx-auto mb-2" />
-                        <p className="text-sm text-slate-400">{search ? 'Keine Ergebnisse' : 'Keine Textbausteine vorhanden'}</p>
-                    </div>
-                ) : (
-                    <>
-                        {/* Recommended for this document type */}
-                        {matching.length > 0 && (
-                            <div className="mb-3">
-                                <div className="flex items-center gap-2 mb-2 px-1">
-                                    <Star className="w-3.5 h-3.5 text-rose-500" />
-                                    <span className="text-xs font-semibold text-rose-600 uppercase tracking-wide">
-                                        Empfohlen für {dokumentTypLabel}
-                                    </span>
-                                </div>
-                                <div className="space-y-1.5">
-                                    {matching.map(tb => renderItem(tb, true))}
-                                </div>
-                            </div>
-                        )}
-                        {/* Separator between groups */}
-                        {matching.length > 0 && rest.length > 0 && (
-                            <div className="flex items-center gap-3 my-3 px-1">
-                                <div className="flex-1 h-px bg-slate-200" />
-                                <span className="text-xs text-slate-400 font-medium">Weitere Textbausteine</span>
-                                <div className="flex-1 h-px bg-slate-200" />
-                            </div>
-                        )}
-                        {/* Rest of textbausteine */}
-                        {rest.length > 0 && (
-                            <div className="space-y-1.5">
-                                {rest.map(tb => renderItem(tb, false))}
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
-            <HoverPreview text={hoveredTbText} visible={hoveredTb !== null} anchorRect={hoveredTb?.rect ?? null} />
-        </PickerModal>
     );
 }
 

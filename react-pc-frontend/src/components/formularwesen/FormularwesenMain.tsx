@@ -9,6 +9,7 @@ import BlocksSidebar from './BlocksSidebar';
 import PropertiesSidebar from './PropertiesSidebar';
 import EditorCanvas from './EditorCanvas';
 import PreviewModal from './PreviewModal';
+import TextbausteinDefaultsModal from './TextbausteinDefaultsModal';
 import {
     uid, DEFAULT_ITEMS, SIZE_DEFAULTS, STYLE_DEFAULTS, SAMPLE_DATA
 } from './constants';
@@ -60,6 +61,7 @@ export default function FormularwesenMain() {
     const [backgroundImagePage2, setBackgroundImagePage2] = useState<string | null>(null);
     const [showPreview, setShowPreview] = useState(false);
     const [showSaveModal, setShowSaveModal] = useState(false);
+    const [showTextbausteinDefaults, setShowTextbausteinDefaults] = useState(false);
     const [saveNameInput, setSaveNameInput] = useState('');
     const [status, setStatus] = useState<{ message: string; type: 'info' | 'success' | 'error' } | null>(null);
     const [liveData, setLiveData] = useState<Record<string, string>>(SAMPLE_DATA);
@@ -476,6 +478,8 @@ export default function FormularwesenMain() {
                     onRename={handleRename}
                     onUndo={handleUndo}
                     canUndo={historyRef.current.length > 0}
+                    onOpenTextbausteinDefaults={() => setShowTextbausteinDefaults(true)}
+                    textbausteinDefaultsDisabled={!currentTemplateName}
                 />
             </div>
 
@@ -537,6 +541,16 @@ export default function FormularwesenMain() {
                     backgroundImagePage2={backgroundImagePage2}
                     liveData={liveData}
                     onClose={() => setShowPreview(false)}
+                />
+            )}
+
+            {/* Standard-Texte je Dokumenttyp */}
+            {showTextbausteinDefaults && (
+                <TextbausteinDefaultsModal
+                    templateName={currentTemplateName}
+                    assignedDokumenttypen={selectedDokumenttypen}
+                    onClose={() => setShowTextbausteinDefaults(false)}
+                    onSaved={() => showStatus('Standard-Texte gespeichert.', 'success')}
                 />
             )}
 
