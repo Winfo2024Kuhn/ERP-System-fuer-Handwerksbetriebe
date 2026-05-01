@@ -5,6 +5,7 @@ import { Select } from './ui/select-custom';
 import { CategoryMultiSelectModal } from './CategoryMultiSelectModal';
 import { EmailListInput } from './EmailListInput';
 import { AddressAutocomplete } from './AddressAutocomplete';
+import { PhoneInput } from './PhoneInput';
 import type { Kunde, Anfrage } from '../types';
 
 interface SelectedCategory {
@@ -376,22 +377,21 @@ const KundeAnlegenView: React.FC<{
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Telefon</label>
-                        <input
-                            type="tel"
+                        <PhoneInput
                             value={formData.telefon}
-                            onChange={e => setFormData(prev => ({ ...prev, telefon: e.target.value }))}
-                            placeholder="z.B. +49 123 456789"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+                            onChange={v => setFormData(prev => ({ ...prev, telefon: v }))}
+                            variant="festnetz"
+                            autoPrefillAreaCode
+                            plz={formData.plz}
+                            ort={formData.ort}
                         />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Mobiltelefon</label>
-                        <input
-                            type="tel"
+                        <PhoneInput
                             value={formData.mobiltelefon}
-                            onChange={e => setFormData(prev => ({ ...prev, mobiltelefon: e.target.value }))}
-                            placeholder="z.B. +49 170 1234567"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+                            onChange={v => setFormData(prev => ({ ...prev, mobiltelefon: v }))}
+                            variant="mobil"
                         />
                     </div>
                 </div>

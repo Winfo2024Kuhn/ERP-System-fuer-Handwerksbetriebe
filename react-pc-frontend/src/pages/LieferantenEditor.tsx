@@ -19,6 +19,7 @@ import { Select } from "../components/ui/select-custom";
 import { useToast } from '../components/ui/toast';
 import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
+import { PhoneInput } from "../components/PhoneInput";
 
 const LIEFERANT_TYPES = [
     { value: "STAHL", label: "Stahl" },
@@ -788,18 +789,21 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
                         <div className="space-y-1.5">
                             <Label>Telefon</Label>
-                            <Input
-                                type="tel"
+                            <PhoneInput
                                 value={formData.telefon || ""}
-                                onChange={(e) => handleChange("telefon", e.target.value)}
+                                onChange={(v) => handleChange("telefon", v)}
+                                variant="festnetz"
+                                autoPrefillAreaCode
+                                plz={formData.plz}
+                                ort={formData.ort}
                             />
                         </div>
                         <div className="space-y-1.5">
                             <Label>Mobil</Label>
-                            <Input
-                                type="tel"
+                            <PhoneInput
                                 value={formData.mobiltelefon || ""}
-                                onChange={(e) => handleChange("mobiltelefon", e.target.value)}
+                                onChange={(v) => handleChange("mobiltelefon", v)}
+                                variant="mobil"
                             />
                         </div>
                         <div className="space-y-1.5">

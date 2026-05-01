@@ -23,6 +23,7 @@ import { Label } from '../components/ui/label';
 import { type KundeDetail } from '../types';
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
 import { AddressAutocomplete } from '../components/AddressAutocomplete';
+import { PhoneInput } from '../components/PhoneInput';
 import { EmailsTab } from '../components/EmailsTab';
 import { DetailLayout } from '../components/DetailLayout';
 import { Select } from '../components/ui/select-custom';
@@ -452,11 +453,24 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <Label htmlFor="telefon">Telefon</Label>
-                            <Input id="telefon" value={formData.telefon || ''} onChange={e => handleChange('telefon', e.target.value)} placeholder="+49 ..." />
+                            <PhoneInput
+                                id="telefon"
+                                value={formData.telefon || ''}
+                                onChange={v => handleChange('telefon', v)}
+                                variant="festnetz"
+                                autoPrefillAreaCode
+                                plz={formData.plz}
+                                ort={formData.ort}
+                            />
                         </div>
                         <div>
                             <Label htmlFor="mobiltelefon">Mobiltelefon</Label>
-                            <Input id="mobiltelefon" value={formData.mobiltelefon || ''} onChange={e => handleChange('mobiltelefon', e.target.value)} placeholder="+49 ..." />
+                            <PhoneInput
+                                id="mobiltelefon"
+                                value={formData.mobiltelefon || ''}
+                                onChange={v => handleChange('mobiltelefon', v)}
+                                variant="mobil"
+                            />
                         </div>
                     </div>
 
