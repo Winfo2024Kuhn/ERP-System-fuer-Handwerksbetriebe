@@ -1,80 +1,45 @@
 {
-  "total_views": 432,
-  "total_unique_visitors": 27,
-  "total_clones": 10300,
-  "total_unique_cloners": 1194,
-  "last_view_timestamp": "2026-04-29T00:00:00Z",
-  "last_clone_timestamp": "2026-04-29T00:00:00Z",
+  "total_views": 435,
+  "total_unique_visitors": 28,
+  "total_clones": 11082,
+  "total_unique_cloners": 1237,
+  "last_view_timestamp": "2026-04-30T00:00:00Z",
+  "last_clone_timestamp": "2026-04-30T00:00:00Z",
   "referring_sites": [
     {
       "referrer": "github.com",
-      "count": 38,
-      "uniques": 3
-    },
-    {
-      "referrer": "Google",
-      "count": 1,
-      "uniques": 1
+      "count": 23,
+      "uniques": 2
     }
   ],
   "popular_content": [
     {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe",
-      "title": "Overview",
-      "count": 11,
-      "uniques": 2
-    },
-    {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/graphs/traffic",
       "title": "/graphs/traffic",
-      "count": 10,
+      "count": 11,
+      "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe",
+      "title": "Overview",
+      "count": 7,
       "uniques": 1
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/pulse",
       "title": "/pulse",
-      "count": 9,
-      "uniques": 2
+      "count": 7,
+      "uniques": 1
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/assets/Dokumenteditor.png",
       "title": "/blob/main/assets/Dokumenteditor.png",
-      "count": 3,
-      "uniques": 2
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/issues",
-      "title": "/issues",
       "count": 2,
-      "uniques": 2
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/projects",
-      "title": "/projects",
-      "count": 2,
-      "uniques": 2
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/README.md",
-      "title": "/blob/main/README.md",
-      "count": 2,
-      "uniques": 1
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions",
-      "title": "/actions",
-      "count": 1,
       "uniques": 1
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/56c75b5d81624ec86c361a3144b986807f53b66e/src/main/java/org/example/email/EmailService.java",
       "title": "/blob/56c75b5d81624ec86c361a3144b986807f53b66e/src/main/java/org/example/email/EmailService.java",
-      "count": 1,
-      "uniques": 1
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/assets/Produktkategorie_Nachkalkulation.png",
-      "title": "/blob/main/assets/Produktkategorie_Nachkalkulation.png",
       "count": 1,
       "uniques": 1
     }
@@ -83,5 +48,5 @@
   "forks": 0,
   "watchers": 2,
   "open_issues": 24,
-  "updated_at": "2026-05-01T03:07:23Z"
+  "updated_at": "2026-05-02T03:06:16Z"
 }
