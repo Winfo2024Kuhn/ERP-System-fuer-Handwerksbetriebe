@@ -94,16 +94,28 @@ public class AnfrageFunnelService {
         if (StringUtils.hasText(dto.getTelefon())) {
             neu.setTelefon(dto.getTelefon().trim());
         }
-        AdressTeile adresse = AdressTeile.parse(dto.getProjektAnschrift());
-        neu.setStrasse(adresse.strasse);
-        neu.setPlz(adresse.plz);
-        neu.setOrt(adresse.ort);
+        AdressTeile rechnungsadresse = AdressTeile.parse(rechnungsAnschriftRoh(dto));
+        neu.setStrasse(rechnungsadresse.strasse);
+        neu.setPlz(rechnungsadresse.plz);
+        neu.setOrt(rechnungsadresse.ort);
 
         List<String> emails = new ArrayList<>();
         emails.add(email);
         neu.setKundenEmails(emails);
 
         return kundeRepository.save(neu);
+    }
+
+    /**
+     * Liefert die Rechnungs-/Hauptadresse für den Kunden – entweder die explizit
+     * angegebene Rechnungsadresse oder die Projekt-Anschrift, wenn der Kunde
+     * im Funnel „Rechnungsadresse = Projektadresse" angekreuzt hat.
+     */
+    private String rechnungsAnschriftRoh(AnfrageFunnelRequestDto dto) {
+        if (dto.isRechnungsAnschriftGleichProjekt()) {
+            return dto.getProjektAnschrift();
+        }
+        return dto.getRechnungsAnschrift();
     }
 
     private Anfrage erstelleAnfrage(AnfrageFunnelRequestDto dto, Kunde kunde, String email) {
@@ -188,6 +200,11 @@ public class AnfrageFunnelService {
         }
         if (StringUtils.hasText(dto.getProjektAnschrift())) {
             sb.append("- Projekt-Anschrift: ").append(dto.getProjektAnschrift().trim()).append("\n");
+        }
+        if (dto.isRechnungsAnschriftGleichProjekt()) {
+            sb.append("- Rechnungs-Anschrift: identisch mit Projekt-Anschrift\n");
+        } else if (StringUtils.hasText(dto.getRechnungsAnschrift())) {
+            sb.append("- Rechnungs-Anschrift: ").append(dto.getRechnungsAnschrift().trim()).append("\n");
         }
 
         sb.append("\nService: ").append(dto.getServiceTyp().trim()).append("\n");

@@ -153,6 +153,8 @@ Content-Type: multipart/form-data
   "email": "max@example.de",
   "telefon": "0170 1234567",
   "projektAnschrift": "Kleistraße 11, 97072 Würzburg",
+  "rechnungsAnschrift": "Hauptstraße 5, 80331 München",
+  "rechnungsAnschriftGleichProjekt": false,
   "datenschutzAkzeptiert": true,
   "consentIp": "1.2.3.4",
   "datenschutzVersion": "2026-01"
@@ -161,6 +163,15 @@ Content-Type: multipart/form-data
 
 **Pflichtfelder:** `serviceTyp`, `nachricht`, `vorname`, `nachname`, `email`,
 `datenschutzAkzeptiert` (muss `true` sein, sonst HTTP 400).
+
+**Adress-Trennung:**
+- `projektAnschrift` → landet auf `Anfrage.projektStrasse/Plz/Ort`
+  (= „Wo wird gebaut?")
+- `rechnungsAnschrift` → landet auf `Kunde.strasse/plz/ort`
+  (= „Wohin geht die Rechnung?")
+- `rechnungsAnschriftGleichProjekt: true` → `rechnungsAnschrift` wird
+  ignoriert, stattdessen wird `projektAnschrift` als Rechnungsadresse
+  übernommen.
 
 **Antwort bei Erfolg (HTTP 201):**
 ```json

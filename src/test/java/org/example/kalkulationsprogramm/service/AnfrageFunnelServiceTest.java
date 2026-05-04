@@ -68,11 +68,14 @@ class AnfrageFunnelServiceTest {
     }
 
     @Test
-    void legtNeuenKundenAnWennEMailUnbekannt() {
+    void legtNeuenKundenMitEigenerRechnungsanschriftAn() {
         given(kundeRepository.findByKundenEmailIgnoreCase("max@example.de")).willReturn(List.of());
         given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
 
         AnfrageFunnelRequestDto dto = baseDto();
+        dto.setProjektAnschrift("Kleistraße 11, 97072 Würzburg");
+        dto.setRechnungsAnschrift("Hauptstraße 5, 80331 München");
+        dto.setRechnungsAnschriftGleichProjekt(false);
 
         Anfrage anfrage = service.verarbeiteFunnelAnfrage(dto, List.of());
 
@@ -82,10 +85,30 @@ class AnfrageFunnelServiceTest {
         assertThat(gespeicherter.getKundennummer()).isEqualTo("1042");
         assertThat(gespeicherter.getName()).isEqualTo("Max Mustermann");
         assertThat(gespeicherter.getKundenEmails()).containsExactly("max@example.de");
+        assertThat(gespeicherter.getStrasse()).isEqualTo("Hauptstraße 5");
+        assertThat(gespeicherter.getPlz()).isEqualTo("80331");
+        assertThat(gespeicherter.getOrt()).isEqualTo("München");
+        assertThat(anfrage.getId()).isEqualTo(1L);
+    }
+
+    @Test
+    void uebernimmtProjektAnschriftAlsRechnungsadresseWennCheckboxGesetzt() {
+        given(kundeRepository.findByKundenEmailIgnoreCase("max@example.de")).willReturn(List.of());
+        given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
+
+        AnfrageFunnelRequestDto dto = baseDto();
+        dto.setProjektAnschrift("Kleistraße 11, 97072 Würzburg");
+        dto.setRechnungsAnschrift(null);
+        dto.setRechnungsAnschriftGleichProjekt(true);
+
+        service.verarbeiteFunnelAnfrage(dto, List.of());
+
+        ArgumentCaptor<Kunde> kundeCaptor = ArgumentCaptor.forClass(Kunde.class);
+        verify(kundeRepository).save(kundeCaptor.capture());
+        Kunde gespeicherter = kundeCaptor.getValue();
         assertThat(gespeicherter.getStrasse()).isEqualTo("Kleistraße 11");
         assertThat(gespeicherter.getPlz()).isEqualTo("97072");
         assertThat(gespeicherter.getOrt()).isEqualTo("Würzburg");
-        assertThat(anfrage.getId()).isEqualTo(1L);
     }
 
     @Test
@@ -167,6 +190,7 @@ class AnfrageFunnelServiceTest {
         dto.setEmail("max@example.de");
         dto.setTelefon("093692323");
         dto.setProjektAnschrift("Kleistraße 11, 97072 Würzburg");
+        dto.setRechnungsAnschriftGleichProjekt(true);
         dto.setDatenschutzAkzeptiert(true);
         dto.setConsentIp("1.2.3.4");
         dto.setDatenschutzVersion("1.0");

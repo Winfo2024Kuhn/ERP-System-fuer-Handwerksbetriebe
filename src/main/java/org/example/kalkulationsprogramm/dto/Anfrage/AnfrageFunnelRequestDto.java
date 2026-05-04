@@ -48,6 +48,16 @@ public class AnfrageFunnelRequestDto {
     @Size(max = 500)
     private String projektAnschrift;
 
+    /**
+     * Rechnungs-/Hauptadresse des Kunden. Landet auf {@code Kunde.strasse/plz/ort}.
+     * Wenn {@link #rechnungsAnschriftGleichProjekt} true ist, wird stattdessen
+     * {@link #projektAnschrift} als Rechnungsadresse übernommen.
+     */
+    @Size(max = 500)
+    private String rechnungsAnschrift;
+
+    private boolean rechnungsAnschriftGleichProjekt;
+
     private boolean datenschutzAkzeptiert;
 
     @Size(max = 50)
