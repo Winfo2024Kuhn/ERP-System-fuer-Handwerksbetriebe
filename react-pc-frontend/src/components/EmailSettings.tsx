@@ -127,6 +127,10 @@ export default function EmailSettings() {
     const messageEditorRef = useRef<HTMLDivElement>(null);
     const subjectCursorRef = useRef<number>(0);
     const messageRangeRef = useRef<Range | null>(null);
+    // Tracks which entry the contentEditable was last initialized for, so we
+    // only set innerHTML when switching entries — never on every state change
+    // (otherwise the user's caret jumps and partial edits get wiped).
+    const editorInitForRef = useRef<number | string | null>(null);
 
     // Active tab within settings
     const [activeSection, setActiveSection] = useState<'signatures' | 'ooo'>('signatures');
@@ -177,6 +181,22 @@ export default function EmailSettings() {
         loadSignatures();
         loadOooEntries();
     }, [loadSignatures, loadOooEntries]);
+
+    // Initialize the contentEditable editor's HTML only when the entry changes,
+    // not on every state update. Without this, dangerouslySetInnerHTML would
+    // overwrite the user's in-progress edits and reset the caret on every keystroke.
+    useEffect(() => {
+        if (editingOoo === null) {
+            editorInitForRef.current = null;
+            return;
+        }
+        const editor = messageEditorRef.current;
+        if (!editor) return;
+        const key = editingOoo.id ?? 'new';
+        if (editorInitForRef.current === key) return;
+        editorInitForRef.current = key;
+        editor.innerHTML = DOMPurify.sanitize(editingOoo.message || '');
+    }, [editingOoo]);
 
     // Save signature
     const handleSaveSignature = async () => {
@@ -398,37 +418,60 @@ export default function EmailSettings() {
         const current = editingOoo.subject || '';
         const pos = Math.min(subjectCursorRef.current ?? current.length, current.length);
         const next = current.slice(0, pos) + placeholder + current.slice(pos);
+        const newCaret = pos + placeholder.length;
+        subjectCursorRef.current = newCaret;
         setEditingOoo({ ...editingOoo, subject: next });
-        // Re-focus and place caret after inserted placeholder
-        requestAnimationFrame(() => {
+        // setTimeout(0) waits for React to flush the new value into the DOM
+        // before we restore focus and caret position.
+        setTimeout(() => {
             const el = subjectInputRef.current;
-            if (el) {
-                el.focus();
-                const caret = pos + placeholder.length;
-                el.setSelectionRange(caret, caret);
-                subjectCursorRef.current = caret;
+            if (!el) return;
+            el.focus();
+            try {
+                el.setSelectionRange(newCaret, newCaret);
+            } catch {
+                // setSelectionRange may throw on certain input types; ignore
             }
-        });
+        }, 0);
     };
 
-    // Inserts a placeholder into the contentEditable message editor at the saved selection range.
+    // Inserts a placeholder into the contentEditable message editor at the
+    // current (or last saved) selection range.
     const insertMessagePlaceholder = (placeholder: string) => {
         if (!editingOoo) return;
         const editor = messageEditorRef.current;
         if (!editor) return;
-        editor.focus();
 
         const selection = window.getSelection();
-        let range = messageRangeRef.current;
-        // Fallback: if no saved range or it sits outside the editor, append at end
-        if (!range || !editor.contains(range.startContainer)) {
+        let range: Range | null = null;
+
+        // Prefer the live selection if it's still inside the editor (chip buttons
+        // use mousedown preventDefault to keep editor focused).
+        if (selection && selection.rangeCount > 0) {
+            const live = selection.getRangeAt(0);
+            if (editor.contains(live.startContainer)) {
+                range = live;
+            }
+        }
+        // Fallback to the last saved range, if it still belongs to this editor.
+        if (!range && messageRangeRef.current && editor.contains(messageRangeRef.current.startContainer)) {
+            range = messageRangeRef.current;
+            editor.focus();
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
+        // Last resort: append at the end of the editor.
+        if (!range) {
+            editor.focus();
             range = document.createRange();
             range.selectNodeContents(editor);
             range.collapse(false);
-        }
-        if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
         }
 
         const node = document.createTextNode(placeholder);
@@ -441,6 +484,7 @@ export default function EmailSettings() {
             selection.addRange(range);
         }
         messageRangeRef.current = range.cloneRange();
+        // Sync state from the live DOM (editor is uncontrolled — DOM is source of truth).
         setEditingOoo({ ...editingOoo, message: editor.innerHTML });
     };
 
@@ -456,9 +500,12 @@ export default function EmailSettings() {
     };
 
     // Visual chip button used to insert placeholders at cursor.
+    // mousedown preventDefault keeps the active editor (input or contentEditable)
+    // focused, so the saved selection/caret is preserved when the click fires.
     const PlaceholderChip = ({ token, label, onClick }: { token: string; label: string; onClick: () => void }) => (
         <button
             type="button"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={onClick}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-rose-200 text-rose-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 transition-colors cursor-pointer shadow-sm"
             title={`${token} am Cursor einfügen`}
@@ -676,7 +723,8 @@ ${signatureHtml}`;
                                 <div>
                                     <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                                         <Sparkles className="w-3.5 h-3.5 text-rose-500" />
-                                        Bezeichnung
+                                        Titel
+                                        <code className="text-[10px] text-slate-400 font-mono font-normal">{"{{title}}"}</code>
                                     </Label>
                                     <Input
                                         value={editingOoo.title || ''}
@@ -684,6 +732,9 @@ ${signatureHtml}`;
                                         placeholder="z.B. Sommerurlaub, Betriebsferien Weihnachten"
                                         className="mt-1.5"
                                     />
+                                    <p className="text-xs text-slate-500 mt-1.5">
+                                        Wird in Betreff und Nachricht über den Platzhalter <code className="text-[11px] bg-slate-100 px-1 rounded text-rose-700">{"{{title}}"}</code> eingesetzt.
+                                    </p>
                                 </div>
 
                                 {/* Zeitraum-Block */}
@@ -767,17 +818,24 @@ ${signatureHtml}`;
                                         <MessageSquare className="w-3.5 h-3.5 text-rose-500" />
                                         Nachricht
                                     </Label>
+                                    {/*
+                                        Uncontrolled contentEditable: initial HTML is set imperatively
+                                        via useEffect when the entry changes. Re-rendering with
+                                        dangerouslySetInnerHTML on every keystroke would wipe the
+                                        caret and partial edits — that bug is fixed here.
+                                    */}
                                     <div
                                         ref={messageEditorRef}
                                         className="border border-slate-200 rounded-lg bg-white p-4 min-h-[260px] overflow-auto focus:border-rose-300 focus:ring-2 focus:ring-rose-200 outline-none transition-colors prose prose-sm max-w-none"
                                         contentEditable
                                         suppressContentEditableWarning
-                                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(editingOoo.message || '') }}
                                         onMouseUp={saveMessageRange}
                                         onKeyUp={saveMessageRange}
                                         onBlur={(e) => {
                                             saveMessageRange();
-                                            setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
+                                            if (editingOoo) {
+                                                setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
+                                            }
                                         }}
                                     />
                                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
