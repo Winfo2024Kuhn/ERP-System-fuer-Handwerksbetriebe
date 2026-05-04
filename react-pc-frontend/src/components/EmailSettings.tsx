@@ -17,7 +17,13 @@ import {
     MessageSquare,
     Sparkles,
     Plane,
-    Info
+    Info,
+    Bold,
+    Italic,
+    Underline,
+    List,
+    ListOrdered,
+    Eraser
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -27,10 +33,6 @@ import { DatePicker } from './ui/datepicker';
 import { cn } from '../lib/utils';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
-import { TiptapEditor } from './TiptapEditor';
-import type { useEditor } from '@tiptap/react';
-
-type TiptapEditorInstance = ReturnType<typeof useEditor>;
 
 // Types
 interface EmailSignature {
@@ -129,7 +131,12 @@ export default function EmailSettings() {
     // Cursor tracking for placeholder insertion
     const subjectInputRef = useRef<HTMLInputElement>(null);
     const subjectCursorRef = useRef<number>(0);
-    const messageEditorRef = useRef<TiptapEditorInstance | null>(null);
+    const messageEditorRef = useRef<HTMLDivElement>(null);
+    const messageRangeRef = useRef<Range | null>(null);
+    // Tracks which entry the contentEditable was last initialized for, so we
+    // only set innerHTML when switching entries — never on every state change
+    // (otherwise the user's caret jumps and partial edits get wiped).
+    const editorInitForRef = useRef<number | string | null>(null);
 
     // Active tab within settings
     const [activeSection, setActiveSection] = useState<'signatures' | 'ooo'>('signatures');
@@ -180,6 +187,25 @@ export default function EmailSettings() {
         loadSignatures();
         loadOooEntries();
     }, [loadSignatures, loadOooEntries]);
+
+    // Initialize the contentEditable editor's HTML only when the entry changes,
+    // not on every state update. Without this, dangerouslySetInnerHTML would
+    // overwrite the user's in-progress edits and reset the caret on every keystroke.
+    useEffect(() => {
+        if (editingOoo === null) {
+            editorInitForRef.current = null;
+            return;
+        }
+        const editor = messageEditorRef.current;
+        if (!editor) return;
+        const key = editingOoo.id ?? 'new';
+        if (editorInitForRef.current === key) return;
+        editorInitForRef.current = key;
+        editor.innerHTML = DOMPurify.sanitize(editingOoo.message || '', {
+            ADD_ATTR: ['target', 'style'],
+            ADD_TAGS: ['table', 'tbody', 'thead', 'tr', 'td', 'th']
+        });
+    }, [editingOoo]);
 
     // Save signature
     const handleSaveSignature = async () => {
@@ -421,11 +447,85 @@ export default function EmailSettings() {
         }, 0);
     };
 
-    // Inserts a placeholder into the TipTap message editor at the current cursor.
+    // Inserts a placeholder into the contentEditable message editor at the
+    // current (or last saved) selection range.
     const insertMessagePlaceholder = (placeholder: string) => {
+        if (!editingOoo) return;
         const editor = messageEditorRef.current;
         if (!editor) return;
-        editor.chain().focus().insertContent(placeholder).run();
+
+        const selection = window.getSelection();
+        let range: Range | null = null;
+
+        if (selection && selection.rangeCount > 0) {
+            const live = selection.getRangeAt(0);
+            if (editor.contains(live.startContainer)) {
+                range = live;
+            }
+        }
+        if (!range && messageRangeRef.current && editor.contains(messageRangeRef.current.startContainer)) {
+            range = messageRangeRef.current;
+            editor.focus();
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
+        if (!range) {
+            editor.focus();
+            range = document.createRange();
+            range.selectNodeContents(editor);
+            range.collapse(false);
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
+
+        const node = document.createTextNode(placeholder);
+        range.deleteContents();
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.setEndAfter(node);
+        if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+        messageRangeRef.current = range.cloneRange();
+        setEditingOoo({ ...editingOoo, message: editor.innerHTML });
+    };
+
+    const saveMessageRange = () => {
+        const editor = messageEditorRef.current;
+        if (!editor) return;
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return;
+        const r = selection.getRangeAt(0);
+        if (editor.contains(r.startContainer)) {
+            messageRangeRef.current = r.cloneRange();
+        }
+    };
+
+    // Simple rich-text formatting via document.execCommand.
+    // execCommand is deprecated but still universally supported in browsers and
+    // is exactly what EmailComposeForm-style native contentEditable editors use.
+    const applyFormat = (command: string, value?: string) => {
+        const editor = messageEditorRef.current;
+        if (!editor) return;
+        editor.focus();
+        // Re-apply saved range if focus was lost (e.g. clicking a toolbar button).
+        const selection = window.getSelection();
+        if (messageRangeRef.current && editor.contains(messageRangeRef.current.startContainer)) {
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(messageRangeRef.current);
+            }
+        }
+        document.execCommand(command, false, value);
+        if (editingOoo) {
+            setEditingOoo({ ...editingOoo, message: editor.innerHTML });
+        }
+        saveMessageRange();
     };
 
     // Visual chip button used to insert placeholders at cursor.
@@ -747,11 +847,89 @@ ${signatureHtml}`;
                                         <MessageSquare className="w-3.5 h-3.5 text-rose-500" />
                                         Nachricht
                                     </Label>
-                                    <TiptapEditor
-                                        value={editingOoo.message || ''}
-                                        onChange={(html) => setEditingOoo((prev) => prev ? { ...prev, message: html } : prev)}
-                                        onEditorReady={(ed) => { messageEditorRef.current = ed; }}
-                                    />
+                                    <div className="border border-slate-200 rounded-lg bg-white overflow-hidden focus-within:border-rose-300 focus-within:ring-2 focus-within:ring-rose-200 transition-colors">
+                                        {/* Mini-Toolbar */}
+                                        <div className="flex flex-wrap gap-1 items-center bg-rose-50 border-b border-rose-100 px-2 py-1.5">
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('bold')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Fett (Ctrl+B)"
+                                            >
+                                                <Bold className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('italic')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Kursiv (Ctrl+I)"
+                                            >
+                                                <Italic className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('underline')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Unterstrichen (Ctrl+U)"
+                                            >
+                                                <Underline className="w-4 h-4" />
+                                            </button>
+                                            <span className="w-px h-5 bg-rose-200 mx-1" />
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('insertUnorderedList')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Aufzählung"
+                                            >
+                                                <List className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('insertOrderedList')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Nummerierte Liste"
+                                            >
+                                                <ListOrdered className="w-4 h-4" />
+                                            </button>
+                                            <span className="w-px h-5 bg-rose-200 mx-1" />
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('removeFormat')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Formatierung entfernen"
+                                            >
+                                                <Eraser className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        {/* Editor — uncontrolled contentEditable preserves complex HTML
+                                            (signature tables, inline styles) without normalization.
+                                            Mirrors the EmailComposeForm pattern. */}
+                                        <div
+                                            ref={messageEditorRef}
+                                            className="p-4 min-h-[260px] max-h-[480px] overflow-auto outline-none prose prose-sm max-w-none"
+                                            contentEditable
+                                            suppressContentEditableWarning
+                                            onMouseUp={saveMessageRange}
+                                            onKeyUp={saveMessageRange}
+                                            onInput={(e) => {
+                                                if (editingOoo) {
+                                                    setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
+                                                }
+                                            }}
+                                            onBlur={(e) => {
+                                                saveMessageRange();
+                                                if (editingOoo) {
+                                                    setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
+                                                }
+                                            }}
+                                        />
+                                    </div>
                                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                                         <span className="text-xs text-slate-400 mr-1">Am Cursor einfügen:</span>
                                         <PlaceholderChip token="{{start}}" label="Start" onClick={() => insertMessagePlaceholder('{{start}}')} />
