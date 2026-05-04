@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.event.EmailAddressChangedEvent;
 import org.example.kalkulationsprogramm.mapper.KundeMapper;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.service.KundenDetailService;
+import org.example.kalkulationsprogramm.service.KundennummerService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -50,6 +51,7 @@ public class KundeController {
     private final KundeMapper kundeMapper;
     private final KundenDetailService kundenDetailService;
     private final ApplicationEventPublisher eventPublisher;
+    private final KundennummerService kundennummerService;
 
     @GetMapping
     public KundeSearchResponseDto sucheKunden(@RequestParam(value = "q", required = false) String query,
@@ -120,7 +122,7 @@ public class KundeController {
     @Transactional
     public KundeListItemDto createKunde(@Valid @RequestBody KundeCreateRequestDto request) {
         if (!StringUtils.hasText(request.getKundennummer())) {
-            request.setKundennummer(generateNextKundennummer());
+            request.setKundennummer(kundennummerService.reserviereNaechsteKundennummer());
         }
 
         final String kundennummer = request.getKundennummer().trim();
@@ -214,16 +216,7 @@ public class KundeController {
     }
 
     private String generateNextKundennummer() {
-        return kundeRepository.findMaxKundennummer()
-                .map(max -> {
-                    try {
-                        long val = Long.parseLong(max);
-                        return String.valueOf(val + 1);
-                    } catch (NumberFormatException e) {
-                        return "1000";
-                    }
-                })
-                .orElse("1000");
+        return kundennummerService.generiereNaechsteKundennummer();
     }
 
     private void applyRequest(Kunde kunde, KundeCreateRequestDto request) {

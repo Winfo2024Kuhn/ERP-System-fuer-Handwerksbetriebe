@@ -55,6 +55,9 @@ class KundeControllerTest {
     @MockBean
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
+    @MockBean
+    private org.example.kalkulationsprogramm.service.KundennummerService kundennummerService;
+
     @Test
     @DisplayName("Suchanfragen überschreiten nie das Limit von 50 Einträgen")
     void searchLimitsPageSizeTo50() throws Exception {

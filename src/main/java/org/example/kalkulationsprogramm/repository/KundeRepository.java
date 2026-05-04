@@ -31,4 +31,10 @@ public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecific
      */
     @Query("SELECT COUNT(k) > 0 FROM Kunde k JOIN k.kundenEmails e WHERE LOWER(e) = LOWER(:email)")
     boolean existsByKundenEmail(@Param("email") String email);
+
+    /**
+     * Findet Kunden, die diese E-Mail-Adresse hinterlegt haben.
+     */
+    @Query("SELECT DISTINCT k FROM Kunde k JOIN k.kundenEmails e WHERE LOWER(e) = LOWER(:email)")
+    List<Kunde> findByKundenEmailIgnoreCase(@Param("email") String email);
 }
