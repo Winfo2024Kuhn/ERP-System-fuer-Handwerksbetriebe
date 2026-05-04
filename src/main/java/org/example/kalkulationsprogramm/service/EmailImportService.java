@@ -68,6 +68,7 @@ public class EmailImportService {
     private final SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
     private final LieferantenRepository lieferantenRepository;
     private final SystemSettingsService systemSettingsService;
+    private final OutOfOfficeResponder outOfOfficeResponder;
 
     // Self-Injection für transactional proxy: importMessage muss durch den
     // Spring-Proxy laufen, damit @Transactional pro Mail eine eigene
@@ -88,6 +89,23 @@ public class EmailImportService {
     private static final List<String> OUTGOING_FOLDERS = List.of(
             "INBOX.Sent",
             "INBOX.Sent Items");
+
+    /**
+     * Schaltet abgelaufene Abwesenheitspläne (endAt < heute) automatisch aus.
+     * Läuft einmal pro Stunde, damit der "active=true"-Status nicht über
+     * das eingestellte Enddatum hinaus stehen bleibt.
+     */
+    @Scheduled(fixedDelay = 3_600_000L, initialDelay = 60_000L)
+    public void deactivateExpiredOutOfOffice() {
+        if (!emailFeaturesEnabled) {
+            return;
+        }
+        try {
+            outOfOfficeResponder.deactivateExpiredSchedules();
+        } catch (Exception e) {
+            log.warn("[OOO] Auto-Deaktivierung abgelaufener Pläne fehlgeschlagen: {}", e.getMessage());
+        }
+    }
 
     /**
      * Importiert alle neuen E-Mails aus IMAP.
@@ -330,6 +348,11 @@ public class EmailImportService {
             }
         }
 
+        // Auto-Reply-Header für OOO-Loop-Schutz puffern (vor dem späteren Versand)
+        String autoSubmittedHeader = firstHeader(msg, "Auto-Submitted");
+        String precedenceHeader = firstHeader(msg, "Precedence");
+        String listIdHeader = firstHeader(msg, "List-Id");
+
         // Newsletter Detection (via Header)
         // WICHTIG: Nur als Newsletter markieren wenn der Absender NICHT zu einem
         // bekannten Lieferanten gehört! Viele Lieferanten nutzen Newsletter-Tools
@@ -375,7 +398,42 @@ public class EmailImportService {
             }
         }
 
+        // Abwesenheitsnotiz (OOO) – nur für eingehende Mails, die nach
+        // Klassifikation NICHT als Spam/Newsletter markiert wurden und vom
+        // einem Kunden stammen. Greift in allen IMAP-Ordnern. Dedup pro
+        // Absender + Plan erfolgt im Responder selbst.
+        if (direction == EmailDirection.IN
+                && !email.isSpam()
+                && !email.isNewsletter()) {
+            try {
+                outOfOfficeResponder.handleIncomingEmail(new OutOfOfficeResponder.IncomingMail(
+                        email.getFromAddress(),
+                        email.getSubject(),
+                        email.getSentAt(),
+                        email.isSpam(),
+                        email.isNewsletter(),
+                        autoSubmittedHeader,
+                        precedenceHeader,
+                        listIdHeader));
+            } catch (Exception ex) {
+                log.warn("[EmailImport] OOO-Auto-Reply für Email {} fehlgeschlagen: {}",
+                        email.getId(), ex.getMessage());
+            }
+        }
+
         return true;
+    }
+
+    /**
+     * Liest den ersten Wert eines Headers; gibt null zurück wenn nicht vorhanden.
+     */
+    private String firstHeader(Message msg, String name) {
+        try {
+            String[] values = msg.getHeader(name);
+            return (values != null && values.length > 0) ? values[0] : null;
+        } catch (MessagingException e) {
+            return null;
+        }
     }
 
     /**
