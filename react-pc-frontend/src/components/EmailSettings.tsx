@@ -27,6 +27,10 @@ import { DatePicker } from './ui/datepicker';
 import { cn } from '../lib/utils';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
+import { TiptapEditor } from './TiptapEditor';
+import type { useEditor } from '@tiptap/react';
+
+type TiptapEditorInstance = ReturnType<typeof useEditor>;
 
 // Types
 interface EmailSignature {
@@ -124,13 +128,8 @@ export default function EmailSettings() {
 
     // Cursor tracking for placeholder insertion
     const subjectInputRef = useRef<HTMLInputElement>(null);
-    const messageEditorRef = useRef<HTMLDivElement>(null);
     const subjectCursorRef = useRef<number>(0);
-    const messageRangeRef = useRef<Range | null>(null);
-    // Tracks which entry the contentEditable was last initialized for, so we
-    // only set innerHTML when switching entries — never on every state change
-    // (otherwise the user's caret jumps and partial edits get wiped).
-    const editorInitForRef = useRef<number | string | null>(null);
+    const messageEditorRef = useRef<TiptapEditorInstance | null>(null);
 
     // Active tab within settings
     const [activeSection, setActiveSection] = useState<'signatures' | 'ooo'>('signatures');
@@ -181,22 +180,6 @@ export default function EmailSettings() {
         loadSignatures();
         loadOooEntries();
     }, [loadSignatures, loadOooEntries]);
-
-    // Initialize the contentEditable editor's HTML only when the entry changes,
-    // not on every state update. Without this, dangerouslySetInnerHTML would
-    // overwrite the user's in-progress edits and reset the caret on every keystroke.
-    useEffect(() => {
-        if (editingOoo === null) {
-            editorInitForRef.current = null;
-            return;
-        }
-        const editor = messageEditorRef.current;
-        if (!editor) return;
-        const key = editingOoo.id ?? 'new';
-        if (editorInitForRef.current === key) return;
-        editorInitForRef.current = key;
-        editor.innerHTML = DOMPurify.sanitize(editingOoo.message || '');
-    }, [editingOoo]);
 
     // Save signature
     const handleSaveSignature = async () => {
@@ -438,68 +421,11 @@ export default function EmailSettings() {
         }, 0);
     };
 
-    // Inserts a placeholder into the contentEditable message editor at the
-    // current (or last saved) selection range.
+    // Inserts a placeholder into the TipTap message editor at the current cursor.
     const insertMessagePlaceholder = (placeholder: string) => {
-        if (!editingOoo) return;
         const editor = messageEditorRef.current;
         if (!editor) return;
-
-        const selection = window.getSelection();
-        let range: Range | null = null;
-
-        // Prefer the live selection if it's still inside the editor (chip buttons
-        // use mousedown preventDefault to keep editor focused).
-        if (selection && selection.rangeCount > 0) {
-            const live = selection.getRangeAt(0);
-            if (editor.contains(live.startContainer)) {
-                range = live;
-            }
-        }
-        // Fallback to the last saved range, if it still belongs to this editor.
-        if (!range && messageRangeRef.current && editor.contains(messageRangeRef.current.startContainer)) {
-            range = messageRangeRef.current;
-            editor.focus();
-            if (selection) {
-                selection.removeAllRanges();
-                selection.addRange(range);
-            }
-        }
-        // Last resort: append at the end of the editor.
-        if (!range) {
-            editor.focus();
-            range = document.createRange();
-            range.selectNodeContents(editor);
-            range.collapse(false);
-            if (selection) {
-                selection.removeAllRanges();
-                selection.addRange(range);
-            }
-        }
-
-        const node = document.createTextNode(placeholder);
-        range.deleteContents();
-        range.insertNode(node);
-        range.setStartAfter(node);
-        range.setEndAfter(node);
-        if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
-        }
-        messageRangeRef.current = range.cloneRange();
-        // Sync state from the live DOM (editor is uncontrolled — DOM is source of truth).
-        setEditingOoo({ ...editingOoo, message: editor.innerHTML });
-    };
-
-    const saveMessageRange = () => {
-        const editor = messageEditorRef.current;
-        if (!editor) return;
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) return;
-        const r = selection.getRangeAt(0);
-        if (editor.contains(r.startContainer)) {
-            messageRangeRef.current = r.cloneRange();
-        }
+        editor.chain().focus().insertContent(placeholder).run();
     };
 
     // Visual chip button used to insert placeholders at cursor.
@@ -821,25 +747,10 @@ ${signatureHtml}`;
                                         <MessageSquare className="w-3.5 h-3.5 text-rose-500" />
                                         Nachricht
                                     </Label>
-                                    {/*
-                                        Uncontrolled contentEditable: initial HTML is set imperatively
-                                        via useEffect when the entry changes. Re-rendering with
-                                        dangerouslySetInnerHTML on every keystroke would wipe the
-                                        caret and partial edits — that bug is fixed here.
-                                    */}
-                                    <div
-                                        ref={messageEditorRef}
-                                        className="border border-slate-200 rounded-lg bg-white p-4 min-h-[260px] overflow-auto focus:border-rose-300 focus:ring-2 focus:ring-rose-200 outline-none transition-colors prose prose-sm max-w-none"
-                                        contentEditable
-                                        suppressContentEditableWarning
-                                        onMouseUp={saveMessageRange}
-                                        onKeyUp={saveMessageRange}
-                                        onBlur={(e) => {
-                                            saveMessageRange();
-                                            if (editingOoo) {
-                                                setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
-                                            }
-                                        }}
+                                    <TiptapEditor
+                                        value={editingOoo.message || ''}
+                                        onChange={(html) => setEditingOoo((prev) => prev ? { ...prev, message: html } : prev)}
+                                        onEditorReady={(ed) => { messageEditorRef.current = ed; }}
                                     />
                                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                                         <span className="text-xs text-slate-400 mr-1">Am Cursor einfügen:</span>
