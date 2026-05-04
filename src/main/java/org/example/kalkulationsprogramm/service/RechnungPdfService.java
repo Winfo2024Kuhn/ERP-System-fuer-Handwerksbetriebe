@@ -571,6 +571,15 @@ public class RechnungPdfService {
                  } else {
                      // CASE B: We are OUTSIDE a table (e.g. after Closure) -> Render as Standalone
                      java.util.List<com.lowagie.text.Element> elements = parseHtmlToElements(content, textColor, defaultFontSize, defaultBold);
+                     // Etwas mehr vertikalen Abstand zwischen aufeinanderfolgenden Textbausteinen,
+                     // damit Vor-/Nachtexte visuell klar getrennt sind. Wirkt nur auf den letzten
+                     // Paragraph; Zeilenabstand innerhalb des Bausteins bleibt unveraendert.
+                     for (int idx = elements.size() - 1; idx >= 0; idx--) {
+                         if (elements.get(idx) instanceof Paragraph p) {
+                             p.setSpacingAfter(p.getSpacingAfter() + 8f);
+                             break;
+                         }
+                     }
                      for (com.lowagie.text.Element e : elements) {
                          ct.addElement(e);
                      }
