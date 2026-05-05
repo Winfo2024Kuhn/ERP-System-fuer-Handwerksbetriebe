@@ -58,6 +58,8 @@ import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { ZuordnungModal } from '../components/ZuordnungModal';
+import { DokumentLoeschenDialog } from '../components/dokument/DokumentLoeschenDialog';
+import { DokumentVerlaufDrawer } from '../components/dokument/DokumentVerlaufDrawer';
 
 interface Supplier {
     id: number;
@@ -267,8 +269,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     // Lösch-Dialog State
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [deleteDokument, setDeleteDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
-    const [deleteBegruendung, setDeleteBegruendung] = useState('');
-    const [deleteLoading, setDeleteLoading] = useState(false);
+
+    // Verlauf-Drawer State (Audit-Trail für Steuerprüfung)
+    const [showVerlaufDrawer, setShowVerlaufDrawer] = useState(false);
+    const [verlaufDokument, setVerlaufDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
 
     // PDF Preview Modal State
     const [pdfPreviewDoc, setPdfPreviewDoc] = useState<{ url: string; title: string } | null>(null);
@@ -1906,6 +1910,20 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             </>
                                                         )}
 
+                                                        {/* Verlauf - immer verfügbar (für Steuerprüfung) */}
+                                                        <hr className="my-1 border-slate-100" />
+                                                        <button
+                                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                            onClick={() => {
+                                                                setVerlaufDokument(dok);
+                                                                setShowVerlaufDrawer(true);
+                                                                setActionMenuDokument(null);
+                                                            }}
+                                                        >
+                                                            <Clock className="w-4 h-4" />
+                                                            Verlauf anzeigen
+                                                        </button>
+
                                                         {/* Löschen - nur Entwürfe (GoBD: nicht gebucht, nicht versandt, nicht storniert, kein STORNO) */}
                                                         {!dok.gebucht && !dok.versandDatum && !dok.storniert && dok.typ !== 'STORNO' && (
                                                             <>
@@ -1914,7 +1932,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                     className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                                                     onClick={() => {
                                                                         setDeleteDokument(dok);
-                                                                        setDeleteBegruendung('');
                                                                         setShowDeleteDialog(true);
                                                                         setActionMenuDokument(null);
                                                                     }}
@@ -2704,78 +2721,31 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 </DialogContent>
             </Dialog>
 
-            {/* Lösch-Dialog mit Begründung */}
-            <Dialog open={showDeleteDialog} onOpenChange={(open) => {
-                if (!open) {
-                    setShowDeleteDialog(false);
+            {/* GoBD-konformer Lösch-Dialog mit Dropdown + Freitext */}
+            <DokumentLoeschenDialog
+                open={showDeleteDialog}
+                onOpenChange={(open) => {
+                    setShowDeleteDialog(open);
+                    if (!open) setDeleteDokument(null);
+                }}
+                dokumentId={deleteDokument?.id}
+                dokumentNummer={deleteDokument?.dokumentNummer}
+                onDeleted={() => {
+                    loadAusgangsDokumente();
                     setDeleteDokument(null);
-                    setDeleteBegruendung('');
-                }
-            }}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-red-600">Dokument löschen</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-2">
-                        <p className="text-sm text-slate-600">
-                            Möchten Sie <span className="font-semibold">{deleteDokument?.dokumentNummer}</span> wirklich löschen?
-                        </p>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-500">
-                            Gemäß GoBD dürfen nur Entwürfe gelöscht werden. Gebuchte oder versandte Dokumente müssen storniert werden.
-                        </div>
-                        <div className="space-y-2">
-                            <Label className="text-sm font-medium text-slate-700">Begründung *</Label>
-                            <textarea
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 min-h-[80px] resize-none"
-                                placeholder="Bitte geben Sie eine Begründung für das Löschen an..."
-                                value={deleteBegruendung}
-                                onChange={(e) => setDeleteBegruendung(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter className="gap-2">
-                        <Button variant="outline" onClick={() => {
-                            setShowDeleteDialog(false);
-                            setDeleteDokument(null);
-                            setDeleteBegruendung('');
-                        }}>
-                            Abbrechen
-                        </Button>
-                        <Button
-                            className="bg-red-600 text-white hover:bg-red-700"
-                            disabled={deleteLoading || !deleteBegruendung.trim()}
-                            onClick={async () => {
-                                if (!deleteDokument) return;
-                                setDeleteLoading(true);
-                                try {
-                                    const response = await fetch(
-                                        `/api/ausgangs-dokumente/${deleteDokument.id}?begruendung=${encodeURIComponent(deleteBegruendung.trim())}`,
-                                        { method: 'DELETE' }
-                                    );
-                                    if (response.ok) {
-                                        toast.success(`Dokument ${deleteDokument.dokumentNummer} gelöscht`);
-                                        loadAusgangsDokumente();
-                                        setShowDeleteDialog(false);
-                                        setDeleteDokument(null);
-                                        setDeleteBegruendung('');
-                                    } else {
-                                        const error = await response.text();
-                                        toast.error(error || 'Löschen fehlgeschlagen');
-                                    }
-                                } catch (e) {
-                                    console.error(e);
-                                    toast.error('Fehler beim Löschen');
-                                } finally {
-                                    setDeleteLoading(false);
-                                }
-                            }}
-                        >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Löschen
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                }}
+            />
+
+            {/* Audit-Verlauf für die Steuerprüfung */}
+            <DokumentVerlaufDrawer
+                open={showVerlaufDrawer}
+                onOpenChange={(open) => {
+                    setShowVerlaufDrawer(open);
+                    if (!open) setVerlaufDokument(null);
+                }}
+                dokumentId={verlaufDokument?.id}
+                dokumentNummer={verlaufDokument?.dokumentNummer}
+            />
 
             {activeTab === 'dokumente' && (
                 <div className="space-y-6">

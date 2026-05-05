@@ -46,6 +46,9 @@ class AusgangsGeschaeftsDokumentControllerTest {
     @MockBean
     private DokumentFreigabeService dokumentFreigabeService;
 
+    @MockBean
+    private org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentAuditService auditService;
+
     private AusgangsGeschaeftsDokumentResponseDto buildResponseDto(Long id, String nummer) {
         AusgangsGeschaeftsDokumentResponseDto dto = new AusgangsGeschaeftsDokumentResponseDto();
         dto.setId(id);
@@ -361,7 +364,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @DisplayName("Löscht Dokument mit Begründung")
         void loeschtDokumentMitBegruendung() throws Exception {
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
-            doNothing().when(service).loeschen(eq(1L), eq("Falsch erstellt"));
+            doNothing().when(service).loeschen(eq(1L), eq("Falsch erstellt"), any(), any());
 
             mockMvc.perform(delete("/api/ausgangs-dokumente/1")
                             .param("begruendung", "Falsch erstellt"))
@@ -383,7 +386,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void loeschenGebuchtGibt400() throws Exception {
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-001"));
             doThrow(new RuntimeException("Gebuchte Dokumente können nicht gelöscht werden"))
-                    .when(service).loeschen(eq(1L), any());
+                    .when(service).loeschen(eq(1L), any(), any(), any());
 
             mockMvc.perform(delete("/api/ausgangs-dokumente/1")
                             .param("begruendung", "Test"))

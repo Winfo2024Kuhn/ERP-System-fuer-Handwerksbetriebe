@@ -56,6 +56,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
     @Mock private ProduktkategorieRepository produktkategorieRepository;
     @Mock private ProjektDokumentRepository projektDokumentRepository;
     @Mock private ZeitbuchungRepository zeitbuchungRepository;
+    @Mock private AusgangsGeschaeftsDokumentAuditService auditService;
 
     private AusgangsGeschaeftsDokumentService service;
 
@@ -72,7 +73,8 @@ class AusgangsGeschaeftsDokumentServiceTest {
                 leistungRepository,
                 produktkategorieRepository,
                 projektDokumentRepository,
-                zeitbuchungRepository);
+                zeitbuchungRepository,
+                auditService);
     }
 
     private void mockCounterForNummer() {

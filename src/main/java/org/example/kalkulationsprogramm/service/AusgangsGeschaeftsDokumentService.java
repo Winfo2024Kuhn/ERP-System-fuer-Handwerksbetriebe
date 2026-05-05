@@ -71,6 +71,7 @@ public class AusgangsGeschaeftsDokumentService {
     private final ProduktkategorieRepository produktkategorieRepository;
     private final ProjektDokumentRepository projektDokumentRepository;
     private final ZeitbuchungRepository zeitbuchungRepository;
+    private final AusgangsGeschaeftsDokumentAuditService auditService;
 
     public AusgangsGeschaeftsDokumentService(
             @Value("${file.upload-dir}") String uploadDir,
@@ -83,7 +84,8 @@ public class AusgangsGeschaeftsDokumentService {
             LeistungRepository leistungRepository,
             ProduktkategorieRepository produktkategorieRepository,
             ProjektDokumentRepository projektDokumentRepository,
-            ZeitbuchungRepository zeitbuchungRepository) {
+            ZeitbuchungRepository zeitbuchungRepository,
+            AusgangsGeschaeftsDokumentAuditService auditService) {
         this.dokumentenSpeicherplatz = Path.of(uploadDir).toAbsolutePath().normalize();
         this.dokumentRepository = dokumentRepository;
         this.counterRepository = counterRepository;
@@ -95,6 +97,7 @@ public class AusgangsGeschaeftsDokumentService {
         this.produktkategorieRepository = produktkategorieRepository;
         this.projektDokumentRepository = projektDokumentRepository;
         this.zeitbuchungRepository = zeitbuchungRepository;
+        this.auditService = auditService;
     }
 
     /** Rechnungstypen, die im Abrechnungsverlauf berücksichtigt werden */
@@ -785,6 +788,19 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public void loeschen(Long id, String begruendung) {
+        loeschen(id, begruendung, null, null);
+    }
+
+    /**
+     * Löscht ein Dokument mit GoBD-konformem Audit-Eintrag.
+     *
+     * @param id           Dokument-ID
+     * @param begruendung  Pflicht-Begründung (wird in Audit-Tabelle persistiert)
+     * @param geloeschtVonId Optional: ID des löschenden FrontendUserProfile
+     * @param ipAdresse    Optional: IP-Adresse des Aufrufers
+     */
+    @Transactional
+    public void loeschen(Long id, String begruendung, Long geloeschtVonId, String ipAdresse) {
         AusgangsGeschaeftsDokument dokument = dokumentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Dokument nicht gefunden: " + id));
 
@@ -811,6 +827,13 @@ public class AusgangsGeschaeftsDokumentService {
         if (begruendung == null || begruendung.isBlank()) {
             throw new RuntimeException("Eine Begründung für das Löschen ist erforderlich.");
         }
+
+        // GoBD: Vor dem Hard-Delete einen unveränderlichen Audit-Eintrag mit
+        // Snapshot, Begründung und Bearbeiter persistieren (revisionssicher).
+        var bearbeiter = geloeschtVonId != null
+                ? frontendUserProfileRepository.findById(geloeschtVonId).orElse(null)
+                : null;
+        auditService.protokolliereLoeschung(dokument, bearbeiter, begruendung, ipAdresse);
 
         log.info("Dokument gelöscht: {} (Typ: {}, Nr: {}) – Begründung: {}",
                 dokument.getId(), dokument.getTyp(), dokument.getDokumentNummer(), begruendung);

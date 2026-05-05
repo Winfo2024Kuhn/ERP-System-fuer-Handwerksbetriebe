@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings } from 'lucide-react';
+import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, ShieldCheck } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -13,6 +13,7 @@ import { DatePicker } from '../components/ui/datepicker';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfigurator';
+import { SteuerpruefungExport } from '../components/firma/SteuerpruefungExport';
 
 // Types
 interface Firmeninformation {
@@ -94,7 +95,7 @@ interface BwaUploadDto {
     steuerberaterName: string;
 }
 
-type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'systemsetup';
+type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'systemsetup' | 'steuerpruefung';
 type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
 const KOSTENSTELLEN_TYP_OPTIONS = [
@@ -439,6 +440,18 @@ export default function FirmaEditor() {
                         >
                             <Settings className="w-4 h-4 inline-block mr-2" />
                             System-Setup
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('steuerpruefung')}
+                            className={cn(
+                                "px-4 py-2 text-sm font-medium rounded-t-lg transition",
+                                activeTab === 'steuerpruefung'
+                                    ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                            )}
+                        >
+                            <ShieldCheck className="w-4 h-4 inline-block mr-2" />
+                            Steuerprüfung
                         </button>
                     </div>
 
@@ -977,6 +990,10 @@ export default function FirmaEditor() {
                             </p>
                             <SystemSetupConfigurator />
                         </div>
+                    )}
+
+                    {activeTab === 'steuerpruefung' && (
+                        <SteuerpruefungExport />
                     )}
                 </>
             )}

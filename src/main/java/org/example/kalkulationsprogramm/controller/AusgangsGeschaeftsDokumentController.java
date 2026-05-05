@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsG
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
+import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentAuditService;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.slf4j.Logger;
@@ -39,6 +40,7 @@ public class AusgangsGeschaeftsDokumentController {
 
     private final AusgangsGeschaeftsDokumentService service;
     private final DokumentFreigabeService dokumentFreigabeService;
+    private final AusgangsGeschaeftsDokumentAuditService auditService;
 
     /**
      * Liefert pro AusgangsGeschaeftsDokument-ID die jüngste relevante digitale Freigabe.
@@ -206,20 +208,56 @@ public class AusgangsGeschaeftsDokumentController {
     /**
      * Dokument löschen.
      * Alle nicht gebuchten Dokumente dürfen mit einer Begründung gelöscht werden.
+     * Schreibt vor dem Hard-Delete einen GoBD-konformen Audit-Eintrag.
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Long id, @RequestParam String begruendung) {
+    public ResponseEntity<?> delete(@PathVariable Long id,
+                                    @RequestParam String begruendung,
+                                    @RequestParam(required = false) Long userId,
+                                    jakarta.servlet.http.HttpServletRequest request) {
         try {
             AusgangsGeschaeftsDokumentResponseDto dto = service.findById(id);
             if (dto == null) {
                 return ResponseEntity.notFound().build();
             }
 
-            service.loeschen(id, begruendung);
+            String ip = clientIp(request);
+            service.loeschen(id, begruendung, userId, ip);
             return ResponseEntity.ok().build();
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
+    }
+
+    /**
+     * Audit-Historie eines Dokuments für die Steuerprüfung.
+     * Liefert alle Aktionen (Erstellt, Geändert, Gebucht, Versendet, Storniert, Gelöscht)
+     * mit Bearbeiter, Zeitstempel und Begründung.
+     */
+    @GetMapping("/{id}/historie")
+    public ResponseEntity<List<java.util.Map<String, Object>>> historie(@PathVariable Long id) {
+        return ResponseEntity.ok(auditService.getHistorie(id));
+    }
+
+    /**
+     * Audit-Historie eines Dokuments anhand der Dokumentnummer.
+     * Funktioniert auch für hard-deleted Dokumente — wichtig wenn ein Prüfer
+     * eine Lücke im Nummernkreis aufdeckt.
+     */
+    @GetMapping("/historie/nummer/{dokumentNummer}")
+    public ResponseEntity<List<java.util.Map<String, Object>>> historieByNummer(
+            @PathVariable String dokumentNummer) {
+        return ResponseEntity.ok(auditService.getHistorieByNummer(dokumentNummer));
+    }
+
+    private String clientIp(jakarta.servlet.http.HttpServletRequest request) {
+        if (request == null) return null;
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            int comma = xff.indexOf(',');
+            return (comma > 0 ? xff.substring(0, comma) : xff).trim();
+        }
+        return request.getRemoteAddr();
     }
 
     // --- Abrechnungsverlauf ---

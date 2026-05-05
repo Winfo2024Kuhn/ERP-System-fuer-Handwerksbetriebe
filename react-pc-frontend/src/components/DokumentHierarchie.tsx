@@ -4,6 +4,7 @@ import {
     Check,
     ChevronDown,
     ChevronRight,
+    Clock,
     Edit2,
     FileText,
     GitBranch,
@@ -14,6 +15,8 @@ import {
     User,
     X,
 } from 'lucide-react';
+import { DokumentLoeschenDialog } from './dokument/DokumentLoeschenDialog';
+import { DokumentVerlaufDrawer } from './dokument/DokumentVerlaufDrawer';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
@@ -87,6 +90,14 @@ export function DokumentHierarchie({
     const createPayloadIds = projektId ? { projektId } : { anfrageId };
     const [actionMenuId, setActionMenuId] = useState<number | null>(null);
     const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set());
+
+    // Lösch-Dialog mit GoBD-konformer Begründung
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [deleteDokument, setDeleteDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
+
+    // Audit-Verlauf Drawer (Steuerprüfung)
+    const [showVerlaufDrawer, setShowVerlaufDrawer] = useState(false);
+    const [verlaufDokument, setVerlaufDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
 
     // Rechnungserstellungsdialog
     const [showRechnungDialog, setShowRechnungDialog] = useState(false);
@@ -536,7 +547,21 @@ export function DokumentHierarchie({
                                 </>
                             )}
 
-                            {/* Löschen */}
+                            {/* Verlauf — immer verfügbar (Steuerprüfung) */}
+                            <hr className="my-1 border-slate-100" />
+                            <button
+                                className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                onClick={() => {
+                                    setVerlaufDokument(dok);
+                                    setShowVerlaufDrawer(true);
+                                    setActionMenuId(null);
+                                }}
+                            >
+                                <Clock className="w-4 h-4" />
+                                Verlauf anzeigen
+                            </button>
+
+                            {/* Löschen — mit GoBD-konformem Begründungs-Dialog (Dropdown + Freitext) */}
                             {dok.typ !== 'RECHNUNG' && dok.typ !== 'GUTSCHRIFT' && dok.typ !== 'STORNO'
                                 && dok.typ !== 'TEILRECHNUNG' && dok.typ !== 'ABSCHLAGSRECHNUNG' && dok.typ !== 'SCHLUSSRECHNUNG'
                                 && !dok.gebucht && (
@@ -544,18 +569,9 @@ export function DokumentHierarchie({
                                     <hr className="my-1 border-slate-100" />
                                     <button
                                         className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                        onClick={async () => {
-                                            if (await confirmDialog({ title: "Dokument löschen", message: `Dokument ${dok.dokumentNummer} wirklich löschen?`, variant: "danger", confirmLabel: "Löschen" })) {
-                                                try {
-                                                    const response = await fetch(`/api/ausgangs-dokumente/${dok.id}`, { method: 'DELETE' });
-                                                    if (response.ok) {
-                                                        onRefresh();
-                                                    } else {
-                                                        const error = await response.text();
-                                                        toast.error(error || 'Löschen fehlgeschlagen');
-                                                    }
-                                                } catch (e) { console.error(e); }
-                                            }
+                                        onClick={() => {
+                                            setDeleteDokument(dok);
+                                            setShowDeleteDialog(true);
                                             setActionMenuId(null);
                                         }}
                                     >
@@ -1029,6 +1045,32 @@ export function DokumentHierarchie({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* GoBD-konformer Lösch-Dialog (Dropdown + Pflicht-Begründung) */}
+            <DokumentLoeschenDialog
+                open={showDeleteDialog}
+                onOpenChange={(open) => {
+                    setShowDeleteDialog(open);
+                    if (!open) setDeleteDokument(null);
+                }}
+                dokumentId={deleteDokument?.id}
+                dokumentNummer={deleteDokument?.dokumentNummer}
+                onDeleted={() => {
+                    onRefresh();
+                    setDeleteDokument(null);
+                }}
+            />
+
+            {/* Audit-Verlauf für Steuerprüfung */}
+            <DokumentVerlaufDrawer
+                open={showVerlaufDrawer}
+                onOpenChange={(open) => {
+                    setShowVerlaufDrawer(open);
+                    if (!open) setVerlaufDokument(null);
+                }}
+                dokumentId={verlaufDokument?.id}
+                dokumentNummer={verlaufDokument?.dokumentNummer}
+            />
         </div>
     );
 }
