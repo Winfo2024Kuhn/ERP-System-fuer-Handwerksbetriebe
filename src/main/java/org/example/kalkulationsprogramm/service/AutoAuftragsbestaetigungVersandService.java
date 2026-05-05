@@ -688,19 +688,79 @@ public class AutoAuftragsbestaetigungVersandService
     }
 
     /**
-     * Liefert den Brutto-Betrag der AB. Falls {@code betragBrutto} (noch) nicht
-     * gesetzt ist — z.B. weil {@code AusgangsGeschaeftsDokumentService.erstellen}
-     * nur den Netto-Wert übernimmt — wird er aus Netto + MwSt-Satz berechnet.
+     * Liefert den Brutto-Betrag der AB. Bei Folgedokumenten setzt
+     * {@code AusgangsGeschaeftsDokumentService.erstellen} weder netto noch
+     * brutto, weil das Frontend bisher die Beträge erst beim Speichern
+     * nachrechnet. Daher: erst die persistierten Werte verwenden, dann
+     * Netto+MwSt, dann Fallback aus dem geerbten {@code positionenJson}.
      */
-    private static BigDecimal ermittleBruttoBetrag(AusgangsGeschaeftsDokument ab)
+    static BigDecimal ermittleBruttoBetrag(AusgangsGeschaeftsDokument ab)
     {
+        BigDecimal mwst = ab.getMwstSatz() != null ? ab.getMwstSatz() : new BigDecimal("0.19");
         if (ab.getBetragBrutto() != null) return ab.getBetragBrutto();
-        if (ab.getBetragNetto() != null)
+        BigDecimal netto = ab.getBetragNetto() != null
+                ? ab.getBetragNetto()
+                : summiereNettoAusJson(ab.getPositionenJson());
+        if (netto == null) return null;
+        return netto.multiply(BigDecimal.ONE.add(mwst)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Aggregiert den Nettobetrag aus dem {@code positionenJson} eines
+     * AusgangsGeschaeftsDokuments — nur SERVICE-Blöcke (auch verschachtelt
+     * unter SECTION_HEADER), {@code optional==true} ausgeschlossen, Positions-
+     * Rabatt {@code discount} berücksichtigt. Symmetrisch zur Frontend-Logik
+     * im DocumentEditor.
+     */
+    static BigDecimal summiereNettoAusJson(String positionenJson)
+    {
+        if (positionenJson == null || positionenJson.isBlank()) return null;
+        try
         {
-            BigDecimal mwst = ab.getMwstSatz() != null ? ab.getMwstSatz() : new BigDecimal("0.19");
-            return ab.getBetragNetto().multiply(BigDecimal.ONE.add(mwst)).setScale(2, RoundingMode.HALF_UP);
+            JsonNode root = OBJECT_MAPPER.readTree(positionenJson);
+            JsonNode blocks = root.isArray() ? root
+                    : (root.has("blocks") && root.get("blocks").isArray() ? root.get("blocks") : null);
+            if (blocks == null) return null;
+            BigDecimal summe = BigDecimal.ZERO;
+            for (JsonNode b : blocks) summe = summe.add(summiereBlock(b));
+            return summe.setScale(2, RoundingMode.HALF_UP);
         }
-        return null;
+        catch (Exception e)
+        {
+            log.warn("Netto-Summe konnte aus positionenJson nicht ermittelt werden: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static BigDecimal summiereBlock(JsonNode block)
+    {
+        String type = optString(block, "type", "");
+        if ("SERVICE".equals(type))
+        {
+            if (optBoolean(block, "optional", false)) return BigDecimal.ZERO;
+            BigDecimal menge = optBigDecimal(block, "quantity", BigDecimal.ONE);
+            BigDecimal preis = optBigDecimal(block, "price", BigDecimal.ZERO);
+            BigDecimal pos = menge.multiply(preis);
+            BigDecimal rabatt = optBigDecimal(block, "discount", null);
+            if (rabatt != null && rabatt.signum() > 0)
+            {
+                BigDecimal faktor = BigDecimal.ONE.subtract(
+                        rabatt.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP));
+                pos = pos.multiply(faktor);
+            }
+            return pos;
+        }
+        if ("SECTION_HEADER".equals(type))
+        {
+            JsonNode children = block.get("children");
+            if (children != null && children.isArray())
+            {
+                BigDecimal s = BigDecimal.ZERO;
+                for (JsonNode c : children) s = s.add(summiereBlock(c));
+                return s;
+            }
+        }
+        return BigDecimal.ZERO;
     }
 
     private static String formatBetrag(BigDecimal betrag)
