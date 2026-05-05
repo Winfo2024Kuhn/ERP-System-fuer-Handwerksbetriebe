@@ -10,7 +10,6 @@ import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
-import org.example.kalkulationsprogramm.domain.Angebot;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailBlacklistEntry;
@@ -25,7 +24,6 @@ import org.example.kalkulationsprogramm.dto.EmailThreadDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -74,7 +72,6 @@ public class UnifiedEmailController {
     private final EmailRepository emailRepository;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
-    private final AngebotRepository angebotRepository;
     private final LieferantenRepository lieferantenRepository;
     private final EmailAutoAssignmentService emailAutoAssignmentService;
     private final EmailImportService emailImportService;
@@ -435,30 +432,6 @@ public class UnifiedEmailController {
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
         if (projekt == null) {
             return ResponseEntity.notFound().build();
-        }
-        List<Email> emails = emailRepository.findByProjektOrderBySentAtDesc(projekt);
-        return ResponseEntity.ok(emails.stream()
-                .limit(limit)
-                .map(this::toDto)
-                .collect(Collectors.toList()));
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // EMAILS FÜR ANGEBOTE (über zugehöriges Projekt)
-    // ═══════════════════════════════════════════════════════════════
-
-    @GetMapping("/angebot/{angebotId}")
-    @Transactional(readOnly = true)
-    public ResponseEntity<List<UnifiedEmailDto>> getEmailsByAngebot(
-            @PathVariable Long angebotId,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
-        Angebot angebot = angebotRepository.findById(angebotId).orElse(null);
-        if (angebot == null) {
-            return ResponseEntity.notFound().build();
-        }
-        Projekt projekt = angebot.getProjekt();
-        if (projekt == null) {
-            return ResponseEntity.ok(List.of());
         }
         List<Email> emails = emailRepository.findByProjektOrderBySentAtDesc(projekt);
         return ResponseEntity.ok(emails.stream()

@@ -48,7 +48,6 @@ export interface EmailsTabProps {
     // Entity context - exactly one should be provided
     projektId?: number;
     anfrageId?: number;
-    angebotId?: number;
     kundeId?: number;
     lieferantId?: number;
 
@@ -68,15 +67,6 @@ export interface EmailsTabProps {
 
     // Optional: Anfrage detail object for compose modal  
     anfrage?: {
-        bauvorhaben: string;
-        kundenName?: string;
-        kundenEmails?: string[];
-        kundenAnrede?: string;
-        kundenAnsprechpartner?: string;
-    };
-
-    // Optional: Angebot detail object for compose modal (mapped to anfrage payload)
-    angebot?: {
         bauvorhaben: string;
         kundenName?: string;
         kundenEmails?: string[];
@@ -123,10 +113,8 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
     emails,
     projektId,
     anfrageId,
-    angebotId,
     projekt,
     anfrage,
-    angebot,
     onEmailSent,
     showComposeButton = true,
     showReplyButton = true,
@@ -153,7 +141,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
     // Determine the entity context
     const contextProjektId = projektId;
-    const contextAnfrageId = anfrageId ?? angebotId;
+    const contextAnfrageId = anfrageId;
 
     // ─── Thread-grouped emails: show only roots ───────────────
     const threadRoots = useMemo(() => {
@@ -548,7 +536,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                             )}
                         >Ausgang</button>
                     </div>
-                    {showComposeButton && (projektId || anfrageId || angebotId) && (
+                    {showComposeButton && (projektId || anfrageId) && (
                         <Button onClick={() => setShowComposeModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
                             <Plus className="w-4 h-4 mr-2" /> Neue E-Mail
                         </Button>
@@ -637,8 +625,8 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                     onClose={handleComposeClose}
                     projektId={projektId}
                     projekt={projekt as unknown as ProjektDetail}
-                    anfrageId={anfrageId ?? angebotId}
-                    anfrage={anfrage ?? angebot}
+                    anfrageId={anfrageId}
+                    anfrage={anfrage}
                     onSuccess={handleComposeSent}
                 />
             )}

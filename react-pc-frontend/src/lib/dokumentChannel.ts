@@ -8,7 +8,6 @@ export interface DokumentChangedEvent {
     type: 'dokument-changed';
     projektId?: number;
     anfrageId?: number;
-    angebotId?: number;
     dokumentId?: number;
 }
 
