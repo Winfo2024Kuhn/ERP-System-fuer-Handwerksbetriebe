@@ -38,10 +38,19 @@ function jsonResponse(body: unknown): Response {
     } as Response;
 }
 
+function hostnameOf(url: string): string {
+    try {
+        return new URL(url).hostname.toLowerCase();
+    } catch {
+        return '';
+    }
+}
+
 function mockUrlRouter(routes: { photon: unknown; nominatim: unknown }) {
     mockFetch.mockImplementation((url: string) => {
-        if (url.includes('photon.komoot.io')) return Promise.resolve(jsonResponse(routes.photon));
-        if (url.includes('nominatim')) return Promise.resolve(jsonResponse(routes.nominatim));
+        const host = hostnameOf(url);
+        if (host === 'photon.komoot.io') return Promise.resolve(jsonResponse(routes.photon));
+        if (host === 'nominatim.openstreetmap.org') return Promise.resolve(jsonResponse(routes.nominatim));
         return Promise.resolve(jsonResponse({}));
     });
 }
@@ -101,8 +110,8 @@ describe('AddressAutocomplete', () => {
         });
         await waitFor(() => expect(mockFetch).toHaveBeenCalled());
         const calledUrls = mockFetch.mock.calls.map(c => c[0] as string);
-        expect(calledUrls.some(u => u.includes('photon.komoot.io'))).toBe(true);
-        expect(calledUrls.some(u => u.includes('nominatim'))).toBe(true);
+        expect(calledUrls.some(u => hostnameOf(u) === 'photon.komoot.io')).toBe(true);
+        expect(calledUrls.some(u => hostnameOf(u) === 'nominatim.openstreetmap.org')).toBe(true);
         expect(calledUrls.some(u => u.includes(encodeURIComponent('Musterstraße 12')))).toBe(true);
     });
 
