@@ -351,6 +351,17 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Ausgangs-Geschäftsdokumente State
     const [ausgangsDokumente, setAusgangsDokumente] = useState<AusgangsGeschaeftsDokument[]>([]);
+
+    // Digitale Freigabe-Stati pro Dokument-ID — gleiche Anzeige wie im AnfrageEditor
+    // (DokumentHierarchie). Geladen über /api/ausgangs-dokumente/freigabe-status,
+    // damit der Badge "Angenommen / Wartet auf Kunde / Link abgelaufen" auf der Karte sichtbar ist.
+    const [freigabeStatus, setFreigabeStatus] = useState<Record<number, {
+        status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+        dokumentArt: string;
+        dokumentNummer: string;
+        akzeptiertAm: string | null;
+        ablaufDatum: string;
+    }>>({});
     const [actionMenuDokument, setActionMenuDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
 
     // Dateien (Dokumente) Anzahl
@@ -391,6 +402,23 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     useEffect(() => {
         loadAusgangsDokumente();
     }, [loadAusgangsDokumente]);
+
+    // Freigabe-Status für alle aktuell geladenen Dokumente nachziehen.
+    // Symmetrisch zu DokumentHierarchie — sobald die Dokumentliste sich ändert,
+    // wird der Status aller IDs in einem Request gebündelt aktualisiert.
+    useEffect(() => {
+        const ids = ausgangsDokumente
+            .map(d => d.id)
+            .filter((id): id is number => typeof id === 'number');
+        if (ids.length === 0) {
+            setFreigabeStatus({});
+            return;
+        }
+        fetch(`/api/ausgangs-dokumente/freigabe-status?ids=${encodeURIComponent(ids.join(','))}`)
+            .then(res => (res.ok ? res.json() : {}))
+            .then(data => setFreigabeStatus(data || {}))
+            .catch(() => setFreigabeStatus({}));
+    }, [ausgangsDokumente]);
 
     // Dateien-Anzahl laden
     useEffect(() => {
@@ -1554,6 +1582,50 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                     Entwurf
                                                                 </span>
                                                             )}
+                                                            {(() => {
+                                                                const fr = freigabeStatus[dok.id];
+                                                                if (!fr) return null;
+                                                                const formatShort = (iso: string | null) => {
+                                                                    if (!iso) return '';
+                                                                    try {
+                                                                        return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                                                                    } catch { return ''; }
+                                                                };
+                                                                if (fr.status === 'ACCEPTED') {
+                                                                    return (
+                                                                        <span
+                                                                            title={`Digital angenommen am ${formatShort(fr.akzeptiertAm)}`}
+                                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                                        >
+                                                                            <Check className="w-3 h-3" />
+                                                                            Angenommen · {formatShort(fr.akzeptiertAm)}
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                if (fr.status === 'PENDING') {
+                                                                    return (
+                                                                        <span
+                                                                            title={`Freigabe-Link an Kunden versendet, gültig bis ${formatShort(fr.ablaufDatum)}`}
+                                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+                                                                        >
+                                                                            <Mail className="w-3 h-3" />
+                                                                            Wartet auf Kunde
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                if (fr.status === 'EXPIRED' || fr.status === 'REVOKED') {
+                                                                    return (
+                                                                        <span
+                                                                            title="Freigabe-Link nicht mehr gültig"
+                                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200"
+                                                                        >
+                                                                            <X className="w-3 h-3" />
+                                                                            Link {fr.status === 'EXPIRED' ? 'abgelaufen' : 'zurückgezogen'}
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })()}
                                                             {isChild && dok.vorgaengerNummer && (
                                                                 <span className="text-[10px] text-slate-400">
                                                                     aus {dok.vorgaengerNummer}
