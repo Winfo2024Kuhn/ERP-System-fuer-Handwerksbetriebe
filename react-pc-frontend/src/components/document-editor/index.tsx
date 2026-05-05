@@ -264,10 +264,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const invoiceTypes: AusgangsGeschaeftsDokumentTyp[] = [
         'RECHNUNG', 'TEILRECHNUNG', 'ABSCHLAGSRECHNUNG', 'SCHLUSSRECHNUNG', 'GUTSCHRIFT', 'STORNO'
     ];
+    // Spiegelt AusgangsGeschaeftsDokument#istBearbeitbar() im Backend:
+    // storniert / digital angenommen (Angebot, AB) / gebuchte Rechnung → gesperrt.
+    // Wichtig für Auto-Save: ohne digitalAngenommen-Check feuert der 10s-Interval
+    // bei angenommenen Angeboten/ABs endlos Server-Fehler-Alerts.
     const isLocked = !!(
-        (dokument?.gebucht || dokument?.storniert) &&
-        dokument?.typ &&
-        invoiceTypes.includes(dokument.typ)
+        dokument?.storniert ||
+        dokument?.digitalAngenommen ||
+        (dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ))
     );
     const currentDokumentTyp = dokument?.typ ?? dokumentTyp;
     const showFinalizationPrompt = invoiceTypes.includes(currentDokumentTyp);
