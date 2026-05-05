@@ -43,24 +43,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 3. Geschäftsdokumente
-
-**Controller:** `GeschaeftsdokumentController`  
-**Basis-URL:** `/api/geschaeftsdokumente`
-
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| `GET` | `/` | Alle Geschäftsdokumente |
-| `GET` | `/{id}` | Einzelnes Dokument abrufen |
-| `GET` | `/{id}/abschluss` | Abschluss-Info inkl. Zahlungsstatus |
-| `GET` | `/projekt/{projektId}` | Dokumente eines Projekts |
-| `POST` | `/` | Neues Dokument erstellen |
-| `POST` | `/{id}/konvertieren` | Dokument konvertieren |
-| `POST` | `/{id}/zahlungen` | Zahlung hinzufügen |
-
----
-
-## 4. Offene Posten
+## 3. Offene Posten
 
 **Controller:** `OffenePostenController`  
 **Basis-URL:** `/api/offene-posten`
@@ -72,7 +55,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 5. Bestellungen
+## 4. Bestellungen
 
 **Controller:** `BestellungController`  
 **Basis-URL:** `/api/bestellungen`
@@ -93,7 +76,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 6. Zeiterfassung
+## 5. Zeiterfassung
 
 **Controller:** `ZeiterfassungApiController`  
 **Basis-URL:** `/api/zeiterfassung`
@@ -125,7 +108,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 7. Angebote
+## 6. Angebote
 
 **Controller:** `AngebotController`  
 **Basis-URL:** `/api/angebote`
@@ -150,7 +133,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 8. E-Mail
+## 7. E-Mail
 
 **Controller:** `EmailController`  
 **Basis-URL:** `/api/email`
@@ -179,7 +162,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 9. Lieferanten-Dokumente
+## 8. Lieferanten-Dokumente
 
 **Controller:** `LieferantDokumentController`  
 **Basis-URL:** `/api/lieferant-dokumente`
@@ -198,7 +181,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 10. Projekte & Kunden
+## 9. Projekte & Kunden
 
 **Controller:** `ProjektController`  
 **Basis-URL:** `/api/projekte`
@@ -222,7 +205,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 11. Lieferanten
+## 10. Lieferanten
 
 **Controller:** `LieferantenController`  
 **Basis-URL:** `/api/lieferanten`
@@ -242,7 +225,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 12. Mitarbeiter & Abwesenheit
+## 11. Mitarbeiter & Abwesenheit
 
 **Controller:** `MitarbeiterController`  
 **Basis-URL:** `/api/mitarbeiter`
@@ -271,7 +254,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 13. Dokument-Generator
+## 12. Dokument-Generator
 
 **Controller:** `DokumentGeneratorController`  
 **Basis-URL:** `/api/dokument-generator`
@@ -284,7 +267,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 14. Artikel & Produktkategorien
+## 13. Artikel & Produktkategorien
 
 **Controller:** `ArtikelController`  
 **Basis-URL:** `/api/artikel`
@@ -313,7 +296,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 15. Mietverwaltung
+## 14. Mietverwaltung
 
 **Controller:** `MietobjektController`  
 **Basis-URL:** `/api/miete/mietobjekte`
@@ -345,7 +328,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 16. System & Sonstiges
+## 15. System & Sonstiges
 
 **Controller:** `FirmaController`  
 **Basis-URL:** `/api/firma`
@@ -394,7 +377,7 @@ Basis-URL: `http://localhost:8082`
 
 ---
 
-## 17. Authentifizierung & Berechtigungen
+## 16. Authentifizierung & Berechtigungen
 
 **Controller:** `AbteilungBerechtigungController`  
 **Basis-URL:** `/api/abteilungen`
@@ -446,35 +429,34 @@ Basis-URL: `http://localhost:8082`
 | 19 | FormularTemplateController | `/api/formular-templates` |
 | 20 | FrontendUserController | `/api/user` |
 | 21 | GaebImportController | `/api/gaeb-import` |
-| 22 | GeschaeftsdokumentController | `/api/geschaeftsdokumente` |
-| 23 | KalenderController | `/api/kalender` |
-| 24 | KiHilfeController | `/api/ki-hilfe` |
-| 25 | KostenVerteilungController | `/api/miete/kostenverteilung` |
-| 26 | KundeController | `/api/kunden` |
-| 27 | LeistungController | `/api/leistungen` |
-| 28 | LieferantDokumentController | `/api/lieferant-dokumente` |
-| 29 | LieferantReklamationController | `/api/lieferant-reklamationen` |
-| 30 | LieferantenController | `/api/lieferanten` |
-| 31 | LohnabrechnungController | `/api/lohnabrechnungen` |
-| 32 | MietabrechnungController | `/api/miete/mietabrechnung` |
-| 33 | MietobjektController | `/api/miete/mietobjekte` |
-| 34 | MitarbeiterController | `/api/mitarbeiter` |
-| 35 | NotificationController | `/api/notifications` |
-| 36 | OffenePostenController | `/api/offene-posten` |
-| 37 | OutOfOfficeController | `/api/out-of-office` |
-| 38 | ProduktkategorieController | `/api/produktkategorien` |
-| 39 | ProjektController | `/api/projekte` |
-| 40 | RaumVerbrauchController | `/api/miete/raumverbrauch` |
-| 41 | RechnungsuebersichtController | `/api/rechnungen` |
-| 42 | SchnittbilderController | `/api/schnittbilder` |
-| 43 | SystemUtilityController | `/api/system` |
-| 44 | TextbausteinController | `/api/textbausteine` |
-| 45 | UnifiedEmailController | `/api/unified-email` |
-| 46 | UrlaubsantragController | `/api/urlaubsantraege` |
-| 47 | UtilsController | `/api/utils` |
-| 48 | VendorInvoiceController | `/api/vendor-invoices` |
-| 49 | ZeiterfassungApiController | `/api/zeiterfassung` |
-| 50 | ZeiterfassungController | `/zeiterfassung` |
-| 51 | ZeitkontoKorrekturController | `/api/zeitkonto-korrektur` |
-| 52 | ZeitverwaltungController | `/api/zeitverwaltung` |
-| 53 | SpaController | (SPA Routing) |
+| 22 | KalenderController | `/api/kalender` |
+| 23 | KiHilfeController | `/api/ki-hilfe` |
+| 24 | KostenVerteilungController | `/api/miete/kostenverteilung` |
+| 25 | KundeController | `/api/kunden` |
+| 26 | LeistungController | `/api/leistungen` |
+| 27 | LieferantDokumentController | `/api/lieferant-dokumente` |
+| 28 | LieferantReklamationController | `/api/lieferant-reklamationen` |
+| 29 | LieferantenController | `/api/lieferanten` |
+| 30 | LohnabrechnungController | `/api/lohnabrechnungen` |
+| 31 | MietabrechnungController | `/api/miete/mietabrechnung` |
+| 32 | MietobjektController | `/api/miete/mietobjekte` |
+| 33 | MitarbeiterController | `/api/mitarbeiter` |
+| 34 | NotificationController | `/api/notifications` |
+| 35 | OffenePostenController | `/api/offene-posten` |
+| 36 | OutOfOfficeController | `/api/out-of-office` |
+| 37 | ProduktkategorieController | `/api/produktkategorien` |
+| 38 | ProjektController | `/api/projekte` |
+| 39 | RaumVerbrauchController | `/api/miete/raumverbrauch` |
+| 40 | RechnungsuebersichtController | `/api/rechnungen` |
+| 41 | SchnittbilderController | `/api/schnittbilder` |
+| 42 | SystemUtilityController | `/api/system` |
+| 43 | TextbausteinController | `/api/textbausteine` |
+| 44 | UnifiedEmailController | `/api/unified-email` |
+| 45 | UrlaubsantragController | `/api/urlaubsantraege` |
+| 46 | UtilsController | `/api/utils` |
+| 47 | VendorInvoiceController | `/api/vendor-invoices` |
+| 48 | ZeiterfassungApiController | `/api/zeiterfassung` |
+| 49 | ZeiterfassungController | `/zeiterfassung` |
+| 50 | ZeitkontoKorrekturController | `/api/zeitkonto-korrektur` |
+| 51 | ZeitverwaltungController | `/api/zeitverwaltung` |
+| 52 | SpaController | (SPA Routing) |

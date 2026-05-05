@@ -19,9 +19,9 @@
 
 ### Bereits getestete Module ✅
 
-**Controller:** AngebotController, ArtikelController, AusgangsGeschaeftsDokumentController, DateiController, EmailController, FormularTemplateController, GeschaeftsdokumentController, KostenVerteilungController, KundeController, LeistungController, LieferantDokumentController, LieferantenController, MietabrechnungController, MietobjektController, MitarbeiterController, OffenePostenController, ProjektController
+**Controller:** AngebotController, ArtikelController, AusgangsGeschaeftsDokumentController, DateiController, EmailController, FormularTemplateController, KostenVerteilungController, KundeController, LeistungController, LieferantDokumentController, LieferantenController, MietabrechnungController, MietobjektController, MitarbeiterController, OffenePostenController, ProjektController
 
-**Service:** AngebotService, BestellungService (+ Mapping + PDF), ArtikelImportService, ArtikelMatchingService, FeiertagService, EmailAiService, DateiSpeicherService, MonatsSaldoService, InquiryDetectionService, OfferPriceService, OutOfOfficeResponder, RechnungPdfService, StuecklistePdfService, ProjektManagementService (+IT), ZeitkontoService, MietabrechnungService, AusgangsGeschaeftsDokumentService (BezahltTest + vollständig), GeschaeftsdokumentService, ZugferdExtractorService, ZugferdErstellService, KostenVerteilungService, ZeitkontoKorrekturService, ZeitbuchungAutoStopService, SpamFilterService, EmailAutoAssignmentService, EmailImportService, EmailAttachmentProcessingService, VendorInvoiceIntegrationService, ArbeitsgangManagementService, BwaService, MietobjektService
+**Service:** AngebotService, BestellungService (+ Mapping + PDF), ArtikelImportService, ArtikelMatchingService, FeiertagService, EmailAiService, DateiSpeicherService, MonatsSaldoService, InquiryDetectionService, OfferPriceService, OutOfOfficeResponder, RechnungPdfService, StuecklistePdfService, ProjektManagementService (+IT), ZeitkontoService, MietabrechnungService, AusgangsGeschaeftsDokumentService (BezahltTest + vollständig), ZugferdExtractorService, ZugferdErstellService, KostenVerteilungService, ZeitkontoKorrekturService, ZeitbuchungAutoStopService, SpamFilterService, EmailAutoAssignmentService, EmailImportService, EmailAttachmentProcessingService, VendorInvoiceIntegrationService, ArbeitsgangManagementService, BwaService, MietobjektService
 
 **Repository:** ArtikelRepository (+Cascade), AngebotRepository (+Search), ProjektDokumentRepository, WerkstoffRepository
 
@@ -85,81 +85,68 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 1.1.10 | Vorgänger-/Nachfolger-Verkettung funktioniert | `erstellen()` | Unit |
 | 1.1.11 | `ensureAngebotDokument()` erzeugt Dokument nur einmalig | `ensureAngebotDokument()` | Unit |
 
-#### 1.2 `GeschaeftsdokumentService` (~330 Zeilen)
-
-**Testdatei:** `GeschaeftsdokumentServiceTest.java`
-
-| # | Testfall | Methode | Typ |
-|---|---|---|---|
-| 1.2.1 | Dokument wird korrekt erstellt und gespeichert | `erstellen()` | Unit |
-| 1.2.2 | Konvertierung erzeugt neuen Typ mit Vorgänger-Referenz | `konvertieren()` | Unit |
-| 1.2.3 | Abschluss-Berechnung summiert Zahlungen korrekt | `berechneAbschluss()` | Unit |
-| 1.2.4 | Zahlung wird korrekt erfasst und verbucht | `zahlungErfassen()` | Unit |
-| 1.2.5 | Nummern-Generierung mit Jahr/Typ-Prefix funktioniert | `erstellen()` | Unit |
-| 1.2.6 | Abschlagszahlung wird über Dokumentkette aggregiert | `berechneAbschluss()` | Unit |
-
-#### 1.3 `ZugferdExtractorService` (~330 Zeilen)
+#### 1.2 `ZugferdExtractorService` (~330 Zeilen)
 
 **Testdatei:** `ZugferdExtractorServiceTest.java`
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 1.3.1 | Extrahiert Rechnungsdaten aus gültiger ZUGFeRD-PDF | `extract()` | Unit |
-| 1.3.2 | Parst Positionen mit Menge, Einheit und Betrag | `extract()` | Unit |
-| 1.3.3 | Erkennt und berechnet Skonto korrekt | `extract()` | Unit |
-| 1.3.4 | Stellt Umlaute nach Encoding-Problemen wieder her | `extract()` | Unit |
-| 1.3.5 | Gibt leere Daten zurück bei Nicht-ZUGFeRD-PDF | `extract()` | Unit |
-| 1.3.6 | Fallback-XML-Parsing greift bei fehlerhaftem Hauptparser | `extract()` | Unit |
+| 1.2.1 | Extrahiert Rechnungsdaten aus gültiger ZUGFeRD-PDF | `extract()` | Unit |
+| 1.2.2 | Parst Positionen mit Menge, Einheit und Betrag | `extract()` | Unit |
+| 1.2.3 | Erkennt und berechnet Skonto korrekt | `extract()` | Unit |
+| 1.2.4 | Stellt Umlaute nach Encoding-Problemen wieder her | `extract()` | Unit |
+| 1.2.5 | Gibt leere Daten zurück bei Nicht-ZUGFeRD-PDF | `extract()` | Unit |
+| 1.2.6 | Fallback-XML-Parsing greift bei fehlerhaftem Hauptparser | `extract()` | Unit |
 
-#### 1.4 `ZugferdErstellService` (~75 Zeilen)
+#### 1.3 `ZugferdErstellService` (~75 Zeilen)
 
 **Testdatei:** `ZugferdErstellServiceTest.java`
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 1.4.1 | Erzeugt ZUGFeRD-PDF mit eingebetteten Rechnungsdaten | `erzeuge()` | Unit |
-| 1.4.2 | Berechnet MwSt. korrekt (19 %) | `erzeuge()` | Unit |
-| 1.4.3 | Nutzt Fallback-Datum wenn kein Rechnungsdatum gesetzt | `erzeuge()` | Unit |
+| 1.3.1 | Erzeugt ZUGFeRD-PDF mit eingebetteten Rechnungsdaten | `erzeuge()` | Unit |
+| 1.3.2 | Berechnet MwSt. korrekt (19 %) | `erzeuge()` | Unit |
+| 1.3.3 | Nutzt Fallback-Datum wenn kein Rechnungsdatum gesetzt | `erzeuge()` | Unit |
 
-#### 1.5 `KostenVerteilungService` (Miet-Modul, ~340 Zeilen)
+#### 1.4 `KostenVerteilungService` (Miet-Modul, ~340 Zeilen)
 
 **Testdatei:** `KostenVerteilungServiceTest.java`
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 1.5.1 | Erstellt Kostenstelle mit korrekter Zuordnung | `saveKostenstelle()` | Unit |
-| 1.5.2 | Erstellt Kostenposition mit BigDecimal-Rundung | `saveKostenposition()` | Unit |
-| 1.5.3 | Kopiert Vorjahres-Positionen korrekt | `copyKostenpositionenVonVorjahr()` | Unit |
-| 1.5.4 | Verhindert Doppel-Kopie bei existierenden Positionen | `copyKostenpositionenVonVorjahr()` | Unit |
-| 1.5.5 | Verteilungsschlüssel validiert Mietpartei-Zuordnung | `saveVerteilungsschluessel()` | Unit |
-| 1.5.6 | Berechnungsmethode BETRAG vs. VERBRAUCHSFAKTOR korrekt | `saveVerteilungsschluessel()` | Unit |
+| 1.4.1 | Erstellt Kostenstelle mit korrekter Zuordnung | `saveKostenstelle()` | Unit |
+| 1.4.2 | Erstellt Kostenposition mit BigDecimal-Rundung | `saveKostenposition()` | Unit |
+| 1.4.3 | Kopiert Vorjahres-Positionen korrekt | `copyKostenpositionenVonVorjahr()` | Unit |
+| 1.4.4 | Verhindert Doppel-Kopie bei existierenden Positionen | `copyKostenpositionenVonVorjahr()` | Unit |
+| 1.4.5 | Verteilungsschlüssel validiert Mietpartei-Zuordnung | `saveVerteilungsschluessel()` | Unit |
+| 1.4.6 | Berechnungsmethode BETRAG vs. VERBRAUCHSFAKTOR korrekt | `saveVerteilungsschluessel()` | Unit |
 
-#### 1.6 `ZeitkontoKorrekturService` (~270 Zeilen)
+#### 1.5 `ZeitkontoKorrekturService` (~270 Zeilen)
 
 **Testdatei:** `ZeitkontoKorrekturServiceTest.java`
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 1.6.1 | Erstellt Korrektur mit Audit-Eintrag (ERSTELLT) | `erstelleKorrektur()` | Unit |
-| 1.6.2 | Änderung erzeugt neuen Audit-Eintrag (GEAENDERT) | `aendereKorrektur()` | Unit |
-| 1.6.3 | Stornierung setzt Status statt zu löschen (GoBD) | `storniereKorrektur()` | Unit |
-| 1.6.4 | Versionsnummer wird bei Änderung inkrementiert | `aendereKorrektur()` | Unit |
-| 1.6.5 | Lehnt Korrektur ohne Begründung ab | `erstelleKorrektur()` | Unit |
-| 1.6.6 | Summiert aktive Korrekturen pro Jahr korrekt | `summiereAktiveKorrekturen()` | Unit |
-| 1.6.7 | Audit-Historie enthält alle Einträge chronologisch | `getAuditHistorie()` | Unit |
-| 1.6.8 | Stornierte Korrekturen werden bei Summierung ignoriert | `summiereAktiveKorrekturen()` | Unit |
+| 1.5.1 | Erstellt Korrektur mit Audit-Eintrag (ERSTELLT) | `erstelleKorrektur()` | Unit |
+| 1.5.2 | Änderung erzeugt neuen Audit-Eintrag (GEAENDERT) | `aendereKorrektur()` | Unit |
+| 1.5.3 | Stornierung setzt Status statt zu löschen (GoBD) | `storniereKorrektur()` | Unit |
+| 1.5.4 | Versionsnummer wird bei Änderung inkrementiert | `aendereKorrektur()` | Unit |
+| 1.5.5 | Lehnt Korrektur ohne Begründung ab | `erstelleKorrektur()` | Unit |
+| 1.5.6 | Summiert aktive Korrekturen pro Jahr korrekt | `summiereAktiveKorrekturen()` | Unit |
+| 1.5.7 | Audit-Historie enthält alle Einträge chronologisch | `getAuditHistorie()` | Unit |
+| 1.5.8 | Stornierte Korrekturen werden bei Summierung ignoriert | `summiereAktiveKorrekturen()` | Unit |
 
-#### 1.7 `ZeitbuchungAutoStopService` (~110 Zeilen)
+#### 1.6 `ZeitbuchungAutoStopService` (~110 Zeilen)
 
 **Testdatei:** `ZeitbuchungAutoStopServiceTest.java`
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 1.7.1 | Stoppt offene Buchungen nach Mitternacht | `pruefUndStoppeOffeneBuchungen()` | Unit |
-| 1.7.2 | Setzt Endzeit auf 23:59 bei Tagesüberschreitung | `autoStoppeWennNoetig()` | Unit |
-| 1.7.3 | Berechnet Stunden korrekt aus Zeitspanne | `autoStoppeWennNoetig()` | Unit |
-| 1.7.4 | Erzeugt Audit-Eintrag mit Quelle SYSTEM | `autoStoppeWennNoetig()` | Unit |
-| 1.7.5 | Invalidiert Monatssaldo-Cache nach Stopp | `autoStoppeWennNoetig()` | Unit |
+| 1.6.1 | Stoppt offene Buchungen nach Mitternacht | `pruefUndStoppeOffeneBuchungen()` | Unit |
+| 1.6.2 | Setzt Endzeit auf 23:59 bei Tagesüberschreitung | `autoStoppeWennNoetig()` | Unit |
+| 1.6.3 | Berechnet Stunden korrekt aus Zeitspanne | `autoStoppeWennNoetig()` | Unit |
+| 1.6.4 | Erzeugt Audit-Eintrag mit Quelle SYSTEM | `autoStoppeWennNoetig()` | Unit |
+| 1.6.5 | Invalidiert Monatssaldo-Cache nach Stopp | `autoStoppeWennNoetig()` | Unit |
 
 ---
 
@@ -419,7 +406,6 @@ Für jeden Controller sind sowohl Happy-Path- als auch Sicherheitstests erforder
 |---|---|---|
 | **EmailController** | `EmailControllerTest.java` | GET /api/emails, POST /api/emails/send |
 | **ZeiterfassungController** | `ZeiterfassungControllerTest.java` | POST /api/zeitbuchungen, GET /api/zeitkonto |
-| **GeschaeftsdokumentController** | `GeschaeftsdokumentControllerTest.java` | CRUD + Konvertierung |
 | **AusgangsGeschaeftsDokumentController** | `AusgangsGDControllerTest.java` | Erstellen, Buchen, Aktualisieren |
 | **MietabrechnungController** | `MietabrechnungControllerTest.java` | Abrechnung erstellen/exportieren |
 | **MietobjektController** | `MietobjektControllerTest.java` | CRUD Mietobjekte + Parteien |
@@ -519,7 +505,6 @@ Repositories mit Custom Queries oder komplexen Finder-Methoden benötigen `@Data
 | **KundeRepository** | Suche nach Name, Kundennummer, Freitextsuche | 🟠 Mittel |
 | **LieferantenRepository** | findByDomain, Freitextsuche | 🟠 Mittel |
 | **MitarbeiterRepository** | findByAbteilung, aktive Mitarbeiter | 🟡 Mittel |
-| **GeschaeftsdokumentRepository** | findByProjekt, Nummernsuche | 🟡 Mittel |
 | **ZeitkontoKorrekturRepository** | findAktiveByMitarbeiter, Jahres-Summe | 🟡 Mittel |
 
 ---
