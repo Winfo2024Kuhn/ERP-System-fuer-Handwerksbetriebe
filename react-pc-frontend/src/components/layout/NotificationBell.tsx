@@ -6,29 +6,13 @@ import {
     Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck
 } from 'lucide-react';
 
-// ── Types ────────────────────────────────────────────────────────────────
+// ── Types & Pure-Logic Helpers ───────────────────────────────────────────
+// Die Pure-Functions (filterDismissed/dismissItem/dismissCategory) liegen in
+// notification-helpers.ts, damit Vitest sie ohne Komponenten-Mount testen
+// kann und Vites Fast-Refresh-Regel hier nicht bricht.
 
-interface CategoryDto {
-    type: string;
-    label: string;
-    count: number;
-    icon: string;
-    link: string;
-}
-
-interface RecentItemDto {
-    type: string;
-    title: string;
-    subtitle: string;
-    timestamp: string;
-    link: string;
-}
-
-interface NotificationSummary {
-    totalCount: number;
-    categories: CategoryDto[];
-    recentItems: RecentItemDto[];
-}
+import type { CategoryDto, RecentItemDto, NotificationSummary } from './notification-helpers';
+import { dismissItem, dismissCategory, filterDismissed } from './notification-helpers';
 
 // ── Icon map ─────────────────────────────────────────────────────────────
 
@@ -142,100 +126,8 @@ const GROUPS: NotificationGroup[] = [
     },
 ];
 
-// ── Dismissal helpers ────────────────────────────────────────────────────
-// Wir blenden Items UND Kategorien sitzungsweise aus, sobald der User sie
-// "als gelesen" markiert hat. Dadurch sinkt der Glocken-Zähler direkt, ohne
-// auf das nächste Backend-Polling warten zu müssen. Beim nächsten Polling
-// wird die Liste mit dem realen Stand abgeglichen: Sobald für eine dismissed
-// Kategorie ein höherer Counter als beim Dismiss kommt (=neue Einträge),
-// wird sie wieder eingeblendet.
-
-const DISMISS_ITEMS_KEY = 'notification_dismissed_items';
-const DISMISS_CATS_KEY = 'notification_dismissed_categories';
-
-function dismissItem(type: string, title: string) {
-    try {
-        const raw = sessionStorage.getItem(DISMISS_ITEMS_KEY) || '[]';
-        const items: string[] = JSON.parse(raw);
-        const key = `${type}::${title}`;
-        if (!items.includes(key)) { items.push(key); sessionStorage.setItem(DISMISS_ITEMS_KEY, JSON.stringify(items)); }
-    } catch { /* ignore */ }
-}
-
-/**
- * Markiert eine Kategorie als „erledigt": sie verschwindet, bis der Backend-
- * Counter für dieselbe Kategorie wieder über den hier gespeicherten Wert
- * steigt (=es ist ein echter neuer Eintrag dazugekommen).
- */
-function dismissCategory(type: string, count: number) {
-    try {
-        const raw = sessionStorage.getItem(DISMISS_CATS_KEY) || '{}';
-        const map: Record<string, number> = JSON.parse(raw);
-        map[type] = count;
-        sessionStorage.setItem(DISMISS_CATS_KEY, JSON.stringify(map));
-    } catch { /* ignore */ }
-}
-
-function filterDismissed(data: NotificationSummary): NotificationSummary {
-    let dismissedItems: string[] = [];
-    let dismissedCats: Record<string, number> = {};
-    try {
-        dismissedItems = JSON.parse(sessionStorage.getItem(DISMISS_ITEMS_KEY) || '[]');
-    } catch { /* ignore */ }
-    try {
-        dismissedCats = JSON.parse(sessionStorage.getItem(DISMISS_CATS_KEY) || '{}');
-    } catch { /* ignore */ }
-    const categories = data.categories.filter(c => {
-        const dismissedCount = dismissedCats[c.type];
-        if (dismissedCount === undefined) return true;
-        return c.count > dismissedCount; // wieder einblenden, wenn neue dazukommen
-    });
-    const visibleCatTypes = new Set(categories.map(c => c.type));
-    // RecentItems verwerfen, deren Kategorie selbst dismissed ist – sonst hängen
-    // die Item-Zeilen ohne Header in der Luft (z.B. nach „alle als gelesen").
-    const recentItems = data.recentItems
-        .filter(item => !dismissedItems.includes(`${item.type}::${item.title}`))
-        .filter(item => itemTypeBelongsToVisibleCat(item.type, visibleCatTypes, data.categories, dismissedCats));
-    const totalCount = categories.reduce((sum, c) => sum + c.count, 0);
-    return { totalCount, categories, recentItems };
-}
-
-/**
- * Ein RecentItem darf nur sichtbar bleiben, wenn mindestens eine Kategorie
- * sichtbar ist, zu der es semantisch gehört. Wir matchen über die Gruppen-
- * Definition unten: Ein Item-Type ist sichtbar, sofern *eine* der zugehörigen
- * Kategorien noch sichtbar ist; sind alle dismissed, muss auch das Item gehen.
- */
-function itemTypeBelongsToVisibleCat(
-    itemType: string,
-    visibleCatTypes: Set<string>,
-    allCats: CategoryDto[],
-    dismissedCats: Record<string, number>,
-): boolean {
-    const owningCats = ITEM_TO_CAT_TYPES[itemType];
-    if (!owningCats || owningCats.length === 0) return true; // unbekannt → durchlassen
-    // Wenn keine der zugehörigen Kategorien überhaupt im Backend-Response steht,
-    // ist das Item ohnehin „verwaist" → durchlassen, damit es wenigstens angezeigt wird.
-    const present = owningCats.some(t => allCats.some(c => c.type === t));
-    if (!present) return true;
-    // Mindestens eine zugehörige Kategorie muss sichtbar sein.
-    return owningCats.some(t => visibleCatTypes.has(t) || dismissedCats[t] === undefined);
-}
-
-// Item-Type → mögliche Category-Types, zu denen das Item gehört.
-const ITEM_TO_CAT_TYPES: Record<string, string[]> = {
-    EMAIL: ['EMAILS', 'EMAILS_PROJECTS', 'EMAILS_OFFERS', 'EMAILS_SUPPLIERS', 'EMAILS_SPAM', 'EMAILS_NEWSLETTER'],
-    URLAUBSANTRAG: ['URLAUBSANTRAEGE'],
-    BAUTAGEBUCH: ['BAUTAGEBUCH'],
-    EINGANG_FAELLIG: ['EINGANG_FAELLIG'],
-    AUSGANG_UEBERFAELLIG: ['AUSGANG_UEBERFAELLIG'],
-    RECHNUNG: ['RECHNUNGEN'],
-    TERMIN: ['TERMINE'],
-    LIEFERSCHEIN: ['LIEFERSCHEINE'],
-    REKLAMATION: ['REKLAMATIONEN'],
-    FREIGABE_ANGENOMMEN: ['FREIGABEN_ANGENOMMEN'],
-    ANFRAGE_WEBSEITE: ['ANFRAGEN_WEBSEITE'],
-};
+// Pure Helpers (dismissItem, dismissCategory, filterDismissed) sind nach
+// notification-helpers.ts ausgelagert – siehe Import oben.
 
 // ── Component ────────────────────────────────────────────────────────────
 
