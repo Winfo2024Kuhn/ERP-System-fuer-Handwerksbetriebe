@@ -1,10 +1,12 @@
 package org.example.kalkulationsprogramm.controller;
 
 import jakarta.validation.Valid;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.domain.Dokumenttyp;
 import org.example.kalkulationsprogramm.domain.EmailTextTemplate;
 import org.example.kalkulationsprogramm.dto.Email.EmailTextTemplateDto;
 import org.example.kalkulationsprogramm.service.EmailTextTemplateService;
@@ -23,15 +25,23 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class EmailTextTemplateController {
 
-    private static final List<Map<String, String>> DOKUMENT_TYPEN = List.of(
-            Map.of("value", "RECHNUNG", "label", "Rechnung"),
-            Map.of("value", "TEILRECHNUNG", "label", "Teilrechnung"),
-            Map.of("value", "SCHLUSSRECHNUNG", "label", "Schlussrechnung"),
-            Map.of("value", "ABSCHLAGSRECHNUNG", "label", "Abschlagsrechnung"),
-            Map.of("value", "MAHNUNG", "label", "Mahnung"),
-            Map.of("value", "ANGEBOT", "label", "Anfrage / Angebot"),
-            Map.of("value", "AUFTRAGSBESTAETIGUNG", "label", "Auftragsbestätigung"),
-            Map.of("value", "ZEICHNUNG", "label", "Zeichnung / Entwurf"));
+    // Single Source of Truth: Doc-Typen kommen aus dem Dokumenttyp-Enum.
+    // ZEICHNUNG existiert nicht im Enum, wird aber als E-Mail-Vorlage benötigt
+    // (Versand der ersten Entwurfs-PDF an den Kunden) und daher manuell ergänzt.
+    private static final List<Map<String, String>> DOKUMENT_TYPEN = buildDokumentTypen();
+
+    private static List<Map<String, String>> buildDokumentTypen() {
+        List<Map<String, String>> list = new ArrayList<>();
+        for (Dokumenttyp d : Dokumenttyp.values()) {
+            String label = switch (d) {
+                case ANGEBOT -> "Anfrage / Angebot";
+                default -> d.getLabel();
+            };
+            list.add(Map.of("value", d.name(), "label", label));
+        }
+        list.add(Map.of("value", "ZEICHNUNG", "label", "Zeichnung / Entwurf"));
+        return List.copyOf(list);
+    }
 
     private static final List<Map<String, String>> PLACEHOLDERS = List.of(
             Map.of("token", "{{ANREDE}}", "label", "Anrede (z. B. Sehr geehrter Herr Müller)"),

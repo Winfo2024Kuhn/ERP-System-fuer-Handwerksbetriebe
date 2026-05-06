@@ -105,7 +105,7 @@ public class EmailTemplateController {
                         dokumentTyp.toLowerCase(), anrede, kundenName, bauvorhaben, projektnummer,
                         dokumentnummer, rechnungsdatum, faelligkeitsdatum, betrag, benutzer, dokumentTyp);
             }
-            case "MAHNUNG" -> {
+            case "MAHNUNG", "ZAHLUNGSERINNERUNG", "ERSTE_MAHNUNG", "ZWEITE_MAHNUNG" -> {
                 String dokumentnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
                 LocalDate rechnungsdatum = parseDate(request.getRechnungsdatum(), LocalDate.now());
                 LocalDate faelligkeitsdatum = parseDate(request.getFaelligkeitsdatum(), LocalDate.now().plusDays(14));
@@ -113,7 +113,7 @@ public class EmailTemplateController {
                 String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
                 return EmailService.buildInvoiceEmailWithTypeHints(
                         "mahnung", anrede, kundenName, bauvorhaben, projektnummer, dokumentnummer,
-                        rechnungsdatum, faelligkeitsdatum, betrag, benutzer, "MAHNUNG");
+                        rechnungsdatum, faelligkeitsdatum, betrag, benutzer, dokumentTyp);
             }
             case "ANGEBOT" -> {
                 String anfragesnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
