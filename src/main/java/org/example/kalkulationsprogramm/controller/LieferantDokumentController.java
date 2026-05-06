@@ -257,6 +257,21 @@ public class LieferantDokumentController {
     }
 
     /**
+     * Lädt ein einzelnes Lieferanten-Dokument (inkl. Geschäftsdaten und Verknüpfungen).
+     * Wird vom Eingangsrechnungs-Editor in den Offenen Posten genutzt, um das gleiche
+     * Bearbeitungs-Modal wie auf der Lieferanten-Seite zu öffnen.
+     */
+    @GetMapping("/{dokumentId}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<LieferantDokumentDto.Response> getDokument(@PathVariable Long dokumentId) {
+        var dto = dokumentService.getDokumentById(dokumentId);
+        if (dto == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(dto);
+    }
+
+    /**
      * Re-analysiert ein einzelnes Dokument.
      */
     @PostMapping("/{dokumentId}/reanalyze")

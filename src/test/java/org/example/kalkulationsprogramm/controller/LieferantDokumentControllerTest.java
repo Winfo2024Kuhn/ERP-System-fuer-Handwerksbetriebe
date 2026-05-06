@@ -157,6 +157,32 @@ class LieferantDokumentControllerTest {
     }
 
     @Nested
+    @DisplayName("GET /api/lieferant-dokumente/{dokumentId}")
+    class GetDokument {
+
+        @Test
+        @DisplayName("Lädt Dokument erfolgreich")
+        void laedtDokumentErfolgreich() throws Exception {
+            LieferantDokumentDto.Response response = new LieferantDokumentDto.Response();
+            response.setId(42L);
+            given(dokumentService.getDokumentById(42L)).willReturn(response);
+
+            mockMvc.perform(get("/api/lieferant-dokumente/42"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(42));
+        }
+
+        @Test
+        @DisplayName("Unbekanntes Dokument gibt 404")
+        void unbekanntesDokumentGibt404() throws Exception {
+            given(dokumentService.getDokumentById(999L)).willReturn(null);
+
+            mockMvc.perform(get("/api/lieferant-dokumente/999"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
     @DisplayName("POST /api/lieferant-dokumente/{dokumentId}/reanalyze")
     class ReanalyzeDokument {
 

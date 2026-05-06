@@ -4,6 +4,8 @@ import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { RefreshCw, FileText, CheckCircle, AlertTriangle, ShieldCheck, Clock, Wallet } from 'lucide-react';
 import { useToast } from './ui/toast';
+import LieferantDokumentModal from './LieferantDokumentModal';
+import type { LieferantDokument } from '../types';
 
 // API Types
 interface Eingangsrechnung {
@@ -99,6 +101,9 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
     const [items, setItems] = useState<Eingangsrechnung[]>([]);
     const [loading, setLoading] = useState(true);
     const [showBezahlt, setShowBezahlt] = useState(false);
+    const [editDokument, setEditDokument] = useState<LieferantDokument | null>(null);
+    const [editLieferantId, setEditLieferantId] = useState<number | null>(null);
+    const [openingEditor, setOpeningEditor] = useState<number | null>(null);
 
     // canApprove wird vom Backend bestimmt (über darfGenehmigen in den Items)
     const canApprove = useMemo(() => {
@@ -171,6 +176,39 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
         } catch (err) {
             console.error('Fehler beim Genehmigen:', err);
             loadData(); // Reload on error
+        }
+    };
+
+    // Öffnet je nach Status den passenden Viewer:
+    // - Noch nicht genehmigt: vollwertiger Bearbeitungs-Editor (LieferantDokumentModal),
+    //   damit KI-Fehler vor der Freigabe korrigiert werden können.
+    // - Bereits genehmigt: nur die einfache PDF-Vorschau.
+    const handleOpenDokument = async (item: Eingangsrechnung) => {
+        if (item.genehmigt || !item.dokumentId || !item.lieferantId) {
+            if (item.pdfUrl) {
+                onOpenPdf?.(item.pdfUrl, item.dokumentNummer || 'Rechnung');
+            }
+            return;
+        }
+
+        setOpeningEditor(item.id);
+        try {
+            const res = await fetch(`/api/lieferant-dokumente/${item.dokumentId}`);
+            if (!res.ok) {
+                throw new Error('Dokument konnte nicht geladen werden');
+            }
+            const dok: LieferantDokument = await res.json();
+            setEditLieferantId(item.lieferantId);
+            setEditDokument(dok);
+        } catch (err) {
+            console.error('Fehler beim Öffnen des Dokument-Editors:', err);
+            toast.error('Dokument konnte nicht geöffnet werden.');
+            // Fallback: einfache PDF-Vorschau
+            if (item.pdfUrl) {
+                onOpenPdf?.(item.pdfUrl, item.dokumentNummer || 'Rechnung');
+            }
+        } finally {
+            setOpeningEditor(null);
         }
     };
 
@@ -340,11 +378,16 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
             <td className="px-4 py-3 text-center">
                 {item.pdfUrl ? (
                     <button
-                        onClick={() => onOpenPdf?.(item.pdfUrl, item.dokumentNummer || 'Rechnung')}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-rose-200 hover:text-rose-600"
-                        title="Rechnung öffnen"
+                        onClick={() => handleOpenDokument(item)}
+                        disabled={openingEditor === item.id}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-rose-200 hover:text-rose-600 disabled:opacity-60"
+                        title={item.genehmigt ? 'Rechnung öffnen' : 'Rechnung bearbeiten'}
                     >
-                        <FileText className="w-5 h-5" />
+                        {openingEditor === item.id ? (
+                            <RefreshCw className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <FileText className="w-5 h-5" />
+                        )}
                     </button>
                 ) : (
                     <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-slate-200 text-slate-300">
@@ -500,6 +543,22 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
                     </Card>
                 )}
             </div>
+
+            {/* Bearbeitungs-Editor (nur für noch nicht genehmigte Rechnungen) */}
+            <LieferantDokumentModal
+                isOpen={editDokument !== null && editLieferantId !== null}
+                onClose={() => {
+                    setEditDokument(null);
+                    setEditLieferantId(null);
+                }}
+                dokument={editDokument}
+                lieferantId={editLieferantId ?? ''}
+                onSave={() => {
+                    setEditDokument(null);
+                    setEditLieferantId(null);
+                    void loadData();
+                }}
+            />
         </div>
     );
 }
