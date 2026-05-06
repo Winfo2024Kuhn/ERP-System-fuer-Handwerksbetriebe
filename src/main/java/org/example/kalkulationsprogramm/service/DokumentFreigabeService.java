@@ -500,7 +500,7 @@ public class DokumentFreigabeService
             {
                 try
                 {
-                    autoAuftragsbestaetigungVersandService.versende(ab, empfaenger);
+                    autoAuftragsbestaetigungVersandService.versende(ab, empfaenger, freigabe);
                 }
                 catch (Exception ignored) { /* Versand-Fehler werden im Service geloggt */ }
             }

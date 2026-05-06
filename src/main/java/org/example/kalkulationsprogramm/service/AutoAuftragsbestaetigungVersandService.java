@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
+import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Textbaustein;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -73,6 +74,19 @@ public class AutoAuftragsbestaetigungVersandService
      */
     public boolean versende(AusgangsGeschaeftsDokument ab, String empfaenger)
     {
+        return versende(ab, empfaenger, null);
+    }
+
+    /**
+     * Wie {@link #versende(AusgangsGeschaeftsDokument, String)}, aber zusätzlich mit
+     * Annahme-Beleg im HTML-Body. Wird nach digitaler Angebotsannahme aufgerufen — die
+     * Mail enthält dann denselben optisch hervorgehobenen Block wie die Angebots-Mail
+     * (linker Akzent-Border, hellgrauer Hintergrund), aber mit dem Text "Angebot
+     * angenommen — diese Auftragsbestätigung wurde automatisch erstellt" plus
+     * Annahme-Datum und Audit-Hash als Beweis.
+     */
+    public boolean versende(AusgangsGeschaeftsDokument ab, String empfaenger, DokumentFreigabe freigabe)
+    {
         if (ab == null || ab.getTyp() != AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG)
         {
             return false;
@@ -92,6 +106,10 @@ public class AutoAuftragsbestaetigungVersandService
             Files.write(tempPdf, pdfBytes);
 
             EmailService.EmailContent content = baueEmailInhalt(ab);
+            if (freigabe != null)
+            {
+                content = mitAnnahmeBeleg(content, freigabe);
+            }
 
             EmailService emailService = new EmailService(
                     systemSettingsService.getSmtpHost(),
@@ -784,5 +802,50 @@ public class AutoAuftragsbestaetigungVersandService
     {
         if (input == null) return "Dokument";
         return input.replaceAll("[\\\\/:*?\"<>|\\s]", "_");
+    }
+
+    // ======================= Annahme-Beleg im HTML-Body =======================
+
+    private static final DateTimeFormatter ANNAHME_FORMAT =
+            DateTimeFormatter.ofPattern("dd.MM.yyyy 'um' HH:mm 'Uhr'");
+
+    /**
+     * Hängt einen Annahme-Beleg-Block an den HTML-Body an. Optisch identisch zum
+     * Freigabe-Block in der Angebots-Mail (siehe {@code DokumentFreigabeService.buildFreigabeBlockHtml}):
+     * linker Akzent-Border in #500010, hellgrauer Hintergrund, Arial. So bleibt das
+     * Markenbild über beide Mail-Typen konsistent.
+     */
+    private EmailService.EmailContent mitAnnahmeBeleg(EmailService.EmailContent content, DokumentFreigabe freigabe)
+    {
+        String belegHtml = buildAnnahmeBelegHtml(freigabe);
+        String html = content.htmlBody() == null ? belegHtml : content.htmlBody() + belegHtml;
+        return new EmailService.EmailContent(content.subject(), html);
+    }
+
+    private static String buildAnnahmeBelegHtml(DokumentFreigabe f)
+    {
+        String wann = f.getAkzeptiertAm() != null ? f.getAkzeptiertAm().format(ANNAHME_FORMAT) : "—";
+        String hash = kuerzeHash(f.getHashAcceptance());
+        String angebotsNummer = nullSafe(f.getDokumentNummer());
+
+        return "<div style=\"margin:24px 0;padding:16px 18px;border-left:3px solid #500010;background:#fafafa;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<p style=\"margin:0 0 6px 0;font-weight:600;color:#1e293b;\">Angebot angenommen — Auftragsbestätigung</p>"
+                + "<p style=\"margin:0 0 10px 0;color:#475569;line-height:1.45;\">"
+                + "Diese Mail wurde automatisch vom System erstellt, nachdem Sie das Angebot "
+                + "<strong>" + angebotsNummer + "</strong> am <strong>" + wann + "</strong> "
+                + "online digital angenommen haben. Im Anhang finden Sie Ihre verbindliche "
+                + "Auftragsbestätigung als PDF."
+                + "</p>"
+                + "<p style=\"margin:8px 0 0 0;color:#94a3b8;font-size:13px;line-height:1.5;\">"
+                + "Audit-Hash zur Rechtssicherheit: <code style=\"font-family:monospace;color:#64748b;\">" + hash + "</code><br>"
+                + "Sollten Sie diese Annahme <em>nicht</em> selbst durchgeführt haben, melden Sie sich bitte umgehend bei uns."
+                + "</p>"
+                + "</div>";
+    }
+
+    private static String kuerzeHash(String hash)
+    {
+        if (hash == null || hash.isBlank()) return "—";
+        return hash.length() <= 16 ? hash : hash.substring(0, 16) + "…";
     }
 }
