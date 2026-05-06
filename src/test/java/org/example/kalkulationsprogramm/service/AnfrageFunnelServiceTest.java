@@ -32,6 +32,7 @@ class AnfrageFunnelServiceTest {
     private MitarbeiterRepository mitarbeiterRepository;
     private KundennummerService kundennummerService;
     private DateiSpeicherService dateiSpeicherService;
+    private AnfrageFunnelSpamFilterService spamFilterService;
 
     private AnfrageFunnelService service;
 
@@ -45,10 +46,13 @@ class AnfrageFunnelServiceTest {
         mitarbeiterRepository = mock(MitarbeiterRepository.class);
         kundennummerService = mock(KundennummerService.class);
         dateiSpeicherService = mock(DateiSpeicherService.class);
+        spamFilterService = mock(AnfrageFunnelSpamFilterService.class);
+        given(spamFilterService.pruefe(any())).willReturn(AnfrageFunnelSpamFilterService.Result.ok());
 
         service = new AnfrageFunnelService(
                 kundeRepository, anfrageRepository, anfrageNotizRepository,
-                mitarbeiterRepository, kundennummerService, dateiSpeicherService
+                mitarbeiterRepository, kundennummerService, dateiSpeicherService,
+                spamFilterService
         );
 
         systemMitarbeiter = new Mitarbeiter();
@@ -168,6 +172,17 @@ class AnfrageFunnelServiceTest {
         assertThat(notiz.getNotiz()).contains("Service: Neubau");
         assertThat(notiz.getNotiz()).contains("Datenschutz akzeptiert");
         assertThat(notiz.getBilder()).isEmpty();
+    }
+
+    @Test
+    void wirftAusnahmeWennSpamFilterAnfrageAblehnt() {
+        given(spamFilterService.pruefe(any()))
+                .willReturn(AnfrageFunnelSpamFilterService.Result.spam("Test-Eingabe"));
+
+        assertThatThrownBy(() -> service.verarbeiteFunnelAnfrage(baseDto(), List.of()))
+                .isInstanceOf(FunnelAnfrageAbgelehntException.class)
+                .hasMessageContaining("Test-Eingabe");
+        verify(anfrageRepository, never()).save(any(Anfrage.class));
     }
 
     @Test

@@ -54,9 +54,16 @@ public class AnfrageFunnelService {
     private final MitarbeiterRepository mitarbeiterRepository;
     private final KundennummerService kundennummerService;
     private final DateiSpeicherService dateiSpeicherService;
+    private final AnfrageFunnelSpamFilterService spamFilterService;
 
     @Transactional
     public Anfrage verarbeiteFunnelAnfrage(AnfrageFunnelRequestDto dto, List<MultipartFile> bilder) {
+        AnfrageFunnelSpamFilterService.Result spamCheck = spamFilterService.pruefe(dto);
+        if (spamCheck.spam()) {
+            log.info("Funnel-Anfrage als Spam abgelehnt: {}", spamCheck.grund());
+            throw new FunnelAnfrageAbgelehntException(spamCheck.grund());
+        }
+
         Mitarbeiter systemMitarbeiter = mitarbeiterRepository.findByLoginToken(SYSTEM_MITARBEITER_TOKEN)
                 .orElseThrow(() -> new IllegalStateException(
                         "System-Mitarbeiter 'Webseite' nicht gefunden. Migration V221 ausgeführt?"));

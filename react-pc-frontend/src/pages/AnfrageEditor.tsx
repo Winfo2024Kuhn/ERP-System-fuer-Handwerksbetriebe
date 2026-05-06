@@ -663,9 +663,10 @@ interface AnfrageDetailViewProps {
     onBack: () => void;
     onEdit: () => void;
     onRefresh: () => void;
+    onDeleted?: () => void;
 }
 
-const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, onEdit, onRefresh }) => {
+const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, onEdit, onRefresh, onDeleted }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [activeTab, setActiveTab] = useState<'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen'>('emails');
@@ -895,6 +896,38 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
         }
     };
 
+    // Anfrage komplett löschen (mit Cascade-Option für verwaisten Kunden).
+    // Backend prüft: keine E-Mails, keine Geschäftsdokumente, kein Versand,
+    // keine echten Bautagebuch-Notizen, kein Projekt – sonst HTTP 409.
+    const handleAnfrageDelete = async () => {
+        const ok = await confirmDialog({
+            title: 'Anfrage löschen',
+            message: 'Diese Anfrage wirklich löschen? Wenn der Kunde nur an dieser Anfrage hängt und sonst keine Projekte hat, wird er ebenfalls gelöscht. Bilder/Notizen aus dem Webseiten-Funnel werden mit entfernt.',
+            variant: 'danger',
+            confirmLabel: 'Löschen'
+        });
+        if (!ok) return;
+        try {
+            const res = await fetch(`/api/anfragen/${anfrage.id}?cascadeKunde=true`, { method: 'DELETE' });
+            if (res.ok) {
+                let kundeWeg = false;
+                try { kundeWeg = (await res.json())?.kundeMitgeloescht === true; } catch { /* leerer Body */ }
+                toast.success(kundeWeg ? 'Anfrage und verwaister Kunde gelöscht.' : 'Anfrage gelöscht.');
+                if (onDeleted) onDeleted(); else onBack();
+                return;
+            }
+            let hinweis = 'Anfrage konnte nicht gelöscht werden.';
+            try {
+                const data = await res.json();
+                if (typeof data?.hinweis === 'string' && data.hinweis.trim()) hinweis = data.hinweis;
+            } catch { /* ignore */ }
+            toast.error(hinweis);
+        } catch (e) {
+            console.error('Anfrage-Löschen fehlgeschlagen:', e);
+            toast.error('Anfrage konnte nicht gelöscht werden.');
+        }
+    };
+
     const kundenEmails = anfrage.kundenEmails || [];
 
     const nettoPreis = (anfrage.betrag || 0) / 1.19;
@@ -948,6 +981,14 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <div className="flex items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => handleAnfrageDelete()}
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200"
+                        title="Anfrage löschen (nur möglich solange noch keine E-Mails oder Geschäftsdokumente daran hängen)"
+                    >
+                        <Trash2 className="w-4 h-4 mr-2" /> Löschen
                     </Button>
                 </div>
             </div>
@@ -1706,6 +1747,12 @@ export default function AnfrageEditor() {
                     }}
                     onEdit={handleEdit}
                     onRefresh={() => loadDetails(selectedAnfrage.id)}
+                    onDeleted={() => {
+                        setSelectedAnfrage(null);
+                        setViewMode('list');
+                        setSearchParams({}, { replace: true });
+                        loadAnfragen();
+                    }}
                 />
 
                 {/* Edit Modal */}

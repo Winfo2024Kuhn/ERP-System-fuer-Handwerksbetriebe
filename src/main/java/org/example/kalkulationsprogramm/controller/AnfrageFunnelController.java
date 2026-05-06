@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageFunnelRequestDto;
 import org.example.kalkulationsprogramm.service.AnfrageFunnelService;
+import org.example.kalkulationsprogramm.service.FunnelAnfrageAbgelehntException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -70,6 +71,12 @@ public class AnfrageFunnelController {
                     "anfrageId", anfrage.getId(),
                     "message", "Anfrage erfolgreich angelegt."
             ));
+        } catch (FunnelAnfrageAbgelehntException e) {
+            log.info("Funnel-Anfrage als Spam abgelehnt: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(Map.of("success", false, "code", "SPAM_ABGELEHNT",
+                            "message", e.getMessage() != null ? e.getMessage()
+                                    : "Anfrage wirkt nicht ernst gemeint und konnte nicht gesendet werden."));
         } catch (IllegalArgumentException | IllegalStateException e) {
             log.warn("Funnel-Anfrage abgelehnt: {}", e.getMessage());
             return ResponseEntity.badRequest()

@@ -31,7 +31,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(invocation -> {
             Anfrage a = invocation.getArgument(0);
@@ -69,7 +73,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         Anfrage anfrage = new Anfrage();
         anfrage.setId(5L);
@@ -99,7 +107,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         Projekt projekt = new Projekt();
         projekt.setId(9L);
@@ -133,7 +145,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         when(anfrageRepository.findById(999L)).thenReturn(Optional.empty());
 
@@ -151,7 +167,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         Anfrage a1 = new Anfrage();
         a1.setId(1L);
@@ -184,7 +204,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(kundeRepository.findById(anyLong())).thenReturn(java.util.Optional.empty());

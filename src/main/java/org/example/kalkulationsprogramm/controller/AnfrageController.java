@@ -291,8 +291,24 @@ public class AnfrageController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> loesche(@PathVariable Long id) {
-        return anfrageService.loesche(id) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+    public ResponseEntity<java.util.Map<String, Object>> loesche(@PathVariable Long id,
+            @RequestParam(value = "cascadeKunde", defaultValue = "false") boolean cascadeKunde) {
+        AnfrageService.LoeschResult result = anfrageService.loescheMitPruefung(id, cascadeKunde);
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("grund", result.grund().name());
+        body.put("hinweis", result.hinweis());
+        body.put("kundeMitgeloescht", result.kundeMitgeloescht());
+        switch (result.grund()) {
+            case OK -> {
+                return ResponseEntity.ok(body);
+            }
+            case NICHT_GEFUNDEN -> {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+            }
+            default -> {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+            }
+        }
     }
 
     @PutMapping("/{id}")

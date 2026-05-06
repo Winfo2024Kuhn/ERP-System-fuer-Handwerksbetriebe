@@ -156,6 +156,24 @@ public class SystemSettingsController {
         return ResponseEntity.ok(result);
     }
 
+    // ==================== Funnel-Spam-Filter ====================
+
+    @GetMapping("/anfrage-funnel-spamfilter")
+    public ResponseEntity<FunnelSpamFilterResponse> getFunnelSpamFilter() {
+        return ResponseEntity.ok(new FunnelSpamFilterResponse(
+                settingsService.isAnfrageFunnelSpamFilterAktiv()));
+    }
+
+    @PutMapping("/anfrage-funnel-spamfilter")
+    public ResponseEntity<Map<String, String>> saveFunnelSpamFilter(
+            @RequestBody FunnelSpamFilterRequest req) {
+        settingsService.saveAnfrageFunnelSpamFilterAktiv(req.aktiv());
+        return ResponseEntity.ok(Map.of(
+                "message", req.aktiv()
+                        ? "Spam-Filter für Webseiten-Anfragen aktiviert."
+                        : "Spam-Filter für Webseiten-Anfragen deaktiviert."));
+    }
+
     // ==================== DTOs ====================
 
     private boolean hasValue(String val) {
@@ -180,4 +198,6 @@ public class SystemSettingsController {
     record GeminiSettingsResponse(boolean apiKeySet) {}
     record GeminiSettingsRequest(String apiKey) {}
     record GeminiTestRequest(String apiKey) {}
+    record FunnelSpamFilterResponse(boolean aktiv) {}
+    record FunnelSpamFilterRequest(boolean aktiv) {}
 }
