@@ -36,7 +36,7 @@ import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import { DocumentManager } from "../components/DocumentManager";
 import { EmailListInput } from "../components/EmailListInput";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
-import { PhoneInput } from "../components/PhoneInput";
+import { KundeAnlegenForm } from "../components/KundeAnlegenForm";
 import type {
     Anfrage,
     AnfrageDetail,
@@ -342,270 +342,6 @@ const KundenAuswahlView: React.FC<{
     );
 };
 
-// Anrede Optionen
-const ANREDE_OPTIONS = [
-    { value: '', label: 'Bitte wählen' },
-    { value: 'HERR', label: 'Sehr geehrter Herr' },
-    { value: 'FRAU', label: 'Sehr geehrte Frau' },
-    { value: 'FAMILIE', label: 'Sehr geehrte Familie' },
-    { value: 'DAMEN_HERREN', label: 'Sehr geehrte Damen und Herren' }
-];
-
-// ==================== KUNDE ANLEGEN VIEW ====================
-const KundeAnlegenView: React.FC<{
-    onSuccess: (kunde: Kunde) => void;
-    onBack: () => void;
-}> = ({ onSuccess, onBack }) => {
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [kundennummerError, setKundennummerError] = useState<string | null>(null);
-    const [autoKundennummer, setAutoKundennummer] = useState(true);
-    const [formData, setFormData] = useState({
-        name: '',
-        kundennummer: '',
-        anrede: '',
-        ansprechspartner: '',
-        strasse: '',
-        plz: '',
-        ort: '',
-        telefon: '',
-        mobiltelefon: '',
-        email: '',
-        zahlungsziel: 8,
-    });
-
-    // Nächste verfügbare Kundennummer laden
-    useEffect(() => {
-        if (autoKundennummer) {
-            fetch('/api/kunden/next-kundennummer')
-                .then(res => res.json())
-                .then(data => {
-                    setFormData(prev => ({ ...prev, kundennummer: data.kundennummer || '' }));
-                })
-                .catch(() => {});
-        }
-    }, [autoKundennummer]);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!formData.name.trim()) {
-            setError('Bitte Kundennamen angeben');
-            return;
-        }
-        if (!autoKundennummer && !formData.kundennummer.trim()) {
-            setError('Bitte Kundennummer angeben oder "Automatisch" aktivieren');
-            return;
-        }
-
-        setSaving(true);
-        setError(null);
-        try {
-            const payload = {
-                name: formData.name.trim(),
-                kundennummer: autoKundennummer ? '' : formData.kundennummer.trim(),
-                anrede: formData.anrede || null,
-                ansprechspartner: formData.ansprechspartner.trim() || null,
-                strasse: formData.strasse.trim() || null,
-                plz: formData.plz.trim() || null,
-                ort: formData.ort.trim() || null,
-                telefon: formData.telefon.trim() || null,
-                mobiltelefon: formData.mobiltelefon.trim() || null,
-                zahlungsziel: formData.zahlungsziel || 8,
-                kundenEmails: formData.email.trim() ? [formData.email.trim()] : [],
-            };
-
-            const res = await fetch('/api/kunden', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                const msg = errData.message || errData.detail || 'Kunde konnte nicht angelegt werden';
-                if (res.status === 409) {
-                    setKundennummerError(msg);
-                    return;
-                }
-                throw new Error(msg);
-            }
-
-            const created = await res.json();
-            onSuccess(created);
-        } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : 'Fehler beim Speichern');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    return (
-        <div className="space-y-4">
-            <div className="flex items-center gap-3 mb-4">
-                <button onClick={onBack} className="text-slate-500 hover:text-slate-700">
-                    <ChevronLeft className="w-5 h-5" />
-                </button>
-                <h3 className="text-lg font-semibold text-slate-900">Neuen Kunden anlegen</h3>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
-                )}
-
-                {/* Name & Kundennummer */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Kundenname *</label>
-                        <input
-                            type="text"
-                            value={formData.name}
-                            onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                            placeholder="Firma / Name"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="block text-sm font-medium text-slate-700">Kundennummer</label>
-                            <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={autoKundennummer}
-                                    onChange={e => {
-                                        const checked = e.target.checked;
-                                        setAutoKundennummer(checked);
-                                        if (checked) {
-                                            fetch('/api/kunden/next-kundennummer')
-                                                .then(res => res.json())
-                                                .then(data => setFormData(prev => ({ ...prev, kundennummer: data.kundennummer || '' })))
-                                                .catch(() => {});
-                                        } else {
-                                            setFormData(prev => ({ ...prev, kundennummer: '' }));
-                                        }
-                                    }}
-                                    className="accent-rose-600 w-4 h-4"
-                                />
-                                <span className="text-slate-600">Automatisch</span>
-                            </label>
-                        </div>
-                        <input
-                            type="text"
-                            value={formData.kundennummer}
-                            onChange={e => {
-                                setFormData(prev => ({ ...prev, kundennummer: e.target.value }));
-                                setKundennummerError(null);
-                            }}
-                            placeholder={autoKundennummer ? 'Wird automatisch vergeben' : 'z.B. K-1234'}
-                            disabled={autoKundennummer}
-                            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-50 disabled:text-slate-400 ${kundennummerError ? 'border-rose-500 bg-rose-50' : 'border-slate-200'}`}
-                        />
-                        {kundennummerError && (
-                            <p className="mt-1 text-xs text-rose-600">{kundennummerError}</p>
-                        )}
-                    </div>
-                </div>
-
-                {/* Anrede & Ansprechpartner */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Anrede</label>
-                        <Select
-                            value={formData.anrede}
-                            onChange={(value) => setFormData(prev => ({ ...prev, anrede: value }))}
-                            options={ANREDE_OPTIONS.map(opt => ({
-                                value: opt.value,
-                                label: opt.label
-                            }))}
-                            placeholder="Anrede wählen"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Ansprechpartner</label>
-                        <input
-                            type="text"
-                            value={formData.ansprechspartner}
-                            onChange={e => setFormData(prev => ({ ...prev, ansprechspartner: e.target.value }))}
-                            placeholder="Vor- und Nachname"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                </div>
-
-                {/* E-Mail */}
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">E-Mail</label>
-                    <input
-                        type="email"
-                        value={formData.email}
-                        onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                        placeholder="email@example.com"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                </div>
-
-                {/* Telefon & Mobiltelefon */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Telefon</label>
-                        <PhoneInput
-                            value={formData.telefon}
-                            onChange={v => setFormData(prev => ({ ...prev, telefon: v }))}
-                            variant="festnetz"
-                            autoPrefillAreaCode
-                            plz={formData.plz}
-                            ort={formData.ort}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Mobiltelefon</label>
-                        <PhoneInput
-                            value={formData.mobiltelefon}
-                            onChange={v => setFormData(prev => ({ ...prev, mobiltelefon: v }))}
-                            variant="mobil"
-                        />
-                    </div>
-                </div>
-
-                {/* Adresse */}
-                <AddressAutocomplete
-                    value={{
-                        strasse: formData.strasse,
-                        plz: formData.plz,
-                        ort: formData.ort
-                    }}
-                    onChange={next => setFormData(prev => ({
-                        ...prev,
-                        strasse: next.strasse,
-                        plz: next.plz,
-                        ort: next.ort
-                    }))}
-                />
-
-                {/* Zahlungsziel */}
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Zahlungsziel (Tage)</label>
-                    <input
-                        type="number"
-                        min="0"
-                        value={formData.zahlungsziel}
-                        onChange={e => setFormData(prev => ({ ...prev, zahlungsziel: parseInt(e.target.value) || 8 }))}
-                        placeholder="8"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4">
-                    <Button type="button" variant="outline" onClick={onBack}>Abbrechen</Button>
-                    <Button type="submit" disabled={saving} className="bg-rose-600 text-white hover:bg-rose-700">
-                        {saving ? 'Speichern...' : 'Kunde anlegen'}
-                    </Button>
-                </div>
-            </form>
-        </div>
-    );
-};
-
 // ==================== ANFRAGE ERSTELLEN MODAL ====================
 interface AnfrageErstellenModalProps {
     isOpen: boolean;
@@ -687,8 +423,18 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
         setSubView('main');
     };
 
-    const handleKundeCreated = (kunde: Kunde) => {
-        setSelectedKunde(kunde);
+    // Adapter: KundeAnlegenForm liefert den globalen Kunde-Typ (id: string | number),
+    // dieser Editor arbeitet mit der schmaleren lokalen Variante (id: number).
+    const handleKundeCreated = (kunde: { id: string | number; name: string; kundennummer?: string; strasse?: string; plz?: string; ort?: string; kundenEmails?: string[] }) => {
+        setSelectedKunde({
+            id: typeof kunde.id === 'string' ? parseInt(kunde.id, 10) : kunde.id,
+            name: kunde.name,
+            kundennummer: kunde.kundennummer || '',
+            strasse: kunde.strasse,
+            plz: kunde.plz,
+            ort: kunde.ort,
+            kundenEmails: kunde.kundenEmails,
+        });
         setSubView('main');
     };
 
@@ -761,7 +507,7 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                     )}
 
                     {subView === 'createKunde' && (
-                        <KundeAnlegenView
+                        <KundeAnlegenForm
                             onSuccess={handleKundeCreated}
                             onBack={() => setSubView('selectKunde')}
                         />

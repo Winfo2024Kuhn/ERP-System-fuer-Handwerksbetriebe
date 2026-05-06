@@ -2,9 +2,13 @@ package org.example.kalkulationsprogramm.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatGrund;
+import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatResponseDto;
+import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatTrefferDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeListItemDto;
 import org.example.kalkulationsprogramm.mapper.KundeMapper;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -57,6 +61,16 @@ class KundeControllerTest {
 
     @MockBean
     private org.example.kalkulationsprogramm.service.KundennummerService kundennummerService;
+
+    @MockBean
+    private org.example.kalkulationsprogramm.service.KundeDuplikatService kundeDuplikatService;
+
+    @BeforeEach
+    void setupDuplikatService() {
+        // Default: keine Duplikate, damit der "Happy Path" funktioniert.
+        given(kundeDuplikatService.findeDuplikate(any(), any(), any(), any(), any(), any()))
+                .willReturn(new KundeDuplikatResponseDto(List.of(), false));
+    }
 
     @Test
     @DisplayName("Suchanfragen überschreiten nie das Limit von 50 Einträgen")
@@ -128,5 +142,66 @@ class KundeControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Duplikat-Verdacht liefert 409 mit Treffer-Liste im Body")
+    void createKundeReturnsConflictWithDuplikate() throws Exception {
+        KundeDuplikatTrefferDto treffer = new KundeDuplikatTrefferDto();
+        treffer.setId(42L);
+        treffer.setName("Müller GmbH");
+        treffer.setKundennummer("K-42");
+        treffer.setGruende(List.of(KundeDuplikatGrund.EMAIL_GLEICH));
+        treffer.setScore(100);
+        given(kundeDuplikatService.findeDuplikate(any(), any(), any(), any(), any(), any()))
+                .willReturn(new KundeDuplikatResponseDto(List.of(treffer), true));
+
+        var payload = new java.util.HashMap<String, Object>();
+        payload.put("name", "Müller GmbH");
+        payload.put("kundenEmails", List.of("info@mueller.de"));
+
+        mockMvc.perform(post("/api/kunden")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.harterTreffer").value(true))
+                .andExpect(jsonPath("$.duplikate[0].id").value(42))
+                .andExpect(jsonPath("$.duplikate[0].name").value("Müller GmbH"))
+                .andExpect(jsonPath("$.duplikate[0].gruende[0]").value("EMAIL_GLEICH"));
+    }
+
+    @Test
+    @DisplayName("Header X-Duplikat-Bestaetigt umgeht den Duplikat-Check")
+    void createKundeBypassesDuplikatCheckWithHeader() throws Exception {
+        // Service würde Treffer melden – wird aber dank Header nicht aufgerufen.
+        KundeDuplikatTrefferDto treffer = new KundeDuplikatTrefferDto();
+        treffer.setId(1L);
+        treffer.setName("Konflikt");
+        given(kundeDuplikatService.findeDuplikate(any(), any(), any(), any(), any(), any()))
+                .willReturn(new KundeDuplikatResponseDto(List.of(treffer), true));
+
+        given(kundeRepository.save(any(Kunde.class))).willAnswer(inv -> {
+            Kunde k = inv.getArgument(0);
+            k.setId(99L);
+            return k;
+        });
+        given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("K-100");
+        KundeListItemDto dto = new KundeListItemDto();
+        dto.setId(99L);
+        dto.setName("Neuer Kunde");
+        given(kundeMapper.toListItem(any(Kunde.class))).willReturn(dto);
+
+        var payload = new java.util.HashMap<String, Object>();
+        payload.put("name", "Neuer Kunde");
+
+        mockMvc.perform(post("/api/kunden")
+                        .header("X-Duplikat-Bestaetigt", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isCreated());
+
+        // Service darf bei aktivem Header nicht angefragt worden sein.
+        verify(kundeDuplikatService, org.mockito.Mockito.never())
+                .findeDuplikate(any(), any(), any(), any(), any(), any());
     }
 }
