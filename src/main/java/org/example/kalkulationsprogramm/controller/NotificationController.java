@@ -331,6 +331,34 @@ public class NotificationController {
                                 categories.add(new CategoryDto("RECHNUNGEN", "Neue Lieferantenrechnungen",
                                                 neueRechnungen.size(),
                                                 "Truck", "/offeneposten?tab=eingang"));
+
+                                neueRechnungen.stream()
+                                                .sorted(Comparator.comparing(
+                                                                LieferantGeschaeftsdokument::getDokumentDatum,
+                                                                Comparator.nullsLast(Comparator.reverseOrder())))
+                                                .limit(3)
+                                                .forEach(gd -> {
+                                                        String lieferantName = "";
+                                                        try {
+                                                                if (gd.getDokument() != null && gd.getDokument()
+                                                                                .getLieferant() != null) {
+                                                                        lieferantName = gd.getDokument().getLieferant()
+                                                                                        .getLieferantenname();
+                                                                }
+                                                        } catch (Exception e) {
+                                                                /* lazy loading */ }
+                                                        recentItems.add(new RecentItemDto(
+                                                                        "RECHNUNG",
+                                                                        gd.getDokumentNummer() != null
+                                                                                        ? gd.getDokumentNummer()
+                                                                                        : "Rechnung",
+                                                                        lieferantName,
+                                                                        gd.getDokumentDatum() != null
+                                                                                        ? gd.getDokumentDatum().toString()
+                                                                                        : "",
+                                                                        "/offeneposten?tab=eingang&dokumentId="
+                                                                                        + gd.getId()));
+                                                });
                         }
                 } catch (Exception ignored) {
                 }
