@@ -1,5 +1,5 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
-import { RefreshCw, Download, FileText } from 'lucide-react';
+import { RefreshCw, Download } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -291,9 +291,11 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
             {useFallback ? (
                 /* Fallback: iframe mit weißem Hintergrund */
                 <div className="flex-1 relative" style={{ background: 'white' }}>
-                    {/* Skelett bleibt, bis: kein Fetch mehr läuft UND iframe das aktuelle PDF geladen hat */}
-                    {(loading || !previewUrl || iframeLoadedUrl !== previewUrl) && (
-                        <PdfLoadingSkeleton loading={loading} />
+                    {/* Skelett bleibt, bis ALLES stabil ist: kein Fetch läuft, nichts ist stale,
+                        und das iframe das aktuelle PDF geladen hat. Verhindert Flackern, wenn
+                        Daten in Stufen nachladen und mehrfach Previews getriggert werden. */}
+                    {(loading || stale || !previewUrl || iframeLoadedUrl !== previewUrl) && (
+                        <PdfLoadingSkeleton />
                     )}
                     {previewUrl ? (
                         <iframe
@@ -313,11 +315,14 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
                     className="flex-1 overflow-y-auto overflow-x-hidden relative"
                     style={{ background: 'white' }}
                 >
-                    {/* Skelett bleibt sichtbar, bis Canvas-Render der aktuellen URL fertig ist
-                        (renderedUrl === previewUrl). Während Fetch (loading) oder Re-Render
-                        durch Resize/Open-Animation wird ebenfalls das Skelett gezeigt. */}
-                    {!error && (loading || !previewUrl || renderedUrl !== previewUrl) && (
-                        <PdfLoadingSkeleton loading={loading || (!!previewUrl && renderedUrl !== previewUrl)} />
+                    {/* Skelett bleibt sichtbar, solange irgendwas in Bewegung ist:
+                        - Fetch läuft (loading)
+                        - Inhalt ist seit letztem Render geändert (stale)
+                        - Canvas-Render der aktuellen URL noch nicht fertig
+                        Verhindert Flackern, wenn Daten in Stufen nachladen und der
+                        Auto-Preview-Debounce mehrfach feuert. */}
+                    {!error && (loading || stale || !previewUrl || renderedUrl !== previewUrl) && (
+                        <PdfLoadingSkeleton />
                     )}
 
                     <div ref={canvasContainerRef} style={{ lineHeight: 0 }} />
@@ -334,110 +339,66 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
 }
 
 /* ────────────────────────────────────────────────────────────
-   Premium PDF Loading Skeleton
-   Wird so lange angezeigt, bis das PDF vollständig vom Backend
-   geladen UND clientseitig fertig gerendert ist. Komplett deckend,
-   damit kein leerer/halb gerenderter Zustand sichtbar wird.
+   PDF Loading Skeleton
+   Reines A4-Skelett in voller Vorschaugröße. Kein Icon, kein
+   Text, keine Spinner — nur ein dezent schimmerndes Blatt.
    ──────────────────────────────────────────────────────────── */
-function PdfLoadingSkeleton({ loading }: { loading: boolean }) {
+function PdfLoadingSkeleton() {
     return (
-        <div className={cn(
-            "absolute inset-0 z-10 flex flex-col items-center pointer-events-none bg-white",
-        )}>
-            {/* Document skeleton */}
-            <div className="w-full max-w-[90%] mt-6 flex flex-col items-center gap-6">
-                {/* Animated icon + status */}
-                <div className="flex flex-col items-center gap-3 py-4">
-                    <div className="relative">
-                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-50 to-rose-100 flex items-center justify-center shadow-sm">
-                            <FileText className="w-7 h-7 text-rose-400" />
+        <div className="absolute inset-0 z-10 overflow-y-auto overflow-x-hidden pointer-events-none bg-white">
+            <div
+                className="w-full bg-white"
+                style={{
+                    boxShadow: '0 2px 20px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)',
+                    aspectRatio: '210 / 297',
+                }}
+            >
+                <div className="p-[8%] h-full flex flex-col">
+                    {/* Header area */}
+                    <div className="flex justify-between items-start mb-[8%]">
+                        <div className="flex flex-col gap-2 w-[45%]">
+                            <div className="skeleton-shimmer h-3 rounded-full w-[70%]" style={{ animationDelay: '0s' }} />
+                            <div className="skeleton-shimmer h-2.5 rounded-full w-[50%]" style={{ animationDelay: '0.08s' }} />
+                            <div className="skeleton-shimmer h-2.5 rounded-full w-[60%]" style={{ animationDelay: '0.16s' }} />
                         </div>
-                        {loading && (
-                            <div className="absolute -inset-1.5 rounded-2xl border-2 border-transparent border-t-rose-400 animate-spin" style={{ animationDuration: '1.2s' }} />
-                        )}
+                        <div className="skeleton-shimmer h-10 w-20 rounded" style={{ animationDelay: '0.1s' }} />
                     </div>
-                    <div className="flex flex-col items-center gap-1">
-                        <span className="text-sm font-medium text-slate-500">
-                            {loading ? 'PDF wird erstellt…' : 'Vorschau wird vorbereitet…'}
-                        </span>
-                        <span className="text-[11px] text-slate-400">
-                            {loading ? 'Layout und Inhalte werden gerendert' : 'Starten Sie die Vorschau'}
-                        </span>
+
+                    {/* Address block */}
+                    <div className="flex flex-col gap-1.5 mb-[6%] w-[55%]">
+                        <div className="skeleton-shimmer h-2 rounded-full w-[80%]" style={{ animationDelay: '0.2s' }} />
+                        <div className="skeleton-shimmer h-2 rounded-full w-[65%]" style={{ animationDelay: '0.28s' }} />
+                        <div className="skeleton-shimmer h-2 rounded-full w-[40%]" style={{ animationDelay: '0.36s' }} />
                     </div>
-                </div>
 
-                {/* A4 page skeleton */}
-                <div
-                    className="w-full bg-white rounded-lg overflow-hidden"
-                    style={{
-                        boxShadow: '0 2px 20px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)',
-                        aspectRatio: '210 / 297',
-                        maxHeight: 'calc(100vh - 220px)',
-                    }}
-                >
-                    <div className="p-[8%] h-full flex flex-col">
-                        {/* Header area */}
-                        <div className="flex justify-between items-start mb-[8%]">
-                            <div className="flex flex-col gap-2 w-[45%]">
-                                <div className="skeleton-shimmer h-3 rounded-full w-[70%]" style={{ animationDelay: '0s' }} />
-                                <div className="skeleton-shimmer h-2.5 rounded-full w-[50%]" style={{ animationDelay: '0.08s' }} />
-                                <div className="skeleton-shimmer h-2.5 rounded-full w-[60%]" style={{ animationDelay: '0.16s' }} />
-                            </div>
-                            <div className="skeleton-shimmer h-10 w-20 rounded" style={{ animationDelay: '0.1s' }} />
-                        </div>
+                    {/* Title */}
+                    <div className="skeleton-shimmer h-4 rounded-full w-[35%] mb-[5%]" style={{ animationDelay: '0.4s' }} />
 
-                        {/* Address block */}
-                        <div className="flex flex-col gap-1.5 mb-[6%] w-[55%]">
-                            <div className="skeleton-shimmer h-2 rounded-full w-[80%]" style={{ animationDelay: '0.2s' }} />
-                            <div className="skeleton-shimmer h-2 rounded-full w-[65%]" style={{ animationDelay: '0.28s' }} />
-                            <div className="skeleton-shimmer h-2 rounded-full w-[40%]" style={{ animationDelay: '0.36s' }} />
-                        </div>
-
-                        {/* Title */}
-                        <div className="skeleton-shimmer h-4 rounded-full w-[35%] mb-[5%]" style={{ animationDelay: '0.4s' }} />
-
-                        {/* Text lines */}
-                        <div className="flex flex-col gap-2 flex-1">
-                            {[90, 55, 70, 40, 85, 60, 75, 50, 65, 45, 80].map((w, i) => (
-                                <div
-                                    key={i}
-                                    className="skeleton-shimmer h-2 rounded-full"
-                                    style={{ width: `${w}%`, animationDelay: `${0.5 + i * 0.06}s` }}
-                                />
-                            ))}
-
-                            {/* Table-like block */}
-                            <div className="mt-[4%] flex flex-col gap-1.5">
-                                <div className="skeleton-shimmer h-3 rounded w-full" style={{ animationDelay: '1.1s' }} />
-                                <div className="skeleton-shimmer h-2.5 rounded w-full opacity-60" style={{ animationDelay: '1.16s' }} />
-                                <div className="skeleton-shimmer h-2.5 rounded w-full opacity-60" style={{ animationDelay: '1.22s' }} />
-                                <div className="skeleton-shimmer h-2.5 rounded w-[70%] opacity-60" style={{ animationDelay: '1.28s' }} />
-                            </div>
-                        </div>
-
-                        {/* Footer */}
-                        <div className="flex justify-between items-end mt-auto pt-[4%] border-t border-slate-50">
-                            <div className="skeleton-shimmer h-2 rounded-full w-[30%]" style={{ animationDelay: '1.4s' }} />
-                            <div className="skeleton-shimmer h-2 rounded-full w-[20%]" style={{ animationDelay: '1.46s' }} />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Progress dots */}
-                {loading && (
-                    <div className="flex gap-1.5 py-2">
-                        {[0, 1, 2].map(i => (
+                    {/* Text lines */}
+                    <div className="flex flex-col gap-2 flex-1">
+                        {[90, 55, 70, 40, 85, 60, 75, 50, 65, 45, 80].map((w, i) => (
                             <div
                                 key={i}
-                                className="w-1.5 h-1.5 rounded-full bg-rose-300"
-                                style={{
-                                    animation: 'pdfDotPulse 1.4s ease-in-out infinite',
-                                    animationDelay: `${i * 0.2}s`,
-                                }}
+                                className="skeleton-shimmer h-2 rounded-full"
+                                style={{ width: `${w}%`, animationDelay: `${0.5 + i * 0.06}s` }}
                             />
                         ))}
+
+                        {/* Table-like block */}
+                        <div className="mt-[4%] flex flex-col gap-1.5">
+                            <div className="skeleton-shimmer h-3 rounded w-full" style={{ animationDelay: '1.1s' }} />
+                            <div className="skeleton-shimmer h-2.5 rounded w-full opacity-60" style={{ animationDelay: '1.16s' }} />
+                            <div className="skeleton-shimmer h-2.5 rounded w-full opacity-60" style={{ animationDelay: '1.22s' }} />
+                            <div className="skeleton-shimmer h-2.5 rounded w-[70%] opacity-60" style={{ animationDelay: '1.28s' }} />
+                        </div>
                     </div>
-                )}
+
+                    {/* Footer */}
+                    <div className="flex justify-between items-end mt-auto pt-[4%] border-t border-slate-50">
+                        <div className="skeleton-shimmer h-2 rounded-full w-[30%]" style={{ animationDelay: '1.4s' }} />
+                        <div className="skeleton-shimmer h-2 rounded-full w-[20%]" style={{ animationDelay: '1.46s' }} />
+                    </div>
+                </div>
             </div>
         </div>
     );
