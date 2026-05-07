@@ -310,7 +310,7 @@ export interface Produktkategorie {
   beschreibung?: string;
   verrechnungseinheit?: Verrechnungseinheit;
   pfad?: string;
-  isLeaf: boolean;
+  leaf: boolean;
   projektAnzahl?: number;
 }
 
@@ -410,7 +410,7 @@ export interface ProjektProduktkategorieNested {
   beschreibung?: string;
   verrechnungseinheit?: Verrechnungseinheit;
   pfad?: string;
-  isLeaf?: boolean;
+  leaf?: boolean;
 }
 
 export interface ProjektProduktkategorie {

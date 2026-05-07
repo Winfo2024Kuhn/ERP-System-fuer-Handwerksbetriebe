@@ -1215,8 +1215,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
     const handleKategorieUeberspringen = () => {
         if (!pendingLeistungInsert) return;
+        const name = pendingLeistungInsert.leistungName;
         setBlocks(prev => insertBeforeNachtexte(prev, pendingLeistungInsert.block));
         setPendingLeistungInsert(null);
+        toast.info(`Leistung „${name}“ ohne Kategorie eingefügt`);
     };
 
     const updateBlock = (id: string, updates: Partial<DocBlock>) => {
@@ -2268,6 +2270,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             fontSize: extractFontSizeFromHtml(resolvedContent) || extractFontSizeFromHtml(htmlContent),
                             fett: extractBoldFromHtml(resolvedContent) || extractBoldFromHtml(htmlContent),
                         });
+                        setShowTextbausteinPicker(false);
+                        toast.success(`Textbaustein „${tb.name}“ eingefügt`);
                     }}
                     onClose={() => setShowTextbausteinPicker(false)}
                 />
@@ -2277,6 +2281,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     leistungen={leistungen}
                     onSelect={(l) => {
                         const descHtml = l.description || '';
+                        const hasKategorie = l.folderId != null && projektId != null;
                         addBlock('SERVICE', {
                             title: l.name,
                             description: descHtml,
@@ -2288,6 +2293,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             leistungId: l.id,
                             kategorieId: l.folderId ?? undefined,
                         });
+                        setShowLeistungPicker(false);
+                        if (!hasKategorie) {
+                            toast.success(`Leistung „${l.name}“ eingefügt`);
+                        }
                     }}
                     onClose={() => setShowLeistungPicker(false)}
                 />
@@ -2306,6 +2315,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             fontSize: extractFontSizeFromHtml(descHtml),
                             fett: extractBoldFromHtml(descHtml),
                         });
+                        setShowStundensatzPicker(false);
+                        toast.success(`Stundensatz „${az.bezeichnung}“ eingefügt`);
                     }}
                     onClose={() => setShowStundensatzPicker(false)}
                 />
