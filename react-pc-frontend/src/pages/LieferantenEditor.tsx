@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle, Package } from "lucide-react";
+import { Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle, Package, Plug } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -13,6 +13,7 @@ import LieferantDokumenteTab from "../components/LieferantDokumenteTab";
 import { LieferantNotizenTab } from "../components/LieferantNotizenTab";
 
 import { LieferantReklamationenTab } from "../components/LieferantReklamationenTab";
+import { LieferantIdsKonfigTab } from "../components/LieferantIdsKonfigTab";
 import { DetailLayout } from "../components/DetailLayout";
 import { PageLayout } from "../components/layout/PageLayout";
 import { Select } from "../components/ui/select-custom";
@@ -98,7 +99,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
     );
 
     // Tab State
-    const [activeTab, setActiveTab] = useState<'emails' | 'dokumente' | 'notizen' | 'reklamationen'>('emails');
+    const [activeTab, setActiveTab] = useState<'emails' | 'dokumente' | 'notizen' | 'reklamationen' | 'ids'>('emails');
 
     const mainContent = (
         <>
@@ -162,6 +163,19 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                     <AlertTriangle className="w-4 h-4" />
                     Reklamationen
                 </button>
+
+                <button
+                    onClick={() => setActiveTab('ids')}
+                    className={cn(
+                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
+                        activeTab === 'ids'
+                            ? "text-rose-600 border-b-2 border-rose-500"
+                            : "text-slate-500 hover:text-slate-700"
+                    )}
+                >
+                    <Plug className="w-4 h-4" />
+                    Schnittstelle
+                </button>
             </div>
 
             {/* Tab Content */}
@@ -200,6 +214,14 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                     <div className="absolute inset-0 overflow-y-auto pr-2">
                         <LieferantReklamationenTab
                             lieferantId={lieferant.id as number}
+                        />
+                    </div>
+                )}
+                {activeTab === 'ids' && (
+                    <div className="absolute inset-0 overflow-y-auto pr-2">
+                        <LieferantIdsKonfigTab
+                            lieferantId={lieferant.id as number}
+                            lieferantName={lieferant.lieferantenname || 'diesem Lieferanten'}
                         />
                     </div>
                 )}
