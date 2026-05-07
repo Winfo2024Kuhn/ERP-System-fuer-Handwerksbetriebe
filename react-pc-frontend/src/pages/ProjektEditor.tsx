@@ -136,7 +136,19 @@ const TYP_COLORS: Record<string, string> = {
     'SCHLUSSRECHNUNG': 'bg-rose-100 text-rose-800 border-rose-300',
     'GUTSCHRIFT': 'bg-green-50 text-green-700 border-green-200',
     'STORNO': 'bg-red-50 text-red-700 border-red-200',
+    // Mahn-Eskalation: gelb → amber → rot, damit der Druck im Tree visuell erkennbar ist
+    'ZAHLUNGSERINNERUNG': 'bg-yellow-50 text-yellow-800 border-yellow-200',
+    'ERSTE_MAHNUNG': 'bg-amber-100 text-amber-800 border-amber-300',
+    'ZWEITE_MAHNUNG': 'bg-red-100 text-red-800 border-red-300',
 };
+
+/** Mahn-Einträge sind virtuelle Children einer Rechnung; sie kommen aus
+ *  ProjektGeschaeftsdokument und tragen daher eine negierte ID. */
+const istMahnDokument = (dok: AusgangsGeschaeftsDokument): boolean =>
+    dok.id < 0
+    || dok.typ === 'ZAHLUNGSERINNERUNG'
+    || dok.typ === 'ERSTE_MAHNUNG'
+    || dok.typ === 'ZWEITE_MAHNUNG';
 
 
 
@@ -1597,9 +1609,27 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                     isChild ? "border-slate-200 hover:border-slate-300" : "border-slate-200 hover:border-rose-300",
                                                     dok.storniert && "opacity-50"
                                                 )}
-                                                onClick={() => setActionMenuDokument(actionMenuDokument?.id === dok.id ? null : dok)}
-                                                onDoubleClick={() => window.open(`/dokument-editor?projektId=${projekt.id}&dokumentId=${dok.id}`, '_blank')}
-                                                title="Klick für Aktionen, Doppelklick zum Öffnen"
+                                                onClick={() => {
+                                                    // Mahn-Einträge sind virtuelle ProjektGeschaeftsdokument-Children:
+                                                    // Klick öffnet direkt die PDF-Vorschau, kein Aktionsmenü.
+                                                    if (istMahnDokument(dok)) {
+                                                        if (dok.pdfUrl) {
+                                                            setPdfPreviewDoc({ url: dok.pdfUrl, title: dok.dokumentNummer });
+                                                        }
+                                                        return;
+                                                    }
+                                                    setActionMenuDokument(actionMenuDokument?.id === dok.id ? null : dok);
+                                                }}
+                                                onDoubleClick={() => {
+                                                    if (istMahnDokument(dok)) {
+                                                        if (dok.pdfUrl) {
+                                                            setPdfPreviewDoc({ url: dok.pdfUrl, title: dok.dokumentNummer });
+                                                        }
+                                                        return;
+                                                    }
+                                                    window.open(`/dokument-editor?projektId=${projekt.id}&dokumentId=${dok.id}`, '_blank');
+                                                }}
+                                                title={istMahnDokument(dok) ? "Klick für PDF-Vorschau" : "Klick für Aktionen, Doppelklick zum Öffnen"}
                                             >
                                                 <div className="flex items-start justify-between gap-4">
                                                     <div className="flex-1 min-w-0">
@@ -1729,8 +1759,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                     </div>
                                                 </div>
 
-                                                {/* Aktionsmenü bei Klick */}
-                                                {actionMenuDokument?.id === dok.id && (
+                                                {/* Aktionsmenü bei Klick — nicht für Mahn-Einträge,
+                                                    weil deren ID virtuell ist und kein DocumentEditor existiert. */}
+                                                {actionMenuDokument?.id === dok.id && !istMahnDokument(dok) && (
                                                     <div
                                                         className="absolute right-4 top-4 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-20 min-w-[220px]"
                                                         onClick={(e) => e.stopPropagation()}

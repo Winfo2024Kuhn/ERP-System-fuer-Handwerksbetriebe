@@ -754,7 +754,10 @@ export type AusgangsGeschaeftsDokumentTyp =
   | 'ABSCHLAGSRECHNUNG'
   | 'SCHLUSSRECHNUNG'
   | 'GUTSCHRIFT'
-  | 'STORNO';
+  | 'STORNO'
+  | 'ZAHLUNGSERINNERUNG'
+  | 'ERSTE_MAHNUNG'
+  | 'ZWEITE_MAHNUNG';
 
 export const AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN: { value: AusgangsGeschaeftsDokumentTyp; label: string }[] = [
   { value: 'ANGEBOT', label: 'Angebot' },
@@ -765,6 +768,9 @@ export const AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN: { value: AusgangsGeschaeftsDokum
   { value: 'SCHLUSSRECHNUNG', label: 'Schlussrechnung' },
   { value: 'GUTSCHRIFT', label: 'Gutschrift' },
   { value: 'STORNO', label: 'Stornorechnung' },
+  { value: 'ZAHLUNGSERINNERUNG', label: 'Zahlungserinnerung' },
+  { value: 'ERSTE_MAHNUNG', label: '1. Mahnung' },
+  { value: 'ZWEITE_MAHNUNG', label: '2. Mahnung' },
 ];
 
 export interface AusgangsGeschaeftsDokument {
@@ -806,6 +812,8 @@ export interface AusgangsGeschaeftsDokument {
   // Ersteller
   erstelltVonId?: number;
   erstelltVonName?: string;
+  /** Direkter PDF-URL — derzeit nur für virtuelle Mahn-Einträge gesetzt. */
+  pdfUrl?: string;
 }
 
 export interface AusgangsGeschaeftsDokumentErstellen {

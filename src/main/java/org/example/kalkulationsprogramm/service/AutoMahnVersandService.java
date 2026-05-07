@@ -626,19 +626,19 @@ public class AutoMahnVersandService
                     + "dass die Rechnung mit der Nummer <strong>" + rechnungsNr + "</strong>"
                     + (bv.isBlank() ? "" : " für das Bauvorhaben <strong>" + bv + "</strong>")
                     + " seit <strong>" + tageUeberfaellig + " Tagen</strong> "
-                    + "ueberfaellig ist und noch nicht beglichen wurde.</p>";
+                    + "überfällig ist und noch nicht beglichen wurde.</p>";
             case "1. Mahnung" -> "<p>trotz unserer Zahlungserinnerung haben wir bisher keinen "
-                    + "Zahlungseingang fuer die Rechnung <strong>" + rechnungsNr + "</strong>"
+                    + "Zahlungseingang für die Rechnung <strong>" + rechnungsNr + "</strong>"
                     + (bv.isBlank() ? "" : " (Bauvorhaben <strong>" + bv + "</strong>)")
-                    + " feststellen koennen. Die Rechnung ist seit <strong>"
-                    + tageUeberfaellig + " Tagen</strong> ueberfaellig.</p>";
+                    + " feststellen können. Die Rechnung ist seit <strong>"
+                    + tageUeberfaellig + " Tagen</strong> überfällig.</p>";
             case "2. Mahnung" -> "<p>leider mussten wir feststellen, dass die Rechnung "
                     + "<strong>" + rechnungsNr + "</strong>"
                     + (bv.isBlank() ? "" : " für das Bauvorhaben <strong>" + bv + "</strong>")
                     + " auch nach unserer 1. Mahnung noch immer nicht beglichen wurde "
-                    + "(<strong>" + tageUeberfaellig + " Tage</strong> ueberfaellig).</p>";
+                    + "(<strong>" + tageUeberfaellig + " Tage</strong> überfällig).</p>";
             default -> "<p>Die Rechnung " + rechnungsNr + " ist seit " + tageUeberfaellig
-                    + " Tagen ueberfaellig.</p>";
+                    + " Tagen überfällig.</p>";
         };
     }
 
@@ -654,8 +654,8 @@ public class AutoMahnVersandService
         return "<p><strong>Offene Forderung:</strong><br>"
                 + "Rechnungsnummer: <strong>" + nullSafe(rechnung.getDokumentid()) + "</strong><br>"
                 + "Rechnungsdatum: " + rdat + "<br>"
-                + "Urspruengliches Faelligkeitsdatum: " + fdat + "<br>"
-                + "Tage ueberfaellig: <strong>" + tageUeberfaellig + "</strong><br>"
+                + "Ursprüngliches Fälligkeitsdatum: " + fdat + "<br>"
+                + "Tage überfällig: <strong>" + tageUeberfaellig + "</strong><br>"
                 + "Offener Betrag: <strong>" + betrag + "</strong><br>"
                 + "Neues Zahlungsziel: <strong>" + neuesFaelligkeitsdatum.format(DATUM_FORMAT)
                 + "</strong></p>";
@@ -666,17 +666,17 @@ public class AutoMahnVersandService
         String datum = neuesFaelligkeitsdatum.format(DATUM_FORMAT);
         return switch (typLabel)
         {
-            case "Zahlungserinnerung" -> "<p>Bitte ueberweisen Sie den ausstehenden Betrag bis zum "
+            case "Zahlungserinnerung" -> "<p>Bitte überweisen Sie den ausstehenden Betrag bis zum "
                     + "<strong>" + datum + "</strong>. Sollte sich Ihre Zahlung mit dieser Erinnerung "
-                    + "ueberschnitten haben, betrachten Sie diese E-Mail bitte als gegenstandslos.</p>";
-            case "1. Mahnung" -> "<p>Wir bitten Sie, den ausstehenden Betrag umgehend, spaetestens bis zum "
-                    + "<strong>" + datum + "</strong> zu ueberweisen, um zusaetzliche Mahngebuehren "
+                    + "überschnitten haben, betrachten Sie diese E-Mail bitte als gegenstandslos.</p>";
+            case "1. Mahnung" -> "<p>Wir bitten Sie, den ausstehenden Betrag umgehend, spätestens bis zum "
+                    + "<strong>" + datum + "</strong> zu überweisen, um zusätzliche Mahngebühren "
                     + "zu vermeiden.</p>";
             case "2. Mahnung" -> "<p>Wir fordern Sie hiermit letztmalig auf, den ausstehenden Betrag "
-                    + "bis zum <strong>" + datum + "</strong> zu ueberweisen. Andernfalls sehen wir uns "
-                    + "gezwungen, die Forderung an ein Inkassobuero zu uebergeben oder gerichtliche "
+                    + "bis zum <strong>" + datum + "</strong> zu überweisen. Andernfalls sehen wir uns "
+                    + "gezwungen, die Forderung an ein Inkassobüro zu übergeben oder gerichtliche "
                     + "Schritte einzuleiten. Die dadurch entstehenden Kosten gehen zu Ihren Lasten.</p>";
-            default -> "<p>Bitte ueberweisen Sie bis zum <strong>" + datum + "</strong>.</p>";
+            default -> "<p>Bitte überweisen Sie bis zum <strong>" + datum + "</strong>.</p>";
         };
     }
 

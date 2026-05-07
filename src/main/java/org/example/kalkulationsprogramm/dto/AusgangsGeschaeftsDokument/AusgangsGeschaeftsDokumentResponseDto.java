@@ -57,4 +57,12 @@ public class AusgangsGeschaeftsDokumentResponseDto {
     // Ersteller
     private Long erstelltVonId;
     private String erstelltVonName;
+
+    /**
+     * Direkter PDF-URL — wird derzeit nur für virtuelle Mahn-Einträge gesetzt,
+     * weil die in {@code ProjektGeschaeftsdokument} liegen und nicht über den
+     * Standard-Endpoint {@code /api/ausgangs-dokumente/{id}/pdf} erreichbar
+     * sind. Frontend nutzt das Feld für die PDF-Vorschau.
+     */
+    private String pdfUrl;
 }

@@ -822,12 +822,123 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Findet alle Dokumente für ein Projekt.
+     * Findet alle Dokumente für ein Projekt – inklusive Mahnungen, die
+     * weiterhin in {@code ProjektGeschaeftsdokument} persistiert sind und hier
+     * als virtuelle Child-Einträge der zugehörigen Rechnung mitgeliefert werden,
+     * damit die Hierarchie Rechnung → Zahlungserinnerung → 1. Mahnung →
+     * 2. Mahnung im Ausgangs-Dokumente-Tab sichtbar ist.
      */
+    @Transactional(readOnly = true)
     public List<AusgangsGeschaeftsDokumentResponseDto> findByProjekt(Long projektId) {
-        return dokumentRepository.findByProjektIdOrderByDatumDesc(projektId).stream()
-                .map(this::toResponseDto)
-                .collect(Collectors.toList());
+        List<AusgangsGeschaeftsDokument> dokumente =
+                dokumentRepository.findByProjektIdOrderByDatumDesc(projektId);
+
+        // Mahnungen aus alter Domaene gruppieren nach Dokumentnummer der Original-Rechnung.
+        // Match-Schluessel ist die Dokumentnummer, weil erstelleOffenenPostenEintrag()
+        // beide Domaenen synchron mit derselben Nummer haelt.
+        java.util.Map<String, java.util.EnumMap<org.example.kalkulationsprogramm.domain.Mahnstufe,
+                ProjektGeschaeftsdokument>> mahnungenJeRechnung = new java.util.HashMap<>();
+        for (ProjektGeschaeftsdokument m : projektDokumentRepository.findMahnungenByProjektId(projektId)) {
+            if (m.getMahnstufe() == null || m.getReferenzDokument() == null) continue;
+            String rechnungNummer = m.getReferenzDokument().getDokumentid();
+            if (rechnungNummer == null) continue;
+            mahnungenJeRechnung
+                    .computeIfAbsent(rechnungNummer, k -> new java.util.EnumMap<>(
+                            org.example.kalkulationsprogramm.domain.Mahnstufe.class))
+                    .put(m.getMahnstufe(), m);
+        }
+
+        List<AusgangsGeschaeftsDokumentResponseDto> result = new ArrayList<>();
+        for (AusgangsGeschaeftsDokument dok : dokumente) {
+            result.add(toResponseDto(dok));
+
+            if (!RECHNUNGSTYPEN.contains(dok.getTyp())) continue;
+            java.util.EnumMap<org.example.kalkulationsprogramm.domain.Mahnstufe,
+                    ProjektGeschaeftsdokument> stufen = mahnungenJeRechnung.get(dok.getDokumentNummer());
+            if (stufen == null || stufen.isEmpty()) continue;
+
+            // Kette aufbauen: Rechnung -> Zahlungserinnerung -> 1. Mahnung -> 2. Mahnung
+            Long parentId = dok.getId();
+            String parentNummer = dok.getDokumentNummer();
+            for (org.example.kalkulationsprogramm.domain.Mahnstufe stufe :
+                    org.example.kalkulationsprogramm.domain.Mahnstufe.values()) {
+                ProjektGeschaeftsdokument m = stufen.get(stufe);
+                if (m == null) continue;
+                AusgangsGeschaeftsDokumentResponseDto mDto = mappeMahnungZuDto(m, stufe, dok, parentId, parentNummer);
+                result.add(mDto);
+                parentId = mDto.getId();
+                parentNummer = mDto.getDokumentNummer();
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Mappt ein Mahn-{@link ProjektGeschaeftsdokument} auf einen virtuellen
+     * {@link AusgangsGeschaeftsDokumentResponseDto}-Eintrag fuer den Tree im
+     * Projekt-Editor. Die ID wird als negierte ProjektGeschaeftsdokument-ID
+     * vergeben, damit sie nicht mit echten AusgangsGeschaeftsDokument-IDs
+     * kollidiert; das Frontend erkennt Mahnungen am negativen ID-Vorzeichen
+     * und behandelt sie nicht-editierbar.
+     */
+    private AusgangsGeschaeftsDokumentResponseDto mappeMahnungZuDto(
+            ProjektGeschaeftsdokument mahnung,
+            org.example.kalkulationsprogramm.domain.Mahnstufe stufe,
+            AusgangsGeschaeftsDokument originalRechnung,
+            Long vorgaengerId,
+            String vorgaengerNummer) {
+        AusgangsGeschaeftsDokumentResponseDto dto = new AusgangsGeschaeftsDokumentResponseDto();
+        dto.setId(-mahnung.getId());
+        dto.setDokumentNummer(mahnung.getDokumentid());
+        dto.setTyp(mappeMahnstufeAufTyp(stufe));
+        dto.setDatum(mahnung.getRechnungsdatum() != null
+                ? mahnung.getRechnungsdatum()
+                : mahnung.getUploadDatum());
+        dto.setBetreff(mahnstufeLabel(stufe) + " zu Rechnung " + originalRechnung.getDokumentNummer());
+        dto.setBetragBrutto(mahnung.getBruttoBetrag());
+        dto.setVersandDatum(mahnung.getEmailVersandDatum());
+        dto.setVorgaengerId(vorgaengerId);
+        dto.setVorgaengerNummer(vorgaengerNummer);
+
+        // Mahnungen sind nach Versand fix — keine Bearbeitung im DocumentEditor.
+        dto.setBearbeitbar(false);
+        dto.setGebucht(true);
+        dto.setStorniert(false);
+        dto.setDigitalAngenommen(false);
+
+        if (originalRechnung.getProjekt() != null) {
+            dto.setProjektId(originalRechnung.getProjekt().getId());
+            dto.setProjektBauvorhaben(originalRechnung.getProjekt().getBauvorhaben());
+            dto.setProjektnummer(originalRechnung.getProjekt().getAuftragsnummer());
+        }
+        if (originalRechnung.getKunde() != null) {
+            dto.setKundeId(originalRechnung.getKunde().getId());
+            dto.setKundennummer(originalRechnung.getKunde().getKundennummer());
+            dto.setKundenName(originalRechnung.getKunde().getName());
+        }
+
+        // PDF-Direkt-URL: Mahn-PDFs liegen unter /api/dokumente/{gespeicherterDateiname}.
+        if (mahnung.getGespeicherterDateiname() != null && !mahnung.getGespeicherterDateiname().isBlank()) {
+            dto.setPdfUrl("/api/dokumente/" + mahnung.getGespeicherterDateiname());
+        }
+        return dto;
+    }
+
+    private static AusgangsGeschaeftsDokumentTyp mappeMahnstufeAufTyp(
+            org.example.kalkulationsprogramm.domain.Mahnstufe stufe) {
+        return switch (stufe) {
+            case ZAHLUNGSERINNERUNG -> AusgangsGeschaeftsDokumentTyp.ZAHLUNGSERINNERUNG;
+            case ERSTE_MAHNUNG -> AusgangsGeschaeftsDokumentTyp.ERSTE_MAHNUNG;
+            case ZWEITE_MAHNUNG -> AusgangsGeschaeftsDokumentTyp.ZWEITE_MAHNUNG;
+        };
+    }
+
+    private static String mahnstufeLabel(org.example.kalkulationsprogramm.domain.Mahnstufe stufe) {
+        return switch (stufe) {
+            case ZAHLUNGSERINNERUNG -> "Zahlungserinnerung";
+            case ERSTE_MAHNUNG -> "1. Mahnung";
+            case ZWEITE_MAHNUNG -> "2. Mahnung";
+        };
     }
 
     /**
@@ -1243,6 +1354,12 @@ public class AusgangsGeschaeftsDokumentService {
             case SCHLUSSRECHNUNG -> "SR";
             case GUTSCHRIFT -> "GU";
             case STORNO -> "ST";
+            // Mahn-Typen werden nie hier persistiert (sie sind virtuelle DTO-Werte
+            // und kommen aus ProjektGeschaeftsdokument), benoetigen aber einen
+            // case-Eintrag damit der exhaustive switch kompiliert.
+            case ZAHLUNGSERINNERUNG, ERSTE_MAHNUNG, ZWEITE_MAHNUNG ->
+                    throw new IllegalStateException(
+                            "Mahn-Typen werden nicht im AusgangsGeschaeftsDokument-Nummernkreis vergeben: " + typ);
         };
     }
 
