@@ -12,12 +12,15 @@ export interface PreviewDoc {
  * (Dateiendung, API-Pfade, Download-Endpoints)
  */
 function isPdfUrl(url: string): boolean {
-    const lower = url.toLowerCase();
-    return lower.includes('.pdf') ||
-        lower.includes('/dokumente/') ||
-        lower.includes('/attachments/') ||
-        lower.includes('/download') ||
-        lower.endsWith('/pdf');
+    // Strip Query-String/Hash, damit Endungen + Pfade unabhängig von Parametern matchen
+    // (Beispiel: /api/.../mahnung-vorschau?stufe=ZAHLUNGSERINNERUNG)
+    const path = url.toLowerCase().split('?')[0].split('#')[0];
+    return path.includes('.pdf') ||
+        path.includes('/dokumente/') ||
+        path.includes('/attachments/') ||
+        path.includes('/download') ||
+        path.endsWith('/pdf') ||
+        path.includes('vorschau');
 }
 
 /**

@@ -22,10 +22,14 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { type KundeDetail } from '../types';
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
+import { AddressAutocomplete } from '../components/AddressAutocomplete';
+import { PhoneInput } from '../components/PhoneInput';
 import { EmailsTab } from '../components/EmailsTab';
 import { DetailLayout } from '../components/DetailLayout';
 import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
+import { KundeDuplikatHinweis, type KundeDuplikatTreffer } from '../components/KundeDuplikatHinweis';
+import { KundeDuplikatBestaetigungModal } from '../components/KundeDuplikatBestaetigungModal';
 
 const ANREDE_OPTIONS = [
     { value: '', label: 'Bitte wählen' },
@@ -261,6 +265,7 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
     const [autoKundennummer, setAutoKundennummer] = useState(isCreating && !kunde.kundennummer);
+    const [duplikatModal, setDuplikatModal] = useState<{ duplikate: KundeDuplikatTreffer[] } | null>(null);
 
     useEffect(() => {
         setFormData(kunde);
@@ -301,7 +306,7 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
         });
     };
 
-    const handleSubmit = async () => {
+    const speichern = async (duplikatBestaetigt: boolean) => {
         setError('');
         if (!formData.name.trim()) {
             setError('Bitte einen Kundennamen angeben.');
@@ -327,11 +332,24 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
         try {
             const url = isCreating ? '/api/kunden' : `/api/kunden/${kunde.id}`;
             const method = isCreating ? 'POST' : 'PUT';
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (duplikatBestaetigt) headers['X-Duplikat-Bestaetigt'] = 'true';
             const res = await fetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(payload)
             });
+
+            // 409 mit Treffer-Liste = Duplikat-Verdacht
+            if (res.status === 409 && isCreating) {
+                const body = await res.json().catch(() => null);
+                if (body && Array.isArray(body.duplikate) && body.duplikate.length > 0) {
+                    setDuplikatModal({ duplikate: body.duplikate });
+                    return;
+                }
+                setError(body?.message || 'Kundennummer ist bereits vergeben.');
+                return;
+            }
 
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
@@ -344,6 +362,22 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
             setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen.');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleSubmit = () => speichern(false);
+
+    const handleBestehendenWaehlen = async (treffer: KundeDuplikatTreffer) => {
+        setDuplikatModal(null);
+        try {
+            const res = await fetch(`/api/kunden/${treffer.id}`);
+            if (res.ok) {
+                const detail = await res.json();
+                onSave(detail);
+                return;
+            }
+        } catch (err) {
+            console.error('Kunden-Detail konnte nicht geladen werden:', err);
         }
     };
 
@@ -369,6 +403,18 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
                         <div className="p-3 bg-rose-50 border border-rose-200 text-sm text-rose-800 rounded-lg">
                             {error}
                         </div>
+                    )}
+
+                    {isCreating && (
+                        <KundeDuplikatHinweis
+                            email={emails.find(e => e.trim()) || ''}
+                            telefon={formData.telefon || ''}
+                            mobiltelefon={formData.mobiltelefon || ''}
+                            name={formData.name || ''}
+                            plz={formData.plz || ''}
+                            strasse={formData.strasse || ''}
+                            onTrefferKlick={handleBestehendenWaehlen}
+                        />
                     )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -427,19 +473,21 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
                         </div>
                     </div>
 
+                    <AddressAutocomplete
+                        value={{
+                            strasse: formData.strasse || '',
+                            plz: formData.plz || '',
+                            ort: formData.ort || ''
+                        }}
+                        onChange={next => setFormData(prev => ({
+                            ...prev,
+                            strasse: next.strasse,
+                            plz: next.plz,
+                            ort: next.ort
+                        }))}
+                    />
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="md:col-span-2">
-                            <Label htmlFor="strasse">Straße</Label>
-                            <Input id="strasse" value={formData.strasse || ''} onChange={e => handleChange('strasse', e.target.value)} placeholder="Straße Hausnr." />
-                        </div>
-                        <div>
-                            <Label htmlFor="plz">PLZ</Label>
-                            <Input id="plz" value={formData.plz || ''} onChange={e => handleChange('plz', e.target.value)} placeholder="PLZ" />
-                        </div>
-                        <div className="md:col-span-2">
-                            <Label htmlFor="ort">Ort</Label>
-                            <Input id="ort" value={formData.ort || ''} onChange={e => handleChange('ort', e.target.value)} placeholder="Ort" />
-                        </div>
                         <div>
                             <Label htmlFor="zahlungsziel">Zahlungsziel (Tage)</Label>
                             <Input id="zahlungsziel" type="number" min={0} value={formData.zahlungsziel ?? 8} onChange={e => handleChange('zahlungsziel', parseInt(e.target.value, 10) || 8)} placeholder="8" />
@@ -449,11 +497,24 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <Label htmlFor="telefon">Telefon</Label>
-                            <Input id="telefon" value={formData.telefon || ''} onChange={e => handleChange('telefon', e.target.value)} placeholder="+49 ..." />
+                            <PhoneInput
+                                id="telefon"
+                                value={formData.telefon || ''}
+                                onChange={v => handleChange('telefon', v)}
+                                variant="festnetz"
+                                autoPrefillAreaCode
+                                plz={formData.plz}
+                                ort={formData.ort}
+                            />
                         </div>
                         <div>
                             <Label htmlFor="mobiltelefon">Mobiltelefon</Label>
-                            <Input id="mobiltelefon" value={formData.mobiltelefon || ''} onChange={e => handleChange('mobiltelefon', e.target.value)} placeholder="+49 ..." />
+                            <PhoneInput
+                                id="mobiltelefon"
+                                value={formData.mobiltelefon || ''}
+                                onChange={v => handleChange('mobiltelefon', v)}
+                                variant="mobil"
+                            />
                         </div>
                     </div>
 
@@ -484,6 +545,17 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
                         </Button>
                     </div>
                 </div>
+
+                <KundeDuplikatBestaetigungModal
+                    isOpen={!!duplikatModal}
+                    duplikate={duplikatModal?.duplikate || []}
+                    onAbbrechen={() => setDuplikatModal(null)}
+                    onBestehendenWaehlen={handleBestehendenWaehlen}
+                    onTrotzdemAnlegen={() => {
+                        setDuplikatModal(null);
+                        speichern(true);
+                    }}
+                />
             </div>
         </div>
     );

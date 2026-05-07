@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet, Zap } from 'lucide-react';
+import { Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet, Zap, Bell } from 'lucide-react';
 
 interface TypBerechtigung {
     typ: string;
@@ -17,6 +17,7 @@ interface AbteilungBerechtigung {
     darfRechnungenGenehmigen: boolean;
     darfRechnungenSehen: boolean;
     darfEcheckApp: boolean;
+    darfFreigabeAnnahmePushen: boolean;
 }
 
 const DOKUMENT_TYP_LABELS: Record<string, string> = {
@@ -80,6 +81,13 @@ export default function AbteilungBerechtigungenEditor() {
         }));
     };
 
+    const handleTogglePushFlag = (abteilungId: number, field: 'darfFreigabeAnnahmePushen') => {
+        setBerechtigungen(prev => prev.map(abt => {
+            if (abt.abteilungId !== abteilungId) return abt;
+            return { ...abt, [field]: !abt[field] };
+        }));
+    };
+
     const handleSave = async (abteilung: AbteilungBerechtigung) => {
         setSaving(abteilung.abteilungId);
         try {
@@ -90,7 +98,8 @@ export default function AbteilungBerechtigungenEditor() {
                     berechtigungen: abteilung.berechtigungen,
                     darfRechnungenGenehmigen: abteilung.darfRechnungenGenehmigen,
                     darfRechnungenSehen: abteilung.darfRechnungenSehen,
-                    darfEcheckApp: abteilung.darfEcheckApp
+                    darfEcheckApp: abteilung.darfEcheckApp,
+                    darfFreigabeAnnahmePushen: abteilung.darfFreigabeAnnahmePushen
                 })
             });
             if (res.ok) {
@@ -286,6 +295,34 @@ export default function AbteilungBerechtigungenEditor() {
                                     <div>
                                         <span className="text-sm font-medium text-slate-900">Darf E-Check App verwenden</span>
                                         <p className="text-xs text-slate-500">Mitarbeiter dieser Abteilung sehen den E-Check Menüpunkt in der mobilen Zeiterfassungs-App</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Push-Benachrichtigungen */}
+                        <div className="mt-6 pt-4 border-t border-slate-200">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Bell className="w-4 h-4 text-slate-600" />
+                                <h3 className="font-semibold text-slate-700">Push-Benachrichtigungen</h3>
+                            </div>
+                            <div className="space-y-3">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <button
+                                        onClick={() => handleTogglePushFlag(abt.abteilungId, 'darfFreigabeAnnahmePushen')}
+                                        className={`w-6 h-6 rounded-md border-2 transition-colors flex-shrink-0 ${
+                                            abt.darfFreigabeAnnahmePushen
+                                                ? 'bg-green-500 border-green-500'
+                                                : 'bg-white border-slate-300 hover:border-slate-400'
+                                        }`}
+                                    >
+                                        {abt.darfFreigabeAnnahmePushen && <Check className="w-full h-full text-white p-0.5" />}
+                                    </button>
+                                    <div>
+                                        <span className="text-sm font-medium text-slate-900">Kunde hat angenommen</span>
+                                        <p className="text-xs text-slate-500">
+                                            Push aufs Handy, sobald ein Kunde ein Angebot oder eine Auftragsbestätigung digital annimmt.
+                                        </p>
                                     </div>
                                 </label>
                             </div>

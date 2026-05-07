@@ -98,7 +98,7 @@
         <mxCell id="svc-1" value="&lt;b&gt;Projekt &amp; Angebot&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;ProjektManagementService&lt;br&gt;ProjektPersistenceService&lt;br&gt;AngebotService&lt;br&gt;ArtikelService / ArtikelImportService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="80" y="505" width="200" height="85" as="geometry"/>
         </mxCell>
-        <mxCell id="svc-2" value="&lt;b&gt;Rechnungswesen&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;AusgangsDokService&lt;br&gt;RechnungPdfService&lt;br&gt;GeschaeftsdokumentService&lt;br&gt;ZugferdErstellService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="svc-2" value="&lt;b&gt;Rechnungswesen&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;AusgangsDokService&lt;br&gt;RechnungPdfService&lt;br&gt;ZugferdErstellService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="295" y="505" width="200" height="85" as="geometry"/>
         </mxCell>
         <mxCell id="svc-3" value="&lt;b&gt;E-Mail&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;EmailImportService (IMAP)&lt;br&gt;EmailAutoAssignmentService&lt;br&gt;EmailAttachmentProcessingService&lt;br&gt;SmtpHtmlMailSender&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
@@ -126,10 +126,10 @@
         </mxCell>
 
         <!-- ==================== REPOSITORY LAYER ==================== -->
-        <mxCell id="repo-layer" value="Repository Layer (73 Repositories – Spring Data JPA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e7ff;strokeColor=#4338ca;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=5;arcSize=8;" vertex="1" parent="1">
+        <mxCell id="repo-layer" value="Repository Layer (72 Repositories – Spring Data JPA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e7ff;strokeColor=#4338ca;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=5;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="60" y="715" width="1280" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="repo-info" value="&lt;font style=&quot;font-size:11px&quot;&gt;ProjektRepository | AngebotRepository | AusgangsGeschaeftsDokumentRepository | EmailRepository | ZeitbuchungRepository | KundeRepository | LieferantenRepository | MitarbeiterRepository | ArtikelRepository | GeschaeftsdokumentRepository | MonatsSaldoRepository | ... (73 total)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="repo-info" value="&lt;font style=&quot;font-size:11px&quot;&gt;ProjektRepository | AngebotRepository | AusgangsGeschaeftsDokumentRepository | EmailRepository | ZeitbuchungRepository | KundeRepository | LieferantenRepository | MitarbeiterRepository | ArtikelRepository | MonatsSaldoRepository | ... (72 total)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="80" y="740" width="1240" height="40" as="geometry"/>
         </mxCell>
 

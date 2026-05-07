@@ -336,6 +336,7 @@ public class LieferantenController {
                     .htmlToPlainText(htmlBody));
             emailContext.setSentAt(java.time.LocalDateTime.now());
             emailContext.setDirection(org.example.kalkulationsprogramm.domain.EmailDirection.OUT);
+            emailContext.setRead(true);
             emailContext = emailRepository.save(emailContext); // Save to get ID
 
             // Save Attachments

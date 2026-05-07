@@ -57,7 +57,7 @@ const KategorieTree: React.FC<KategorieTreeProps> = ({
     const renderNode = (kategorie: Produktkategorie, level = 0) => {
         const isExpanded = expanded.has(kategorie.id);
         const isSelected = selectedId === kategorie.id;
-        const hasChildren = !kategorie.isLeaf;
+        const hasChildren = !kategorie.leaf;
         const children = childrenCache.get(kategorie.id) || [];
 
         const handleExpandClick = async (e: React.MouseEvent) => {
@@ -451,11 +451,11 @@ export default function ProduktkategorieEditor() {
                                     <span className="text-slate-500">Typ:</span>
                                     <span className={cn(
                                         "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                                        selectedKategorie.isLeaf
+                                        selectedKategorie.leaf
                                             ? "bg-green-50 text-green-700"
                                             : "bg-slate-100 text-slate-700"
                                     )}>
-                                        {selectedKategorie.isLeaf ? 'Endkategorie' : 'Hat Unterkategorien'}
+                                        {selectedKategorie.leaf ? 'Endkategorie' : 'Hat Unterkategorien'}
                                     </span>
                                 </div>
                             </div>

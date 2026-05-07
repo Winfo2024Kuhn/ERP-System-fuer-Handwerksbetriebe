@@ -48,6 +48,7 @@ import { KategorieBestaetigenDialog } from './KategorieBestaetigenDialog';
 import { EmailComposeModal } from '../EmailComposeModal';
 import { anredeEnumToText } from '../EmailComposeForm';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
+import { EmailValidityDialog } from './EmailValidityDialog';
 import { useToast } from '../ui/toast';
 
 interface ImportedGaebBlock {
@@ -251,6 +252,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     // Email Versand State
     const [showEmailModal, setShowEmailModal] = useState(false);
     const [showFormatDialog, setShowFormatDialog] = useState(false);
+    const [showValidityDialog, setShowValidityDialog] = useState(false);
+    const [pendingFormat, setPendingFormat] = useState<PdfFormat | null>(null);
+    /** Vom Benutzer im Pop-up gewählte Gültigkeit des Annahme-Links (nur Angebote). */
+    const [gueltigkeitTage, setGueltigkeitTage] = useState<number | null>(null);
     const [emailLoading, setEmailLoading] = useState(false);
     const [emailAttachments, setEmailAttachments] = useState<File[]>([]);
     const [emailBody, setEmailBody] = useState<string>('');
@@ -264,10 +269,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const invoiceTypes: AusgangsGeschaeftsDokumentTyp[] = [
         'RECHNUNG', 'TEILRECHNUNG', 'ABSCHLAGSRECHNUNG', 'SCHLUSSRECHNUNG', 'GUTSCHRIFT', 'STORNO'
     ];
+    // Spiegelt AusgangsGeschaeftsDokument#istBearbeitbar() im Backend:
+    // storniert / digital angenommen (Angebot, AB) / gebuchte Rechnung → gesperrt.
+    // Wichtig für Auto-Save: ohne digitalAngenommen-Check feuert der 10s-Interval
+    // bei angenommenen Angeboten/ABs endlos Server-Fehler-Alerts.
     const isLocked = !!(
-        (dokument?.gebucht || dokument?.storniert) &&
-        dokument?.typ &&
-        invoiceTypes.includes(dokument.typ)
+        dokument?.storniert ||
+        dokument?.digitalAngenommen ||
+        (dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ))
     );
     const currentDokumentTyp = dokument?.typ ?? dokumentTyp;
     const showFinalizationPrompt = invoiceTypes.includes(currentDokumentTyp);
@@ -371,7 +380,15 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     }
                 }
 
-                setBlocks(current => [...current, ...mappedBlocks]);
+                setBlocks(current => {
+                    const firstNachIdx = current.findIndex(b => b.textbausteinRolle === 'NACH');
+                    if (firstNachIdx === -1) return [...current, ...mappedBlocks];
+                    return [
+                        ...current.slice(0, firstNachIdx),
+                        ...mappedBlocks,
+                        ...current.slice(firstNachIdx),
+                    ];
+                });
                 const sectionCount = mappedBlocks.filter(b => b.type === 'SECTION_HEADER').length;
                 showImportToast('success',
                     'GAEB Import erfolgreich',
@@ -672,8 +689,119 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         loadVorlagen();
     }, []);
 
-    // Textbausteine are NOT auto-inserted for new documents.
-    // Users add them manually via the "Textbaustein" picker button in the toolbar.
+    // --- Auto-Load Standard-Textbausteine je Dokumenttyp ---
+    // Beim Anlegen eines neuen Dokuments oder beim Umwandeln (z.B. Angebot -> AB)
+    // werden die in der Vorlage konfigurierten Vor-/Nachtexte automatisch als TEXT-Bloecke
+    // vor bzw. nach den Leistungen eingefuegt bzw. ausgetauscht. Manuell hinzugefuegte
+    // Texte (textbausteinRolle == undefined) bleiben dabei erhalten.
+    const lastAppliedDefaultsTypRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (loading) return;
+        if (!dokumentTyp) return;
+        if (dokument?.gebucht) return;
+
+        // Warten, bis der Kontext (Kunde / Projekt) geladen ist, damit
+        // {{KUNDENNAME}}, {{BAUVORHABEN}} etc. korrekt aufgeloest werden.
+        const kontextBereit = !!kontextDaten.kundenName
+            || !!kontextDaten.projektnummer
+            || !!kontextDaten.projektBauvorhaben
+            || !!kontextDaten.kundennummer;
+        if (!kontextBereit && !!(projektId || anfrageId)) return;
+
+        if (lastAppliedDefaultsTypRef.current === dokumentTyp) return;
+
+        // Bestehendes Dokument: nur ersetzen, wenn die vorhandenen Default-Textbausteine
+        // explizit zu einem anderen Dokumenttyp gehoeren (Umwandlungs-Fall) oder gar
+        // nicht vorhanden sind und das Dokument aus einem Vorgaenger entstanden ist
+        // (Backend hat beim Umwandeln die alten Textbausteine entfernt).
+        // Legacy-Bausteine ohne Typ-Marker bleiben unangetastet, da sie user-editiert
+        // sein koennten.
+        if (dokumentId) {
+            const vorOrNach = blocks.filter(b => b.textbausteinRolle != null);
+            const hasMatchingTyp = vorOrNach.some(b => b.textbausteinDokumenttyp === dokumentTyp);
+            if (hasMatchingTyp) return;
+
+            if (vorOrNach.length === 0) {
+                // Nur fuer umgewandelte Dokumente nachgenerieren.
+                if (!dokument?.vorgaengerId) return;
+            } else {
+                const hasStaleTyp = vorOrNach.some(
+                    b => b.textbausteinDokumenttyp != null && b.textbausteinDokumenttyp !== dokumentTyp,
+                );
+                // Nur bei explizit anderem Typ-Marker ersetzen.
+                if (!hasStaleTyp) return;
+            }
+        }
+
+        const typLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp;
+
+        let aborted = false;
+        (async () => {
+            try {
+                const tplRes = await fetch(
+                    `/api/formulare/templates/selection?dokumenttyp=${encodeURIComponent(typLabel)}`,
+                );
+                if (aborted || tplRes.status !== 200) return;
+                const templateName = (await tplRes.text()).trim();
+                if (!templateName) return;
+
+                const dfRes = await fetch(
+                    `/api/formulare/templates/${encodeURIComponent(templateName)}/textbaustein-defaults/resolve?dokumenttyp=${encodeURIComponent(typLabel)}`,
+                );
+                if (aborted || !dfRes.ok) return;
+                const data: {
+                    vortexte: Array<{ id: number; name: string; html?: string; beschreibung?: string }>;
+                    nachtexte: Array<{ id: number; name: string; html?: string; beschreibung?: string }>;
+                } = await dfRes.json();
+
+                if (aborted) return;
+                const buildBlock = (item: { id: number; html?: string; beschreibung?: string }, rolle: 'VOR' | 'NACH'): DocBlock => {
+                    const rawHtml = item.html || item.beschreibung || '';
+                    const resolvedHtml = replacePlaceholders(rawHtml, false);
+                    return {
+                        id: crypto.randomUUID(),
+                        type: 'TEXT',
+                        content: resolvedHtml,
+                        fontSize: 10,
+                        fett: false,
+                        textbausteinRolle: rolle,
+                        textbausteinId: item.id,
+                        textbausteinDokumenttyp: dokumentTyp,
+                    };
+                };
+
+                const vorBlocks = data.vortexte.map(v => buildBlock(v, 'VOR'));
+                const nachBlocks = data.nachtexte.map(n => buildBlock(n, 'NACH'));
+
+                lastAppliedDefaultsTypRef.current = dokumentTyp;
+
+                setBlocks(prev => {
+                    // Vorhandene Default-Bloecke entfernen, manuell eingefuegte Texte bleiben
+                    const cleaned = prev.filter(b => b.textbausteinRolle == null);
+                    if (vorBlocks.length === 0 && nachBlocks.length === 0) return cleaned;
+                    const firstLeistungIdx = cleaned.findIndex(
+                        b => b.type === 'SERVICE' || b.type === 'SECTION_HEADER',
+                    );
+                    if (firstLeistungIdx === -1) {
+                        // Noch keine Leistungen: Vor- und Nachtexte einfach anhaengen
+                        return [...cleaned, ...vorBlocks, ...nachBlocks];
+                    }
+                    return [
+                        ...cleaned.slice(0, firstLeistungIdx),
+                        ...vorBlocks,
+                        ...cleaned.slice(firstLeistungIdx),
+                        ...nachBlocks,
+                    ];
+                });
+            } catch {
+                // Stumm: fehlende Defaults sind kein Fehler.
+            }
+        })();
+        return () => { aborted = true; };
+        // blocks bewusst NICHT in den Deps (sonst Re-Run bei jedem Tastendruck);
+        // der Closure-Wert aus dem Render nach loadDokument reicht aus.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, dokumentId, dokumentTyp, replacePlaceholders, kontextDaten, projektId, anfrageId, dokument]);
 
     const syncDocumentIdInUrl = useCallback((savedDocumentId?: number) => {
         if (!savedDocumentId) return;
@@ -692,8 +820,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     }, []);
 
     // --- Save ---
-    const handleSave = useCallback(async () => {
-        if (isLocked) return;
+    const handleSave = useCallback(async (): Promise<AusgangsGeschaeftsDokument | null> => {
+        if (isLocked) return null;
         setSaving(true);
         try {
             const htmlInhalt = blocksToHtml(blocks);
@@ -741,6 +869,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             `${autoWps} Schweißanweisung${autoWps === 1 ? '' : 'en'} automatisch dem Projekt zugeordnet (EN 1090).`,
                         );
                     }
+                    return updated;
                 } else {
                     const errorText = await res.text();
                     console.error('Fehler beim Speichern:', res.status, errorText);
@@ -779,6 +908,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             `${autoWps} Schweißanweisung${autoWps === 1 ? '' : 'en'} automatisch dem Projekt zugeordnet (EN 1090).`,
                         );
                     }
+                    return created;
                 }
             }
         } catch (err) {
@@ -786,6 +916,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         } finally {
             setSaving(false);
         }
+        return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, bereitsAbgerechnetDurchAndere, globalRabatt]);
 
@@ -1011,6 +1142,22 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         });
     }, []);
 
+    // Fuegt einen neuen Block vor dem ersten NACH-Textbaustein ein,
+    // damit neue Leistungen / Section-Header / Subtotals immer zwischen
+    // Vor- und Nachtexten landen. Wenn keine Nachtexte existieren,
+    // wird der Block ans Ende angehaengt.
+    const insertBeforeNachtexte = (prev: DocBlock[], block: DocBlock): DocBlock[] => {
+        const firstNachIdx = prev.findIndex(b => b.textbausteinRolle === 'NACH');
+        if (firstNachIdx === -1) {
+            return [...prev, block];
+        }
+        return [
+            ...prev.slice(0, firstNachIdx),
+            block,
+            ...prev.slice(firstNachIdx),
+        ];
+    };
+
     // --- Block Actions ---
     const addBlock = (type: DocBlock['type'], payload?: Partial<DocBlock>) => {
         if (isLocked) return;
@@ -1050,13 +1197,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             return;
         }
 
-        setBlocks(prev => [...prev, newBlock]);
+        setBlocks(prev => insertBeforeNachtexte(prev, newBlock));
     };
 
     const handleKategorieBestaetigt = async (kategorieId: number) => {
         if (!pendingLeistungInsert || !projektId) return;
         const finalBlock = { ...pendingLeistungInsert.block, kategorieId };
-        setBlocks(prev => [...prev, finalBlock]);
+        setBlocks(prev => insertBeforeNachtexte(prev, finalBlock));
         setPendingLeistungInsert(null);
         try {
             const res = await fetch(`/api/projekte/${projektId}/produktkategorien`, {
@@ -1080,8 +1227,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
     const handleKategorieUeberspringen = () => {
         if (!pendingLeistungInsert) return;
-        setBlocks(prev => [...prev, pendingLeistungInsert.block]);
+        const name = pendingLeistungInsert.leistungName;
+        setBlocks(prev => insertBeforeNachtexte(prev, pendingLeistungInsert.block));
         setPendingLeistungInsert(null);
+        toast.info(`Leistung „${name}“ ohne Kategorie eingefügt`);
     };
 
     const updateBlock = (id: string, updates: Partial<DocBlock>) => {
@@ -1379,12 +1528,36 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         setShowFormatDialog(true);
     };
 
-    const handleFormatSelected = async (format: PdfFormat) => {
+    const handleFormatSelected = (format: PdfFormat) => {
+        // Bei Angeboten muss vor dem Versand die Gültigkeit des Annahme-Links
+        // gewählt werden. Bei allen anderen Dokumenttypen gibt es keinen
+        // Freigabe-Link, also direkt weiter zur PDF-Erzeugung.
+        if (dokumentTyp === 'ANGEBOT') {
+            setPendingFormat(format);
+            setShowFormatDialog(false);
+            setShowValidityDialog(true);
+            return;
+        }
+        void prepareAndOpenEmail(format, null);
+    };
+
+    const handleValidityConfirmed = (tage: number) => {
+        setGueltigkeitTage(tage);
+        setShowValidityDialog(false);
+        const format = pendingFormat;
+        if (format) {
+            void prepareAndOpenEmail(format, tage);
+        }
+    };
+
+    const prepareAndOpenEmail = async (format: PdfFormat, tage: number | null) => {
         setEmailLoading(true);
         try {
-            // 1. Auto-Save wenn nötig
+            // 1. Auto-Save wenn nötig – Rückgabewert liefert aktuelle ID (React-State ist async)
+            let aktiveDokumentId = dokument?.id ?? null;
             if (!dokument?.id || hasUnsavedChanges) {
-                await handleSave();
+                const saved = await handleSave();
+                if (saved?.id) aktiveDokumentId = saved.id;
             }
 
             // 2. Rechnungstypen: sofort buchen & sperren (instant lock vor E-Mail)
@@ -1410,15 +1583,27 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
             const blob = await response.blob();
 
-            // PDF serverseitig speichern für Offene Posten Ansicht
-            if (showFinalizationPrompt && dokument?.id) {
+            // PDF serverseitig speichern:
+            // - Immer für Angebote/AB → Dateiname wird an Freigabe-Token gehängt
+            // - Nur bei Buchung für Rechnungen → Offene-Posten-Ansicht
+            let pdfDateiname: string | null = null;
+            const brauchtPdfSpeicherung = aktiveDokumentId && (
+                dokumentTyp === 'ANGEBOT' ||
+                dokumentTyp === 'AUFTRAGSBESTAETIGUNG' ||
+                showFinalizationPrompt
+            );
+            if (brauchtPdfSpeicherung) {
                 try {
                     const arrayBuffer = await blob.arrayBuffer();
-                    await fetch(`/api/ausgangs-dokumente/${dokument.id}/pdf-speichern`, {
+                    const saveRes = await fetch(`/api/ausgangs-dokumente/${aktiveDokumentId}/pdf-speichern`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/pdf' },
                         body: arrayBuffer
                     });
+                    if (saveRes.ok) {
+                        const saved = await saveRes.json() as { dateiname?: string };
+                        pdfDateiname = saved.dateiname ?? null;
+                    }
                 } catch (e) {
                     console.warn('PDF konnte nicht serverseitig gespeichert werden:', e);
                 }
@@ -1430,6 +1615,21 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
 
             // 3. E-Mail-Body vom Backend generieren lassen
+            // Fälligkeitsdatum analog zum PDF berechnen (Rechnungsdatum + Zahlungsziel),
+            // damit der {{FAELLIGKEITSDATUM}}-Platzhalter im DB-Template gefüllt wird.
+            // Wir bauen das Datum aus lokalen Komponenten, weil `new Date('YYYY-MM-DD')`
+            // als UTC-Mitternacht parst und der anschließende `toISOString()`-Roundtrip
+            // in CET/CEST das Datum um einen Tag vor verschieben kann.
+            const rechnungsdatumIso = datum || (() => {
+                const t = new Date();
+                return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+            })();
+            const zahlungszielTage = kontextDaten.zahlungsziel ?? 8;
+            const [yy, mm, dd] = rechnungsdatumIso.split('-').map(Number);
+            const faelligDate = new Date(yy, mm - 1, dd);
+            faelligDate.setDate(faelligDate.getDate() + zahlungszielTage);
+            const faelligkeitsdatumIso = `${faelligDate.getFullYear()}-${String(faelligDate.getMonth() + 1).padStart(2, '0')}-${String(faelligDate.getDate()).padStart(2, '0')}`;
+
             let generatedBody = '';
             try {
                 const templateRes = await fetch('/api/email/template', {
@@ -1438,12 +1638,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     body: JSON.stringify({
                         dokumentTyp: dokumentTyp,
                         anrede: anredeEnumToText(kontextDaten.anrede),
-                        kundenName: kontextDaten.ansprechpartner || '',
+                        kundenName: kontextDaten.kundenName || '',
+                        ansprechpartner: kontextDaten.ansprechpartner || '',
                         bauvorhaben: kontextDaten.projektBauvorhaben || betreff || '',
                         projektnummer: kontextDaten.projektnummer || '',
                         dokumentnummer: dokumentNummer || '',
-                        rechnungsdatum: datum || new Date().toISOString().split('T')[0],
+                        rechnungsdatum: rechnungsdatumIso,
+                        faelligkeitsdatum: faelligkeitsdatumIso,
                         betrag: nettosumme ? `${(nettosumme * 1.19).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` : undefined,
+                        dokumentId: aktiveDokumentId,
+                        isAnfrage: !!anfrageId,
+                        recipient: kontextDaten.kundenEmails?.[0] ?? null,
+                        pdfDateiname: pdfDateiname,
+                        gueltigkeitTage: tage,
                     })
                 });
                 if (templateRes.ok) {
@@ -2091,6 +2298,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             fontSize: extractFontSizeFromHtml(resolvedContent) || extractFontSizeFromHtml(htmlContent),
                             fett: extractBoldFromHtml(resolvedContent) || extractBoldFromHtml(htmlContent),
                         });
+                        setShowTextbausteinPicker(false);
+                        toast.success(`Textbaustein „${tb.name}“ eingefügt`);
                     }}
                     onClose={() => setShowTextbausteinPicker(false)}
                 />
@@ -2100,6 +2309,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     leistungen={leistungen}
                     onSelect={(l) => {
                         const descHtml = l.description || '';
+                        const hasKategorie = l.folderId != null && projektId != null;
                         addBlock('SERVICE', {
                             title: l.name,
                             description: descHtml,
@@ -2111,6 +2321,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             leistungId: l.id,
                             kategorieId: l.folderId ?? undefined,
                         });
+                        setShowLeistungPicker(false);
+                        if (!hasKategorie) {
+                            toast.success(`Leistung „${l.name}“ eingefügt`);
+                        }
                     }}
                     onClose={() => setShowLeistungPicker(false)}
                 />
@@ -2129,6 +2343,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             fontSize: extractFontSizeFromHtml(descHtml),
                             fett: extractBoldFromHtml(descHtml),
                         });
+                        setShowStundensatzPicker(false);
+                        toast.success(`Stundensatz „${az.bezeichnung}“ eingefügt`);
                     }}
                     onClose={() => setShowStundensatzPicker(false)}
                 />
@@ -2171,6 +2387,18 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 loading={emailLoading}
             />
 
+            {/* Gültigkeitsdauer-Auswahl (nur Angebote) */}
+            <EmailValidityDialog
+                isOpen={showValidityDialog}
+                onClose={() => {
+                    setShowValidityDialog(false);
+                    setPendingFormat(null);
+                    setEmailLoading(false);
+                }}
+                onConfirm={handleValidityConfirmed}
+                defaultTage={gueltigkeitTage ?? 14}
+            />
+
             {/* E-Mail Versand Modal */}
             <EmailComposeModal
                 isOpen={showEmailModal}
@@ -2193,6 +2421,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 initialRecipient={kontextDaten.kundenEmails?.[0]}
                 initialSubject={emailSubject}
                 initialBody={emailBody}
+                gueltigkeitTage={gueltigkeitTage ?? undefined}
                 onSuccess={async () => {
                     // Versanddatum setzen (Buchung erfolgte bereits vor E-Mail-Vorbereitung)
                     if (dokument?.id) {
@@ -2212,6 +2441,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setShowEmailModal(false);
                     setEmailAttachments([]);
                     setEmailBody('');
+                    setGueltigkeitTage(null);
+                    setPendingFormat(null);
                 }}
             />
         </div>

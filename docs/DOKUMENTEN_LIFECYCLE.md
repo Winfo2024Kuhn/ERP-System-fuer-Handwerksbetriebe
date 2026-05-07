@@ -399,9 +399,7 @@ Verifiziert
 
 | Entity | Zweck |
 |---|---|
-| `Geschaeftsdokument` | Allgemeine Geschäftsdokumente im Projektkontext |
 | `Dokumenttyp` | Enum mit Labels (10 Typen inkl. Mahnungen) |
-| `Zahlung` | Zahlungs-Entity für Teilzahlungen |
 
 ### 7.4 Services
 
@@ -412,4 +410,3 @@ Verifiziert
 | `ZugferdErstellService` | ZUGFeRD-PDF erstellen |
 | `ZugferdExtractorService` | ZUGFeRD-Daten aus PDFs extrahieren |
 | `ZugferdConverterService` | Daten nach ZugferdDaten konvertieren |
-| `GeschaeftsdokumentService` | CRUD für Projekt-Geschäftsdokumente |

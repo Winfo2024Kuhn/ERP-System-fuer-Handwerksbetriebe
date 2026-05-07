@@ -38,6 +38,13 @@ const mockStats = {
 };
 
 // ---- Test helpers ----
+// Folder-Endpoints werden mit Pagination-Query (`?offset=0&limit=50`) aufgerufen.
+// Der Mock matcht daher gegen den Pfad ohne Query-String.
+function stripQuery(url: string): string {
+    const idx = url.indexOf('?');
+    return idx === -1 ? url : url.substring(0, idx);
+}
+
 function mockFetchResponses(overrides: Record<string, unknown> = {}) {
     const paginate = (items: unknown[]) => ({ content: items, page: 0, size: 50, totalElements: items.length, hasMore: false });
 
@@ -64,7 +71,7 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
         }
 
         // Check for paginated folder endpoints (url may have query params)
-        const basePath = url.split('?')[0];
+        const basePath = stripQuery(url);
         if (folderData[basePath] !== undefined) {
             const overrideData = overrides[basePath];
             const items = overrideData !== undefined ? overrideData as unknown[] : folderData[basePath];
@@ -74,6 +81,8 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
             });
         }
 
+        // Erst mit voller URL probieren (fuer Endpoints mit Pflicht-Query wie /search?q=),
+        // dann Fallback auf den Pfad ohne Query (Pagination-Endpoints).
         const data = responses[url] ?? responses[basePath];
         if (data !== undefined) {
             return Promise.resolve({
@@ -137,7 +146,7 @@ describe('EmailCenter', () => {
         it('ruft inbox und stats Endpoints auf', async () => {
             renderEmailCenter();
             await waitFor(() => {
-                expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/emails/inbox'));
+                expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/emails\/inbox(\?|$)/));
                 expect(fetchMock).toHaveBeenCalledWith('/api/emails/stats');
             });
         });
@@ -152,7 +161,7 @@ describe('EmailCenter', () => {
             await user.click(screen.getByText('Gesendet'));
 
             await waitFor(() => {
-                expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/emails/sent'));
+                expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/emails\/sent(\?|$)/));
             });
         });
     });
@@ -417,9 +426,12 @@ describe('EmailCenter', () => {
         it('aktualisiert E-Mails nach 30 Sekunden', async () => {
             renderEmailCenter();
 
-            await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/emails/inbox')));
+            const inboxMatcher = (c: [string, ...unknown[]]) =>
+                typeof c[0] === 'string' && c[0].startsWith('/api/emails/inbox');
 
-            const callsBefore = fetchMock.mock.calls.filter((c: [string]) => c[0].startsWith('/api/emails/inbox')).length;
+            await waitFor(() => expect(fetchMock.mock.calls.some(inboxMatcher)).toBe(true));
+
+            const callsBefore = fetchMock.mock.calls.filter(inboxMatcher).length;
 
             // Advance timers by 30 seconds
             await act(async () => {
@@ -427,7 +439,7 @@ describe('EmailCenter', () => {
             });
 
             await waitFor(() => {
-                const callsAfter = fetchMock.mock.calls.filter((c: [string]) => c[0].startsWith('/api/emails/inbox')).length;
+                const callsAfter = fetchMock.mock.calls.filter(inboxMatcher).length;
                 expect(callsAfter).toBeGreaterThan(callsBefore);
             });
         });

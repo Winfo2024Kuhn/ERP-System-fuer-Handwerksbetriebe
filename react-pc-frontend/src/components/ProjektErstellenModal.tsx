@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from './ui/button';
 import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder, Euro, Trash2, RefreshCw } from 'lucide-react';
-import { Select } from './ui/select-custom';
 import { CategoryMultiSelectModal } from './CategoryMultiSelectModal';
 import { EmailListInput } from './EmailListInput';
+import { AddressAutocomplete } from './AddressAutocomplete';
+import { KundeAnlegenForm } from './KundeAnlegenForm';
 import type { Kunde, Anfrage } from '../types';
 
 interface SelectedCategory {
@@ -179,283 +180,6 @@ const KundenAuswahlView: React.FC<{
                     </Button>
                 </div>
             )}
-        </div>
-    );
-};
-
-// Sub-view for creating a new customer
-const KundeAnlegenView: React.FC<{
-    onSuccess: (kunde: Kunde) => void;
-    onBack: () => void;
-}> = ({ onSuccess, onBack }) => {
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [kundennummerError, setKundennummerError] = useState<string | null>(null);
-    const [autoKundennummer, setAutoKundennummer] = useState(true);
-    const [formData, setFormData] = useState({
-        name: '',
-        kundennummer: '',
-        anrede: '',
-        ansprechspartner: '',
-        strasse: '',
-        plz: '',
-        ort: '',
-        telefon: '',
-        mobiltelefon: '',
-        email: '',
-        zahlungsziel: 8,
-    });
-
-    // Nächste verfügbare Kundennummer laden
-    useEffect(() => {
-        if (autoKundennummer) {
-            fetch('/api/kunden/next-kundennummer')
-                .then(res => res.json())
-                .then(data => {
-                    setFormData(prev => ({ ...prev, kundennummer: data.kundennummer || '' }));
-                })
-                .catch(() => {});
-        }
-    }, [autoKundennummer]);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!formData.name.trim()) {
-            setError('Bitte Kundennamen angeben');
-            return;
-        }
-        if (!autoKundennummer && !formData.kundennummer.trim()) {
-            setError('Bitte Kundennummer angeben oder "Automatisch" aktivieren');
-            return;
-        }
-
-        setSaving(true);
-        setError(null);
-        try {
-            const payload = {
-                name: formData.name.trim(),
-                kundennummer: autoKundennummer ? '' : formData.kundennummer.trim(),
-                anrede: formData.anrede || null,
-                ansprechspartner: formData.ansprechspartner.trim() || null,
-                strasse: formData.strasse.trim() || null,
-                plz: formData.plz.trim() || null,
-                ort: formData.ort.trim() || null,
-                telefon: formData.telefon.trim() || null,
-                mobiltelefon: formData.mobiltelefon.trim() || null,
-                zahlungsziel: formData.zahlungsziel || 8,
-                kundenEmails: formData.email.trim() ? [formData.email.trim()] : [],
-            };
-
-            const res = await fetch('/api/kunden', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                const msg = errData.message || errData.detail || 'Kunde konnte nicht angelegt werden';
-                if (res.status === 409) {
-                    setKundennummerError(msg);
-                    return;
-                }
-                throw new Error(msg);
-            }
-
-            const created = await res.json();
-            onSuccess(created);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Fehler beim Speichern');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    return (
-        <div className="space-y-4">
-            <div className="flex items-center gap-3 mb-4">
-                <button onClick={onBack} className="text-slate-500 hover:text-slate-700">
-                    <ChevronLeft className="w-5 h-5" />
-                </button>
-                <h3 className="text-lg font-semibold text-slate-900">Neuen Kunden anlegen</h3>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Name & Kundennummer */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Kundenname *</label>
-                        <input
-                            type="text"
-                            value={formData.name}
-                            onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                            placeholder="Firma / Name"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="block text-sm font-medium text-slate-700">Kundennummer</label>
-                            <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={autoKundennummer}
-                                    onChange={e => {
-                                        const checked = e.target.checked;
-                                        setAutoKundennummer(checked);
-                                        if (checked) {
-                                            fetch('/api/kunden/next-kundennummer')
-                                                .then(res => res.json())
-                                                .then(data => setFormData(prev => ({ ...prev, kundennummer: data.kundennummer || '' })))
-                                                .catch(() => {});
-                                        } else {
-                                            setFormData(prev => ({ ...prev, kundennummer: '' }));
-                                        }
-                                    }}
-                                    className="accent-rose-600 w-4 h-4"
-                                />
-                                <span className="text-slate-600">Automatisch</span>
-                            </label>
-                        </div>
-                        <input
-                            type="text"
-                            value={formData.kundennummer}
-                            onChange={e => {
-                                setFormData(prev => ({ ...prev, kundennummer: e.target.value }));
-                                setKundennummerError(null);
-                            }}
-                            placeholder={autoKundennummer ? 'Wird automatisch vergeben' : 'z.B. K-1234'}
-                            disabled={autoKundennummer}
-                            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-50 disabled:text-slate-400 ${kundennummerError ? 'border-rose-500 bg-rose-50' : 'border-slate-200'}`}
-                        />
-                        {kundennummerError && (
-                            <p className="mt-1 text-xs text-rose-600">{kundennummerError}</p>
-                        )}
-                    </div>
-                </div>
-
-                {/* Anrede & Ansprechpartner */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Anrede</label>
-                        <Select
-                            options={[
-                                { value: 'HERR', label: 'Sehr geehrter Herr' },
-                                { value: 'FRAU', label: 'Sehr geehrte Frau' },
-                                { value: 'DAMEN_HERREN', label: 'Sehr geehrte Damen und Herren' }
-                            ]}
-                            value={formData.anrede}
-                            onChange={val => setFormData(prev => ({ ...prev, anrede: val }))}
-                            placeholder="Anrede wählen"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Ansprechpartner</label>
-                        <input
-                            type="text"
-                            value={formData.ansprechspartner}
-                            onChange={e => setFormData(prev => ({ ...prev, ansprechspartner: e.target.value }))}
-                            placeholder="Vor- und Nachname"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                </div>
-
-                {/* E-Mail */}
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">E-Mail</label>
-                    <input
-                        type="email"
-                        value={formData.email}
-                        onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                        placeholder="email@example.com"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                </div>
-
-                {/* Telefon & Mobiltelefon */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Telefon</label>
-                        <input
-                            type="tel"
-                            value={formData.telefon}
-                            onChange={e => setFormData(prev => ({ ...prev, telefon: e.target.value }))}
-                            placeholder="z.B. +49 123 456789"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Mobiltelefon</label>
-                        <input
-                            type="tel"
-                            value={formData.mobiltelefon}
-                            onChange={e => setFormData(prev => ({ ...prev, mobiltelefon: e.target.value }))}
-                            placeholder="z.B. +49 170 1234567"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                </div>
-
-                {/* Adresse */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Straße</label>
-                        <input
-                            type="text"
-                            value={formData.strasse}
-                            onChange={e => setFormData(prev => ({ ...prev, strasse: e.target.value }))}
-                            placeholder="Straße + Hausnummer"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">PLZ</label>
-                            <input
-                                type="text"
-                                value={formData.plz}
-                                onChange={e => setFormData(prev => ({ ...prev, plz: e.target.value }))}
-                                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Ort</label>
-                            <input
-                                type="text"
-                                value={formData.ort}
-                                onChange={e => setFormData(prev => ({ ...prev, ort: e.target.value }))}
-                                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Zahlungsziel */}
-                <div className="w-1/3">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Zahlungsziel (Tage)</label>
-                    <input
-                        type="number"
-                        min="0"
-                        value={formData.zahlungsziel}
-                        onChange={e => setFormData(prev => ({ ...prev, zahlungsziel: parseInt(e.target.value) || 8 }))}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                </div>
-
-                {error && (
-                    <p className="text-sm text-red-600">{error}</p>
-                )}
-
-                <div className="flex justify-end gap-3 pt-2">
-                    <Button type="button" variant="outline" onClick={onBack} disabled={saving}>
-                        Abbrechen
-                    </Button>
-                    <Button type="submit" disabled={saving} className="bg-rose-600 text-white hover:bg-rose-700">
-                        {saving ? 'Speichern...' : 'Kunde anlegen'}
-                    </Button>
-                </div>
-            </form>
         </div>
     );
 };
@@ -719,6 +443,36 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         }
     }, [isOpen, editProjekt, loadNaechsteAuftragsnummer]);
 
+    // Beim Auswählen einer Anfrage: Produktkategorien aus AB/Angebot vorschlagen
+    // (immer Leaf-Kategorien, AB hat Vorrang vor Angebot). Im Edit-Modus nicht überschreiben.
+    useEffect(() => {
+        if (!selectedAnfrage || isEditMode) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`/api/anfragen/${selectedAnfrage.id}/produktkategorien-vorschlag`);
+                if (!res.ok) return;
+                const data: Array<{
+                    kategorieId: number;
+                    bezeichnung: string;
+                    pfad?: string;
+                    verrechnungseinheit?: { name: string; anzeigename: string };
+                    menge: number;
+                }> = await res.json();
+                if (cancelled) return;
+                setSelectedCategories(data.map(v => ({
+                    id: v.kategorieId,
+                    bezeichnung: v.pfad || v.bezeichnung,
+                    menge: v.menge,
+                    verrechnungseinheit: v.verrechnungseinheit?.anzeigename || v.verrechnungseinheit?.name || '',
+                })));
+            } catch (err) {
+                console.error('Kategorie-Vorschlag konnte nicht geladen werden:', err);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [selectedAnfrage, isEditMode]);
+
     // When Anfrage is selected, prefill form including Kunde
     useEffect(() => {
         if (selectedAnfrage) {
@@ -752,15 +506,22 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                     kundennummer: selectedAnfrage.kundennummer || '',
                 });
             }
+            // Projektadresse aus Anfrage vorausfüllen, wenn dort eine Objektadresse
+            // hinterlegt ist (anfrage.projektStrasse/Plz/Ort). So muss der Nutzer
+            // sie nicht erneut eintippen oder die "Kundenadresse übernehmen"-Checkbox
+            // aktivieren — sie hat sich bei der Anfrageaufnahme schon aufgemacht.
+            const hatAnfrageAdresse = !!(selectedAnfrage.projektStrasse
+                || selectedAnfrage.projektPlz
+                || selectedAnfrage.projektOrt);
             setFormData({
                 bauvorhaben: selectedAnfrage.bauvorhaben || '',
                 kunde: selectedAnfrage.kundenName || '',
                 kundennummer: selectedAnfrage.kundennummer || '',
                 kundenId: selectedAnfrage.kundenId,
                 auftragsnummer: '',
-                strasse: '',
-                plz: '',
-                ort: '',
+                strasse: hatAnfrageAdresse ? (selectedAnfrage.projektStrasse || '') : '',
+                plz: hatAnfrageAdresse ? (selectedAnfrage.projektPlz || '') : '',
+                ort: hatAnfrageAdresse ? (selectedAnfrage.projektOrt || '') : '',
                 anfrageIds: [selectedAnfrage.id],
             });
         }
@@ -955,7 +716,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
 
                     {/* Sub-view: Kunde anlegen */}
                     {subView === 'kundeNeu' && (
-                        <KundeAnlegenView
+                        <KundeAnlegenForm
                             onSuccess={handleKundeCreated}
                             onBack={() => setSubView('kundensuche')}
                         />
@@ -1433,42 +1194,20 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                         </span>
                                     </label>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div className="md:col-span-2">
-                                        <input
-                                            type="text"
-                                            value={formData.strasse || ''}
-                                            onChange={e => {
-                                                handleInputChange('strasse', e.target.value);
-                                                if (useKundeAdresse) setUseKundeAdresse(false);
-                                            }}
-                                            placeholder="Straße"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <input
-                                            type="text"
-                                            value={formData.plz || ''}
-                                            onChange={e => {
-                                                handleInputChange('plz', e.target.value);
-                                                if (useKundeAdresse) setUseKundeAdresse(false);
-                                            }}
-                                            placeholder="PLZ"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={formData.ort || ''}
-                                            onChange={e => {
-                                                handleInputChange('ort', e.target.value);
-                                                if (useKundeAdresse) setUseKundeAdresse(false);
-                                            }}
-                                            placeholder="Ort"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                        />
-                                    </div>
-                                </div>
+                                <AddressAutocomplete
+                                    showLabels={false}
+                                    value={{
+                                        strasse: formData.strasse || '',
+                                        plz: formData.plz || '',
+                                        ort: formData.ort || ''
+                                    }}
+                                    onChange={next => {
+                                        handleInputChange('strasse', next.strasse);
+                                        handleInputChange('plz', next.plz);
+                                        handleInputChange('ort', next.ort);
+                                        if (useKundeAdresse) setUseKundeAdresse(false);
+                                    }}
+                                />
                             </div>
                         </div>
                     )}

@@ -79,26 +79,29 @@ export default function LieferantLieferscheinePage() {
 
     const loadData = async () => {
         setLoading(true)
-        try {
-            const token = localStorage.getItem('zeiterfassung_token')
+        const token = localStorage.getItem('zeiterfassung_token')
 
-            // 1. Load Lieferant Name
-            const liefRes = await fetch(`/api/lieferanten/${lieferantId}?token=${token}`)
-            if (liefRes.ok) {
-                const data = await liefRes.json()
-                setLieferant({ id: data.id, lieferantenname: data.lieferantenname })
-            }
+        // Lieferant + Dokumente parallel laden – Liste ist der kritische Pfad,
+        // Name ist nur kosmetisch und blockiert nichts mehr.
+        const liefPromise = fetch(`/api/lieferanten/${lieferantId}?token=${token}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data) setLieferant({ id: data.id, lieferantenname: data.lieferantenname })
+            })
+            .catch(err => console.error('Lieferant laden fehlgeschlagen', err))
 
-            // 2. Load Documents
-            const docRes = await fetch(`/api/lieferanten/${lieferantId}/dokumente?typ=LIEFERSCHEIN&token=${token}`)
-            if (docRes.ok) {
-                const data = await docRes.json()
+        const docPromise = fetch(`/api/lieferanten/${lieferantId}/dokumente?typ=LIEFERSCHEIN&token=${token}`)
+            .then(res => res.ok ? res.json() : [])
+            .then(data => {
                 setLieferscheine(data)
-            }
-        } catch (err) {
-            console.error(err)
-        }
-        setLoading(false)
+                setLoading(false) // Liste ist da → UI kann rendern
+            })
+            .catch(err => {
+                console.error('Lieferscheine laden fehlgeschlagen', err)
+                setLoading(false)
+            })
+
+        await Promise.all([liefPromise, docPromise])
     }
 
     const filteredLieferscheine = lieferscheine.filter(d => {

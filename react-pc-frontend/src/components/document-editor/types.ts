@@ -29,6 +29,21 @@ export interface DocBlock {
     leistungId?: number;
     /** ID der Produktkategorie (von Leistung.kategorie) */
     kategorieId?: number;
+    /**
+     * Markiert TEXT-Bloecke, die automatisch aus den
+     * "Standard-Texte"-Defaults der Vorlage eingefuegt wurden.
+     * Beim Wechsel des Dokumenttyps werden diese ersetzt; manuell
+     * eingefuegte Textbausteine (ohne Rolle) bleiben erhalten.
+     */
+    textbausteinRolle?: 'VOR' | 'NACH';
+    /** ID des verwendeten Textbausteins (zur Wiedererkennung). */
+    textbausteinId?: number;
+    /**
+     * Fuer welchen Dokumenttyp dieser Default-Textbaustein erzeugt wurde.
+     * Wird beim Umwandeln (z.B. Angebot -> AB) verwendet, um veraltete
+     * Standard-Textbausteine automatisch durch die des neuen Typs zu ersetzen.
+     */
+    textbausteinDokumenttyp?: AusgangsGeschaeftsDokumentTyp;
 }
 
 export interface DocumentEditorProps {

@@ -37,6 +37,36 @@ public class EmailSignatureController {
                 .orElse(ResponseEntity.noContent().build());
     }
 
+    /**
+     * Liefert die aktuelle System-Signatur (fuer automatische Mails). Im UI
+     * wird damit angezeigt, welche Signatur an Auto-AB / Mahnung angehaengt
+     * wird — und ob der Inhaber noch den Platzhalter editieren muss.
+     */
+    @GetMapping("/system-default")
+    public ResponseEntity<Map<String, Object>> getSystemDefaultRaw() {
+        return service.list().stream()
+                .filter(EmailSignature::isSystemDefault)
+                .findFirst()
+                .map(sig -> ResponseEntity.ok(Map.of(
+                        "signature", (Object) sig,
+                        "isPlatzhalter", EmailSignatureService.isPlatzhalter(sig)
+                )))
+                .orElse(ResponseEntity.noContent().build());
+    }
+
+    /**
+     * Markiert die angegebene Signatur als System-Default. Andere Signaturen
+     * verlieren das Flag automatisch (siehe Service).
+     */
+    @PutMapping("/{id}/system-default")
+    public ResponseEntity<EmailSignature> setSystemDefault(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(service.setSystemDefault(id));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
     @PostMapping
     public ResponseEntity<EmailSignature> save(@RequestBody SaveSignatureRequest req) {
         EmailSignature sig = new EmailSignature();

@@ -23,6 +23,9 @@ public class EmailSignature {
     @Transient
     private boolean defaultSignature;
 
+    @Column(name = "is_system_default", nullable = false)
+    private boolean isSystemDefault = false;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -53,6 +56,8 @@ public class EmailSignature {
     public void setHtml(String html) { this.html = html; }
     public boolean isDefaultSignature() { return defaultSignature; }
     public void setDefaultSignature(boolean defaultSignature) { this.defaultSignature = defaultSignature; }
+    public boolean isSystemDefault() { return isSystemDefault; }
+    public void setSystemDefault(boolean systemDefault) { this.isSystemDefault = systemDefault; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

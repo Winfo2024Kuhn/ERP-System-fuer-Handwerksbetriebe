@@ -47,6 +47,75 @@ public class EmailSignatureService {
         return getDefaultForFrontendUser(profileId, null);
     }
 
+    /**
+     * Liefert die Signatur, die fuer automatisch versendete E-Mails (Auto-AB,
+     * Mahnverfahren, ...) angehaengt wird. Genau eine Zeile in
+     * {@code email_signature} traegt {@code is_system_default = 1}; die
+     * Konsistenz wird ueber {@link #setSystemDefault(Long)} sichergestellt.
+     *
+     * <p>Solange der Seed-Platzhalter aus V256 unveraendert ist (Marker
+     * {@code data-system-placeholder="1"}), liefert die Methode
+     * {@link Optional#empty()} — wir wollen keinen Aufforderungstext an
+     * echte Empfaenger versenden. Sobald der Inhaber den Inhalt im UI
+     * austauscht, faellt der Marker raus und die Signatur wird genutzt.</p>
+     */
+    @Transactional(readOnly = true)
+    public Optional<EmailSignature> getSystemDefaultSignature() {
+        return signatureRepository.findFirstByIsSystemDefaultTrue()
+                .filter(sig -> !isPlatzhalter(sig))
+                .map(sig -> {
+                    Optional.ofNullable(sig.getImages()).ifPresent(List::size);
+                    return sig;
+                });
+    }
+
+    /**
+     * Erkennt die unveraenderte Seed-Signatur aus V256 anhand des
+     * {@code data-system-placeholder="1"}-Markers. Wird der HTML-Inhalt im
+     * UI ersetzt, verschwindet der Marker und die Signatur gilt als
+     * "befuellt".
+     */
+    public static boolean isPlatzhalter(EmailSignature sig) {
+        if (sig == null || sig.getHtml() == null) return true;
+        return sig.getHtml().contains("data-system-placeholder=\"1\"")
+                || sig.getHtml().contains("data-system-placeholder='1'");
+    }
+
+    /**
+     * Haengt die System-Signatur an einen vorgerenderten HTML-Mail-Body an —
+     * idempotent: ist die Signatur schon im Body, wird nichts dupliziert. Wenn
+     * keine System-Signatur konfiguriert oder der Seed-Platzhalter noch
+     * unveraendert ist, wird der Body unveraendert zurueckgegeben.
+     *
+     * <p>Wird von {@link AutoMahnVersandService} und
+     * {@link AutoAuftragsbestaetigungVersandService} genutzt, damit alle
+     * automatisch versendeten Mails einheitlich die im UI hinterlegte
+     * System-Signatur tragen.</p>
+     */
+    @Transactional(readOnly = true)
+    public String appendSystemSignatureIfConfigured(String htmlBody) {
+        return getSystemDefaultSignature()
+                .map(sig -> ensureSignaturePresentOnce(htmlBody, sig, null))
+                .orElse(htmlBody);
+    }
+
+    /**
+     * Setzt die angegebene Signatur als System-Default fuer automatische
+     * E-Mails. Loescht die Markierung von allen anderen Zeilen, damit hoechstens
+     * eine Signatur das Flag traegt.
+     */
+    @Transactional
+    public EmailSignature setSystemDefault(Long signatureId) {
+        EmailSignature sig = signatureRepository.findById(signatureId)
+                .orElseThrow(() -> new IllegalArgumentException("Signatur nicht gefunden: " + signatureId));
+        signatureRepository.clearSystemDefaultExcept(signatureId);
+        if (!sig.isSystemDefault()) {
+            sig.setSystemDefault(true);
+            sig = signatureRepository.save(sig);
+        }
+        return sig;
+    }
+
     @Transactional(readOnly = true)
     public Optional<EmailSignature> getDefaultForFrontendUser(Long profileId, String frontendUserDisplayName) {
         Optional<FrontendUserProfile> profileOpt = Optional.empty();

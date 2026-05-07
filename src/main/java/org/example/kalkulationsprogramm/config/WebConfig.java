@@ -25,12 +25,9 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
-        // SPA-Forwarding: React-Routen an index.html weiterleiten
-        registry.addViewController("/dokument-editor").setViewName("forward:/index.html");
-        registry.addViewController("/ki-assistent").setViewName("forward:/index.html");
-
-        // Zeiterfassung PWA: alle Navigationsanfragen auf index.html weiterleiten
-        // Wichtig: ohne Trailing-Slash und mit Trailing-Slash abdecken
+        // PC-SPA: Reload auf React-Routen (z.B. /dokumentuebersicht, /dokument-editor,
+        // /ki-assistent) wird vom SpaErrorController via 404-Forward auf /index.html
+        // behandelt. Hier nur Mobile-PWA, da diese auf einem anderen index.html liegt.
         registry.addViewController("/zeiterfassung").setViewName("forward:/zeiterfassung/index.html");
         registry.addViewController("/zeiterfassung/").setViewName("forward:/zeiterfassung/index.html");
     }

@@ -7,6 +7,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsG
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
+import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,15 @@ class AusgangsGeschaeftsDokumentControllerTest {
 
     @MockBean
     private AusgangsGeschaeftsDokumentService service;
+
+    @MockBean
+    private DokumentFreigabeService dokumentFreigabeService;
+
+    @MockBean
+    private org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentAuditService auditService;
+
+    @MockBean
+    private org.example.kalkulationsprogramm.service.AutoMahnVersandService autoMahnVersandService;
 
     private AusgangsGeschaeftsDokumentResponseDto buildResponseDto(Long id, String nummer) {
         AusgangsGeschaeftsDokumentResponseDto dto = new AusgangsGeschaeftsDokumentResponseDto();
@@ -125,7 +135,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void erstelltDokumentErfolgreich() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(1L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class))).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -143,7 +153,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Erstellung mit ungültigen Daten gibt 400 zurück")
         void erstellungMitUngueltigemDtoGibt400() throws Exception {
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class)))
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any()))
                     .willThrow(new RuntimeException("Betrag muss positiv sein"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -161,7 +171,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void sqlInjectionImBetreff() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(1L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class))).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-001"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -180,7 +190,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void xssInHtmlInhalt() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(1L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class))).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-001"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -251,7 +261,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void buchtDokumentErfolgreich() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(1L);
-            given(service.buchen(1L)).willReturn(entity);
+            given(service.buchen(eq(1L), any(), any())).willReturn(entity);
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/buchen"))
@@ -261,7 +271,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Doppeltes Buchen gibt 400 zurück")
         void doppeltessBuchenGibt400() throws Exception {
-            given(service.buchen(1L)).willThrow(new RuntimeException("Bereits gebucht"));
+            given(service.buchen(eq(1L), any(), any())).willThrow(new RuntimeException("Bereits gebucht"));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/buchen"))
                     .andExpect(status().isBadRequest());
@@ -275,7 +285,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Bucht nach E-Mail-Versand erfolgreich")
         void buchtNachEmailVersandErfolgreich() throws Exception {
-            given(service.buchenNachEmailVersand(1L)).willReturn(new AusgangsGeschaeftsDokument());
+            given(service.buchenNachEmailVersand(eq(1L), any(), any())).willReturn(new AusgangsGeschaeftsDokument());
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/email-versendet"))
@@ -290,12 +300,14 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Speichert PDF erfolgreich")
         void speichertPdfErfolgreich() throws Exception {
-            doNothing().when(service).speicherePdfFuerDokument(eq(1L), any(byte[].class));
+            given(service.speicherePdfFuerDokument(eq(1L), any(byte[].class)))
+                    .willReturn("abc123.pdf");
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/pdf-speichern")
                             .contentType(MediaType.APPLICATION_OCTET_STREAM)
                             .content(new byte[]{0x25, 0x50, 0x44, 0x46}))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dateiname").value("abc123.pdf"));
         }
 
         @Test
@@ -329,7 +341,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void storniertDokumentErfolgreich() throws Exception {
             AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
             storno.setId(2L);
-            given(service.stornieren(1L)).willReturn(storno);
+            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(storno);
             given(service.findById(2L)).willReturn(buildResponseDto(2L, "ST-2026-001"));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/storno"))
@@ -340,7 +352,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Stornierung eines bereits stornierten Dokuments gibt 400")
         void doppelteStornierungGibt400() throws Exception {
-            given(service.stornieren(1L)).willThrow(new RuntimeException("Bereits storniert"));
+            given(service.stornieren(eq(1L), any(), any(), any())).willThrow(new RuntimeException("Bereits storniert"));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/storno"))
                     .andExpect(status().isBadRequest());
@@ -355,7 +367,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @DisplayName("Löscht Dokument mit Begründung")
         void loeschtDokumentMitBegruendung() throws Exception {
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
-            doNothing().when(service).loeschen(eq(1L), eq("Falsch erstellt"));
+            doNothing().when(service).loeschen(eq(1L), eq("Falsch erstellt"), any(), any());
 
             mockMvc.perform(delete("/api/ausgangs-dokumente/1")
                             .param("begruendung", "Falsch erstellt"))
@@ -377,7 +389,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void loeschenGebuchtGibt400() throws Exception {
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-001"));
             doThrow(new RuntimeException("Gebuchte Dokumente können nicht gelöscht werden"))
-                    .when(service).loeschen(eq(1L), any());
+                    .when(service).loeschen(eq(1L), any(), any(), any());
 
             mockMvc.perform(delete("/api/ausgangs-dokumente/1")
                             .param("begruendung", "Test"))

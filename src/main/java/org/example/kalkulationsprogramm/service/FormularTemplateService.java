@@ -41,6 +41,13 @@ import java.util.stream.Stream;
 @Service
 public class FormularTemplateService {
 
+    private FormularTextbausteinDefaultService textbausteinDefaultService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTextbausteinDefaultService(FormularTextbausteinDefaultService service) {
+        this.textbausteinDefaultService = service;
+    }
+
     private static final long MAX_TEMPLATE_BYTES = 5_000_000; // 5 MB für Vorlagen mit Hintergrundbildern
     private static final List<String> SUPPORTED_PLACEHOLDERS = List.of(
             "{{DOKUMENTNUMMER}}",
@@ -562,6 +569,10 @@ public class FormularTemplateService {
             objectMapper.writeValue(newFile.toFile(), data);
             Files.deleteIfExists(oldFile);
 
+            if (textbausteinDefaultService != null) {
+                textbausteinDefaultService.renameTemplate(oldName, newName);
+            }
+
             // Update assignments (global + user-spezifisch)
             List<FormularTemplateAssignment> existingAssignments = assignmentRepository
                     .findByTemplateNameIgnoreCase(oldName);
@@ -601,6 +612,9 @@ public class FormularTemplateService {
                 Files.delete(targetFile);
             }
             assignmentRepository.deleteByTemplateNameIgnoreCase(name);
+            if (textbausteinDefaultService != null) {
+                textbausteinDefaultService.deleteForTemplate(name);
+            }
         } catch (IOException e) {
             throw new IllegalStateException("Vorlage konnte nicht gelöscht werden.", e);
         }

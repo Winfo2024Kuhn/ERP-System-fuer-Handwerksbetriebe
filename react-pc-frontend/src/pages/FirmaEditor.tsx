@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, Shield, CheckCircle, XCircle, ChevronRight, Pencil, Search, Layers, GitBranch, ExternalLink } from 'lucide-react';
+import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, Shield, ShieldCheck, CheckCircle, XCircle, ChevronRight, Pencil, Search, Layers, GitBranch, ExternalLink } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -16,6 +16,7 @@ import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfi
 import { useFeatures } from '../hooks/useFeatures';
 import { StundensatzEditModal } from '../components/StundensatzEditModal';
 import { type Abteilung, type Arbeitsgang } from '../types';
+import { SteuerpruefungExport } from '../components/firma/SteuerpruefungExport';
 
 // Types
 interface Firmeninformation {
@@ -38,6 +39,12 @@ interface Firmeninformation {
     logoDateiname: string;
     geschaeftsfuehrer: string;
     fusszeileText: string;
+    googleBewertungsLink: string;
+    mahnverfahrenAktiv: boolean;
+    tageBisZahlungserinnerung: number;
+    tageBisErsteMahnung: number;
+    tageBisZweiteMahnung: number;
+    mahnverfahrenNeuesZahlungszielTage: number;
 }
 
 interface Kostenstelle {
@@ -105,15 +112,7 @@ interface En1090RolleDto {
     aktiv: boolean;
 }
 
-interface En1090RolleDto {
-    id: number;
-    kurztext: string;
-    beschreibung: string | null;
-    sortierung: number;
-    aktiv: boolean;
-}
-
-type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'en1090rollen' | 'abteilungen' | 'systemsetup';
+type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'en1090rollen' | 'abteilungen' | 'systemsetup' | 'steuerpruefung';
 type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
 const KOSTENSTELLEN_TYP_OPTIONS = [
@@ -755,6 +754,18 @@ export default function FirmaEditor() {
                             <Settings className="w-4 h-4 inline-block mr-2" />
                             System-Setup
                         </button>
+                        <button
+                            onClick={() => setActiveTab('steuerpruefung')}
+                            className={cn(
+                                "px-4 py-2 text-sm font-medium rounded-t-lg transition",
+                                activeTab === 'steuerpruefung'
+                                    ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                            )}
+                        >
+                            <ShieldCheck className="w-4 h-4 inline-block mr-2" />
+                            Steuerprüfung
+                        </button>
                     </div>
 
                     {/* Tab Content */}
@@ -900,6 +911,18 @@ export default function FirmaEditor() {
                                             onChange={e => setFirma({ ...firma, website: e.target.value })}
                                         />
                                     </div>
+                                    <div>
+                                        <Label>Bewertungs-Link (Google)</Label>
+                                        <Input
+                                            type="url"
+                                            value={firma.googleBewertungsLink || ''}
+                                            onChange={e => setFirma({ ...firma, googleBewertungsLink: e.target.value })}
+                                            placeholder="https://www.google.com/search?q=..."
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            Wird in E-Mails über den Platzhalter <code className="bg-slate-100 px-1 rounded">{'{{REVIEW_LINK}}'}</code> als Link „Jetzt Bewertung abgeben" eingefügt.
+                                        </p>
+                                    </div>
                                 </div>
 
                                 {/* Steuerliche Daten */}
@@ -959,6 +982,65 @@ export default function FirmaEditor() {
                                         <Input
                                             value={firma.bic || ''}
                                             onChange={e => setFirma({ ...firma, bic: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Mahnverfahren — Volle Breite, eigener Block */}
+                            <div className="mt-6 pt-6 border-t space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-lg font-semibold text-slate-900">Automatisches Mahnverfahren</h3>
+                                    <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={firma.mahnverfahrenAktiv || false}
+                                            onChange={e => setFirma({ ...firma, mahnverfahrenAktiv: e.target.checked })}
+                                            className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                        />
+                                        Aktiv
+                                    </label>
+                                </div>
+                                <p className="text-sm text-slate-500">
+                                    Wenn aktiviert, prüft das System täglich überfällige Rechnungen und versendet automatisch
+                                    Zahlungserinnerungen sowie 1. und 2. Mahnungen per E-Mail an den Kunden. Die Tagesangaben
+                                    zählen ab dem Fälligkeitsdatum der Original-Rechnung.
+                                </p>
+                                <div className={cn("grid grid-cols-1 md:grid-cols-4 gap-4 transition-opacity", !firma.mahnverfahrenAktiv && "opacity-50 pointer-events-none")}>
+                                    <div>
+                                        <Label>Zahlungserinnerung nach (Tagen)</Label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            value={firma.tageBisZahlungserinnerung || 7}
+                                            onChange={e => setFirma({ ...firma, tageBisZahlungserinnerung: parseInt(e.target.value) || 7 })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>1. Mahnung nach (Tagen)</Label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            value={firma.tageBisErsteMahnung || 14}
+                                            onChange={e => setFirma({ ...firma, tageBisErsteMahnung: parseInt(e.target.value) || 14 })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>2. Mahnung nach (Tagen)</Label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            value={firma.tageBisZweiteMahnung || 21}
+                                            onChange={e => setFirma({ ...firma, tageBisZweiteMahnung: parseInt(e.target.value) || 21 })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>Neues Zahlungsziel (Tage)</Label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            value={firma.mahnverfahrenNeuesZahlungszielTage || 7}
+                                            onChange={e => setFirma({ ...firma, mahnverfahrenNeuesZahlungszielTage: parseInt(e.target.value) || 7 })}
                                         />
                                     </div>
                                 </div>
@@ -1613,6 +1695,10 @@ export default function FirmaEditor() {
                                 </div>
                             )}
                         </div>
+                    )}
+
+                    {activeTab === 'steuerpruefung' && (
+                        <SteuerpruefungExport />
                     )}
                 </>
             )}

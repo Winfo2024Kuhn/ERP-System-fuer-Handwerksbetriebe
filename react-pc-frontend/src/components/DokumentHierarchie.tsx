@@ -1,17 +1,22 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     Calendar,
     Check,
     ChevronDown,
     ChevronRight,
+    Clock,
     Edit2,
     FileText,
     GitBranch,
     Lock,
+    Mail,
     Plus,
     Trash2,
     User,
+    X,
 } from 'lucide-react';
+import { DokumentLoeschenDialog } from './dokument/DokumentLoeschenDialog';
+import { DokumentVerlaufDrawer } from './dokument/DokumentVerlaufDrawer';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
@@ -60,7 +65,6 @@ interface DokumentHierarchieProps {
     ausgangsDokumente: AusgangsGeschaeftsDokument[];
     projektId?: number;
     anfrageId?: number;
-    angebotId?: number;
     /** Wenn gesetzt, werden nur diese Dokumenttypen im Erstellen-Dialog anfragenn */
     allowedTypes?: AusgangsGeschaeftsDokumentTyp[];
     /** Wenn true, werden Rechnungserstellungs-Aktionen ausgeblendet */
@@ -74,20 +78,26 @@ export function DokumentHierarchie({
     ausgangsDokumente,
     projektId,
     anfrageId,
-    angebotId,
     allowedTypes,
     hideRechnungActions,
     onRefresh,
     confirmDialog,
     toast,
 }: DokumentHierarchieProps) {
-    const contextAnfrageId = anfrageId ?? angebotId;
     // URL-Param für den Dokument-Editor: projektId oder anfrageId
-    const editorParam = projektId ? `projektId=${projektId}` : `anfrageId=${contextAnfrageId}`;
+    const editorParam = projektId ? `projektId=${projektId}` : `anfrageId=${anfrageId}`;
     // Payload-Felder für die Dokumenterstellung
-    const createPayloadIds = projektId ? { projektId } : { anfrageId: contextAnfrageId };
+    const createPayloadIds = projektId ? { projektId } : { anfrageId };
     const [actionMenuId, setActionMenuId] = useState<number | null>(null);
     const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set());
+
+    // Lösch-Dialog mit GoBD-konformer Begründung
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [deleteDokument, setDeleteDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
+
+    // Audit-Verlauf Drawer (Steuerprüfung)
+    const [showVerlaufDrawer, setShowVerlaufDrawer] = useState(false);
+    const [verlaufDokument, setVerlaufDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
 
     // Rechnungserstellungsdialog
     const [showRechnungDialog, setShowRechnungDialog] = useState(false);
@@ -107,6 +117,31 @@ export function DokumentHierarchie({
 
     // Dokumenttyp-Dialog
     const [showDokumentTypDialog, setShowDokumentTypDialog] = useState(false);
+
+    // Freigabe-Status pro Dokument-ID (digital angenommen / wartet / abgelaufen)
+    type FreigabeStatusKurz = {
+        status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+        dokumentArt: string;
+        dokumentNummer: string;
+        akzeptiertAm: string | null;
+        ablaufDatum: string;
+    };
+    const [freigabeStatus, setFreigabeStatus] = useState<Record<number, FreigabeStatusKurz>>({});
+
+    useEffect(() => {
+        const ids = ausgangsDokumente
+            .map(d => d.id)
+            .filter((id): id is number => typeof id === 'number');
+        if (ids.length === 0) {
+            setFreigabeStatus({});
+            return;
+        }
+        const idsParam = ids.join(',');
+        fetch(`/api/ausgangs-dokumente/freigabe-status?ids=${encodeURIComponent(idsParam)}`)
+            .then(res => (res.ok ? res.json() : {}))
+            .then(data => setFreigabeStatus(data || {}))
+            .catch(() => setFreigabeStatus({}));
+    }, [ausgangsDokumente]);
 
     // Prüfen ob bereits ein Basisdokument (Root ohne Vorgänger) existiert
     const hasBasisdokument = useMemo(
@@ -337,11 +372,61 @@ export function DokumentHierarchie({
                                         Gebucht
                                     </span>
                                 )}
-                                {!dok.storniert && !dok.gebucht && (
+                                {!dok.storniert && !dok.gebucht && !dok.digitalAngenommen && (
                                     <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
                                         Entwurf
                                     </span>
                                 )}
+                                {!dok.storniert && dok.digitalAngenommen && (
+                                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                        <Lock className="w-3 h-3 inline-block mr-1" />
+                                        Verbindlich
+                                    </span>
+                                )}
+                                {(() => {
+                                    const fr = freigabeStatus[dok.id];
+                                    if (!fr) return null;
+                                    const formatShort = (iso: string | null) => {
+                                        if (!iso) return '';
+                                        try {
+                                            return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                                        } catch { return ''; }
+                                    };
+                                    if (fr.status === 'ACCEPTED') {
+                                        return (
+                                            <span
+                                                title={`Digital angenommen am ${formatShort(fr.akzeptiertAm)}`}
+                                                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                            >
+                                                <Check className="w-3 h-3" />
+                                                Angenommen · {formatShort(fr.akzeptiertAm)}
+                                            </span>
+                                        );
+                                    }
+                                    if (fr.status === 'PENDING') {
+                                        return (
+                                            <span
+                                                title={`Freigabe-Link an Kunden versendet, gültig bis ${formatShort(fr.ablaufDatum)}`}
+                                                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+                                            >
+                                                <Mail className="w-3 h-3" />
+                                                Wartet auf Kunde
+                                            </span>
+                                        );
+                                    }
+                                    if (fr.status === 'EXPIRED' || fr.status === 'REVOKED') {
+                                        return (
+                                            <span
+                                                title="Freigabe-Link nicht mehr gültig"
+                                                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200"
+                                            >
+                                                <X className="w-3 h-3" />
+                                                Link {fr.status === 'EXPIRED' ? 'abgelaufen' : 'zurückgezogen'}
+                                            </span>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                             </div>
                             <p className="font-semibold text-slate-900 group-hover:text-rose-700 transition-colors">
                                 {dok.dokumentNummer}
@@ -462,7 +547,21 @@ export function DokumentHierarchie({
                                 </>
                             )}
 
-                            {/* Löschen */}
+                            {/* Verlauf — immer verfügbar (Steuerprüfung) */}
+                            <hr className="my-1 border-slate-100" />
+                            <button
+                                className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                onClick={() => {
+                                    setVerlaufDokument(dok);
+                                    setShowVerlaufDrawer(true);
+                                    setActionMenuId(null);
+                                }}
+                            >
+                                <Clock className="w-4 h-4" />
+                                Verlauf anzeigen
+                            </button>
+
+                            {/* Löschen — mit GoBD-konformem Begründungs-Dialog (Dropdown + Freitext) */}
                             {dok.typ !== 'RECHNUNG' && dok.typ !== 'GUTSCHRIFT' && dok.typ !== 'STORNO'
                                 && dok.typ !== 'TEILRECHNUNG' && dok.typ !== 'ABSCHLAGSRECHNUNG' && dok.typ !== 'SCHLUSSRECHNUNG'
                                 && !dok.gebucht && (
@@ -470,18 +569,9 @@ export function DokumentHierarchie({
                                     <hr className="my-1 border-slate-100" />
                                     <button
                                         className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                        onClick={async () => {
-                                            if (await confirmDialog({ title: "Dokument löschen", message: `Dokument ${dok.dokumentNummer} wirklich löschen?`, variant: "danger", confirmLabel: "Löschen" })) {
-                                                try {
-                                                    const response = await fetch(`/api/ausgangs-dokumente/${dok.id}`, { method: 'DELETE' });
-                                                    if (response.ok) {
-                                                        onRefresh();
-                                                    } else {
-                                                        const error = await response.text();
-                                                        toast.error(error || 'Löschen fehlgeschlagen');
-                                                    }
-                                                } catch (e) { console.error(e); }
-                                            }
+                                        onClick={() => {
+                                            setDeleteDokument(dok);
+                                            setShowDeleteDialog(true);
                                             setActionMenuId(null);
                                         }}
                                     >
@@ -955,6 +1045,32 @@ export function DokumentHierarchie({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* GoBD-konformer Lösch-Dialog (Dropdown + Pflicht-Begründung) */}
+            <DokumentLoeschenDialog
+                open={showDeleteDialog}
+                onOpenChange={(open) => {
+                    setShowDeleteDialog(open);
+                    if (!open) setDeleteDokument(null);
+                }}
+                dokumentId={deleteDokument?.id}
+                dokumentNummer={deleteDokument?.dokumentNummer}
+                onDeleted={() => {
+                    onRefresh();
+                    setDeleteDokument(null);
+                }}
+            />
+
+            {/* Audit-Verlauf für Steuerprüfung */}
+            <DokumentVerlaufDrawer
+                open={showVerlaufDrawer}
+                onOpenChange={(open) => {
+                    setShowVerlaufDrawer(open);
+                    if (!open) setVerlaufDokument(null);
+                }}
+                dokumentId={verlaufDokument?.id}
+                dokumentNummer={verlaufDokument?.dokumentNummer}
+            />
         </div>
     );
 }

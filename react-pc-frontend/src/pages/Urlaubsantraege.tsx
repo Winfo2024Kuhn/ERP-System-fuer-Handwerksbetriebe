@@ -32,16 +32,44 @@ export default function Urlaubsantraege() {
         return searchParams.get('status') || 'OFFEN';
     });
     const [loading, setLoading] = useState(false);
+    const [fokusId, setFokusId] = useState<number | null>(() => {
+        const v = searchParams.get('antragId');
+        return v ? Number(v) : null;
+    });
 
-    // Deep-link: read status from URL param
+    // Deep-link: read status + optionalen fokusId aus URL.
+    // fokusId wird nach dem Scrollen wieder aus der URL entfernt, damit die Hervorhebung
+    // nicht beim Reload wieder triggert.
     useEffect(() => {
         const statusParam = searchParams.get('status');
-        if (statusParam) {
-            setStatusFilter(statusParam);
+        const antragParam = searchParams.get('antragId');
+        if (statusParam || antragParam) {
+            if (statusParam) setStatusFilter(statusParam);
+            if (antragParam) setFokusId(Number(antragParam));
             setSearchParams({}, { replace: true });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
+
+    // Scroll + Highlight, sobald die Liste die fokussierte ID enthält.
+    useEffect(() => {
+        if (fokusId == null) return;
+        if (!antraege.some(a => a.id === fokusId)) return;
+        const t = window.setTimeout(() => {
+            const el = document.querySelector(`[data-antrag-id="${fokusId}"]`) as HTMLElement | null;
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('ring-2', 'ring-rose-400', 'ring-offset-2');
+                window.setTimeout(() => {
+                    el.classList.remove('ring-2', 'ring-rose-400', 'ring-offset-2');
+                    setFokusId(null);
+                }, 2400);
+            } else {
+                setFokusId(null);
+            }
+        }, 80);
+        return () => window.clearTimeout(t);
+    }, [fokusId, antraege]);
 
     useEffect(() => {
         loadAntraege();
@@ -132,7 +160,11 @@ export default function Urlaubsantraege() {
                 )}
 
                 {antraege.map((antrag) => (
-                    <Card key={antrag.id} className="p-4 border-slate-200">
+                    <Card
+                        key={antrag.id}
+                        data-antrag-id={antrag.id}
+                        className="p-4 border-slate-200 transition-shadow"
+                    >
                         <div className="flex flex-col md:flex-row justify-between gap-4">
                             <div className="flex items-start gap-4">
                                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">

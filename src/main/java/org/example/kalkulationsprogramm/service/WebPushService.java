@@ -116,6 +116,55 @@ public class WebPushService {
     }
 
     /**
+     * Schickt eine generische Push-Nachricht an alle aktuell registrierten
+     * Push-Subscriptions im System. Wird z.B. ausgelöst, wenn ein Kunde ein
+     * Angebot oder eine Auftragsbestätigung digital annimmt – damit das Büro
+     * sofort benachrichtigt wird, auch wenn der ERP-Tab geschlossen ist.
+     * Fail-safe: schluckt Fehler, damit ein Push-Problem nie eine fachliche
+     * Operation (Annahme) blockiert.
+     */
+    public void notifyAll(String title, String body, String url) {
+        if (!isEnabled()) {
+            log.debug("WebPush nicht aktiv – notifyAll wird ignoriert");
+            return;
+        }
+        try {
+            List<PushSubscription> alle = pushSubscriptionRepository.findAll();
+            for (PushSubscription sub : alle) {
+                sendPush(sub, title, body, url, null, "freigabe");
+            }
+        } catch (Exception e) {
+            log.warn("notifyAll fehlgeschlagen: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Push-Benachrichtigung für Freigabe-Annahmen ("Kunde hat angenommen").
+     * Versendet nur an Subscriptions, deren Mitarbeiter mindestens einer
+     * Abteilung mit darfFreigabeAnnahmePushen=true angehört. So lässt sich
+     * pro Abteilung in der Administration steuern, wer den Push bekommt.
+     */
+    public void notifyFreigabeAnnahme(String title, String body, String url) {
+        if (!isEnabled()) {
+            log.debug("WebPush nicht aktiv – notifyFreigabeAnnahme wird ignoriert");
+            return;
+        }
+        try {
+            List<PushSubscription> alle = pushSubscriptionRepository.findAll();
+            for (PushSubscription sub : alle) {
+                Mitarbeiter ma = sub.getMitarbeiter();
+                if (ma == null) continue;
+                boolean erlaubt = ma.getAbteilungen() != null && ma.getAbteilungen().stream()
+                        .anyMatch(abt -> Boolean.TRUE.equals(abt.getDarfFreigabeAnnahmePushen()));
+                if (!erlaubt) continue;
+                sendPush(sub, title, body, url, null, "freigabe");
+            }
+        } catch (Exception e) {
+            log.warn("notifyFreigabeAnnahme fehlgeschlagen: {}", e.getMessage());
+        }
+    }
+
+    /**
      * Subscribe a device for push notifications.
      */
     @Transactional

@@ -486,13 +486,24 @@ describe('OfflineService', () => {
         it('sollte Server-Daten zurückgeben wenn online', async () => {
             vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({ stunden: 3, minuten: 45 }))
             const r = await OfflineService.getHeuteGearbeitet('tok')
-            expect(r).toEqual({ stunden: 3, minuten: 45, fromCache: false })
+            expect(r).toEqual({ stunden: 3, minuten: 45, fromCache: false, aktiveBuchungStartZeit: null })
+        })
+
+        it('sollte aktiveBuchungStartZeit durchreichen wenn vom Server geliefert', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({
+                stunden: 1, minuten: 30, aktiveBuchungStartZeit: '2024-06-15T08:00:00',
+            }))
+            const r = await OfflineService.getHeuteGearbeitet('tok')
+            expect(r).toEqual({
+                stunden: 1, minuten: 30, fromCache: false,
+                aktiveBuchungStartZeit: '2024-06-15T08:00:00',
+            })
         })
 
         it('sollte {0,0} wenn kein Cache und offline', async () => {
             vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
             const r = await OfflineService.getHeuteGearbeitet('tok')
-            expect(r).toEqual({ stunden: 0, minuten: 0, fromCache: true })
+            expect(r).toEqual({ stunden: 0, minuten: 0, fromCache: true, aktiveBuchungStartZeit: null })
         })
 
         it('sollte gecachte Werte mit fromCache=true zurückgeben wenn offline', async () => {
@@ -503,7 +514,7 @@ describe('OfflineService', () => {
             vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
 
             const r = await OfflineService.getHeuteGearbeitet('tok')
-            expect(r).toEqual({ stunden: 2, minuten: 15, fromCache: true })
+            expect(r).toEqual({ stunden: 2, minuten: 15, fromCache: true, aktiveBuchungStartZeit: null })
         })
     })
 

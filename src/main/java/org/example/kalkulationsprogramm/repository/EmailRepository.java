@@ -12,12 +12,24 @@ import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface EmailRepository extends JpaRepository<Email, Long> {
+
+  /**
+   * Löst alle Replies eines Parents per Bulk-UPDATE (umgeht die Lazy-Collection
+   * und vermeidet ObjectDeletedException, wenn Parent + Child in derselben
+   * Transaktion gelöscht werden – der Persistence-Context kennt dann sonst
+   * Replies bereits als "deleted" und das Setzen von parentEmail = null würde
+   * sie via merge wiederbeleben).
+   */
+  @Modifying
+  @Query("UPDATE Email e SET e.parentEmail = null WHERE e.parentEmail.id = :parentId")
+  int detachRepliesFromParent(@Param("parentId") Long parentId);
 
   List<Email> findByDeletedAtIsNotNullOrderByDeletedAtDesc();
 
@@ -430,22 +442,25 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   // NEW FOLDERS: PROJECT, OFFER, SUPPLIER
   // ═══════════════════════════════════════════════════════════════
 
-  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  // Nur eingehende Mails. Gesendete Mails gehören in den "Gesendet"-Ordner –
+  // sonst würde ein Klick auf eine OUT-Mail in Projekte/Anfragen/Lieferanten
+  // den aktiven Ordner auf "sent" umschalten (siehe computeFolder).
+  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.direction = 'IN' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findProjectEmails();
 
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.deletedAt IS NULL AND e.isRead = false")
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.direction = 'IN' AND e.deletedAt IS NULL AND e.isRead = false")
   long countProjectEmailsUnread();
 
-  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.direction = 'IN' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findAnfrageEmails();
 
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.deletedAt IS NULL AND e.isRead = false")
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.direction = 'IN' AND e.deletedAt IS NULL AND e.isRead = false")
   long countAnfrageEmailsUnread();
 
-  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
+  @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.direction = 'IN' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findLieferantEmails();
 
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.deletedAt IS NULL AND e.isRead = false")
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.direction = 'IN' AND e.deletedAt IS NULL AND e.isRead = false")
   long countLieferantEmailsUnread();
 
   // Updates for existing counts to use "Unread" logic if needed by user

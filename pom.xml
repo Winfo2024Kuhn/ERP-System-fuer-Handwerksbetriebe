@@ -71,6 +71,13 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- Cloudflare-Access JWT-Verifikation für /api/internal/** (Defense-in-Depth) -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>9.37.3</version>
+        </dependency>
+
         <!-- Web Push Notifications (VAPID) for iOS PWA lock screen support -->
         <dependency>
             <groupId>nl.martijndwars</groupId>

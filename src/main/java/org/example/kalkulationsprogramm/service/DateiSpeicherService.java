@@ -56,7 +56,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.transaction.Transactional;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 public class DateiSpeicherService {
     private final ProjektDokumentRepository dokumentRepository;
@@ -90,13 +92,6 @@ public class DateiSpeicherService {
     // Für Bestellungskosten-Zuordnungen zu Projekten
     @Setter(onMethod_ = @org.springframework.beans.factory.annotation.Autowired)
     private org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository lieferantDokumentProjektAnteilRepository;
-
-    // Für Angebot-Dokument-Löschung
-    @Setter(onMethod_ = @org.springframework.beans.factory.annotation.Autowired)
-    private org.example.kalkulationsprogramm.repository.AngebotDokumentRepository angebotDokumentRepository;
-
-    @Setter(onMethod_ = @org.springframework.beans.factory.annotation.Autowired)
-    private org.example.kalkulationsprogramm.repository.AngebotRepository angebotRepository;
 
     @Autowired
     public DateiSpeicherService(@Value("${file.upload-dir}") String uploadDir,
@@ -356,84 +351,6 @@ public class DateiSpeicherService {
         return anfrageDokumentRepository.save(dokument);
     }
 
-    public org.example.kalkulationsprogramm.domain.AngebotDokument speichereAngebotsDatei(
-            MultipartFile datei, Long angebotID, DokumentGruppe gruppe) {
-        org.example.kalkulationsprogramm.domain.Angebot angebot = angebotRepository.findById(angebotID)
-                .orElseThrow(() -> new RuntimeException("Angebot nicht gefunden!"));
-        String originalDateiname = Path.of(StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()))).getFileName().toString();
-        String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
-        String lowerName = originalDateiname.toLowerCase();
-        boolean isDrawing = lowerName.contains("zeichnung") || lowerName.contains("entwurf");
-        boolean useHicadStorage = lowerName.endsWith(".sza") || lowerName.endsWith(".tcd")
-                || lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")
-                || lowerName.endsWith(".csv") || lowerName.endsWith(".ods") || lowerName.endsWith(".xlsb");
-        Path basisPfad = useHicadStorage ? this.hicadSpeicherplatz : this.anfragenSpeicherplatz;
-        Path zielPfad = resolveAndValidate(basisPfad, gespeicherterDateiname);
-        try {
-            Files.copy(datei.getInputStream(), zielPfad, StandardCopyOption.REPLACE_EXISTING);
-            if (useHicadStorage) {
-                kopiereNachNetzwerkFreigabeFallsAbweichend(gespeicherterDateiname, zielPfad);
-            }
-        } catch (IOException ioException) {
-            throw new RuntimeException("Datei konnte nicht gespeichert werden.", ioException);
-        }
-        org.example.kalkulationsprogramm.domain.AngebotDokument dokument;
-        boolean istPdf = "application/pdf".equalsIgnoreCase(datei.getContentType());
-        if (istPdf) {
-            try {
-                var zugferdDaten = this.zugferdExtractorService.extract(zielPfad.toString(), originalDateiname);
-                if (zugferdDaten.getBetrag() != null) {
-                    angebot.setBetrag(zugferdDaten.getBetrag());
-                    angebotRepository.save(angebot);
-                }
-                boolean hatDaten = zugferdDaten.getRechnungsnummer() != null;
-                if (hatDaten) {
-                    var geschaeftsdokument = new org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument();
-                    geschaeftsdokument.setDokumentid(zugferdDaten.getRechnungsnummer());
-                    geschaeftsdokument.setGeschaeftsdokumentart(zugferdDaten.getGeschaeftsdokumentart());
-                    geschaeftsdokument.setBruttoBetrag(zugferdDaten.getBetrag());
-                    dokument = geschaeftsdokument;
-                } else if (isDrawing) {
-                    var geschaeftsdokument = new org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument();
-                    String base = originalDateiname;
-                    int dot = base.lastIndexOf('.');
-                    if (dot > 0) base = base.substring(0, dot);
-                    geschaeftsdokument.setDokumentid(base);
-                    geschaeftsdokument.setGeschaeftsdokumentart("Zeichnung");
-                    dokument = geschaeftsdokument;
-                } else {
-                    dokument = new org.example.kalkulationsprogramm.domain.AngebotDokument();
-                }
-            } catch (Exception ignored) {
-                if (isDrawing) {
-                    var geschaeftsdokument = new org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument();
-                    String base = originalDateiname;
-                    int dot = base.lastIndexOf('.');
-                    if (dot > 0) base = base.substring(0, dot);
-                    geschaeftsdokument.setDokumentid(base);
-                    geschaeftsdokument.setGeschaeftsdokumentart("Zeichnung");
-                    dokument = geschaeftsdokument;
-                } else {
-                    dokument = new org.example.kalkulationsprogramm.domain.AngebotDokument();
-                }
-            }
-        } else {
-            dokument = new org.example.kalkulationsprogramm.domain.AngebotDokument();
-        }
-        dokument.setAngebot(angebot);
-        dokument.setOriginalDateiname(originalDateiname);
-        dokument.setGespeicherterDateiname(gespeicherterDateiname);
-        dokument.setDateityp(datei.getContentType());
-        dokument.setDateigroesse(datei.getSize());
-        dokument.setUploadDatum(LocalDate.now());
-        DokumentGruppe verwendeteGruppe2 = gruppe;
-        if (dokument instanceof org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument && isDrawing) {
-            verwendeteGruppe2 = DokumentGruppe.GESCHAEFTSDOKUMENTE;
-        }
-        dokument.setDokumentGruppe(verwendeteGruppe2);
-        return angebotDokumentRepository.save(dokument);
-    }
-
     public ProjektGeschaeftsdokument speichereZugferdDatei(Path zugferdPfad, String originalDateiname, Long projektID,
             ZugferdDaten daten) {
         Projekt projekt = projektRepository.findById(projektID)
@@ -610,46 +527,6 @@ public class DateiSpeicherService {
         return gespeichertesDokument;
     }
 
-    public org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument speichereAngebotsZugferdDatei(
-            Path zugferdPfad, String originalDateiname, Long angebotID, ZugferdDaten daten) {
-        org.example.kalkulationsprogramm.domain.Angebot angebot = angebotRepository.findById(angebotID)
-                .orElseThrow(() -> new RuntimeException("Angebot nicht gefunden!"));
-        String gespeicherterDateiname = generiereEinzigartigenDateinamen(originalDateiname);
-        Path zielPfad = resolveAndValidate(this.anfragenSpeicherplatz, gespeicherterDateiname);
-        try {
-            Files.copy(zugferdPfad, zielPfad, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            throw new RuntimeException("Datei konnte nicht gespeichert werden.", e);
-        }
-        var dokument = new org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument();
-        dokument.setAngebot(angebot);
-        dokument.setOriginalDateiname(originalDateiname);
-        dokument.setGespeicherterDateiname(gespeicherterDateiname);
-        dokument.setDateityp("application/pdf");
-        try { dokument.setDateigroesse(Files.size(zielPfad)); } catch (IOException ignored) { }
-        dokument.setUploadDatum(LocalDate.now());
-        dokument.setDokumentGruppe(DokumentGruppe.GESCHAEFTSDOKUMENTE);
-        String dokumentart = normalizeGeschaeftsdokumentart(daten.getGeschaeftsdokumentart());
-        if (istRechnung(dokumentart)) { dokumentart = "Angebot"; }
-        String dokumentId = daten.getRechnungsnummer();
-        if (dokumentId == null || dokumentId.isBlank()) {
-            String base = originalDateiname;
-            int dot = base.lastIndexOf('.');
-            if (dot > 0) { base = base.substring(0, dot); }
-            dokumentId = base;
-        }
-        dokument.setDokumentid(dokumentId);
-        dokument.setGeschaeftsdokumentart(dokumentart);
-        dokument.setBruttoBetrag(daten.getBetrag());
-        var gespeichert = (org.example.kalkulationsprogramm.domain.AngebotGeschaeftsdokument)
-                angebotDokumentRepository.save(dokument);
-        if (daten.getBetrag() != null) {
-            angebot.setBetrag(daten.getBetrag());
-            angebotRepository.save(angebot);
-        }
-        return gespeichert;
-    }
-
     public ProjektDokument speichereErzeugteDatei(byte[] inhalt,
             String originalDateiname,
             Long projektID,
@@ -715,10 +592,6 @@ public class DateiSpeicherService {
 
     public List<AnfrageDokument> holeDokumenteZuAnfrage(Long anfrageID) {
         return anfrageDokumentRepository.findByAnfrageId(anfrageID);
-    }
-
-    public List<org.example.kalkulationsprogramm.domain.AngebotDokument> holeDokumenteZuAngebot(Long angebotID) {
-        return angebotDokumentRepository.findByAngebotId(angebotID);
     }
 
     public List<ProjektGeschaeftsdokument> holeOffeneGeschaeftsdokumente() {
@@ -1493,22 +1366,6 @@ public class DateiSpeicherService {
         this.anfrageDokumentRepository.delete(dokument);
     }
 
-    @Transactional
-    public void loescheAngebotDatei(Long dokumentID) {
-        org.example.kalkulationsprogramm.domain.AngebotDokument dokument = this.angebotDokumentRepository.findById(dokumentID)
-                .orElseThrow(() -> new RuntimeException("Angebotsdokument konnte nicht gefunden werden!"));
-        try {
-            Path dateipfad = this.anfragenSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
-            if (!Files.deleteIfExists(dateipfad)) {
-                Path fallbackPfad = this.dokumentenSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
-                Files.deleteIfExists(fallbackPfad);
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("Fehler beim Löschen der physischen Datei: " + dokument.getOriginalDateiname(), e);
-        }
-        this.angebotDokumentRepository.delete(dokument);
-    }
-
     /**
      * Speichert ein Bild und gibt den relativen, über den {@code DateiController}
      * abrufbaren Web-Pfad zurück.
@@ -1594,6 +1451,17 @@ public class DateiSpeicherService {
             throw new RuntimeException("Datei nicht gefunden oder nicht lesbar: " + dateiname);
         } catch (MalformedURLException e) {
             throw new RuntimeException("Fehler beim Lesen der Datei: " + dateiname, e);
+        }
+    }
+
+    public void loescheDokumentPdfByDateiname(String dateiname) {
+        if (dateiname == null || dateiname.isBlank()) return;
+        try {
+            Path pfad = dokumentenSpeicherplatz.resolve(dateiname).normalize();
+            if (!pfad.startsWith(dokumentenSpeicherplatz)) return;
+            Files.deleteIfExists(pfad);
+        } catch (Exception e) {
+            log.warn("Freigabe-PDF konnte nicht gelöscht werden: {}", dateiname, e);
         }
     }
 

@@ -68,6 +68,9 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
     @Mock
     private LeistungWpsAutoAssignService leistungWpsAutoAssignService;
 
+    @Mock
+    private AusgangsGeschaeftsDokumentAuditService auditService;
+
     private AusgangsGeschaeftsDokumentService service;
 
     @TempDir
@@ -87,7 +90,8 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
                 produktkategorieRepository,
                 projektDokumentRepository,
                 zeitbuchungRepository,
-                leistungWpsAutoAssignService
+                leistungWpsAutoAssignService,
+                auditService
         );
     }
 

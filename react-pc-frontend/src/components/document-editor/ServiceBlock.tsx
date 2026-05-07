@@ -79,7 +79,7 @@ export function ServiceBlock({
                 kategorie={{
                     id: zeitprognose.kategorieId,
                     bezeichnung: zeitprognose.kategorieName,
-                    isLeaf: true,
+                    leaf: true,
                 }}
                 onClose={() => setShowAnalyse(false)}
             />,

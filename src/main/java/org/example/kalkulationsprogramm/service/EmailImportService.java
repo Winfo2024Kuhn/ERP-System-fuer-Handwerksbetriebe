@@ -68,6 +68,7 @@ public class EmailImportService {
     private final SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
     private final LieferantenRepository lieferantenRepository;
     private final SystemSettingsService systemSettingsService;
+    private final OutOfOfficeResponder outOfOfficeResponder;
 
     // Self-Injection für transactional proxy: importMessage muss durch den
     // Spring-Proxy laufen, damit @Transactional pro Mail eine eigene
@@ -88,6 +89,23 @@ public class EmailImportService {
     private static final List<String> OUTGOING_FOLDERS = List.of(
             "INBOX.Sent",
             "INBOX.Sent Items");
+
+    /**
+     * Schaltet abgelaufene Abwesenheitspläne (endAt < heute) automatisch aus.
+     * Läuft einmal pro Stunde, damit der "active=true"-Status nicht über
+     * das eingestellte Enddatum hinaus stehen bleibt.
+     */
+    @Scheduled(fixedDelay = 3_600_000L, initialDelay = 60_000L)
+    public void deactivateExpiredOutOfOffice() {
+        if (!emailFeaturesEnabled) {
+            return;
+        }
+        try {
+            outOfOfficeResponder.deactivateExpiredSchedules();
+        } catch (Exception e) {
+            log.warn("[OOO] Auto-Deaktivierung abgelaufener Pläne fehlgeschlagen: {}", e.getMessage());
+        }
+    }
 
     /**
      * Importiert alle neuen E-Mails aus IMAP.
@@ -267,6 +285,10 @@ public class EmailImportService {
         email.setDirection(direction);
         email.setImapFolder(folder.getFullName());
         email.setImapUid(folder.getUID(msg));
+        // Eigene gesendete Mails gelten automatisch als gelesen.
+        if (direction == EmailDirection.OUT) {
+            email.setRead(true);
+        }
 
         // Absender
         Address[] fromArr = msg.getFrom();
@@ -281,6 +303,30 @@ public class EmailImportService {
         // Empfänger
         email.setRecipient(extractAddresses(msg.getRecipients(Message.RecipientType.TO)));
         email.setCc(extractAddresses(msg.getRecipients(Message.RecipientType.CC)));
+
+        // Reply-To (für Spam-Filter: From ≠ Reply-To ist klassischer Phishing-Marker).
+        // jakarta.mail.Message#getReplyTo() liefert per Spec From zurück, wenn der
+        // Reply-To-Header NICHT gesetzt ist. Wir wollen aber nur den echten Header
+        // persistieren, damit das Feld semantisch sauber bleibt (für ML-Features später).
+        if (firstHeader(msg, "Reply-To") != null) {
+            try {
+                Address[] replyTo = msg.getReplyTo();
+                if (replyTo != null && replyTo.length > 0 && replyTo[0] instanceof InternetAddress ria) {
+                    email.setReplyToAddress(ria.getAddress());
+                }
+            } catch (MessagingException ignored) {
+                // Reply-To ist optional
+            }
+        }
+
+        // Authentication-Results (SPF, DKIM, DMARC) für strukturelle Spam-Erkennung
+        String authResults = joinHeaders(msg, "Authentication-Results");
+        if (authResults != null && !authResults.isBlank()) {
+            // Auf 2000 Zeichen begrenzen — manche Mailserver hängen sehr lange Strings an
+            email.setAuthenticationResults(authResults.length() > 2000
+                    ? authResults.substring(0, 2000)
+                    : authResults);
+        }
 
         // Subject
         email.setSubject(msg.getSubject());
@@ -330,6 +376,11 @@ public class EmailImportService {
             }
         }
 
+        // Auto-Reply-Header für OOO-Loop-Schutz puffern (vor dem späteren Versand)
+        String autoSubmittedHeader = firstHeader(msg, "Auto-Submitted");
+        String precedenceHeader = firstHeader(msg, "Precedence");
+        String listIdHeader = firstHeader(msg, "List-Id");
+
         // Newsletter Detection (via Header)
         // WICHTIG: Nur als Newsletter markieren wenn der Absender NICHT zu einem
         // bekannten Lieferanten gehört! Viele Lieferanten nutzen Newsletter-Tools
@@ -375,7 +426,58 @@ public class EmailImportService {
             }
         }
 
+        // Abwesenheitsnotiz (OOO) – nur für eingehende Mails, die nach
+        // Klassifikation NICHT als Spam/Newsletter markiert wurden und vom
+        // einem Kunden stammen. Greift in allen IMAP-Ordnern. Dedup pro
+        // Absender + Plan erfolgt im Responder selbst.
+        if (direction == EmailDirection.IN
+                && !email.isSpam()
+                && !email.isNewsletter()) {
+            try {
+                outOfOfficeResponder.handleIncomingEmail(new OutOfOfficeResponder.IncomingMail(
+                        email.getFromAddress(),
+                        email.getSubject(),
+                        email.getSentAt(),
+                        email.isSpam(),
+                        email.isNewsletter(),
+                        autoSubmittedHeader,
+                        precedenceHeader,
+                        listIdHeader));
+            } catch (Exception ex) {
+                log.warn("[EmailImport] OOO-Auto-Reply für Email {} fehlgeschlagen: {}",
+                        email.getId(), ex.getMessage());
+            }
+        }
+
         return true;
+    }
+
+    /**
+     * Liest den ersten Wert eines Headers; gibt null zurück wenn nicht vorhanden.
+     */
+    private String firstHeader(Message msg, String name) {
+        try {
+            String[] values = msg.getHeader(name);
+            return (values != null && values.length > 0) ? values[0] : null;
+        } catch (MessagingException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Liest alle Werte eines Headers und joined sie mit Newlines.
+     * Authentication-Results kann mehrfach vorkommen (jeder MTA hängt seine an).
+     */
+    private String joinHeaders(Message msg, String name) {
+        try {
+            String[] values = msg.getHeader(name);
+            if (values == null || values.length == 0) {
+                return null;
+            }
+            return String.join("\n", values);
+        } catch (MessagingException e) {
+            return null;
+        }
     }
 
     /**
@@ -868,6 +970,8 @@ public class EmailImportService {
 
     /**
      * Löscht eine E-Mail permanent vom IMAP-Server.
+     * IMAP-Zugangsdaten werden – wie beim Import – aus den System-Einstellungen (DB)
+     * gelesen, nicht mehr aus Umgebungsvariablen.
      */
     public void deleteEmailFromServer(Email email) {
         if (email.getMessageId() == null) {
@@ -875,15 +979,13 @@ public class EmailImportService {
             return;
         }
 
-        String user = System.getenv("IMAP_USER");
-        String pass = System.getenv("IMAP_PASSWORD");
-        if (user == null || user.isBlank() || pass == null || pass.isBlank()) {
-            log.debug("[EmailDeletion] IMAP_USER/PASSWORD nicht konfiguriert, überspringe Server-Löschung");
+        String user = systemSettingsService.getImapUsername();
+        String pass = systemSettingsService.getImapPassword();
+        String host = systemSettingsService.getImapHost();
+        int port = systemSettingsService.getImapPort();
+        if (user == null || user.isBlank() || pass == null || pass.isBlank() || host == null || host.isBlank()) {
+            log.debug("[EmailDeletion] IMAP-Zugangsdaten fehlen (System-Einstellungen), überspringe Server-Löschung");
             return;
-        }
-        String host = System.getenv("IMAP_HOST");
-        if (host == null || host.isBlank()) {
-            host = "secureimap.t-online.de";
         }
 
         Properties props = new Properties();
@@ -895,7 +997,11 @@ public class EmailImportService {
         try {
             Session session = Session.getInstance(props);
             Store store = session.getStore("imaps");
-            store.connect(host, user, pass);
+            if (port > 0) {
+                store.connect(host, port, user, pass);
+            } else {
+                store.connect(host, user, pass);
+            }
 
             boolean deleted = false;
 

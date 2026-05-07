@@ -117,6 +117,15 @@ public class AusgangsGeschaeftsDokument {
     private boolean storniert = false;
 
     /**
+     * Wenn true: Kunde hat das Dokument digital angenommen (über DokumentFreigabe).
+     * Sperrt das Dokument für Bearbeitung — bei Verhandlung muss ein neues Folgedokument
+     * erstellt werden, statt das angenommene zu ändern. Bewahrt den Beweis-Charakter
+     * der Annahme.
+     */
+    @Column(nullable = false)
+    private boolean digitalAngenommen = false;
+
+    /**
      * Datum der Stornierung
      */
     private LocalDate storniertAm;
@@ -239,11 +248,13 @@ public class AusgangsGeschaeftsDokument {
      *
      * Sperrlogik:
      * - Stornierte Dokumente sind immer gesperrt (Korrekturnachweis).
+     * - Digital angenommene Angebote/ABs sind gesperrt (verbindlich, Beweis-Charakter).
      * - Gebuchte Rechnungen/Gutschriften/Stornos sind gesperrt (GoBD).
-     * - Anfragen und ABs bleiben auch nach Buchung/Versand bearbeitbar.
+     * - Sonst: Anfragen und ABs bleiben bearbeitbar (Verhandlungsspielraum).
      */
     public boolean istBearbeitbar() {
         if (storniert) return false;
+        if (digitalAngenommen) return false;
         if (gebucht && SPERRBARE_TYPEN.contains(typ)) return false;
         return true;
     }

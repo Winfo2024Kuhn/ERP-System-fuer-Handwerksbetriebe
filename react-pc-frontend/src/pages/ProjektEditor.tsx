@@ -58,6 +58,8 @@ import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { ZuordnungModal } from '../components/ZuordnungModal';
+import { DokumentLoeschenDialog } from '../components/dokument/DokumentLoeschenDialog';
+import { DokumentVerlaufDrawer } from '../components/dokument/DokumentVerlaufDrawer';
 
 interface Supplier {
     id: number;
@@ -134,11 +136,40 @@ const TYP_COLORS: Record<string, string> = {
     'SCHLUSSRECHNUNG': 'bg-rose-100 text-rose-800 border-rose-300',
     'GUTSCHRIFT': 'bg-green-50 text-green-700 border-green-200',
     'STORNO': 'bg-red-50 text-red-700 border-red-200',
+    // Mahn-Eskalation: gelb → amber → rot, damit der Druck im Tree visuell erkennbar ist
+    'ZAHLUNGSERINNERUNG': 'bg-yellow-50 text-yellow-800 border-yellow-200',
+    'ERSTE_MAHNUNG': 'bg-amber-100 text-amber-800 border-amber-300',
+    'ZWEITE_MAHNUNG': 'bg-red-100 text-red-800 border-red-300',
 };
 
+/** Mahn-Einträge sind virtuelle Children einer Rechnung; sie kommen aus
+ *  ProjektGeschaeftsdokument und tragen daher eine negierte ID. */
+const istMahnDokument = (dok: AusgangsGeschaeftsDokument): boolean =>
+    dok.id < 0
+    || dok.typ === 'ZAHLUNGSERINNERUNG'
+    || dok.typ === 'ERSTE_MAHNUNG'
+    || dok.typ === 'ZWEITE_MAHNUNG';
 
 
 
+
+
+// ==================== AUDIT-TRAIL ====================
+
+/** Rechtlich relevante Beweisdaten einer akzeptierten digitalen Freigabe. */
+type FreigabeAuditData = {
+    status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+    dokumentArt: string;
+    dokumentNummer: string;
+    erstelltAm: string;
+    ablaufDatum: string;
+    akzeptiertAm: string | null;
+    akzeptiertEmail: string | null;
+    akzeptiertIp: string | null;
+    akzeptiertUserAgent: string | null;
+    hashOriginal: string | null;
+    hashAcceptance: string | null;
+};
 
 // ==================== DETAIL VIEW ====================
 
@@ -250,8 +281,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     // Lösch-Dialog State
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [deleteDokument, setDeleteDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
-    const [deleteBegruendung, setDeleteBegruendung] = useState('');
-    const [deleteLoading, setDeleteLoading] = useState(false);
+
+    // Verlauf-Drawer State (Audit-Trail für Steuerprüfung)
+    const [showVerlaufDrawer, setShowVerlaufDrawer] = useState(false);
+    const [verlaufDokument, setVerlaufDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
 
     // PDF Preview Modal State
     const [pdfPreviewDoc, setPdfPreviewDoc] = useState<{ url: string; title: string } | null>(null);
@@ -351,6 +384,23 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Ausgangs-Geschäftsdokumente State
     const [ausgangsDokumente, setAusgangsDokumente] = useState<AusgangsGeschaeftsDokument[]>([]);
+
+    // Digitale Freigabe-Stati pro Dokument-ID — gleiche Anzeige wie im AnfrageEditor
+    // (DokumentHierarchie). Geladen über /api/ausgangs-dokumente/freigabe-status,
+    // damit der Badge "Angenommen / Wartet auf Kunde / Link abgelaufen" auf der Karte sichtbar ist.
+    const [freigabeStatus, setFreigabeStatus] = useState<Record<number, {
+        status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+        dokumentArt: string;
+        dokumentNummer: string;
+        akzeptiertAm: string | null;
+        ablaufDatum: string;
+    }>>({});
+
+    // Audit-Detail-Modal beim Klick auf den „Angenommen"-Badge — wird on-demand
+    // pro Dokument geladen, damit IP/User-Agent nicht in der Listen-API mitkommen.
+    const [auditDokumentId, setAuditDokumentId] = useState<number | null>(null);
+    const [auditDaten, setAuditDaten] = useState<FreigabeAuditData | null>(null);
+    const [auditLoading, setAuditLoading] = useState(false);
     const [actionMenuDokument, setActionMenuDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
 
     // Dateien (Dokumente) Anzahl
@@ -391,6 +441,40 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     useEffect(() => {
         loadAusgangsDokumente();
     }, [loadAusgangsDokumente]);
+
+    // Freigabe-Status für alle aktuell geladenen Dokumente nachziehen.
+    // Symmetrisch zu DokumentHierarchie — sobald die Dokumentliste sich ändert,
+    // wird der Status aller IDs in einem Request gebündelt aktualisiert.
+    useEffect(() => {
+        const ids = ausgangsDokumente
+            .map(d => d.id)
+            .filter((id): id is number => typeof id === 'number');
+        if (ids.length === 0) {
+            setFreigabeStatus({});
+            return;
+        }
+        fetch(`/api/ausgangs-dokumente/freigabe-status?ids=${encodeURIComponent(ids.join(','))}`)
+            .then(res => (res.ok ? res.json() : {}))
+            .then(data => setFreigabeStatus(data || {}))
+            .catch(() => setFreigabeStatus({}));
+    }, [ausgangsDokumente]);
+
+    // Audit-Trail on-demand laden, sobald der Nutzer auf den Badge klickt.
+    const oeffneAuditModal = useCallback(async (dokumentId: number) => {
+        setAuditDokumentId(dokumentId);
+        setAuditDaten(null);
+        setAuditLoading(true);
+        try {
+            const res = await fetch(`/api/ausgangs-dokumente/${dokumentId}/freigabe-audit`);
+            if (res.ok) {
+                setAuditDaten(await res.json());
+            }
+        } catch {
+            // Modal bleibt leer — Fehler wird durch fehlende Daten sichtbar
+        } finally {
+            setAuditLoading(false);
+        }
+    }, []);
 
     // Dateien-Anzahl laden
     useEffect(() => {
@@ -1542,9 +1626,27 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                     isChild ? "border-slate-200 hover:border-slate-300" : "border-slate-200 hover:border-rose-300",
                                                     dok.storniert && "opacity-50"
                                                 )}
-                                                onClick={() => setActionMenuDokument(actionMenuDokument?.id === dok.id ? null : dok)}
-                                                onDoubleClick={() => window.open(`/dokument-editor?projektId=${projekt.id}&dokumentId=${dok.id}`, '_blank')}
-                                                title="Klick für Aktionen, Doppelklick zum Öffnen"
+                                                onClick={() => {
+                                                    // Mahn-Einträge sind virtuelle ProjektGeschaeftsdokument-Children:
+                                                    // Klick öffnet direkt die PDF-Vorschau, kein Aktionsmenü.
+                                                    if (istMahnDokument(dok)) {
+                                                        if (dok.pdfUrl) {
+                                                            setPdfPreviewDoc({ url: dok.pdfUrl, title: dok.dokumentNummer });
+                                                        }
+                                                        return;
+                                                    }
+                                                    setActionMenuDokument(actionMenuDokument?.id === dok.id ? null : dok);
+                                                }}
+                                                onDoubleClick={() => {
+                                                    if (istMahnDokument(dok)) {
+                                                        if (dok.pdfUrl) {
+                                                            setPdfPreviewDoc({ url: dok.pdfUrl, title: dok.dokumentNummer });
+                                                        }
+                                                        return;
+                                                    }
+                                                    window.open(`/dokument-editor?projektId=${projekt.id}&dokumentId=${dok.id}`, '_blank');
+                                                }}
+                                                title={istMahnDokument(dok) ? "Klick für PDF-Vorschau" : "Klick für Aktionen, Doppelklick zum Öffnen"}
                                             >
                                                 <div className="flex items-start justify-between gap-4">
                                                     <div className="flex-1 min-w-0">
@@ -1566,11 +1668,63 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                     Gebucht
                                                                 </span>
                                                             )}
-                                                            {!dok.storniert && !dok.gebucht && (
+                                                            {!dok.storniert && !dok.gebucht && dok.digitalAngenommen && (
+                                                                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                                                    <Lock className="w-3 h-3 inline-block mr-1" />
+                                                                    Verbindlich
+                                                                </span>
+                                                            )}
+                                                            {!dok.storniert && !dok.gebucht && !dok.digitalAngenommen && (
                                                                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
                                                                     Entwurf
                                                                 </span>
                                                             )}
+                                                            {(() => {
+                                                                const fr = freigabeStatus[dok.id];
+                                                                if (!fr) return null;
+                                                                const formatShort = (iso: string | null) => {
+                                                                    if (!iso) return '';
+                                                                    try {
+                                                                        return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                                                                    } catch { return ''; }
+                                                                };
+                                                                if (fr.status === 'ACCEPTED') {
+                                                                    return (
+                                                                        <button
+                                                                            type="button"
+                                                                            title={`Digital angenommen am ${formatShort(fr.akzeptiertAm)} — Klick für Audit-Details`}
+                                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 cursor-pointer"
+                                                                            onClick={(e) => { e.stopPropagation(); oeffneAuditModal(dok.id); }}
+                                                                        >
+                                                                            <Check className="w-3 h-3" />
+                                                                            Angenommen · {formatShort(fr.akzeptiertAm)}
+                                                                        </button>
+                                                                    );
+                                                                }
+                                                                if (fr.status === 'PENDING') {
+                                                                    return (
+                                                                        <span
+                                                                            title={`Freigabe-Link an Kunden versendet, gültig bis ${formatShort(fr.ablaufDatum)}`}
+                                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+                                                                        >
+                                                                            <Mail className="w-3 h-3" />
+                                                                            Wartet auf Kunde
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                if (fr.status === 'EXPIRED' || fr.status === 'REVOKED') {
+                                                                    return (
+                                                                        <span
+                                                                            title="Freigabe-Link nicht mehr gültig"
+                                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200"
+                                                                        >
+                                                                            <X className="w-3 h-3" />
+                                                                            Link {fr.status === 'EXPIRED' ? 'abgelaufen' : 'zurückgezogen'}
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })()}
                                                             {isChild && dok.vorgaengerNummer && (
                                                                 <span className="text-[10px] text-slate-400">
                                                                     aus {dok.vorgaengerNummer}
@@ -1628,8 +1782,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                     </div>
                                                 </div>
 
-                                                {/* Aktionsmenü bei Klick */}
-                                                {actionMenuDokument?.id === dok.id && (
+                                                {/* Aktionsmenü bei Klick — nicht für Mahn-Einträge,
+                                                    weil deren ID virtuell ist und kein DocumentEditor existiert. */}
+                                                {actionMenuDokument?.id === dok.id && !istMahnDokument(dok) && (
                                                     <div
                                                         className="absolute right-4 top-4 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-20 min-w-[220px]"
                                                         onClick={(e) => e.stopPropagation()}
@@ -1809,6 +1964,20 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             </>
                                                         )}
 
+                                                        {/* Verlauf - immer verfügbar (für Steuerprüfung) */}
+                                                        <hr className="my-1 border-slate-100" />
+                                                        <button
+                                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                            onClick={() => {
+                                                                setVerlaufDokument(dok);
+                                                                setShowVerlaufDrawer(true);
+                                                                setActionMenuDokument(null);
+                                                            }}
+                                                        >
+                                                            <Clock className="w-4 h-4" />
+                                                            Verlauf anzeigen
+                                                        </button>
+
                                                         {/* Löschen - nur Entwürfe (GoBD: nicht gebucht, nicht versandt, nicht storniert, kein STORNO) */}
                                                         {!dok.gebucht && !dok.versandDatum && !dok.storniert && dok.typ !== 'STORNO' && (
                                                             <>
@@ -1817,7 +1986,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                     className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                                                     onClick={() => {
                                                                         setDeleteDokument(dok);
-                                                                        setDeleteBegruendung('');
                                                                         setShowDeleteDialog(true);
                                                                         setActionMenuDokument(null);
                                                                     }}
@@ -2607,78 +2775,31 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 </DialogContent>
             </Dialog>
 
-            {/* Lösch-Dialog mit Begründung */}
-            <Dialog open={showDeleteDialog} onOpenChange={(open) => {
-                if (!open) {
-                    setShowDeleteDialog(false);
+            {/* GoBD-konformer Lösch-Dialog mit Dropdown + Freitext */}
+            <DokumentLoeschenDialog
+                open={showDeleteDialog}
+                onOpenChange={(open) => {
+                    setShowDeleteDialog(open);
+                    if (!open) setDeleteDokument(null);
+                }}
+                dokumentId={deleteDokument?.id}
+                dokumentNummer={deleteDokument?.dokumentNummer}
+                onDeleted={() => {
+                    loadAusgangsDokumente();
                     setDeleteDokument(null);
-                    setDeleteBegruendung('');
-                }
-            }}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-red-600">Dokument löschen</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-2">
-                        <p className="text-sm text-slate-600">
-                            Möchten Sie <span className="font-semibold">{deleteDokument?.dokumentNummer}</span> wirklich löschen?
-                        </p>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-500">
-                            Gemäß GoBD dürfen nur Entwürfe gelöscht werden. Gebuchte oder versandte Dokumente müssen storniert werden.
-                        </div>
-                        <div className="space-y-2">
-                            <Label className="text-sm font-medium text-slate-700">Begründung *</Label>
-                            <textarea
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 min-h-[80px] resize-none"
-                                placeholder="Bitte geben Sie eine Begründung für das Löschen an..."
-                                value={deleteBegruendung}
-                                onChange={(e) => setDeleteBegruendung(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter className="gap-2">
-                        <Button variant="outline" onClick={() => {
-                            setShowDeleteDialog(false);
-                            setDeleteDokument(null);
-                            setDeleteBegruendung('');
-                        }}>
-                            Abbrechen
-                        </Button>
-                        <Button
-                            className="bg-red-600 text-white hover:bg-red-700"
-                            disabled={deleteLoading || !deleteBegruendung.trim()}
-                            onClick={async () => {
-                                if (!deleteDokument) return;
-                                setDeleteLoading(true);
-                                try {
-                                    const response = await fetch(
-                                        `/api/ausgangs-dokumente/${deleteDokument.id}?begruendung=${encodeURIComponent(deleteBegruendung.trim())}`,
-                                        { method: 'DELETE' }
-                                    );
-                                    if (response.ok) {
-                                        toast.success(`Dokument ${deleteDokument.dokumentNummer} gelöscht`);
-                                        loadAusgangsDokumente();
-                                        setShowDeleteDialog(false);
-                                        setDeleteDokument(null);
-                                        setDeleteBegruendung('');
-                                    } else {
-                                        const error = await response.text();
-                                        toast.error(error || 'Löschen fehlgeschlagen');
-                                    }
-                                } catch (e) {
-                                    console.error(e);
-                                    toast.error('Fehler beim Löschen');
-                                } finally {
-                                    setDeleteLoading(false);
-                                }
-                            }}
-                        >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Löschen
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                }}
+            />
+
+            {/* Audit-Verlauf für die Steuerprüfung */}
+            <DokumentVerlaufDrawer
+                open={showVerlaufDrawer}
+                onOpenChange={(open) => {
+                    setShowVerlaufDrawer(open);
+                    if (!open) setVerlaufDokument(null);
+                }}
+                dokumentId={verlaufDokument?.id}
+                dokumentNummer={verlaufDokument?.dokumentNummer}
+            />
 
             {activeTab === 'dokumente' && (
                 <div className="space-y-6">
@@ -3132,6 +3253,61 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Audit-Trail-Modal: Beweisdaten der digitalen Annahme.
+                Wer (E-Mail), Wann (Zeitstempel), Wo (IP), Was (Hash) — analog zu DocuSign-
+                Audit-Trail. Hash wird gekürzt angezeigt mit Copy-Button für den Vollwert. */}
+            <Dialog open={auditDokumentId !== null} onOpenChange={(open) => { if (!open) { setAuditDokumentId(null); setAuditDaten(null); } }}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Check className="w-5 h-5 text-emerald-600" />
+                            Annahme-Beweis
+                        </DialogTitle>
+                    </DialogHeader>
+                    {auditLoading && (
+                        <p className="text-sm text-slate-500 py-4">Lade Audit-Daten…</p>
+                    )}
+                    {!auditLoading && !auditDaten && (
+                        <p className="text-sm text-slate-500 py-4">Keine Audit-Daten verfügbar.</p>
+                    )}
+                    {!auditLoading && auditDaten && (
+                        <div className="space-y-3 py-2 text-sm">
+                            <AuditRow label="Dokument" value={`${auditDaten.dokumentArt} ${auditDaten.dokumentNummer}`} />
+                            <AuditRow
+                                label="Angenommen am"
+                                value={auditDaten.akzeptiertAm
+                                    ? new Date(auditDaten.akzeptiertAm).toLocaleString('de-DE', {
+                                        day: '2-digit', month: '2-digit', year: 'numeric',
+                                        hour: '2-digit', minute: '2-digit', second: '2-digit',
+                                    })
+                                    : '—'}
+                            />
+                            <AuditRow label="E-Mail" value={auditDaten.akzeptiertEmail || '—'} />
+                            <AuditRow label="IP-Adresse" value={auditDaten.akzeptiertIp || '—'} mono />
+                            {auditDaten.akzeptiertUserAgent && (
+                                <AuditRow label="Browser" value={auditDaten.akzeptiertUserAgent} mono small />
+                            )}
+                            <div className="pt-2 mt-2 border-t border-slate-100 space-y-3">
+                                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                                    Kryptographischer Beweis
+                                </p>
+                                <HashRow label="Original-Hash" value={auditDaten.hashOriginal} toast={toast} />
+                                <HashRow label="Annahme-Hash" value={auditDaten.hashAcceptance} toast={toast} />
+                                <p className="text-xs text-slate-400 leading-relaxed">
+                                    SHA-256 über Geschäftsdaten + Akzeptanzdaten. Im Streitfall reproduzierbar
+                                    und damit unveränderbarer Beweis der digitalen Annahme.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => { setAuditDokumentId(null); setAuditDaten(null); }}>
+                            Schließen
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 
@@ -3146,12 +3322,78 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     );
 };
 
+// ==================== AUDIT-MODAL HELFER ====================
+
+function AuditRow({ label, value, mono, small }: { label: string; value: string; mono?: boolean; small?: boolean }) {
+    return (
+        <div>
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className={cn(
+                "text-slate-900 break-all",
+                mono && "font-mono",
+                small ? "text-xs" : "text-sm",
+            )}>
+                {value}
+            </p>
+        </div>
+    );
+}
+
+function HashRow({ label, value, toast }: {
+    label: string;
+    value: string | null;
+    toast: ReturnType<typeof useToast>;
+}) {
+    if (!value) {
+        return <AuditRow label={label} value="—" />;
+    }
+    const kurz = value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-8)}` : value;
+    const handleCopy = () => {
+        navigator.clipboard.writeText(value)
+            .then(() => toast.success('Hash in Zwischenablage kopiert'))
+            .catch(() => toast.error('Kopieren fehlgeschlagen'));
+    };
+    return (
+        <div>
+            <p className="text-xs text-slate-500">{label}</p>
+            <div className="flex items-center gap-2">
+                <code className="text-xs font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded px-2 py-1 flex-1 truncate" title={value}>
+                    {kurz}
+                </code>
+                <Button size="sm" variant="outline" onClick={handleCopy} className="shrink-0">
+                    Kopieren
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 // ==================== MAIN COMPONENT ====================
+
+// Geräteübergreifender "Zuletzt aufgerufen"-Stempel via Backend.
+// Server liefert eine Map { entityId: epochMillis } und wird per POST aktualisiert.
+async function fetchProjektLastAccessed(): Promise<Record<string, number>> {
+    try {
+        const res = await fetch('/api/last-accessed/PROJEKT');
+        if (!res.ok) return {};
+        const data = await res.json();
+        return data && typeof data === 'object' ? data : {};
+    } catch {
+        return {};
+    }
+}
+
+function trackProjektAccess(id: number) {
+    fetch(`/api/last-accessed/PROJEKT/${id}`, { method: 'POST' }).catch(() => {
+        // fire-and-forget: Sortierung beim nächsten Reload bleibt einfach unverändert
+    });
+}
 
 export default function ProjektEditor() {
     const [searchParams, setSearchParams] = useSearchParams();
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
     const [projekte, setProjekte] = useState<Projekt[]>([]);
+    const [freigabeStatusByProjektId, setFreigabeStatusByProjektId] = useState<Record<number, FreigabeStatusKurz>>({});
     const [selectedProjekt, setSelectedProjekt] = useState<ProjektDetail | null>(null);
     const [loading, setLoading] = useState(false);
     const [total, setTotal] = useState(0);
@@ -3178,24 +3420,49 @@ export default function ProjektEditor() {
             if (filters.status === 'bezahlt') params.set("bezahlt", "true");
             if (filters.status === 'offen') params.set("bezahlt", "false");
 
-            const res = await fetch(`/api/projekte?${params.toString()}`);
+            const [res, lastAccessed] = await Promise.all([
+                fetch(`/api/projekte?${params.toString()}`),
+                fetchProjektLastAccessed(),
+            ]);
             if (!res.ok) throw new Error("Fehler beim Laden");
             const data = await res.json();
 
-            // Projekte sortieren: offene (nicht abgeschlossene) zuerst
+            // Projekte sortieren: zuletzt aufgerufene zuerst (Stack), dann offene vor abgeschlossenen
             const sortedProjekte = Array.isArray(data.projekte) ? data.projekte : [];
             sortedProjekte.sort((a: Projekt, b: Projekt) => {
-                // Offene (abgeschlossen=false) zuerst
+                const ta = lastAccessed[String(a.id)] || 0;
+                const tb = lastAccessed[String(b.id)] || 0;
+                if (ta !== tb) return tb - ta;
                 if (a.abgeschlossen === b.abgeschlossen) return 0;
                 return a.abgeschlossen ? 1 : -1;
             });
 
             setProjekte(sortedProjekte);
             setTotal(typeof data.gesamt === "number" ? data.gesamt : 0);
+
+            // Freigabe-Status (Angebot/AB digital angenommen?) für die geladenen Projekte ziehen.
+            const ids = sortedProjekte
+                .map((p: Projekt) => p.id)
+                .filter((id: unknown): id is number => typeof id === 'number');
+            if (ids.length > 0) {
+                try {
+                    const statusRes = await fetch(`/api/projekte/freigabe-status?ids=${encodeURIComponent(ids.join(','))}`);
+                    if (statusRes.ok) {
+                        setFreigabeStatusByProjektId(await statusRes.json() || {});
+                    } else {
+                        setFreigabeStatusByProjektId({});
+                    }
+                } catch {
+                    setFreigabeStatusByProjektId({});
+                }
+            } else {
+                setFreigabeStatusByProjektId({});
+            }
         } catch (err) {
             console.error(err);
             setProjekte([]);
             setTotal(0);
+            setFreigabeStatusByProjektId({});
         } finally {
             setLoading(false);
         }
@@ -3227,6 +3494,7 @@ export default function ProjektEditor() {
                     const res = await fetch(`/api/projekte/${projektId}`);
                     if (!res.ok) throw new Error('Fehler beim Laden der Details');
                     const data: ProjektDetail = await res.json();
+                    trackProjektAccess(data.id);
                     setSelectedProjekt(data);
                     setViewMode('detail');
                 } catch (err) {
@@ -3255,6 +3523,7 @@ export default function ProjektEditor() {
     };
 
     const handleDetail = async (projekt: Projekt) => {
+        trackProjektAccess(projekt.id);
         try {
             setLoading(true);
             const res = await fetch(`/api/projekte/${projekt.id}`);
@@ -3470,6 +3739,7 @@ export default function ProjektEditor() {
                             projekt={projekt}
                             onClick={() => handleDetail(projekt)}
                             onToggleAbgeschlossen={handleToggleAbgeschlossen}
+                            freigabe={freigabeStatusByProjektId[projekt.id]}
                         />
                     ))}
                 </div>
@@ -3537,10 +3807,62 @@ export default function ProjektEditor() {
     );
 }
 
-function ProjektCard({ projekt, onClick, onToggleAbgeschlossen }: {
+type FreigabeStatusKurz = {
+    status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+    dokumentArt: string;
+    dokumentNummer: string;
+    akzeptiertAm: string | null;
+    ablaufDatum: string;
+    erstelltAm: string;
+};
+
+function FreigabeBadge({ freigabe }: { freigabe: FreigabeStatusKurz }) {
+    const formatShort = (iso: string | null) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    };
+    if (freigabe.status === 'ACCEPTED') {
+        return (
+            <span
+                title={`${freigabe.dokumentArt} ${freigabe.dokumentNummer} digital angenommen am ${formatShort(freigabe.akzeptiertAm)}`}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+            >
+                <Check className="w-3 h-3" />
+                {freigabe.dokumentArt} angenommen · {formatShort(freigabe.akzeptiertAm)}
+            </span>
+        );
+    }
+    if (freigabe.status === 'PENDING') {
+        return (
+            <span
+                title={`Freigabe-Link für ${freigabe.dokumentArt} ${freigabe.dokumentNummer} versendet, gültig bis ${formatShort(freigabe.ablaufDatum)}`}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+            >
+                <Mail className="w-3 h-3" />
+                {freigabe.dokumentArt} wartet auf Kunde
+            </span>
+        );
+    }
+    if (freigabe.status === 'EXPIRED') {
+        return (
+            <span
+                title={`Freigabe-Link für ${freigabe.dokumentArt} ${freigabe.dokumentNummer} ist abgelaufen`}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200"
+            >
+                <X className="w-3 h-3" />
+                {freigabe.dokumentArt} – Link abgelaufen
+            </span>
+        );
+    }
+    return null;
+}
+
+function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
     projekt: Projekt;
     onClick: () => void;
     onToggleAbgeschlossen?: (projektId: number, abgeschlossen: boolean) => void;
+    freigabe?: FreigabeStatusKurz;
 }) {
     const formatCurrency = (val?: number) =>
         new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
@@ -3586,6 +3908,7 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen }: {
                                     Beendet
                                 </span>
                             )}
+                            {freigabe && <FreigabeBadge freigabe={freigabe} />}
                         </div>
                         <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={projekt.bauvorhaben}>
                             {projekt.bauvorhaben || "Unbenannt"}

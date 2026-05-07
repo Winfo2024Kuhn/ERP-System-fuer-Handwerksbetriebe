@@ -21,10 +21,12 @@ import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyResponse;
 import org.example.kalkulationsprogramm.dto.Email.EmailPreviewRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailSendRequest;
+import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.EmailAiService;
 import org.example.kalkulationsprogramm.service.EmailSignatureService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
@@ -55,6 +57,7 @@ public class EmailController {
     private final FrontendUserProfileService frontendUserProfileService;
     private final DateiSpeicherService dateiSpeicherService;
     private final SystemSettingsService systemSettingsService;
+    private final DokumentFreigabeService dokumentFreigabeService;
 
     @Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -321,6 +324,11 @@ public class EmailController {
         String messageId;
         try {
             String finalHtml = Optional.ofNullable(request.getHtmlBody()).orElse("");
+            // Wenn dies eine Angebots-/AB-Mail eines Projekts ist: digitalen Freigabe-Link
+            // VOR der Signatur einbetten. Erzeugt einen Datenbank-Eintrag mit UUID + Hash.
+            if (doc instanceof ProjektGeschaeftsdokument gesDokument) {
+                finalHtml = appendFreigabeLinkProjekt(finalHtml, gesDokument, request.getRecipient());
+            }
             java.util.Map<String, java.io.File> inline = new java.util.HashMap<>();
             var sigOpt = getSignatureForFrontendUser(request.getFrontendUserId(), request.getBenutzer());
             if (sigOpt.isPresent()) {
@@ -362,6 +370,7 @@ public class EmailController {
                             .htmlToPlainText(request.getHtmlBody()));
                     email.setSentAt(java.time.LocalDateTime.now());
                     email.setDirection(EmailDirection.OUT);
+                    email.setRead(true);
                     email.setMessageId(messageId);
                     email = emailRepository.save(email);
 
@@ -423,6 +432,8 @@ public class EmailController {
         String messageId;
         try {
             String finalHtml = Optional.ofNullable(request.getHtmlBody()).orElse("");
+            // Digitalen Freigabe-Link VOR der Signatur einbetten (nur Angebot/AB).
+            finalHtml = appendFreigabeLinkAnfrage(finalHtml, gesDoc, request.getRecipient());
             java.util.Map<String, java.io.File> inline = new java.util.HashMap<>();
             var sigOpt = getSignatureForFrontendUser(request.getFrontendUserId(), request.getBenutzer());
             if (sigOpt.isPresent()) {
@@ -479,6 +490,7 @@ public class EmailController {
                         .htmlToPlainText(request.getHtmlBody()));
                 email.setSentAt(java.time.LocalDateTime.now());
                 email.setDirection(EmailDirection.OUT);
+                email.setRead(true);
                 email.setMessageId(messageId);
                 email = emailRepository.save(email);
 
@@ -517,6 +529,67 @@ public class EmailController {
             log.error("Fehler beim Speichern der gesendeten Anfrage-Email", ignored);
         }
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Wenn das Anfrage-Geschäftsdokument ein Angebot oder eine Auftragsbestätigung ist,
+     * wird eine neue {@link DokumentFreigabe} erzeugt und ein hartkodierter Link-Block in
+     * den HTML-Body eingefügt. Der Block landet vor der Signatur, weil
+     * {@link EmailSignatureService#ensureSignaturePresentOnce} hinten anhängt.
+     */
+    private String appendFreigabeLinkAnfrage(String html, AnfrageGeschaeftsdokument gesDoc, String recipient) {
+        if (!istAngebotOderAB(gesDoc.getGeschaeftsdokumentart())) {
+            return html;
+        }
+        try {
+            String kundeName = gesDoc.getAnfrage() != null && gesDoc.getAnfrage().getKunde() != null
+                    ? gesDoc.getAnfrage().getKunde().getName() : null;
+            DokumentFreigabe freigabe = dokumentFreigabeService.erstelleFuerAnfrage(gesDoc, kundeName, recipient);
+            return html + buildFreigabeBlock(dokumentFreigabeService.buildPublicUrl(freigabe), gesDoc.getGeschaeftsdokumentart());
+        } catch (Exception e) {
+            log.warn("Freigabe-Link für Anfrage-Dokument {} konnte nicht erzeugt werden: {}",
+                    gesDoc.getId(), e.getMessage());
+            return html;
+        }
+    }
+
+    /**
+     * Pendant zu {@link #appendFreigabeLinkAnfrage} für Projekt-Geschäftsdokumente.
+     */
+    private String appendFreigabeLinkProjekt(String html, ProjektGeschaeftsdokument gesDoc, String recipient) {
+        if (!istAngebotOderAB(gesDoc.getGeschaeftsdokumentart())) {
+            return html;
+        }
+        try {
+            String kundeName = gesDoc.getProjekt() != null && gesDoc.getProjekt().getKundenId() != null
+                    ? gesDoc.getProjekt().getKundenId().getName() : null;
+            DokumentFreigabe freigabe = dokumentFreigabeService.erstelleFuerProjekt(gesDoc, kundeName, recipient);
+            return html + buildFreigabeBlock(dokumentFreigabeService.buildPublicUrl(freigabe), gesDoc.getGeschaeftsdokumentart());
+        } catch (Exception e) {
+            log.warn("Freigabe-Link für Projekt-Dokument {} konnte nicht erzeugt werden: {}",
+                    gesDoc.getId(), e.getMessage());
+            return html;
+        }
+    }
+
+    private static boolean istAngebotOderAB(String art) {
+        if (art == null) return false;
+        String lower = art.toLowerCase(Locale.GERMAN);
+        return lower.contains("angebot")
+                || lower.contains("auftragsbest"); // matched "Auftragsbestätigung", "Auftragsbestaetigung"
+    }
+
+    private static String buildFreigabeBlock(String url, String dokumentArt) {
+        String art = dokumentArt == null || dokumentArt.isBlank() ? "Dokument" : dokumentArt;
+        return "<div style=\"margin:24px 0;padding:16px 18px;border-left:3px solid #dc2626;background:#fafafa;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<p style=\"margin:0 0 6px 0;font-weight:600;color:#1e293b;\">" + art + " digital prüfen und annehmen</p>"
+                + "<p style=\"margin:0 0 10px 0;color:#475569;line-height:1.45;\">"
+                + "Sie können dieses " + art + " bequem online ansehen und mit einem Klick verbindlich annehmen:"
+                + "</p>"
+                + "<p style=\"margin:0;\"><a href=\"" + url + "\" style=\"color:#dc2626;font-weight:600;text-decoration:underline;\">"
+                + url + "</a></p>"
+                + "<p style=\"margin:8px 0 0 0;color:#94a3b8;font-size:13px;\">Der Link ist 14 Tage gültig.</p>"
+                + "</div>";
     }
 
     private Optional<EmailSignature> getSignatureForFrontendUser(Long frontendUserId, String displayName) {

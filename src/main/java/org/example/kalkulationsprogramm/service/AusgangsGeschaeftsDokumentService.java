@@ -33,6 +33,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.Abrechnun
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -49,6 +50,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -69,6 +72,7 @@ public class AusgangsGeschaeftsDokumentService {
     private final ProjektDokumentRepository projektDokumentRepository;
     private final ZeitbuchungRepository zeitbuchungRepository;
     private final LeistungWpsAutoAssignService leistungWpsAutoAssignService;
+    private final AusgangsGeschaeftsDokumentAuditService auditService;
 
     public AusgangsGeschaeftsDokumentService(
             @Value("${file.upload-dir}") String uploadDir,
@@ -82,7 +86,8 @@ public class AusgangsGeschaeftsDokumentService {
             ProduktkategorieRepository produktkategorieRepository,
             ProjektDokumentRepository projektDokumentRepository,
             ZeitbuchungRepository zeitbuchungRepository,
-            LeistungWpsAutoAssignService leistungWpsAutoAssignService) {
+            LeistungWpsAutoAssignService leistungWpsAutoAssignService,
+            AusgangsGeschaeftsDokumentAuditService auditService) {
         this.dokumentenSpeicherplatz = Path.of(uploadDir).toAbsolutePath().normalize();
         this.dokumentRepository = dokumentRepository;
         this.counterRepository = counterRepository;
@@ -95,6 +100,7 @@ public class AusgangsGeschaeftsDokumentService {
         this.projektDokumentRepository = projektDokumentRepository;
         this.zeitbuchungRepository = zeitbuchungRepository;
         this.leistungWpsAutoAssignService = leistungWpsAutoAssignService;
+        this.auditService = auditService;
     }
 
     /** Rechnungstypen, die im Abrechnungsverlauf berücksichtigt werden */
@@ -103,6 +109,20 @@ public class AusgangsGeschaeftsDokumentService {
             AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG,
             AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG,
             AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
+    );
+
+    /**
+     * Buchhaltungsrelevante Typen, für die ein GoBD-konformer Audit-Trail (§147 AO,
+     * 10-Jahres-Aufbewahrung) zwingend ist. Angebot/AB sind nur Geschäftsbriefe
+     * (§147 Abs. 1 Nr. 2 AO, 6 Jahre) und brauchen keinen Audit-Eintrag.
+     */
+    private static final Set<AusgangsGeschaeftsDokumentTyp> AUDIT_RELEVANTE_TYPEN = EnumSet.of(
+            AusgangsGeschaeftsDokumentTyp.RECHNUNG,
+            AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG,
+            AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG,
+            AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG,
+            AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT,
+            AusgangsGeschaeftsDokumentTyp.STORNO
     );
 
     /** Dokumenttypen, die für die Produktkategorie-Zuordnung relevant sind */
@@ -116,6 +136,15 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto) {
+        return erstellen(dto, null);
+    }
+
+    /**
+     * Wie {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto)}, schreibt aber
+     * für buchhaltungsrelevante Typen einen Audit-Eintrag mit Aufrufer-IP.
+     */
+    @Transactional
+    public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto, String ipAdresse) {
         // Nur ein Basisdokument (ohne Vorgänger) pro Projekt/Anfrage erlaubt
         if (dto.getVorgaengerId() == null) {
             if (dto.getProjektId() != null && dokumentRepository.existsByProjektIdAndVorgaengerIsNull(dto.getProjektId())) {
@@ -181,7 +210,15 @@ public class AusgangsGeschaeftsDokumentService {
                     dokument.setHtmlInhalt(vorgaenger.getHtmlInhalt());
                 }
                 if (dto.getPositionenJson() == null && vorgaenger.getPositionenJson() != null) {
-                    dokument.setPositionenJson(vorgaenger.getPositionenJson());
+                    String inheritedJson = vorgaenger.getPositionenJson();
+                    // Beim Umwandeln (z.B. Angebot -> Auftragsbestaetigung) die alten
+                    // Standard-Textbausteine (VOR/NACH) entfernen. Das Frontend laedt
+                    // beim ersten Oeffnen automatisch die fuer den neuen Typ
+                    // konfigurierten Textbausteine. Leistungen und Mengen bleiben.
+                    if (vorgaenger.getTyp() != dokument.getTyp()) {
+                        inheritedJson = entferneStandardTextbausteine(inheritedJson);
+                    }
+                    dokument.setPositionenJson(inheritedJson);
                 }
                 // Kunde vom Vorgänger übernehmen falls nicht gesetzt
                 if (dokument.getKunde() == null && vorgaenger.getKunde() != null) {
@@ -253,6 +290,11 @@ public class AusgangsGeschaeftsDokumentService {
         }
 
         saved.setAutoZugewieseneWps(autoAssignEn1090Wps(saved));
+
+        if (AUDIT_RELEVANTE_TYPEN.contains(saved.getTyp())) {
+            auditService.protokolliereErstellung(saved, saved.getErstelltVon(), ipAdresse);
+        }
+
         return saved;
     }
 
@@ -410,6 +452,15 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public AusgangsGeschaeftsDokument buchen(Long id) {
+        return buchen(id, null, null);
+    }
+
+    /**
+     * Wie {@link #buchen(Long)}, schreibt aber zusätzlich einen GoBD-Audit-Eintrag
+     * mit Bearbeiter und IP-Adresse.
+     */
+    @Transactional
+    public AusgangsGeschaeftsDokument buchen(Long id, Long bearbeiterId, String ipAdresse) {
         AusgangsGeschaeftsDokument dokument = dokumentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Dokument nicht gefunden: " + id));
 
@@ -433,6 +484,13 @@ public class AusgangsGeschaeftsDokumentService {
 
         AusgangsGeschaeftsDokument saved = dokumentRepository.save(dokument);
         erstelleOffenenPostenEintrag(saved);
+
+        if (AUDIT_RELEVANTE_TYPEN.contains(saved.getTyp())) {
+            var bearbeiter = bearbeiterId != null
+                    ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
+                    : null;
+            auditService.protokolliereBuchung(saved, bearbeiter, ipAdresse);
+        }
         return saved;
     }
 
@@ -443,6 +501,15 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public AusgangsGeschaeftsDokument buchenNachEmailVersand(Long id) {
+        return buchenNachEmailVersand(id, null, null);
+    }
+
+    /**
+     * Wie {@link #buchenNachEmailVersand(Long)}, schreibt aber zusätzlich einen
+     * GoBD-Audit-Eintrag (Versand und ggf. Buchung) mit Bearbeiter und IP-Adresse.
+     */
+    @Transactional
+    public AusgangsGeschaeftsDokument buchenNachEmailVersand(Long id, Long bearbeiterId, String ipAdresse) {
         AusgangsGeschaeftsDokument dokument = dokumentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Dokument nicht gefunden: " + id));
 
@@ -470,6 +537,20 @@ public class AusgangsGeschaeftsDokumentService {
 
         // Fälligkeitsdatum nachträglich setzen falls es fehlt (z.B. bei bereits gebuchten Dokumenten)
         aktualisiereOffenenPostenFaelligkeitsdatum(saved);
+
+        if (AUDIT_RELEVANTE_TYPEN.contains(saved.getTyp())) {
+            var bearbeiter = bearbeiterId != null
+                    ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
+                    : null;
+            // Buchung und Versand sind hier ein gemeinsamer Akt: Wenn das Dokument
+            // gerade frisch gebucht wurde, wird das als BUCHUNG protokolliert; der
+            // Versand kommt als zweiter Eintrag dazu, damit Prüfer beide Aktionen
+            // einzeln in der Hash-Kette nachvollziehen kann.
+            if (!warBereitsGebucht && !istNichtBuchbar) {
+                auditService.protokolliereBuchung(saved, bearbeiter, ipAdresse);
+            }
+            auditService.protokolliereVersand(saved, bearbeiter, ipAdresse);
+        }
 
         return saved;
     }
@@ -521,6 +602,18 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public AusgangsGeschaeftsDokument stornieren(Long id) {
+        return stornieren(id, null, null, null);
+    }
+
+    /**
+     * Wie {@link #stornieren(Long)}, schreibt aber zusätzlich einen GoBD-Audit-Eintrag
+     * (Stornierung des Originals + Erstellung des Storno-Gegendokuments) mit
+     * Bearbeiter, IP-Adresse und optional einem fachlichen Stornogrund. Wenn kein
+     * Grund mitkommt, wird der Standardtext "Stornierung des Originaldokuments"
+     * genutzt — der Audit-Service verlangt zwingend einen Grund (GoBD).
+     */
+    @Transactional
+    public AusgangsGeschaeftsDokument stornieren(Long id, Long bearbeiterId, String ipAdresse, String grund) {
         AusgangsGeschaeftsDokument original = dokumentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Dokument nicht gefunden: " + id));
 
@@ -590,7 +683,8 @@ public class AusgangsGeschaeftsDokumentService {
                         && !geschwisterDok.isStorniert()) {
                     log.info("Kaskadierende Stornierung: Schlussrechnung {} wird mitstorniert (Abschlagsrechnung {} storniert)",
                             geschwisterDok.getDokumentNummer(), original.getDokumentNummer());
-                    stornieren(geschwisterDok.getId());
+                    stornieren(geschwisterDok.getId(), bearbeiterId, ipAdresse,
+                            "Kaskadierende Stornierung wegen storniertem Vorgänger " + original.getDokumentNummer());
                 }
             }
         }
@@ -603,6 +697,20 @@ public class AusgangsGeschaeftsDokumentService {
         // Anfrage-Preis aktualisieren
         if (original.getAnfrage() != null) {
             aktualisiereAnfragePreisAusDokumenten(original.getAnfrage().getId());
+        }
+
+        // GoBD-Audit: Storno + Erstellung des Gegendokuments protokollieren.
+        // Ist nur bei AUDIT_RELEVANTE_TYPEN nötig — was hier ohnehin der Fall ist,
+        // da nur Rechnungstypen + STORNO storniert werden dürfen.
+        if (AUDIT_RELEVANTE_TYPEN.contains(original.getTyp())) {
+            var bearbeiter = bearbeiterId != null
+                    ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
+                    : null;
+            String stornoGrund = (grund == null || grund.isBlank())
+                    ? "Stornierung des Originaldokuments"
+                    : grund;
+            auditService.protokolliereStornierung(original, bearbeiter, stornoGrund, ipAdresse);
+            auditService.protokolliereErstellung(savedStorno, bearbeiter, ipAdresse);
         }
 
         return savedStorno;
@@ -672,7 +780,7 @@ public class AusgangsGeschaeftsDokumentService {
      * direkt auf die PDF-Datei verweist (statt auf den Document-Editor).
      */
     @Transactional
-    public void speicherePdfFuerDokument(Long dokumentId, byte[] pdfBytes) {
+    public String speicherePdfFuerDokument(Long dokumentId, byte[] pdfBytes) {
         AusgangsGeschaeftsDokument dokument = dokumentRepository.findById(dokumentId)
                 .orElseThrow(() -> new RuntimeException("Dokument nicht gefunden: " + dokumentId));
 
@@ -704,6 +812,7 @@ public class AusgangsGeschaeftsDokumentService {
                     projektDokumentRepository.save(g);
                     log.info("PDF für Offenen Posten {} gespeichert: {}", g.getDokumentid(), gespeicherterDateiname);
                 });
+        return gespeicherterDateiname;
     }
 
     /**
@@ -736,12 +845,123 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Findet alle Dokumente für ein Projekt.
+     * Findet alle Dokumente für ein Projekt – inklusive Mahnungen, die
+     * weiterhin in {@code ProjektGeschaeftsdokument} persistiert sind und hier
+     * als virtuelle Child-Einträge der zugehörigen Rechnung mitgeliefert werden,
+     * damit die Hierarchie Rechnung → Zahlungserinnerung → 1. Mahnung →
+     * 2. Mahnung im Ausgangs-Dokumente-Tab sichtbar ist.
      */
+    @Transactional(readOnly = true)
     public List<AusgangsGeschaeftsDokumentResponseDto> findByProjekt(Long projektId) {
-        return dokumentRepository.findByProjektIdOrderByDatumDesc(projektId).stream()
-                .map(this::toResponseDto)
-                .collect(Collectors.toList());
+        List<AusgangsGeschaeftsDokument> dokumente =
+                dokumentRepository.findByProjektIdOrderByDatumDesc(projektId);
+
+        // Mahnungen aus alter Domaene gruppieren nach Dokumentnummer der Original-Rechnung.
+        // Match-Schluessel ist die Dokumentnummer, weil erstelleOffenenPostenEintrag()
+        // beide Domaenen synchron mit derselben Nummer haelt.
+        java.util.Map<String, java.util.EnumMap<org.example.kalkulationsprogramm.domain.Mahnstufe,
+                ProjektGeschaeftsdokument>> mahnungenJeRechnung = new java.util.HashMap<>();
+        for (ProjektGeschaeftsdokument m : projektDokumentRepository.findMahnungenByProjektId(projektId)) {
+            if (m.getMahnstufe() == null || m.getReferenzDokument() == null) continue;
+            String rechnungNummer = m.getReferenzDokument().getDokumentid();
+            if (rechnungNummer == null) continue;
+            mahnungenJeRechnung
+                    .computeIfAbsent(rechnungNummer, k -> new java.util.EnumMap<>(
+                            org.example.kalkulationsprogramm.domain.Mahnstufe.class))
+                    .put(m.getMahnstufe(), m);
+        }
+
+        List<AusgangsGeschaeftsDokumentResponseDto> result = new ArrayList<>();
+        for (AusgangsGeschaeftsDokument dok : dokumente) {
+            result.add(toResponseDto(dok));
+
+            if (!RECHNUNGSTYPEN.contains(dok.getTyp())) continue;
+            java.util.EnumMap<org.example.kalkulationsprogramm.domain.Mahnstufe,
+                    ProjektGeschaeftsdokument> stufen = mahnungenJeRechnung.get(dok.getDokumentNummer());
+            if (stufen == null || stufen.isEmpty()) continue;
+
+            // Kette aufbauen: Rechnung -> Zahlungserinnerung -> 1. Mahnung -> 2. Mahnung
+            Long parentId = dok.getId();
+            String parentNummer = dok.getDokumentNummer();
+            for (org.example.kalkulationsprogramm.domain.Mahnstufe stufe :
+                    org.example.kalkulationsprogramm.domain.Mahnstufe.values()) {
+                ProjektGeschaeftsdokument m = stufen.get(stufe);
+                if (m == null) continue;
+                AusgangsGeschaeftsDokumentResponseDto mDto = mappeMahnungZuDto(m, stufe, dok, parentId, parentNummer);
+                result.add(mDto);
+                parentId = mDto.getId();
+                parentNummer = mDto.getDokumentNummer();
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Mappt ein Mahn-{@link ProjektGeschaeftsdokument} auf einen virtuellen
+     * {@link AusgangsGeschaeftsDokumentResponseDto}-Eintrag fuer den Tree im
+     * Projekt-Editor. Die ID wird als negierte ProjektGeschaeftsdokument-ID
+     * vergeben, damit sie nicht mit echten AusgangsGeschaeftsDokument-IDs
+     * kollidiert; das Frontend erkennt Mahnungen am negativen ID-Vorzeichen
+     * und behandelt sie nicht-editierbar.
+     */
+    private AusgangsGeschaeftsDokumentResponseDto mappeMahnungZuDto(
+            ProjektGeschaeftsdokument mahnung,
+            org.example.kalkulationsprogramm.domain.Mahnstufe stufe,
+            AusgangsGeschaeftsDokument originalRechnung,
+            Long vorgaengerId,
+            String vorgaengerNummer) {
+        AusgangsGeschaeftsDokumentResponseDto dto = new AusgangsGeschaeftsDokumentResponseDto();
+        dto.setId(-mahnung.getId());
+        dto.setDokumentNummer(mahnung.getDokumentid());
+        dto.setTyp(mappeMahnstufeAufTyp(stufe));
+        dto.setDatum(mahnung.getRechnungsdatum() != null
+                ? mahnung.getRechnungsdatum()
+                : mahnung.getUploadDatum());
+        dto.setBetreff(mahnstufeLabel(stufe) + " zu Rechnung " + originalRechnung.getDokumentNummer());
+        dto.setBetragBrutto(mahnung.getBruttoBetrag());
+        dto.setVersandDatum(mahnung.getEmailVersandDatum());
+        dto.setVorgaengerId(vorgaengerId);
+        dto.setVorgaengerNummer(vorgaengerNummer);
+
+        // Mahnungen sind nach Versand fix — keine Bearbeitung im DocumentEditor.
+        dto.setBearbeitbar(false);
+        dto.setGebucht(true);
+        dto.setStorniert(false);
+        dto.setDigitalAngenommen(false);
+
+        if (originalRechnung.getProjekt() != null) {
+            dto.setProjektId(originalRechnung.getProjekt().getId());
+            dto.setProjektBauvorhaben(originalRechnung.getProjekt().getBauvorhaben());
+            dto.setProjektnummer(originalRechnung.getProjekt().getAuftragsnummer());
+        }
+        if (originalRechnung.getKunde() != null) {
+            dto.setKundeId(originalRechnung.getKunde().getId());
+            dto.setKundennummer(originalRechnung.getKunde().getKundennummer());
+            dto.setKundenName(originalRechnung.getKunde().getName());
+        }
+
+        // PDF-Direkt-URL: Mahn-PDFs liegen unter /api/dokumente/{gespeicherterDateiname}.
+        if (mahnung.getGespeicherterDateiname() != null && !mahnung.getGespeicherterDateiname().isBlank()) {
+            dto.setPdfUrl("/api/dokumente/" + mahnung.getGespeicherterDateiname());
+        }
+        return dto;
+    }
+
+    private static AusgangsGeschaeftsDokumentTyp mappeMahnstufeAufTyp(
+            org.example.kalkulationsprogramm.domain.Mahnstufe stufe) {
+        return switch (stufe) {
+            case ZAHLUNGSERINNERUNG -> AusgangsGeschaeftsDokumentTyp.ZAHLUNGSERINNERUNG;
+            case ERSTE_MAHNUNG -> AusgangsGeschaeftsDokumentTyp.ERSTE_MAHNUNG;
+            case ZWEITE_MAHNUNG -> AusgangsGeschaeftsDokumentTyp.ZWEITE_MAHNUNG;
+        };
+    }
+
+    private static String mahnstufeLabel(org.example.kalkulationsprogramm.domain.Mahnstufe stufe) {
+        return switch (stufe) {
+            case ZAHLUNGSERINNERUNG -> "Zahlungserinnerung";
+            case ERSTE_MAHNUNG -> "1. Mahnung";
+            case ZWEITE_MAHNUNG -> "2. Mahnung";
+        };
     }
 
     /**
@@ -795,6 +1015,19 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public void loeschen(Long id, String begruendung) {
+        loeschen(id, begruendung, null, null);
+    }
+
+    /**
+     * Löscht ein Dokument mit GoBD-konformem Audit-Eintrag.
+     *
+     * @param id           Dokument-ID
+     * @param begruendung  Pflicht-Begründung (wird in Audit-Tabelle persistiert)
+     * @param geloeschtVonId Optional: ID des löschenden FrontendUserProfile
+     * @param ipAdresse    Optional: IP-Adresse des Aufrufers
+     */
+    @Transactional
+    public void loeschen(Long id, String begruendung, Long geloeschtVonId, String ipAdresse) {
         AusgangsGeschaeftsDokument dokument = dokumentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Dokument nicht gefunden: " + id));
 
@@ -821,6 +1054,13 @@ public class AusgangsGeschaeftsDokumentService {
         if (begruendung == null || begruendung.isBlank()) {
             throw new RuntimeException("Eine Begründung für das Löschen ist erforderlich.");
         }
+
+        // GoBD: Vor dem Hard-Delete einen unveränderlichen Audit-Eintrag mit
+        // Snapshot, Begründung und Bearbeiter persistieren (revisionssicher).
+        var bearbeiter = geloeschtVonId != null
+                ? frontendUserProfileRepository.findById(geloeschtVonId).orElse(null)
+                : null;
+        auditService.protokolliereLoeschung(dokument, bearbeiter, begruendung, ipAdresse);
 
         log.info("Dokument gelöscht: {} (Typ: {}, Nr: {}) – Begründung: {}",
                 dokument.getId(), dokument.getTyp(), dokument.getDokumentNummer(), begruendung);
@@ -869,8 +1109,15 @@ public class AusgangsGeschaeftsDokumentService {
         verlauf.setBasisdokumentNummer(basis.getDokumentNummer());
         verlauf.setBasisdokumentTyp(basis.getTyp());
         verlauf.setBasisdokumentDatum(basis.getDatum());
-        verlauf.setBasisdokumentBetragNetto(
-                basis.getBetragNetto() != null ? basis.getBetragNetto() : BigDecimal.ZERO);
+
+        // Basisbetrag: gespeicherter Wert oder aus positionenJson berechnen.
+        // Why: AB/Angebot speichern den Betrag oft nur in positionenJson — ohne Fallback
+        // wäre der Restbetrag fälschlich 0 und die Rechnungserstellung würde blockiert.
+        BigDecimal basisNetto = basis.getBetragNetto();
+        if (basisNetto == null && basis.getPositionenJson() != null) {
+            basisNetto = berechneNettoAusPositionenJson(basis.getPositionenJson());
+        }
+        verlauf.setBasisdokumentBetragNetto(basisNetto != null ? basisNetto : BigDecimal.ZERO);
 
         // Alle Nachfolger-Dokumente laden (sortiert nach Erstellungszeitpunkt)
         List<AusgangsGeschaeftsDokument> nachfolger = dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(basisdokumentId);
@@ -995,6 +1242,63 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
+     * Entfernt alle TEXT-Bloecke mit gesetzter "textbausteinRolle" (VOR/NACH) aus einem
+     * positionenJson. Wird beim Umwandeln eines Dokuments (z.B. Angebot -> AB) verwendet,
+     * damit das Frontend die fuer den neuen Typ konfigurierten Standard-Textbausteine
+     * frisch generieren kann. Leistungen, Section-Header, Subtotals und manuell
+     * hinzugefuegte Textbausteine (ohne Rolle) bleiben unveraendert erhalten.
+     */
+    private String entferneStandardTextbausteine(String positionenJson) {
+        if (positionenJson == null || positionenJson.isBlank()) return positionenJson;
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(positionenJson);
+
+            ArrayNode blocksNode;
+            ObjectNode rootObject = null;
+
+            if (root.isArray()) {
+                blocksNode = (ArrayNode) root;
+            } else if (root.isObject() && root.has("blocks") && root.get("blocks").isArray()) {
+                rootObject = (ObjectNode) root;
+                blocksNode = (ArrayNode) root.get("blocks");
+            } else {
+                return positionenJson;
+            }
+
+            ArrayNode gefiltert = mapper.createArrayNode();
+            for (JsonNode block : blocksNode) {
+                if (istStandardTextbaustein(block)) continue;
+                // Auch Kinder von SECTION_HEADER bereinigen, falls dort Textbausteine liegen
+                if (block.isObject() && block.has("children") && block.get("children").isArray()) {
+                    ArrayNode kinder = (ArrayNode) block.get("children");
+                    ArrayNode kinderGefiltert = mapper.createArrayNode();
+                    for (JsonNode kind : kinder) {
+                        if (!istStandardTextbaustein(kind)) kinderGefiltert.add(kind);
+                    }
+                    ((ObjectNode) block).set("children", kinderGefiltert);
+                }
+                gefiltert.add(block);
+            }
+
+            if (rootObject != null) {
+                rootObject.set("blocks", gefiltert);
+                return mapper.writeValueAsString(rootObject);
+            }
+            return mapper.writeValueAsString(gefiltert);
+        } catch (Exception e) {
+            log.warn("Fehler beim Entfernen der Standard-Textbausteine aus positionenJson: {}", e.getMessage());
+            return positionenJson;
+        }
+    }
+
+    private boolean istStandardTextbaustein(JsonNode block) {
+        if (block == null || !block.isObject()) return false;
+        JsonNode rolle = block.get("textbausteinRolle");
+        return rolle != null && !rolle.isNull() && !rolle.asText().isBlank();
+    }
+
+    /**
      * Extrahiert die IDs aller SERVICE-Blöcke mit nicht-null quantity > 0 aus einem positionenJson.
      * Damit werden die tatsächlich abgerechneten Positionen einer Teilrechnung identifiziert.
      */
@@ -1080,6 +1384,12 @@ public class AusgangsGeschaeftsDokumentService {
             case SCHLUSSRECHNUNG -> "SR";
             case GUTSCHRIFT -> "GU";
             case STORNO -> "ST";
+            // Mahn-Typen werden nie hier persistiert (sie sind virtuelle DTO-Werte
+            // und kommen aus ProjektGeschaeftsdokument), benoetigen aber einen
+            // case-Eintrag damit der exhaustive switch kompiliert.
+            case ZAHLUNGSERINNERUNG, ERSTE_MAHNUNG, ZWEITE_MAHNUNG ->
+                    throw new IllegalStateException(
+                            "Mahn-Typen werden nicht im AusgangsGeschaeftsDokument-Nummernkreis vergeben: " + typ);
         };
     }
 
@@ -1140,6 +1450,7 @@ public class AusgangsGeschaeftsDokumentService {
         dto.setGebuchtAm(dokument.getGebuchtAm());
         dto.setStorniert(dokument.isStorniert());
         dto.setStorniertAm(dokument.getStorniertAm());
+        dto.setDigitalAngenommen(dokument.isDigitalAngenommen());
         dto.setZahlungszielTage(dokument.getZahlungszielTage());
         dto.setVersandDatum(dokument.getVersandDatum());
         dto.setBearbeitbar(dokument.istBearbeitbar());
@@ -1425,6 +1736,86 @@ public class AusgangsGeschaeftsDokumentService {
         projektRepository.save(projekt);
         log.info("ProjektProduktkategorien für Projekt {} aktualisiert: {} Kategorien",
                 projektId, kategorieMengen.size());
+    }
+
+    /**
+     * Liefert für eine Anfrage einen Vorschlag der Produktkategorien (inkl. aggregierter Mengen),
+     * die sich aus den Leistungen der zugehörigen Auftragsbestätigungen bzw. – falls keine AB
+     * existiert – aus dem Angebot ergeben.
+     *
+     * Wird beim Anlegen eines Projekts aus einer Anfrage als Vorbelegung verwendet.
+     * Es werden ausschließlich Leaf-Kategorien zurückgegeben.
+     */
+    @Transactional(readOnly = true)
+    public List<KategorieVorschlagDto> berechneKategorieVorschlagFuerAnfrage(Long anfrageId) {
+        if (anfrageId == null) return List.of();
+
+        List<AusgangsGeschaeftsDokument> aktive = dokumentRepository.findByAnfrageIdOrderByDatumDesc(anfrageId).stream()
+                .filter(d -> !d.isStorniert())
+                .filter(d -> KATEGORIE_RELEVANTE_TYPEN.contains(d.getTyp()))
+                .toList();
+
+        // ABs haben Priorität – wenn vorhanden, nur diese verwenden
+        List<AusgangsGeschaeftsDokument> abs = aktive.stream()
+                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG)
+                .toList();
+
+        List<AusgangsGeschaeftsDokument> effektive = abs.isEmpty()
+                ? aktive.stream()
+                    .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.ANGEBOT)
+                    .toList()
+                : abs;
+
+        if (effektive.isEmpty()) return List.of();
+
+        String quelle = abs.isEmpty()
+                ? AusgangsGeschaeftsDokumentTyp.ANGEBOT.name()
+                : AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG.name();
+
+        Map<Long, BigDecimal> leistungMengen = new java.util.HashMap<>();
+        for (AusgangsGeschaeftsDokument dok : effektive) {
+            extractLeistungMengenFromPositionenJson(dok.getPositionenJson(), leistungMengen);
+        }
+        if (leistungMengen.isEmpty()) return List.of();
+
+        // Leistung → aggregierte Menge ihrer Kategorie
+        Map<Long, BigDecimal> kategorieMengen = new java.util.HashMap<>();
+        List<Leistung> leistungen = leistungRepository.findAllById(leistungMengen.keySet());
+        for (Leistung l : leistungen) {
+            if (l.getKategorie() != null) {
+                kategorieMengen.merge(l.getKategorie().getId(),
+                        leistungMengen.getOrDefault(l.getId(), BigDecimal.ZERO),
+                        BigDecimal::add);
+            }
+        }
+        if (kategorieMengen.isEmpty()) return List.of();
+
+        List<Produktkategorie> kategorien = produktkategorieRepository.findAllById(kategorieMengen.keySet());
+        return kategorien.stream()
+                // Nur Leaf-Kategorien zurückgeben (gefordert vom Nutzer)
+                .filter(k -> k.getUnterkategorien() == null || k.getUnterkategorien().isEmpty())
+                .map(k -> {
+                    KategorieVorschlagDto dto = new KategorieVorschlagDto();
+                    dto.setKategorieId(k.getId());
+                    dto.setBezeichnung(k.getBezeichnung());
+                    dto.setPfad(bauePfad(k));
+                    dto.setVerrechnungseinheit(k.getVerrechnungseinheit());
+                    dto.setMenge(kategorieMengen.getOrDefault(k.getId(), BigDecimal.ZERO));
+                    dto.setQuelle(quelle);
+                    return dto;
+                })
+                .sorted((a, b) -> a.getPfad().compareToIgnoreCase(b.getPfad()))
+                .toList();
+    }
+
+    private String bauePfad(Produktkategorie kategorie) {
+        java.util.Deque<String> namen = new java.util.ArrayDeque<>();
+        Produktkategorie current = kategorie;
+        while (current != null) {
+            namen.addFirst(current.getBezeichnung());
+            current = current.getUebergeordneteKategorie();
+        }
+        return String.join(" > ", namen);
     }
 
     /**

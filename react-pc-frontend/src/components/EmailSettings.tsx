@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import {
     Plus,
@@ -7,14 +7,29 @@ import {
     Save,
     X,
     Calendar,
+    CalendarDays,
+    CalendarOff,
     Clock,
-    CheckCircle,
-    Mail
+    CheckCircle2,
+    Hourglass,
+    History,
+    Mail,
+    MessageSquare,
+    Sparkles,
+    Plane,
+    Info,
+    Bold,
+    Italic,
+    Underline,
+    List,
+    ListOrdered,
+    Eraser
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { DatePicker } from './ui/datepicker';
 import { cn } from '../lib/utils';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
@@ -25,6 +40,12 @@ interface EmailSignature {
     name: string;
     html: string;
     defaultSignature: boolean;
+    /**
+     * true = diese Signatur wird automatisch an alle vom System versendeten
+     * E-Mails (Auto-AB nach Annahme, Mahnungen, ...) angehaengt. Gesteuert
+     * ueber PUT /api/email/signatures/{id}/system-default.
+     */
+    isSystemDefault?: boolean;
     createdAt: string;
     updatedAt: string;
 }
@@ -52,6 +73,50 @@ interface OutOfOfficeBackend {
     active: boolean;
 }
 
+// Aktuelles Frontend-Profil aus localStorage holen
+const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
+
+interface FrontendUserSelection {
+    id: number;
+    displayName: string;
+}
+
+const getCurrentFrontendUser = (): FrontendUserSelection | null => {
+    try {
+        const raw = localStorage.getItem(FRONTEND_USER_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.id === 'number') {
+            return parsed as FrontendUserSelection;
+        }
+    } catch (err) {
+        console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
+    }
+    return null;
+};
+
+// Lädt die nutzerspezifische Standard-Signatur (FrontendUserProfile.defaultSignature)
+const fetchUserDefaultSignatureHtml = async (): Promise<string> => {
+    try {
+        const currentUser = getCurrentFrontendUser();
+        const params = new URLSearchParams();
+        if (currentUser?.id) {
+            params.set('frontendUserId', String(currentUser.id));
+        }
+        const url = params.toString()
+            ? `/api/email/signatures/default?${params.toString()}`
+            : '/api/email/signatures/default';
+        const res = await fetch(url);
+        if (res.ok && res.status !== 204) {
+            const data = await res.json();
+            if (data?.html) return data.html as string;
+        }
+    } catch (err) {
+        console.error('Standard-Signatur konnte nicht geladen werden:', err);
+    }
+    return '';
+};
+
 export default function EmailSettings() {
     const toast = useToast();
     const confirmDialog = useConfirm();
@@ -68,6 +133,16 @@ export default function EmailSettings() {
     const [loadingOoo, setLoadingOoo] = useState(false);
     const [editingOoo, setEditingOoo] = useState<Partial<OutOfOfficeEntry> | null>(null);
     const [savingOoo, setSavingOoo] = useState(false);
+
+    // Cursor tracking for placeholder insertion
+    const subjectInputRef = useRef<HTMLInputElement>(null);
+    const subjectCursorRef = useRef<number>(0);
+    const messageEditorRef = useRef<HTMLDivElement>(null);
+    const messageRangeRef = useRef<Range | null>(null);
+    // Tracks which entry the contentEditable was last initialized for, so we
+    // only set innerHTML when switching entries — never on every state change
+    // (otherwise the user's caret jumps and partial edits get wiped).
+    const editorInitForRef = useRef<number | string | null>(null);
 
     // Active tab within settings
     const [activeSection, setActiveSection] = useState<'signatures' | 'ooo'>('signatures');
@@ -118,6 +193,25 @@ export default function EmailSettings() {
         loadSignatures();
         loadOooEntries();
     }, [loadSignatures, loadOooEntries]);
+
+    // Initialize the contentEditable editor's HTML only when the entry changes,
+    // not on every state update. Without this, dangerouslySetInnerHTML would
+    // overwrite the user's in-progress edits and reset the caret on every keystroke.
+    useEffect(() => {
+        if (editingOoo === null) {
+            editorInitForRef.current = null;
+            return;
+        }
+        const editor = messageEditorRef.current;
+        if (!editor) return;
+        const key = editingOoo.id ?? 'new';
+        if (editorInitForRef.current === key) return;
+        editorInitForRef.current = key;
+        editor.innerHTML = DOMPurify.sanitize(editingOoo.message || '', {
+            ADD_ATTR: ['target', 'style'],
+            ADD_TAGS: ['table', 'tbody', 'thead', 'tr', 'td', 'th']
+        });
+    }, [editingOoo]);
 
     // Save signature
     const handleSaveSignature = async () => {
@@ -186,6 +280,36 @@ export default function EmailSettings() {
         setNewSignatureHtml('');
     };
 
+    // Markiert eine Signatur als System-Default fuer automatische E-Mails.
+    // Andere Signaturen verlieren das Flag automatisch (Backend stellt das sicher).
+    const handleSetSystemDefault = async (id: number) => {
+        try {
+            const res = await fetch(`/api/email/signatures/${id}/system-default`, {
+                method: 'PUT',
+            });
+            if (res.ok) {
+                toast.success('System-Signatur aktualisiert.');
+                loadSignatures();
+            } else {
+                toast.warning('System-Signatur konnte nicht gesetzt werden.');
+            }
+        } catch (err) {
+            console.error('Failed to set system default signature', err);
+        }
+    };
+
+    // Erkennt die unveraenderte Seed-Signatur aus V256 — solange dieser
+    // Marker im HTML steht, wird KEINE Signatur an Auto-Mails angehaengt.
+    // (Symmetrisch zu EmailSignatureService.isPlatzhalter im Backend.)
+    const isSystemPlaceholder = (sig: EmailSignature) =>
+        !!sig.html && (sig.html.includes('data-system-placeholder="1"')
+                    || sig.html.includes("data-system-placeholder='1'"));
+
+    const systemSignature = signatures.find(s => s.isSystemDefault);
+    const systemSignatureNeedsSetup = systemSignature
+        ? isSystemPlaceholder(systemSignature)
+        : false;
+
     // Save OOO
     const handleSaveOoo = async () => {
         if (!editingOoo?.title?.trim() || !editingOoo?.startDate || !editingOoo?.endDate) {
@@ -203,7 +327,10 @@ export default function EmailSettings() {
                 subject: editingOoo.subject || 'Automatische Antwort: {{subject}}',
                 message: editingOoo.message || '',
                 signatureId: editingOoo.signatureId || null,
-                active: false // Always inactive manually - auto activates based on date
+                // active=true heisst "Eintrag scharf geschaltet". Ob aktuell geantwortet wird,
+                // entscheidet zusaetzlich der Datums-Filter im OutOfOfficeResponder. Abgelaufene
+                // Eintraege werden vom taeglichen deactivateExpiredSchedules-Job auf false gesetzt.
+                active: true
             };
 
             const res = await fetch('/api/email/outofoffice', {
@@ -262,6 +389,198 @@ export default function EmailSettings() {
         return now < start;
     };
 
+    // Calculates inclusive day count between two ISO dates (YYYY-MM-DD)
+    const calculateDuration = (start: string, end: string): number => {
+        if (!start || !end) return 0;
+        const s = new Date(start);
+        const e = new Date(end);
+        const diff = Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        return Math.max(0, diff);
+    };
+
+    // Days until start (negative = past)
+    const daysUntilStart = (start: string): number => {
+        if (!start) return 0;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const s = new Date(start);
+        s.setHours(0, 0, 0, 0);
+        return Math.ceil((s.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    };
+
+    type OooStatus = {
+        label: string;
+        Icon: typeof CheckCircle2;
+        accentBar: string;
+        iconWrap: string;
+        badge: string;
+        cardBorder: string;
+        cardBg: string;
+    };
+
+    const getOooStatus = (entry: OutOfOfficeEntry): OooStatus => {
+        if (isOooActive(entry)) {
+            return {
+                label: 'Aktiv',
+                Icon: CheckCircle2,
+                accentBar: 'bg-emerald-500',
+                iconWrap: 'bg-emerald-100 text-emerald-600 ring-4 ring-emerald-50',
+                badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                cardBorder: 'border-emerald-200',
+                cardBg: 'bg-gradient-to-br from-emerald-50/60 via-white to-white'
+            };
+        }
+        if (isOooUpcoming(entry)) {
+            const days = daysUntilStart(entry.startDate);
+            return {
+                label: days === 0 ? 'Heute' : days === 1 ? 'Morgen' : `In ${days} Tagen`,
+                Icon: Hourglass,
+                accentBar: 'bg-amber-500',
+                iconWrap: 'bg-amber-100 text-amber-600 ring-4 ring-amber-50',
+                badge: 'bg-amber-50 text-amber-700 border-amber-200',
+                cardBorder: 'border-amber-200',
+                cardBg: 'bg-gradient-to-br from-amber-50/40 via-white to-white'
+            };
+        }
+        return {
+            label: 'Abgelaufen',
+            Icon: History,
+            accentBar: 'bg-slate-300',
+            iconWrap: 'bg-slate-100 text-slate-400 ring-4 ring-slate-50',
+            badge: 'bg-slate-100 text-slate-500 border-slate-200',
+            cardBorder: 'border-slate-200',
+            cardBg: 'bg-slate-50/60'
+        };
+    };
+
+    const stripHtml = (html: string): string => {
+        if (!html) return '';
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+    };
+
+    // Inserts a placeholder string into the subject input at the last known cursor position.
+    const insertSubjectPlaceholder = (placeholder: string) => {
+        if (!editingOoo) return;
+        const current = editingOoo.subject || '';
+        const pos = Math.min(subjectCursorRef.current ?? current.length, current.length);
+        const next = current.slice(0, pos) + placeholder + current.slice(pos);
+        const newCaret = pos + placeholder.length;
+        subjectCursorRef.current = newCaret;
+        setEditingOoo({ ...editingOoo, subject: next });
+        // setTimeout(0) waits for React to flush the new value into the DOM
+        // before we restore focus and caret position.
+        setTimeout(() => {
+            const el = subjectInputRef.current;
+            if (!el) return;
+            el.focus();
+            try {
+                el.setSelectionRange(newCaret, newCaret);
+            } catch {
+                // setSelectionRange may throw on certain input types; ignore
+            }
+        }, 0);
+    };
+
+    // Inserts a placeholder into the contentEditable message editor at the
+    // current (or last saved) selection range.
+    const insertMessagePlaceholder = (placeholder: string) => {
+        if (!editingOoo) return;
+        const editor = messageEditorRef.current;
+        if (!editor) return;
+
+        const selection = window.getSelection();
+        let range: Range | null = null;
+
+        if (selection && selection.rangeCount > 0) {
+            const live = selection.getRangeAt(0);
+            if (editor.contains(live.startContainer)) {
+                range = live;
+            }
+        }
+        if (!range && messageRangeRef.current && editor.contains(messageRangeRef.current.startContainer)) {
+            range = messageRangeRef.current;
+            editor.focus();
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
+        if (!range) {
+            editor.focus();
+            range = document.createRange();
+            range.selectNodeContents(editor);
+            range.collapse(false);
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
+
+        const node = document.createTextNode(placeholder);
+        range.deleteContents();
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.setEndAfter(node);
+        if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+        messageRangeRef.current = range.cloneRange();
+        setEditingOoo({ ...editingOoo, message: editor.innerHTML });
+    };
+
+    const saveMessageRange = () => {
+        const editor = messageEditorRef.current;
+        if (!editor) return;
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return;
+        const r = selection.getRangeAt(0);
+        if (editor.contains(r.startContainer)) {
+            messageRangeRef.current = r.cloneRange();
+        }
+    };
+
+    // Simple rich-text formatting via document.execCommand.
+    // execCommand is deprecated but still universally supported in browsers and
+    // is exactly what EmailComposeForm-style native contentEditable editors use.
+    const applyFormat = (command: string, value?: string) => {
+        const editor = messageEditorRef.current;
+        if (!editor) return;
+        editor.focus();
+        // Re-apply saved range if focus was lost (e.g. clicking a toolbar button).
+        const selection = window.getSelection();
+        if (messageRangeRef.current && editor.contains(messageRangeRef.current.startContainer)) {
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(messageRangeRef.current);
+            }
+        }
+        document.execCommand(command, false, value);
+        if (editingOoo) {
+            setEditingOoo({ ...editingOoo, message: editor.innerHTML });
+        }
+        saveMessageRange();
+    };
+
+    // Visual chip button used to insert placeholders at cursor.
+    // mousedown preventDefault keeps the active editor (input or contentEditable)
+    // focused, so the saved selection/caret is preserved when the click fires.
+    const PlaceholderChip = ({ token, label, onClick }: { token: string; label: string; onClick: () => void }) => (
+        <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onClick}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-rose-200 text-rose-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 transition-colors cursor-pointer shadow-sm"
+            title={`${token} am Cursor einfügen`}
+        >
+            <Plus className="w-3 h-3" />
+            {label}
+            <code className="text-[10px] text-rose-400 font-mono">{token}</code>
+        </button>
+    );
+
     return (
         <div className="space-y-6">
             {/* Section Tabs */}
@@ -293,6 +612,62 @@ export default function EmailSettings() {
             {/* Signatures Section */}
             {activeSection === 'signatures' && (
                 <div className="space-y-6">
+                    {/* Hinweis-Banner: System-Signatur fuer automatische E-Mails.
+                        Erklaert dem Inhaber sichtbar, dass eine seiner Signaturen
+                        die "System-Signatur" sein muss — sonst werden Auto-Mahnungen
+                        und Auto-Auftragsbestaetigungen ohne Signatur versendet. */}
+                    <Card className={cn(
+                        "p-4 border",
+                        systemSignatureNeedsSetup
+                            ? "border-amber-300 bg-amber-50"
+                            : systemSignature
+                                ? "border-emerald-200 bg-emerald-50/40"
+                                : "border-rose-300 bg-rose-50"
+                    )}>
+                        <div className="flex items-start gap-3">
+                            <div className={cn(
+                                "shrink-0 rounded-full p-2",
+                                systemSignatureNeedsSetup
+                                    ? "bg-amber-100 text-amber-700"
+                                    : systemSignature
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : "bg-rose-100 text-rose-700"
+                            )}>
+                                <Mail className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold text-slate-900">
+                                    System-Signatur für automatische E-Mails
+                                </h3>
+                                <p className="text-sm text-slate-600 mt-1">
+                                    Diese Signatur wird automatisch an alle E-Mails angehängt, die
+                                    das ERP selbst versendet — also automatische
+                                    Auftragsbestätigungen nach digitaler Annahme und Mahnungen
+                                    aus dem automatischen Mahnverfahren.
+                                </p>
+                                {systemSignature && !systemSignatureNeedsSetup && (
+                                    <p className="text-sm text-emerald-700 mt-2 font-medium">
+                                        Aktiv: <span className="font-semibold">{systemSignature.name}</span>
+                                    </p>
+                                )}
+                                {systemSignatureNeedsSetup && (
+                                    <p className="text-sm text-amber-800 mt-2">
+                                        <strong>Bitte einrichten:</strong> Die System-Signatur enthält
+                                        noch den Platzhalter-Text. Solange dieser nicht ersetzt wird,
+                                        gehen automatische Mails ohne Signatur raus. Klick auf
+                                        „Bearbeiten" bei der Signatur „{systemSignature?.name}".
+                                    </p>
+                                )}
+                                {!systemSignature && (
+                                    <p className="text-sm text-rose-800 mt-2">
+                                        <strong>Keine System-Signatur gesetzt.</strong> Lege eine Signatur
+                                        an und klicke unten auf „Als System-Signatur setzen".
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </Card>
+
                     {/* Signature Editor */}
                     {editingSignature !== null ? (
                         <Card className="p-6 border-rose-200 bg-rose-50/30">
@@ -365,16 +740,44 @@ export default function EmailSettings() {
                     ) : (
                         <div className="space-y-3">
                             {signatures.map((sig) => (
-                                <Card key={sig.id} className="p-4 hover:shadow-md transition-shadow group">
+                                <Card
+                                    key={sig.id}
+                                    className={cn(
+                                        "p-4 hover:shadow-md transition-shadow group",
+                                        sig.isSystemDefault && "border-emerald-300 ring-1 ring-emerald-200"
+                                    )}
+                                >
                                     <div className="flex items-start justify-between gap-4">
                                         <div className="flex-1 min-w-0">
-                                            <h4 className="font-medium text-slate-900">{sig.name}</h4>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <h4 className="font-medium text-slate-900">{sig.name}</h4>
+                                                {sig.isSystemDefault && (
+                                                    <span
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold border border-emerald-200"
+                                                        title="Wird automatisch an Auto-Auftragsbestätigungen und Mahnungen angehängt"
+                                                    >
+                                                        <Mail className="w-3 h-3" />
+                                                        System (automatische E-Mails)
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div
                                                 className="mt-2 text-sm text-slate-600 prose prose-sm max-w-none line-clamp-3"
                                                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(sig.html || '<em>Kein Inhalt</em>') }}
                                             />
                                         </div>
                                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {!sig.isSystemDefault && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleSetSystemDefault(sig.id)}
+                                                    className="text-slate-500 hover:text-emerald-700"
+                                                    title="Als System-Signatur für automatische E-Mails setzen"
+                                                >
+                                                    <Mail className="w-4 h-4" />
+                                                </Button>
+                                            )}
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -388,6 +791,10 @@ export default function EmailSettings() {
                                                 size="sm"
                                                 onClick={() => handleDeleteSignature(sig.id)}
                                                 className="text-slate-500 hover:text-red-600"
+                                                disabled={sig.isSystemDefault}
+                                                title={sig.isSystemDefault
+                                                    ? "System-Signatur kann nicht gelöscht werden — erst eine andere als System-Signatur setzen."
+                                                    : "Signatur löschen"}
                                             >
                                                 <Trash2 className="w-4 h-4" />
                                             </Button>
@@ -403,184 +810,435 @@ export default function EmailSettings() {
             {/* Out of Office Section */}
             {activeSection === 'ooo' && (
                 <div className="space-y-6">
-                    {/* OOO Form */}
-                    {editingOoo !== null ? (
-                        <Card className="p-6 border-rose-200 bg-rose-50/30">
-                            <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                                {editingOoo.id ? 'Abwesenheit bearbeiten' : 'Neue Abwesenheit planen'}
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="md:col-span-2">
-                                    <Label>Titel</Label>
-                                    <Input
-                                        value={editingOoo.title || ''}
-                                        onChange={(e) => setEditingOoo({ ...editingOoo, title: e.target.value })}
-                                        placeholder="z.B. Urlaub, Betriebsferien"
-                                        className="mt-1"
-                                    />
-                                </div>
-                                <div>
-                                    <Label>Von</Label>
-                                    <Input
-                                        type="date"
-                                        value={editingOoo.startDate || ''}
-                                        onChange={(e) => setEditingOoo({ ...editingOoo, startDate: e.target.value })}
-                                        className="mt-1"
-                                    />
-                                </div>
-                                <div>
-                                    <Label>Bis</Label>
-                                    <Input
-                                        type="date"
-                                        value={editingOoo.endDate || ''}
-                                        onChange={(e) => setEditingOoo({ ...editingOoo, endDate: e.target.value })}
-                                        className="mt-1"
-                                    />
-                                </div>
-
-                                <div className="md:col-span-2">
-                                    <Label>Betreff der automatischen Antwort</Label>
-                                    <Input
-                                        value={editingOoo.subject || ''}
-                                        onChange={(e) => setEditingOoo({ ...editingOoo, subject: e.target.value })}
-                                        placeholder="Automatische Antwort: {{subject}}"
-                                        className="mt-1"
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        Platzhalter: {"{{subject}}"}, {"{{start}}"}, {"{{ende}}"}, {"{{title}}"}
-                                    </p>
-                                </div>
-                                <div className="md:col-span-2">
-                                    <Label>Nachricht</Label>
-                                    <div 
-                                        className="mt-1 border border-slate-200 rounded-lg bg-white p-4 min-h-[300px] overflow-auto focus:border-rose-300 focus:ring-1 focus:ring-rose-200 outline-none"
-                                        contentEditable
-                                        suppressContentEditableWarning
-                                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(editingOoo.message || '') }}
-                                        onBlur={(e) => setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML })}
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        Platzhalter werden automatisch ersetzt: {"{{start}}"}, {"{{ende}}"}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex gap-2 mt-4">
-                                <Button
-                                    onClick={handleSaveOoo}
-                                    disabled={savingOoo}
-                                    className="bg-rose-600 text-white hover:bg-rose-700"
-                                >
-                                    <Save className="w-4 h-4 mr-2" />
-                                    {savingOoo ? 'Speichern...' : 'Planen'}
-                                </Button>
-                                <Button variant="outline" onClick={() => setEditingOoo(null)}>
-                                    <X className="w-4 h-4 mr-2" /> Abbrechen
-                                </Button>
-                            </div>
-                        </Card>
-                    ) : (
-                        <Button
-                            onClick={() => {
-                                // Find default signature and extract text
-                                const defaultSig = signatures.find(s => s.defaultSignature) || (signatures.length > 0 ? signatures[0] : null);
-                                // Build HTML message with signature
-                                const signatureHtml = defaultSig?.html 
-                                    ? `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${defaultSig.html}</div>`
-                                    : '';
-                                const message = `<p>Vielen Dank für Ihre Nachricht.</p>
+                    {/* Section header */}
+                    <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                        <div>
+                            <p className="text-sm font-semibold text-rose-600 uppercase tracking-wide flex items-center gap-2">
+                                <Plane className="w-4 h-4" /> Abwesenheit
+                            </p>
+                            <h2 className="text-2xl font-bold text-slate-900">Abwesenheitsnotizen</h2>
+                            <p className="text-slate-500 mt-1 text-sm">
+                                Plane Urlaub und Betriebsferien — automatische Antworten werden zum Zeitraum aktiviert.
+                            </p>
+                        </div>
+                        {!editingOoo && oooEntries.length > 0 && (
+                            <Button
+                                onClick={async () => {
+                                    const userSignatureHtml = await fetchUserDefaultSignatureHtml();
+                                    const fallbackHtml = userSignatureHtml
+                                        || signatures.find(s => s.defaultSignature)?.html
+                                        || (signatures.length > 0 ? signatures[0].html : '');
+                                    const signatureHtml = fallbackHtml
+                                        ? `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${fallbackHtml}</div>`
+                                        : '';
+                                    const message = `<p>Vielen Dank für Ihre Nachricht.</p>
 <p>Ich bin vom {{start}} bis {{ende}} nicht erreichbar.</p>
 <p>Mit freundlichen Grüßen</p>
 ${signatureHtml}`;
-                                setEditingOoo({
-                                    title: '',
-                                    startDate: '',
-                                    endDate: '',
-                                    subject: 'Automatische Antwort: {{subject}}',
-                                    message: message,
-                                    signatureId: null // Not used anymore
-                                });
-                            }}
-                            className="bg-rose-600 text-white hover:bg-rose-700"
-                        >
-                            <Plus className="w-4 h-4 mr-2" /> Neue Abwesenheit planen
-                        </Button>
+                                    setEditingOoo({
+                                        title: '',
+                                        startDate: '',
+                                        endDate: '',
+                                        subject: 'Automatische Antwort: {{subject}}',
+                                        message: message,
+                                        signatureId: null
+                                    });
+                                }}
+                                className="bg-rose-600 text-white hover:bg-rose-700 shadow-sm"
+                            >
+                                <Plus className="w-4 h-4 mr-2" /> Neue Abwesenheit
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* OOO Edit Form */}
+                    {editingOoo !== null && (
+                        <Card className="overflow-hidden border-rose-200 shadow-sm">
+                            {/* Form header strip */}
+                            <div className="bg-gradient-to-r from-rose-600 to-rose-500 px-6 py-4 text-white">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center">
+                                        {editingOoo.id ? <Edit2 className="w-5 h-5" /> : <Plane className="w-5 h-5" />}
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold">
+                                            {editingOoo.id ? 'Abwesenheit bearbeiten' : 'Neue Abwesenheit planen'}
+                                        </h3>
+                                        <p className="text-sm text-rose-50/90">
+                                            Wird automatisch aktiviert und nach dem Endzeitpunkt deaktiviert.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-6 space-y-6 bg-rose-50/20">
+                                {/* Titel */}
+                                <div>
+                                    <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                        <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+                                        Titel
+                                        <code className="text-[10px] text-slate-400 font-mono font-normal">{"{{title}}"}</code>
+                                    </Label>
+                                    <Input
+                                        value={editingOoo.title || ''}
+                                        onChange={(e) => setEditingOoo({ ...editingOoo, title: e.target.value })}
+                                        placeholder="z.B. Sommerurlaub, Betriebsferien Weihnachten"
+                                        className="mt-1.5"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1.5">
+                                        Wird in Betreff und Nachricht über den Platzhalter <code className="text-[11px] bg-slate-100 px-1 rounded text-rose-700">{"{{title}}"}</code> eingesetzt.
+                                    </p>
+                                </div>
+
+                                {/* Zeitraum-Block */}
+                                <div className="rounded-xl border border-rose-100 bg-white p-4 shadow-sm">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2 m-0">
+                                            <CalendarDays className="w-3.5 h-3.5 text-rose-500" />
+                                            Zeitraum
+                                        </Label>
+                                        {(() => {
+                                            const dur = calculateDuration(editingOoo.startDate || '', editingOoo.endDate || '');
+                                            return dur > 0 ? (
+                                                <span className="text-xs bg-rose-100 text-rose-700 px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">
+                                                    <Clock className="w-3 h-3" />
+                                                    {dur} {dur === 1 ? 'Tag' : 'Tage'}
+                                                </span>
+                                            ) : null;
+                                        })()}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                            <Label className="text-xs text-slate-500 font-normal">Von</Label>
+                                            <DatePicker
+                                                value={editingOoo.startDate || ''}
+                                                onChange={(v) => setEditingOoo({ ...editingOoo, startDate: v })}
+                                                placeholder="Startdatum"
+                                                className="mt-1"
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label className="text-xs text-slate-500 font-normal">Bis</Label>
+                                            <DatePicker
+                                                value={editingOoo.endDate || ''}
+                                                onChange={(v) => setEditingOoo({ ...editingOoo, endDate: v })}
+                                                placeholder="Enddatum"
+                                                className="mt-1"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Betreff-Block */}
+                                <div className="rounded-xl border border-rose-100 bg-white p-4 shadow-sm">
+                                    <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-2">
+                                        <Mail className="w-3.5 h-3.5 text-rose-500" />
+                                        Betreff der automatischen Antwort
+                                    </Label>
+                                    <Input
+                                        ref={subjectInputRef}
+                                        value={editingOoo.subject || ''}
+                                        onChange={(e) => {
+                                            subjectCursorRef.current = e.target.selectionStart ?? e.target.value.length;
+                                            setEditingOoo({ ...editingOoo, subject: e.target.value });
+                                        }}
+                                        onSelect={(e) => {
+                                            const t = e.currentTarget;
+                                            subjectCursorRef.current = t.selectionStart ?? t.value.length;
+                                        }}
+                                        onClick={(e) => {
+                                            const t = e.currentTarget;
+                                            subjectCursorRef.current = t.selectionStart ?? t.value.length;
+                                        }}
+                                        onKeyUp={(e) => {
+                                            const t = e.currentTarget;
+                                            subjectCursorRef.current = t.selectionStart ?? t.value.length;
+                                        }}
+                                        placeholder="Automatische Antwort: {{subject}}"
+                                    />
+                                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                                        <span className="text-xs text-slate-400 mr-1">Am Cursor einfügen:</span>
+                                        <PlaceholderChip token="{{subject}}" label="Betreff" onClick={() => insertSubjectPlaceholder('{{subject}}')} />
+                                        <PlaceholderChip token="{{title}}" label="Titel" onClick={() => insertSubjectPlaceholder('{{title}}')} />
+                                        <PlaceholderChip token="{{start}}" label="Start" onClick={() => insertSubjectPlaceholder('{{start}}')} />
+                                        <PlaceholderChip token="{{ende}}" label="Ende" onClick={() => insertSubjectPlaceholder('{{ende}}')} />
+                                    </div>
+                                </div>
+
+                                {/* Nachricht-Block */}
+                                <div className="rounded-xl border border-rose-100 bg-white p-4 shadow-sm">
+                                    <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-2">
+                                        <MessageSquare className="w-3.5 h-3.5 text-rose-500" />
+                                        Nachricht
+                                    </Label>
+                                    <div className="border border-slate-200 rounded-lg bg-white overflow-hidden focus-within:border-rose-300 focus-within:ring-2 focus-within:ring-rose-200 transition-colors">
+                                        {/* Mini-Toolbar */}
+                                        <div className="flex flex-wrap gap-1 items-center bg-rose-50 border-b border-rose-100 px-2 py-1.5">
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('bold')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Fett (Ctrl+B)"
+                                            >
+                                                <Bold className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('italic')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Kursiv (Ctrl+I)"
+                                            >
+                                                <Italic className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('underline')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Unterstrichen (Ctrl+U)"
+                                            >
+                                                <Underline className="w-4 h-4" />
+                                            </button>
+                                            <span className="w-px h-5 bg-rose-200 mx-1" />
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('insertUnorderedList')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Aufzählung"
+                                            >
+                                                <List className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('insertOrderedList')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Nummerierte Liste"
+                                            >
+                                                <ListOrdered className="w-4 h-4" />
+                                            </button>
+                                            <span className="w-px h-5 bg-rose-200 mx-1" />
+                                            <button
+                                                type="button"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => applyFormat('removeFormat')}
+                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
+                                                title="Formatierung entfernen"
+                                            >
+                                                <Eraser className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        {/* Editor — uncontrolled contentEditable preserves complex HTML
+                                            (signature tables, inline styles) without normalization.
+                                            Mirrors the EmailComposeForm pattern. */}
+                                        <div
+                                            ref={messageEditorRef}
+                                            className="p-4 min-h-[260px] max-h-[480px] overflow-auto outline-none prose prose-sm max-w-none"
+                                            contentEditable
+                                            suppressContentEditableWarning
+                                            onMouseUp={saveMessageRange}
+                                            onKeyUp={saveMessageRange}
+                                            onInput={(e) => {
+                                                if (editingOoo) {
+                                                    setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
+                                                }
+                                            }}
+                                            onBlur={(e) => {
+                                                saveMessageRange();
+                                                if (editingOoo) {
+                                                    setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                                        <span className="text-xs text-slate-400 mr-1">Am Cursor einfügen:</span>
+                                        <PlaceholderChip token="{{start}}" label="Start" onClick={() => insertMessagePlaceholder('{{start}}')} />
+                                        <PlaceholderChip token="{{ende}}" label="Ende" onClick={() => insertMessagePlaceholder('{{ende}}')} />
+                                        <PlaceholderChip token="{{title}}" label="Titel" onClick={() => insertMessagePlaceholder('{{title}}')} />
+                                    </div>
+                                    <div className="mt-3 flex gap-2 items-start text-xs text-slate-500 bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                                        <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-slate-400" />
+                                        <span>Platzhalter werden in der gesendeten E-Mail automatisch durch Datum, Betreff und Titel ersetzt.</span>
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex gap-2 pt-2">
+                                    <Button
+                                        onClick={handleSaveOoo}
+                                        disabled={savingOoo}
+                                        className="bg-rose-600 text-white hover:bg-rose-700 shadow-sm"
+                                    >
+                                        <Save className="w-4 h-4 mr-2" />
+                                        {savingOoo ? 'Speichern...' : (editingOoo.id ? 'Änderungen speichern' : 'Abwesenheit planen')}
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => setEditingOoo(null)}
+                                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    >
+                                        <X className="w-4 h-4 mr-2" /> Abbrechen
+                                    </Button>
+                                </div>
+                            </div>
+                        </Card>
                     )}
 
                     {/* OOO List */}
                     {loadingOoo ? (
-                        <p className="text-slate-500 text-center py-8">Lade Abwesenheitsnotizen...</p>
-                    ) : oooEntries.length === 0 ? (
-                        <Card className="p-8 text-center text-slate-500">
-                            <Calendar className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-                            <p>Keine Abwesenheitsnotizen geplant.</p>
-                        </Card>
-                    ) : (
-                        <div className="space-y-3">
-                            {oooEntries.map((entry) => {
-                                const active = isOooActive(entry);
-                                const upcoming = isOooUpcoming(entry);
-
-                                return (
-                                    <Card
-                                        key={entry.id}
-                                        className={cn(
-                                            "p-4 transition-all group",
-                                            active && "border-green-300 bg-green-50/50",
-                                            upcoming && "border-blue-200 bg-blue-50/30"
-                                        )}
-                                    >
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <h4 className="font-medium text-slate-900">{entry.title}</h4>
-                                                    {active && (
-                                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                                            <CheckCircle className="w-3 h-3" /> Aktiv
-                                                        </span>
-                                                    )}
-                                                    {upcoming && (
-                                                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                                            <Clock className="w-3 h-3" /> Geplant
-                                                        </span>
-                                                    )}
-                                                    {!active && !upcoming && (
-                                                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
-                                                            Abgelaufen
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <p className="text-sm text-slate-600 flex items-center gap-2">
-                                                    <Calendar className="w-4 h-4 text-slate-400" />
-                                                    {formatDate(entry.startDate)} – {formatDate(entry.endDate)}
-                                                </p>
-                                                {entry.message && (
-                                                    <p className="mt-2 text-sm text-slate-500 line-clamp-2">{entry.message}</p>
-                                                )}
-                                            </div>
-                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => setEditingOoo(entry)}
-                                                    className="text-slate-500 hover:text-rose-600"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleDeleteOoo(entry.id)}
-                                                    className="text-slate-500 hover:text-red-600"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </Card>
-                                );
-                            })}
+                        <div className="flex items-center justify-center gap-3 py-12 text-slate-500">
+                            <div className="w-5 h-5 border-2 border-rose-200 border-t-rose-600 rounded-full animate-spin" />
+                            <span>Lade Abwesenheitsnotizen...</span>
                         </div>
-                    )}
+                    ) : oooEntries.length === 0 && !editingOoo ? (
+                        <Card className="p-12 text-center border-dashed border-2 border-rose-200 bg-rose-50/30">
+                            <div className="w-16 h-16 mx-auto rounded-full bg-rose-100 flex items-center justify-center mb-4">
+                                <CalendarOff className="w-8 h-8 text-rose-500" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-slate-900 mb-1">Noch keine Abwesenheit geplant</h3>
+                            <p className="text-sm text-slate-500 mb-5 max-w-md mx-auto">
+                                Plane jetzt deinen Urlaub oder Betriebsferien. Während der Abwesenheit
+                                bekommen Kunden automatisch eine freundliche Antwort.
+                            </p>
+                            <Button
+                                onClick={async () => {
+                                    const userSignatureHtml = await fetchUserDefaultSignatureHtml();
+                                    const fallbackHtml = userSignatureHtml
+                                        || signatures.find(s => s.defaultSignature)?.html
+                                        || (signatures.length > 0 ? signatures[0].html : '');
+                                    const signatureHtml = fallbackHtml
+                                        ? `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${fallbackHtml}</div>`
+                                        : '';
+                                    const message = `<p>Vielen Dank für Ihre Nachricht.</p>
+<p>Ich bin vom {{start}} bis {{ende}} nicht erreichbar.</p>
+<p>Mit freundlichen Grüßen</p>
+${signatureHtml}`;
+                                    setEditingOoo({
+                                        title: '',
+                                        startDate: '',
+                                        endDate: '',
+                                        subject: 'Automatische Antwort: {{subject}}',
+                                        message: message,
+                                        signatureId: null
+                                    });
+                                }}
+                                className="bg-rose-600 text-white hover:bg-rose-700 shadow-sm"
+                            >
+                                <Plus className="w-4 h-4 mr-2" /> Erste Abwesenheit planen
+                            </Button>
+                        </Card>
+                    ) : oooEntries.length > 0 ? (
+                        <div className="space-y-3">
+                            {[...oooEntries]
+                                .sort((a, b) => {
+                                    // Active first, then upcoming (sorted by start), then expired (sorted descending)
+                                    const aActive = isOooActive(a) ? 0 : isOooUpcoming(a) ? 1 : 2;
+                                    const bActive = isOooActive(b) ? 0 : isOooUpcoming(b) ? 1 : 2;
+                                    if (aActive !== bActive) return aActive - bActive;
+                                    if (aActive === 2) return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+                                    return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+                                })
+                                .map((entry) => {
+                                    const status = getOooStatus(entry);
+                                    const StatusIcon = status.Icon;
+                                    const duration = calculateDuration(entry.startDate, entry.endDate);
+                                    const messagePreview = stripHtml(entry.message);
+
+                                    return (
+                                        <Card
+                                            key={entry.id}
+                                            className={cn(
+                                                "relative overflow-hidden transition-all group hover:shadow-md",
+                                                status.cardBorder,
+                                                status.cardBg
+                                            )}
+                                        >
+                                            {/* Left accent bar */}
+                                            <div className={cn("absolute left-0 top-0 bottom-0 w-1", status.accentBar)} />
+
+                                            <div className="p-4 pl-5 flex items-start gap-4">
+                                                {/* Status icon circle */}
+                                                <div className={cn(
+                                                    "flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center",
+                                                    status.iconWrap
+                                                )}>
+                                                    <StatusIcon className="w-5 h-5" />
+                                                </div>
+
+                                                {/* Content */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <h4 className="font-semibold text-slate-900 truncate">
+                                                                    {entry.title || 'Ohne Titel'}
+                                                                </h4>
+                                                                <span className={cn(
+                                                                    "text-xs px-2 py-0.5 rounded-full border font-medium flex items-center gap-1 flex-shrink-0",
+                                                                    status.badge
+                                                                )}>
+                                                                    <StatusIcon className="w-3 h-3" />
+                                                                    {status.label}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Date row */}
+                                                            <div className="mt-1.5 flex items-center gap-3 text-sm text-slate-600 flex-wrap">
+                                                                <span className="flex items-center gap-1.5">
+                                                                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                                                    {formatDate(entry.startDate)}
+                                                                    <span className="text-slate-300 mx-0.5">→</span>
+                                                                    {formatDate(entry.endDate)}
+                                                                </span>
+                                                                {duration > 0 && (
+                                                                    <span className="text-xs text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                                        <Clock className="w-3 h-3" />
+                                                                        {duration} {duration === 1 ? 'Tag' : 'Tage'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Message preview */}
+                                                            {messagePreview && (
+                                                                <p className="mt-2 text-sm text-slate-500 line-clamp-2">
+                                                                    {messagePreview}
+                                                                </p>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Actions */}
+                                                        <div className="flex gap-1 flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => setEditingOoo(entry)}
+                                                                className="text-slate-500 hover:text-rose-700 hover:bg-rose-100"
+                                                                title="Bearbeiten"
+                                                            >
+                                                                <Edit2 className="w-4 h-4" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleDeleteOoo(entry.id)}
+                                                                className="text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                                                title="Löschen"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
+                        </div>
+                    ) : null}
                 </div>
             )}
         </div>

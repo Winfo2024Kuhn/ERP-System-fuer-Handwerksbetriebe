@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, Plus, X, Search, FileText, Camera, AlertTriangle, Loader2 } from 'lucide-react'
+import { ArrowLeft, Save, Plus, X, FileText, Camera, AlertTriangle, Loader2 } from 'lucide-react'
 import { NotificationService } from '../services/NotificationService'
 
 interface LieferscheinResult {
@@ -10,13 +10,24 @@ interface LieferscheinResult {
     datum: string
 }
 
+interface LieferantDokumentApi {
+    id: number
+    originalDateiname?: string
+    uploadDatum: string
+    geschaeftsdaten?: {
+        dokumentNummer?: string
+        dokumentDatum?: string
+    }
+}
+
+const RECENT_LIMIT = 5
+
 export default function LieferantReklamationCreatePage() {
     const { lieferantId } = useParams()
     const navigate = useNavigate()
     const [loading, setLoading] = useState(false)
-    const [searchQuery, setSearchQuery] = useState('')
-    const [lieferscheinResults, setLieferscheinResults] = useState<LieferscheinResult[]>([])
-    const [searching, setSearching] = useState(false)
+    const [recentLieferscheine, setRecentLieferscheine] = useState<LieferscheinResult[]>([])
+    const [recentLoading, setRecentLoading] = useState(true)
 
     // Form State
     const [beschreibung, setBeschreibung] = useState('')
@@ -25,30 +36,30 @@ export default function LieferantReklamationCreatePage() {
 
     const fileInputRef = useRef<HTMLInputElement>(null)
 
-    // Lieferschein Search
+    // Letzte Lieferscheine direkt beim Öffnen laden – kein Suchen, einfach klicken.
     useEffect(() => {
-        if (!searchQuery || searchQuery.length < 2) {
-            setLieferscheinResults([])
-            return
-        }
-
-        const delayDebounceFn = setTimeout(async () => {
-            setSearching(true)
+        const loadRecent = async () => {
+            setRecentLoading(true)
             try {
                 const token = localStorage.getItem('zeiterfassung_token')
-                const res = await fetch(`/api/reklamationen/lieferscheine/search?lieferantId=${lieferantId}&query=${encodeURIComponent(searchQuery)}&token=${token}`)
+                const res = await fetch(`/api/lieferanten/${lieferantId}/dokumente?typ=LIEFERSCHEIN&token=${token}`)
                 if (res.ok) {
-                    const data = await res.json()
-                    setLieferscheinResults(data)
+                    const data: LieferantDokumentApi[] = await res.json()
+                    const mapped: LieferscheinResult[] = data.slice(0, RECENT_LIMIT).map(d => ({
+                        id: d.id,
+                        dokumentNummer: d.geschaeftsdaten?.dokumentNummer,
+                        originalDateiname: d.originalDateiname || '(ohne Dateiname)',
+                        datum: d.geschaeftsdaten?.dokumentDatum || d.uploadDatum.split('T')[0],
+                    }))
+                    setRecentLieferscheine(mapped)
                 }
             } catch (err) {
-                console.error("Search error", err)
+                console.error('Lieferscheine laden fehlgeschlagen', err)
             }
-            setSearching(false)
-        }, 500)
-
-        return () => clearTimeout(delayDebounceFn)
-    }, [searchQuery, lieferantId])
+            setRecentLoading(false)
+        }
+        if (lieferantId) loadRecent()
+    }, [lieferantId])
 
     const handleAddImage = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
@@ -156,44 +167,36 @@ export default function LieferantReklamationCreatePage() {
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
+                    ) : recentLoading ? (
+                        <div className="flex items-center justify-center py-6">
+                            <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+                        </div>
+                    ) : recentLieferscheine.length === 0 ? (
+                        <p className="text-sm text-slate-500 py-4 text-center">
+                            Noch keine Lieferscheine vorhanden.
+                        </p>
                     ) : (
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="Lieferschein suchen (Nr. oder Dateiname)..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500"
-                            />
-                            {searching && (
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
-                                </div>
-                            )}
-
-                            {/* Suchergebnisse Dropdown */}
-                            {lieferscheinResults.length > 0 && (
-                                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-lg z-10 max-h-60 overflow-y-auto">
-                                    {lieferscheinResults.map(ls => (
-                                        <button
-                                            key={ls.id}
-                                            onClick={() => {
-                                                setSelectedLieferschein(ls)
-                                                setSearchQuery('')
-                                                setLieferscheinResults([])
-                                            }}
-                                            className="w-full text-left p-3 hover:bg-slate-50 border-b border-slate-100 last:border-0"
-                                        >
-                                            <p className="font-medium text-slate-900">{ls.dokumentNummer || ls.originalDateiname}</p>
-                                            <div className="flex justify-between mt-1 text-xs text-slate-500">
-                                                <span>{ls.datum}</span>
-                                                {ls.dokumentNummer && <span className="truncate max-w-[150px]">{ls.originalDateiname}</span>}
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                        <div className="space-y-2">
+                            <p className="text-xs text-slate-500 mb-1">
+                                Die letzten {recentLieferscheine.length} Lieferscheine – tippe einen an:
+                            </p>
+                            {recentLieferscheine.map(ls => (
+                                <button
+                                    key={ls.id}
+                                    onClick={() => setSelectedLieferschein(ls)}
+                                    className="w-full text-left p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors active:scale-[0.99]"
+                                >
+                                    <p className="font-medium text-slate-900 truncate">
+                                        {ls.dokumentNummer || ls.originalDateiname}
+                                    </p>
+                                    <div className="flex justify-between mt-1 text-xs text-slate-500">
+                                        <span>{ls.datum}</span>
+                                        {ls.dokumentNummer && (
+                                            <span className="truncate max-w-[150px]">{ls.originalDateiname}</span>
+                                        )}
+                                    </div>
+                                </button>
+                            ))}
                         </div>
                     )}
                 </div>

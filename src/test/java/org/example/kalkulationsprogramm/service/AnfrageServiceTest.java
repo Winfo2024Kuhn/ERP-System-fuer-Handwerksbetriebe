@@ -7,12 +7,15 @@ import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,7 +34,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(invocation -> {
             Anfrage a = invocation.getArgument(0);
@@ -69,7 +76,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         Anfrage anfrage = new Anfrage();
         anfrage.setId(5L);
@@ -99,7 +110,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         Projekt projekt = new Projekt();
         projekt.setId(9L);
@@ -133,7 +148,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         when(anfrageRepository.findById(999L)).thenReturn(Optional.empty());
 
@@ -151,7 +170,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         Anfrage a1 = new Anfrage();
         a1.setId(1L);
@@ -184,7 +207,11 @@ class AnfrageServiceTest {
         org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
-                kundeRepository, null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
 
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(kundeRepository.findById(anyLong())).thenReturn(java.util.Optional.empty());
@@ -199,5 +226,98 @@ class AnfrageServiceTest {
         assertThat(response).isNotNull();
         verify(anfrageRepository).save(any(Anfrage.class));
         verify(kundeRepository, never()).findById(anyLong());
+    }
+
+    private AnfrageService neueServiceMitAnfragen(AnfrageRepository anfrageRepository) {
+        DateiSpeicherService dateiSpeicherService = mock(DateiSpeicherService.class);
+        AnfrageDokumentRepository anfrageDokumentRepository = mock(AnfrageDokumentRepository.class);
+        KundeRepository kundeRepository = mock(KundeRepository.class);
+        org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
+        AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
+        return new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
+                kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, eventPublisher, ausgangsGeschaeftsDokumentService);
+    }
+
+    private Anfrage anfrageMit(long id, LocalDateTime createdAt) {
+        Anfrage a = new Anfrage();
+        a.setId(id);
+        Kunde k = new Kunde();
+        k.setName("Max Mustermann " + id);
+        a.setKunde(k);
+        a.setCreatedAt(createdAt);
+        return a;
+    }
+
+    @Test
+    void sucheSeitePaginiertUndLiefertGesamt() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+
+        List<Anfrage> dreizehn = new ArrayList<>();
+        for (int i = 0; i < 13; i++) {
+            dreizehn.add(anfrageMit(i + 1, LocalDateTime.of(2024, 1, 1, 0, 0).plusHours(i)));
+        }
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(dreizehn);
+
+        AnfrageSeiteResponseDto seite = service.sucheSeite(null, null, null, null, null, false, 0, 12);
+
+        assertThat(seite.gesamt()).isEqualTo(13);
+        assertThat(seite.seite()).isZero();
+        assertThat(seite.seitenGroesse()).isEqualTo(12);
+        assertThat(seite.anfragen()).hasSize(12);
+    }
+
+    @Test
+    void sucheSeiteAusserhalbBereichLiefertLeerenSliceMitKorrektemGesamt() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(List.of(
+                anfrageMit(1, LocalDateTime.of(2024, 1, 1, 0, 0)),
+                anfrageMit(2, LocalDateTime.of(2024, 1, 2, 0, 0))));
+
+        AnfrageSeiteResponseDto seite = service.sucheSeite(null, null, null, null, null, false, 5, 12);
+
+        assertThat(seite.anfragen()).isEmpty();
+        assertThat(seite.gesamt()).isEqualTo(2);
+        assertThat(seite.seite()).isEqualTo(5);
+    }
+
+    @Test
+    void sucheSeiteSortiertNeuesteZuerst() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+
+        Anfrage alt = anfrageMit(1L, LocalDateTime.of(2024, 1, 1, 0, 0));
+        Anfrage neu = anfrageMit(2L, LocalDateTime.of(2024, 6, 1, 0, 0));
+        Anfrage mittel = anfrageMit(3L, LocalDateTime.of(2024, 3, 1, 0, 0));
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(List.of(alt, neu, mittel));
+
+        AnfrageSeiteResponseDto seite = service.sucheSeite(null, null, null, null, null, false, 0, 12);
+
+        assertThat(seite.anfragen()).extracting(AnfrageResponseDto::getId)
+                .containsExactly(2L, 3L, 1L);
+    }
+
+    @Test
+    void sucheSeiteFiltertAnfragenMitProjektWennNurOhneProjekt() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+
+        Anfrage offen = anfrageMit(1L, LocalDateTime.of(2024, 1, 1, 0, 0));
+        Anfrage zugeordnet = anfrageMit(2L, LocalDateTime.of(2024, 2, 1, 0, 0));
+        Projekt p = new Projekt();
+        p.setId(99L);
+        zugeordnet.setProjekt(p);
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(List.of(offen, zugeordnet));
+
+        AnfrageSeiteResponseDto seite = service.sucheSeite(null, null, null, null, null, true, 0, 12);
+
+        assertThat(seite.gesamt()).isEqualTo(1);
+        assertThat(seite.anfragen()).extracting(AnfrageResponseDto::getId).containsExactly(1L);
     }
 }

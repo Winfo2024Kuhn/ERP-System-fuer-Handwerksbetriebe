@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeCreateRequestDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDetailDto;
+import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatResponseDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeListItemDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeUpdateRequestDto;
@@ -12,8 +13,12 @@ import org.example.kalkulationsprogramm.domain.Anrede;
 import org.example.kalkulationsprogramm.event.EmailAddressChangedEvent;
 import org.example.kalkulationsprogramm.mapper.KundeMapper;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.service.KundeDuplikatService;
 import org.example.kalkulationsprogramm.service.KundenDetailService;
+import org.example.kalkulationsprogramm.service.KundennummerService;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -26,6 +31,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -50,6 +56,8 @@ public class KundeController {
     private final KundeMapper kundeMapper;
     private final KundenDetailService kundenDetailService;
     private final ApplicationEventPublisher eventPublisher;
+    private final KundennummerService kundennummerService;
+    private final KundeDuplikatService kundeDuplikatService;
 
     @GetMapping
     public KundeSearchResponseDto sucheKunden(@RequestParam(value = "q", required = false) String query,
@@ -115,12 +123,43 @@ public class KundeController {
         return response;
     }
 
+    /**
+     * Live-Check beim Anlegen: liefert mögliche Duplikate (E-Mail, Telefon, Name+PLZ, …).
+     * Wird vom Frontend debounced bei Feld-Eingabe aufgerufen, blockt nicht.
+     */
+    @GetMapping("/duplikat-check")
+    public KundeDuplikatResponseDto duplikatCheck(@RequestParam(required = false) String email,
+                                                  @RequestParam(required = false) String telefon,
+                                                  @RequestParam(required = false) String mobiltelefon,
+                                                  @RequestParam(required = false) String name,
+                                                  @RequestParam(required = false) String plz,
+                                                  @RequestParam(required = false) String strasse) {
+        return kundeDuplikatService.findeDuplikate(email, telefon, mobiltelefon, name, plz, strasse);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Transactional
-    public KundeListItemDto createKunde(@Valid @RequestBody KundeCreateRequestDto request) {
+    public KundeListItemDto createKunde(@Valid @RequestBody KundeCreateRequestDto request,
+                                        @RequestHeader(value = "X-Duplikat-Bestaetigt", required = false) String duplikatBestaetigt) {
+        // Duplikat-Check: nur wenn der User noch nicht ausdrücklich bestätigt hat
+        if (!"true".equalsIgnoreCase(duplikatBestaetigt)) {
+            String erstEmail = (request.getKundenEmails() != null && !request.getKundenEmails().isEmpty())
+                    ? request.getKundenEmails().get(0) : null;
+            KundeDuplikatResponseDto duplikate = kundeDuplikatService.findeDuplikate(
+                    erstEmail,
+                    request.getTelefon(),
+                    request.getMobiltelefon(),
+                    request.getName(),
+                    request.getPlz(),
+                    request.getStrasse());
+            if (duplikate.getDuplikate() != null && !duplikate.getDuplikate().isEmpty()) {
+                throw new KundeDuplikatException(duplikate);
+            }
+        }
+
         if (!StringUtils.hasText(request.getKundennummer())) {
-            request.setKundennummer(generateNextKundennummer());
+            request.setKundennummer(kundennummerService.reserviereNaechsteKundennummer());
         }
 
         final String kundennummer = request.getKundennummer().trim();
@@ -195,6 +234,16 @@ public class KundeController {
         return java.util.Map.of("kundennummer", generateNextKundennummer());
     }
 
+    /**
+     * Übersetzt einen Duplikat-Verdacht in HTTP 409 mit Treffer-Liste im Body.
+     * Frontend kann anhand des Body den Bestätigungs-Modal anzeigen und ggf.
+     * das POST mit Header {@code X-Duplikat-Bestaetigt: true} wiederholen.
+     */
+    @ExceptionHandler(KundeDuplikatException.class)
+    public ResponseEntity<KundeDuplikatResponseDto> handleDuplikat(KundeDuplikatException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getAntwort());
+    }
+
     @GetMapping("/{id}")
     public KundeDetailDto getKundeDetail(@PathVariable Long id) {
         return kundenDetailService.loadDetails(id)
@@ -214,16 +263,7 @@ public class KundeController {
     }
 
     private String generateNextKundennummer() {
-        return kundeRepository.findMaxKundennummer()
-                .map(max -> {
-                    try {
-                        long val = Long.parseLong(max);
-                        return String.valueOf(val + 1);
-                    } catch (NumberFormatException e) {
-                        return "1000";
-                    }
-                })
-                .orElse("1000");
+        return kundennummerService.generiereNaechsteKundennummer();
     }
 
     private void applyRequest(Kunde kunde, KundeCreateRequestDto request) {

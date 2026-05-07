@@ -81,6 +81,20 @@ public class Email {
     @Column(length = 1000)
     private String cc;
 
+    /**
+     * Reply-To Header. Bei Phishing/Spam weicht dies oft von From-Address ab.
+     */
+    @Column(length = 255)
+    private String replyToAddress;
+
+    /**
+     * Roh-Header "Authentication-Results" (SPF, DKIM, DMARC).
+     * Wird vom SpamFilterService geparst und ist für ML-Modelle als Feature nutzbar.
+     */
+    @Lob
+    @Column(columnDefinition = "TEXT")
+    private String authenticationResults;
+
     // ═══════════════════════════════════════════════════════════════
     // INHALT
     // ═══════════════════════════════════════════════════════════════

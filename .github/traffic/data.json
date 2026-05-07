@@ -1,92 +1,87 @@
 {
-  "total_views": 419,
-  "total_unique_visitors": 23,
-  "total_clones": 7881,
-  "total_unique_cloners": 988,
-  "last_view_timestamp": "2026-04-24T00:00:00Z",
-  "last_clone_timestamp": "2026-04-24T00:00:00Z",
+  "total_views": 458,
+  "total_unique_visitors": 31,
+  "total_clones": 13696,
+  "total_unique_cloners": 1529,
+  "last_view_timestamp": "2026-05-05T00:00:00Z",
+  "last_clone_timestamp": "2026-05-05T00:00:00Z",
   "referring_sites": [
     {
       "referrer": "github.com",
-      "count": 100,
-      "uniques": 2
-    },
-    {
-      "referrer": "statics.teams.cdn.office.net",
-      "count": 13,
-      "uniques": 2
+      "count": 31,
+      "uniques": 3
     },
     {
       "referrer": "Google",
-      "count": 1,
+      "count": 3,
       "uniques": 1
     }
   ],
   "popular_content": [
     {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe",
-      "title": "Overview",
-      "count": 60,
-      "uniques": 2
-    },
-    {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/graphs/traffic",
       "title": "/graphs/traffic",
-      "count": 22,
+      "count": 8,
       "uniques": 1
     },
     {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions",
-      "title": "/actions",
-      "count": 20,
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe",
+      "title": "Overview",
+      "count": 6,
       "uniques": 2
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/pulse",
       "title": "/pulse",
-      "count": 20,
-      "uniques": 2
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions/workflows/traffic.yml",
-      "title": "/actions/workflows/traffic.yml",
-      "count": 7,
-      "uniques": 1
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/agents",
-      "title": "/agents",
-      "count": 7,
-      "uniques": 1
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/branches",
-      "title": "/branches",
-      "count": 5,
-      "uniques": 2
-    },
-    {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/actions/runs/24304157502",
-      "title": "/actions/runs/24304157502",
       "count": 5,
       "uniques": 1
     },
     {
-      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/tasks/7d25c225-3f97-4999-ab64-b655d7ffd75e",
-      "title": "/tasks/7d25c225-3f97-4999-ab64-b655d7ffd75e",
-      "count": 5,
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/security/code-scanning",
+      "title": "/security/code-scanning",
+      "count": 3,
       "uniques": 1
     },
     {
       "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/README.md",
       "title": "/blob/main/README.md",
-      "count": 4,
-      "uniques": 3
+      "count": 2,
+      "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/security/code-scanning/54",
+      "title": "/security/code-scanning/54",
+      "count": 2,
+      "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/56c75b5d81624ec86c361a3144b986807f53b66e/src/main/java/org/example/email/EmailService.java",
+      "title": "/blob/56c75b5d81624ec86c361a3144b986807f53b66e/src/main/java/org/example/email/EmailService.java",
+      "count": 1,
+      "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/.github/DEVELOPMENT.md",
+      "title": "/blob/main/.github/DEVELOPMENT.md",
+      "count": 1,
+      "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/SECURITY.md",
+      "title": "/blob/main/SECURITY.md",
+      "count": 1,
+      "uniques": 1
+    },
+    {
+      "path": "/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/blob/main/THIRD-PARTY-LICENSES.md",
+      "title": "/blob/main/THIRD-PARTY-LICENSES.md",
+      "count": 1,
+      "uniques": 1
     }
   ],
   "stars": 7,
   "forks": 0,
   "watchers": 2,
   "open_issues": 24,
-  "updated_at": "2026-04-27T03:07:22Z"
+  "updated_at": "2026-05-07T03:08:19Z"
 }

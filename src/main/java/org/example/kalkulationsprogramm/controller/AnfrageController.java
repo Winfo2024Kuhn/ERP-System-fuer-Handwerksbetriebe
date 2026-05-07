@@ -13,14 +13,21 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
+import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.service.AnfrageFunnelService;
 import org.example.kalkulationsprogramm.service.AnfrageService;
+import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
@@ -42,6 +49,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AnfrageController {
     private final AnfrageService anfrageService;
+    private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
     private final DateiSpeicherService dateiSpeicherService;
     private final ZugferdErstellService zugferdErstellService;
     private final ZugferdExtractorService zugferdExtractorService;
@@ -49,8 +57,46 @@ public class AnfrageController {
     private final KundeRepository kundeRepository;
     private final AnfrageNotizRepository anfrageNotizRepository;
     private final AnfrageNotizBildRepository anfrageNotizBildRepository;
+    private final AnfrageRepository anfrageRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final FrontendUserProfileService frontendUserProfileService;
+    private final DokumentFreigabeService dokumentFreigabeService;
+
+    /**
+     * Liefert pro angefragter Anfrage-ID die jüngste relevante digitale Freigabe
+     * (Angebot oder Auftragsbestätigung). Wird vom AnfrageEditor genutzt, um Status-
+     * Badges direkt an die Suche-Cards zu hängen.
+     */
+    /**
+     * Liefert die IDs aller noch offenen Anfragen, die über den Webseiten-Funnel
+     * hereingekommen sind. Wird vom AnfrageEditor genutzt, um diese Anfragen in
+     * der Kartenübersicht ganz nach oben zu sortieren – „neue Leads zuerst".
+     */
+    @GetMapping("/funnel-ids")
+    public ResponseEntity<List<Long>> funnelAnfrageIds() {
+        List<Long> ids = anfrageRepository
+                .findOffeneFunnelAnfragen(AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN)
+                .stream()
+                .map(Anfrage::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        return ResponseEntity.ok(ids);
+    }
+
+    @GetMapping("/freigabe-status")
+    public ResponseEntity<java.util.Map<Long, FreigabeStatusKurzDto>> freigabeStatus(@RequestParam("ids") List<Long> ids) {
+        var byAnfrageId = dokumentFreigabeService.findJuengsteProAnfrage(ids);
+        java.util.Map<Long, FreigabeStatusKurzDto> result = new java.util.HashMap<>();
+        byAnfrageId.forEach((anfrageId, freigabe) -> result.put(anfrageId, FreigabeStatusKurzDto.builder()
+                .status(freigabe.getStatus().name())
+                .dokumentArt(freigabe.getDokumentArt())
+                .dokumentNummer(freigabe.getDokumentNummer())
+                .akzeptiertAm(freigabe.getAkzeptiertAm())
+                .ablaufDatum(freigabe.getAblaufDatum())
+                .erstelltAm(freigabe.getErstelltAm())
+                .build()));
+        return ResponseEntity.ok(result);
+    }
 
     @PostMapping(value = "/zugferd/extract", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     public ResponseEntity<ZugferdDaten> extractZugferd(@RequestParam("datei") MultipartFile datei) {
@@ -227,6 +273,11 @@ public class AnfrageController {
         }
     }
 
+    /**
+     * Backward-Compat-Variante: Wird aufgerufen, wenn kein {@code page}-Query-Param
+     * gesetzt ist (z.B. EmailCenter-Suche, TerminKalender, ProjektErstellenModal).
+     * Liefert weiterhin die ungeseiteten DTOs als flache Liste.
+     */
     @GetMapping
     public List<AnfrageResponseDto> liste(@RequestParam(required = false) Integer jahr,
             @RequestParam(required = false) String kundenname,
@@ -240,14 +291,50 @@ public class AnfrageController {
         return anfrageService.suche(jahr, effektiverKundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt);
     }
 
+    /**
+     * Paginierte Variante: Wird aufgerufen, sobald der Aufrufer einen {@code page}-Param
+     * setzt (AnfrageEditor-Liste). Reduziert das DTO-Mapping von N auf {@code size}
+     * Anfragen pro Aufruf und entlastet damit den N+1-Pfad in {@code mapToDto}.
+     */
+    @GetMapping(params = "page")
+    public AnfrageSeiteResponseDto listeSeite(@RequestParam(required = false) Integer jahr,
+            @RequestParam(required = false) String kundenname,
+            @RequestParam(required = false) String kunde,
+            @RequestParam(required = false) String bauvorhaben,
+            @RequestParam(required = false) String anfragesnummer,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false, defaultValue = "false") boolean nurOhneProjekt,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "12") int size) {
+        String effektiverKundenname = kundenname != null ? kundenname : kunde;
+        return anfrageService.sucheSeite(
+                jahr, effektiverKundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt, page, size);
+    }
+
     @GetMapping("/jahre")
     public List<Integer> verfuegbareJahre() {
         return anfrageService.verfuegbareAnlegeJahre();
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> loesche(@PathVariable Long id) {
-        return anfrageService.loesche(id) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+    public ResponseEntity<java.util.Map<String, Object>> loesche(@PathVariable Long id,
+            @RequestParam(value = "cascadeKunde", defaultValue = "false") boolean cascadeKunde) {
+        AnfrageService.LoeschResult result = anfrageService.loescheMitPruefung(id, cascadeKunde);
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("grund", result.grund().name());
+        body.put("hinweis", result.hinweis());
+        body.put("kundeMitgeloescht", result.kundeMitgeloescht());
+        switch (result.grund()) {
+            case OK -> {
+                return ResponseEntity.ok(body);
+            }
+            case NICHT_GEFUNDEN -> {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+            }
+            default -> {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+            }
+        }
     }
 
     @PutMapping("/{id}")
@@ -313,6 +400,16 @@ public class AnfrageController {
         }
         dto.setAnfrageIds(java.util.List.of(anfrage.getId()));
         return ResponseEntity.ok(dto);
+    }
+
+    /**
+     * Liefert die aus dem Angebot bzw. der Auftragsbestätigung abgeleiteten
+     * Produktkategorien (inkl. aggregierter Mengen) als Vorschlag für die
+     * Projektanlage. Wenn eine AB existiert, hat sie Vorrang vor dem Angebot.
+     */
+    @GetMapping("/{id}/produktkategorien-vorschlag")
+    public ResponseEntity<List<KategorieVorschlagDto>> produktkategorienVorschlag(@PathVariable Long id) {
+        return ResponseEntity.ok(ausgangsGeschaeftsDokumentService.berechneKategorieVorschlagFuerAnfrage(id));
     }
 
     private AnfrageDokumentResponseDto mappeDokumentZuDto(AnfrageDokument dokument) {

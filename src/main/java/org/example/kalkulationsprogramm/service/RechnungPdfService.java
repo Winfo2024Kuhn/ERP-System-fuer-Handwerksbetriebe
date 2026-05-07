@@ -571,6 +571,15 @@ public class RechnungPdfService {
                  } else {
                      // CASE B: We are OUTSIDE a table (e.g. after Closure) -> Render as Standalone
                      java.util.List<com.lowagie.text.Element> elements = parseHtmlToElements(content, textColor, defaultFontSize, defaultBold);
+                     // Etwas mehr vertikalen Abstand zwischen aufeinanderfolgenden Textbausteinen,
+                     // damit Vor-/Nachtexte visuell klar getrennt sind. Wirkt nur auf den letzten
+                     // Paragraph; Zeilenabstand innerhalb des Bausteins bleibt unveraendert.
+                     for (int idx = elements.size() - 1; idx >= 0; idx--) {
+                         if (elements.get(idx) instanceof Paragraph p) {
+                             p.setSpacingAfter(p.getSpacingAfter() + 8f);
+                             break;
+                         }
+                     }
                      for (com.lowagie.text.Element e : elements) {
                          ct.addElement(e);
                      }
@@ -1329,6 +1338,15 @@ public class RechnungPdfService {
     }
 
     private void addSummenBlock(ColumnText ct, List<ContentBlockDto> blocks, BigDecimal globalRabattProzent, AbrechnungsverlaufPdfDto abrechnungsverlauf, BigDecimal overrideBetragNetto, String dokumentTyp, AbschlagInfoPdfDto abschlagInfo) throws DocumentException {
+        // Mahnungen brauchen keinen Summen-Block: der offene Betrag steht schon
+        // prominent in der Forderungs-Box im Inhalt — eine weitere Netto/USt/
+        // Zahlbetrag-Tabelle wäre redundant und verwirrend.
+        boolean isMahnung = dokumentTyp != null
+                && (dokumentTyp.contains("Mahnung") || dokumentTyp.equalsIgnoreCase("Zahlungserinnerung"));
+        if (isMahnung) {
+            return;
+        }
+
         // Nettosumme aus allen SERVICE-Blöcken berechnen (exclude optional)
         BigDecimal positionenNetto = BigDecimal.ZERO;
         for (ContentBlockDto block : blocks) {

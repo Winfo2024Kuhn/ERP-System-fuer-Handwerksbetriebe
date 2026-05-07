@@ -308,7 +308,68 @@ Das System implementiert aktuell **kein automatisches Löschen** nach Ablauf der
 
 ---
 
-## 10. Zusammenfassung der technischen Maßnahmen
+## 10. Manipulationssichere Hash-Kette für Ausgangs-Dokument-Audit (GoBD Rz. 64)
+
+### 10.1 Zweck
+
+GoBD Rz. 64 fordert, dass nachträgliche Änderungen an Buchungsbelegen erkennbar sein müssen. Die Hash-Kette stellt sicher, dass eine Manipulation eines bereits protokollierten Audit-Eintrags (z. B. direkt in der Datenbank) sofort bei der maschinellen Prüfung auffällt.
+
+### 10.2 Funktionsprinzip
+
+Jeder Eintrag in `ausgangs_geschaeftsdokument_audit` erhält drei zusätzliche Felder:
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `chain_index` | BIGINT UNIQUE | Monoton wachsende Position in der Kette (0, 1, 2, …) |
+| `previous_hash` | CHAR(64) | SHA-256 des unmittelbaren Vorgänger-Eintrags (`NULL` bei erstem Eintrag) |
+| `entry_hash` | CHAR(64) | SHA-256 über alle relevanten Felder **plus** `previous_hash` |
+
+Der **entry_hash** wird über folgende Felder gebildet (kanonische Reihenfolge, `|`-separiert):
+
+```
+chain_index | previous_hash | dokumentId | dokumentNummer | typ | aktion |
+betragNetto | betragBrutto | gebucht | storniert | digitalAngenommen |
+geaendertAm (ISO) | geaendertVon (Id) | inhaltHash
+```
+
+### 10.3 Atomares Anhängen
+
+Der Kettenkopf liegt in der Singleton-Tabelle `audit_chain_state` (Zeile id=1). Beim Anhängen eines neuen Eintrags wird diese Zeile mit `SELECT … FOR UPDATE` **pessimistisch gelockt**, sodass zwei parallele Aktionen niemals denselben `previous_hash` erhalten.
+
+### 10.4 Backfill
+
+Beim ersten Start nach der V255-Migration führt der `AuditChainBackfillRunner` (Spring `ApplicationRunner`) alle bereits vorhandenen Audit-Einträge in chronologischer Reihenfolge in die Kette ein. Bestehende Einträge ohne `chain_index` werden nachträglich verkettet.
+
+### 10.5 Selbstverifikation
+
+Der Endpoint `GET /api/ausgangs-dokumente/audit/verify` prüft die gesamte Kette und liefert einen Bericht:
+
+```json
+{
+  "intakt": true,
+  "gesamtAnzahl": 1247,
+  "letzterChainIndex": 1246,
+  "letzterEntryHash": "a3f9...",
+  "fehler": []
+}
+```
+
+Bei Manipulation enthält `fehler` die erste Bruchstelle mit `chainIndex`, `dokumentNummer` und Beschreibung.
+
+### 10.6 GoBD-Z3-Paket (Datenträgerüberlassung)
+
+Der Endpoint `GET /api/ausgangs-dokumente/audit/z3-paket?von=YYYY-MM-DD&bis=YYYY-MM-DD` erzeugt ein ZIP-Paket für die **Datenträgerüberlassung (Z3)** nach GoBD:
+
+| Datei im ZIP | Inhalt |
+|---|---|
+| `dokumente.csv` | Alle Ausgangs-Geschäftsdokumente im Zeitraum (Stammdaten) |
+| `audit.csv` | Vollständiger Audit-Log mit Hash-Kette (chain_index, previous_hash, entry_hash) |
+| `INFO.txt` | Erklärung des Formats, Prüfanleitung für Steuerprüfer |
+| `manifest.sha256` | SHA-256-Prüfsummen aller Dateien im Paket |
+
+---
+
+## 11. Zusammenfassung der technischen Maßnahmen
 
 | GoBD-Anforderung | Technische Umsetzung | Entity/Service |
 |---|---|---|
@@ -323,3 +384,5 @@ Das System implementiert aktuell **kein automatisches Löschen** nach Ablauf der
 | Dokumentenkette | `vorgaenger_id` FK + `nachfolger`-Liste | `AusgangsGeschaeftsDokument` |
 | Doppelerfassungsschutz | `idempotencyKey` (UUID) | `Zeitbuchung` |
 | Offene Posten-Tracking | Automatischer Eintrag bei Buchung | `ProjektGeschaeftsdokument` |
+| **Manipulationsschutz Audit** | **SHA-256 Hash-Kette** (entry_hash + previous_hash) | **`AusgangsGeschaeftsDokumentAudit`** |
+| **Maschinenlesbare Prüfung** | **Verify-Endpoint + Z3-ZIP-Export** | **`AuditChainVerifier` / `SteuerpruefungZ3ExportService`** |

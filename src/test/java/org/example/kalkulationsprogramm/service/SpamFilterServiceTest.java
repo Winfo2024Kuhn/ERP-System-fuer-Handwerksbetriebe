@@ -570,4 +570,161 @@ class SpamFilterServiceTest {
             assertThat(email.getSpamScore()).isEqualTo(0);
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Strukturelle / Header-Features (Issue #56, Phase 1)
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class StrukturelleFeatures {
+
+        @Test
+        void spfFailErhoehtSpamScore() {
+            Email email = erstelleEmail("info@firma-mustermann.de", "Angebot", "Hallo, kurze Anfrage.");
+            email.setAuthenticationResults("mx.example.com; spf=fail smtp.mailfrom=firma-mustermann.de");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isGreaterThanOrEqualTo(25);
+        }
+
+        @Test
+        void dkimUndDmarcFailKombinierenSichZuHohemScore() {
+            Email email = erstelleEmail("ceo@beispielfirma.de", "Re: Rechnung", "Bitte überweisen.");
+            email.setAuthenticationResults("mx.example.com; dkim=fail (signature did not verify); dmarc=fail");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isGreaterThanOrEqualTo(55);
+        }
+
+        @Test
+        void replyToAufAndererDomainIstVerdaechtig() {
+            Email email = erstelleEmail("noreply@firma-original.de", "Konto", "Bitte einloggen.");
+            email.setReplyToAddress("payments@phisher-xyz.tk");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isGreaterThanOrEqualTo(25);
+        }
+
+        @Test
+        void replyToAufSubdomainDerselbenFirmaIstNichtVerdaechtig() {
+            Email email = erstelleEmail("noreply@firma.de", "Newsletter", "Hallo.");
+            email.setReplyToAddress("info@mail.firma.de");
+
+            int scoreOhne = service.calculateSpamScore(erstelleEmail("noreply@firma.de", "Newsletter", "Hallo."));
+            int scoreMit = service.calculateSpamScore(email);
+
+            // Beide gleich — kein Mismatch-Aufschlag
+            assertThat(scoreMit).isEqualTo(scoreOhne);
+        }
+
+        @Test
+        void freeMailerMitVielenLinksIstVerdaechtig() {
+            String body = "Hallo, schauen Sie hier: https://promo-a.tk/x https://promo-b.tk/y https://promo-c.tk/z";
+            Email email = erstelleEmail("max.mueller@gmail.com", "Spannendes Angebot", body);
+
+            int score = service.calculateSpamScore(email);
+
+            // 3 Links, alle auf andere Domain als gmail.com → Domain-Mismatch (15)
+            // + Free-Mailer + ≥3 Links → +20  (kumulativ +35)
+            assertThat(score).isGreaterThanOrEqualTo(30);
+        }
+
+        @Test
+        void firmenMailMitLinksAufEigeneDomainIstNichtVerdaechtig() {
+            // 4 unique Subdomains der gleichen Firma → linkCount=4, alle Same-Org
+            String body = "Hallo, siehe https://shop.firma.de/a https://blog.firma.de/b "
+                    + "https://mail.firma.de/c https://www.firma.de/d";
+            Email email = erstelleEmail("info@firma.de", "Newsletter", body);
+
+            int score = service.calculateSpamScore(email);
+
+            // Sender-Domain == Link-Domain (Same-Org-Check via registrableDomain) → kein Aufschlag
+            assertThat(score).isLessThan(15);
+        }
+
+        @Test
+        void authResultsNullErzeugtKeinenAufschlag() {
+            Email email = erstelleEmail("info@firma-mustermann.de", "Anfrage", "Hallo");
+            email.setAuthenticationResults(null);
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isLessThan(15);
+        }
+
+        @Test
+        void authResultsAllesPassErzeugtKeinenAufschlag() {
+            Email email = erstelleEmail("info@firma-mustermann.de", "Anfrage", "Hallo");
+            email.setAuthenticationResults("mx.example.com; spf=pass; dkim=pass; dmarc=pass");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isLessThan(15);
+        }
+
+        @Test
+        void replyToOhneAtZeichenErzeugtKeinenAufschlag() {
+            Email email = erstelleEmail("info@firma.de", "Hi", "Text");
+            email.setReplyToAddress("not-an-email");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isLessThan(15);
+        }
+
+        @Test
+        void replyToLeerErzeugtKeinenAufschlag() {
+            Email email = erstelleEmail("info@firma.de", "Hi", "Text");
+            email.setReplyToAddress("");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isLessThan(15);
+        }
+
+        @Test
+        void vieleTrackingPixelIstVerdaechtig() {
+            String html = "<html><body>Hi"
+                    + "<img width=\"1\" height=\"1\" src=\"https://t1.example.com/p\">"
+                    + "<img width=\"1\" height=\"1\" src=\"https://t2.example.com/p\">"
+                    + "<img width=\"1\" height=\"1\" src=\"https://t3.example.com/p\">"
+                    + "<img width=\"1\" height=\"1\" src=\"https://t4.example.com/p\">"
+                    + "<img width=\"1\" height=\"1\" src=\"https://t5.example.com/p\">"
+                    + "</body></html>";
+            Email email = erstelleEmail("info@firma.de", "Hallo", "Hi");
+            email.setHtmlBody(html);
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isGreaterThanOrEqualTo(10);
+        }
+
+        @Test
+        void wenigTextVieleLinksIstVerdaechtig() {
+            String body = "Hi! https://a.tk/1 https://b.tk/2 https://c.tk/3 https://d.tk/4 https://e.tk/5";
+            Email email = erstelleEmail("info@some-newsletter.com", "Promo", body);
+
+            int score = service.calculateSpamScore(email);
+
+            // ≥5 Links, kurzer Text → +15; alle Links auf andere Domain → +15
+            assertThat(score).isGreaterThanOrEqualTo(15);
+        }
+
+        @Test
+        void normaleFirmenAnfrageHatNiedrigenScore() {
+            String body = "Sehr geehrte Damen und Herren, "
+                    + "wir interessieren uns für Ihre Stahlbau-Leistungen für unsere neue Halle in München. "
+                    + "Können Sie uns ein Angebot für ca. 80 Tonnen Konstruktionsstahl machen? "
+                    + "Anbei finden Sie die Pläne. Mit freundlichen Grüßen, Max Mustermann.";
+            Email email = erstelleEmail("m.mustermann@mustermann-bau.de", "Anfrage Stahlbau Halle", body);
+            email.setAuthenticationResults("mx.example.com; spf=pass; dkim=pass; dmarc=pass");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isLessThan(20);
+        }
+    }
 }

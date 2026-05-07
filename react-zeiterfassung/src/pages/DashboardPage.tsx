@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Zap } from 'lucide-react'
 import { buildBookingRequestPayload, createOperationId, OfflineService } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
-import { shouldIncludeCurrentSessionMinutes, shouldIncludeOfflineCompletedMinutes } from './DashboardPage.logic'
+import { shouldIncludeOfflineCompletedMinutes } from './DashboardPage.logic'
 
 interface Session {
     projektId: number | null
@@ -95,48 +95,47 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         const token = localStorage.getItem('zeiterfassung_token')
         if (!token) return
 
-        // 1. Get server/cached total for today.
-        // Fresh server data already includes a running booking, cached data does not.
+        // 1. Server-Wert: enthält NUR abgeschlossene Buchungen (keine laufende).
+        // Cache und Live-Wert haben damit dieselbe Semantik – keine Doppelzählung.
         const heuteData = await OfflineService.getHeuteGearbeitet(token)
         const serverMinuten = (heuteData.stunden || 0) * 60 + (heuteData.minuten || 0)
 
         const pendingCount = await OfflineService.getPendingCount()
 
-        // 2. Read local session and cooldown state.
+        // 2. Laufende Session ermitteln. Quelle: lokale Session zuerst, dann
+        // Server-Antwort als Fallback (z.B. nach App-Neustart bevor lokale
+        // Session geladen wurde).
         let currentSessionMinuten = 0
         const storedSession = localStorage.getItem('zeiterfassung_active_session')
-        const startSyncedAt = localStorage.getItem('zeiterfassung_start_synced_at')
-        const hasRecentStartSync = Boolean(
-            startSyncedAt && storedSession && Date.now() - parseInt(startSyncedAt, 10) < 15000,
-        )
+        let runningStart: Date | null = null
+        let runningIsAbwesenheit = false
 
         if (storedSession) {
             try {
                 const session = JSON.parse(storedSession)
-                const includeCurrentSession = shouldIncludeCurrentSessionMinutes(
-                    heuteData.fromCache,
-                    pendingCount,
-                    hasRecentStartSync,
-                )
-
-                // Only count work sessions, not pauses, and only when the local
-                // state is ahead of or replacing the server state.
-                if (includeCurrentSession && session.startTime && !isAbwesenheitOderPause(session.typ)) {
-                    const start = new Date(session.startTime)
-                    const now = new Date()
-                    currentSessionMinuten = Math.floor((now.getTime() - start.getTime()) / 60000)
+                if (session.startTime) {
+                    runningStart = new Date(session.startTime)
+                    runningIsAbwesenheit = isAbwesenheitOderPause(session.typ)
                 }
             } catch { /* ignore */ }
+        } else if (heuteData.aktiveBuchungStartZeit) {
+            runningStart = new Date(heuteData.aktiveBuchungStartZeit)
+            // Server liefert nur Arbeit (PAUSE wird im Backend gefiltert), also keine Abwesenheit
+            runningIsAbwesenheit = false
         }
 
-        // 3. Add locally completed offline bookings only when server data is stale
-        // or when unsynced entries still exist. Otherwise they would be double-counted
-        // immediately after reconnect/sync.
+        if (runningStart && !runningIsAbwesenheit) {
+            const now = new Date()
+            currentSessionMinuten = Math.max(0, Math.floor((now.getTime() - runningStart.getTime()) / 60000))
+        }
+
+        // 3. Offline-Minuten: Buchungen, die offline beendet wurden und noch
+        // nicht im Server-Wert enthalten sind. Sobald alle pending-Einträge
+        // gesynct sind, räumt App.tsx diese auf (clearOfflineHeuteMinuten).
         const offlineMinuten = shouldIncludeOfflineCompletedMinutes(heuteData.fromCache, pendingCount)
             ? await OfflineService.getOfflineHeuteMinuten()
             : 0
 
-        // Total = server/cached total + local-only completed work + local running session
         const totalMinuten = serverMinuten + offlineMinuten + currentSessionMinuten
         setHeuteStunden(Math.floor(totalMinuten / 60))
         setHeuteMinuten(totalMinuten % 60)
@@ -158,6 +157,24 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             } catch {
                 // Invalid JSON, ignore
             }
+        }
+
+        // STOP-COOLDOWN: Wenn der User gerade gestoppt hat (Feierabend / Pause beendet),
+        // darf der Server-State die leere lokale Session NICHT wiederherstellen.
+        // Sonst sieht der User eine alte (Pause-)Session, die er nicht mehr loswird.
+        const stoppedAt = localStorage.getItem('zeiterfassung_stopped_at')
+        if (stoppedAt) {
+            const stoppedElapsed = Date.now() - parseInt(stoppedAt, 10)
+            if (stoppedElapsed < 15000) {
+                console.log(`🛑 Stop wurde vor ${(stoppedElapsed / 1000).toFixed(1)}s ausgelöst - ignoriere Server-Session (Cooldown)`)
+                if (localSession) {
+                    // Defensive: localStorage sollte leer sein, aber falls nicht, aufräumen
+                    localStorage.removeItem('zeiterfassung_active_session')
+                    setActiveSession(null)
+                }
+                return
+            }
+            localStorage.removeItem('zeiterfassung_stopped_at')
         }
 
         // Check if we have pending offline entries - if yes, DON'T sync with server!
@@ -345,6 +362,10 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             }
         }
 
+        // Stop-Cooldown setzen, damit ein nachfolgendes loadActiveSession()
+        // die alte Session NICHT vom Server wiederherstellt (z.B. wegen
+        // verzögerter Server-Transaction oder Idempotency-Replay).
+        localStorage.setItem('zeiterfassung_stopped_at', Date.now().toString())
         localStorage.removeItem('zeiterfassung_active_session')
         setActiveSession(null)
         setElapsedTime('00:00:00')
@@ -437,6 +458,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
         }
 
+        // Stop-Cooldown setzen (analog zu handleStopSession), damit der Server
+        // die beendete Pause-Session nicht versehentlich zurückbringt.
+        localStorage.setItem('zeiterfassung_stopped_at', Date.now().toString())
         // Clear local pause session and navigate to time tracking
         localStorage.removeItem('zeiterfassung_active_session')
         setActiveSession(null)

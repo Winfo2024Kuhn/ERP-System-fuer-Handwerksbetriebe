@@ -35,6 +35,8 @@ import { Input } from "../components/ui/input";
 import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import { DocumentManager } from "../components/DocumentManager";
 import { EmailListInput } from "../components/EmailListInput";
+import { AddressAutocomplete } from "../components/AddressAutocomplete";
+import { KundeAnlegenForm } from "../components/KundeAnlegenForm";
 import type {
     Anfrage,
     AnfrageDetail,
@@ -86,10 +88,63 @@ const formatDate = (dateStr?: string | null) => {
 };
 
 // ==================== ANFRAGE CARD ====================
-function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen }: {
+type FreigabeStatusKurz = {
+    status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+    dokumentArt: string;
+    dokumentNummer: string;
+    akzeptiertAm: string | null;
+    ablaufDatum: string;
+    erstelltAm: string;
+};
+
+function FreigabeBadge({ freigabe }: { freigabe: FreigabeStatusKurz }) {
+    const formatShort = (iso: string | null) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    };
+    if (freigabe.status === 'ACCEPTED') {
+        return (
+            <span
+                title={`${freigabe.dokumentArt} ${freigabe.dokumentNummer} digital angenommen am ${formatShort(freigabe.akzeptiertAm)}`}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+            >
+                <Check className="w-3 h-3" />
+                {freigabe.dokumentArt} angenommen · {formatShort(freigabe.akzeptiertAm)}
+            </span>
+        );
+    }
+    if (freigabe.status === 'PENDING') {
+        return (
+            <span
+                title={`Freigabe-Link für ${freigabe.dokumentArt} ${freigabe.dokumentNummer} versendet, gültig bis ${formatShort(freigabe.ablaufDatum)}`}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+            >
+                <Mail className="w-3 h-3" />
+                {freigabe.dokumentArt} wartet auf Kunde
+            </span>
+        );
+    }
+    if (freigabe.status === 'EXPIRED') {
+        return (
+            <span
+                title={`Freigabe-Link für ${freigabe.dokumentArt} ${freigabe.dokumentNummer} ist abgelaufen`}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200"
+            >
+                <X className="w-3 h-3" />
+                {freigabe.dokumentArt} – Link abgelaufen
+            </span>
+        );
+    }
+    return null;
+}
+
+function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWebseite }: {
     anfrage: Anfrage;
     onClick: () => void;
     onToggleAbgeschlossen?: (anfrageId: number, abgeschlossen: boolean) => void;
+    freigabe?: FreigabeStatusKurz;
+    viaWebseite?: boolean;
 }) {
     const handleCheckboxClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -124,6 +179,15 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen }: {
                             )}>
                                 {anfrage.abgeschlossen ? 'Beendet' : (anfrage.projektId ? 'Projekt erstellt' : 'Offen')}
                             </span>
+                            {freigabe && <FreigabeBadge freigabe={freigabe} />}
+                            {viaWebseite && (
+                                <span
+                                    className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200"
+                                    title="Anfrage kam frisch über die Webseite herein"
+                                >
+                                    Webseite · neu
+                                </span>
+                            )}
                         </div>
                         <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={anfrage.bauvorhaben}>
                             {anfrage.bauvorhaben || "Unbenannt"}
@@ -287,291 +351,6 @@ const KundenAuswahlView: React.FC<{
     );
 };
 
-// Anrede Optionen
-const ANREDE_OPTIONS = [
-    { value: '', label: 'Bitte wählen' },
-    { value: 'HERR', label: 'Sehr geehrter Herr' },
-    { value: 'FRAU', label: 'Sehr geehrte Frau' },
-    { value: 'FAMILIE', label: 'Sehr geehrte Familie' },
-    { value: 'DAMEN_HERREN', label: 'Sehr geehrte Damen und Herren' }
-];
-
-// ==================== KUNDE ANLEGEN VIEW ====================
-const KundeAnlegenView: React.FC<{
-    onSuccess: (kunde: Kunde) => void;
-    onBack: () => void;
-}> = ({ onSuccess, onBack }) => {
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [kundennummerError, setKundennummerError] = useState<string | null>(null);
-    const [autoKundennummer, setAutoKundennummer] = useState(true);
-    const [formData, setFormData] = useState({
-        name: '',
-        kundennummer: '',
-        anrede: '',
-        ansprechspartner: '',
-        strasse: '',
-        plz: '',
-        ort: '',
-        telefon: '',
-        mobiltelefon: '',
-        email: '',
-        zahlungsziel: 8,
-    });
-
-    // Nächste verfügbare Kundennummer laden
-    useEffect(() => {
-        if (autoKundennummer) {
-            fetch('/api/kunden/next-kundennummer')
-                .then(res => res.json())
-                .then(data => {
-                    setFormData(prev => ({ ...prev, kundennummer: data.kundennummer || '' }));
-                })
-                .catch(() => {});
-        }
-    }, [autoKundennummer]);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!formData.name.trim()) {
-            setError('Bitte Kundennamen angeben');
-            return;
-        }
-        if (!autoKundennummer && !formData.kundennummer.trim()) {
-            setError('Bitte Kundennummer angeben oder "Automatisch" aktivieren');
-            return;
-        }
-
-        setSaving(true);
-        setError(null);
-        try {
-            const payload = {
-                name: formData.name.trim(),
-                kundennummer: autoKundennummer ? '' : formData.kundennummer.trim(),
-                anrede: formData.anrede || null,
-                ansprechspartner: formData.ansprechspartner.trim() || null,
-                strasse: formData.strasse.trim() || null,
-                plz: formData.plz.trim() || null,
-                ort: formData.ort.trim() || null,
-                telefon: formData.telefon.trim() || null,
-                mobiltelefon: formData.mobiltelefon.trim() || null,
-                zahlungsziel: formData.zahlungsziel || 8,
-                kundenEmails: formData.email.trim() ? [formData.email.trim()] : [],
-            };
-
-            const res = await fetch('/api/kunden', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                const msg = errData.message || errData.detail || 'Kunde konnte nicht angelegt werden';
-                if (res.status === 409) {
-                    setKundennummerError(msg);
-                    return;
-                }
-                throw new Error(msg);
-            }
-
-            const created = await res.json();
-            onSuccess(created);
-        } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : 'Fehler beim Speichern');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    return (
-        <div className="space-y-4">
-            <div className="flex items-center gap-3 mb-4">
-                <button onClick={onBack} className="text-slate-500 hover:text-slate-700">
-                    <ChevronLeft className="w-5 h-5" />
-                </button>
-                <h3 className="text-lg font-semibold text-slate-900">Neuen Kunden anlegen</h3>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
-                )}
-
-                {/* Name & Kundennummer */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Kundenname *</label>
-                        <input
-                            type="text"
-                            value={formData.name}
-                            onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                            placeholder="Firma / Name"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="block text-sm font-medium text-slate-700">Kundennummer</label>
-                            <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={autoKundennummer}
-                                    onChange={e => {
-                                        const checked = e.target.checked;
-                                        setAutoKundennummer(checked);
-                                        if (checked) {
-                                            fetch('/api/kunden/next-kundennummer')
-                                                .then(res => res.json())
-                                                .then(data => setFormData(prev => ({ ...prev, kundennummer: data.kundennummer || '' })))
-                                                .catch(() => {});
-                                        } else {
-                                            setFormData(prev => ({ ...prev, kundennummer: '' }));
-                                        }
-                                    }}
-                                    className="accent-rose-600 w-4 h-4"
-                                />
-                                <span className="text-slate-600">Automatisch</span>
-                            </label>
-                        </div>
-                        <input
-                            type="text"
-                            value={formData.kundennummer}
-                            onChange={e => {
-                                setFormData(prev => ({ ...prev, kundennummer: e.target.value }));
-                                setKundennummerError(null);
-                            }}
-                            placeholder={autoKundennummer ? 'Wird automatisch vergeben' : 'z.B. K-1234'}
-                            disabled={autoKundennummer}
-                            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-50 disabled:text-slate-400 ${kundennummerError ? 'border-rose-500 bg-rose-50' : 'border-slate-200'}`}
-                        />
-                        {kundennummerError && (
-                            <p className="mt-1 text-xs text-rose-600">{kundennummerError}</p>
-                        )}
-                    </div>
-                </div>
-
-                {/* Anrede & Ansprechpartner */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Anrede</label>
-                        <Select
-                            value={formData.anrede}
-                            onChange={(value) => setFormData(prev => ({ ...prev, anrede: value }))}
-                            options={ANREDE_OPTIONS.map(opt => ({
-                                value: opt.value,
-                                label: opt.label
-                            }))}
-                            placeholder="Anrede wählen"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Ansprechpartner</label>
-                        <input
-                            type="text"
-                            value={formData.ansprechspartner}
-                            onChange={e => setFormData(prev => ({ ...prev, ansprechspartner: e.target.value }))}
-                            placeholder="Vor- und Nachname"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                </div>
-
-                {/* E-Mail */}
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">E-Mail</label>
-                    <input
-                        type="email"
-                        value={formData.email}
-                        onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                        placeholder="email@example.com"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                </div>
-
-                {/* Telefon & Mobiltelefon */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Telefon</label>
-                        <input
-                            type="tel"
-                            value={formData.telefon}
-                            onChange={e => setFormData(prev => ({ ...prev, telefon: e.target.value }))}
-                            placeholder="z.B. +49 123 456789"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Mobiltelefon</label>
-                        <input
-                            type="tel"
-                            value={formData.mobiltelefon}
-                            onChange={e => setFormData(prev => ({ ...prev, mobiltelefon: e.target.value }))}
-                            placeholder="z.B. +49 170 1234567"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                </div>
-
-                {/* Adresse */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Straße</label>
-                        <input
-                            type="text"
-                            value={formData.strasse}
-                            onChange={e => setFormData(prev => ({ ...prev, strasse: e.target.value }))}
-                            placeholder="Straße + Hausnummer"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">PLZ</label>
-                        <input
-                            type="text"
-                            value={formData.plz}
-                            onChange={e => setFormData(prev => ({ ...prev, plz: e.target.value }))}
-                            placeholder="PLZ"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                    </div>
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Ort</label>
-                    <input
-                        type="text"
-                        value={formData.ort}
-                        onChange={e => setFormData(prev => ({ ...prev, ort: e.target.value }))}
-                        placeholder="Ort"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                </div>
-
-                {/* Zahlungsziel */}
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Zahlungsziel (Tage)</label>
-                    <input
-                        type="number"
-                        min="0"
-                        value={formData.zahlungsziel}
-                        onChange={e => setFormData(prev => ({ ...prev, zahlungsziel: parseInt(e.target.value) || 8 }))}
-                        placeholder="8"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4">
-                    <Button type="button" variant="outline" onClick={onBack}>Abbrechen</Button>
-                    <Button type="submit" disabled={saving} className="bg-rose-600 text-white hover:bg-rose-700">
-                        {saving ? 'Speichern...' : 'Kunde anlegen'}
-                    </Button>
-                </div>
-            </form>
-        </div>
-    );
-};
-
 // ==================== ANFRAGE ERSTELLEN MODAL ====================
 interface AnfrageErstellenModalProps {
     isOpen: boolean;
@@ -653,8 +432,18 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
         setSubView('main');
     };
 
-    const handleKundeCreated = (kunde: Kunde) => {
-        setSelectedKunde(kunde);
+    // Adapter: KundeAnlegenForm liefert den globalen Kunde-Typ (id: string | number),
+    // dieser Editor arbeitet mit der schmaleren lokalen Variante (id: number).
+    const handleKundeCreated = (kunde: { id: string | number; name: string; kundennummer?: string; strasse?: string; plz?: string; ort?: string; kundenEmails?: string[] }) => {
+        setSelectedKunde({
+            id: typeof kunde.id === 'string' ? parseInt(kunde.id, 10) : kunde.id,
+            name: kunde.name,
+            kundennummer: kunde.kundennummer || '',
+            strasse: kunde.strasse,
+            plz: kunde.plz,
+            ort: kunde.ort,
+            kundenEmails: kunde.kundenEmails,
+        });
         setSubView('main');
     };
 
@@ -727,7 +516,7 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                     )}
 
                     {subView === 'createKunde' && (
-                        <KundeAnlegenView
+                        <KundeAnlegenForm
                             onSuccess={handleKundeCreated}
                             onBack={() => setSubView('selectKunde')}
                         />
@@ -820,38 +609,23 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                                         </label>
                                     )}
                                 </div>
-                                <div className="grid grid-cols-3 gap-3 mb-3">
-                                    <div className="col-span-2">
-                                        <Input
-                                            value={formData.projektStrasse}
-                                            onChange={e => {
-                                                setFormData(prev => ({ ...prev, projektStrasse: e.target.value }));
-                                                setAdresseGleichKunde(false);
-                                            }}
-                                            placeholder="Straße"
-                                            disabled={adresseGleichKunde}
-                                        />
-                                    </div>
-                                    <div>
-                                        <Input
-                                            value={formData.projektPlz}
-                                            onChange={e => {
-                                                setFormData(prev => ({ ...prev, projektPlz: e.target.value }));
-                                                setAdresseGleichKunde(false);
-                                            }}
-                                            placeholder="PLZ"
-                                            disabled={adresseGleichKunde}
-                                        />
-                                    </div>
-                                </div>
-                                <Input
-                                    value={formData.projektOrt}
-                                    onChange={e => {
-                                        setFormData(prev => ({ ...prev, projektOrt: e.target.value }));
+                                <AddressAutocomplete
+                                    showLabels={false}
+                                    disabled={adresseGleichKunde}
+                                    value={{
+                                        strasse: formData.projektStrasse,
+                                        plz: formData.projektPlz,
+                                        ort: formData.projektOrt
+                                    }}
+                                    onChange={next => {
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            projektStrasse: next.strasse,
+                                            projektPlz: next.plz,
+                                            projektOrt: next.ort
+                                        }));
                                         setAdresseGleichKunde(false);
                                     }}
-                                    placeholder="Ort"
-                                    disabled={adresseGleichKunde}
                                 />
                             </div>
 
@@ -889,9 +663,10 @@ interface AnfrageDetailViewProps {
     onBack: () => void;
     onEdit: () => void;
     onRefresh: () => void;
+    onDeleted?: () => void;
 }
 
-const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, onEdit, onRefresh }) => {
+const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, onEdit, onRefresh, onDeleted }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [activeTab, setActiveTab] = useState<'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen'>('emails');
@@ -1121,6 +896,38 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
         }
     };
 
+    // Anfrage komplett löschen (mit Cascade-Option für verwaisten Kunden).
+    // Backend prüft: keine E-Mails, keine Geschäftsdokumente, kein Versand,
+    // keine echten Bautagebuch-Notizen, kein Projekt – sonst HTTP 409.
+    const handleAnfrageDelete = async () => {
+        const ok = await confirmDialog({
+            title: 'Anfrage löschen',
+            message: 'Diese Anfrage wirklich löschen? Wenn der Kunde nur an dieser Anfrage hängt und sonst keine Projekte hat, wird er ebenfalls gelöscht. Bilder/Notizen aus dem Webseiten-Funnel werden mit entfernt.',
+            variant: 'danger',
+            confirmLabel: 'Löschen'
+        });
+        if (!ok) return;
+        try {
+            const res = await fetch(`/api/anfragen/${anfrage.id}?cascadeKunde=true`, { method: 'DELETE' });
+            if (res.ok) {
+                let kundeWeg = false;
+                try { kundeWeg = (await res.json())?.kundeMitgeloescht === true; } catch { /* leerer Body */ }
+                toast.success(kundeWeg ? 'Anfrage und verwaister Kunde gelöscht.' : 'Anfrage gelöscht.');
+                if (onDeleted) onDeleted(); else onBack();
+                return;
+            }
+            let hinweis = 'Anfrage konnte nicht gelöscht werden.';
+            try {
+                const data = await res.json();
+                if (typeof data?.hinweis === 'string' && data.hinweis.trim()) hinweis = data.hinweis;
+            } catch { /* ignore */ }
+            toast.error(hinweis);
+        } catch (e) {
+            console.error('Anfrage-Löschen fehlgeschlagen:', e);
+            toast.error('Anfrage konnte nicht gelöscht werden.');
+        }
+    };
+
     const kundenEmails = anfrage.kundenEmails || [];
 
     const nettoPreis = (anfrage.betrag || 0) / 1.19;
@@ -1174,6 +981,14 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <div className="flex items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => handleAnfrageDelete()}
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200"
+                        title="Anfrage löschen (nur möglich solange noch keine E-Mails oder Geschäftsdokumente daran hängen)"
+                    >
+                        <Trash2 className="w-4 h-4 mr-2" /> Löschen
                     </Button>
                 </div>
             </div>
@@ -1625,10 +1440,31 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
 };
 
 // ==================== MAIN COMPONENT ====================
+
+// Geräteübergreifender "Zuletzt aufgerufen"-Stempel via Backend.
+async function fetchAnfrageLastAccessed(): Promise<Record<string, number>> {
+    try {
+        const res = await fetch('/api/last-accessed/ANFRAGE');
+        if (!res.ok) return {};
+        const data = await res.json();
+        return data && typeof data === 'object' ? data : {};
+    } catch {
+        return {};
+    }
+}
+
+function trackAnfrageAccess(id: number) {
+    fetch(`/api/last-accessed/ANFRAGE/${id}`, { method: 'POST' }).catch(() => {
+        // fire-and-forget: Sortierung beim nächsten Reload bleibt einfach unverändert
+    });
+}
+
 export default function AnfrageEditor() {
     const [searchParams, setSearchParams] = useSearchParams();
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
     const [anfragen, setAnfragen] = useState<Anfrage[]>([]);
+    const [funnelAnfrageIds, setFunnelAnfrageIds] = useState<Set<number>>(new Set());
+    const [freigabeStatusByAnfrageId, setFreigabeStatusByAnfrageId] = useState<Record<number, FreigabeStatusKurz>>({});
     const [selectedAnfrage, setSelectedAnfrage] = useState<AnfrageDetail | null>(null);
     const [loading, setLoading] = useState(false);
     const [total, setTotal] = useState(0);
@@ -1657,6 +1493,7 @@ export default function AnfrageEditor() {
                     const anfrageData = await anfrageRes.json();
                     const emails = emailsRes.ok ? await emailsRes.json() : [];
                     const dokumente = dokumenteRes.ok ? await dokumenteRes.json() : [];
+                    trackAnfrageAccess(anfrageData.id ?? anfrageId);
                     setSelectedAnfrage({
                         ...anfrageData,
                         emails: Array.isArray(emails) ? emails : [],
@@ -1673,9 +1510,19 @@ export default function AnfrageEditor() {
     }, [searchParams]);
 
     // Filters
-    const [filters, setFilters] = useState({
+    const initialFreigabeParam = searchParams.get('freigabe');
+    const initialFreigabe: 'all' | 'accepted' | 'pending' | 'expired' =
+        initialFreigabeParam === 'accepted' || initialFreigabeParam === 'pending' || initialFreigabeParam === 'expired'
+            ? initialFreigabeParam
+            : 'all';
+    const [filters, setFilters] = useState<{
+        q: string;
+        jahr: string;
+        freigabe: 'all' | 'accepted' | 'pending' | 'expired';
+    }>({
         q: "",
         jahr: "",
+        freigabe: initialFreigabe,
     });
     const [verfuegbareJahre, setVerfuegbareJahre] = useState<number[]>([]);
 
@@ -1702,22 +1549,68 @@ export default function AnfrageEditor() {
             }
             if (filters.jahr) params.set("jahr", filters.jahr);
 
-            const res = await fetch(`/api/anfragen?${params.toString()}`);
+            const [res, lastAccessed, funnelRes] = await Promise.all([
+                fetch(`/api/anfragen?${params.toString()}`),
+                fetchAnfrageLastAccessed(),
+                fetch('/api/anfragen/funnel-ids').catch(() => null),
+            ]);
             if (!res.ok) throw new Error("Fehler beim Laden");
             const data = await res.json();
 
-            // API gibt Array oder Objekt mit gesamt zurück
+            // Webseiten-Anfragen (Funnel) ganz oben halten — frische Leads sollen
+            // sofort sichtbar sein. Innerhalb der Funnel-Gruppe wieder nach
+            // letztem Aufruf sortieren, dito für den Rest.
+            let funnelIds = new Set<number>();
+            if (funnelRes && funnelRes.ok) {
+                try {
+                    const ids: number[] = await funnelRes.json();
+                    if (Array.isArray(ids)) funnelIds = new Set(ids);
+                } catch { /* ignore */ }
+            }
+            const sortFn = (a: Anfrage, b: Anfrage) => {
+                const aFunnel = funnelIds.has(a.id) ? 1 : 0;
+                const bFunnel = funnelIds.has(b.id) ? 1 : 0;
+                if (aFunnel !== bFunnel) return bFunnel - aFunnel; // Funnel zuerst
+                const ta = lastAccessed[String(a.id)] || 0;
+                const tb = lastAccessed[String(b.id)] || 0;
+                return tb - ta;
+            };
+            let resultList: Anfrage[];
             if (Array.isArray(data)) {
-                setAnfragen(data);
-                setTotal(data.length);
+                resultList = [...data].sort(sortFn);
+                setAnfragen(resultList);
+                setTotal(resultList.length);
             } else {
-                setAnfragen(Array.isArray(data.anfragen) ? data.anfragen : []);
+                resultList = Array.isArray(data.anfragen) ? [...data.anfragen] : [];
+                resultList.sort(sortFn);
+                setAnfragen(resultList);
                 setTotal(typeof data.gesamt === "number" ? data.gesamt : 0);
+            }
+            setFunnelAnfrageIds(funnelIds);
+            // Freigabe-Status (Angebot/AB digital angenommen?) für die geladenen Anfragen ziehen.
+            const ids = resultList.map(a => a.id).filter((id): id is number => typeof id === 'number');
+            if (ids.length > 0) {
+                try {
+                    const idsParam = ids.join(',');
+                    const statusRes = await fetch(`/api/anfragen/freigabe-status?ids=${encodeURIComponent(idsParam)}`);
+                    if (statusRes.ok) {
+                        const statusJson = await statusRes.json();
+                        setFreigabeStatusByAnfrageId(statusJson || {});
+                    } else {
+                        setFreigabeStatusByAnfrageId({});
+                    }
+                } catch {
+                    setFreigabeStatusByAnfrageId({});
+                }
+            } else {
+                setFreigabeStatusByAnfrageId({});
             }
         } catch (err) {
             console.error(err);
             setAnfragen([]);
             setTotal(0);
+            setFreigabeStatusByAnfrageId({});
+            setFunnelAnfrageIds(new Set());
         } finally {
             setLoading(false);
         }
@@ -1762,7 +1655,7 @@ export default function AnfrageEditor() {
 
     // Handlers
     const handleFilterChange = (key: string, value: string) => {
-        setFilters((prev) => ({ ...prev, [key]: value }));
+        setFilters((prev) => ({ ...prev, [key]: value } as typeof prev));
     };
 
     const handleFilterSubmit = (e: React.FormEvent) => {
@@ -1772,9 +1665,22 @@ export default function AnfrageEditor() {
     };
 
     const handleResetFilters = () => {
-        setFilters({ q: "", jahr: "" });
+        setFilters({ q: "", jahr: "", freigabe: 'all' });
         setPage(0);
     };
+
+    // Frontend-Filter über Freigabe-Status (Backend filtert nur q/jahr).
+    // Wirkt zusätzlich auf die geladenen Anfragen der aktuellen Seite.
+    const sichtbareAnfragen = useMemo(() => {
+        if (filters.freigabe === 'all') return anfragen;
+        return anfragen.filter(a => {
+            const fs = freigabeStatusByAnfrageId[a.id]?.status;
+            if (filters.freigabe === 'accepted') return fs === 'ACCEPTED';
+            if (filters.freigabe === 'pending') return fs === 'PENDING';
+            if (filters.freigabe === 'expired') return fs === 'EXPIRED' || fs === 'REVOKED';
+            return true;
+        });
+    }, [anfragen, freigabeStatusByAnfrageId, filters.freigabe]);
 
     // Handlers (Refactored to loadDetails below)
 
@@ -1785,7 +1691,7 @@ export default function AnfrageEditor() {
         if (total === 0) return 'Keine Anfragen gefunden.';
         const start = page * PAGE_SIZE + 1;
         const end = Math.min(start + anfragen.length - 1, total);
-        return `Zeige ${start}-${end} von ${total} Anfragenn`;
+        return `Zeige ${start}-${end} von ${total} Anfragen`;
     }, [loading, total, page, anfragen.length]);
 
     const loadDetails = async (id: number) => {
@@ -1816,6 +1722,7 @@ export default function AnfrageEditor() {
     };
 
     const handleDetail = (anfrage: Anfrage) => {
+        trackAnfrageAccess(anfrage.id);
         loadDetails(anfrage.id);
     };
 
@@ -1840,6 +1747,12 @@ export default function AnfrageEditor() {
                     }}
                     onEdit={handleEdit}
                     onRefresh={() => loadDetails(selectedAnfrage.id)}
+                    onDeleted={() => {
+                        setSelectedAnfrage(null);
+                        setViewMode('list');
+                        setSearchParams({}, { replace: true });
+                        loadAnfragen();
+                    }}
                 />
 
                 {/* Edit Modal */}
@@ -1902,30 +1815,49 @@ export default function AnfrageEditor() {
                             className="mt-1"
                         />
                     </div>
-                    <div className="flex items-end gap-3 md:col-span-2 xl:col-span-2">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Angebots-Status</label>
+                        <Select
+                            value={filters.freigabe}
+                            onChange={(value) => handleFilterChange('freigabe', value)}
+                            options={[
+                                { value: 'all', label: 'Alle' },
+                                { value: 'accepted', label: 'Angebot angenommen' },
+                                { value: 'pending', label: 'Wartet auf Kunden' },
+                                { value: 'expired', label: 'Link abgelaufen' },
+                            ]}
+                            placeholder="Status wählen"
+                            className="mt-1"
+                        />
+                    </div>
+                    <div className="flex items-end gap-3">
                         <Button type="submit" className="flex-1 bg-rose-600 text-white hover:bg-rose-700">Filtern</Button>
                         <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Reset</Button>
                     </div>
                 </form>
-                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>
+                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Status-Filter wirkt auf die geladene Seite.</p>
             </div>
 
             {/* Grid Content */}
             {loading ? (
                 <div className="text-center py-8 text-slate-500">Anfragen werden geladen...</div>
-            ) : anfragen.length === 0 ? (
+            ) : sichtbareAnfragen.length === 0 ? (
                 <div className="bg-white p-8 rounded-2xl text-center text-slate-500 border-dashed border-2">
                     <FileText className="w-10 h-10 mx-auto mb-2 text-rose-200" />
-                    Keine Anfragen gefunden.
+                    {filters.freigabe !== 'all' && anfragen.length > 0
+                        ? 'Keine Anfragen mit diesem Status auf der aktuellen Seite.'
+                        : 'Keine Anfragen gefunden.'}
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {anfragen.map((anfrage) => (
+                    {sichtbareAnfragen.map((anfrage) => (
                         <AnfrageCard
                             key={anfrage.id}
                             anfrage={anfrage}
                             onClick={() => handleDetail(anfrage)}
                             onToggleAbgeschlossen={handleToggleAbgeschlossen}
+                            freigabe={freigabeStatusByAnfrageId[anfrage.id]}
+                            viaWebseite={funnelAnfrageIds.has(anfrage.id)}
                         />
                     ))}
                 </div>

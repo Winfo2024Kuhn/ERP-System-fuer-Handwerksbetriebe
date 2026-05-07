@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
@@ -93,6 +94,9 @@ class ProjektControllerTest {
 
         @MockBean
         private ZeitbuchungRepository zeitbuchungRepository;
+
+        @MockBean
+        private DokumentFreigabeService dokumentFreigabeService;
 
         @Test
         void getAlleProjekte_returnsPagedResponse() throws Exception {

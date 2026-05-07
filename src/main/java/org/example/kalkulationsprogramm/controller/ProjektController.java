@@ -29,6 +29,7 @@ import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ProjektNotizBild;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektUpdateDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelMengeDto;
+import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenErfassenDto;
 import org.example.kalkulationsprogramm.dto.Projekt.LieferantPerformanceDto;
 import org.example.kalkulationsprogramm.dto.Projekt.LieferantenkostenJahrDto;
@@ -50,6 +51,7 @@ import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
@@ -100,6 +102,27 @@ public class ProjektController {
     private final ProjektNotizBildRepository projektNotizBildRepository;
     private final ProjektRepository projektRepository;
     private final ZeitbuchungRepository zeitbuchungRepository;
+    private final DokumentFreigabeService dokumentFreigabeService;
+
+    /**
+     * Liefert pro angefragter Projekt-ID die jüngste relevante digitale Freigabe
+     * (Angebot oder Auftragsbestätigung). Wird vom ProjektEditor genutzt, um Status-
+     * Badges direkt an die Suche-Cards zu hängen.
+     */
+    @GetMapping("/freigabe-status")
+    public ResponseEntity<Map<Long, FreigabeStatusKurzDto>> freigabeStatus(@RequestParam("ids") List<Long> ids) {
+        var byProjektId = dokumentFreigabeService.findJuengsteProProjekt(ids);
+        Map<Long, FreigabeStatusKurzDto> result = new HashMap<>();
+        byProjektId.forEach((projektId, freigabe) -> result.put(projektId, FreigabeStatusKurzDto.builder()
+                .status(freigabe.getStatus().name())
+                .dokumentArt(freigabe.getDokumentArt())
+                .dokumentNummer(freigabe.getDokumentNummer())
+                .akzeptiertAm(freigabe.getAkzeptiertAm())
+                .ablaufDatum(freigabe.getAblaufDatum())
+                .erstelltAm(freigabe.getErstelltAm())
+                .build()));
+        return ResponseEntity.ok(result);
+    }
 
     // Projekte bearbeiten/ erstellen (Multipart mit Dateien)
     // Projekte bearbeiten/ erstellen (Multipart mit Dateien)

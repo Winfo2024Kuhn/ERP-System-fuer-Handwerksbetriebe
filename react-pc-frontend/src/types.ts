@@ -354,7 +354,7 @@ export interface Produktkategorie {
   beschreibung?: string;
   verrechnungseinheit?: Verrechnungseinheit;
   pfad?: string;
-  isLeaf: boolean;
+  leaf: boolean;
   projektAnzahl?: number;
 }
 
@@ -456,7 +456,7 @@ export interface ProjektProduktkategorieNested {
   beschreibung?: string;
   verrechnungseinheit?: Verrechnungseinheit;
   pfad?: string;
-  isLeaf?: boolean;
+  leaf?: boolean;
 }
 
 export interface ProjektProduktkategorie {
@@ -702,40 +702,6 @@ export interface AnfrageDetail extends Anfrage {
   dokumente?: AnfrageDokument[];
 }
 
-// ==================== Angebot DTOs ====================
-export interface Angebot {
-  id: number;
-  kundenId?: number;
-  kundenName?: string;
-  bauvorhaben: string;
-  kundennummer?: string;
-  angebotsnummer?: string;
-  betrag?: number;
-  kundenEmails?: string[];
-  emailVersandDatum?: string;
-  projektId?: number;
-  anlegedatum?: string;
-  bildUrl?: string;
-  projektStrasse?: string;
-  projektPlz?: string;
-  projektOrt?: string;
-  kurzbeschreibung?: string;
-  abgeschlossen?: boolean;
-  createdAt?: string;
-  kundenStrasse?: string;
-  kundenPlz?: string;
-  kundenOrt?: string;
-  kundenTelefon?: string;
-  kundenMobiltelefon?: string;
-  kundenAnsprechpartner?: string;
-  kundenAnrede?: string;
-}
-
-export interface AngebotDetail extends Angebot {
-  emails?: ProjektEmail[];
-  dokumente?: ProjektDokument[];
-}
-
 // ==================== Formularwesen DTOs ====================
 export type FormBlockType =
   | 'heading'
@@ -838,7 +804,10 @@ export type AusgangsGeschaeftsDokumentTyp =
   | 'ABSCHLAGSRECHNUNG'
   | 'SCHLUSSRECHNUNG'
   | 'GUTSCHRIFT'
-  | 'STORNO';
+  | 'STORNO'
+  | 'ZAHLUNGSERINNERUNG'
+  | 'ERSTE_MAHNUNG'
+  | 'ZWEITE_MAHNUNG';
 
 export const AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN: { value: AusgangsGeschaeftsDokumentTyp; label: string }[] = [
   { value: 'ANGEBOT', label: 'Angebot' },
@@ -849,6 +818,9 @@ export const AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN: { value: AusgangsGeschaeftsDokum
   { value: 'SCHLUSSRECHNUNG', label: 'Schlussrechnung' },
   { value: 'GUTSCHRIFT', label: 'Gutschrift' },
   { value: 'STORNO', label: 'Stornorechnung' },
+  { value: 'ZAHLUNGSERINNERUNG', label: 'Zahlungserinnerung' },
+  { value: 'ERSTE_MAHNUNG', label: '1. Mahnung' },
+  { value: 'ZWEITE_MAHNUNG', label: '2. Mahnung' },
 ];
 
 export interface AusgangsGeschaeftsDokument {
@@ -869,6 +841,8 @@ export interface AusgangsGeschaeftsDokument {
   gebuchtAm?: string;
   storniert: boolean;
   storniertAm?: string;
+  /** Kunde hat das Dokument digital angenommen → gesperrt für Bearbeitung */
+  digitalAngenommen?: boolean;
   bearbeitbar: boolean;
   // Projekt
   projektId?: number;
@@ -888,6 +862,8 @@ export interface AusgangsGeschaeftsDokument {
   // Ersteller
   erstelltVonId?: number;
   erstelltVonName?: string;
+  /** Direkter PDF-URL — derzeit nur für virtuelle Mahn-Einträge gesetzt. */
+  pdfUrl?: string;
 }
 
 export interface AusgangsGeschaeftsDokumentErstellen {

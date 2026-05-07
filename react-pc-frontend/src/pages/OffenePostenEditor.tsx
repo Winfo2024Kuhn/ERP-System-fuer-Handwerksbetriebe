@@ -72,16 +72,43 @@ export default function OffenePostenEditor() {
         const tabParam = searchParams.get('tab');
         return tabParam === 'eingang' ? 'eingang' : 'ausgang';
     });
+    const [fokusId, setFokusId] = useState<number | null>(() => {
+        const v = searchParams.get('dokumentId');
+        return v ? Number(v) : null;
+    });
 
-    // Deep-link: read tab param from URL
+    // Deep-link: tab + optionalen dokumentId aus URL übernehmen.
+    // dokumentId wird nach Verarbeitung wieder entfernt, damit Reload nicht erneut springt.
     useEffect(() => {
         const tabParam = searchParams.get('tab');
-        if (tabParam === 'eingang' || tabParam === 'ausgang') {
-            setActiveTab(tabParam);
+        const dokParam = searchParams.get('dokumentId');
+        if (tabParam || dokParam) {
+            if (tabParam === 'eingang' || tabParam === 'ausgang') setActiveTab(tabParam);
+            if (dokParam) setFokusId(Number(dokParam));
             setSearchParams({}, { replace: true });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
+
+    // Scroll + Highlight, sobald die geladene Liste die fokussierte ID enthält.
+    useEffect(() => {
+        if (fokusId == null) return;
+        if (!items.some(i => i.id === fokusId)) return;
+        const t = window.setTimeout(() => {
+            const el = document.querySelector(`[data-dokument-id="${fokusId}"]`) as HTMLElement | null;
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('ring-2', 'ring-rose-400');
+                window.setTimeout(() => {
+                    el.classList.remove('ring-2', 'ring-rose-400');
+                    setFokusId(null);
+                }, 2400);
+            } else {
+                setFokusId(null);
+            }
+        }, 80);
+        return () => window.clearTimeout(t);
+    }, [fokusId, items]);
 
 
     // Load open items
@@ -192,7 +219,10 @@ export default function OffenePostenEditor() {
         return (
             <React.Fragment key={invoice.id}>
                 {/* Main invoice row */}
-                <tr className={`align-top transition-colors ${mahnungen.length > 0 ? 'border-l-4 border-amber-300 bg-white hover:bg-rose-50/30' : 'bg-white hover:bg-slate-50/80'}`}>
+                <tr
+                    data-dokument-id={invoice.id}
+                    className={`align-top transition-all ${mahnungen.length > 0 ? 'border-l-4 border-amber-300 bg-white hover:bg-rose-50/30' : 'bg-white hover:bg-slate-50/80'}`}
+                >
                     {/* Projekt */}
                     <td className="px-4 py-3 text-sm">
                         {invoice.projektId ? (

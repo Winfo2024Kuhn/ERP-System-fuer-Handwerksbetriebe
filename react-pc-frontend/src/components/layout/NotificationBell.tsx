@@ -1,56 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
-    Bell, Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, X, Package
+    Bell, Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, X, Package, CheckCircle2,
+    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck
 } from 'lucide-react';
 
-// ── Types ────────────────────────────────────────────────────────────────
+// ── Types & Pure-Logic Helpers ───────────────────────────────────────────
+// Die Pure-Functions (filterDismissed/dismissItem/dismissCategory) liegen in
+// notification-helpers.ts, damit Vitest sie ohne Komponenten-Mount testen
+// kann und Vites Fast-Refresh-Regel hier nicht bricht.
 
-interface CategoryDto {
-    type: string;
-    label: string;
-    count: number;
-    icon: string;
-    link: string;
-}
-
-interface RecentItemDto {
-    type: string;
-    title: string;
-    subtitle: string;
-    timestamp: string;
-    link: string;
-}
-
-interface NotificationSummary {
-    totalCount: number;
-    categories: CategoryDto[];
-    recentItems: RecentItemDto[];
-}
+import type { CategoryDto, RecentItemDto, NotificationSummary } from './notification-helpers';
+import { dismissItem, dismissCategory, filterDismissed } from './notification-helpers';
 
 // ── Icon map ─────────────────────────────────────────────────────────────
-
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
-    Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, Package,
-};
-
-const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-    EMAILS: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200' },
-    URLAUBSANTRAEGE: { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200' },
-    BAUTAGEBUCH: { bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-200' },
-    EINGANG_FAELLIG: { bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-200' },
-    AUSGANG_UEBERFAELLIG: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' },
-    RECHNUNGEN: { bg: 'bg-violet-50', text: 'text-violet-600', border: 'border-violet-200' },
-    TERMINE: { bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200' },
-    LIEFERSCHEINE: { bg: 'bg-cyan-50', text: 'text-cyan-600', border: 'border-cyan-200' },
-    REKLAMATIONEN: { bg: 'bg-pink-50', text: 'text-pink-600', border: 'border-pink-200' },
-    EMAILS_PROJECTS: { bg: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-200' },
-    EMAILS_OFFERS: { bg: 'bg-teal-50', text: 'text-teal-600', border: 'border-teal-200' },
-    EMAILS_SUPPLIERS: { bg: 'bg-lime-50', text: 'text-lime-600', border: 'border-lime-200' },
-    EMAILS_SPAM: { bg: 'bg-yellow-50', text: 'text-yellow-600', border: 'border-yellow-200' },
-    EMAILS_NEWSLETTER: { bg: 'bg-sky-50', text: 'text-sky-600', border: 'border-sky-200' },
-};
 
 const RECENT_TYPE_COLORS: Record<string, string> = {
     EMAIL: 'text-blue-500',
@@ -62,6 +26,8 @@ const RECENT_TYPE_COLORS: Record<string, string> = {
     TERMIN: 'text-rose-500',
     LIEFERSCHEIN: 'text-cyan-500',
     REKLAMATION: 'text-pink-500',
+    FREIGABE_ANGENOMMEN: 'text-emerald-500',
+    ANFRAGE_WEBSEITE: 'text-rose-600',
 };
 
 const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -74,68 +40,94 @@ const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string
     TERMIN: CalendarClock,
     LIEFERSCHEIN: Package,
     REKLAMATION: AlertTriangle,
+    FREIGABE_ANGENOMMEN: CheckCircle2,
+    ANFRAGE_WEBSEITE: Globe,
 };
 
-// ── Dismissal helpers ────────────────────────────────────────────────────
-// Dismissals speichern den Stand zum Zeitpunkt des Klicks.
-// Eine Kategorie bleibt ausgeblendet bis ihr Count *höher* wird als beim Dismiss.
-// Items bleiben ausgeblendet bis zur nächsten Seiten-Sitzung (sessionStorage).
+// ── Gruppen-Definition ─────────────────────────────────────────────────
+// Strukturiert die Kategorien thematisch — sonst wirkt die Liste zerfasert.
 
-const DISMISSAL_KEY = 'notification_dismissals_v2';
-
-interface Dismissals {
-    // type → count beim Dismiss (nicht timestamp!)
-    categories: Record<string, number>;
+interface NotificationGroup {
+    id: string;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    accentText: string;
+    accentBg: string;
+    /** Category-Types (CategoryDto.type) die zu dieser Gruppe gehören. */
+    types: string[];
+    /** RecentItem-Types (RecentItemDto.type) die zu dieser Gruppe gehören. */
+    recentTypes: string[];
 }
 
-function loadDismissals(): Dismissals {
-    try {
-        const raw = localStorage.getItem(DISMISSAL_KEY);
-        if (raw) return JSON.parse(raw);
-    } catch { /* ignore */ }
-    return { categories: {} };
-}
+// Reihenfolge bestimmt das Rendering — Webseiten-Anfragen sollen ganz oben sein.
+const GROUPS: NotificationGroup[] = [
+    {
+        id: 'webseite',
+        label: 'Neu von der Webseite',
+        icon: Globe,
+        accentText: 'text-rose-700',
+        accentBg: 'bg-rose-100',
+        types: ['ANFRAGEN_WEBSEITE'],
+        recentTypes: ['ANFRAGE_WEBSEITE'],
+    },
+    {
+        id: 'posteingaenge',
+        label: 'Posteingänge',
+        icon: Inbox,
+        accentText: 'text-blue-600',
+        accentBg: 'bg-blue-50',
+        types: ['EMAILS', 'EMAILS_PROJECTS', 'EMAILS_OFFERS', 'EMAILS_SUPPLIERS', 'EMAILS_SPAM', 'EMAILS_NEWSLETTER'],
+        recentTypes: ['EMAIL'],
+    },
+    {
+        id: 'geschaeft',
+        label: 'Geschäft',
+        icon: Briefcase,
+        accentText: 'text-emerald-600',
+        accentBg: 'bg-emerald-50',
+        types: ['FREIGABEN_ANGENOMMEN', 'BAUTAGEBUCH'],
+        recentTypes: ['FREIGABE_ANGENOMMEN', 'BAUTAGEBUCH'],
+    },
+    {
+        id: 'finanzen',
+        label: 'Finanzen',
+        icon: Wallet,
+        accentText: 'text-orange-600',
+        accentBg: 'bg-orange-50',
+        types: ['EINGANG_FAELLIG', 'AUSGANG_UEBERFAELLIG', 'RECHNUNGEN'],
+        recentTypes: ['EINGANG_FAELLIG', 'AUSGANG_UEBERFAELLIG', 'RECHNUNG'],
+    },
+    {
+        id: 'termine',
+        label: 'Termine',
+        icon: CalendarClock,
+        accentText: 'text-rose-600',
+        accentBg: 'bg-rose-50',
+        types: ['TERMINE'],
+        recentTypes: ['TERMIN'],
+    },
+    {
+        id: 'personal',
+        label: 'Personal',
+        icon: Users,
+        accentText: 'text-emerald-600',
+        accentBg: 'bg-emerald-50',
+        types: ['URLAUBSANTRAEGE'],
+        recentTypes: ['URLAUBSANTRAG'],
+    },
+    {
+        id: 'lieferanten',
+        label: 'Lieferanten',
+        icon: Building2,
+        accentText: 'text-cyan-600',
+        accentBg: 'bg-cyan-50',
+        types: ['LIEFERSCHEINE', 'REKLAMATIONEN'],
+        recentTypes: ['LIEFERSCHEIN', 'REKLAMATION'],
+    },
+];
 
-function saveDismissals(d: Dismissals) {
-    localStorage.setItem(DISMISSAL_KEY, JSON.stringify(d));
-}
-
-function dismissCategory(type: string, count: number) {
-    const d = loadDismissals();
-    d.categories[type] = count;
-    saveDismissals(d);
-}
-
-function dismissItem(type: string, title: string) {
-    // Items nur für diese Sitzung ausblenden (SessionStorage)
-    try {
-        const raw = sessionStorage.getItem('notification_dismissed_items') || '[]';
-        const items: string[] = JSON.parse(raw);
-        const key = `${type}::${title}`;
-        if (!items.includes(key)) { items.push(key); sessionStorage.setItem('notification_dismissed_items', JSON.stringify(items)); }
-    } catch { /* ignore */ }
-}
-
-function filterDismissed(data: NotificationSummary): NotificationSummary {
-    const d = loadDismissals();
-
-    // Kategorie einblenden sobald count > dismissedCount (echte neue Einträge)
-    const categories = data.categories.filter(c => {
-        const dismissedCount = d.categories[c.type];
-        if (dismissedCount === undefined) return true;  // nie dismissed
-        return c.count > dismissedCount;                // neue dazugekommen
-    });
-
-    // Items: sitzungsbasiert ausblenden
-    let dismissedItems: string[] = [];
-    try {
-        dismissedItems = JSON.parse(sessionStorage.getItem('notification_dismissed_items') || '[]');
-    } catch { /* ignore */ }
-    const recentItems = data.recentItems.filter(item => !dismissedItems.includes(`${item.type}::${item.title}`));
-
-    const totalCount = categories.reduce((sum, c) => sum + c.count, 0);
-    return { totalCount, categories, recentItems };
-}
+// Pure Helpers (dismissItem, dismissCategory, filterDismissed) sind nach
+// notification-helpers.ts ausgelagert – siehe Import oben.
 
 // ── Component ────────────────────────────────────────────────────────────
 
@@ -145,10 +137,13 @@ export function NotificationBell() {
     const [open, setOpen] = useState(false);
     const [shake, setShake] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const bellButtonRef = useRef<HTMLButtonElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
     // Use a ref for prevCount to avoid stale-closure issues in the callback
     const prevCountRef = useRef(0);
     const abortRef = useRef<AbortController | null>(null);
     const navigate = useNavigate();
+    const [panelPos, setPanelPos] = useState<{ top: number; right: number } | null>(null);
 
     const fetchNotifications = useCallback(async () => {
         // Cancel any in-flight request before starting a new one
@@ -197,13 +192,60 @@ export function NotificationBell() {
         const handleVisibility = () => {
             if (document.visibilityState === 'visible') fetchNotifications();
         };
+        // Andere Komponenten (z.B. EmailCenter) feuern dieses Event nach
+        // mark-read/mark-spam/mark-not-spam, damit die Glocke sofort den
+        // verringerten Stand zeigt – ohne auf das 60s-Polling zu warten.
+        const handleRefresh = () => fetchNotifications();
         document.addEventListener('visibilitychange', handleVisibility);
+        window.addEventListener('notifications:refresh', handleRefresh);
         return () => {
             abortRef.current?.abort();
             clearInterval(interval);
             document.removeEventListener('visibilitychange', handleVisibility);
+            window.removeEventListener('notifications:refresh', handleRefresh);
         };
     }, [fetchNotifications]);
+
+    // Position berechnen: Modal wird unter der Glocke geöffnet, an deren rechte Kante
+    // ausgerichtet. Wenn die natürliche Breite nach links über den Bildschirm hinausragen
+    // würde, wird das Modal mittig zentriert. Es wird nie breiter als der Viewport.
+    const recomputePanelPosition = useCallback(() => {
+        if (!bellButtonRef.current || !panelRef.current) return;
+        const bell = bellButtonRef.current.getBoundingClientRect();
+        const panel = panelRef.current.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const margin = 16;
+        const top = bell.bottom + 8;
+        // Default: rechter Modal-Rand am rechten Glocken-Rand
+        let right = vw - bell.right;
+        const leftEdgeIfDefault = vw - right - panel.width;
+        if (leftEdgeIfDefault < margin) {
+            // Würde links überlaufen → mittig auf den verfügbaren Viewport setzen
+            const centeredRight = (vw - panel.width) / 2;
+            right = Math.max(margin, centeredRight);
+        }
+        setPanelPos(prev =>
+            prev && prev.top === top && prev.right === right ? prev : { top, right }
+        );
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!open) return;
+        recomputePanelPosition();
+    }, [open, data, recomputePanelPosition]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handler = () => recomputePanelPosition();
+        window.addEventListener('resize', handler);
+        // Wenn der Inhalt der Spalten sich ändert (z.B. Items kommen rein), ggf. neu zentrieren
+        const ro = new ResizeObserver(() => recomputePanelPosition());
+        if (panelRef.current) ro.observe(panelRef.current);
+        return () => {
+            window.removeEventListener('resize', handler);
+            ro.disconnect();
+        };
+    }, [open, recomputePanelPosition]);
 
     // Close on outside click
     useEffect(() => {
@@ -231,11 +273,30 @@ export function NotificationBell() {
         navigate(link);
     };
 
-    const handleCategoryClick = (cat: CategoryDto) => {
-        dismissCategory(cat.type, cat.count);
-        // Immediately update local display
+    /**
+     * "Spalte als gelesen markieren": blendet alle aktuell sichtbaren Items dieser
+     * Themengruppe für die laufende Sitzung aus, dismissed zusätzlich die zugehörigen
+     * Kategorien (damit der Glocken-Zähler sofort sinkt) und ruft – falls es sich um
+     * E-Mails handelt – serverseitig mark-read auf.
+     */
+    const handleMarkColumnRead = (e: React.MouseEvent, groupItems: RecentItemDto[], groupCats: CategoryDto[]) => {
+        e.stopPropagation();
+        groupItems.forEach(item => {
+            dismissItem(item.type, item.title);
+            if (item.type === 'EMAIL') {
+                const match = item.link.match(/\/emails\/\w+\/(\d+)/);
+                if (match) {
+                    fetch(`/api/emails/${match[1]}/mark-read`, { method: 'POST' })
+                        .catch(() => { /* fehler ignorieren – nächstes Polling korrigiert */ });
+                }
+            }
+        });
+        // Kategorien selbst dismissen, damit der Spalten-Counter und der Glocken-
+        // Total-Zähler sofort runtergehen. Sobald wirklich neue Einträge eintrudeln,
+        // wird die Kategorie automatisch wieder sichtbar (filterDismissed-Logik).
+        groupCats.forEach(cat => dismissCategory(cat.type, cat.count));
         if (rawData) setData(filterDismissed(rawData));
-        handleNavigate(cat.link, cat.type);
+        window.setTimeout(() => fetchNotifications(), 600);
     };
 
     const handleItemClick = (item: RecentItemDto) => {
@@ -251,6 +312,7 @@ export function NotificationBell() {
         <div className="relative" ref={dropdownRef}>
             {/* Bell button */}
             <button
+                ref={bellButtonRef}
                 onClick={() => setOpen(!open)}
                 className={cn(
                     "relative flex items-center justify-center w-10 h-10 rounded-xl transition-all",
@@ -270,11 +332,21 @@ export function NotificationBell() {
                 )}
             </button>
 
-            {/* Dropdown */}
+            {/* Dropdown — Breite und Position dynamisch; nie breiter als Bildschirm,
+                und wenn nicht mehr neben der Glocke Platz ist, animiert mittig.  */}
             {open && data && (
-                <div className="absolute right-0 top-full mt-2 w-[420px] bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 animate-in fade-in slide-in-from-top-2 duration-200 overflow-hidden">
+                <div
+                    ref={panelRef}
+                    className="fixed w-fit max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 animate-in fade-in duration-200 overflow-hidden flex flex-col"
+                    style={{
+                        top: panelPos ? `${panelPos.top}px` : '4rem',
+                        right: panelPos ? `${panelPos.right}px` : '1rem',
+                        height: 'min(640px, 80vh)',
+                        transition: 'right 240ms ease-out, top 240ms ease-out',
+                    }}
+                >
                     {/* Header */}
-                    <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-rose-50 to-white border-b border-slate-100">
+                    <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-rose-50 to-white border-b border-slate-100 shrink-0">
                         <div className="flex items-center gap-2">
                             <Bell className="w-4 h-4 text-rose-600" />
                             <span className="text-sm font-semibold text-slate-800">Benachrichtigungen</span>
@@ -294,79 +366,138 @@ export function NotificationBell() {
                         </button>
                     </div>
 
-                    {/* Category tiles */}
-                    {data.categories.length > 0 ? (
-                        <div className="grid grid-cols-2 gap-2 p-3">
-                            {data.categories.map((cat) => {
-                                const Icon = ICON_MAP[cat.icon] || Bell;
-                                const colors = TYPE_COLORS[cat.type] || TYPE_COLORS.EMAILS;
-                                return (
-                                    <button
-                                        key={cat.type}
-                                        onClick={() => handleCategoryClick(cat)}
-                                        className={cn(
-                                            "flex items-center gap-3 p-3 rounded-xl border transition-all",
-                                            "hover:shadow-sm hover:scale-[1.02] active:scale-[0.98]",
-                                            colors.bg, colors.border
-                                        )}
-                                    >
-                                        <div className={cn("p-2 rounded-lg", colors.bg)}>
-                                            <Icon className={cn("w-4 h-4", colors.text)} />
-                                        </div>
-                                        <div className="text-left min-w-0">
-                                            <p className={cn("text-lg font-bold leading-none", colors.text)}>
-                                                {cat.count}
-                                            </p>
-                                            <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                                                {cat.label}
-                                            </p>
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div className="p-8 text-center text-slate-400">
-                            <Bell className="w-8 h-8 mx-auto mb-2 text-slate-200" />
-                            <p className="text-sm">Keine neuen Benachrichtigungen</p>
-                        </div>
-                    )}
-
-                    {/* Recent items */}
-                    {data.recentItems.length > 0 && (
-                        <>
-                            <div className="px-4 py-2 border-t border-slate-100">
-                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                                    Aktuell
-                                </p>
+                    {/* Body — Themengruppen als Spalten nebeneinander; nur Items klickbar. */}
+                    <div className="overflow-x-auto overflow-y-hidden flex-1">
+                        {data.categories.length === 0 && data.recentItems.length === 0 ? (
+                            <div className="p-12 text-center text-slate-400 min-w-[420px]">
+                                <Bell className="w-10 h-10 mx-auto mb-3 text-slate-200" />
+                                <p className="text-sm font-medium">Keine neuen Benachrichtigungen</p>
+                                <p className="text-xs text-slate-400 mt-1">Alles erledigt – gut gemacht!</p>
                             </div>
-                            <div className="max-h-[280px] overflow-y-auto">
-                                {data.recentItems.map((item, i) => {
-                                    const Icon = RECENT_TYPE_ICONS[item.type] || Bell;
-                                    const iconColor = RECENT_TYPE_COLORS[item.type] || 'text-slate-400';
+                        ) : (
+                            <div className="flex items-stretch divide-x divide-slate-100 h-full">
+                                {GROUPS.map((group) => {
+                                    const groupCats = data.categories.filter(c => group.types.includes(c.type));
+                                    const groupItems = data.recentItems.filter(i => group.recentTypes.includes(i.type));
+                                    // Spalte nur anzeigen, wenn die Gruppe Daten hat – sonst keine leeren Spalten.
+                                    if (groupCats.length === 0 && groupItems.length === 0) return null;
+                                    const groupTotal = groupCats.reduce((sum, c) => sum + c.count, 0);
+                                    const GroupIcon = group.icon;
+                                    const isLeadGruppe = group.id === 'webseite';
                                     return (
-                                        <button
-                                            key={`${item.type}-${i}`}
-                                            onClick={() => handleItemClick(item)}
-                                            className="w-full flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left group"
+                                        <div
+                                            key={group.id}
+                                            className="flex flex-col w-[260px] shrink-0 h-full min-h-0"
                                         >
-                                            <div className={cn("mt-0.5 p-1.5 rounded-lg bg-slate-50 group-hover:bg-white transition-colors", iconColor)}>
-                                                <Icon className="w-3.5 h-3.5" />
+                                            {/* Spalten-Header — nicht klickbar, nur Orientierung;
+                                                rechts ein kleiner Button, um alle Items der Spalte als gelesen
+                                                zu markieren (E-Mails: serverseitig, andere: lokal ausblenden). */}
+                                            <div className={cn(
+                                                "flex flex-col gap-1 px-4 py-3 border-b border-slate-100 sticky top-0 z-10",
+                                                isLeadGruppe ? "bg-rose-50" : "bg-slate-50/80"
+                                            )}>
+                                                <div className="flex items-center gap-2">
+                                                    <div className={cn("flex items-center justify-center w-7 h-7 rounded-lg", group.accentBg)}>
+                                                        <GroupIcon className={cn("w-4 h-4", group.accentText)} />
+                                                    </div>
+                                                    <span className={cn(
+                                                        "text-[11px] font-bold uppercase tracking-wider leading-tight flex-1 min-w-0 truncate",
+                                                        isLeadGruppe ? group.accentText : "text-slate-600"
+                                                    )}>
+                                                        {group.label}
+                                                    </span>
+                                                    {(groupItems.length > 0 || groupCats.length > 0) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleMarkColumnRead(e, groupItems, groupCats)}
+                                                            title="Alle als gelesen markieren"
+                                                            className="shrink-0 p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-white transition-colors"
+                                                        >
+                                                            <CheckCheck className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {groupTotal > 0 && (
+                                                    <span className={cn(
+                                                        "self-start text-[11px] font-bold rounded-full px-2 py-0.5",
+                                                        group.accentBg, group.accentText
+                                                    )}>
+                                                        {groupTotal} {groupTotal === 1 ? 'Eintrag' : 'Einträge'}
+                                                    </span>
+                                                )}
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-slate-800 truncate">
-                                                    {item.title}
-                                                </p>
-                                                <p className="text-xs text-slate-500 truncate">
-                                                    {item.subtitle}
-                                                </p>
+                                            {/* Items — eigene Scrollbox pro Spalte, sonst werden lange Spalten zur Bremse */}
+                                            <div className="overflow-y-auto flex-1">
+                                                {groupItems.length > 0 ? (
+                                                    groupItems.map((item, i) => {
+                                                        const Icon = RECENT_TYPE_ICONS[item.type] || Bell;
+                                                        const iconColor = RECENT_TYPE_COLORS[item.type] || 'text-slate-400';
+                                                        return (
+                                                            <button
+                                                                key={`${group.id}-${item.type}-${i}`}
+                                                                onClick={() => handleItemClick(item)}
+                                                                className={cn(
+                                                                    "w-full flex items-start gap-2.5 px-3 py-2.5 transition-colors text-left group border-b border-slate-50 last:border-b-0",
+                                                                    isLeadGruppe
+                                                                        ? "bg-rose-50/40 hover:bg-rose-50"
+                                                                        : "hover:bg-rose-50/40"
+                                                                )}
+                                                                title="Direkt zu diesem Eintrag öffnen"
+                                                            >
+                                                                <div className={cn(
+                                                                    "mt-0.5 p-1.5 rounded-lg shrink-0 transition-colors",
+                                                                    isLeadGruppe ? "bg-white" : "bg-slate-50 group-hover:bg-white",
+                                                                    iconColor
+                                                                )}>
+                                                                    <Icon className="w-3.5 h-3.5" />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-[13px] font-semibold text-slate-900 truncate">
+                                                                        {item.title}
+                                                                    </p>
+                                                                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                                                        {item.subtitle}
+                                                                    </p>
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    // Fallback: Backend liefert Counter, aber keine Items (z.B. weil der
+                                                    // Detail-Build im Server fehlgeschlagen ist). Statt einer toten Textzeile
+                                                    // rendern wir die Kategorien als klickbare Zeilen, damit der Nutzer
+                                                    // immer in die passende Übersicht gelangt.
+                                                    groupCats.map((cat) => (
+                                                        <button
+                                                            key={`${group.id}-cat-${cat.type}`}
+                                                            onClick={() => { setOpen(false); navigate(cat.link); }}
+                                                            className={cn(
+                                                                "w-full flex items-center gap-2.5 px-3 py-2.5 transition-colors text-left border-b border-slate-50 last:border-b-0",
+                                                                isLeadGruppe
+                                                                    ? "bg-rose-50/40 hover:bg-rose-50"
+                                                                    : "hover:bg-rose-50/40"
+                                                            )}
+                                                            title="Übersicht öffnen"
+                                                        >
+                                                            <span className={cn(
+                                                                "shrink-0 inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-[11px] font-bold",
+                                                                group.accentBg, group.accentText
+                                                            )}>
+                                                                {cat.count}
+                                                            </span>
+                                                            <span className="text-[13px] font-medium text-slate-700 truncate flex-1">
+                                                                {cat.label}
+                                                            </span>
+                                                        </button>
+                                                    ))
+                                                )}
                                             </div>
-                                        </button>
+                                        </div>
                                     );
                                 })}
                             </div>
-                        </>
-                    )}
+                        )}
+                    </div>
                 </div>
             )}
 

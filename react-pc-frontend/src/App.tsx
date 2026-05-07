@@ -21,6 +21,7 @@ import ErfolgsanalyseEditor from './pages/ErfolgsanalyseEditor';
 import FormularwesenEditor from './pages/FormularwesenEditor';
 import OffenePostenEditor from './pages/OffenePostenEditor';
 import EmailCenter from './pages/EmailCenter';
+import EmailTextvorlagenEditor from './pages/EmailTextvorlagenEditor';
 
 import MietabrechnungEditor from './pages/MietabrechnungEditor';
 import BenutzerEditor from './pages/BenutzerEditor';
@@ -34,6 +35,7 @@ import Urlaubsantraege from './pages/Urlaubsantraege';
 import AbteilungBerechtigungenEditor from './pages/AbteilungBerechtigungenEditor';
 import TerminKalender from './pages/TerminKalender';
 import RechnungsuebersichtEditor from './pages/RechnungsuebersichtEditor';
+import DokumentUebersichtEditor from './pages/DokumentUebersichtEditor';
 import FirmaEditor from './pages/FirmaEditor';
 import BestellungEditor from './pages/BestellungEditor';
 import BedarfUebersichtPage from './pages/BedarfUebersichtPage';
@@ -95,9 +97,11 @@ export default function App() {
                 <Route path="/formulare" element={<ErrorBoundary><FormularwesenEditor /></ErrorBoundary>} />
                 <Route path="/offeneposten" element={<ErrorBoundary><OffenePostenEditor /></ErrorBoundary>} />
                 <Route path="/rechnungsuebersicht" element={<ErrorBoundary><RechnungsuebersichtEditor /></ErrorBoundary>} />
+                <Route path="/dokumentuebersicht" element={<ErrorBoundary><DokumentUebersichtEditor /></ErrorBoundary>} />
                 <Route path="/emails" element={<Navigate to="/emails/inbox" replace />} />
                 <Route path="/emails/:folder" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
                 <Route path="/emails/:folder/:emailId" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
+                <Route path="/email-textvorlagen" element={<ErrorBoundary><EmailTextvorlagenEditor /></ErrorBoundary>} />
 
                 <Route path="/miete" element={<ErrorBoundary><MietabrechnungEditor /></ErrorBoundary>} />
                 <Route path="/benutzer" element={<RequireAdmin><ErrorBoundary><BenutzerEditor /></ErrorBoundary></RequireAdmin>} />

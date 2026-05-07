@@ -12,12 +12,31 @@ import java.util.List;
 @Repository
 public interface LieferantDokumentRepository extends JpaRepository<LieferantDokument, Long> {
 
-        List<LieferantDokument> findByLieferantIdOrderByUploadDatumDesc(Long lieferantId);
+        // JOIN FETCH lädt Geschäftsdaten + Uploader + Lieferant in EINEM Query mit,
+        // sonst gibt es N+1 wenn das DTO später darauf zugreift.
+        @Query("SELECT d FROM LieferantDokument d "
+                        + "LEFT JOIN FETCH d.geschaeftsdaten "
+                        + "LEFT JOIN FETCH d.uploadedBy "
+                        + "LEFT JOIN FETCH d.lieferant "
+                        + "WHERE d.lieferant.id = :lieferantId "
+                        + "ORDER BY d.uploadDatum DESC")
+        List<LieferantDokument> findByLieferantIdOrderByUploadDatumDesc(@Param("lieferantId") Long lieferantId);
 
-        List<LieferantDokument> findByLieferantIdAndTypOrderByUploadDatumDesc(Long lieferantId,
-                        LieferantDokumentTyp typ);
+        @Query("SELECT d FROM LieferantDokument d "
+                        + "LEFT JOIN FETCH d.geschaeftsdaten "
+                        + "LEFT JOIN FETCH d.uploadedBy "
+                        + "LEFT JOIN FETCH d.lieferant "
+                        + "WHERE d.lieferant.id = :lieferantId AND d.typ = :typ "
+                        + "ORDER BY d.uploadDatum DESC")
+        List<LieferantDokument> findByLieferantIdAndTypOrderByUploadDatumDesc(@Param("lieferantId") Long lieferantId,
+                        @Param("typ") LieferantDokumentTyp typ);
 
-        @Query("SELECT d FROM LieferantDokument d WHERE d.lieferant.id = :lieferantId AND d.typ IN :typen ORDER BY d.uploadDatum DESC")
+        @Query("SELECT d FROM LieferantDokument d "
+                        + "LEFT JOIN FETCH d.geschaeftsdaten "
+                        + "LEFT JOIN FETCH d.uploadedBy "
+                        + "LEFT JOIN FETCH d.lieferant "
+                        + "WHERE d.lieferant.id = :lieferantId AND d.typ IN :typen "
+                        + "ORDER BY d.uploadDatum DESC")
         List<LieferantDokument> findByLieferantIdAndTypIn(@Param("lieferantId") Long lieferantId,
                         @Param("typen") List<LieferantDokumentTyp> typen);
 
@@ -43,11 +62,17 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
          */
         boolean existsByLieferantIdAndOriginalDateinameContaining(Long lieferantId, String filenameFragment);
 
-        @Query("SELECT d FROM LieferantDokument d LEFT JOIN d.geschaeftsdaten g " +
+        // FETCH auf geschaeftsdaten + attachment, weil das DTO-Mapping danach
+        // beide Felder anfasst (sonst N+1 ueber Treffer-Liste).
+        @Query("SELECT DISTINCT d FROM LieferantDokument d " +
+                        "LEFT JOIN FETCH d.geschaeftsdaten g " +
+                        "LEFT JOIN FETCH d.attachment a " +
                         "WHERE d.lieferant.id = :lieferantId " +
-                        "AND d.typ = 'LIEFERSCHEIN' " +
+                        "AND d.typ = org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN " +
                         "AND (LOWER(g.dokumentNummer) LIKE LOWER(CONCAT('%', :query, '%')) " +
-                        "OR LOWER(d.originalDateiname) LIKE LOWER(CONCAT('%', :query, '%')))")
+                        "OR LOWER(d.originalDateiname) LIKE LOWER(CONCAT('%', :query, '%')) " +
+                        "OR LOWER(a.originalFilename) LIKE LOWER(CONCAT('%', :query, '%'))) " +
+                        "ORDER BY d.uploadDatum DESC")
         List<LieferantDokument> searchLieferscheine(@Param("lieferantId") Long lieferantId,
                         @Param("query") String query);
 

@@ -41,4 +41,12 @@ public class Abteilung {
      */
     @Column(nullable = false)
     private Boolean darfEcheckApp = false;
+
+    /**
+     * Steuert, ob Mitarbeiter dieser Abteilung eine Push-Benachrichtigung
+     * bekommen, sobald ein Kunde ein Dokument digital annimmt
+     * ("Angebot angenommen", "Auftragsbestätigung angenommen").
+     */
+    @Column(nullable = false)
+    private Boolean darfFreigabeAnnahmePushen = true;
 }

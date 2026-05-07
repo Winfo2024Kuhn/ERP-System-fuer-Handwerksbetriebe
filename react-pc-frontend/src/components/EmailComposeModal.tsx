@@ -68,6 +68,8 @@ interface EmailComposeModalProps {
     initialRecipient?: string;
     initialSubject?: string;
     initialBody?: string;
+    /** Vom Benutzer gewählte Gültigkeit des digitalen Annahme-Links (nur Angebote). */
+    gueltigkeitTage?: number;
     /** Optional callback after successful email send */
     onSuccess?: () => void;
 }
@@ -84,6 +86,7 @@ export default function EmailComposeModal({
     initialRecipient,
     initialSubject,
     initialBody,
+    gueltigkeitTage,
     onSuccess,
 }: EmailComposeModalProps) {
     if (!isOpen) return null;
@@ -107,6 +110,7 @@ export default function EmailComposeModal({
                     initialRecipient={initialRecipient}
                     initialSubject={initialSubject}
                     initialBody={initialBody}
+                    gueltigkeitTage={gueltigkeitTage}
                     onSuccess={onSuccess || (() => window.location.reload())}
                     variant="modal"
                 />

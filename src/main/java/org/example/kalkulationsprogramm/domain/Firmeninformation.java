@@ -50,4 +50,28 @@ public class Firmeninformation {
     // Zusätzliche Felder für Dokumente
     @Column(length = 1000)
     private String fusszeileText; // Text für Dokumenten-Fußzeile
+
+    // URL zur Google-Bewertungsseite des Betriebs.
+    // Wird in E-Mail-Vorlagen über den Platzhalter {{REVIEW_LINK}} als klickbarer Link eingesetzt.
+    @Column(name = "google_bewertungs_link", length = 500)
+    private String googleBewertungsLink;
+
+    // --- Automatisches Mahnverfahren ---
+    // Opt-In: erst aktivieren, wenn die Tage-Schwellen vom Inhaber bestaetigt sind.
+    @Column(name = "mahnverfahren_aktiv", nullable = false)
+    private boolean mahnverfahrenAktiv = false;
+
+    // Tage nach Faelligkeitsdatum, bis die jeweilige Stufe automatisch ausgeloest wird.
+    @Column(name = "tage_bis_zahlungserinnerung", nullable = false)
+    private int tageBisZahlungserinnerung = 7;
+
+    @Column(name = "tage_bis_erste_mahnung", nullable = false)
+    private int tageBisErsteMahnung = 14;
+
+    @Column(name = "tage_bis_zweite_mahnung", nullable = false)
+    private int tageBisZweiteMahnung = 21;
+
+    // Neues Zahlungsziel, das jede ausgeloeste Mahnung dem Kunden setzt.
+    @Column(name = "mahnverfahren_neues_zahlungsziel_tage", nullable = false)
+    private int mahnverfahrenNeuesZahlungszielTage = 7;
 }

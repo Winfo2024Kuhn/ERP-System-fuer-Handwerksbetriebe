@@ -131,6 +131,24 @@ public class SystemSettingsService {
         return sanitizeValue(get("ai.gemini.api-key", defaultGeminiApiKey));
     }
 
+    /**
+     * Schaltet den KI-gestützten Spam-Filter für eingehende Webseiten-Anfragen
+     * (Funnel) ein oder aus. Standard: an. Wird im FirmaEditor per Checkbox
+     * gesteuert, damit der Betreiber bei Gemini-Kostenproblemen oder
+     * Falsch-Positiven die Filterung temporär abschalten kann.
+     */
+    public boolean isAnfrageFunnelSpamFilterAktiv() {
+        String val = get("anfrage.funnel.spamfilter.aktiv", "true");
+        return val == null || val.isBlank() || Boolean.parseBoolean(val);
+    }
+
+    @Transactional
+    public void saveAnfrageFunnelSpamFilterAktiv(boolean aktiv) {
+        save("anfrage.funnel.spamfilter.aktiv", String.valueOf(aktiv),
+                "KI-Spam-Filter für Webseiten-Anfragen (Funnel) aktiv");
+        log.info("Funnel-Spam-Filter umgeschaltet: aktiv={}", aktiv);
+    }
+
     public boolean isInitialConfigurationRequired() {
         return !hasConfiguredValue(getGeminiApiKey()) || !isSmtpConfigured();
     }

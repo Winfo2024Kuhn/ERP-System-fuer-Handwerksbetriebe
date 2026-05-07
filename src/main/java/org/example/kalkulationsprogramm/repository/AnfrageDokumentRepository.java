@@ -22,4 +22,12 @@ public interface AnfrageDokumentRepository extends JpaRepository<AnfrageDokument
     Optional<AnfrageDokument> findByGespeicherterDateiname(String gespeicherterDateiname);
 
     Optional<AnfrageDokument> findByGespeicherterDateinameIgnoreCase(String gespeicherterDateiname);
+
+    /**
+     * Liefert für eine Liste von Anfrage-IDs ein Mapping
+     * [AnfrageGeschaeftsdokument.id, Anfrage.id], damit der DokumentFreigabeService
+     * den jüngsten Freigabe-Status pro Anfrage finden kann.
+     */
+    @Query("SELECT g.id, g.anfrage.id FROM AnfrageGeschaeftsdokument g WHERE g.anfrage.id IN :anfrageIds")
+    List<Object[]> findGeschaeftsdokumentIdMappingByAnfrageIds(@org.springframework.data.repository.query.Param("anfrageIds") List<Long> anfrageIds);
 }

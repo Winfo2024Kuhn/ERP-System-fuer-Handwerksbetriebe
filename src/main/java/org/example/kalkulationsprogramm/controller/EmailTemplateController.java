@@ -2,8 +2,14 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
+import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
+import org.example.kalkulationsprogramm.service.EmailTextTemplateService;
+import org.example.kalkulationsprogramm.service.FirmeninformationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,6 +25,12 @@ import lombok.RequiredArgsConstructor;
 public class EmailTemplateController {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter DISPLAY_DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+    private static final String REVIEW_LINK_LABEL = "Jetzt Bewertung abgeben";
+
+    private final EmailTextTemplateService emailTextTemplateService;
+    private final DokumentFreigabeService dokumentFreigabeService;
+    private final FirmeninformationService firmeninformationService;
 
     @PostMapping
     public ResponseEntity<EmailTemplateResponse> generateTemplate(@RequestBody EmailTemplateRequest request) {
@@ -27,99 +39,133 @@ public class EmailTemplateController {
         }
 
         String dokumentTyp = request.getDokumentTyp().toUpperCase();
-        String anrede = request.getAnrede() != null ? request.getAnrede() : "Sehr geehrte Damen und Herren";
-        String bauvorhaben = request.getBauvorhaben() != null ? request.getBauvorhaben() : "";
-        String projektnummer = request.getProjektnummer() != null ? request.getProjektnummer() : "";
-        String benutzer = request.getBenutzer() != null ? request.getBenutzer() : "";
-
-        EmailService.EmailContent content;
 
         try {
-            switch (dokumentTyp) {
-                case "RECHNUNG", "TEILRECHNUNG", "SCHLUSSRECHNUNG", "ABSCHLAGSRECHNUNG" -> {
-                    String dokumentnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
-                    LocalDate rechnungsdatum = parseDate(request.getRechnungsdatum(), LocalDate.now());
-                    LocalDate faelligkeitsdatum = parseDate(request.getFaelligkeitsdatum(),
-                            LocalDate.now().plusDays(14));
-                    String betrag = request.getBetrag() != null ? request.getBetrag() : "0,00 €";
-                    String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
+            EmailService.EmailContent content = renderFromDbTemplate(dokumentTyp, request);
+            if (content == null) {
+                content = renderFallback(dokumentTyp, request);
+            }
 
-                    content = EmailService.buildInvoiceEmailWithTypeHints(
-                            dokumentTyp.toLowerCase(),
-                            anrede,
-                            kundenName,
-                            bauvorhaben,
-                            projektnummer,
-                            dokumentnummer,
-                            rechnungsdatum,
-                            faelligkeitsdatum,
-                            betrag,
-                            benutzer,
-                            dokumentTyp);
-                }
-                case "MAHNUNG" -> {
-                    String dokumentnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
-                    LocalDate rechnungsdatum = parseDate(request.getRechnungsdatum(), LocalDate.now());
-                    LocalDate faelligkeitsdatum = parseDate(request.getFaelligkeitsdatum(),
-                            LocalDate.now().plusDays(14));
-                    String betrag = request.getBetrag() != null ? request.getBetrag() : "0,00 €";
-                    String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
+            String body = content.htmlBody();
 
-                    content = EmailService.buildInvoiceEmailWithTypeHints(
-                            "mahnung",
-                            anrede,
-                            kundenName,
-                            bauvorhaben,
-                            projektnummer,
-                            dokumentnummer,
-                            rechnungsdatum,
-                            faelligkeitsdatum,
-                            betrag,
-                            benutzer,
-                            "MAHNUNG");
-                }
-                case "ANGEBOT" -> {
-                    String anfragesnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
-                    String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
-                    content = EmailService.buildOfferEmail(
-                            anrede,
-                            kundenName,
-                            bauvorhaben,
-                            anfragesnummer,
-                            benutzer,
-                            null);
-                }
-                case "AUFTRAGSBESTAETIGUNG" -> {
-                    String auftragsnummer = request.getDokumentnummer() != null ? request.getDokumentnummer()
-                            : projektnummer;
-                    String betrag = request.getBetrag() != null ? request.getBetrag() : null;
-                    String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
-                    content = EmailService.buildOrderConfirmationEmail(
-                            null,
-                            anrede,
-                            kundenName,
-                            bauvorhaben,
-                            projektnummer,
-                            auftragsnummer,
-                            betrag,
-                            benutzer);
-                }
-                case "ZEICHNUNG" -> {
-                    content = EmailService.buildDrawingEmail(anrede, benutzer, bauvorhaben);
-                }
-                default -> {
-                    content = new EmailService.EmailContent("", "");
-                }
+            // Nur Angebote bekommen einen digitalen Freigabe-Link.
+            // Auftragsbestätigungen werden vom Büro versendet — der Kunde hat dem Angebot
+            // bereits zugestimmt, eine zweite digitale Bestätigung waere irreführend.
+            if (dokumentTyp.equals("ANGEBOT")
+                    && request.getDokumentId() != null) {
+                boolean isAnfrage = Boolean.TRUE.equals(request.getIsAnfrage());
+                String recipient = request.getRecipient() != null ? request.getRecipient() : "";
+                String pdfDateiname = request.getPdfDateiname();
+                int gueltigkeitTage = request.getGueltigkeitTage() != null
+                        ? request.getGueltigkeitTage()
+                        : DokumentFreigabeService.DEFAULT_GUELTIGKEITS_TAGE;
+                body += dokumentFreigabeService
+                        .erstelleFreigabeBlockFuerDokument(request.getDokumentId(), isAnfrage, recipient, pdfDateiname, gueltigkeitTage)
+                        .orElse("");
             }
 
             EmailTemplateResponse response = new EmailTemplateResponse();
             response.setSubject(content.subject());
-            response.setBody(content.htmlBody());
+            response.setBody(body);
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    private EmailService.EmailContent renderFromDbTemplate(String dokumentTyp, EmailTemplateRequest req) {
+        Map<String, String> ctx = new HashMap<>();
+        ctx.put("ANREDE", nullToEmpty(req.getAnrede(), "Sehr geehrte Damen und Herren"));
+        ctx.put("KUNDENNAME", nullToEmpty(req.getKundenName(), ""));
+        ctx.put("ANSPRECHPARTNER", nullToEmpty(req.getAnsprechpartner(), ""));
+        ctx.put("BAUVORHABEN", nullToEmpty(req.getBauvorhaben(), ""));
+        ctx.put("PROJEKTNUMMER", nullToEmpty(req.getProjektnummer(), ""));
+        ctx.put("DOKUMENTNUMMER", nullToEmpty(req.getDokumentnummer(), ""));
+        ctx.put("BENUTZER", nullToEmpty(req.getBenutzer(), ""));
+        ctx.put("BETRAG", nullToEmpty(req.getBetrag(), ""));
+        ctx.put("RECHNUNGSDATUM", formatDate(req.getRechnungsdatum()));
+        ctx.put("FAELLIGKEITSDATUM", formatDate(req.getFaelligkeitsdatum()));
+        ctx.put("REVIEW_LINK", buildReviewLink());
+
+        return emailTextTemplateService.render(dokumentTyp, ctx);
+    }
+
+    private EmailService.EmailContent renderFallback(String dokumentTyp, EmailTemplateRequest request) {
+        String anrede = request.getAnrede() != null ? request.getAnrede() : "Sehr geehrte Damen und Herren";
+        String bauvorhaben = request.getBauvorhaben() != null ? request.getBauvorhaben() : "";
+        String projektnummer = request.getProjektnummer() != null ? request.getProjektnummer() : "";
+        String benutzer = request.getBenutzer() != null ? request.getBenutzer() : "";
+
+        switch (dokumentTyp) {
+            case "RECHNUNG", "TEILRECHNUNG", "SCHLUSSRECHNUNG", "ABSCHLAGSRECHNUNG" -> {
+                String dokumentnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
+                LocalDate rechnungsdatum = parseDate(request.getRechnungsdatum(), LocalDate.now());
+                LocalDate faelligkeitsdatum = parseDate(request.getFaelligkeitsdatum(), LocalDate.now().plusDays(14));
+                String betrag = request.getBetrag() != null ? request.getBetrag() : "0,00 €";
+                String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
+                return EmailService.buildInvoiceEmailWithTypeHints(
+                        dokumentTyp.toLowerCase(), anrede, kundenName, bauvorhaben, projektnummer,
+                        dokumentnummer, rechnungsdatum, faelligkeitsdatum, betrag, benutzer, dokumentTyp);
+            }
+            case "MAHNUNG", "ZAHLUNGSERINNERUNG", "ERSTE_MAHNUNG", "ZWEITE_MAHNUNG" -> {
+                String dokumentnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
+                LocalDate rechnungsdatum = parseDate(request.getRechnungsdatum(), LocalDate.now());
+                LocalDate faelligkeitsdatum = parseDate(request.getFaelligkeitsdatum(), LocalDate.now().plusDays(14));
+                String betrag = request.getBetrag() != null ? request.getBetrag() : "0,00 €";
+                String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
+                return EmailService.buildInvoiceEmailWithTypeHints(
+                        "mahnung", anrede, kundenName, bauvorhaben, projektnummer, dokumentnummer,
+                        rechnungsdatum, faelligkeitsdatum, betrag, benutzer, dokumentTyp);
+            }
+            case "ANGEBOT" -> {
+                String anfragesnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
+                String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
+                return EmailService.buildOfferEmail(anrede, kundenName, bauvorhaben, anfragesnummer, benutzer, null);
+            }
+            case "AUFTRAGSBESTAETIGUNG" -> {
+                String auftragsnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : projektnummer;
+                String betrag = request.getBetrag() != null ? request.getBetrag() : null;
+                String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
+                return EmailService.buildOrderConfirmationEmail(
+                        null, anrede, kundenName, bauvorhaben, projektnummer, auftragsnummer, betrag, benutzer);
+            }
+            case "ZEICHNUNG" -> {
+                return EmailService.buildDrawingEmail(anrede, benutzer, bauvorhaben);
+            }
+            default -> {
+                return new EmailService.EmailContent("", "");
+            }
+        }
+    }
+
+    private String buildReviewLink() {
+        FirmeninformationDto firma = firmeninformationService.getFirmeninformation();
+        String url = firma == null ? null : firma.getGoogleBewertungsLink();
+        if (url == null || url.isBlank()) {
+            return "";
+        }
+        // href-Wert escapen, damit doppelte Anfuehrungszeichen nicht das Attribut sprengen.
+        String safeUrl = url.trim().replace("\"", "%22");
+        return "<a href=\"" + safeUrl + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + REVIEW_LINK_LABEL + "</a>";
+    }
+
+    private static String formatDate(String dateStr) {
+        if (dateStr == null || dateStr.isBlank()) {
+            return "";
+        }
+        try {
+            return LocalDate.parse(dateStr, DATE_FORMAT).format(DISPLAY_DATE_FORMAT);
+        } catch (Exception e) {
+            return dateStr;
+        }
+    }
+
+    private static String nullToEmpty(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback == null ? "" : fallback;
+        }
+        return value;
     }
 
     private LocalDate parseDate(String dateStr, LocalDate defaultValue) {
@@ -138,6 +184,7 @@ public class EmailTemplateController {
         private String dokumentTyp;
         private String anrede;
         private String kundenName;
+        private String ansprechpartner;
         private String bauvorhaben;
         private String projektnummer;
         private String dokumentnummer;
@@ -145,6 +192,16 @@ public class EmailTemplateController {
         private String faelligkeitsdatum;
         private String betrag;
         private String benutzer;
+        /** Optionale Dokument-ID für Freigabe-Block (nur bei Angebot/AB) */
+        private Long dokumentId;
+        /** true = Anfrage-Kontext, false = Projekt-Kontext */
+        private Boolean isAnfrage;
+        /** Empfänger-E-Mail für die Freigabe-Zuordnung */
+        private String recipient;
+        /** Dateiname der gespeicherten PDF (UUID.pdf) für die Freigabe-Seite */
+        private String pdfDateiname;
+        /** Vom Anwender gewählte Gültigkeitsdauer des Freigabe-Links in Tagen (nur bei Angebot). */
+        private Integer gueltigkeitTage;
     }
 
     @Data

@@ -30,13 +30,13 @@ public class EmailDraft {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String recipient;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String cc;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String subject;
 
     @Lob

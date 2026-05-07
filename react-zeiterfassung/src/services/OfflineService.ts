@@ -56,6 +56,13 @@ export interface HeuteGearbeitetResult {
     stunden: number
     minuten: number
     fromCache: boolean
+    /**
+     * ISO-Zeitstempel der laufenden Buchung (oder null falls keine läuft).
+     * Server zählt diese NICHT in stunden/minuten mit; das Frontend rechnet
+     * sie selbst dazu. Damit gibt es keine Doppelzählung wenn der Wert
+     * offline gecached wird und die Session weiterläuft.
+     */
+    aktiveBuchungStartZeit?: string | null
 }
 
 export function createOperationId() {
@@ -414,7 +421,12 @@ export const OfflineService = {
                 const data = await res.json()
                 // Cache the fresh data
                 await db.put('master_data', { key: cacheKey, value: data })
-                return { stunden: data.stunden || 0, minuten: data.minuten || 0, fromCache: false }
+                return {
+                    stunden: data.stunden || 0,
+                    minuten: data.minuten || 0,
+                    fromCache: false,
+                    aktiveBuchungStartZeit: data.aktiveBuchungStartZeit || null,
+                }
             }
         } catch {
             // Network error or timeout - that's fine, use cache
@@ -423,11 +435,12 @@ export const OfflineService = {
 
         // Offline or error - return cached
         const cached = await db.get('master_data', cacheKey)
-        const cachedValue = cached?.value as { stunden?: number; minuten?: number } | undefined
+        const cachedValue = cached?.value as { stunden?: number; minuten?: number; aktiveBuchungStartZeit?: string | null } | undefined
         return {
             stunden: cachedValue?.stunden || 0,
             minuten: cachedValue?.minuten || 0,
             fromCache: true,
+            aktiveBuchungStartZeit: cachedValue?.aktiveBuchungStartZeit || null,
         }
     },
 

@@ -6,7 +6,7 @@ interface KategorieOption {
     id: number;
     bezeichnung: string;
     pfad: string;
-    isLeaf: boolean;
+    leaf: boolean;
 }
 
 interface KategorieBestaetigenDialogProps {
@@ -45,7 +45,7 @@ export function KategorieBestaetigenDialog({
             const startLoading = window.setTimeout(() => setLadeKategorien(true), 0);
             fetch('/api/produktkategorien')
                 .then(r => r.json())
-                .then((data: KategorieOption[]) => setKategorien(data.filter(k => k.isLeaf)))
+                .then((data: KategorieOption[]) => setKategorien(data.filter(k => k.leaf)))
                 .catch(() => setKategorien([]))
                 .finally(() => setLadeKategorien(false));
 

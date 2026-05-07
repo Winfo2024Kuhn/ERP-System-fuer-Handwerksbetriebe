@@ -512,7 +512,9 @@ public class ZeiterfassungApiService {
 
     /**
      * Gibt die heute gearbeiteten Stunden für einen Mitarbeiter zurück.
-     * Zählt nur tatsächliche Arbeitszeit aus der neuen Zeitbuchung-Tabelle.
+     * Zählt NUR abgeschlossene Buchungen. Die laufende Buchung wird separat
+     * über aktiveBuchungStartZeit zurückgegeben, damit das Frontend sie selbst
+     * dazurechnen kann (verhindert Doppelzählung mit Offline-Cache).
      */
     @Transactional(readOnly = true)
     public Map<String, Object> getHeuteGearbeitet(String token) {
@@ -520,6 +522,7 @@ public class ZeiterfassungApiService {
         result.put("stunden", 0);
         result.put("minuten", 0);
         result.put("buchungenAnzahl", 0);
+        result.put("aktiveBuchungStartZeit", null);
 
         Optional<Mitarbeiter> mitarbeiterOpt = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token);
         if (mitarbeiterOpt.isEmpty()) {
@@ -534,29 +537,32 @@ public class ZeiterfassungApiService {
 
         long totalMinuten = 0;
         int anzahlArbeitsBuchungen = 0;
+        String aktiveBuchungStartZeit = null;
 
         for (Zeitbuchung buchung : heutigeBuchungen) {
             // PAUSE-Buchungen nicht zur Arbeitszeit zählen
             if (buchung.getTyp() == BuchungsTyp.PAUSE) {
                 continue;
             }
-            anzahlArbeitsBuchungen++;
 
             if (buchung.getAnzahlInStunden() != null) {
                 // Abgeschlossene Buchung -> anzahlInStunden nutzen
+                anzahlArbeitsBuchungen++;
                 totalMinuten += buchung.getAnzahlInStunden()
                         .multiply(BigDecimal.valueOf(60))
                         .longValue();
             } else if (buchung.getEndeZeit() == null && buchung.getStartZeit() != null) {
-                // Aktive Buchung -> bis jetzt berechnen
-                Duration dauer = Duration.between(buchung.getStartZeit(), LocalDateTime.now());
-                totalMinuten += dauer.toMinutes();
+                // Aktive Buchung NICHT mitzählen, sondern Startzeit zurückgeben.
+                // Frontend rechnet die Differenz selbst (vermeidet Doppelzählung
+                // wenn dieser Wert offline gecached wird und die Session weiterläuft).
+                aktiveBuchungStartZeit = buchung.getStartZeit().toString();
             }
         }
 
         result.put("stunden", (int) (totalMinuten / 60));
         result.put("minuten", (int) (totalMinuten % 60));
         result.put("buchungenAnzahl", anzahlArbeitsBuchungen);
+        result.put("aktiveBuchungStartZeit", aktiveBuchungStartZeit);
 
         return result;
     }

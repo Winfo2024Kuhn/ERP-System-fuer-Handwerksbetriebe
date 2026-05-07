@@ -12,7 +12,6 @@ import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.dto.ContactDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
-import org.example.kalkulationsprogramm.repository.AngebotRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -60,7 +59,6 @@ class UnifiedEmailControllerTest {
     @MockBean private EmailRepository emailRepository;
     @MockBean private ProjektRepository projektRepository;
     @MockBean private AnfrageRepository anfrageRepository;
-    @MockBean private AngebotRepository angebotRepository;
     @MockBean private LieferantenRepository lieferantenRepository;
     @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
     @MockBean private EmailImportService emailImportService;

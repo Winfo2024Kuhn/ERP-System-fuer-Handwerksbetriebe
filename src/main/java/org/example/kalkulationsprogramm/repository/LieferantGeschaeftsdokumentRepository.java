@@ -102,6 +102,24 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         @Param("endDate") java.time.LocalDate endDate);
 
         /**
+         * Findet alle LieferantGeschaeftsdokumente in einem Datumsbereich – ohne Typ-Filter,
+         * für die Dokumentübersicht (umfasst auch Auftragsbestätigungen, Lieferscheine etc.).
+         */
+        @Query("SELECT gd FROM LieferantGeschaeftsdokument gd " +
+                        "WHERE gd.dokumentDatum BETWEEN :startDate AND :endDate " +
+                        "ORDER BY gd.dokumentDatum DESC")
+        List<LieferantGeschaeftsdokument> findAllByDatumBetween(
+                        @Param("startDate") java.time.LocalDate startDate,
+                        @Param("endDate") java.time.LocalDate endDate);
+
+        /**
+         * Findet alle LieferantGeschaeftsdokumente – ohne Typ-Filter, für die Dokumentübersicht.
+         */
+        @Query("SELECT gd FROM LieferantGeschaeftsdokument gd " +
+                        "ORDER BY gd.dokumentDatum DESC")
+        List<LieferantGeschaeftsdokument> findAllSortedByDatum();
+
+        /**
          * Findet alle bezahlten Lieferanten-Rechnungen in einem Zeitraum
          * basierend auf dem Bezahlt-Datum (für Erfolgsanalyse - Kosten
          * werden im Monat der tatsächlichen Zahlung angezeigt).

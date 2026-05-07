@@ -80,6 +80,24 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
                """, nativeQuery = true)
      List<Anfrage> findByKundenEmail(@org.springframework.data.repository.query.Param("email") String email);
 
+     /**
+      * Findet alle noch nicht in ein Projekt umgewandelten Anfragen, die über den
+      * Webseiten-Funnel hereingekommen sind (Notiz vom System-Mitarbeiter mit dem
+      * gegebenen Login-Token). Sortiert nach Anfrage-Anlagezeit absteigend, damit
+      * im Notification Center die neueste Anfrage zuerst erscheint.
+      */
+     @Query("""
+               SELECT DISTINCT a FROM Anfrage a
+               LEFT JOIN FETCH a.kunde k
+               JOIN a.notizen n
+               JOIN n.mitarbeiter m
+               WHERE a.projekt IS NULL
+                 AND a.abgeschlossen = false
+                 AND m.loginToken = :token
+               ORDER BY a.createdAt DESC
+               """)
+     List<Anfrage> findOffeneFunnelAnfragen(@org.springframework.data.repository.query.Param("token") String token);
+
      @Query("""
                SELECT DISTINCT a FROM Anfrage a
                LEFT JOIN FETCH a.kunde k

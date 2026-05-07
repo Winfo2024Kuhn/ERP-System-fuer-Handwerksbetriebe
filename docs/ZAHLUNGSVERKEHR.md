@@ -217,15 +217,7 @@ faelligkeitsdatum = rechnungsdatum + zahlungszielTage
 
 ## 8. API-Referenz
 
-### 8.1 Zahlungen
-
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| `POST` | `/api/geschaeftsdokumente/{id}/zahlungen` | Neue Zahlung zu einem Geschäftsdokument hinzufügen |
-| `GET` | `/api/geschaeftsdokumente/{id}` | Geschäftsdokument mit Zahlungsdetails abrufen |
-| `GET` | `/api/geschaeftsdokumente/{id}/abschluss` | Abschluss-Info inkl. Zahlungsstatus |
-
-### 8.2 Offene Posten
+### 8.1 Offene Posten
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
@@ -238,8 +230,7 @@ faelligkeitsdatum = rechnungsdatum + zahlungszielTage
 
 | Entity | Zweck |
 |---|---|
-| `Zahlung` | Einzelne Zahlung zu einem Geschäftsdokument |
-| `Geschaeftsdokument` | Zentrales Geschäftsdokument mit Zahlungsverfolgung |
+| `AusgangsGeschaeftsDokument` | Ausgangsdokumente (Angebot, AB, Rechnung) mit Zahlungsverfolgung |
 | `ProjektGeschaeftsdokument` | Projekt-Offene-Posten mit Mahnstufen-Tracking |
 | `Mahnstufe` (Enum) | Mahnstufen: Zahlungserinnerung, 1. Mahnung, 2. Mahnung |
 | `Dokumenttyp` (Enum) | Dokumenttypen inkl. Mahnungsdokumente |

@@ -381,6 +381,50 @@ public class SpamFilterService {
     );
 
     /**
+     * Kostenlose Mailprovider. Eine Mail von hier ist NICHT automatisch Spam,
+     * aber in Kombination mit Firmensignatur, vielen Links oder verdächtigen
+     * Mustern ein wertvolles Signal (KI-generierte Cold-Mails kommen oft
+     * von Free-Mailern, weil diese ohne Domain-Setup sofort verfügbar sind).
+     */
+    private static final Set<String> FREE_MAIL_DOMAINS = Set.of(
+            // Deutsche Provider
+            "gmail.com", "googlemail.com",
+            "web.de", "gmx.de", "gmx.net", "gmx.com", "gmx.at", "gmx.ch",
+            "t-online.de", "freenet.de", "freenet.com",
+            "hotmail.com", "hotmail.de", "outlook.com", "outlook.de",
+            "live.com", "live.de", "msn.com",
+            "yahoo.com", "yahoo.de", "ymail.com",
+            "aol.com", "aol.de",
+            "icloud.com", "me.com", "mac.com",
+            // Weitere häufige
+            "mail.com", "mail.de", "mail.ru",
+            "protonmail.com", "proton.me", "tutanota.com", "tutanota.de",
+            "zoho.com", "zoho.eu",
+            "rocketmail.com",
+            "yandex.com", "yandex.ru");
+
+    /**
+     * Pattern für SPF/DKIM/DMARC-Fail im Authentication-Results-Header.
+     * Format laut RFC 8601, z.B. "spf=fail", "dkim=fail", "dmarc=fail".
+     */
+    private static final Pattern SPF_FAIL = Pattern.compile("\\bspf=(fail|softfail)\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DKIM_FAIL = Pattern.compile("\\bdkim=fail\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DMARC_FAIL = Pattern.compile("\\bdmarc=fail\\b", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Pattern für Links im Body (zur Domain-Extraktion).
+     */
+    private static final Pattern LINK_PATTERN = Pattern.compile(
+            "https?://([a-zA-Z0-9.-]+)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Pattern für Tracking-Pixel (1x1 Bilder, häufig in Newsletter-/Spam-Mails).
+     */
+    private static final Pattern TRACKING_PIXEL = Pattern.compile(
+            "<img[^>]*(?:width=[\"']?1[\"']?|height=[\"']?1[\"']?)[^>]*>",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
      * Gefährliche Dateiendungen (Ausführbare Dateien + Makro-Dokumente).
      */
     private static final List<String> DANGEROUS_EXTENSIONS = List.of(
@@ -634,8 +678,124 @@ public class SpamFilterService {
             }
         }
 
+        // 8. Strukturelle / Header-Features (Issue #56, Phase 1)
+        score += scoreStructuralFeatures(email, senderDomain, body);
+
         // Score auf 0-100 begrenzen
         return Math.min(100, Math.max(0, score));
+    }
+
+    /**
+     * Strukturelle und Header-basierte Spam-Indikatoren.
+     * Fängt gut formulierten Spam (KI-generierte Cold-Mails, Phishing mit
+     * sauberer Sprache), den die reine Keyword-/Bayes-Analyse durchwinkt.
+     */
+    private int scoreStructuralFeatures(Email email, String senderDomain, String body) {
+        int delta = 0;
+
+        // ─── Authentication-Results (SPF/DKIM/DMARC) ─────────────────
+        // Mailserver schreiben hier rein, ob der Sender authentifiziert ist.
+        // Fail = Phishing-Verdacht (Domain-Spoofing).
+        String authResults = email.getAuthenticationResults();
+        if (authResults != null && !authResults.isBlank()) {
+            if (SPF_FAIL.matcher(authResults).find()) delta += 25;
+            if (DKIM_FAIL.matcher(authResults).find()) delta += 25;
+            if (DMARC_FAIL.matcher(authResults).find()) delta += 30;
+        }
+
+        // ─── From-Domain ≠ Reply-To-Domain ───────────────────────────
+        // Klassischer Phishing-Marker: Antwort soll an andere Domain gehen.
+        String replyTo = email.getReplyToAddress();
+        if (replyTo != null && replyTo.contains("@") && !senderDomain.isBlank()) {
+            String replyDomain = replyTo.substring(replyTo.lastIndexOf('@') + 1).toLowerCase().trim();
+            if (!replyDomain.isBlank() && !replyDomain.equals(senderDomain)
+                    && !isSameOrganizationDomain(replyDomain, senderDomain)) {
+                delta += 25;
+            }
+        }
+
+        // ─── Free-Mailer-Domain ──────────────────────────────────────
+        // Free-Mailer alleine ist NICHT verdächtig (viele Privatkunden).
+        // Aber Free-Mailer + viele Links + langer englischer Text ist
+        // typisch für KI-generierte Cold-Mails.
+        boolean isFreeMail = !senderDomain.isBlank() && FREE_MAIL_DOMAINS.contains(senderDomain);
+
+        // ─── Links: Domain-Mismatch & Text-Link-Ratio ────────────────
+        Set<String> linkDomains = extractLinkDomains(body);
+        int linkCount = linkDomains.size();
+
+        // Mehr als 3 Links und KEINE führt auf die Sender-Domain → fishy
+        if (linkCount >= 3 && !senderDomain.isBlank()
+                && linkDomains.stream().noneMatch(d -> isSameOrganizationDomain(d, senderDomain))) {
+            delta += 15;
+        }
+
+        // Free-Mailer + viele Links → +20 (KI-Cold-Mail-Indikator)
+        if (isFreeMail && linkCount >= 3) {
+            delta += 20;
+        }
+
+        // ─── Text-Link-Ratio ─────────────────────────────────────────
+        // Sehr wenig Text + viele Links = klassisches Spam-Signal.
+        int textLength = body == null ? 0 : body.replaceAll("\\s+", " ").length();
+        if (linkCount >= 5 && textLength > 0 && textLength < 200) {
+            delta += 15;
+        }
+
+        // ─── Tracking-Pixel ──────────────────────────────────────────
+        // Newsletter haben oft 1-2; Spam oft 5+. htmlBody nutzen statt body
+        // (combined body), weil <img> nur im HTML steht.
+        if (email.getHtmlBody() != null) {
+            int pixelCount = 0;
+            var pixelMatcher = TRACKING_PIXEL.matcher(email.getHtmlBody());
+            while (pixelMatcher.find() && pixelCount < 10) {
+                pixelCount++;
+            }
+            if (pixelCount >= 5) {
+                delta += 10;
+            }
+        }
+
+        return delta;
+    }
+
+    /**
+     * Extrahiert alle Link-Domains aus dem Body (lowercase, ohne www-Prefix).
+     */
+    private Set<String> extractLinkDomains(String body) {
+        if (body == null || body.isEmpty()) {
+            return Set.of();
+        }
+        var matcher = LINK_PATTERN.matcher(body);
+        Set<String> domains = new java.util.HashSet<>();
+        while (matcher.find()) {
+            String domain = matcher.group(1).toLowerCase();
+            if (domain.startsWith("www.")) {
+                domain = domain.substring(4);
+            }
+            domains.add(domain);
+            if (domains.size() >= 50) break; // Schutz gegen Riesen-Bodies
+        }
+        return domains;
+    }
+
+    /**
+     * Prüft ob zwei Domains zur gleichen Organisation gehören.
+     * Vergleicht die letzten zwei Labels (z.B. "mail.wuerth.com" == "wuerth.com").
+     * Vereinfachung — kennt keine Public-Suffix-Liste; "foo.co.uk" und "bar.co.uk"
+     * würden also fälschlich als gleiche Org gelten. In der Spam-Heuristik führt
+     * das zu fehlenden Aufschlägen (False-Negatives für Spam) — akzeptabel,
+     * weil eine PSL-Integration den Aufwand hier nicht rechtfertigt.
+     */
+    private boolean isSameOrganizationDomain(String a, String b) {
+        if (a == null || b == null) return false;
+        return registrableDomain(a).equals(registrableDomain(b));
+    }
+
+    private String registrableDomain(String domain) {
+        String[] parts = domain.split("\\.");
+        if (parts.length < 2) return domain;
+        return parts[parts.length - 2] + "." + parts[parts.length - 1];
     }
 
     private String getCombinedBody(Email email) {

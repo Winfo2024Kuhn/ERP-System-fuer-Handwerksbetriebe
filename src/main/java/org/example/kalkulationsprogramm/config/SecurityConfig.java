@@ -6,12 +6,14 @@ import java.util.Map;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
@@ -37,10 +39,29 @@ public class SecurityConfig {
 
     private final ObjectMapper objectMapper;
     private final FrontendUserDetailsService frontendUserDetailsService;
+    private final CloudflareAccessJwtFilter cloudflareAccessJwtFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * Public S2S-Eingang für den Anfrage-Funnel der Marketing-Webseite.
+     * Erreichbar nur über Cloudflare-Tunnel + Access Service Token; der
+     * {@link CloudflareAccessJwtFilter} prüft den signierten CF-Access-JWT als
+     * zweite Schicht (Defense-in-Depth). Spring-Auth ist bewusst ausgeschaltet.
+     */
+    @Bean
+    @Order(0)
+    public SecurityFilterChain funnelFilterChain(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher("/api/internal/**")
+                .csrf(csrf -> csrf.disable())
+                .addFilterBefore(cloudflareAccessJwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
+        return http.build();
     }
 
     /**
@@ -108,6 +129,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/bootstrap-status").permitAll()
                 .requestMatchers("/api/auth/me", "/api/auth/me/credentials").authenticated()
                 .requestMatchers("/api/firma/**", "/api/settings/**", "/api/frontend-users/**").hasRole("ADMIN")
+                // System-Signatur fuer automatische E-Mails ist firmenweite Konfiguration
+                // (wirkt auf Mahnungen, Auto-Auftragsbestaetigungen) — nur Admins duerfen sie umbiegen.
+                .requestMatchers(HttpMethod.PUT, "/api/email/signatures/*/system-default").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form

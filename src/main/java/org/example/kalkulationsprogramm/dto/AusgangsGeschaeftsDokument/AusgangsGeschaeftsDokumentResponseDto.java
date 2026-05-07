@@ -33,6 +33,7 @@ public class AusgangsGeschaeftsDokumentResponseDto {
     private LocalDate gebuchtAm;
     private boolean storniert;
     private LocalDate storniertAm;
+    private boolean digitalAngenommen;
     private boolean bearbeitbar;
 
     // Projekt
@@ -63,4 +64,12 @@ public class AusgangsGeschaeftsDokumentResponseDto {
      * Nur bei POST/PUT befüllt; bei GET-Requests null.
      */
     private Integer autoZugewieseneWps;
+
+    /**
+     * Direkter PDF-URL — wird derzeit nur für virtuelle Mahn-Einträge gesetzt,
+     * weil die in {@code ProjektGeschaeftsdokument} liegen und nicht über den
+     * Standard-Endpoint {@code /api/ausgangs-dokumente/{id}/pdf} erreichbar
+     * sind. Frontend nutzt das Feld für die PDF-Vorschau.
+     */
+    private String pdfUrl;
 }

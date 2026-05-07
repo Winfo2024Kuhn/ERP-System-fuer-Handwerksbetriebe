@@ -106,13 +106,17 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     const [geminiTesting, setGeminiTesting] = useState(false);
     const [geminiTestResult, setGeminiTestResult] = useState<TestResult | null>(null);
 
+    const [funnelSpamFilterAktiv, setFunnelSpamFilterAktiv] = useState(true);
+    const [funnelSpamFilterSaving, setFunnelSpamFilterSaving] = useState(false);
+
     const loadSettings = useCallback(async () => {
         setLoading(true);
         try {
-            const [smtpRes, imapRes, geminiRes] = await Promise.all([
+            const [smtpRes, imapRes, geminiRes, funnelSpamRes] = await Promise.all([
                 fetch('/api/settings/smtp'),
                 fetch('/api/settings/imap'),
                 fetch('/api/settings/gemini'),
+                fetch('/api/settings/anfrage-funnel-spamfilter'),
             ]);
 
             if (smtpRes.ok) {
@@ -141,6 +145,11 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
             if (geminiRes.ok) {
                 const geminiData = await geminiRes.json();
                 setGeminiApiKeySet(!!geminiData.apiKeySet);
+            }
+
+            if (funnelSpamRes.ok) {
+                const data = await funnelSpamRes.json();
+                setFunnelSpamFilterAktiv(data?.aktiv !== false);
             }
         } catch {
             toast.error('Einstellungen konnten nicht geladen werden.');
@@ -799,6 +808,61 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                         Gemini Key speichern
                     </Button>
                 </div>
+            </Card>
+
+            <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
+                    <Brain className="w-5 h-5 text-rose-600" />
+                    Anfragen von der Webseite
+                </h3>
+                <p className="text-sm text-slate-500 mb-4">
+                    Wenn aktiv, prüft die KI jede neue Anfrage über das Webseiten-Formular und blockiert
+                    offensichtliche Spaß-Eingaben (z.B. „Test 123", Beleidigungen, kaputte E-Mail-Adressen).
+                    Ohne Gemini-API-Key passiert nichts – dann gehen alle Anfragen durch.
+                </p>
+
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={funnelSpamFilterAktiv}
+                        disabled={funnelSpamFilterSaving}
+                        onChange={async (e) => {
+                            const next = e.target.checked;
+                            setFunnelSpamFilterAktiv(next);
+                            setFunnelSpamFilterSaving(true);
+                            try {
+                                const res = await fetch('/api/settings/anfrage-funnel-spamfilter', {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ aktiv: next }),
+                                });
+                                if (res.ok) {
+                                    toast.success(next
+                                        ? 'KI-Filter für Webseiten-Anfragen aktiviert.'
+                                        : 'KI-Filter für Webseiten-Anfragen deaktiviert.');
+                                } else {
+                                    setFunnelSpamFilterAktiv(!next);
+                                    toast.error(await parseErrorMessage(res, 'Speichern fehlgeschlagen.'));
+                                }
+                            } catch {
+                                setFunnelSpamFilterAktiv(!next);
+                                toast.error('Speichern fehlgeschlagen.');
+                            } finally {
+                                setFunnelSpamFilterSaving(false);
+                            }
+                        }}
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    <span>
+                        <span className="font-medium text-slate-900">
+                            Spaß-Anfragen automatisch aussortieren
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                            Erkennt z.B. „asdf", „leck mich", Test-Eingaben oder unsinnige E-Mail-Adressen
+                            und meldet der Webseite, dass die Anfrage nicht gesendet werden konnte.
+                        </span>
+                    </span>
+                </label>
             </Card>
         </div>
     );

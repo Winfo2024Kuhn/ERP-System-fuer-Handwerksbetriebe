@@ -35,8 +35,29 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
   @Query("SELECT g FROM ProjektGeschaeftsdokument g WHERE g.projekt.id = :projektId AND g.geschaeftsdokumentart = 'Rechnung'")
   List<ProjektGeschaeftsdokument> findRechnungenByProjektId(@Param("projektId") Long projektId);
 
+  /**
+   * Liefert alle Mahn-Dokumente eines Projekts (Zahlungserinnerung, 1./2. Mahnung).
+   * Mahnungen leben weiterhin ausschließlich in {@code ProjektGeschaeftsdokument},
+   * werden aber im AusgangsGeschaeftsDokument-Tab als virtuelle Children der
+   * zugehörigen Rechnung sichtbar gemacht.
+   */
+  @Query("""
+      SELECT g FROM ProjektGeschaeftsdokument g
+      WHERE g.projekt.id = :projektId
+        AND g.mahnstufe IS NOT NULL
+      """)
+  List<ProjektGeschaeftsdokument> findMahnungenByProjektId(@Param("projektId") Long projektId);
+
   @Query("select g.projekt.id, g.dokumentid from ProjektGeschaeftsdokument g where g.projekt.id in :ids")
   List<Object[]> findDokumentIdsByProjektIds(List<Long> ids);
+
+  /**
+   * Liefert für eine Liste von Projekt-IDs ein Mapping
+   * [ProjektGeschaeftsdokument.id, Projekt.id], damit der DokumentFreigabeService
+   * den jüngsten Freigabe-Status pro Projekt finden kann.
+   */
+  @Query("SELECT g.id, g.projekt.id FROM ProjektGeschaeftsdokument g WHERE g.projekt.id IN :projektIds")
+  List<Object[]> findGeschaeftsdokumentIdMappingByProjektIds(@Param("projektIds") List<Long> projektIds);
 
   /**
    * Prüft ob ein Geschäftsdokument mit der Dokumentnummer bereits existiert.

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -16,11 +17,16 @@ import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
+import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
+import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -30,6 +36,9 @@ public class AnfrageService {
     private final DateiSpeicherService dateiSpeicherService;
     private final AnfrageDokumentRepository anfrageDokumentRepository;
     private final KundeRepository kundeRepository;
+    private final EmailRepository emailRepository;
+    private final ProjektRepository projektRepository;
+    private final AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
     private final Path mailAttachmentBaseDir;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
@@ -38,6 +47,9 @@ public class AnfrageService {
             DateiSpeicherService dateiSpeicherService,
             AnfrageDokumentRepository anfrageDokumentRepository,
             KundeRepository kundeRepository,
+            EmailRepository emailRepository,
+            ProjektRepository projektRepository,
+            AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository,
             @Value("${file.mail-attachment-dir}") String mailAttachmentDir,
             org.springframework.context.ApplicationEventPublisher eventPublisher,
             AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService) {
@@ -45,6 +57,9 @@ public class AnfrageService {
         this.dateiSpeicherService = dateiSpeicherService;
         this.anfrageDokumentRepository = anfrageDokumentRepository;
         this.kundeRepository = kundeRepository;
+        this.emailRepository = emailRepository;
+        this.projektRepository = projektRepository;
+        this.ausgangsGeschaeftsDokumentRepository = ausgangsGeschaeftsDokumentRepository;
         this.mailAttachmentBaseDir = (mailAttachmentDir == null || mailAttachmentDir.isBlank()) ? null
                 : Path.of(mailAttachmentDir).toAbsolutePath().normalize().resolve("email");
         this.eventPublisher = eventPublisher;
@@ -180,6 +195,93 @@ public class AnfrageService {
                 .filter(a -> !nurOhneProjekt || a.getProjekt() == null)
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Paginierte Variante von {@link #suche}. Lädt zunächst alle passenden Entities,
+     * sortiert sie nach createdAt absteigend (neueste zuerst) und mappt anschliessend
+     * nur den angeforderten Seitenausschnitt – dadurch sparen wir die teuren
+     * Per-Anfrage-Folgequeries im Mapping (siehe {@code mapToDto}) für alle Datensätze
+     * ausserhalb der aktuellen Seite.
+     * <p>
+     * Mittel-/langfristig sollte die DB selbst paginieren (Repository mit
+     * {@code Pageable}/{@code Sort.by("createdAt").descending()} + Batch-Fetch der
+     * Anfragesnummern). Dieser In-Memory-Slice ist die kurzfristige Mitigation
+     * für das N+1-Problem im DTO-Mapping.
+     */
+    public AnfrageSeiteResponseDto sucheSeite(Integer jahr,
+            String kundenname,
+            String bauvorhaben,
+            String anfragesnummer,
+            String q,
+            boolean nurOhneProjekt,
+            int page,
+            int size) {
+        int seite = Math.max(0, page);
+        int seitenGroesse = Math.min(Math.max(1, size), 100);
+
+        // Mutable Kopie, weil sowohl Repository-Returns (z.B. {@code List.of(...)} in Tests)
+        // als auch nachgelagerte Filter-Streams unveränderliche Listen liefern können.
+        List<Anfrage> alle = new ArrayList<>(
+                findeGefiltert(jahr, kundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt));
+
+        // createdAt wird per @PrePersist immer gesetzt; LocalDateTime.MIN ist nur ein
+        // Fallback für Altbestände ohne Wert, damit solche Datensätze ans Ende rutschen.
+        alle.sort(Comparator.comparing(
+                (Anfrage a) -> a.getCreatedAt() != null ? a.getCreatedAt() : LocalDateTime.MIN,
+                Comparator.reverseOrder()));
+
+        int gesamt = alle.size();
+        int von = Math.min(seite * seitenGroesse, gesamt);
+        int bis = Math.min(von + seitenGroesse, gesamt);
+        List<AnfrageResponseDto> mapped = alle.subList(von, bis).stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+
+        return new AnfrageSeiteResponseDto(mapped, gesamt, seite, seitenGroesse);
+    }
+
+    /**
+     * Gemeinsame Filterlogik für {@link #suche} und {@link #sucheSeite}: liefert die
+     * passenden {@link Anfrage}-Entities ohne Mapping und ohne Paginierung.
+     */
+    private List<Anfrage> findeGefiltert(Integer jahr,
+            String kundenname,
+            String bauvorhaben,
+            String anfragesnummer,
+            String q,
+            boolean nurOhneProjekt) {
+        String freitext = trimToNull(q);
+        LocalDate startDate = jahr != null ? LocalDate.of(jahr, 1, 1) : null;
+        LocalDate endDate = jahr != null ? LocalDate.of(jahr, 12, 31) : null;
+
+        if (freitext != null) {
+            final LocalDate sd = startDate;
+            final LocalDate ed = endDate;
+            return anfrageRepository.searchByBauvorhabenOrKundeOrEmail(freitext).stream()
+                    .filter(a -> {
+                        if (nurOhneProjekt && a.getProjekt() != null) return false;
+                        if (sd == null || ed == null) return true;
+                        LocalDate anlegedatum = a.getAnlegedatum();
+                        if (anlegedatum == null) return false;
+                        return !anlegedatum.isBefore(sd) && !anlegedatum.isAfter(ed);
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        String kn = trimToNull(kundenname);
+        String bv = trimToNull(bauvorhaben);
+        String anr = trimToNull(anfragesnummer);
+        boolean noFilters = (jahr == null) && kn == null && bv == null && anr == null;
+
+        List<Anfrage> alle = noFilters
+                ? anfrageRepository.findAllWithKundenEmails()
+                : anfrageRepository.search(kn, bv, startDate, endDate, anr);
+
+        if (nurOhneProjekt) {
+            alle = alle.stream().filter(a -> a.getProjekt() == null).collect(Collectors.toList());
+        }
+        return alle;
     }
 
     public List<Integer> verfuegbareAnlegeJahre() {
@@ -365,6 +467,120 @@ public class AnfrageService {
             }
             return true;
         }).orElse(false);
+    }
+
+    public enum LoeschGrund {
+        OK,
+        NICHT_GEFUNDEN,
+        EMAIL_VORHANDEN,
+        DATEI_VORHANDEN,
+        GESCHAEFTSDOKUMENT_VORHANDEN,
+        EMAIL_VERSENDET,
+        BENUTZER_NOTIZ_VORHANDEN,
+        IN_PROJEKT_UMGEWANDELT
+    }
+
+    public record LoeschResult(LoeschGrund grund, boolean kundeMitgeloescht, String hinweis) {
+        public boolean ok() { return grund == LoeschGrund.OK; }
+    }
+
+    /**
+     * Löscht eine Anfrage nur, wenn noch nichts Geschäftsrelevantes dranhängt
+     * (keine Postfach-Mails, keine Geschäftsdokumente, kein E-Mail-Versand,
+     * keine Notiz von einem echten Mitarbeiter, nicht in ein Projekt
+     * umgewandelt). Bilder/Notizen vom Funnel-System dürfen vorhanden sein.
+     *
+     * <p>Wenn {@code cascadeKunde} gesetzt ist und der Kunde nach dem Löschen
+     * keine weitere Anfrage und kein Projekt mehr hätte, wird er ebenfalls
+     * gelöscht (typisch für Spaß-Funnel-Anfragen mit frischem Phantom-Kunden).
+     */
+    @Transactional
+    public LoeschResult loescheMitPruefung(Long id, boolean cascadeKunde) {
+        Anfrage anfrage = anfrageRepository.findById(id).orElse(null);
+        if (anfrage == null) {
+            return new LoeschResult(LoeschGrund.NICHT_GEFUNDEN, false,
+                    "Anfrage existiert nicht (mehr).");
+        }
+        if (anfrage.getProjekt() != null) {
+            return new LoeschResult(LoeschGrund.IN_PROJEKT_UMGEWANDELT, false,
+                    "Anfrage ist bereits in ein Projekt umgewandelt – Löschen nicht möglich.");
+        }
+        if (anfrage.getEmailVersandDatum() != null) {
+            return new LoeschResult(LoeschGrund.EMAIL_VERSENDET, false,
+                    "Es wurde bereits eine E-Mail zu dieser Anfrage versendet.");
+        }
+        if (!emailRepository.findByAnfrageOrderBySentAtDesc(anfrage).isEmpty()) {
+            return new LoeschResult(LoeschGrund.EMAIL_VORHANDEN, false,
+                    "An dieser Anfrage hängen bereits E-Mails – nicht löschbar.");
+        }
+
+        List<AnfrageDokument> docs = anfrageDokumentRepository.findByAnfrageId(anfrage.getId());
+        boolean hatGeschaeftsdokument = docs.stream()
+                .anyMatch(d -> d instanceof AnfrageGeschaeftsdokument);
+        if (hatGeschaeftsdokument) {
+            return new LoeschResult(LoeschGrund.GESCHAEFTSDOKUMENT_VORHANDEN, false,
+                    "An dieser Anfrage hängen Angebote/Auftragsbestätigungen.");
+        }
+        if (!docs.isEmpty()) {
+            return new LoeschResult(LoeschGrund.DATEI_VORHANDEN, false,
+                    "An dieser Anfrage hängen Dateien – bitte zuerst entfernen.");
+        }
+        if (!ausgangsGeschaeftsDokumentRepository.findByAnfrageIdOrderByDatumDesc(anfrage.getId()).isEmpty()) {
+            return new LoeschResult(LoeschGrund.GESCHAEFTSDOKUMENT_VORHANDEN, false,
+                    "An dieser Anfrage hängen ausgehende Geschäftsdokumente.");
+        }
+
+        boolean nurFunnelNotizen = anfrage.getNotizen() == null || anfrage.getNotizen().stream()
+                .allMatch(n -> n.getMitarbeiter() != null
+                        && AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN.equals(n.getMitarbeiter().getLoginToken()));
+        if (!nurFunnelNotizen) {
+            return new LoeschResult(LoeschGrund.BENUTZER_NOTIZ_VORHANDEN, false,
+                    "Es wurden bereits Bautagebuch-Notizen erfasst.");
+        }
+
+        Kunde kunde = anfrage.getKunde();
+
+        for (AnfrageDokument d : docs) {
+            try {
+                dateiSpeicherService.loescheAnfrageDatei(d.getId());
+            } catch (Exception ignored) {
+            }
+        }
+        // Funnel-Bautagebuch: Notizen werden per Cascade entfernt, die physischen
+        // Bild-Dateien hängen aber im uploads-Verzeichnis und müssen separat weg.
+        if (anfrage.getNotizen() != null) {
+            anfrage.getNotizen().stream()
+                    .filter(n -> n.getBilder() != null)
+                    .flatMap(n -> n.getBilder().stream())
+                    .forEach(bild -> {
+                        try {
+                            dateiSpeicherService.loescheBild("/api/images/" + bild.getGespeicherterDateiname());
+                        } catch (Exception ignored) {
+                        }
+                    });
+        }
+        deleteEmailAttachmentsDirectory(anfrage.getId());
+        anfrageRepository.delete(anfrage);
+        anfrageRepository.flush();
+
+        boolean kundeWeg = false;
+        if (cascadeKunde && kunde != null) {
+            long andereAnfragen = anfrageRepository.findByKundeId(kunde.getId()).size();
+            long projekteDesKunden = projektRepository.findByKundenId_Id(kunde.getId()).size();
+            if (andereAnfragen == 0 && projekteDesKunden == 0) {
+                try {
+                    kundeRepository.delete(kunde);
+                    kundeWeg = true;
+                } catch (Exception e) {
+                    // Wenn der Kunde noch in anderen FKs hängt (Lieferantenrechnung,
+                    // Kalender etc.), wirft die DB. Anfrage ist trotzdem schon weg.
+                }
+            }
+        }
+
+        return new LoeschResult(LoeschGrund.OK, kundeWeg,
+                kundeWeg ? "Anfrage und verwaister Kunde gelöscht."
+                         : "Anfrage gelöscht.");
     }
 
     private AnfrageResponseDto mapToDto(Anfrage a) {

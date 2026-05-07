@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import { FileText, Plus, Search, X } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Check, FileText, Plus, Search, X } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
 import type { TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, DocBlock } from './types';
@@ -30,6 +30,20 @@ export function DocumentEditorSidebar({
 }: DocumentEditorSidebarProps) {
     const [activeTab, setActiveTab] = useState<TabType>('TEXT');
     const [searchQuery, setSearchQuery] = useState('');
+    const [recentlyAdded, setRecentlyAdded] = useState<string | null>(null);
+    const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+        };
+    }, []);
+
+    const flashFeedback = (key: string) => {
+        if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+        setRecentlyAdded(key);
+        feedbackTimerRef.current = setTimeout(() => setRecentlyAdded(null), 1200);
+    };
 
     // Close on Escape
     useEffect(() => {
@@ -79,6 +93,7 @@ export function DocumentEditorSidebar({
             fontSize: extractFontSizeFromHtml(htmlContent),
             fett: extractBoldFromHtml(htmlContent),
         });
+        flashFeedback(`TEXT-${tb.id}`);
     };
 
     const handleAddLeistung = (l: LeistungApiDto) => {
@@ -94,6 +109,7 @@ export function DocumentEditorSidebar({
             leistungId: l.id,
             kategorieId: l.folderId ?? undefined,
         });
+        flashFeedback(`SERVICE-${l.id}`);
     };
 
     const handleAddArbeitszeitart = (az: ArbeitszeitartApiDto) => {
@@ -107,6 +123,7 @@ export function DocumentEditorSidebar({
             fontSize: extractFontSizeFromHtml(descHtml),
             fett: extractBoldFromHtml(descHtml),
         });
+        flashFeedback(`ARBEITSZEIT-${az.id}`);
     };
 
     if (!isOpen) return null;
@@ -181,67 +198,126 @@ export function DocumentEditorSidebar({
 
                 {/* Item list */}
                 <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5">
-                    {activeTab === 'TEXT' && filteredTextbausteine.map(tb => (
-                        <button
-                            key={tb.id}
-                            onClick={() => handleAddTextblock(tb)}
-                            disabled={isLocked}
-                            className="w-full group p-2.5 text-left bg-white hover:bg-rose-50 border border-slate-150 hover:border-rose-200 rounded-lg transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none"
-                        >
-                            <div className="flex items-start gap-2">
-                                <div className="mt-0.5 p-1 bg-slate-100 group-hover:bg-rose-100 rounded transition-colors">
-                                    <FileText className="w-3 h-3 text-slate-400 group-hover:text-rose-500" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <span className="text-xs font-medium text-slate-700 group-hover:text-rose-700 block truncate">
-                                        {tb.name}
-                                    </span>
-                                    {tb.beschreibung && (
-                                        <span className="text-[10px] text-slate-400 block truncate mt-0.5">
-                                            {(() => { let t = tb.beschreibung; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 60); })()}
+                    {activeTab === 'TEXT' && filteredTextbausteine.map(tb => {
+                        const isAdded = recentlyAdded === `TEXT-${tb.id}`;
+                        return (
+                            <button
+                                key={tb.id}
+                                onClick={() => handleAddTextblock(tb)}
+                                disabled={isLocked}
+                                className={cn(
+                                    "w-full group p-2.5 text-left border rounded-lg transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none",
+                                    isAdded
+                                        ? "bg-rose-100 border-rose-400 ring-2 ring-rose-300 scale-[1.02] shadow-sm"
+                                        : "bg-white hover:bg-rose-50 border-slate-150 hover:border-rose-200"
+                                )}
+                            >
+                                <div className="flex items-start gap-2">
+                                    <div className={cn(
+                                        "mt-0.5 p-1 rounded transition-colors",
+                                        isAdded ? "bg-rose-200" : "bg-slate-100 group-hover:bg-rose-100"
+                                    )}>
+                                        <FileText className={cn(
+                                            "w-3 h-3 transition-colors",
+                                            isAdded ? "text-rose-700" : "text-slate-400 group-hover:text-rose-500"
+                                        )} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <span className={cn(
+                                            "text-xs font-medium block truncate transition-colors",
+                                            isAdded ? "text-rose-800" : "text-slate-700 group-hover:text-rose-700"
+                                        )}>
+                                            {tb.name}
                                         </span>
+                                        {isAdded ? (
+                                            <span className="text-[10px] font-medium text-rose-700 block truncate mt-0.5">
+                                                Hinzugefügt
+                                            </span>
+                                        ) : tb.beschreibung && (
+                                            <span className="text-[10px] text-slate-400 block truncate mt-0.5">
+                                                {(() => { let t = tb.beschreibung; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 60); })()}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {isAdded ? (
+                                        <Check className="w-3.5 h-3.5 text-rose-600 flex-shrink-0 mt-0.5" />
+                                    ) : (
+                                        <Plus className="w-3.5 h-3.5 text-slate-300 group-hover:text-rose-400 flex-shrink-0 mt-0.5" />
                                     )}
                                 </div>
-                                <Plus className="w-3.5 h-3.5 text-slate-300 group-hover:text-rose-400 flex-shrink-0 mt-0.5" />
-                            </div>
-                        </button>
-                    ))}
+                            </button>
+                        );
+                    })}
 
-                    {activeTab === 'SERVICE' && filteredLeistungen.map(l => (
-                        <button
-                            key={l.id}
-                            onClick={() => handleAddLeistung(l)}
-                            disabled={isLocked}
-                            className="w-full group p-2.5 text-left bg-white hover:bg-rose-50 border border-slate-150 hover:border-rose-200 rounded-lg transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none"
-                        >
-                            <div className="flex items-start justify-between gap-2">
-                                <span className="text-xs font-medium text-slate-700 group-hover:text-rose-700 truncate">
-                                    {l.name}
-                                </span>
-                                <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 group-hover:bg-rose-100 group-hover:text-rose-600 px-1.5 py-0.5 rounded flex-shrink-0 transition-colors">
-                                    {l.price?.toFixed(2)} €
-                                </span>
-                            </div>
-                        </button>
-                    ))}
+                    {activeTab === 'SERVICE' && filteredLeistungen.map(l => {
+                        const isAdded = recentlyAdded === `SERVICE-${l.id}`;
+                        return (
+                            <button
+                                key={l.id}
+                                onClick={() => handleAddLeistung(l)}
+                                disabled={isLocked}
+                                className={cn(
+                                    "w-full group p-2.5 text-left border rounded-lg transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none",
+                                    isAdded
+                                        ? "bg-rose-100 border-rose-400 ring-2 ring-rose-300 scale-[1.02] shadow-sm"
+                                        : "bg-white hover:bg-rose-50 border-slate-150 hover:border-rose-200"
+                                )}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className={cn(
+                                        "text-xs font-medium truncate transition-colors flex items-center gap-1.5",
+                                        isAdded ? "text-rose-800" : "text-slate-700 group-hover:text-rose-700"
+                                    )}>
+                                        {isAdded && <Check className="w-3 h-3 text-rose-600 flex-shrink-0" />}
+                                        <span className="truncate">{isAdded ? 'Hinzugefügt: ' : ''}{l.name}</span>
+                                    </span>
+                                    <span className={cn(
+                                        "text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 transition-colors",
+                                        isAdded
+                                            ? "bg-rose-200 text-rose-800"
+                                            : "bg-slate-100 text-slate-500 group-hover:bg-rose-100 group-hover:text-rose-600"
+                                    )}>
+                                        {l.price?.toFixed(2)} €
+                                    </span>
+                                </div>
+                            </button>
+                        );
+                    })}
 
-                    {activeTab === 'ARBEITSZEIT' && filteredArbeitszeitarten.map(az => (
-                        <button
-                            key={az.id}
-                            onClick={() => handleAddArbeitszeitart(az)}
-                            disabled={isLocked}
-                            className="w-full group p-2.5 text-left bg-white hover:bg-rose-50 border border-slate-150 hover:border-rose-200 rounded-lg transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none"
-                        >
-                            <div className="flex items-start justify-between gap-2">
-                                <span className="text-xs font-medium text-slate-700 group-hover:text-rose-700 truncate">
-                                    {az.bezeichnung}
-                                </span>
-                                <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 group-hover:bg-rose-100 group-hover:text-rose-600 px-1.5 py-0.5 rounded flex-shrink-0 transition-colors">
-                                    {az.stundensatz?.toFixed(2)} €/h
-                                </span>
-                            </div>
-                        </button>
-                    ))}
+                    {activeTab === 'ARBEITSZEIT' && filteredArbeitszeitarten.map(az => {
+                        const isAdded = recentlyAdded === `ARBEITSZEIT-${az.id}`;
+                        return (
+                            <button
+                                key={az.id}
+                                onClick={() => handleAddArbeitszeitart(az)}
+                                disabled={isLocked}
+                                className={cn(
+                                    "w-full group p-2.5 text-left border rounded-lg transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none",
+                                    isAdded
+                                        ? "bg-rose-100 border-rose-400 ring-2 ring-rose-300 scale-[1.02] shadow-sm"
+                                        : "bg-white hover:bg-rose-50 border-slate-150 hover:border-rose-200"
+                                )}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className={cn(
+                                        "text-xs font-medium truncate transition-colors flex items-center gap-1.5",
+                                        isAdded ? "text-rose-800" : "text-slate-700 group-hover:text-rose-700"
+                                    )}>
+                                        {isAdded && <Check className="w-3 h-3 text-rose-600 flex-shrink-0" />}
+                                        <span className="truncate">{isAdded ? 'Hinzugefügt: ' : ''}{az.bezeichnung}</span>
+                                    </span>
+                                    <span className={cn(
+                                        "text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 transition-colors",
+                                        isAdded
+                                            ? "bg-rose-200 text-rose-800"
+                                            : "bg-slate-100 text-slate-500 group-hover:bg-rose-100 group-hover:text-rose-600"
+                                    )}>
+                                        {az.stundensatz?.toFixed(2)} €/h
+                                    </span>
+                                </div>
+                            </button>
+                        );
+                    })}
 
                     {/* Empty state */}
                     {((activeTab === 'TEXT' && filteredTextbausteine.length === 0) ||
