@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -127,6 +128,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/bootstrap-status").permitAll()
                 .requestMatchers("/api/auth/me", "/api/auth/me/credentials").authenticated()
                 .requestMatchers("/api/firma/**", "/api/settings/**", "/api/frontend-users/**").hasRole("ADMIN")
+                // System-Signatur fuer automatische E-Mails ist firmenweite Konfiguration
+                // (wirkt auf Mahnungen, Auto-Auftragsbestaetigungen) — nur Admins duerfen sie umbiegen.
+                .requestMatchers(HttpMethod.PUT, "/api/email/signatures/*/system-default").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form
