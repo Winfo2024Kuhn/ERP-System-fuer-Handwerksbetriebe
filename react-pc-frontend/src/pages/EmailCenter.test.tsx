@@ -46,20 +46,14 @@ function stripQuery(url: string): string {
 }
 
 function mockFetchResponses(overrides: Record<string, unknown> = {}) {
-    const paginate = (items: unknown[]) => ({ content: items, page: 0, size: 50, totalElements: items.length, hasMore: false });
-
     const responses: Record<string, unknown> = {
         '/api/emails/stats': mockStats,
-        ...overrides
-    };
-
-    // Paginated folder endpoints
-    const folderData: Record<string, unknown[]> = {
         '/api/emails/inbox': mockEmails.filter(e => e.direction === 'IN'),
         '/api/emails/sent': mockEmails.filter(e => e.direction === 'OUT'),
         '/api/emails/trash': [],
         '/api/emails/spam': [],
         '/api/emails/newsletter': [],
+        ...overrides
     };
 
     return vi.fn((url: string, options?: RequestInit) => {
@@ -70,20 +64,9 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
             return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
         }
 
-        // Check for paginated folder endpoints (url may have query params)
-        const basePath = stripQuery(url);
-        if (folderData[basePath] !== undefined) {
-            const overrideData = overrides[basePath];
-            const items = overrideData !== undefined ? overrideData as unknown[] : folderData[basePath];
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve(paginate(items))
-            });
-        }
-
         // Erst mit voller URL probieren (fuer Endpoints mit Pflicht-Query wie /search?q=),
-        // dann Fallback auf den Pfad ohne Query (Pagination-Endpoints).
-        const data = responses[url] ?? responses[basePath];
+        // dann Fallback auf den Pfad ohne Query (Folder-Endpoints mit ?offset/&limit).
+        const data = responses[url] ?? responses[stripQuery(url)];
         if (data !== undefined) {
             return Promise.resolve({
                 ok: true,
@@ -499,9 +482,6 @@ describe('EmailCenter', () => {
         ];
 
         function mockPreisanfrageFetch() {
-            const paginate = (items: unknown[]) => ({
-                content: items, page: 0, size: 50, totalElements: items.length, hasMore: false
-            });
             return vi.fn((url: string, options?: RequestInit) => {
                 const method = options?.method || 'GET';
                 if (method === 'POST' || method === 'DELETE') {
@@ -509,7 +489,7 @@ describe('EmailCenter', () => {
                 }
                 const basePath = url.split('?')[0];
                 if (basePath === '/api/emails/inbox') {
-                    return Promise.resolve({ ok: true, json: () => Promise.resolve(paginate(emailsMitPreisanfrage)) });
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(emailsMitPreisanfrage) });
                 }
                 if (basePath === '/api/emails/stats') {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve(mockStats) });

@@ -100,6 +100,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
   // Verknüpfte WPS laden, sobald eine bestehende Leistung geöffnet wird.
   useEffect(() => {
     if (!service.id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWpsRefs([]);
       return;
     }
