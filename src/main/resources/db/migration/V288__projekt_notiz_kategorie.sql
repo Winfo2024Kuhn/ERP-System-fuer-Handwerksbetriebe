@@ -18,11 +18,19 @@
 --   KORROSIONSSCHUTZ – Beschichtungssystem, Schichtdicke
 --   OBERFLAECHE      – Strahlgrad, Vorbereitung
 --
--- Index: Es existiert bereits ein FK-Index auf projekt_id. Ein
--- zusätzlicher Composite-Index (projekt_id, kategorie) wird erst
--- angelegt, falls der Akte-Export zeigt, dass die Filterung lahmt –
--- bei den typischen Mengen pro Projekt reicht der bestehende Index.
+-- MySQL 8 unterstützt kein "ADD COLUMN IF NOT EXISTS" – wir nutzen
+-- daher den gleichen INFORMATION_SCHEMA-Workaround wie V259, damit
+-- die Migration auch idempotent ist (z. B. nach einem fehlge-
+-- schlagenen Vorlauf, der die Spalte schon angelegt hatte).
 -- ═══════════════════════════════════════════════════════════════
 
-ALTER TABLE projekt_notiz
-    ADD COLUMN IF NOT EXISTS kategorie VARCHAR(40) NOT NULL DEFAULT 'ALLGEMEIN';
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'projekt_notiz'
+                   AND COLUMN_NAME = 'kategorie');
+SET @sql = IF(@col_exists = 0,
+    'ALTER TABLE projekt_notiz ADD COLUMN kategorie VARCHAR(40) NOT NULL DEFAULT ''ALLGEMEIN''',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
