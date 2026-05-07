@@ -27,6 +27,7 @@ import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ProjektNotizBild;
+import org.example.kalkulationsprogramm.domain.ProjektNotizKategorie;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektUpdateDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelMengeDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
@@ -1265,6 +1266,7 @@ public class ProjektController {
             notiz.setProjekt(projekt);
             notiz.setMitarbeiter(mitarbeiter);
             notiz.setNotiz(dto.notiz);
+            notiz.setKategorie(ProjektNotizKategorie.fromStringOrDefault(dto.kategorie));
             // Default true, falls null (wobei boolean primitiv im DTO schwierig wäre, aber
             // hier Feldzugriff)
             notiz.setMobileSichtbar(dto.mobileSichtbar);
@@ -1304,6 +1306,9 @@ public class ProjektController {
 
             if (dto.notiz != null) {
                 notiz.setNotiz(dto.notiz);
+            }
+            if (dto.kategorie != null) {
+                notiz.setKategorie(ProjektNotizKategorie.fromStringOrDefault(dto.kategorie));
             }
             // Mobile Sichtbarkeit updatebar
             notiz.setMobileSichtbar(dto.mobileSichtbar);
@@ -1375,6 +1380,9 @@ public class ProjektController {
         ProjektNotizDto dto = new ProjektNotizDto();
         dto.id = notiz.getId();
         dto.notiz = notiz.getNotiz();
+        dto.kategorie = notiz.getKategorie() != null
+                ? notiz.getKategorie().name()
+                : ProjektNotizKategorie.ALLGEMEIN.name();
         dto.erstelltAm = notiz.getErstelltAm();
         dto.mobileSichtbar = notiz.isMobileSichtbar();
         dto.nurFuerErsteller = notiz.isNurFuerErsteller();
@@ -1507,6 +1515,7 @@ public class ProjektController {
     public static class ProjektNotizDto {
         public Long id;
         public String notiz;
+        public String kategorie;
         public LocalDateTime erstelltAm;
         public Long mitarbeiterId;
         public String mitarbeiterVorname;
@@ -1526,6 +1535,7 @@ public class ProjektController {
 
     public static class ProjektNotizCreateDto {
         public String notiz;
+        public String kategorie; // optional, default ALLGEMEIN
         public boolean mobileSichtbar = true; // Default true if omitted
         public boolean nurFuerErsteller = false;
     }

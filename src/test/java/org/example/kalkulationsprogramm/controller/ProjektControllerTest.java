@@ -21,6 +21,8 @@ import org.example.kalkulationsprogramm.service.StuecklistePdfService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
@@ -253,5 +255,108 @@ class ProjektControllerTest {
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$[0].berechneterBetrag").value(200.00))
                         .andExpect(jsonPath("$[0].gesamtbetrag").value(200.00));
+        }
+
+        // --- Tests: POST /api/projekte/{id}/notizen mit kategorie (EN-1090-Bautagebuch) ---
+
+        @Test
+        void erstelleNotiz_speichertKategorieAusDto() throws Exception {
+                org.example.kalkulationsprogramm.domain.Projekt projekt =
+                        new org.example.kalkulationsprogramm.domain.Projekt();
+                projekt.setId(7L);
+                org.example.kalkulationsprogramm.domain.Mitarbeiter mitarbeiter =
+                        new org.example.kalkulationsprogramm.domain.Mitarbeiter();
+                mitarbeiter.setId(11L);
+                mitarbeiter.setVorname("Max");
+                mitarbeiter.setNachname("Mustermann");
+
+                when(projektRepository.findById(7L))
+                        .thenReturn(java.util.Optional.of(projekt));
+                when(mitarbeiterRepository.findByLoginToken("tok"))
+                        .thenReturn(java.util.Optional.of(mitarbeiter));
+                when(projektNotizRepository.save(any(org.example.kalkulationsprogramm.domain.ProjektNotiz.class)))
+                        .thenAnswer(inv -> {
+                                org.example.kalkulationsprogramm.domain.ProjektNotiz arg = inv.getArgument(0);
+                                arg.setId(99L);
+                                return arg;
+                        });
+
+                String body = "{\"notiz\":\"24x M16 HV 450 Nm\",\"kategorie\":\"VERBINDUNGSMITTEL\"}";
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .post("/api/projekte/7/notizen")
+                                .param("token", "tok")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content(body))
+                                .andExpect(status().isCreated())
+                                .andExpect(jsonPath("$.kategorie").value("VERBINDUNGSMITTEL"));
+
+                ArgumentCaptor<org.example.kalkulationsprogramm.domain.ProjektNotiz> captor =
+                        ArgumentCaptor.forClass(org.example.kalkulationsprogramm.domain.ProjektNotiz.class);
+                verify(projektNotizRepository).save(captor.capture());
+                org.junit.jupiter.api.Assertions.assertEquals(
+                        org.example.kalkulationsprogramm.domain.ProjektNotizKategorie.VERBINDUNGSMITTEL,
+                        captor.getValue().getKategorie());
+        }
+
+        @Test
+        void erstelleNotiz_ohneKategorie_landetAufAllgemein() throws Exception {
+                org.example.kalkulationsprogramm.domain.Projekt projekt =
+                        new org.example.kalkulationsprogramm.domain.Projekt();
+                projekt.setId(7L);
+                org.example.kalkulationsprogramm.domain.Mitarbeiter mitarbeiter =
+                        new org.example.kalkulationsprogramm.domain.Mitarbeiter();
+                mitarbeiter.setId(11L);
+
+                when(projektRepository.findById(7L))
+                        .thenReturn(java.util.Optional.of(projekt));
+                when(mitarbeiterRepository.findByLoginToken("tok"))
+                        .thenReturn(java.util.Optional.of(mitarbeiter));
+                when(projektNotizRepository.save(any(org.example.kalkulationsprogramm.domain.ProjektNotiz.class)))
+                        .thenAnswer(inv -> {
+                                org.example.kalkulationsprogramm.domain.ProjektNotiz arg = inv.getArgument(0);
+                                arg.setId(100L);
+                                return arg;
+                        });
+
+                // Älterer Mobile-Client schickt kategorie nicht mit
+                String body = "{\"notiz\":\"Material angeliefert\"}";
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .post("/api/projekte/7/notizen")
+                                .param("token", "tok")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content(body))
+                                .andExpect(status().isCreated())
+                                .andExpect(jsonPath("$.kategorie").value("ALLGEMEIN"));
+        }
+
+        @Test
+        void erstelleNotiz_ungueltigeKategorie_faelltStillAufAllgemein() throws Exception {
+                org.example.kalkulationsprogramm.domain.Projekt projekt =
+                        new org.example.kalkulationsprogramm.domain.Projekt();
+                projekt.setId(7L);
+                org.example.kalkulationsprogramm.domain.Mitarbeiter mitarbeiter =
+                        new org.example.kalkulationsprogramm.domain.Mitarbeiter();
+                mitarbeiter.setId(11L);
+
+                when(projektRepository.findById(7L))
+                        .thenReturn(java.util.Optional.of(projekt));
+                when(mitarbeiterRepository.findByLoginToken("tok"))
+                        .thenReturn(java.util.Optional.of(mitarbeiter));
+                when(projektNotizRepository.save(any(org.example.kalkulationsprogramm.domain.ProjektNotiz.class)))
+                        .thenAnswer(inv -> {
+                                org.example.kalkulationsprogramm.domain.ProjektNotiz arg = inv.getArgument(0);
+                                arg.setId(101L);
+                                return arg;
+                        });
+
+                // Ein Mobile-Tippfehler darf das Bautagebuch nicht blockieren
+                String body = "{\"notiz\":\"Test\",\"kategorie\":\"FOO_BAR\"}";
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .post("/api/projekte/7/notizen")
+                                .param("token", "tok")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content(body))
+                                .andExpect(status().isCreated())
+                                .andExpect(jsonPath("$.kategorie").value("ALLGEMEIN"));
         }
 }

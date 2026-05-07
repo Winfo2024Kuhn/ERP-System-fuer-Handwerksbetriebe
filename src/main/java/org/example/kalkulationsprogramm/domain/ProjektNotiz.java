@@ -34,6 +34,10 @@ public class ProjektNotiz {
     @Column(length = 4000, nullable = false)
     private String notiz;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 40, nullable = false)
+    private ProjektNotizKategorie kategorie = ProjektNotizKategorie.ALLGEMEIN;
+
     @Column(nullable = false)
     private boolean nurFuerErsteller = false;
 

@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, MessageCircle, Plus, Loader2, Send, X, User, Edit2, Trash2, Camera, Image, Lock } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Plus, Loader2, Send, X, User, Edit2, Trash2, Camera, Image, Lock, Wrench, Anchor, Flame, Paintbrush, FileText } from 'lucide-react'
 import { ImageViewer } from '../components/ui/image-viewer'
+
+type Kategorie = 'ALLGEMEIN' | 'VERBINDUNGSMITTEL' | 'SCHWEISSUNG' | 'KORROSIONSSCHUTZ' | 'OBERFLAECHE'
 
 interface NotizBild {
     id: number
@@ -13,6 +15,7 @@ interface NotizBild {
 interface Notiz {
     id: number
     notiz: string
+    kategorie?: Kategorie
     erstelltAm: string
     mitarbeiterId: number
     mitarbeiterVorname: string
@@ -21,6 +24,98 @@ interface Notiz {
     nurFuerErsteller: boolean
     canEdit?: boolean
     bilder?: NotizBild[]
+}
+
+type VorlageId = 'frei' | 'hv-schraube' | 'duebel' | 'schweissnaht' | 'korrosionsschutz'
+
+interface VorlageDef {
+    id: VorlageId
+    label: string
+    icon: typeof Wrench
+    kategorie: Kategorie
+    farbe: string // tailwind class
+    felder: Array<{ key: string; label: string; placeholder?: string; pflicht?: boolean }>
+    fotoHinweis?: string
+}
+
+const VORLAGEN: VorlageDef[] = [
+    {
+        id: 'frei',
+        label: 'Notiz',
+        icon: FileText,
+        kategorie: 'ALLGEMEIN',
+        farbe: 'bg-slate-100 text-slate-700',
+        felder: [],
+    },
+    {
+        id: 'hv-schraube',
+        label: 'HV-Schraube',
+        icon: Wrench,
+        kategorie: 'VERBINDUNGSMITTEL',
+        farbe: 'bg-rose-100 text-rose-700',
+        felder: [
+            { key: 'groesse', label: 'Größe', placeholder: 'z. B. M16 10.9', pflicht: true },
+            { key: 'anzahl', label: 'Anzahl', placeholder: '24', pflicht: true },
+            { key: 'drehmoment', label: 'Drehmoment (Nm)', placeholder: '450' },
+            { key: 'position', label: 'Position am Bauteil', placeholder: 'z. B. Stütze A3, Fußpunkt' },
+        ],
+        fotoHinweis: 'Bitte Etikett der Schachtel mit ETA-/Kennzeichnung fotografieren.',
+    },
+    {
+        id: 'duebel',
+        label: 'Dübel / Anker',
+        icon: Anchor,
+        kategorie: 'VERBINDUNGSMITTEL',
+        farbe: 'bg-rose-50 text-rose-600',
+        felder: [
+            { key: 'typ', label: 'Hersteller / Typ', placeholder: 'z. B. Würth W-FAZ', pflicht: true },
+            { key: 'groesse', label: 'Größe', placeholder: 'M12 x 100', pflicht: true },
+            { key: 'anzahl', label: 'Anzahl', placeholder: '8', pflicht: true },
+            { key: 'drehmoment', label: 'Anziehmoment (Nm)', placeholder: '60' },
+            { key: 'position', label: 'Position am Bauteil', placeholder: 'z. B. Konsole West' },
+        ],
+        fotoHinweis: 'Bitte Etikett der Dübelschachtel mit ETA-Nr. fotografieren.',
+    },
+    {
+        id: 'schweissnaht',
+        label: 'Schweißnaht',
+        icon: Flame,
+        kategorie: 'SCHWEISSUNG',
+        farbe: 'bg-rose-200 text-rose-900',
+        felder: [
+            { key: 'nahttyp', label: 'Nahttyp', placeholder: 'z. B. Kehlnaht a4', pflicht: true },
+            { key: 'position', label: 'Position', placeholder: 'z. B. Träger T1, Anschluss Stütze A2', pflicht: true },
+            { key: 'schweisser', label: 'Schweißer', placeholder: 'Name oder Nr.' },
+            { key: 'wps', label: 'WPS-Nr.', placeholder: 'z. B. WPS-2026-014' },
+        ],
+        fotoHinweis: 'Foto der ausgeführten Naht hilft im Audit.',
+    },
+    {
+        id: 'korrosionsschutz',
+        label: 'Korrosionsschutz',
+        icon: Paintbrush,
+        kategorie: 'KORROSIONSSCHUTZ',
+        farbe: 'bg-slate-200 text-slate-800',
+        felder: [
+            { key: 'system', label: 'Beschichtungssystem', placeholder: 'z. B. EP-Zinkstaub 80μm', pflicht: true },
+            { key: 'schichtdicke', label: 'Schichtdicke (μm)', placeholder: '120' },
+            { key: 'position', label: 'Bauteil / Bereich', placeholder: 'z. B. alle Stützen Halle A' },
+        ],
+        fotoHinweis: 'Messprotokoll oder Bauteil fotografieren.',
+    },
+]
+
+function buildNotizText(vorlage: VorlageDef, werte: Record<string, string>, freitext: string): string {
+    if (vorlage.id === 'frei') return freitext.trim()
+    const lines = [`[${vorlage.label}]`]
+    for (const feld of vorlage.felder) {
+        const v = (werte[feld.key] ?? '').trim()
+        if (v) lines.push(`${feld.label}: ${v}`)
+    }
+    if (freitext.trim()) {
+        lines.push('', freitext.trim())
+    }
+    return lines.join('\n')
 }
 
 export default function ProjektNotizenPage() {
@@ -34,6 +129,8 @@ export default function ProjektNotizenPage() {
     const [nurFuerErsteller, setNurFuerErsteller] = useState(false)
     const [editingNotiz, setEditingNotiz] = useState<Notiz | null>(null)
     const [saving, setSaving] = useState(false)
+    const [vorlageId, setVorlageId] = useState<VorlageId>('frei')
+    const [vorlageWerte, setVorlageWerte] = useState<Record<string, string>>({})
     const [uploadingBildNotizId, setUploadingBildNotizId] = useState<number | null>(null)
     const [viewerNotizBilder, setViewerNotizBilder] = useState<NotizBild[]>([])
     const [viewerIndex, setViewerIndex] = useState<number | null>(null)
@@ -67,8 +164,20 @@ export default function ProjektNotizenPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projektId])
 
+    const aktiveVorlage = VORLAGEN.find(v => v.id === vorlageId) ?? VORLAGEN[0]
+
+    const pflichtfelderErfuellt = (() => {
+        if (vorlageId === 'frei') return neueNotiz.trim().length > 0
+        return aktiveVorlage.felder
+            .filter(f => f.pflicht)
+            .every(f => (vorlageWerte[f.key] ?? '').trim().length > 0)
+    })()
+
     const handleSave = async () => {
-        if (!neueNotiz.trim()) return
+        if (!pflichtfelderErfuellt) return
+        const text = buildNotizText(aktiveVorlage, vorlageWerte, neueNotiz)
+        if (!text.trim()) return
+
         setSaving(true)
         try {
             const token = localStorage.getItem('zeiterfassung_token')
@@ -78,20 +187,30 @@ export default function ProjektNotizenPage() {
 
             const method = editingNotiz ? 'PATCH' : 'POST'
 
+            // Beim Bearbeiten Kategorie NICHT mitsenden – sonst würde der
+            // Default-Vorlagenmodus „frei" (= ALLGEMEIN) eine bestehende
+            // EN-1090-Kategorie wie SCHWEISSUNG oder VERBINDUNGSMITTEL
+            // überschreiben und den Audit-Pfad zerstören.
+            const body: Record<string, unknown> = {
+                notiz: text,
+                mobileSichtbar: mobileSichtbar,
+                nurFuerErsteller: nurFuerErsteller,
+            }
+            if (!editingNotiz) {
+                body.kategorie = aktiveVorlage.kategorie
+            }
             const res = await fetch(url, {
                 method: method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    notiz: neueNotiz.trim(),
-                    mobileSichtbar: mobileSichtbar,
-                    nurFuerErsteller: nurFuerErsteller
-                })
+                body: JSON.stringify(body)
             })
             if (res.ok) {
                 setNeueNotiz('')
                 setNurFuerErsteller(false)
                 setEditingNotiz(null)
                 setShowModal(false)
+                setVorlageId('frei')
+                setVorlageWerte({})
                 loadNotizen()
             } else {
                 alert('Fehler beim Speichern der Notiz')
@@ -188,11 +307,13 @@ export default function ProjektNotizenPage() {
         galleryInputRef.current?.click()
     }
 
-    const openCreateModal = () => {
+    const openCreateModal = (initialVorlage: VorlageId = 'frei') => {
         setNeueNotiz('')
         setNurFuerErsteller(false)
         setEditingNotiz(null)
         setMobileSichtbar(true)
+        setVorlageId(initialVorlage)
+        setVorlageWerte({})
         setShowModal(true)
     }
 
@@ -201,6 +322,10 @@ export default function ProjektNotizenPage() {
         setNurFuerErsteller(!!n.nurFuerErsteller)
         setMobileSichtbar(!!n.mobileSichtbar)
         setEditingNotiz(n)
+        // Beim Bearbeiten zurück in den Freitext-Modus, weil der strukturierte
+        // Text bereits in n.notiz steht und als Ganzes editierbar ist.
+        setVorlageId('frei')
+        setVorlageWerte({})
         setShowModal(true)
     }
 
@@ -251,11 +376,28 @@ export default function ProjektNotizenPage() {
                         </div>
                     </div>
                     <button
-                        onClick={openCreateModal}
+                        onClick={() => openCreateModal('frei')}
                         className="ml-auto p-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors active:scale-95"
                     >
                         <Plus className="w-5 h-5" />
                     </button>
+                </div>
+
+                {/* Shortcut-Leiste für strukturierte EN-1090-Einträge */}
+                <div className="mt-3 -mx-1 flex gap-2 overflow-x-auto pb-1 px-1">
+                    {VORLAGEN.filter(v => v.id !== 'frei').map(v => {
+                        const Icon = v.icon
+                        return (
+                            <button
+                                key={v.id}
+                                onClick={() => openCreateModal(v.id)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap active:scale-95 transition-transform ${v.farbe}`}
+                            >
+                                <Icon className="w-3.5 h-3.5" />
+                                {v.label}
+                            </button>
+                        )
+                    })}
                 </div>
             </header>
 
@@ -281,7 +423,7 @@ export default function ProjektNotizenPage() {
                                         <User className="w-4 h-4 text-rose-600" />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1">
+                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                                             <span className="font-medium text-slate-900 text-sm">
                                                 {notiz.mitarbeiterVorname} {notiz.mitarbeiterNachname}
                                             </span>
@@ -291,6 +433,17 @@ export default function ProjektNotizenPage() {
                                             {notiz.nurFuerErsteller && (
                                                 <Lock className="w-3 h-3 text-amber-500 ml-1" />
                                             )}
+                                            {notiz.kategorie && notiz.kategorie !== 'ALLGEMEIN' && (() => {
+                                                const v = VORLAGEN.find(v => v.kategorie === notiz.kategorie)
+                                                if (!v) return null
+                                                const Icon = v.icon
+                                                return (
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${v.farbe}`}>
+                                                        <Icon className="w-3 h-3" />
+                                                        {v.label}
+                                                    </span>
+                                                )
+                                            })()}
                                         </div>
                                         <p className="text-slate-700 whitespace-pre-wrap break-words">
                                             {notiz.notiz}
@@ -406,13 +559,64 @@ export default function ProjektNotizenPage() {
                                 <X className="w-5 h-5 text-slate-500" />
                             </button>
                         </div>
+
+                        {/* Vorlagen-Auswahl (nur beim Anlegen) */}
+                        {!editingNotiz && (
+                            <div className="mb-4 -mx-1 flex gap-2 overflow-x-auto pb-1 px-1">
+                                {VORLAGEN.map(v => {
+                                    const Icon = v.icon
+                                    const aktiv = v.id === vorlageId
+                                    return (
+                                        <button
+                                            key={v.id}
+                                            onClick={() => { setVorlageId(v.id); setVorlageWerte({}) }}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+                                                aktiv
+                                                    ? `${v.farbe} ring-2 ring-offset-1 ring-rose-500`
+                                                    : `${v.farbe} opacity-60`
+                                            }`}
+                                        >
+                                            <Icon className="w-3.5 h-3.5" />
+                                            {v.label}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        )}
+
+                        {/* Strukturierte Felder */}
+                        {!editingNotiz && aktiveVorlage.felder.length > 0 && (
+                            <div className="space-y-2 mb-3">
+                                {aktiveVorlage.felder.map(feld => (
+                                    <div key={feld.key}>
+                                        <label className="text-xs font-medium text-slate-600 mb-0.5 block">
+                                            {feld.label}{feld.pflicht && <span className="text-rose-600"> *</span>}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={vorlageWerte[feld.key] ?? ''}
+                                            onChange={e => setVorlageWerte(w => ({ ...w, [feld.key]: e.target.value }))}
+                                            placeholder={feld.placeholder}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                        />
+                                    </div>
+                                ))}
+                                {aktiveVorlage.fotoHinweis && (
+                                    <div className="flex items-start gap-2 mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900">
+                                        <Camera className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                        <span>{aktiveVorlage.fotoHinweis} Nach dem Speichern auf <b>Kamera</b> tippen.</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <textarea
                             value={neueNotiz}
                             onChange={(e) => setNeueNotiz(e.target.value)}
-                            placeholder="Eintrag eingeben..."
-                            rows={4}
+                            placeholder={vorlageId === 'frei' ? 'Eintrag eingeben...' : 'Bemerkung (optional)...'}
+                            rows={vorlageId === 'frei' ? 4 : 2}
                             className="w-full p-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
-                            autoFocus
+                            autoFocus={vorlageId === 'frei'}
                         />
                         <div className="space-y-3 mt-4">
                             <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
@@ -432,7 +636,7 @@ export default function ProjektNotizenPage() {
                         </div>
                         <button
                             onClick={handleSave}
-                            disabled={!neueNotiz.trim() || saving}
+                            disabled={!pflichtfelderErfuellt || saving}
                             className="w-full mt-4 py-3 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-colors"
                         >
                             {saving ? (
