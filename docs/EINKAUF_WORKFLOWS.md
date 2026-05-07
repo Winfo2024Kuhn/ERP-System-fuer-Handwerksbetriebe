@@ -211,7 +211,7 @@ Auftrag vergeben wird.
 | `PreisanfrageStatus` | OFFEN, TEILWEISE_BEANTWORTET, VOLLSTAENDIG, VERGEBEN, ABGEBROCHEN |
 | `PreisanfrageLieferantStatus` | VORBEREITET, VERSENDET, BEANTWORTET, ABGELEHNT |
 
-Tabellen siehe Flyway `V227__preisanfrage.sql`. `Preisanfrage.vergebenAn` zeigt
+Tabellen siehe Flyway `V271__preisanfrage.sql`. `Preisanfrage.vergebenAn` zeigt
 nach Vergabe auf den Gewinner-`PreisanfrageLieferant`.
 
 ### 4.3 Nummer und Token

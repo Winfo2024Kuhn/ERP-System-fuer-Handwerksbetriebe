@@ -24,7 +24,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class WpsFreigabeService {
 
-    /** Kurztexte aus {@code V219__en1090_rollen_qualifikationen.sql}. */
+    /** Kurztexte aus {@code V263__en1090_rollen_qualifikationen.sql}. */
     static final Set<String> SAP_ROLLE_KURZTEXTE = Set.of(
             "Schweißaufsicht (SAP)",
             "Stellvertreter SAP");

@@ -26,7 +26,7 @@
 
   **Idempotente Patterns im Projekt (Referenz: vorhandene Migrationen):**
 
-  1. **Neue Tabelle** → direkt mit `IF NOT EXISTS` (siehe [V215__en1090_echeck.sql](src/main/resources/db/migration/V215__en1090_echeck.sql), [V229__artikel_preis_historie.sql](src/main/resources/db/migration/V229__artikel_preis_historie.sql)):
+  1. **Neue Tabelle** → direkt mit `IF NOT EXISTS` (siehe [V259__en1090_echeck.sql](src/main/resources/db/migration/V259__en1090_echeck.sql), [V273__artikel_preis_historie.sql](src/main/resources/db/migration/V273__artikel_preis_historie.sql)):
      ```sql
      CREATE TABLE IF NOT EXISTS meine_tabelle (
          id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -34,7 +34,7 @@
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
      ```
 
-  2. **Neue Spalte** → Prepared-Statement mit `INFORMATION_SCHEMA.COLUMNS`-Check (Pattern aus [V228__artikel_durchschnittspreis.sql](src/main/resources/db/migration/V228__artikel_durchschnittspreis.sql)):
+  2. **Neue Spalte** → Prepared-Statement mit `INFORMATION_SCHEMA.COLUMNS`-Check (Pattern aus [V272__artikel_durchschnittspreis.sql](src/main/resources/db/migration/V272__artikel_durchschnittspreis.sql)):
      ```sql
      SET @col = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
                  WHERE TABLE_SCHEMA = DATABASE()
@@ -60,7 +60,7 @@
 
   4. **Neuer Foreign Key** → Check gegen `INFORMATION_SCHEMA.TABLE_CONSTRAINTS` (`CONSTRAINT_TYPE = 'FOREIGN KEY'`).
 
-  5. **Spalten-Typ ändern / ENUM-Konvertierung** → `ALTER TABLE ... MODIFY COLUMN ...` ist in MySQL 8 von Natur aus idempotent, wenn der Zielzustand bereits besteht (siehe [V231__artikel_preis_historie_enum_spalten.sql](src/main/resources/db/migration/V231__artikel_preis_historie_enum_spalten.sql), [V232__wps_lage_typ_enum.sql](src/main/resources/db/migration/V232__wps_lage_typ_enum.sql)). Kein Wrapper nötig.
+  5. **Spalten-Typ ändern / ENUM-Konvertierung** → `ALTER TABLE ... MODIFY COLUMN ...` ist in MySQL 8 von Natur aus idempotent, wenn der Zielzustand bereits besteht (siehe [V275__artikel_preis_historie_enum_spalten.sql](src/main/resources/db/migration/V275__artikel_preis_historie_enum_spalten.sql), [V276__wps_lage_typ_enum.sql](src/main/resources/db/migration/V276__wps_lage_typ_enum.sql)). Kein Wrapper nötig.
 
   **Anti-Patterns — bitte vermeiden (brechen auf MySQL 8):**
   - `ALTER TABLE x ADD COLUMN IF NOT EXISTS ...` → MariaDB-Syntax, in MySQL 8 Parse-Error.

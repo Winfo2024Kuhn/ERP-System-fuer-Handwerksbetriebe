@@ -1,18 +1,22 @@
 -- ═══════════════════════════════════════════════════════════════
--- V239: artikel_in_projekt — Spalte `lieferant_id` droppen
+-- V283: artikel_in_projekt — Spalte `lieferant_id` droppen
 -- ═══════════════════════════════════════════════════════════════
 -- Ausgangslage (aus `SHOW CREATE TABLE artikel_in_projekt`):
---   - KEIN Foreign Key auf `lieferant_id`. FKs existieren nur auf
---     projekt_id, artikel_id, kategorie_id.
---   - Composite-Index `FKrl0duw5r0pksbpj79kdpjabql` auf
---     (artikel_id, lieferant_id). Dieser Index ist aktuell der
---     einzige Index, der `artikel_id` abdeckt — der FK auf
+--   - Auf manchen Umgebungen existieren historische FKs auf
+--     `lieferant_id` (aus alter Hibernate-ddl-auto=update-Zeit):
+--       * FKcntoko2hycpioejmu3pjx9wv9 → lieferanten
+--       * FKrl0duw5r0pksbpj79kdpjabql → lieferanten_artikel_preise
+--         (composite auf artikel_id, lieferant_id)
+--   - Auf anderen Umgebungen sind diese FKs schon nicht (mehr) da.
+--   - Composite-Index `FKrl0duw5r0pksbpj79kdpjabql` ist auf manchen
+--     DBs der einzige Index, der `artikel_id` abdeckt — der FK auf
 --     `artikel_id` (`FKbff4hugr1a1yb7wpntofif4lj`) braucht ihn
---     deshalb als Backing-Index. Daher schlägt ein direktes
---     DROP INDEX mit Error 1553 fehl ("needed in a foreign key
---     constraint").
+--     deshalb als Backing-Index. Direktes DROP INDEX schlägt mit
+--     Error 1553 fehl ("needed in a foreign key constraint").
 --
 -- Vorgehen:
+--   0) Alle FKs auf artikel_in_projekt droppen, die `lieferant_id`
+--      einschließen (Cursor über information_schema.KEY_COLUMN_USAGE).
 --   1) Single-Column-Index auf `artikel_id` anlegen, falls noch keiner
 --      existiert. Dann hat der FK auf artikel_id einen eigenen
 --      Backing-Index und der Composite-Index darf weg.
@@ -21,15 +25,38 @@
 --
 -- Umsetzung via Stored Procedure, damit jeder Schritt idempotent ist
 -- und die Migration auch auf Umgebungen läuft, auf denen Teile schon
--- manuell bereinigt wurden.
+-- manuell bereinigt wurden (Cursor liefert leere Menge → No-Op).
 
-DROP PROCEDURE IF EXISTS __v239_drop_aip_lieferant;
+DROP PROCEDURE IF EXISTS __v283_drop_aip_lieferant;
 
-CREATE PROCEDURE __v239_drop_aip_lieferant()
+CREATE PROCEDURE __v283_drop_aip_lieferant()
 BEGIN
     DECLARE v_composite_idx VARCHAR(64) DEFAULT NULL;
     DECLARE v_single_idx_exists INT DEFAULT 0;
     DECLARE v_has_col INT DEFAULT 0;
+    DECLARE v_done INT DEFAULT 0;
+    DECLARE v_fk_name VARCHAR(64);
+    DECLARE fk_cursor CURSOR FOR
+        SELECT DISTINCT CONSTRAINT_NAME
+        FROM information_schema.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA      = DATABASE()
+          AND TABLE_NAME        = 'artikel_in_projekt'
+          AND COLUMN_NAME       = 'lieferant_id'
+          AND REFERENCED_TABLE_NAME IS NOT NULL;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
+
+    -- 0) Alle Foreign Keys droppen, die `lieferant_id` einschließen (Single-Spalte
+    --    auf `lieferanten` oder Composite auf `lieferanten_artikel_preise`).
+    --    Diese FKs sind aus alter Hibernate-Zeit (ddl-auto=update) entstanden
+    --    und blockieren sowohl das DROP INDEX als auch das DROP COLUMN.
+    OPEN fk_cursor;
+    fk_loop: LOOP
+        FETCH fk_cursor INTO v_fk_name;
+        IF v_done THEN LEAVE fk_loop; END IF;
+        SET @sql = CONCAT('ALTER TABLE artikel_in_projekt DROP FOREIGN KEY `', v_fk_name, '`');
+        PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END LOOP;
+    CLOSE fk_cursor;
 
     -- 1) Composite-Index finden, der (artikel_id, lieferant_id) abdeckt.
     SELECT MAX(s1.INDEX_NAME) INTO v_composite_idx
@@ -89,5 +116,5 @@ BEGIN
     END IF;
 END;
 
-CALL __v239_drop_aip_lieferant();
-DROP PROCEDURE __v239_drop_aip_lieferant;
+CALL __v283_drop_aip_lieferant();
+DROP PROCEDURE __v283_drop_aip_lieferant;
