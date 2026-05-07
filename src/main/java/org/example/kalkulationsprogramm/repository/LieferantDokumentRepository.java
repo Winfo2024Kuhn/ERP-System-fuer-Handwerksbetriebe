@@ -12,12 +12,31 @@ import java.util.List;
 @Repository
 public interface LieferantDokumentRepository extends JpaRepository<LieferantDokument, Long> {
 
-        List<LieferantDokument> findByLieferantIdOrderByUploadDatumDesc(Long lieferantId);
+        // JOIN FETCH lädt Geschäftsdaten + Uploader + Lieferant in EINEM Query mit,
+        // sonst gibt es N+1 wenn das DTO später darauf zugreift.
+        @Query("SELECT d FROM LieferantDokument d "
+                        + "LEFT JOIN FETCH d.geschaeftsdaten "
+                        + "LEFT JOIN FETCH d.uploadedBy "
+                        + "LEFT JOIN FETCH d.lieferant "
+                        + "WHERE d.lieferant.id = :lieferantId "
+                        + "ORDER BY d.uploadDatum DESC")
+        List<LieferantDokument> findByLieferantIdOrderByUploadDatumDesc(@Param("lieferantId") Long lieferantId);
 
-        List<LieferantDokument> findByLieferantIdAndTypOrderByUploadDatumDesc(Long lieferantId,
-                        LieferantDokumentTyp typ);
+        @Query("SELECT d FROM LieferantDokument d "
+                        + "LEFT JOIN FETCH d.geschaeftsdaten "
+                        + "LEFT JOIN FETCH d.uploadedBy "
+                        + "LEFT JOIN FETCH d.lieferant "
+                        + "WHERE d.lieferant.id = :lieferantId AND d.typ = :typ "
+                        + "ORDER BY d.uploadDatum DESC")
+        List<LieferantDokument> findByLieferantIdAndTypOrderByUploadDatumDesc(@Param("lieferantId") Long lieferantId,
+                        @Param("typ") LieferantDokumentTyp typ);
 
-        @Query("SELECT d FROM LieferantDokument d WHERE d.lieferant.id = :lieferantId AND d.typ IN :typen ORDER BY d.uploadDatum DESC")
+        @Query("SELECT d FROM LieferantDokument d "
+                        + "LEFT JOIN FETCH d.geschaeftsdaten "
+                        + "LEFT JOIN FETCH d.uploadedBy "
+                        + "LEFT JOIN FETCH d.lieferant "
+                        + "WHERE d.lieferant.id = :lieferantId AND d.typ IN :typen "
+                        + "ORDER BY d.uploadDatum DESC")
         List<LieferantDokument> findByLieferantIdAndTypIn(@Param("lieferantId") Long lieferantId,
                         @Param("typen") List<LieferantDokumentTyp> typen);
 
