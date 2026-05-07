@@ -1603,6 +1603,21 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
 
             // 3. E-Mail-Body vom Backend generieren lassen
+            // Fälligkeitsdatum analog zum PDF berechnen (Rechnungsdatum + Zahlungsziel),
+            // damit der {{FAELLIGKEITSDATUM}}-Platzhalter im DB-Template gefüllt wird.
+            // Wir bauen das Datum aus lokalen Komponenten, weil `new Date('YYYY-MM-DD')`
+            // als UTC-Mitternacht parst und der anschließende `toISOString()`-Roundtrip
+            // in CET/CEST das Datum um einen Tag vor verschieben kann.
+            const rechnungsdatumIso = datum || (() => {
+                const t = new Date();
+                return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+            })();
+            const zahlungszielTage = kontextDaten.zahlungsziel ?? 8;
+            const [yy, mm, dd] = rechnungsdatumIso.split('-').map(Number);
+            const faelligDate = new Date(yy, mm - 1, dd);
+            faelligDate.setDate(faelligDate.getDate() + zahlungszielTage);
+            const faelligkeitsdatumIso = `${faelligDate.getFullYear()}-${String(faelligDate.getMonth() + 1).padStart(2, '0')}-${String(faelligDate.getDate()).padStart(2, '0')}`;
+
             let generatedBody = '';
             try {
                 const templateRes = await fetch('/api/email/template', {
@@ -1616,7 +1631,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         bauvorhaben: kontextDaten.projektBauvorhaben || betreff || '',
                         projektnummer: kontextDaten.projektnummer || '',
                         dokumentnummer: dokumentNummer || '',
-                        rechnungsdatum: datum || new Date().toISOString().split('T')[0],
+                        rechnungsdatum: rechnungsdatumIso,
+                        faelligkeitsdatum: faelligkeitsdatumIso,
                         betrag: nettosumme ? `${(nettosumme * 1.19).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` : undefined,
                         dokumentId: aktiveDokumentId,
                         isAnfrage: !!anfrageId,
