@@ -33,7 +33,11 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import org.mockito.InOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -255,7 +259,7 @@ class UnifiedEmailControllerTest {
         }
 
         @Test
-        @DisplayName("Permanent löschen: Email vorhanden -> 204 + Delete + Replies entkoppelt")
+        @DisplayName("Permanent löschen: Email vorhanden -> 204 + Replies-Detach VOR Delete (Reihenfolge wichtig!)")
         void deletePermanentlySuccess() throws Exception {
             Email email = createTestEmail(1L, "Zu löschen", "test@example.com");
             given(emailRepository.findByIdForUpdate(1L)).willReturn(Optional.of(email));
@@ -263,8 +267,12 @@ class UnifiedEmailControllerTest {
             mockMvc.perform(delete("/api/emails/1/permanent"))
                     .andExpect(status().isNoContent());
 
-            verify(emailRepository).detachRepliesFromParent(1L);
-            verify(emailRepository).delete(email);
+            // Reihenfolge: detachRepliesFromParent -> flush -> delete.
+            // Wenn flush() entfernt würde, könnte Hibernate Replies wiederbeleben (FK).
+            InOrder order = inOrder(emailRepository);
+            order.verify(emailRepository).detachRepliesFromParent(1L);
+            order.verify(emailRepository).flush();
+            order.verify(emailRepository).delete(email);
         }
 
         @Test
@@ -277,7 +285,11 @@ class UnifiedEmailControllerTest {
             mockMvc.perform(delete("/api/emails/1/permanent"))
                     .andExpect(status().isNoContent());
 
-            verify(emailRepository, org.mockito.Mockito.never()).delete(any(Email.class));
+            // Bei nicht gefundener Email darf KEINE der Folge-Aktionen laufen
+            // (kein Delete, kein Reply-Detach, kein Mailserver-Call).
+            verify(emailRepository, never()).delete(any(Email.class));
+            verify(emailRepository, never()).detachRepliesFromParent(any());
+            verifyNoInteractions(emailImportService);
         }
     }
 

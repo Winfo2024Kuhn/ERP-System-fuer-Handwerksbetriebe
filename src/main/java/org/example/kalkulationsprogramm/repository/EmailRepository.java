@@ -12,10 +12,12 @@ import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -37,8 +39,10 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Lädt eine Email mit pessimistischem Schreib-Lock. Schützt vor parallelen
    * Doppel-DELETEs (z.B. Doppelklick im Frontend), die sonst eine
    * StaleStateException beim Commit der zweiten Transaktion auslösen.
+   * 3s-Timeout, damit ein hängender Konkurrent die UI nicht 50s blockiert.
    */
   @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "3000"))
   @Query("SELECT e FROM Email e WHERE e.id = :id")
   Optional<Email> findByIdForUpdate(@Param("id") Long id);
 
