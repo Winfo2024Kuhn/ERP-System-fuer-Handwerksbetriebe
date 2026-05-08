@@ -570,6 +570,11 @@ class ProjektManagementServiceTest {
 
         when(anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(anfrageId)).thenReturn(List.of(notiz));
 
+        // Bild wird beim Transfer physisch vom bilder- in den dokumenten-Speicherplatz
+        // kopiert und bekommt dabei einen neuen Dateinamen.
+        when(dateiSpeicherService.kopiereBildZuDokumenten("uuid-test.jpg"))
+                .thenReturn("uuid-projekt-test.jpg");
+
         // Mock Projekt creation
         Projekt projekt = new Projekt();
         projekt.setId(projektId);
@@ -593,9 +598,62 @@ class ProjektManagementServiceTest {
         assertTrue(savedNotiz.isMobileSichtbar());
         assertEquals(1, savedNotiz.getBilder().size());
         assertEquals("test.jpg", savedNotiz.getBilder().getFirst().getOriginalDateiname());
-        assertEquals("uuid-test.jpg", savedNotiz.getBilder().getFirst().getGespeicherterDateiname()); // Verify filename
-                                                                                                  // reuse
+        // Neuer Dateiname aus DateiSpeicherService – Datei wurde physisch kopiert und
+        // liegt jetzt im Dokumenten-Speicherplatz, damit /api/dokumente/<name> sie findet.
+        assertEquals("uuid-projekt-test.jpg",
+                savedNotiz.getBilder().getFirst().getGespeicherterDateiname());
         assertEquals(projekt, savedNotiz.getProjekt()); // Verify linkage to new projekt
+        verify(dateiSpeicherService).kopiereBildZuDokumenten("uuid-test.jpg");
+    }
+
+    @Test
+    void notizBildWirdUebersprungenWennDateiKopierenFehlschlaegt() {
+        // Reproduziert den Bug-Fall, falls die Quelldatei nicht (mehr) existiert:
+        // Die Notiz wird trotzdem übernommen, das nicht kopierbare Bild ausgelassen –
+        // statt die ganze Notiz-Übernahme abzubrechen.
+        Long anfrageId = 1L;
+        Long projektId = 100L;
+        ProjektErstellenDto dto = new ProjektErstellenDto();
+        dto.setAnfrageIds(List.of(anfrageId));
+        dto.setAuftragsnummer("2024/01/00001");
+
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(anfrageId);
+        anfrage.setDokumente(new ArrayList<>());
+        Kunde kunde = new Kunde();
+        kunde.setId(10L);
+        anfrage.setKunde(kunde);
+        when(kundeRepository.findById(10L)).thenReturn(Optional.of(kunde));
+        when(anfrageRepository.findAllById(dto.getAnfrageIds())).thenReturn(List.of(anfrage));
+
+        AnfrageNotiz notiz = new AnfrageNotiz();
+        notiz.setNotiz("Notiz mit kaputter Bilddatei");
+        notiz.setErstelltAm(java.time.LocalDateTime.now());
+        notiz.setMitarbeiter(new Mitarbeiter());
+        AnfrageNotizBild bild = new AnfrageNotizBild();
+        bild.setOriginalDateiname("weg.jpg");
+        bild.setGespeicherterDateiname("uuid-weg.jpg");
+        bild.setErstelltAm(java.time.LocalDateTime.now());
+        notiz.setBilder(List.of(bild));
+        when(anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(anfrageId)).thenReturn(List.of(notiz));
+
+        when(dateiSpeicherService.kopiereBildZuDokumenten("uuid-weg.jpg"))
+                .thenThrow(new RuntimeException("Quelldatei für Notiz-Bild nicht gefunden: uuid-weg.jpg"));
+
+        Projekt projekt = new Projekt();
+        projekt.setId(projektId);
+        when(projektRepository.findById(projektId)).thenReturn(Optional.of(projekt));
+        when(projektPersistenceService.saveProjektWithRetry(any(Projekt.class))).thenReturn(projekt);
+        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
+
+        service.erstelleProjekt(dto, null, null, null, null, null, null);
+
+        ArgumentCaptor<ProjektNotiz> notizCaptor = ArgumentCaptor.forClass(ProjektNotiz.class);
+        verify(projektNotizRepository).save(notizCaptor.capture());
+        ProjektNotiz saved = notizCaptor.getValue();
+        assertEquals("Notiz mit kaputter Bilddatei", saved.getNotiz());
+        assertTrue(saved.getBilder().isEmpty(),
+                "Bild ohne Quelldatei darf nicht mit altem (nicht auflösbarem) Dateinamen gespeichert werden.");
     }
 }
 

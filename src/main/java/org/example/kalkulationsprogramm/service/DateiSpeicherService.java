@@ -1390,6 +1390,30 @@ public class DateiSpeicherService {
         return "/api/images/" + speichername;
     }
 
+    /**
+     * Kopiert ein Notiz-Bild aus dem Bilder-Speicherplatz in den Dokumenten-Speicherplatz
+     * und vergibt einen frischen UUID-Dateinamen. Wird beim Transfer Anfrage→Projekt
+     * verwendet, damit das Projekt-Notiz-Bild über {@code /api/dokumente/&lt;name&gt;}
+     * (welches in {@code dokumentenSpeicherplatz} sucht) auffindbar bleibt.
+     *
+     * @param quellDateiname Dateiname im Bilder-Speicherplatz (UUID + Extension)
+     * @return neuer Dateiname im Dokumenten-Speicherplatz
+     */
+    public String kopiereBildZuDokumenten(String quellDateiname) {
+        Path quelle = resolveAndValidate(this.bilderSpeicherplatz, quellDateiname);
+        if (!Files.exists(quelle)) {
+            throw new RuntimeException("Quelldatei für Notiz-Bild nicht gefunden: " + quellDateiname);
+        }
+        String neuerName = generiereEinzigartigenDateinamen(quellDateiname);
+        Path ziel = resolveAndValidate(this.dokumentenSpeicherplatz, neuerName);
+        try {
+            Files.copy(quelle, ziel, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new RuntimeException("Notiz-Bild konnte nicht kopiert werden: " + quellDateiname, e);
+        }
+        return neuerName;
+    }
+
     @Transactional
     public void loescheBild(String bildUrl) {
         try {

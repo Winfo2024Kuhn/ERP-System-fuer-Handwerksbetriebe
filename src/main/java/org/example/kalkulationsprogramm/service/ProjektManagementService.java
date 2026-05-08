@@ -364,10 +364,25 @@ ProjektManagementService {
                         List<ProjektNotizBild> pBilder = new ArrayList<>();
                         if (aNotiz.getBilder() != null) {
                             for (AnfrageNotizBild aBild : aNotiz.getBilder()) {
+                                // Anfrage-Notiz-Bilder liegen im bilder-Speicherplatz (Auslieferung
+                                // via /api/images). Projekt-Notiz-Bilder werden über /api/dokumente
+                                // ausgeliefert und müssen daher physisch in den Dokumenten-
+                                // Speicherplatz kopiert werden, sonst sind sie nach dem Transfer
+                                // nicht mehr öffenbar.
+                                String neuerName;
+                                try {
+                                    neuerName = dateiSpeicherService
+                                            .kopiereBildZuDokumenten(aBild.getGespeicherterDateiname());
+                                } catch (Exception bildEx) {
+                                    System.err.println("Notiz-Bild konnte nicht kopiert werden ("
+                                            + aBild.getGespeicherterDateiname() + "): "
+                                            + bildEx.getMessage());
+                                    continue;
+                                }
                                 ProjektNotizBild pBild = new ProjektNotizBild();
                                 pBild.setNotiz(pNotiz);
                                 pBild.setOriginalDateiname(aBild.getOriginalDateiname());
-                                pBild.setGespeicherterDateiname(aBild.getGespeicherterDateiname());
+                                pBild.setGespeicherterDateiname(neuerName);
                                 pBild.setDateityp(aBild.getDateityp());
                                 pBild.setErstelltAm(aBild.getErstelltAm());
                                 pBilder.add(pBild);
