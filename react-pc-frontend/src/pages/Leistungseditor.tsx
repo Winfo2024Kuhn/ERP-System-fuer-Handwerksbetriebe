@@ -358,7 +358,8 @@ const ServiceList: React.FC<ServiceListProps> = ({ services, folders, onEdit, on
   return (
     <div className="space-y-1.5">
       {services.map((service) => {
-        const folderName = showFolder ? folders.find((f) => f.id === service.folderId)?.name : null;
+        const folder = showFolder ? folders.find((f) => f.id === service.folderId) : null;
+        const folderName = folder ? getFolderPath(folder, folders) : null;
         return (
           <div
             key={service.id}
@@ -437,7 +438,7 @@ export const Leistungseditor: React.FC = () => {
     return map;
   }, [folders]);
 
-  // Suche global über alle Leistungen; Ordnerfilter nur ohne Suchtext
+  // Suche global über alle Leistungen; Ordnerfilter inkl. Unterordner
   const filteredServices = useMemo(() => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -446,10 +447,21 @@ export const Leistungseditor: React.FC = () => {
       );
     }
     if (selectedFolderId) {
-      return services.filter((s) => s.folderId === selectedFolderId);
+      const allowed = new Set<string>([selectedFolderId]);
+      const stack = [selectedFolderId];
+      while (stack.length) {
+        const id = stack.pop()!;
+        for (const child of childrenMap[id] ?? []) {
+          if (!allowed.has(child.id)) {
+            allowed.add(child.id);
+            stack.push(child.id);
+          }
+        }
+      }
+      return services.filter((s) => allowed.has(s.folderId));
     }
     return services;
-  }, [services, selectedFolderId, searchQuery]);
+  }, [services, selectedFolderId, searchQuery, childrenMap]);
 
   // Rekursive Counts (funktionieren sofort, da alle Ordner bekannt)
   const serviceCounts = useMemo(() => {
@@ -732,7 +744,7 @@ export const Leistungseditor: React.FC = () => {
               folders={folders}
               onEdit={(s) => { setEditingFolderId(null); setEditingService(s); setIsCreating(false); }}
               onDelete={handleDeleteService}
-              showFolder={isSearching}
+              showFolder={isSearching || !isSelectedFolderLeaf}
             />
           </div>
         </Card>
