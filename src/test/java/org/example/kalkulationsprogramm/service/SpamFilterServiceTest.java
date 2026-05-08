@@ -416,6 +416,23 @@ class SpamFilterServiceTest {
 
             assertThat(score).isLessThan(85);
         }
+
+        @Test
+        void mixedCaseRandomLocalPartTriggertSenderPattern() {
+            // Beweis fuer den Lowercase-Bug-Fix: Mixed-Case-Random-Strings
+            // werden gegen den Original-fromAddress getestet, nicht gegen
+            // die lowercased Version.
+            Email email = erstelleEmail(
+                    "jAWULxW.irYpfHK@example.com",
+                    "Hallo",
+                    "Bitte klicken");
+
+            int score = service.calculateSpamScore(email);
+
+            // Mind. +10 vom Sender-Pattern. Kein Bild-Check, also bleibt
+            // der Score klein, aber der Anteil ist nachweisbar > 0.
+            assertThat(score).isGreaterThanOrEqualTo(10);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -123,6 +123,52 @@ class SpamBayesServiceTest {
 
             assertThat(tokens).contains("spam", "betreff", "nachricht", "body", "text");
         }
+
+        @Test
+        void senderTokensAusFromAddress() {
+            // Aus dem Sender werden Domain, TLD und ggf. Random-Marker
+            // als praefixierte Tokens gewonnen, damit Bayes daraus lernen
+            // kann (z.B. dass adventurecentral.com auffaellig oft Spam liefert).
+            Email email = new Email();
+            email.setSubject("Werbung");
+            email.setBody("Klicken Sie hier");
+            email.setFromAddress("jAWULxW.irYpfHK@adventurecentral.com");
+
+            Set<String> tokens = service.tokenize(email);
+
+            assertThat(tokens).contains(
+                    "from_domain_adventurecentral.com",
+                    "from_tld_com",
+                    "from_random_local");
+        }
+
+        @Test
+        void senderTokensOhneRandomMarkerFuerNormaleAdresse() {
+            // Eine normale Adresse (lowercase, vorname.nachname) loest
+            // den Random-Marker NICHT aus.
+            Email email = new Email();
+            email.setSubject("Anfrage");
+            email.setBody("Bitte um Angebot");
+            email.setFromAddress("max.mustermann@beispiel-firma.de");
+
+            Set<String> tokens = service.tokenize(email);
+
+            assertThat(tokens).contains("from_domain_beispiel-firma.de", "from_tld_de");
+            assertThat(tokens).doesNotContain("from_random_local");
+        }
+
+        @Test
+        void senderTokensExtrahiertAusBracketFormat() {
+            // Format "Name <email@domain.com>" muss korrekt geparst werden.
+            Email email = new Email();
+            email.setSubject("Test");
+            email.setBody("Body");
+            email.setFromAddress("Max Mustermann <max@beispiel.de>");
+
+            Set<String> tokens = service.tokenize(email);
+
+            assertThat(tokens).contains("from_domain_beispiel.de", "from_tld_de");
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

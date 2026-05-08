@@ -650,8 +650,14 @@ public class SpamFilterService {
         }
 
         // 3. Verdächtige Absender-Muster
+        // Patterns werden gegen den ORIGINAL-fromAddress getestet, weil
+        // Mixed-Case-Random-Strings ("jAWULxW.irYpfHK@...") nach Lowercase
+        // wie ein normales Wort aussehen wuerden. Die existing Patterns
+        // (noreply, Zahlen, [a-z]{15,}) sind unbeeintraechtigt, weil die
+        // entweder CASE_INSENSITIVE laufen oder auf Zahlen prufen.
+        String fromAddressOriginal = email.getFromAddress() != null ? email.getFromAddress() : "";
         for (Pattern pattern : SUSPICIOUS_SENDER_PATTERNS) {
-            if (pattern.matcher(fromAddress).matches()) {
+            if (pattern.matcher(fromAddressOriginal).matches()) {
                 score += 10;
                 break; // Nur einmal zählen
             }

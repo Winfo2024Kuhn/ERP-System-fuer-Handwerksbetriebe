@@ -159,10 +159,86 @@ public class SpamBayesService {
 
     /**
      * Tokenisiert direkt aus einer Email-Entity.
+     *
+     * Zusaetzlich zum Subject/Body werden auch Sender-Merkmale als
+     * praefixierte Tokens eingespeist (Domain, TLD, "from_random_local"
+     * fuer Mixed-Case-Random-Local-Parts). So lernt Bayes z.B. dass Mails
+     * von "adventurecentral.com" oder mit Random-Sender oft Spam sind —
+     * das fehlt, wenn man nur Body-Tokens betrachtet.
      */
     public Set<String> tokenize(Email email) {
         String body = combineBody(email);
-        return tokenize(email.getSubject(), body);
+        Set<String> tokens = tokenize(email.getSubject(), body);
+        addSenderTokens(tokens, email.getFromAddress());
+        return tokens;
+    }
+
+    /**
+     * Fuegt Sender-bezogene Marker-Tokens zum Token-Set hinzu.
+     * Praefix verhindert Kollisionen mit normalen Body-Tokens.
+     */
+    private void addSenderTokens(Set<String> tokens, String fromAddress) {
+        if (fromAddress == null || fromAddress.isBlank()) return;
+
+        // Pure E-Mail aus "Name <email@domain.com>" extrahieren
+        String email = fromAddress;
+        int lt = fromAddress.indexOf('<');
+        int gt = fromAddress.indexOf('>');
+        if (lt >= 0 && gt > lt) {
+            email = fromAddress.substring(lt + 1, gt);
+        }
+        int at = email.indexOf('@');
+        if (at <= 0 || at >= email.length() - 1) return;
+
+        String localPart = email.substring(0, at);
+        String domain = email.substring(at + 1).toLowerCase().trim();
+
+        // Extrem lange Domains skippen — sind selten echt und blaehen
+        // das Token-Set unnoetig auf. Schranke gilt fuer alle drei
+        // Sender-Tokens, damit bei langen Domains kein TLD-Token ohne
+        // Domain-Token entsteht.
+        if (domain.isBlank() || domain.length() > MAX_TOKEN_LENGTH + 10) {
+            return;
+        }
+
+        if (tokens.size() < MAX_TOKENS_PER_EMAIL) {
+            tokens.add("from_domain_" + domain);
+        }
+        int dot = domain.lastIndexOf('.');
+        if (dot > 0 && dot < domain.length() - 1 && tokens.size() < MAX_TOKENS_PER_EMAIL) {
+            tokens.add("from_tld_" + domain.substring(dot + 1));
+        }
+        if (looksRandomLocalPart(localPart) && tokens.size() < MAX_TOKENS_PER_EMAIL) {
+            tokens.add("from_random_local");
+        }
+    }
+
+    /**
+     * Heuristik fuer "automatisch generierter Local-Part".
+     *
+     * Zwei Kriterien muessen erfuellt sein, damit echte CamelCase-Namen
+     * wie "MaxMustermann" oder "JohnDoeSmith" NICHT faelschlich erkannt
+     * werden:
+     *   - Mind. 12 Zeichen (legt die Latte ueber typische 2-Wort-Namen).
+     *   - Mind. 4 Case-Wechsel (Random-Strings wie "jAWULxW.irYpfHK"
+     *     haben sehr viele; CamelCase-Namen typisch 1-3).
+     */
+    private boolean looksRandomLocalPart(String s) {
+        if (s == null || s.length() < 12) return false;
+        int caseSwitches = 0;
+        Boolean prevWasUpper = null;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isUpperCase(c)) {
+                if (prevWasUpper != null && !prevWasUpper) caseSwitches++;
+                prevWasUpper = true;
+            } else if (Character.isLowerCase(c)) {
+                if (prevWasUpper != null && prevWasUpper) caseSwitches++;
+                prevWasUpper = false;
+            }
+            if (caseSwitches >= 4) return true;
+        }
+        return false;
     }
 
     private String combineBody(Email email) {
