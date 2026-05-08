@@ -19,3 +19,5 @@ Als Heimat eignet sich Issue #51 (Querschnitts-Issue), da es als technische Basi
 **Why:** Kein separates "Infrastruktur"-Issue existiert. #51 ist das nächstliegend thematische Dach für technische Voraussetzungen.
 
 **How to apply:** Bei technischen EN-1090-Branch-Commits ohne direkte Issue-Referenz → Kommentar an #51 setzen.
+
+**Commit fd17419 (2026-05-07):** Schnellerfassungs-Vorlagen im Bautagebuch — kommentiert an #39 (Mobile Montageprotokolle). Bringt ProjektNotizKategorie-Enum + DB-Spalte als Basis für EN-1090-Akte-Export. Commits mit ProjektNotiz/Bautagebuch-Bezug → primär #39, sekundär je nach Inhalt #40 (Wareneingang) oder #37 (E-Check).
