@@ -157,6 +157,45 @@ public class SpamBayesService {
         return tokens;
     }
 
+    // ────────────────────────────────────────────────────────────────
+    // TODO (fuer den naechsten Agent / Folge-PR auf Issue #56)
+    // ────────────────────────────────────────────────────────────────
+    // Aktueller Stand: A+B aus dem #56-Plan sind erledigt
+    //   A) Sender-Patterns gegen Original-Case (Lowercase-Bug behoben)
+    //   B) Sender-Marker-Tokens (from_domain_*, from_tld_*, from_random_local)
+    //
+    // Was noch offen ist und ueberlegt gehoert, bevor weiter geschraubt wird:
+    //
+    // 1. N-Gramme (Schritt C aus #56) — groesster ML-Hebel.
+    //    Aktuell tokenisieren wir nur 1-Gramme. Phrasen wie "klicken sie hier",
+    //    "verify your account", "sie haben gewonnen" sind als verbundene
+    //    2- oder 3-Gramme viel staerkere Indikatoren als ihre Einzelwoerter.
+    //    Achtung: zieht ein Reindex/Retraining nach sich, weil bestehende
+    //    spam_token_counts auf 1-Grammen trainiert sind. Strategie ueberlegen
+    //    (in-place migrieren vs. komplett neu scoren).
+    //
+    // 2. Erstkontakt-Heuristik (Schritt D aus #56)
+    //    Neue Tabelle seen_sender_domain (oder Reuse einer bestehenden), beim
+    //    EmailImportService eintragen. "Domain noch nie gesehen + Free-Mailer
+    //    + 2+ Links" ist klassisches Cold-Mail-Signal — gehoert in den
+    //    SpamFilterService.scoreStructuralFeatures, nicht hierher.
+    //
+    // 3. looksRandomLocalPart-Schwelle (jetzt 12 Zeichen + 4 Case-Wechsel).
+    //    Auf realem Mail-Korpus (mind. 1 Woche live) nachmessen, ob legitime
+    //    User faelschlich getroffen werden. Falls ja: Schwelle auf 14 hoch
+    //    oder zusaetzliches Kriterium "Punkt in Local-Part" einbauen.
+    //
+    // 4. DSGVO-Cleanup fuer Sender-Tokens.
+    //    from_domain_<personenbezogene-domain>.de bleibt unbegrenzt im
+    //    spam_token_counts liegen. Pruefen, ob ein bestehender
+    //    Cleanup-Job (MIN_TOKEN_OCCURRENCES / Time-Decay) auch die
+    //    from_*-Tokens erfasst — sonst dort explizit mit aufnehmen.
+    //
+    // 5. Bracket-Parsing in addSenderTokens nutzt indexOf('<') + indexOf('>') —
+    //    findet nur das ERSTE Paar. Bei "Foo <bar> <real@x.de>" geht das
+    //    schief. Selten, aber Robustheit-Fix waere lastIndexOf('>').
+    // ────────────────────────────────────────────────────────────────
+
     /**
      * Tokenisiert direkt aus einer Email-Entity.
      *
