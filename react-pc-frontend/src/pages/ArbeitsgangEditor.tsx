@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Building2,
+    Calculator,
     ChevronRight,
     Pencil,
     Plus,
@@ -17,6 +18,7 @@ import { Label } from '../components/ui/label';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { StundensatzEditModal } from '../components/StundensatzEditModal';
+import { VerrechnungslohnRechnerDialog } from '../components/VerrechnungslohnRechnerDialog';
 import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
 import { type Abteilung, type Arbeitsgang } from '../types';
@@ -199,6 +201,7 @@ export default function ArbeitsgangEditor() {
 
     // Modal state
     const [editingArbeitsgang, setEditingArbeitsgang] = useState<Arbeitsgang | null>(null);
+    const [rechnerOpen, setRechnerOpen] = useState(false);
 
     // Search
     const [searchTerm, setSearchTerm] = useState('');
@@ -363,10 +366,20 @@ export default function ArbeitsgangEditor() {
             title="Arbeitsgänge"
             subtitle="Verwaltung der Arbeitsgänge und Stundensätze nach Abteilungen."
             actions={
-                <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
-                    <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
-                    Aktualisieren
-                </Button>
+                <>
+                    <Button
+                        size="sm"
+                        className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                        onClick={() => setRechnerOpen(true)}
+                    >
+                        <Calculator className="w-4 h-4 mr-2" />
+                        Was muss meine Stunde kosten?
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
+                        <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
+                        Aktualisieren
+                    </Button>
+                </>
             }
         >
 
@@ -522,6 +535,13 @@ export default function ArbeitsgangEditor() {
                     onSave={handleSaveStundensatz}
                 />
             )}
+
+            {/* Verrechnungslohn-Rechner */}
+            <VerrechnungslohnRechnerDialog
+                open={rechnerOpen}
+                onClose={() => setRechnerOpen(false)}
+                onApplied={() => loadData()}
+            />
         </PageLayout>
     );
 }
