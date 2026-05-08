@@ -6,7 +6,7 @@ import { Label } from './ui/label'
 import { Select } from './ui/select-custom'
 import { useToast } from './ui/toast'
 
-type IdsProtokoll = 'IDS_CONNECT_2_5' | 'OCI_4_0'
+type IdsProtokoll = 'IDS_CONNECT_2_5' | 'WUERTH_LEGACY' | 'OCI_4_0'
 
 interface IdsKonfigDto {
     aktiviert: boolean
@@ -25,11 +25,64 @@ interface Props {
 }
 
 const PROTOKOLL_OPTIONS = [
-    { value: 'IDS_CONNECT_2_5', label: 'IDS-Connect 2.5 (ZVSHK)' },
+    { value: 'IDS_CONNECT_2_5', label: 'IDS-Connect 2.5 (ZVSHK-Standard)' },
+    { value: 'WUERTH_LEGACY', label: 'Würth (Legacy ViewIDSCatalogService)' },
     { value: 'OCI_4_0', label: 'OCI 4.0 (SAP)' },
 ]
 
 const PASSWORT_PLATZHALTER = '********'
+
+interface ApiErrorBody {
+    message?: string
+    fields?: Array<{ field?: string; label?: string; message?: string }>
+}
+
+// Unsichtbare Steuerzeichen, die Copy-Paste oft mitbringt: Zero-Width-Space
+// (U+200B), Zero-Width-Non-Joiner (U+200C), Zero-Width-Joiner (U+200D),
+// Byte-Order-Mark (U+FEFF) und Non-Breaking-Space (U+00A0). Werden vor der
+// URL-Validierung entfernt, damit das Backend nicht 400 zurueckgibt.
+const UNSICHTBARE_CODEPOINTS = new Set([0x200B, 0x200C, 0x200D, 0xFEFF, 0x00A0])
+
+/**
+ * Bereinigt URL-Eingaben aus Copy-Paste: trimmt Whitespace, entfernt
+ * unsichtbare Steuerzeichen und schneidet alles vor dem ersten "http"
+ * weg (z. B. Aufzählungszeichen wie "? https://...").
+ */
+function cleanUrlInput(value: string): string {
+    if (!value) return ''
+    let ohneUnsichtbar = ''
+    for (const ch of value) {
+        if (!UNSICHTBARE_CODEPOINTS.has(ch.charCodeAt(0))) ohneUnsichtbar += ch
+    }
+    ohneUnsichtbar = ohneUnsichtbar.trim()
+    const httpIdx = ohneUnsichtbar.search(/https?:\/\//i)
+    return httpIdx > 0 ? ohneUnsichtbar.slice(httpIdx) : ohneUnsichtbar
+}
+
+/**
+ * Wertet eine Fehler-Response des Backends aus und liefert eine
+ * sprechende Toast-Meldung. Erkennt ApiError-Body (siehe
+ * RestExceptionHandler) inkl. fields[]; fällt sonst auf Text zurück.
+ * Bei mehreren Validation-Fehlern werden alle zu einer Meldung verkettet.
+ */
+async function extractFehlerMeldung(res: Response): Promise<string> {
+    try {
+        const body = (await res.clone().json()) as ApiErrorBody
+        if (body?.fields && body.fields.length > 0) {
+            return body.fields
+                .map(f => `${f.label || f.field || 'Eingabe'}: ${f.message || 'ungültig'}`)
+                .join(' • ')
+        }
+        if (body?.message) return body.message
+    } catch {
+        // Kein JSON-Body – versuchen, Plaintext zu lesen.
+        try {
+            const txt = await res.text()
+            if (txt) return txt
+        } catch { /* ignore */ }
+    }
+    return `Speichern fehlgeschlagen (HTTP ${res.status}).`
+}
 
 export function LieferantIdsKonfigTab({ lieferantId, lieferantName }: Props) {
     const toast = useToast()
@@ -86,17 +139,25 @@ export function LieferantIdsKonfigTab({ lieferantId, lieferantName }: Props) {
     const handleSave = async () => {
         setSaving(true)
         try {
+            const payload = {
+                ...konfig,
+                punchoutUrl: cleanUrlInput(konfig.punchoutUrl ?? ''),
+                kundennummer: (konfig.kundennummer ?? '').trim(),
+                loginName: (konfig.loginName ?? '').trim(),
+            }
             const res = await fetch(`/api/admin/lieferanten/${lieferantId}/ids-konfig`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(konfig),
+                body: JSON.stringify(payload),
             })
             if (res.status === 403) {
                 toast.error('Nur Admins dürfen die Schnittstelle ändern.')
                 return
             }
             if (!res.ok) {
-                throw new Error(`HTTP ${res.status}`)
+                const meldung = await extractFehlerMeldung(res)
+                toast.error(meldung)
+                return
             }
             const data: IdsKonfigDto = await res.json()
             setKonfig({
@@ -111,7 +172,7 @@ export function LieferantIdsKonfigTab({ lieferantId, lieferantName }: Props) {
             toast.success('Schnittstelle gespeichert.')
         } catch (err) {
             console.error('IDS-Konfig speichern fehlgeschlagen', err)
-            toast.error('Speichern fehlgeschlagen.')
+            toast.error('Speichern fehlgeschlagen – bitte Verbindung prüfen.')
         } finally {
             setSaving(false)
         }
@@ -149,7 +210,7 @@ export function LieferantIdsKonfigTab({ lieferantId, lieferantName }: Props) {
                     Mit IDS-Connect kannst Du im Online-Shop von <b>{lieferantName}</b> Material
                     aussuchen, der Warenkorb wird automatisch als Bestellung in dieses ERP
                     zurückgespielt. Die Zugangsdaten bekommst Du beim Lieferanten – bei Würth
-                    z. B. von Deinem Außendienstler.
+                    z. B. von Deinem Außendienst-Mitarbeiter.
                 </div>
             </div>
 

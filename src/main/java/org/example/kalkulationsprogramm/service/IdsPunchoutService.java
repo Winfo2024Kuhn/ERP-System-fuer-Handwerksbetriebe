@@ -124,28 +124,37 @@ public class IdsPunchoutService {
                 ? IdsProtokoll.IDS_CONNECT_2_5
                 : konfig.getProtokoll();
 
-        // IDS-Connect 2.5 (ZVSHK-Standard) – die Feldnamen sind in beiden
-        // Profilen gleich. Der einzige Unterschied bei WUERTH_LEGACY ist
-        // der enctype: Würth weist application/x-www-form-urlencoded mit
-        // "Invalid form enctype, required is 'multipart/form-data'" zurück,
-        // alle anderen Lieferanten akzeptieren urlencoded. Die in der
-        // Würth-Anbindungsmail gelisteten Bezeichner kndnr/name_kunde/
-        // pw_kunde/hookurl sind nur Klartext-Beschreibungen der Werte,
-        // nicht die tatsächlichen Form-Feldnamen.
         Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("FUNCTION", "OrderRequest");
-        fields.put("ACTION", "Login");
-        fields.put("USERNAME", emptyIfNull(konfig.getLoginName()));
-        fields.put("PASSWORD", emptyIfNull(passwortKlartext));
-        fields.put("KUNDENNR", emptyIfNull(konfig.getKundennummer()));
-        fields.put("HOOK_URL", returnUrl);
-        // TARGET ist im IDS-Connect 2.5 das Frame-Target fuer den Return — "_top"
-        // weist den Shop an, den Cart in das oberste Browser-Fenster zu posten.
-        fields.put("TARGET", "_top");
-
-        String enctype = (protokoll == IdsProtokoll.WUERTH_LEGACY)
-                ? "multipart/form-data"
-                : "application/x-www-form-urlencoded";
+        String enctype;
+        if (protokoll == IdsProtokoll.WUERTH_LEGACY) {
+            // Würth ViewIDSCatalogService-IDSInBound (Intershop-Pipeline):
+            // verlangt ausschließlich diese 4 lowercase-Feldnamen und
+            // multipart/form-data als enctype. Die in der Würth-Anbindungs-
+            // mail von Christian Heier explizit aufgeführten Parameter:
+            //   kndnr / name_kunde / pw_kunde / hookurl
+            // — alle anderen Felder (FUNCTION, ACTION, USERNAME, PASSWORD,
+            // KUNDENNR, HOOK_URL, TARGET) werden vom Würth-Endpunkt
+            // ignoriert oder mit "IDS-Parameter ... ist nicht gültig"
+            // zurückgewiesen.
+            fields.put("kndnr", emptyIfNull(konfig.getKundennummer()));
+            fields.put("name_kunde", emptyIfNull(konfig.getLoginName()));
+            fields.put("pw_kunde", emptyIfNull(passwortKlartext));
+            fields.put("hookurl", returnUrl);
+            enctype = "multipart/form-data";
+        } else {
+            // IDS-Connect 2.5 (ZVSHK-Standard): Großschreibung,
+            // application/x-www-form-urlencoded.
+            fields.put("FUNCTION", "OrderRequest");
+            fields.put("ACTION", "Login");
+            fields.put("USERNAME", emptyIfNull(konfig.getLoginName()));
+            fields.put("PASSWORD", emptyIfNull(passwortKlartext));
+            fields.put("KUNDENNR", emptyIfNull(konfig.getKundennummer()));
+            fields.put("HOOK_URL", returnUrl);
+            // TARGET ist im IDS-Connect 2.5 das Frame-Target fuer den Return — "_top"
+            // weist den Shop an, den Cart in das oberste Browser-Fenster zu posten.
+            fields.put("TARGET", "_top");
+            enctype = "application/x-www-form-urlencoded";
+        }
 
         return new PunchoutForm(shopUrl, enctype, fields);
     }
