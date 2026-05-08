@@ -21,6 +21,8 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { HicadImportModal } from '../components/HicadImportModal';
 import { MaterialbestellungModal, type EditPosition } from '../components/MaterialbestellungModal';
+import { IdsLieferantenAuswahlModal } from '../components/IdsLieferantenAuswahlModal';
+import { Plug } from 'lucide-react';
 
 interface ProjektStamm {
     id: number;
@@ -112,6 +114,7 @@ export default function ProjektBedarfPage() {
     const [editZeile, setEditZeile] = useState<EditPosition | null>(null);
     const [mengen, setMengen] = useState<MengenMap>({});
     const [filter, setFilter] = useState<Filter>('alle');
+    const [idsAuswahlOffen, setIdsAuswahlOffen] = useState(false);
 
     // localStorage-Backup laden, sobald die Projekt-ID feststeht.
     useEffect(() => {
@@ -337,6 +340,14 @@ export default function ProjektBedarfPage() {
                     >
                         <FileSpreadsheet className="w-4 h-4" />
                         HiCAD-Import
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => setIdsAuswahlOffen(true)}
+                        title="Beim Lieferanten direkt im Online-Shop bestellen (IDS-Connect)"
+                    >
+                        <Plug className="w-4 h-4" />
+                        Im Lieferanten-Shop
                     </Button>
                     <Button
                         variant="outline"
@@ -634,6 +645,10 @@ export default function ProjektBedarfPage() {
                 initialProjekt={initialProjektFuerModal}
                 projektSperren={!editZeile}
                 editPosition={editZeile}
+            />
+            <IdsLieferantenAuswahlModal
+                isOpen={idsAuswahlOffen}
+                onClose={() => setIdsAuswahlOffen(false)}
             />
         </PageLayout>
     );

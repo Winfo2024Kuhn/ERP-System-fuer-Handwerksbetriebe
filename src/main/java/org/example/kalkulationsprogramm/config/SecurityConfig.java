@@ -120,7 +120,12 @@ public class SecurityConfig {
                     csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(requestHandler)
-                        .ignoringRequestMatchers("/api/auth/login", "/api/auth/logout");
+                        .ignoringRequestMatchers(
+                            "/api/auth/login",
+                            "/api/auth/logout",
+                            // IDS-Punchout-Return: der Lieferanten-Shop POSTet ohne unseren CSRF-Token zurueck.
+                            // Der Browser des Bauleiters bringt ueber das Session-Cookie weiterhin Authentifizierung mit.
+                            "/api/ids/punchout/*/return");
                 })
             // Force the CSRF cookie to be set on every response (Spring Security 6 deferred token fix)
             .addFilterAfter(new CsrfCookieFilter(), org.springframework.security.web.csrf.CsrfFilter.class)
