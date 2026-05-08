@@ -253,6 +253,32 @@ class UnifiedEmailControllerTest {
             mockMvc.perform(delete("/api/emails/999"))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        @DisplayName("Permanent löschen: Email vorhanden -> 204 + Delete + Replies entkoppelt")
+        void deletePermanentlySuccess() throws Exception {
+            Email email = createTestEmail(1L, "Zu löschen", "test@example.com");
+            given(emailRepository.findByIdForUpdate(1L)).willReturn(Optional.of(email));
+
+            mockMvc.perform(delete("/api/emails/1/permanent"))
+                    .andExpect(status().isNoContent());
+
+            verify(emailRepository).detachRepliesFromParent(1L);
+            verify(emailRepository).delete(email);
+        }
+
+        @Test
+        @DisplayName("Permanent löschen ist idempotent (Doppelklick-Race) -> 204 statt 500")
+        void deletePermanentlyIdempotentOnRace() throws Exception {
+            // Race-Szenario: Erste Anfrage hat Email schon gelöscht, zweite findet
+            // sie nicht mehr. Vorher: StaleStateException -> HTTP 500. Jetzt: 204.
+            given(emailRepository.findByIdForUpdate(1L)).willReturn(Optional.empty());
+
+            mockMvc.perform(delete("/api/emails/1/permanent"))
+                    .andExpect(status().isNoContent());
+
+            verify(emailRepository, org.mockito.Mockito.never()).delete(any(Email.class));
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

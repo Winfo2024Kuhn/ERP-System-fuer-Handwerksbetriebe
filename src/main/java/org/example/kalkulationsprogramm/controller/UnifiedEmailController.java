@@ -821,9 +821,12 @@ public class UnifiedEmailController {
     @DeleteMapping("/{id}/permanent")
     @Transactional
     public ResponseEntity<Void> deleteEmailPermanently(@PathVariable Long id) {
-        Email email = emailRepository.findById(id).orElse(null);
+        // Pessimistic Lock serialisiert parallele Doppel-DELETEs (Doppelklick im
+        // Frontend). Die zweite Anfrage wartet, findet die Zeile dann nicht mehr
+        // und liefert idempotent 204 statt StaleStateException -> HTTP 500.
+        Email email = emailRepository.findByIdForUpdate(id).orElse(null);
         if (email == null) {
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.noContent().build();
         }
 
         // Emails mit hoher Spam-Wahrscheinlichkeit (>= 85%) als Spam klassifizieren
