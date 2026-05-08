@@ -377,7 +377,11 @@ public class SpamFilterService {
             Pattern.compile(".*mailer-daemon@.*", Pattern.CASE_INSENSITIVE),
             Pattern.compile(".*[0-9]{5,}@.*"),      // Viele Zahlen vor dem @
             Pattern.compile(".*@.*[0-9]{4,}\\..*"),  // Viele Zahlen in der Domain
-            Pattern.compile(".*[a-z]{15,}@.*")       // Extrem langer lokaler Teil (generiert)
+            Pattern.compile(".*[a-z]{15,}@.*"),      // Extrem langer lokaler Teil (generiert)
+            // Mixed-Case Random-String wie "jAWULxW.irYpfHK@..." — typisch
+            // fuer automatisch generierte Wegwerfadressen. Mindestens 12
+            // Buchstaben und Mix aus Gross-/Kleinschreibung.
+            Pattern.compile("(?=[^@]*[a-z])(?=[^@]*[A-Z])[a-zA-Z.]{12,}@.*")
     );
 
     /**
@@ -423,6 +427,18 @@ public class SpamFilterService {
     private static final Pattern TRACKING_PIXEL = Pattern.compile(
             "<img[^>]*(?:width=[\"']?1[\"']?|height=[\"']?1[\"']?)[^>]*>",
             Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Beliebige HTML-Tags — fuer das Strippen, wenn wir die sichtbare
+     * Textmenge messen wollen.
+     */
+    private static final Pattern HTML_TAGS = Pattern.compile("<[^>]+>");
+
+    /**
+     * Beliebiges <img>-Tag — fuer den Bild-only-Check (Image-Spam).
+     */
+    private static final Pattern IMG_TAG = Pattern.compile(
+            "<img\\b[^>]*>", Pattern.CASE_INSENSITIVE);
 
     /**
      * Gefährliche Dateiendungen (Ausführbare Dateien + Makro-Dokumente).
@@ -753,6 +769,33 @@ public class SpamFilterService {
             }
             if (pixelCount >= 5) {
                 delta += 10;
+            }
+        }
+
+        // ─── Bild-only Werbe-Mail (Image-Spam) ───────────────────────
+        // Eine Mail, die fast ausschliesslich aus IMG-Tags besteht und
+        // kaum sichtbaren Text hat, ist mit hoher Wahrscheinlichkeit
+        // Werbung/Spam. Bayes ist hier blind, weil Tokenisierung leer
+        // bleibt. Whitelists (Lieferant/Kunde) wurden vor dieser Methode
+        // schon angewendet — wer hier noch durchkommt, ist niemand
+        // Bekanntes. textLength im Body-Combined zaehlt HTML mit, also
+        // strippen wir Tags hier explizit, um den sichtbaren Text zu
+        // messen. Score 85 reicht allein zum Auto-Spam (Threshold 85)
+        // — gerechtfertigt, weil eine echte Geschaeftsmail niemals
+        // reines Bild + Klick-Button ohne Text ist.
+        String htmlBody = email.getHtmlBody();
+        if (htmlBody != null && !htmlBody.isBlank()) {
+            int imgCount = 0;
+            var imgMatcher = IMG_TAG.matcher(htmlBody);
+            while (imgMatcher.find() && imgCount < 5) {
+                imgCount++;
+            }
+            if (imgCount >= 1 && linkCount >= 1) {
+                String visible = HTML_TAGS.matcher(htmlBody).replaceAll(" ")
+                        .replaceAll("\\s+", " ").trim();
+                if (visible.length() < 100) {
+                    delta += 85;
+                }
             }
         }
 

@@ -352,6 +352,73 @@ class SpamFilterServiceTest {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // Image-Spam: Mail besteht fast ausschliesslich aus IMG-Tags
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class ImageSpam {
+
+        @Test
+        void bildOnlyMailMitButtonWirdAlsAutoSpamErkannt() {
+            // Reproduziert die Beispiel-Mail: kryptischer Sender, Bild als
+            // ganze Mail, ein Klick-Button als Link, kein sichtbarer Text.
+            Email email = erstelleEmail(
+                    "jAWULxW.irYpfHK@adventurecentral.com",
+                    "Warum Urlauber dieses Gadget feiern Office32",
+                    "");
+            email.setHtmlBody(
+                    "<html><body>"
+                            + "<a href=\"https://promo.example.com/click\">"
+                            + "<img src=\"https://cdn.example.com/banner.jpg\" width=\"600\" height=\"400\" />"
+                            + "</a>"
+                            + "</body></html>");
+
+            int score = service.calculateSpamScore(email);
+
+            // Bild-only +75, Cryptic-Sender (Mixed-Case) +10 -> >= 85
+            // (AUTO_SPAM_THRESHOLD), wird automatisch in Spam verschoben.
+            assertThat(score).isGreaterThanOrEqualTo(85);
+        }
+
+        @Test
+        void echteGeschaeftsMailMitLogoAberTextIstKeinSpam() {
+            // Gegenprobe: HTML-Mail mit Bild (z.B. Logo), aber substanziellem
+            // Text muss NICHT als Spam markiert werden.
+            Email email = erstelleEmail("kontakt@example-bauunternehmen.de",
+                    "Anfrage Dachsanierung",
+                    "");
+            email.setHtmlBody(
+                    "<html><body>"
+                            + "<img src=\"logo.png\" />"
+                            + "<p>Sehr geehrte Damen und Herren,</p>"
+                            + "<p>wir würden gerne ein Angebot für die Sanierung "
+                            + "unseres Daches anfordern. Das Objekt befindet sich "
+                            + "in der Musterstraße 1, 12345 Musterstadt. Bitte "
+                            + "melden Sie sich, wenn Sie einen Besichtigungstermin "
+                            + "vereinbaren möchten.</p>"
+                            + "<p>Mit freundlichen Grüßen, Max Mustermann</p>"
+                            + "</body></html>");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isLessThan(50);
+        }
+
+        @Test
+        void bildOnlyOhneLinkLoestKeinenBildSpamCheckAus() {
+            // Bild ohne klickbaren Link ist nicht das typische Spam-Pattern
+            // (eher ein Tracking-Pixel oder dekorativ); Bild-only-Heuristik
+            // verlangt mind. einen Link.
+            Email email = erstelleEmail("noreply@partner.example", "Update", "");
+            email.setHtmlBody("<html><body><img src=\"x.jpg\" /></body></html>");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isLessThan(85);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // 2.1.10 Domain-Blacklist blockiert bekannte Spam-Domains
     // ═══════════════════════════════════════════════════════════════
 
