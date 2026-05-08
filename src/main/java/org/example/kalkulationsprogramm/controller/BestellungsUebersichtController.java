@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.controller;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
@@ -50,8 +53,17 @@ public class BestellungsUebersichtController {
      */
     @GetMapping
     public ResponseEntity<BestellungsUebersichtDto> getUebersicht() {
-        // Alle Dokumente laden
+        // Alle Dokumente laden und nach ausgeblendet splitten
         List<LieferantDokument> alleDokumente = dokumentRepository.findAll();
+        List<LieferantDokument> aktiveDokumente = new ArrayList<>();
+        List<LieferantDokument> ausgeblendeteDokumente = new ArrayList<>();
+        for (LieferantDokument d : alleDokumente) {
+            if (d.isAusgeblendet()) {
+                ausgeblendeteDokumente.add(d);
+            } else {
+                aktiveDokumente.add(d);
+            }
+        }
 
         // IDs aller bereits zugeordneten Dokumente
         Set<Long> zugeordneteDokumentIds = projektAnteilRepository.findAll().stream()
@@ -64,8 +76,8 @@ public class BestellungsUebersichtController {
                 .map(gd -> gd.getDokument() != null ? gd.getDokument().getId() : -1L)
                 .collect(Collectors.toSet());
 
-        // Ketten bilden
-        List<DokumentenKette> alleKetten = buildKetten(alleDokumente);
+        // Ketten bilden (nur aus aktiven Dokumenten – ausgeblendete tauchen hier nicht auf)
+        List<DokumentenKette> alleKetten = buildKetten(aktiveDokumente);
 
         // Nach Status gruppieren
         List<DokumentenKette> offeneAnfragen = new ArrayList<>();
@@ -99,6 +111,9 @@ public class BestellungsUebersichtController {
             }
         }
 
+        // Ausgeblendete Ketten separat aufbauen, ohne weitere Status-Aufteilung
+        List<DokumentenKette> ausgeblendet = buildKetten(ausgeblendeteDokumente);
+
         // Nach Datum sortieren (neueste zuerst)
         Comparator<DokumentenKette> byDate = (a, b) -> {
             LocalDate dateA = a.dokumente.stream()
@@ -118,9 +133,39 @@ public class BestellungsUebersichtController {
         laufendeBestellungen.sort(byDate);
         abgeschlossen.sort(byDate);
         zugeordnet.sort(byDate);
+        ausgeblendet.sort(byDate);
 
         return ResponseEntity.ok(new BestellungsUebersichtDto(
-                offeneAnfragen, laufendeBestellungen, abgeschlossen, zugeordnet));
+                offeneAnfragen, laufendeBestellungen, abgeschlossen, zugeordnet, ausgeblendet));
+    }
+
+    /**
+     * Blendet eine Dokumenten-Kette aus der Bestellübersicht aus.
+     * Erwartet die IDs aller Dokumente der Kette (vom Frontend gebündelt).
+     */
+    @PostMapping("/ausblenden")
+    @Transactional
+    public ResponseEntity<?> ausblenden(@Valid @RequestBody AusblendenRequest request) {
+        return setAusgeblendet(request, true);
+    }
+
+    /**
+     * Blendet eine zuvor ausgeblendete Kette wieder ein.
+     */
+    @PostMapping("/einblenden")
+    @Transactional
+    public ResponseEntity<?> einblenden(@Valid @RequestBody AusblendenRequest request) {
+        return setAusgeblendet(request, false);
+    }
+
+    private ResponseEntity<?> setAusgeblendet(AusblendenRequest request, boolean wert) {
+        List<LieferantDokument> dokumente = dokumentRepository.findAllById(request.dokumentIds());
+        for (LieferantDokument d : dokumente) {
+            d.setAusgeblendet(wert);
+        }
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "geaendert", dokumente.size()));
     }
 
     /**
@@ -600,7 +645,14 @@ public class BestellungsUebersichtController {
             List<DokumentenKette> offeneAnfragen,
             List<DokumentenKette> laufendeBestellungen,
             List<DokumentenKette> abgeschlossen,
-            List<DokumentenKette> zugeordnet) {
+            List<DokumentenKette> zugeordnet,
+            List<DokumentenKette> ausgeblendet) {
+    }
+
+    public record AusblendenRequest(
+            @NotEmpty
+            @Size(max = 500)
+            List<Long> dokumentIds) {
     }
 
     public record DokumentenKette(

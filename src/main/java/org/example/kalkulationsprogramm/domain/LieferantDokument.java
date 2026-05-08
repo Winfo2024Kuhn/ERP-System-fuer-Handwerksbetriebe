@@ -50,6 +50,9 @@ public class LieferantDokument {
     @Column(nullable = false)
     private LocalDateTime uploadDatum;
 
+    @Column(nullable = false)
+    private boolean ausgeblendet = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "uploaded_by_id")
     @BatchSize(size = 50)

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { RefreshCw, FileText, ChevronRight, Package, Clock, CheckCircle, AlertCircle, X, Download, FolderOpen, Plus, Trash2, Percent, Euro, Save, Briefcase } from 'lucide-react';
+import { RefreshCw, FileText, ChevronRight, Package, Clock, CheckCircle, AlertCircle, X, Download, FolderOpen, Plus, Trash2, Percent, Euro, Save, Briefcase, EyeOff, Eye, Archive } from 'lucide-react';
 import { ProjectSelectModal } from '../components/ProjectSelectModal';
 import { KostenstelleSelectModal } from '../components/KostenstelleSelectModal';
 import { useToast } from '../components/ui/toast';
@@ -32,6 +32,7 @@ interface BestellungsUebersicht {
     laufendeBestellungen: DokumentenKette[];
     abgeschlossen: DokumentenKette[];
     zugeordnet: DokumentenKette[];
+    ausgeblendet: DokumentenKette[];
 }
 
 interface GeschaeftsdatenDto {
@@ -86,9 +87,12 @@ interface KetteCardProps {
     onOpenPdf: (url: string, title: string) => void;
     showZuordnenButton?: boolean;
     onZuordnen?: (kette: DokumentenKette) => void;
+    onAusblenden?: (kette: DokumentenKette) => void;
+    onEinblenden?: (kette: DokumentenKette) => void;
+    busy?: boolean;
 }
 
-function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen }: KetteCardProps) {
+function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen, onAusblenden, onEinblenden, busy }: KetteCardProps) {
     const rechnung = kette.dokumente.find(d => d.typ === 'RECHNUNG');
 
     return (
@@ -147,6 +151,32 @@ function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen }: KetteCa
                 >
                     <FolderOpen className="w-4 h-4 mr-2" />
                     Projekten zuordnen
+                </Button>
+            )}
+
+            {/* Ausblenden / Einblenden */}
+            {onAusblenden && (
+                <Button
+                    onClick={() => onAusblenden(kette)}
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    className="w-full text-slate-500 hover:text-rose-700 hover:bg-rose-50 mt-2"
+                >
+                    <EyeOff className="w-4 h-4 mr-2" />
+                    Ausblenden
+                </Button>
+            )}
+            {onEinblenden && (
+                <Button
+                    onClick={() => onEinblenden(kette)}
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    className="w-full text-rose-700 border-rose-300 hover:bg-rose-50 mt-2"
+                >
+                    <Eye className="w-4 h-4 mr-2" />
+                    Wieder einblenden
                 </Button>
             )}
         </Card>
@@ -674,10 +704,12 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
 
 // ========== Hauptkomponente ==========
 export default function BestellungenUebersicht() {
-    const [tab, setTab] = useState<'offen' | 'laufend' | 'abgeschlossen' | 'zugeordnet'>('laufend');
+    const toast = useToast();
+    const [tab, setTab] = useState<'offen' | 'laufend' | 'abgeschlossen' | 'zugeordnet' | 'ausgeblendet'>('laufend');
     const [data, setData] = useState<BestellungsUebersicht | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [busyKetteId, setBusyKetteId] = useState<string | null>(null);
 
     // PDF Preview State
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -710,13 +742,33 @@ export default function BestellungenUebersicht() {
         setPreviewTitle(title);
     };
 
+    const setKetteAusgeblendet = useCallback(async (kette: DokumentenKette, ausblenden: boolean) => {
+        setBusyKetteId(kette.id);
+        try {
+            const res = await fetch(`/api/bestellungen-uebersicht/${ausblenden ? 'ausblenden' : 'einblenden'}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dokumentIds: kette.dokumente.map(d => d.id) }),
+            });
+            if (!res.ok) throw new Error('Fehler');
+            await loadData();
+            toast.success(ausblenden ? 'Ausgeblendet' : 'Wieder eingeblendet');
+        } catch {
+            toast.error('Aktion fehlgeschlagen');
+        } finally {
+            setBusyKetteId(null);
+        }
+    }, [loadData, toast]);
+
     const currentList = tab === 'offen'
         ? data?.offeneAnfragen
         : tab === 'laufend'
             ? data?.laufendeBestellungen
             : tab === 'abgeschlossen'
                 ? data?.abgeschlossen
-                : data?.zugeordnet;
+                : tab === 'zugeordnet'
+                    ? data?.zugeordnet
+                    : data?.ausgeblendet;
 
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
@@ -775,6 +827,13 @@ export default function BestellungenUebersicht() {
                     label="Zugeordnet"
                     count={data?.zugeordnet.length || 0}
                 />
+                <TabButton
+                    active={tab === 'ausgeblendet'}
+                    onClick={() => setTab('ausgeblendet')}
+                    icon={<Archive className="w-4 h-4" />}
+                    label="Ausgeblendet"
+                    count={data?.ausgeblendet.length || 0}
+                />
             </div>
 
             {/* Content */}
@@ -796,19 +855,26 @@ export default function BestellungenUebersicht() {
                         {tab === 'laufend' && 'Keine laufenden Bestellungen vorhanden.'}
                         {tab === 'abgeschlossen' && 'Keine abgeschlossenen Bestellungen zum Zuordnen.'}
                         {tab === 'zugeordnet' && 'Noch keine Bestellungen Projekten zugeordnet.'}
+                        {tab === 'ausgeblendet' && 'Keine ausgeblendeten Einträge.'}
                     </p>
                 </Card>
             ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {currentList.map(kette => (
-                        <KetteCard
-                            key={kette.id}
-                            kette={kette}
-                            onOpenPdf={handleOpenPdf}
-                            showZuordnenButton={tab === 'abgeschlossen'}
-                            onZuordnen={setZuordnungKette}
-                        />
-                    ))}
+                    {(() => {
+                        const istAusgeblendetTab = tab === 'ausgeblendet';
+                        return currentList.map(kette => (
+                            <KetteCard
+                                key={kette.id}
+                                kette={kette}
+                                onOpenPdf={handleOpenPdf}
+                                showZuordnenButton={tab === 'abgeschlossen'}
+                                onZuordnen={setZuordnungKette}
+                                onAusblenden={istAusgeblendetTab ? undefined : (k) => setKetteAusgeblendet(k, true)}
+                                onEinblenden={istAusgeblendetTab ? (k) => setKetteAusgeblendet(k, false) : undefined}
+                                busy={busyKetteId === kette.id}
+                            />
+                        ));
+                    })()}
                 </div>
             )}
 
