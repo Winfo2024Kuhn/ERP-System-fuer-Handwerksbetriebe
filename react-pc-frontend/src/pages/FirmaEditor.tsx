@@ -55,6 +55,17 @@ interface Kostenstelle {
     sortierung: number;
 }
 
+interface SteuerberaterAnsprechpartner {
+    id?: number;
+    anrede: string | null;
+    vorname: string;
+    nachname: string;
+    email: string;
+    telefon: string;
+    istLohnAnsprechpartner: boolean;
+    notizen?: string;
+}
+
 interface SteuerberaterKontakt {
     id: number;
     name: string;
@@ -67,7 +78,16 @@ interface SteuerberaterKontakt {
     gueltigAb: string | null;
     gueltigBis: string | null;
     weitereEmails: string[];
+    ansprechpartnerListe: SteuerberaterAnsprechpartner[];
 }
+
+const ANREDE_OPTIONS = [
+    { value: '', label: '(keine)' },
+    { value: 'HERR', label: 'Sehr geehrter Herr' },
+    { value: 'FRAU', label: 'Sehr geehrte Frau' },
+    { value: 'DAMEN_HERREN', label: 'Sehr geehrte Damen und Herren' },
+    { value: 'FAMILIE', label: 'Sehr geehrte Familie' },
+];
 
 
 interface LohnabrechnungDto {
@@ -1141,7 +1161,7 @@ export default function FirmaEditor() {
                             {editingSteuerberater?.id ? 'Steuerberater bearbeiten' : 'Neuer Steuerberater'}
                         </DialogTitle>
                     </DialogHeader>
-                    <div className="grid gap-4 py-4">
+                    <div className="grid gap-4 py-4 overflow-y-auto pr-1 flex-1 min-h-0">
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>Name</Label>
@@ -1151,39 +1171,192 @@ export default function FirmaEditor() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label>Ansprechpartner</Label>
-                                <Input 
-                                    value={editingSteuerberater?.ansprechpartner || ''} 
-                                    onChange={e => setEditingSteuerberater(prev => ({ ...prev, ansprechpartner: e.target.value }))}
-                                />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>E-Mail</Label>
-                                <Input 
-                                    value={editingSteuerberater?.email || ''} 
-                                    onChange={e => setEditingSteuerberater(prev => ({ ...prev, email: e.target.value }))}
-                                />
-                            </div>
-                            <div className="space-y-2">
                                 <Label>Telefon</Label>
-                                <Input 
-                                    value={editingSteuerberater?.telefon || ''} 
+                                <Input
+                                    value={editingSteuerberater?.telefon || ''}
                                     onChange={e => setEditingSteuerberater(prev => ({ ...prev, telefon: e.target.value }))}
                                 />
                             </div>
                         </div>
                         <div className="space-y-2">
-                            <Label>Weitere E-Mails (kommagetrennt)</Label>
-                            <Input 
-                                value={editingSteuerberater?.weitereEmails ? editingSteuerberater.weitereEmails.join(', ') : ''} 
-                                onChange={e => setEditingSteuerberater(prev => ({ 
-                                    ...prev, 
-                                    weitereEmails: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                                }))}
-                                placeholder="z.B. buchhaltung@kanzlei.de, sekretariat@kanzlei.de"
+                            <Label>Haupt-E-Mail (für BWA-Erkennung)</Label>
+                            <Input
+                                value={editingSteuerberater?.email || ''}
+                                onChange={e => setEditingSteuerberater(prev => ({ ...prev, email: e.target.value }))}
+                                placeholder="kanzlei@beispiel.de"
                             />
+                        </div>
+                        {/* Weitere E-Mails als Liste mit + und × */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <Label>Weitere E-Mail-Adressen</Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setEditingSteuerberater(prev => ({
+                                        ...prev,
+                                        weitereEmails: [...(prev?.weitereEmails || []), '']
+                                    }))}
+                                >
+                                    <Plus className="w-3 h-3 mr-1" />E-Mail hinzufügen
+                                </Button>
+                            </div>
+                            {(editingSteuerberater?.weitereEmails || []).length === 0 && (
+                                <p className="text-xs text-slate-500">Keine weiteren Adressen.</p>
+                            )}
+                            {(editingSteuerberater?.weitereEmails || []).map((mail, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                    <Input
+                                        value={mail}
+                                        onChange={e => setEditingSteuerberater(prev => {
+                                            const next = [...(prev?.weitereEmails || [])];
+                                            next[idx] = e.target.value;
+                                            return { ...prev, weitereEmails: next };
+                                        })}
+                                        placeholder="weitere@kanzlei.de"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setEditingSteuerberater(prev => ({
+                                            ...prev,
+                                            weitereEmails: (prev?.weitereEmails || []).filter((_, i) => i !== idx)
+                                        }))}
+                                        aria-label="E-Mail entfernen"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                        {/* Ansprechpartner-Liste */}
+                        <div className="space-y-2 pt-2 border-t border-slate-200">
+                            <div className="flex items-center justify-between">
+                                <Label>Ansprechpartner</Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setEditingSteuerberater(prev => {
+                                        const liste = prev?.ansprechpartnerListe || [];
+                                        const istErster = liste.length === 0;
+                                        return {
+                                            ...prev,
+                                            ansprechpartnerListe: [...liste, {
+                                                anrede: 'HERR',
+                                                vorname: '',
+                                                nachname: '',
+                                                email: '',
+                                                telefon: '',
+                                                istLohnAnsprechpartner: istErster,
+                                            }]
+                                        };
+                                    })}
+                                >
+                                    <Plus className="w-3 h-3 mr-1" />Ansprechpartner hinzufügen
+                                </Button>
+                            </div>
+                            {(editingSteuerberater?.ansprechpartnerListe || []).length === 0 && (
+                                <p className="text-xs text-slate-500">Noch kein Ansprechpartner. Mindestens einer wird empfohlen, damit die Stundenaufstellung an die richtige Person geht.</p>
+                            )}
+                            {(editingSteuerberater?.ansprechpartnerListe || []).map((ap, idx) => (
+                                <div key={idx} className="rounded-lg border border-slate-200 p-3 space-y-2 bg-slate-50">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-medium text-slate-600">Ansprechpartner {idx + 1}</span>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setEditingSteuerberater(prev => ({
+                                                ...prev,
+                                                ansprechpartnerListe: (prev?.ansprechpartnerListe || []).filter((_, i) => i !== idx)
+                                            }))}
+                                            aria-label="Ansprechpartner entfernen"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Anrede</Label>
+                                            <Select
+                                                options={ANREDE_OPTIONS}
+                                                value={ap.anrede || ''}
+                                                onChange={v => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], anrede: v || null };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                                placeholder="Anrede"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Vorname</Label>
+                                            <Input
+                                                value={ap.vorname || ''}
+                                                onChange={e => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], vorname: e.target.value };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Nachname *</Label>
+                                            <Input
+                                                value={ap.nachname || ''}
+                                                onChange={e => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], nachname: e.target.value };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">E-Mail</Label>
+                                            <Input
+                                                value={ap.email || ''}
+                                                onChange={e => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], email: e.target.value };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Telefon</Label>
+                                            <Input
+                                                value={ap.telefon || ''}
+                                                onChange={e => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], telefon: e.target.value };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <label className="flex items-center gap-2 text-sm cursor-pointer pt-1">
+                                        <input
+                                            type="radio"
+                                            name="lohnAnsprechpartner"
+                                            checked={!!ap.istLohnAnsprechpartner}
+                                            onChange={() => setEditingSteuerberater(prev => {
+                                                const next = (prev?.ansprechpartnerListe || []).map((a, i) => ({
+                                                    ...a,
+                                                    istLohnAnsprechpartner: i === idx,
+                                                }));
+                                                return { ...prev, ansprechpartnerListe: next };
+                                            })}
+                                            className="accent-rose-600"
+                                        />
+                                        <span className="text-slate-700">Zuständig für Löhne (Empfänger der Stundenaufstellung)</span>
+                                    </label>
+                                </div>
+                            ))}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">

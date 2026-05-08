@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Mail, X, Loader2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Select } from './ui/select-custom';
 
 interface MitarbeiterStunden {
     mitarbeiterId: number;
@@ -14,6 +15,25 @@ interface MitarbeiterStunden {
     feiertage: number;
     krankheit: number;
     fortbildung: number;
+}
+
+interface SteuerberaterAnsprechpartner {
+    id: number;
+    anrede: string | null;
+    vorname: string;
+    nachname: string;
+    email: string;
+    telefon: string;
+    istLohnAnsprechpartner: boolean;
+}
+
+interface SteuerberaterKontakt {
+    id: number;
+    name: string;
+    email: string;
+    telefon: string;
+    weitereEmails: string[];
+    ansprechpartnerListe: SteuerberaterAnsprechpartner[];
 }
 
 interface SteuerberaterEmailModalProps {
@@ -63,6 +83,25 @@ const prepareHtmlForSending = (rawHtml: string): string => {
     return wrapper.innerHTML.trim();
 };
 
+/**
+ * Baut die Anrede-Zeile aus Anrede + Nachname.
+ * Bei DAMEN_HERREN entfällt der Nachname; bei FAMILIE wird der Nachname angehängt.
+ */
+const buildAnredeZeile = (anrede: string | null | undefined, nachname: string | undefined): string => {
+    const safeNachname = (nachname || '').trim();
+    switch (anrede) {
+        case 'HERR':
+            return safeNachname ? `Sehr geehrter Herr ${safeNachname},` : 'Sehr geehrter Herr,';
+        case 'FRAU':
+            return safeNachname ? `Sehr geehrte Frau ${safeNachname},` : 'Sehr geehrte Frau,';
+        case 'FAMILIE':
+            return safeNachname ? `Sehr geehrte Familie ${safeNachname},` : 'Sehr geehrte Familie,';
+        case 'DAMEN_HERREN':
+        default:
+            return 'Sehr geehrte Damen und Herren,';
+    }
+};
+
 export function SteuerberaterEmailModal({
     isOpen,
     onClose,
@@ -71,13 +110,37 @@ export function SteuerberaterEmailModal({
     jahr,
     onSuccess,
 }: SteuerberaterEmailModalProps) {
-    const [recipient, setRecipient] = useState('a.dengel@clausmueller-steuerberater.de');
+    const [steuerberaterListe, setSteuerberaterListe] = useState<SteuerberaterKontakt[]>([]);
+    const [selectedSteuerberaterId, setSelectedSteuerberaterId] = useState<number | null>(null);
+    const [selectedAnsprechpartnerId, setSelectedAnsprechpartnerId] = useState<number | null>(null);
+    const [recipient, setRecipient] = useState('');
     const [subject, setSubject] = useState('');
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [initialized, setInitialized] = useState(false);
+    const [loadingSteuerberater, setLoadingSteuerberater] = useState(false);
 
     const editorRef = useRef<HTMLDivElement>(null);
+    const signatureRef = useRef<string>('');
+    const lastRenderedKeyRef = useRef<string>('');
+
+    const selectedSteuerberater = useMemo(
+        () => steuerberaterListe.find(sb => sb.id === selectedSteuerberaterId) || null,
+        [steuerberaterListe, selectedSteuerberaterId]
+    );
+
+    const selectedAnsprechpartner = useMemo(
+        () => selectedSteuerberater?.ansprechpartnerListe.find(ap => ap.id === selectedAnsprechpartnerId) || null,
+        [selectedSteuerberater, selectedAnsprechpartnerId]
+    );
+
+    const verfuegbareEmails = useMemo<string[]>(() => {
+        if (!selectedSteuerberater) return [];
+        const set = new Set<string>();
+        if (selectedSteuerberater.email) set.add(selectedSteuerberater.email);
+        (selectedSteuerberater.weitereEmails || []).forEach(e => { if (e) set.add(e); });
+        (selectedSteuerberater.ansprechpartnerListe || []).forEach(ap => { if (ap.email) set.add(ap.email); });
+        return Array.from(set);
+    }, [selectedSteuerberater]);
 
     const getMonthName = (m: number) => {
         const months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
@@ -88,7 +151,7 @@ export function SteuerberaterEmailModal({
     // Generate the email body with inline table
     // WICHTIG: Für den Steuerberater berechnen wir "Arbeitsstunden" als:
     // Sollstunden - Krankheit - Urlaub - Fortbildung (da wir nach Sollstunden bezahlen)
-    const generateEmailBody = useCallback((sig: string) => {
+    const generateEmailBody = useCallback((sig: string, anredeZeile: string) => {
         const monthName = getMonthName(monat);
 
         // Build HTML table
@@ -128,7 +191,7 @@ export function SteuerberaterEmailModal({
     </tbody>
 </table>`;
 
-        const bodyHtml = `<p>Sehr geehrter Hr. Dengel,</p>
+        const bodyHtml = `<p>${anredeZeile}</p>
 
 <p><br></p>
 
@@ -149,7 +212,7 @@ ${sig}
         return bodyHtml;
     }, [mitarbeiterDaten, monat]);
 
-    // Load signature
+    // Load signature once
     const loadSignature = useCallback(async () => {
         try {
             const currentUser = getCurrentFrontendUser();
@@ -165,8 +228,7 @@ ${sig}
             if (res.ok && res.status !== 204) {
                 const data = await res.json();
                 if (data.html) {
-                    const wrappedSig = wrapSignatureHtml(data.html);
-                    return wrappedSig;
+                    return wrapSignatureHtml(data.html);
                 }
             }
         } catch (err) {
@@ -175,25 +237,99 @@ ${sig}
         return '';
     }, []);
 
-    // Initialize - only once when modal opens
+    // Open: load Steuerberater + signature
     useEffect(() => {
         if (!isOpen) {
-            setInitialized(false);
+            // Reset on close
+            setSteuerberaterListe([]);
+            setSelectedSteuerberaterId(null);
+            setSelectedAnsprechpartnerId(null);
+            setRecipient('');
+            setSubject('');
+            setError(null);
+            signatureRef.current = '';
+            lastRenderedKeyRef.current = '';
             return;
         }
-        if (initialized) return;
 
+        let cancelled = false;
+        setLoadingSteuerberater(true);
         const monthName = getMonthName(monat);
-        setSubject(`Stundenaufstellung ${monthName} ${jahr} - Bauschlosserei Kuhn`);
 
-        loadSignature().then(sig => {
-            const body = generateEmailBody(sig);
-            if (editorRef.current) {
-                editorRef.current.innerHTML = body;
+        Promise.all([
+            fetch('/api/firma/steuerberater').then(r => r.ok ? r.json() : []),
+            fetch('/api/firma').then(r => r.ok ? r.json() : null).catch(() => null),
+            loadSignature(),
+        ]).then(([liste, firma, sig]) => {
+            if (cancelled) return;
+            const sbListe: SteuerberaterKontakt[] = Array.isArray(liste) ? liste : [];
+            const firmenname = (firma && typeof firma === 'object' && firma.firmenname)
+                ? firma.firmenname.trim()
+                : '';
+            setSubject(firmenname
+                ? `Stundenaufstellung ${monthName} ${jahr} - ${firmenname}`
+                : `Stundenaufstellung ${monthName} ${jahr}`);
+            signatureRef.current = sig;
+            setSteuerberaterListe(sbListe);
+
+            // Default-Auswahl: erster Steuerberater + sein Lohn-Ansprechpartner
+            if (sbListe.length > 0) {
+                const firstSb = sbListe[0];
+                setSelectedSteuerberaterId(firstSb.id);
+
+                const lohnAp = (firstSb.ansprechpartnerListe || []).find(ap => ap.istLohnAnsprechpartner)
+                    || firstSb.ansprechpartnerListe?.[0]
+                    || null;
+                setSelectedAnsprechpartnerId(lohnAp?.id || null);
+
+                const defaultEmail = lohnAp?.email || firstSb.email || '';
+                setRecipient(defaultEmail);
             }
-            setInitialized(true);
+            setLoadingSteuerberater(false);
+        }).catch(err => {
+            if (cancelled) return;
+            console.error('Steuerberater konnten nicht geladen werden:', err);
+            setLoadingSteuerberater(false);
         });
-    }, [isOpen, monat, jahr, loadSignature, generateEmailBody, initialized]);
+
+        return () => { cancelled = true; };
+    }, [isOpen, monat, jahr, loadSignature]);
+
+    // Bei Wechsel des Steuerberaters: Lohn-Ansprechpartner als Default setzen
+    useEffect(() => {
+        if (!selectedSteuerberater) return;
+        const lohnAp = (selectedSteuerberater.ansprechpartnerListe || []).find(ap => ap.istLohnAnsprechpartner)
+            || selectedSteuerberater.ansprechpartnerListe?.[0]
+            || null;
+        setSelectedAnsprechpartnerId(lohnAp?.id || null);
+        setRecipient(lohnAp?.email || selectedSteuerberater.email || '');
+    }, [selectedSteuerberaterId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Bei Wechsel des Ansprechpartners: dessen Email als Empfänger setzen (falls vorhanden)
+    useEffect(() => {
+        if (selectedAnsprechpartner?.email) {
+            setRecipient(selectedAnsprechpartner.email);
+        }
+    }, [selectedAnsprechpartnerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Editor-Inhalt rendern, wenn sich Anrede/Ansprechpartner/Steuerberater ändert.
+    // Wir nutzen einen Key, damit wir nicht bei jedem Tippen im contentEditable
+    // den Inhalt überschreiben.
+    useEffect(() => {
+        if (!isOpen) return;
+        const key = `${selectedSteuerberaterId}|${selectedAnsprechpartnerId}|${monat}|${jahr}|${mitarbeiterDaten.length}`;
+        if (lastRenderedKeyRef.current === key) return;
+
+        const anredeZeile = selectedAnsprechpartner
+            ? buildAnredeZeile(selectedAnsprechpartner.anrede, selectedAnsprechpartner.nachname)
+            : 'Sehr geehrte Damen und Herren,';
+
+        const body = generateEmailBody(signatureRef.current, anredeZeile);
+        if (editorRef.current) {
+            editorRef.current.innerHTML = body;
+        }
+        lastRenderedKeyRef.current = key;
+    }, [isOpen, selectedSteuerberaterId, selectedAnsprechpartnerId, selectedAnsprechpartner, monat, jahr, mitarbeiterDaten.length, generateEmailBody]);
 
     const handleSend = async () => {
         if (!recipient.trim()) {
@@ -247,6 +383,20 @@ ${sig}
 
     if (!isOpen) return null;
 
+    const steuerberaterOptions = steuerberaterListe.map(sb => ({
+        value: String(sb.id),
+        label: sb.name,
+    }));
+
+    const ansprechpartnerOptions = (selectedSteuerberater?.ansprechpartnerListe || []).map(ap => {
+        const fullName = [ap.vorname, ap.nachname].filter(Boolean).join(' ');
+        const labelParts = [fullName || '(ohne Namen)'];
+        if (ap.istLohnAnsprechpartner) labelParts.push('· Löhne');
+        return { value: String(ap.id), label: labelParts.join(' ') };
+    });
+
+    const empfaengerOptions = verfuegbareEmails.map(e => ({ value: e, label: e }));
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="bg-white rounded-xl shadow-2xl w-[90%] max-w-4xl max-h-[90vh] flex flex-col">
@@ -294,15 +444,67 @@ ${sig}
                         </div>
                     )}
 
+                    {loadingSteuerberater ? (
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                            <Loader2 className="w-4 h-4 animate-spin" /> Steuerberater werden geladen...
+                        </div>
+                    ) : steuerberaterListe.length === 0 ? (
+                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+                            Es ist noch kein Steuerberater hinterlegt. Bitte unter <strong>Firma → Steuerberater</strong>
+                            einen Kontakt mit mindestens einem Ansprechpartner anlegen.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Steuerberater-Auswahl (nur bei mehreren) */}
+                            {steuerberaterListe.length > 1 && (
+                                <div className="space-y-2">
+                                    <Label>Steuerberater</Label>
+                                    <Select
+                                        options={steuerberaterOptions}
+                                        value={selectedSteuerberaterId !== null ? String(selectedSteuerberaterId) : ''}
+                                        onChange={v => setSelectedSteuerberaterId(v ? Number(v) : null)}
+                                        placeholder="Steuerberater wählen"
+                                    />
+                                </div>
+                            )}
+
+                            {/* Ansprechpartner */}
+                            <div className="space-y-2">
+                                <Label>Ansprechpartner</Label>
+                                {ansprechpartnerOptions.length > 0 ? (
+                                    <Select
+                                        options={ansprechpartnerOptions}
+                                        value={selectedAnsprechpartnerId !== null ? String(selectedAnsprechpartnerId) : ''}
+                                        onChange={v => setSelectedAnsprechpartnerId(v ? Number(v) : null)}
+                                        placeholder="Ansprechpartner wählen"
+                                    />
+                                ) : (
+                                    <p className="text-xs text-slate-600">
+                                        Kein Ansprechpartner hinterlegt – Anrede wird „Sehr geehrte Damen und Herren" verwendet.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 gap-4">
-                        {/* Recipient */}
+                        {/* Empfänger */}
                         <div className="space-y-2">
                             <Label>Empfänger</Label>
-                            <Input
-                                value={recipient}
-                                onChange={(e) => setRecipient(e.target.value)}
-                                placeholder="E-Mail-Adresse..."
-                            />
+                            {empfaengerOptions.length > 1 ? (
+                                <Select
+                                    options={empfaengerOptions}
+                                    value={recipient}
+                                    onChange={v => setRecipient(v)}
+                                    placeholder="E-Mail-Adresse wählen"
+                                />
+                            ) : (
+                                <Input
+                                    value={recipient}
+                                    onChange={(e) => setRecipient(e.target.value)}
+                                    placeholder="E-Mail-Adresse..."
+                                />
+                            )}
                         </div>
 
                         {/* Subject */}

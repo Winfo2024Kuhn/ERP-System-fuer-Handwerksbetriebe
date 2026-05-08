@@ -51,4 +51,14 @@ public class SteuerberaterKontakt {
     @CollectionTable(name = "steuerberater_kontakt_emails", joinColumns = @JoinColumn(name = "steuerberater_id"))
     @Column(name = "email")
     private java.util.Set<String> weitereEmails = new java.util.HashSet<>();
+
+    /**
+     * LAZY (nicht EAGER), weil {@link #weitereEmails} ebenfalls eine Collection
+     * ist und zwei EAGER-Collections am selben Owner zu Hibernate-MultipleBagFetch
+     * bzw. kartesischen Produkten führen. Service-Methoden, die die Liste
+     * brauchen, laufen unter {@code @Transactional} und initialisieren sie
+     * implizit beim Mappen aufs DTO.
+     */
+    @OneToMany(mappedBy = "steuerberater", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private java.util.List<SteuerberaterAnsprechpartner> ansprechpartnerListe = new java.util.ArrayList<>();
 }

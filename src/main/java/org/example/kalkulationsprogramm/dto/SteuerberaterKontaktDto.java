@@ -15,4 +15,5 @@ public class SteuerberaterKontaktDto {
     private java.time.LocalDate gueltigAb;
     private java.time.LocalDate gueltigBis;
     private java.util.List<String> weitereEmails;
+    private java.util.List<SteuerberaterAnsprechpartnerDto> ansprechpartnerListe;
 }

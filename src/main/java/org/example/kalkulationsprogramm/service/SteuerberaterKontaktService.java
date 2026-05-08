@@ -1,13 +1,18 @@
 package org.example.kalkulationsprogramm.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.domain.Anrede;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
+import org.example.kalkulationsprogramm.dto.SteuerberaterAnsprechpartnerDto;
 import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -56,36 +61,67 @@ public class SteuerberaterKontaktService {
             sk.getWeitereEmails().clear();
         }
 
-        // Validate Validation
-        validateOverlap(sk);
+        mergeAnsprechpartner(sk, dto.getAnsprechpartnerListe());
 
         sk = repository.save(sk);
         return toDto(sk);
     }
 
-    private void validateOverlap(SteuerberaterKontakt current) {
-        if (current.getGueltigAb() == null) return; // Should likely be required, but optional for legacy
-        
-        List<SteuerberaterKontakt> all = repository.findByAktivTrue();
-        
-        for (SteuerberaterKontakt other : all) {
-            if (other.getId().equals(current.getId())) continue;
-            // Skip if other has no dates (legacy assumed open?) or handled otherwise
-            if (other.getGueltigAb() == null) continue; 
-            
-            // Check overlap
-            // Overlap if (StartA <= EndB) and (EndA >= StartB)
-            // Use Max date if null (open end)
-            java.time.LocalDate startA = current.getGueltigAb();
-            java.time.LocalDate endA = current.getGueltigBis() != null ? current.getGueltigBis() : java.time.LocalDate.MAX;
-            
-            java.time.LocalDate startB = other.getGueltigAb();
-            java.time.LocalDate endB = other.getGueltigBis() != null ? other.getGueltigBis() : java.time.LocalDate.MAX;
+    /**
+     * Merge der Ansprechpartner-Liste vom DTO in die persistente Entity-Liste.
+     * In-Place-Update statt Liste neu setzen, damit orphanRemoval und Cascade
+     * sauber funktionieren.
+     *
+     * <p>Wenn die eingehende Liste mehrere oder keinen "Lohn-Ansprechpartner"
+     * markiert, wird genau einer erzwungen (erster mit Flag, sonst der erste
+     * Eintrag insgesamt) – damit das Stunden-Modal später deterministisch
+     * einen Default-Empfänger findet.
+     */
+    private void mergeAnsprechpartner(SteuerberaterKontakt sk, List<SteuerberaterAnsprechpartnerDto> incoming) {
+        List<SteuerberaterAnsprechpartner> bestehend = sk.getAnsprechpartnerListe();
+        if (incoming == null || incoming.isEmpty()) {
+            bestehend.clear();
+            return;
+        }
 
-            if (!startA.isAfter(endB) && !endA.isBefore(startB)) {
-                throw new IllegalArgumentException("Zeitraum überschneidet sich mit Steuerberater: " + other.getName());
+        Map<Long, SteuerberaterAnsprechpartner> byId = new HashMap<>();
+        for (SteuerberaterAnsprechpartner ap : bestehend) {
+            if (ap.getId() != null) byId.put(ap.getId(), ap);
+        }
+
+        // Index des ersten markierten Lohn-Ansprechpartners; -1 wenn keiner markiert.
+        int lohnIndex = -1;
+        for (int i = 0; i < incoming.size(); i++) {
+            if (Boolean.TRUE.equals(incoming.get(i).getIstLohnAnsprechpartner())) {
+                lohnIndex = i;
+                break;
             }
         }
+        // Fallback: keiner markiert → ersten als Default setzen.
+        if (lohnIndex == -1) {
+            lohnIndex = 0;
+        }
+
+        List<SteuerberaterAnsprechpartner> nachher = new java.util.ArrayList<>();
+        for (int i = 0; i < incoming.size(); i++) {
+            SteuerberaterAnsprechpartnerDto in = incoming.get(i);
+            SteuerberaterAnsprechpartner ap = (in.getId() != null) ? byId.get(in.getId()) : null;
+            if (ap == null) {
+                ap = new SteuerberaterAnsprechpartner();
+                ap.setSteuerberater(sk);
+            }
+            ap.setAnrede(Anrede.fromString(in.getAnrede()));
+            ap.setVorname(in.getVorname());
+            ap.setNachname(in.getNachname());
+            ap.setEmail(in.getEmail());
+            ap.setTelefon(in.getTelefon());
+            ap.setIstLohnAnsprechpartner(i == lohnIndex);
+            ap.setNotizen(in.getNotizen());
+            nachher.add(ap);
+        }
+
+        bestehend.clear();
+        bestehend.addAll(nachher);
     }
 
     @Transactional
@@ -142,6 +178,22 @@ public class SteuerberaterKontaktService {
         dto.setGueltigAb(sk.getGueltigAb());
         dto.setGueltigBis(sk.getGueltigBis());
         dto.setWeitereEmails(new java.util.ArrayList<>(sk.getWeitereEmails()));
+        dto.setAnsprechpartnerListe(sk.getAnsprechpartnerListe().stream()
+                .map(this::toAnsprechpartnerDto)
+                .collect(Collectors.toList()));
+        return dto;
+    }
+
+    private SteuerberaterAnsprechpartnerDto toAnsprechpartnerDto(SteuerberaterAnsprechpartner ap) {
+        SteuerberaterAnsprechpartnerDto dto = new SteuerberaterAnsprechpartnerDto();
+        dto.setId(ap.getId());
+        dto.setAnrede(ap.getAnrede() != null ? ap.getAnrede().name() : null);
+        dto.setVorname(ap.getVorname());
+        dto.setNachname(ap.getNachname());
+        dto.setEmail(ap.getEmail());
+        dto.setTelefon(ap.getTelefon());
+        dto.setIstLohnAnsprechpartner(ap.getIstLohnAnsprechpartner());
+        dto.setNotizen(ap.getNotizen());
         return dto;
     }
 }
