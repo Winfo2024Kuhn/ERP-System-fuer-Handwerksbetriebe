@@ -1,10 +1,8 @@
 package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Zahlungsart;
-import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ZahlungsartRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.springframework.http.HttpStatus;
@@ -33,14 +31,13 @@ public class ZahlungsartController {
 
     private final ZahlungsartRepository zahlungsartRepository;
     private final BelegService belegService;
-    private final MitarbeiterRepository mitarbeiterRepository;
 
     @GetMapping("/zahlungsarten")
     public ResponseEntity<List<Map<String, Object>>> list(
             @RequestParam(value = "nurAktive", defaultValue = "true") boolean nurAktive,
             @RequestParam(value = "token", required = false) String token,
             Authentication auth) {
-        Mitarbeiter caller = resolveCaller(token, auth);
+        Mitarbeiter caller = belegService.findCaller(token, auth);
         if (caller == null || !belegService.darfSehen(caller)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
@@ -48,19 +45,6 @@ public class ZahlungsartController {
                 ? zahlungsartRepository.findByAktivTrueOrderBySortierungAscBezeichnungAsc()
                 : zahlungsartRepository.findAllByOrderBySortierungAscBezeichnungAsc();
         return ResponseEntity.ok(zas.stream().map(ZahlungsartController::toDto).toList());
-    }
-
-    private Mitarbeiter resolveCaller(String token, Authentication auth) {
-        if (token != null && !token.isBlank()) {
-            Mitarbeiter m = belegService.findByToken(token);
-            if (m != null) return m;
-        }
-        if (auth != null && auth.getPrincipal() instanceof FrontendUserPrincipal p && p.getUsername() != null) {
-            return mitarbeiterRepository.findAll().stream()
-                    .filter(m -> p.getUsername().equalsIgnoreCase(m.getEmail()))
-                    .findFirst().orElse(null);
-        }
-        return null;
     }
 
     private static Map<String, Object> toDto(Zahlungsart za) {

@@ -9,11 +9,9 @@ import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.domain.SachkontoTyp;
 import org.example.kalkulationsprogramm.dto.SachkontoDto;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
-import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.SachkontoRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.BelegeKasseExportPdfService;
-import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -46,22 +44,10 @@ public class SachkontoController {
     private final SachkontoRepository sachkontoRepository;
     private final BelegRepository belegRepository;
     private final BelegService belegService;
-    private final MitarbeiterRepository mitarbeiterRepository;
     private final BelegeKasseExportPdfService belegeKasseExportPdfService;
 
     private Mitarbeiter resolveCaller(String token, Authentication auth) {
-        if (token != null && !token.isBlank()) {
-            Mitarbeiter m = belegService.findByToken(token);
-            if (m != null) return m;
-        }
-        if (auth != null && auth.getPrincipal() instanceof FrontendUserPrincipal p) {
-            if (p.getUsername() != null) {
-                return mitarbeiterRepository.findAll().stream()
-                        .filter(m -> p.getUsername().equalsIgnoreCase(m.getEmail()))
-                        .findFirst().orElse(null);
-            }
-        }
-        return null;
+        return belegService.findCaller(token, auth);
     }
 
     @GetMapping("/sachkonten")

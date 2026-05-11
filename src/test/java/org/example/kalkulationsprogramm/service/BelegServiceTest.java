@@ -1,17 +1,22 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
 import org.example.kalkulationsprogramm.domain.BelegStatus;
+import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.dto.BelegDto;
 import org.example.kalkulationsprogramm.repository.AbteilungDokumentBerechtigungRepository;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
+import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.SachkontoRepository;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,6 +54,7 @@ class BelegServiceTest {
     @Mock private SachkontoRepository sachkontoRepository;
     @Mock private BelegKiAnalyseService kiAnalyseService;
     @Mock private LieferantDokumentRepository lieferantDokumentRepository;
+    @Mock private FrontendUserProfileRepository frontendUserProfileRepository;
 
     @InjectMocks
     private BelegService service;
@@ -331,6 +337,107 @@ class BelegServiceTest {
         assertThatThrownBy(() -> service.createUmbuchung(req, mitarbeiter(7L, Set.of())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Beschreibung");
+    }
+
+    // ===================== findCaller: Token + Session-Mapping =====================
+    //
+    // Regression: vor diesem Fix mappte der Controller den eingeloggten PC-User
+    // ueber email-Match auf Mitarbeiter. Wenn der Frontend-Login-Username NICHT
+    // mit Mitarbeiter.email uebereinstimmte, kam null raus -> 403 auf alle
+    // Buchhaltungs-Endpoints, obwohl die FK FrontendUserProfile.mitarbeiter
+    // korrekt verknuepft war. findCaller nutzt nun primaer diese FK.
+
+    @Test
+    @DisplayName("findCaller: PC-Login mit verknuepftem Mitarbeiter via Profile-FK -> Treffer")
+    void findCaller_pcLogin_mitProfileFk_liefertMitarbeiter() {
+        Mitarbeiter m = mitarbeiter(42L, Set.of());
+        m.setEmail("buchhalter@firma.example");
+        FrontendUserProfile profile = new FrontendUserProfile();
+        profile.setId(7L);
+        profile.setMitarbeiter(m);
+        given(frontendUserProfileRepository.findById(7L)).willReturn(java.util.Optional.of(profile));
+        Authentication auth = pcAuth(7L, "thomas-login");
+
+        Mitarbeiter result = service.findCaller(null, auth);
+
+        assertThat(result).isEqualTo(m);
+    }
+
+    @Test
+    @DisplayName("findCaller: Username != Email aber Profile-FK gesetzt -> kein 403 (Hauptbug)")
+    void findCaller_usernameUngleichEmail_aberFkVerknuepft_liefertMitarbeiter() {
+        Mitarbeiter m = mitarbeiter(42L, Set.of());
+        m.setEmail("max@firma.example");
+        FrontendUserProfile profile = new FrontendUserProfile();
+        profile.setId(7L);
+        profile.setMitarbeiter(m);
+        given(frontendUserProfileRepository.findById(7L)).willReturn(java.util.Optional.of(profile));
+        // Login-Name hat absichtlich nichts mit der Mitarbeiter-Email zu tun
+        Authentication auth = pcAuth(7L, "anderer-username");
+
+        Mitarbeiter result = service.findCaller(null, auth);
+
+        assertThat(result).as("FK-Mapping muss vor Email-Fallback greifen").isEqualTo(m);
+    }
+
+    @Test
+    @DisplayName("findCaller: PC-Login ohne Profile-FK faellt auf Email-Match zurueck")
+    void findCaller_ohneProfileFk_emailFallback() {
+        Mitarbeiter m = mitarbeiter(42L, Set.of());
+        m.setEmail("buchhalter@firma.example");
+        FrontendUserProfile profile = new FrontendUserProfile();
+        profile.setId(7L);
+        profile.setMitarbeiter(null); // FK noch nicht gesetzt
+        given(frontendUserProfileRepository.findById(7L)).willReturn(java.util.Optional.of(profile));
+        given(mitarbeiterRepository.findAll()).willReturn(List.of(m));
+        Authentication auth = pcAuth(7L, "buchhalter@firma.example");
+
+        Mitarbeiter result = service.findCaller(null, auth);
+
+        assertThat(result).isEqualTo(m);
+    }
+
+    @Test
+    @DisplayName("findCaller: deaktivierter Mitarbeiter wird nicht akzeptiert")
+    void findCaller_inaktiverMitarbeiter_null() {
+        Mitarbeiter m = mitarbeiter(42L, Set.of());
+        m.setAktiv(false);
+        FrontendUserProfile profile = new FrontendUserProfile();
+        profile.setId(7L);
+        profile.setMitarbeiter(m);
+        given(frontendUserProfileRepository.findById(7L)).willReturn(java.util.Optional.of(profile));
+        // Email-Fallback findet ihn ebenfalls nicht
+        given(mitarbeiterRepository.findAll()).willReturn(List.of(m));
+        Authentication auth = pcAuth(7L, "x@y.example");
+
+        Mitarbeiter result = service.findCaller(null, auth);
+
+        assertThat(result).isNull();
+    }
+
+    @Test
+    @DisplayName("findCaller: Token hat Vorrang vor Session-Auth")
+    void findCaller_tokenVorSession() {
+        Mitarbeiter byToken = mitarbeiter(100L, Set.of());
+        given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("abc-token"))
+                .willReturn(java.util.Optional.of(byToken));
+
+        Mitarbeiter result = service.findCaller("abc-token", pcAuth(7L, "egal"));
+
+        assertThat(result).isEqualTo(byToken);
+    }
+
+    @Test
+    @DisplayName("findCaller: weder Token noch Auth -> null")
+    void findCaller_keineAuthInfo_null() {
+        assertThat(service.findCaller(null, null)).isNull();
+        assertThat(service.findCaller("", null)).isNull();
+    }
+
+    private static Authentication pcAuth(Long profileId, String username) {
+        FrontendUserPrincipal p = new FrontendUserPrincipal(profileId, username, username,
+                "$2a$10$dummy", true, Set.of());
+        return new UsernamePasswordAuthenticationToken(p, null, p.getAuthorities());
     }
 
     // ===================== Test-Helfer =====================

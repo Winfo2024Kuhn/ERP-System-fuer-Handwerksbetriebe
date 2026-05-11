@@ -2,13 +2,11 @@ package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
 import org.example.kalkulationsprogramm.domain.BelegStatus;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.dto.BelegDto;
-import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.ContentDisposition;
@@ -48,24 +46,18 @@ import java.util.Map;
 public class BelegController {
 
     private final BelegService belegService;
-    private final MitarbeiterRepository mitarbeiterRepository;
 
     // ===================== Helpers =====================
 
+    /**
+     * Delegiert das Mapping {@code (token, auth)} → {@link Mitarbeiter} an den
+     * {@link BelegService}, damit Token-Login (Mobile) und Session-Login (PC)
+     * an einer einzigen Stelle aufgelöst werden. Wichtig: am PC läuft die
+     * Auflösung primär über die direkte FK {@code FrontendUserProfile.mitarbeiter}
+     * und nicht über E-Mail-Match.
+     */
     private Mitarbeiter resolveCaller(String token, Authentication auth) {
-        if (token != null && !token.isBlank()) {
-            Mitarbeiter m = belegService.findByToken(token);
-            if (m != null) return m;
-        }
-        if (auth != null && auth.getPrincipal() instanceof FrontendUserPrincipal p) {
-            // PC: FrontendUser → Mitarbeiter über Email
-            if (p.getUsername() != null) {
-                return mitarbeiterRepository.findAll().stream()
-                        .filter(m -> p.getUsername().equalsIgnoreCase(m.getEmail()))
-                        .findFirst().orElse(null);
-            }
-        }
-        return null;
+        return belegService.findCaller(token, auth);
     }
 
     private ResponseEntity<Map<String, String>> forbidden(String msg) {

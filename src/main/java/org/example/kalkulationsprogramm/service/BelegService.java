@@ -11,12 +11,15 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.dto.BelegDto;
+import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.repository.AbteilungDokumentBerechtigungRepository;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
+import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.SachkontoRepository;
+import org.springframework.security.core.Authentication;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,6 +69,7 @@ public class BelegService {
     private final SachkontoRepository sachkontoRepository;
     private final BelegKiAnalyseService kiAnalyseService;
     private final LieferantDokumentRepository lieferantDokumentRepository;
+    private final FrontendUserProfileRepository frontendUserProfileRepository;
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
@@ -531,6 +535,40 @@ public class BelegService {
         // findByLoginTokenAndAktivTrue: deaktivierte Mitarbeiter mit altem Token
         // verlieren sofort den Zugriff (konsistent mit Zeiterfassung-Login).
         return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
+    }
+
+    /**
+     * Zentraler Auth-Mapping fuer Buchhaltungs-Controller. Reihenfolge:
+     * 1) Mobile (token im Querystring) -> Mitarbeiter via loginToken.
+     * 2) PC (Session-Auth) -> FrontendUserProfile per ID -> verknuepfter Mitarbeiter
+     *    ueber die direkte FK (FrontendUserProfile.mitarbeiter). Das ist der
+     *    eigentliche Verknuepfungspfad; das E-Mail-Mapping ist nur ein Fallback
+     *    fuer Altdaten, bei denen die FK noch nicht gesetzt wurde.
+     * 3) Fallback: Mitarbeiter mit gleicher E-Mail wie der Frontend-Username.
+     *
+     * Liefert null wenn niemand sicher zugeordnet werden kann.
+     */
+    @Transactional(readOnly = true)
+    public Mitarbeiter findCaller(String token, Authentication auth) {
+        Mitarbeiter byToken = findByToken(token);
+        if (byToken != null) return byToken;
+        if (auth == null || !(auth.getPrincipal() instanceof FrontendUserPrincipal principal)) {
+            return null;
+        }
+        if (principal.getId() != null) {
+            Mitarbeiter linked = frontendUserProfileRepository.findById(principal.getId())
+                    .map(p -> p.getMitarbeiter())
+                    .orElse(null);
+            if (linked != null && Boolean.TRUE.equals(linked.getAktiv())) {
+                return linked;
+            }
+        }
+        String username = principal.getUsername();
+        if (username == null || username.isBlank()) return null;
+        return mitarbeiterRepository.findAll().stream()
+                .filter(m -> Boolean.TRUE.equals(m.getAktiv()))
+                .filter(m -> username.equalsIgnoreCase(m.getEmail()))
+                .findFirst().orElse(null);
     }
 
 }
