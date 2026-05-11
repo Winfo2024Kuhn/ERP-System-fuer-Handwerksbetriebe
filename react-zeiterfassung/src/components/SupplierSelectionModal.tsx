@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Search, Building2, ChevronRight, Loader2 } from 'lucide-react'
 
 interface Lieferant {
@@ -6,13 +6,15 @@ interface Lieferant {
     firmenname: string
 }
 
+// Backend liefert `{ lieferanten: [...], gesamt, seite, seitenGroesse }`.
 interface LieferantSucheItem {
     id: number
     lieferantenname: string
+    istAktiv?: boolean | null
 }
-// Backend liefert `{ lieferanten: [...], gesamt, seite, seitenGroesse }`.
 interface LieferantSucheResponse {
     lieferanten?: LieferantSucheItem[]
+    gesamt?: number
 }
 
 interface SupplierSelectionModalProps {
@@ -21,58 +23,66 @@ interface SupplierSelectionModalProps {
     onSelect: (lieferant: Lieferant | null) => void
 }
 
-const MIN_CHARS = 3
-const DEBOUNCE_MS = 300
+const DEBOUNCE_MS = 250
+const PAGE_SIZE = 100
 
 export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSelectionModalProps) {
     const [searchTerm, setSearchTerm] = useState('')
     const [results, setResults] = useState<Lieferant[]>([])
+    const [totalCount, setTotalCount] = useState(0)
     const [loading, setLoading] = useState(false)
     const abortRef = useRef<AbortController | null>(null)
 
-    // In-Flight-Request beim echten Unmount der Komponente abbrechen,
-    // damit keine setState-Calls auf einer demontierten Komponente passieren.
+    // Beim echten Unmount laufende Requests abbrechen.
     useEffect(() => () => abortRef.current?.abort(), [])
 
-    // Debounced Server-Search ab MIN_CHARS Zeichen. Setzt State nur in
-    // async Callbacks (setTimeout/.then/.finally) — niemals synchron im
-    // Effect-Body, damit kein react-hooks/set-state-in-effect Lint-Fehler.
+    const loadLieferanten = useCallback((query: string) => {
+        abortRef.current?.abort()
+        const ctrl = new AbortController()
+        abortRef.current = ctrl
+        setLoading(true)
+        const params = new URLSearchParams({ size: String(PAGE_SIZE) })
+        const q = query.trim()
+        if (q) params.set('q', q)
+        fetch(`/api/lieferanten?${params}`, { signal: ctrl.signal })
+            .then(res => res.ok ? res.json() as Promise<LieferantSucheResponse> : { lieferanten: [] })
+            .then(data => {
+                if (ctrl.signal.aborted) return
+                const list = (data.lieferanten ?? [])
+                    .filter(l => l.lieferantenname && l.istAktiv !== false)
+                    .map(l => ({ id: l.id, firmenname: l.lieferantenname }))
+                list.sort((a, b) => a.firmenname.localeCompare(b.firmenname, 'de'))
+                setResults(list)
+                setTotalCount(typeof data.gesamt === 'number' ? data.gesamt : list.length)
+            })
+            .catch(err => {
+                if (err?.name !== 'AbortError') {
+                    setResults([])
+                    setTotalCount(0)
+                }
+            })
+            .finally(() => {
+                if (!ctrl.signal.aborted) setLoading(false)
+            })
+    }, [])
+
+    // Debounced Search bei jeder Eingabe — beim ersten Öffnen lädt der Effect
+    // ebenfalls (mit leerer Query) und liefert die ersten PAGE_SIZE Lieferanten.
+    // setState läuft nur in den setTimeout/.then/.finally-Callbacks von
+    // loadLieferanten, niemals synchron im Effect-Body.
     useEffect(() => {
         if (!isOpen) return
-        const q = searchTerm.trim()
-        if (q.length < MIN_CHARS) return
-
-        const handle = setTimeout(() => {
-            abortRef.current?.abort()
-            const ctrl = new AbortController()
-            abortRef.current = ctrl
-            setLoading(true)
-            fetch(`/api/lieferanten?q=${encodeURIComponent(q)}&size=50`, { signal: ctrl.signal })
-                .then(res => res.ok ? res.json() as Promise<LieferantSucheResponse> : { lieferanten: [] })
-                .then(data => {
-                    if (ctrl.signal.aborted) return
-                    const items = (data.lieferanten ?? [])
-                        .filter(l => l.lieferantenname)
-                        .map(l => ({ id: l.id, firmenname: l.lieferantenname }))
-                    items.sort((a, b) => a.firmenname.localeCompare(b.firmenname, 'de'))
-                    setResults(items)
-                })
-                .catch(err => {
-                    if (err?.name !== 'AbortError') setResults([])
-                })
-                .finally(() => {
-                    if (!ctrl.signal.aborted) setLoading(false)
-                })
-        }, DEBOUNCE_MS)
-
+        // Leere Query (Initial-Load) wird sofort geschickt; Tipp-Events debounced.
+        const delay = searchTerm ? DEBOUNCE_MS : 0
+        const handle = setTimeout(() => loadLieferanten(searchTerm), delay)
         return () => clearTimeout(handle)
-    }, [searchTerm, isOpen])
+    }, [searchTerm, isOpen, loadLieferanten])
 
-    // Bei Close/Select Suchzustand zurücksetzen, ohne setState im Effect-Body.
     const resetAndClose = () => {
         abortRef.current?.abort()
         setSearchTerm('')
         setResults([])
+        setTotalCount(0)
         setLoading(false)
         onClose()
     }
@@ -80,17 +90,15 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
         abortRef.current?.abort()
         setSearchTerm('')
         setResults([])
+        setTotalCount(0)
         setLoading(false)
         onSelect(l)
     }
 
     if (!isOpen) return null
 
-    const q = searchTerm.trim()
-    const tooShort = q.length > 0 && q.length < MIN_CHARS
-    const idle = q.length === 0
-    const enoughChars = q.length >= MIN_CHARS
-    const showEmpty = enoughChars && !loading && results.length === 0
+    const showInitialLoading = loading && results.length === 0
+    const showEmpty = !loading && results.length === 0
 
     return (
         <div className="fixed inset-0 bg-slate-50 z-[60] flex flex-col safe-area-top safe-area-bottom animate-in slide-in-from-bottom duration-200">
@@ -118,7 +126,7 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
                             type="text"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="Lieferant suchen (mind. 3 Zeichen)…"
+                            placeholder="Suche nach Name, Ort, Typ, Vertreter…"
                             autoFocus
                             className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all"
                         />
@@ -139,25 +147,20 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
                         <ChevronRight className="w-5 h-5 text-slate-400" />
                     </button>
 
-                    {idle && (
+                    {showInitialLoading && (
                         <div className="text-center py-12 text-slate-400">
-                            Tippe mindestens {MIN_CHARS} Zeichen ein, um Lieferanten zu suchen.
-                        </div>
-                    )}
-
-                    {tooShort && (
-                        <div className="text-center py-12 text-slate-400">
-                            Noch {MIN_CHARS - q.length} Zeichen…
+                            <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin opacity-50" />
+                            <p>Lieferanten werden geladen…</p>
                         </div>
                     )}
 
                     {showEmpty && (
                         <div className="text-center py-12 text-slate-400">
-                            Keine Lieferanten gefunden
+                            {searchTerm.trim() ? 'Keine Lieferanten gefunden' : 'Keine Lieferanten verfügbar'}
                         </div>
                     )}
 
-                    {enoughChars && results.map(lieferant => (
+                    {results.map(lieferant => (
                         <button
                             key={lieferant.id}
                             onClick={() => pick(lieferant)}
@@ -172,6 +175,12 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
                             <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-rose-400" />
                         </button>
                     ))}
+
+                    {results.length > 0 && totalCount > results.length && (
+                        <p className="text-center text-xs text-slate-400 pt-2">
+                            {results.length} von {totalCount} – verfeinere die Suche
+                        </p>
+                    )}
                 </div>
             </div>
         </div>
