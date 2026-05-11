@@ -6,15 +6,11 @@ interface Lieferant {
     firmenname: string
 }
 
-// Backend liefert `{ lieferanten: [...], gesamt, seite, seitenGroesse }`.
-interface LieferantSucheItem {
+// Mobile-Endpoint `/api/zeiterfassung/lieferanten` liefert eine flache Liste
+// mit `firmenname` (bereits via Map gemappt aus `lieferantenname`).
+interface LieferantApiItem {
     id: number
-    lieferantenname: string
-    istAktiv?: boolean | null
-}
-interface LieferantSucheResponse {
-    lieferanten?: LieferantSucheItem[]
-    gesamt?: number
+    firmenname: string
 }
 
 interface SupplierSelectionModalProps {
@@ -24,12 +20,11 @@ interface SupplierSelectionModalProps {
 }
 
 const DEBOUNCE_MS = 250
-const PAGE_SIZE = 100
+const INITIAL_LIMIT = 50
 
 export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSelectionModalProps) {
     const [searchTerm, setSearchTerm] = useState('')
     const [results, setResults] = useState<Lieferant[]>([])
-    const [totalCount, setTotalCount] = useState(0)
     const [loading, setLoading] = useState(false)
     const abortRef = useRef<AbortController | null>(null)
 
@@ -41,38 +36,32 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
         const ctrl = new AbortController()
         abortRef.current = ctrl
         setLoading(true)
-        const params = new URLSearchParams({ size: String(PAGE_SIZE) })
+        // Mobile-spezifischer Endpoint, gleicher wie `OfflineService.searchLieferanten`.
         const q = query.trim()
-        if (q) params.set('q', q)
-        fetch(`/api/lieferanten?${params}`, { signal: ctrl.signal })
-            .then(res => res.ok ? res.json() as Promise<LieferantSucheResponse> : { lieferanten: [] })
+        const url = q
+            ? `/api/zeiterfassung/lieferanten?search=${encodeURIComponent(q)}`
+            : `/api/zeiterfassung/lieferanten?limit=${INITIAL_LIMIT}`
+        fetch(url, { signal: ctrl.signal })
+            .then(res => res.ok ? res.json() as Promise<LieferantApiItem[]> : [])
             .then(data => {
                 if (ctrl.signal.aborted) return
-                const list = (data.lieferanten ?? [])
-                    .filter(l => l.lieferantenname && l.istAktiv !== false)
-                    .map(l => ({ id: l.id, firmenname: l.lieferantenname }))
+                const list = (Array.isArray(data) ? data : [])
+                    .filter(l => l && l.firmenname)
+                    .map(l => ({ id: l.id, firmenname: l.firmenname }))
                 list.sort((a, b) => a.firmenname.localeCompare(b.firmenname, 'de'))
                 setResults(list)
-                setTotalCount(typeof data.gesamt === 'number' ? data.gesamt : list.length)
             })
             .catch(err => {
-                if (err?.name !== 'AbortError') {
-                    setResults([])
-                    setTotalCount(0)
-                }
+                if (err?.name !== 'AbortError') setResults([])
             })
             .finally(() => {
                 if (!ctrl.signal.aborted) setLoading(false)
             })
     }, [])
 
-    // Debounced Search bei jeder Eingabe — beim ersten Öffnen lädt der Effect
-    // ebenfalls (mit leerer Query) und liefert die ersten PAGE_SIZE Lieferanten.
-    // setState läuft nur in den setTimeout/.then/.finally-Callbacks von
-    // loadLieferanten, niemals synchron im Effect-Body.
     useEffect(() => {
         if (!isOpen) return
-        // Leere Query (Initial-Load) wird sofort geschickt; Tipp-Events debounced.
+        // Leere Query (Initial-Load) sofort, jede Eingabe debounced.
         const delay = searchTerm ? DEBOUNCE_MS : 0
         const handle = setTimeout(() => loadLieferanten(searchTerm), delay)
         return () => clearTimeout(handle)
@@ -82,7 +71,6 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
         abortRef.current?.abort()
         setSearchTerm('')
         setResults([])
-        setTotalCount(0)
         setLoading(false)
         onClose()
     }
@@ -90,7 +78,6 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
         abortRef.current?.abort()
         setSearchTerm('')
         setResults([])
-        setTotalCount(0)
         setLoading(false)
         onSelect(l)
     }
@@ -126,7 +113,7 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
                             type="text"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="Suche nach Name, Ort, Typ, Vertreter…"
+                            placeholder="Lieferant suchen…"
                             autoFocus
                             className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all"
                         />
@@ -175,12 +162,6 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect }: SupplierSe
                             <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-rose-400" />
                         </button>
                     ))}
-
-                    {results.length > 0 && totalCount > results.length && (
-                        <p className="text-center text-xs text-slate-400 pt-2">
-                            {results.length} von {totalCount} – verfeinere die Suche
-                        </p>
-                    )}
                 </div>
             </div>
         </div>
