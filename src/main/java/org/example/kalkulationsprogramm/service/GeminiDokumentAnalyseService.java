@@ -912,7 +912,7 @@ public class GeminiDokumentAnalyseService {
             return builder.build();
 
         } catch (Exception e) {
-            log.error("Fehler beim Parsen der KI-Antwort: {}", e.getMessage());
+            log.warn("Fehler beim Parsen der KI-Antwort (wird als manuelle Prüfung markiert): {}", e.getMessage());
             return null;
         }
     }
@@ -1412,6 +1412,17 @@ public class GeminiDokumentAnalyseService {
                             "[KI-Analyse] JSON nach wie vor abgeschnitten - versuche nochmal mit Pro-Model ohne Artikel...");
                     jsonResponse = rufGeminiApi(bytes, mimeType, true, true);
                     result = jsonResponse != null ? mapJsonToData(jsonResponse) : null;
+                } else {
+                    // isJsonTruncated() kann false-negative liefern wenn Gemini bei Token-Limit
+                    // eine schließende } anhängt, der JSON-Inhalt aber intern unvollständig ist.
+                    // In diesem Fall noch einmal mit Pro-Model versuchen.
+                    log.warn(
+                            "[KI-Analyse] JSON-Parsing fehlgeschlagen für Dokument {} trotz scheinbar vollständiger Antwort - Pro-Model Fallback...",
+                            docIdForLog);
+                    String proResponse = rufGeminiApi(bytes, mimeType, true);
+                    if (proResponse != null) {
+                        result = mapJsonToData(proResponse);
+                    }
                 }
 
                 if (result == null) {

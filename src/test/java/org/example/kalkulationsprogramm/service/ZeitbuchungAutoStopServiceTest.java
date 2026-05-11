@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.example.kalkulationsprogramm.domain.ErfassungsQuelle;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -96,6 +97,27 @@ class ZeitbuchungAutoStopServiceTest {
 
             // 22:00 bis 23:59 = 119 Minuten = 1.98 Stunden
             assertThat(buchung.getAnzahlInStunden()).isEqualByComparingTo(new BigDecimal("1.98"));
+        }
+
+        // Regression: ErfassungsQuelle.SYSTEM fehlte im MySQL-ENUM der zeitbuchung_audit-Tabelle,
+        // was zu "Data truncated for column 'geaendert_via'" beim Auto-Stop führte (V314 fix).
+        @Test
+        void uebergibt_ErfassungsQuelle_SYSTEM_an_AuditService() {
+            Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);
+            Zeitkonto konto = erstelleZeitkonto(1L, mitarbeiter, null);
+
+            Zeitbuchung buchung = new Zeitbuchung();
+            buchung.setId(100L);
+            buchung.setMitarbeiter(mitarbeiter);
+            buchung.setStartZeit(LocalDate.now().minusDays(1).atTime(20, 0));
+            buchung.setVersion(1);
+
+            service.autoStoppeWennNoetig(buchung, konto);
+
+            ArgumentCaptor<ErfassungsQuelle> quelleCaptor = ArgumentCaptor.forClass(ErfassungsQuelle.class);
+            verify(auditService).protokolliereAenderung(
+                    eq(buchung), eq(mitarbeiter), quelleCaptor.capture(), any());
+            assertThat(quelleCaptor.getValue()).isEqualTo(ErfassungsQuelle.SYSTEM);
         }
 
         @Test

@@ -511,7 +511,50 @@ class GeminiDokumentAnalyseServiceTest {
         }
     }
 
+    @Nested
+    class JsonTruncationHandling {
+
+        // Regression: Gemini kann bei maxOutputTokens-Erreichung eine schlie\u00dfende }
+        // anh\u00e4ngen, so dass isJsonTruncated() false-negative liefert, aber Jackson
+        // intern noch \"Unexpected end-of-input\" wirft. mapJsonToData soll in diesem Fall
+        // null zur\u00fcckgeben (kein unkontrollierter Exception-Throw).
+        @Test
+        void mapJsonToData_gibt_null_zurueck_bei_jackson_parse_fehler() throws Exception {
+            String truncatedJson = "{\"dokumentTyp\": \"RECHNUNG\", \"confidence\": 0.}";
+            com.fasterxml.jackson.databind.ObjectMapper realMapper =
+                    new com.fasterxml.jackson.databind.ObjectMapper();
+            when(objectMapper.readTree(truncatedJson))
+                    .thenThrow(new com.fasterxml.jackson.core.JsonParseException(null,
+                            "Unexpected end-of-input within/between Object entries"));
+
+            LieferantGeschaeftsdokument result = invokeMapJsonToData(truncatedJson);
+
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void isJsonTruncated_erkennt_fehlendes_ende_klammer() throws Exception {
+            String truncated = "{\"dokumentTyp\": \"RECHNUNG\", \"betrag\":";
+            boolean result = invokeIsJsonTruncated(truncated);
+            assertThat(result).isTrue();
+        }
+
+        @Test
+        void isJsonTruncated_erkennt_gueltiges_json_als_nicht_abgeschnitten() throws Exception {
+            String valid = "{\"dokumentTyp\": \"RECHNUNG\", \"betrag\": 119.0}";
+            boolean result = invokeIsJsonTruncated(valid);
+            assertThat(result).isFalse();
+        }
+    }
+
     // --- Helper methods to invoke private methods via reflection ---
+
+    private boolean invokeIsJsonTruncated(String json) throws Exception {
+        Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+                "isJsonTruncated", String.class);
+        method.setAccessible(true);
+        return (boolean) method.invoke(service, json);
+    }
 
     private LieferantGeschaeftsdokument invokeZugferdExtraktion(Path dateiPfad, String dateiname,
             LieferantDokument dokument) throws Exception {
