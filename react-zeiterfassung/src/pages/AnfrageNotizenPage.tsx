@@ -23,6 +23,11 @@ interface NotizBild {
     erstelltAm: string
 }
 
+interface PendingPhoto {
+    file: File
+    url: string
+}
+
 interface Notiz {
     id: number
     notiz: string
@@ -53,6 +58,10 @@ export default function AnfrageNotizenPage() {
     const cameraInputRef = useRef<HTMLInputElement>(null)
     const galleryInputRef = useRef<HTMLInputElement>(null)
     const [selectedNotizForImage, setSelectedNotizForImage] = useState<number | null>(null)
+    const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
+    const [pendingForNotizId, setPendingForNotizId] = useState<number | null>(null)
+    const pendingPhotosRef = useRef<PendingPhoto[]>([])
+    pendingPhotosRef.current = pendingPhotos
 
     async function loadNotizen() {
         setLoading(true)
@@ -79,6 +88,11 @@ export default function AnfrageNotizenPage() {
         return () => window.clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [anfrageId])
+
+    // Cleanup pendingPhotos beim Unmount (revoke object URLs)
+    useEffect(() => () => {
+        pendingPhotosRef.current.forEach(p => URL.revokeObjectURL(p.url))
+    }, [])
 
     const handleSave = async () => {
         if (!neueNotiz.trim()) return
@@ -177,16 +191,53 @@ export default function AnfrageNotizenPage() {
         }
     }
 
-    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const clearPendingPhotos = () => {
+        setPendingPhotos(prev => {
+            prev.forEach(p => URL.revokeObjectURL(p.url))
+            return []
+        })
+        setPendingForNotizId(null)
+    }
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files
-        if (files && files.length > 0 && selectedNotizForImage) {
-            const fileArray = Array.from(files)
-            for (const file of fileArray) {
-                await handleImageUpload(selectedNotizForImage, file)
+        if (files && files.length > 0 && selectedNotizForImage !== null) {
+            if (pendingForNotizId !== null && pendingForNotizId !== selectedNotizForImage) {
+                pendingPhotos.forEach(p => URL.revokeObjectURL(p.url))
+                setPendingPhotos([])
             }
+            const added = Array.from(files).map(file => ({
+                file,
+                url: URL.createObjectURL(file)
+            }))
+            setPendingPhotos(prev => [...prev, ...added])
+            setPendingForNotizId(selectedNotizForImage)
         }
         e.target.value = ''
         setSelectedNotizForImage(null)
+    }
+
+    const removePendingPhoto = (index: number) => {
+        setPendingPhotos(prev => {
+            const target = prev[index]
+            if (target) URL.revokeObjectURL(target.url)
+            const next = prev.filter((_, i) => i !== index)
+            if (next.length === 0) setPendingForNotizId(null)
+            return next
+        })
+    }
+
+    const uploadPendingPhotos = async (notizId: number) => {
+        if (pendingPhotos.length === 0 || pendingForNotizId !== notizId) return
+        setUploadingBildNotizId(notizId)
+        try {
+            for (const p of pendingPhotos) {
+                await handleImageUpload(notizId, p.file)
+            }
+            clearPendingPhotos()
+        } finally {
+            setUploadingBildNotizId(null)
+        }
     }
 
     const openCamera = (notizId: number) => {
@@ -342,9 +393,32 @@ export default function AnfrageNotizenPage() {
                                             </div>
                                         )}
 
+                                        {/* Pending Photo Vorschau */}
+                                        {notiz.canEdit && pendingForNotizId === notiz.id && pendingPhotos.length > 0 && (
+                                            <div className="mt-3 grid grid-cols-3 gap-2">
+                                                {pendingPhotos.map((p, idx) => (
+                                                    <div key={idx} className="relative aspect-square">
+                                                        <img
+                                                            src={p.url}
+                                                            alt={`Neues Bild ${idx + 1}`}
+                                                            className="w-full h-full object-cover rounded-lg ring-2 ring-rose-400"
+                                                        />
+                                                        <button
+                                                            onClick={() => removePendingPhoto(idx)}
+                                                            disabled={uploadingBildNotizId === notiz.id}
+                                                            aria-label="Bild entfernen"
+                                                            className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow disabled:opacity-50"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         {/* Bild hinzufügen Buttons */}
                                         {notiz.canEdit && (
-                                            <div className="mt-3 flex gap-2">
+                                            <div className="mt-3 flex flex-wrap items-center gap-2">
                                                 {uploadingBildNotizId === notiz.id ? (
                                                     <div className="flex items-center gap-2 text-rose-600 text-sm">
                                                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -357,7 +431,7 @@ export default function AnfrageNotizenPage() {
                                                             className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
                                                         >
                                                             <Camera className="w-3.5 h-3.5" />
-                                                            Kamera
+                                                            {pendingForNotizId === notiz.id && pendingPhotos.length > 0 ? 'Weiteres Foto' : 'Kamera'}
                                                         </button>
                                                         <button
                                                             onClick={() => openGallery(notiz.id)}
@@ -366,6 +440,14 @@ export default function AnfrageNotizenPage() {
                                                             <ImageIcon className="w-3.5 h-3.5" />
                                                             Galerie
                                                         </button>
+                                                        {pendingForNotizId === notiz.id && pendingPhotos.length > 0 && (
+                                                            <button
+                                                                onClick={() => uploadPendingPhotos(notiz.id)}
+                                                                className="ml-auto flex items-center gap-1 text-xs bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg transition-colors"
+                                                            >
+                                                                Hochladen ({pendingPhotos.length})
+                                                            </button>
+                                                        )}
                                                     </>
                                                 )}
                                             </div>

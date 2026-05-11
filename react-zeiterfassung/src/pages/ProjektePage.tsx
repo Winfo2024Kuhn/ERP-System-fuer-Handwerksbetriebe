@@ -36,6 +36,11 @@ interface Bild {
     uploadedByNachname?: string
 }
 
+interface PendingPhoto {
+    file: File
+    url: string
+}
+
 
 
 interface ProjektePageProps {
@@ -59,6 +64,9 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
     const [uploading, setUploading] = useState(false)
     const [showPhoneModal, setShowPhoneModal] = useState(false)
     const [showUploadModal, setShowUploadModal] = useState(false)
+    const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
+    const pendingPhotosRef = useRef<PendingPhoto[]>([])
+    pendingPhotosRef.current = pendingPhotos
 
     const loadProjekte = async () => {
         setLoading(true)
@@ -122,6 +130,19 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
 
         return () => window.clearTimeout(timeoutId)
     }, [])
+
+    // Cleanup pendingPhotos beim Unmount (revoke object URLs)
+    useEffect(() => () => {
+        pendingPhotosRef.current.forEach(p => URL.revokeObjectURL(p.url))
+    }, [])
+
+    // Reset pendingPhotos beim Wechsel des Projekts
+    useEffect(() => {
+        setPendingPhotos(prev => {
+            prev.forEach(p => URL.revokeObjectURL(p.url))
+            return []
+        })
+    }, [selectedProjekt?.id])
 
     // URL-based Selection Sync
     useEffect(() => {
@@ -222,18 +243,45 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
 
 
 
-    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFilesPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files
-        if (!files || files.length === 0 || !selectedProjekt) return
+        if (files && files.length > 0) {
+            const added = Array.from(files).map(file => ({
+                file,
+                url: URL.createObjectURL(file)
+            }))
+            setPendingPhotos(prev => [...prev, ...added])
+        }
+        if (e.target) e.target.value = ''
+    }
+
+    const removePendingPhoto = (index: number) => {
+        setPendingPhotos(prev => {
+            const target = prev[index]
+            if (target) URL.revokeObjectURL(target.url)
+            return prev.filter((_, i) => i !== index)
+        })
+    }
+
+    const clearPendingPhotos = () => {
+        setPendingPhotos(prev => {
+            prev.forEach(p => URL.revokeObjectURL(p.url))
+            return []
+        })
+    }
+
+    const closeUploadModal = () => {
+        clearPendingPhotos()
+        setShowUploadModal(false)
+    }
+
+    const uploadPendingPhotos = async () => {
+        if (pendingPhotos.length === 0 || !selectedProjekt) return
 
         setUploading(true)
-        setShowUploadModal(false)
         const formData = new FormData()
-        for (let i = 0; i < files.length; i++) {
-            formData.append('datei', files[i])
-        }
+        pendingPhotos.forEach(p => formData.append('datei', p.file))
 
-        // Add mitarbeiter header for upload tracking
         const headers: Record<string, string> = {}
         if (mitarbeiter?.id) {
             headers['X-Mitarbeiter-Id'] = String(mitarbeiter.id)
@@ -246,14 +294,14 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                 body: formData
             })
             if (res.ok) {
+                clearPendingPhotos()
+                setShowUploadModal(false)
                 await loadProjektDetail(selectedProjekt)
             }
         } catch (err) {
             console.error('Upload fehlgeschlagen:', err)
         }
         setUploading(false)
-        if (cameraInputRef.current) cameraInputRef.current.value = ''
-        if (galleryInputRef.current) galleryInputRef.current.value = ''
     }
 
     const hasPhoneNumber = selectedProjekt?.kundenTelefon || selectedProjekt?.kundenMobil
@@ -338,7 +386,7 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                                             type="file"
                                             accept="image/*"
                                             capture="environment"
-                                            onChange={handleUpload}
+                                            onChange={handleFilesPicked}
                                             className="hidden"
                                         />
                                         <input
@@ -346,7 +394,7 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                                             type="file"
                                             accept="image/*"
                                             multiple
-                                            onChange={handleUpload}
+                                            onChange={handleFilesPicked}
                                             className="hidden"
                                         />
                                         <button
@@ -573,30 +621,60 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
                     <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 safe-area-bottom animate-slide-up">
                         <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-lg font-bold text-slate-900">Bild hinzufügen</h3>
+                            <h3 className="text-lg font-bold text-slate-900">
+                                {pendingPhotos.length > 0
+                                    ? `${pendingPhotos.length} Bild${pendingPhotos.length === 1 ? '' : 'er'} bereit`
+                                    : 'Bild hinzufügen'}
+                            </h3>
                             <button
-                                onClick={() => setShowUploadModal(false)}
+                                onClick={closeUploadModal}
                                 className="p-2 hover:bg-slate-100 rounded-full"
                             >
                                 <X className="w-5 h-5 text-slate-500" />
                             </button>
                         </div>
+
+                        {pendingPhotos.length > 0 && (
+                            <div className="grid grid-cols-3 gap-2 mb-4 max-h-56 overflow-auto">
+                                {pendingPhotos.map((p, idx) => (
+                                    <div key={idx} className="relative aspect-square">
+                                        <img
+                                            src={p.url}
+                                            alt={`Bild ${idx + 1}`}
+                                            className="w-full h-full object-cover rounded-lg"
+                                        />
+                                        <button
+                                            onClick={() => removePendingPhoto(idx)}
+                                            aria-label="Bild entfernen"
+                                            className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         <div className="space-y-3">
                             <button
                                 onClick={() => cameraInputRef.current?.click()}
-                                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 transition-colors"
+                                disabled={uploading}
+                                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 transition-colors disabled:opacity-50"
                             >
                                 <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center">
                                     <Camera className="w-6 h-6 text-rose-600" />
                                 </div>
                                 <div className="flex-1 text-left">
-                                    <p className="font-medium text-slate-900">Foto aufnehmen</p>
+                                    <p className="font-medium text-slate-900">
+                                        {pendingPhotos.length > 0 ? 'Weiteres Foto aufnehmen' : 'Foto aufnehmen'}
+                                    </p>
                                     <p className="text-sm text-slate-500">Kamera öffnen</p>
                                 </div>
                             </button>
                             <button
                                 onClick={() => galleryInputRef.current?.click()}
-                                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 transition-colors"
+                                disabled={uploading}
+                                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 transition-colors disabled:opacity-50"
                             >
                                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                                     <FolderOpen className="w-6 h-6 text-blue-600" />
@@ -607,9 +685,25 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                                 </div>
                             </button>
                         </div>
+
+                        {pendingPhotos.length > 0 && (
+                            <button
+                                onClick={uploadPendingPhotos}
+                                disabled={uploading}
+                                className="w-full mt-4 py-3 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-colors"
+                            >
+                                {uploading ? (
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                    <>Hochladen ({pendingPhotos.length})</>
+                                )}
+                            </button>
+                        )}
+
                         <button
-                            onClick={() => setShowUploadModal(false)}
-                            className="w-full mt-4 py-3 text-slate-500 font-medium"
+                            onClick={closeUploadModal}
+                            disabled={uploading}
+                            className="w-full mt-4 py-3 text-slate-500 font-medium disabled:opacity-50"
                         >
                             Abbrechen
                         </button>
