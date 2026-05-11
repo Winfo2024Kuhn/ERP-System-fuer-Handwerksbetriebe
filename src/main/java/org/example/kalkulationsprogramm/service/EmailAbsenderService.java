@@ -58,7 +58,7 @@ public class EmailAbsenderService {
         if (adresse == null || adresse.isEmpty()) {
             throw new IllegalArgumentException("E-Mail-Adresse darf nicht leer sein.");
         }
-        if (!adresse.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+        if (!adresse.matches("^[^@\\s]+@[^@\\s.]+(?:\\.[^@\\s.]+)+$")) {
             throw new IllegalArgumentException("Ungueltige E-Mail-Adresse: " + adresse);
         }
 

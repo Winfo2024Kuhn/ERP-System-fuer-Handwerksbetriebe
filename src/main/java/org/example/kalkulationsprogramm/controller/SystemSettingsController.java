@@ -32,7 +32,7 @@ public class SystemSettingsController {
     // nicht-leerer Domain-Part mit mindestens einem Punkt, alles ohne Whitespace.
     // Ungültiges wie "@", "a@", " @ " wird abgewiesen.
     private static final Pattern EMAIL_PATTERN =
-            Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
+            Pattern.compile("^[^@\\s]+@[^@\\s.]+(?:\\.[^@\\s.]+)+$");
 
     // ==================== Alle Einstellungen lesen ====================
 
