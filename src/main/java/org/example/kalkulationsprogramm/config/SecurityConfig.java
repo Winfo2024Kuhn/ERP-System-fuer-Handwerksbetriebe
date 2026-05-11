@@ -51,12 +51,31 @@ public class SecurityConfig {
      * Erreichbar nur über Cloudflare-Tunnel + Access Service Token; der
      * {@link CloudflareAccessJwtFilter} prüft den signierten CF-Access-JWT als
      * zweite Schicht (Defense-in-Depth). Spring-Auth ist bewusst ausgeschaltet.
+     *
+     * <p><b>CSRF-Threat-Model (CodeQL java/spring-disabled-csrf-protection):</b>
+     * CSRF wird hier bewusst und sicher deaktiviert:
+     * <ul>
+     *   <li>Die Chain ist <i>stateless</i> — kein Session-Cookie, kein
+     *       HTTP-Basic, keine vom Browser automatisch mitgesendete
+     *       Authentifizierung. CSRF setzt aber genau das voraus.</li>
+     *   <li>Authentifizierung erfolgt ausschliesslich ueber den
+     *       {@code Cf-Access-Jwt-Assertion}-Header, den die Cloudflare-Edge
+     *       NUR fuer Requests mit gueltigem Access Service Token setzt.
+     *       Browser koennen diesen Header weder selbststaendig setzen noch
+     *       das zugehoerige {@code CF-Access-Client-Secret} ausliefern
+     *       (Service-Token-Geheimnis liegt im Backend der Marketing-Seite).</li>
+     *   <li>Es ist KEIN CORS konfiguriert — cross-origin POSTs aus dem
+     *       Browser scheitern bereits am fehlenden CORS-Header.</li>
+     * </ul>
+     * Damit ist keine Angriffsflaeche fuer Cross-Site-Request-Forgery
+     * vorhanden; ein CSRF-Token waere reiner Ballast ohne Schutzwirkung.
      */
     @Bean
     @Order(0)
     public SecurityFilterChain funnelFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/api/internal/**")
+                // CSRF disabled: stateless JWT-authed S2S endpoint, see Javadoc above for full threat model.
                 .csrf(csrf -> csrf.disable())
                 .addFilterBefore(cloudflareAccessJwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
