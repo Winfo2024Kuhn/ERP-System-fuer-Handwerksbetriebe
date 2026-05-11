@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { ArrowLeft, Search, ScanLine, Upload, FileText, Loader2, X, ChevronRight, Calendar, Hash, Save, User } from 'lucide-react'
@@ -69,6 +69,21 @@ export default function LieferantLieferscheinePage() {
     const [formData, setFormData] = useState<AnalyzeResponse>({
         dokumentTyp: 'LIEFERSCHEIN'
     })
+
+    // Vorschau-URL fuer das gescannte/hochgeladene Dokument, damit der User die
+    // KI-Werte direkt mit dem Beleg vergleichen kann. URL wird per Effekt sauber
+    // freigegeben, sobald der File wechselt oder die Komponente unmountet.
+    const previewUrl = useMemo(
+        () => (currentFile ? URL.createObjectURL(currentFile) : null),
+        [currentFile],
+    )
+    useEffect(() => {
+        if (!previewUrl) return
+        return () => URL.revokeObjectURL(previewUrl)
+    }, [previewUrl])
+    const previewIsPdf = currentFile?.type === 'application/pdf'
+        || currentFile?.name.toLowerCase().endsWith('.pdf')
+    const previewIsImage = currentFile?.type.startsWith('image/')
 
     useEffect(() => {
         if (lieferantId) {
@@ -243,6 +258,24 @@ export default function LieferantLieferscheinePage() {
                 </div>
 
                 <div className="p-4 space-y-4 flex-1">
+                    {previewUrl && (previewIsPdf || previewIsImage) && (
+                        <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                            {previewIsPdf ? (
+                                <iframe
+                                    src={previewUrl}
+                                    title={currentFile?.name || 'Beleg-PDF'}
+                                    className="w-full h-72 bg-white"
+                                />
+                            ) : (
+                                <img
+                                    src={previewUrl}
+                                    alt={currentFile?.name || 'Beleg'}
+                                    className="w-full max-h-72 object-contain bg-slate-50"
+                                />
+                            )}
+                        </div>
+                    )}
+
                     <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 flex gap-3">
                         <div className="bg-rose-100 p-2 rounded-lg h-fit">
                             <ScanLine className="w-5 h-5 text-rose-600" />
