@@ -515,6 +515,98 @@ public class BelegService {
                 .build();
     }
 
+    // ===================== Steuerberater-Beleg-Export (Issue #58) =====================
+
+    /**
+     * Liefert eine flache Liste validierter Belege im Zeitraum fuer den
+     * Steuerberater-Export. Bei {@code aufteilungsModus=TEILWEISE} stehen in
+     * {@code betragNetto/Brutto/Mwst} die Firma-Anteile statt der Gesamt-
+     * Belegsummen — der Steuerberater bekommt nur den betrieblichen Anteil
+     * gebucht. Die Original-Gesamt-Bruttosumme + ein Kurztext mit den
+     * gewaehlten Positionen gehen als Erlaeuterung mit, damit der
+     * Steuerberater den Beleg dem physisch vorliegenden Original zuordnen kann.
+     */
+    @Transactional(readOnly = true)
+    public List<BelegDto.SteuerberaterExportEntry> listeFuerSteuerberaterExport(LocalDate von, LocalDate bis) {
+        List<Beleg> belege = belegRepository.findValidierteImZeitraumFuerExport(von, bis);
+        List<BelegDto.SteuerberaterExportEntry> result = new ArrayList<>(belege.size());
+        for (Beleg b : belege) {
+            boolean teilweise = b.getAufteilungsModus() == BelegAufteilungsModus.TEILWEISE
+                    && b.getBetragFirmaBrutto() != null;
+
+            BigDecimal netto  = teilweise ? b.getBetragFirmaNetto()  : b.getBetragNetto();
+            BigDecimal brutto = teilweise ? b.getBetragFirmaBrutto() : b.getBetragBrutto();
+            BigDecimal mwst   = teilweise ? b.getBetragFirmaMwst()   : differenzMwst(b);
+
+            Integer positionenGesamt = null;
+            Integer positionenFirma  = null;
+            String positionenHinweis = null;
+            if (teilweise) {
+                List<BelegPosition> positionen =
+                        belegPositionRepository.findByBelegIdOrderBySortierungAsc(b.getId());
+                positionenGesamt = positionen.size();
+                List<BelegPosition> firma = positionen.stream()
+                        .filter(BelegPosition::isIstFuerFirma)
+                        .toList();
+                positionenFirma = firma.size();
+                positionenHinweis = buildPositionenHinweis(firma);
+            }
+
+            result.add(BelegDto.SteuerberaterExportEntry.builder()
+                    .belegId(b.getId())
+                    .belegDatum(b.getBelegDatum())
+                    .belegNummer(b.getBelegNummer())
+                    .lieferantName(b.getLieferant() != null ? b.getLieferant().getLieferantenname() : null)
+                    .belegKategorie(b.getBelegKategorie() != null ? b.getBelegKategorie().name() : null)
+                    .dokumentTyp(b.getDokumentTyp() != null ? b.getDokumentTyp().name() : null)
+                    .sachkontoNummer(b.getSachkonto() != null ? b.getSachkonto().getNummer() : null)
+                    .sachkontoBezeichnung(b.getSachkonto() != null ? b.getSachkonto().getBezeichnung() : null)
+                    .betragNetto(netto)
+                    .betragBrutto(brutto)
+                    .betragMwst(mwst)
+                    .mwstSatz(b.getMwstSatz())
+                    .notiz(b.getNotiz())
+                    .beschreibung(b.getBeschreibung())
+                    .aufteilungsModus(b.getAufteilungsModus() != null ? b.getAufteilungsModus().name() : null)
+                    .gesamtBruttoOriginal(teilweise ? b.getBetragBrutto() : null)
+                    .anzahlPositionenGesamt(positionenGesamt)
+                    .anzahlPositionenFirma(positionenFirma)
+                    .positionenHinweis(positionenHinweis)
+                    .build());
+        }
+        return result;
+    }
+
+    /**
+     * Baut einen Kurztext aus den ersten 3 Positionen, der dem Steuerberater
+     * eine Orientierung gibt, welche Bestandteile betrieblich gebucht wurden.
+     * Bei mehr als 3 Positionen wird mit "(+N weitere)" abgeschlossen.
+     */
+    private String buildPositionenHinweis(List<BelegPosition> firmaPositionen) {
+        if (firmaPositionen == null || firmaPositionen.isEmpty()) return null;
+        int limit = Math.min(3, firmaPositionen.size());
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < limit; i++) {
+            BelegPosition p = firmaPositionen.get(i);
+            String txt = p.getBeschreibung() != null && !p.getBeschreibung().isBlank()
+                    ? p.getBeschreibung().trim()
+                    : ("Pos " + p.getSortierung());
+            if (i > 0) sb.append(" · ");
+            sb.append(txt);
+        }
+        int weitere = firmaPositionen.size() - limit;
+        if (weitere > 0) sb.append(" (+").append(weitere).append(" weitere)");
+        return sb.toString();
+    }
+
+    /** Falls die MwSt nicht direkt am Beleg liegt: differenzberechnet aus brutto - netto. */
+    private BigDecimal differenzMwst(Beleg b) {
+        BigDecimal brutto = b.getBetragBrutto();
+        BigDecimal netto = b.getBetragNetto();
+        if (brutto == null || netto == null) return null;
+        return brutto.subtract(netto);
+    }
+
     private BigDecimal signedBetrag(Beleg b) {
         BigDecimal brutto = nullSafe(b.getBetragBrutto());
         return b.getBelegKategorie().istAusgang() ? brutto.negate() : brutto;

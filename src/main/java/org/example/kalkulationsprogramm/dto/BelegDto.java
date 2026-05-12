@@ -193,6 +193,48 @@ public class BelegDto {
         private BigDecimal saldoNachher;
     }
 
+    /**
+     * Eine Zeile fuer den Steuerberater-Beleg-Export (Issue #58).
+     *
+     * Pro Beleg ein Eintrag — bei {@code aufteilungsModus=TEILWEISE} stehen in
+     * {@code betragNetto/Brutto/Mwst} die Firma-Anteile, nicht die Gesamt-
+     * Belegsummen. Das Frontend rendert daraus eine HTML-Tabelle, die der
+     * Buchhalter im E-Mail-Modal noch editieren kann. Beleg-PDFs werden NICHT
+     * mitgeschickt — der Steuerberater hat die physischen Belege bereits;
+     * Spalte {@code belegNummer} ist die Referenz dafuer.
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SteuerberaterExportEntry {
+        private Long belegId;
+        private LocalDate belegDatum;
+        private String belegNummer;
+        private String lieferantName;
+        private String belegKategorie;
+        private String dokumentTyp;
+        private String sachkontoNummer;
+        private String sachkontoBezeichnung;
+        // Bei TEILWEISE: Firma-Anteil. Bei VOLLSTAENDIG: Gesamtsumme.
+        private BigDecimal betragNetto;
+        private BigDecimal betragBrutto;
+        private BigDecimal betragMwst;
+        private BigDecimal mwstSatz;
+        private String notiz;
+        private String beschreibung;
+        // Nur gesetzt bei TEILWEISE — gibt dem Steuerberater den Hinweis, dass
+        // hier nur ein Teil betrieblich war + die Gesamt-Brutto-Summe des
+        // Original-Belegs zum Abgleich mit dem physisch vorliegenden Beleg.
+        private String aufteilungsModus;
+        private BigDecimal gesamtBruttoOriginal;
+        private Integer anzahlPositionenGesamt;
+        private Integer anzahlPositionenFirma;
+        // Kurztext mit den gewaehlten Position-Beschreibungen (max ~3),
+        // damit der Steuerberater nicht jeden Beleg manuell aufschluesseln muss.
+        private String positionenHinweis;
+    }
+
     @Data
     @Builder
     @NoArgsConstructor

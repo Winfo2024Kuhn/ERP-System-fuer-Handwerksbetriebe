@@ -65,4 +65,22 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            "ORDER BY b.belegDatum DESC, b.id DESC")
     List<Beleg> findAehnlicheBelegeByLieferant(@Param("lieferantId") Long lieferantId,
                                                org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Liefert validierte Belege im Datumsbereich (chronologisch) fuer den
+     * Steuerberater-Beleg-Export (Issue #58). Lieferant + Sachkonto werden per
+     * LEFT JOIN FETCH mitgeladen, damit der Service die Anzeigedaten ohne
+     * LazyInitializationException ablesen kann. Positionen werden bewusst NICHT
+     * mit geJOINt — die laed der Service nur fuer TEILWEISE-Belege per
+     * Folge-Query nach (vermeidet Kartesisches Produkt mit n*m Zeilen).
+     */
+    @Query("SELECT b FROM Beleg b " +
+           "LEFT JOIN FETCH b.lieferant " +
+           "LEFT JOIN FETCH b.sachkonto " +
+           "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
+           "  AND (:von IS NULL OR b.belegDatum >= :von) " +
+           "  AND (:bis IS NULL OR b.belegDatum <= :bis) " +
+           "ORDER BY b.belegDatum ASC, b.id ASC")
+    List<Beleg> findValidierteImZeitraumFuerExport(@Param("von") LocalDate von,
+                                                   @Param("bis") LocalDate bis);
 }

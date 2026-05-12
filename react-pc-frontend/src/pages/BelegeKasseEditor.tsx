@@ -10,6 +10,7 @@ import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from '../components/LieferantSearchModal';
+import { SteuerberaterBelegExportModal } from '../components/SteuerberaterBelegExportModal';
 
 // ===================== Types =====================
 
@@ -62,6 +63,21 @@ type BelegKategorie =
     | 'SONSTIGER_BELEG';
 type KiStatus = 'PENDING' | 'LAEUFT' | 'DONE' | 'FAILED';
 
+type AufteilungsModus = 'VOLLSTAENDIG' | 'TEILWEISE';
+
+interface BelegPosition {
+    id: number;
+    sortierung: number;
+    beschreibung?: string | null;
+    menge?: number | null;
+    einheit?: string | null;
+    einzelpreis?: number | null;
+    betragNetto?: number | null;
+    betragBrutto?: number | null;
+    mwstSatz?: number | null;
+    istFuerFirma: boolean;
+}
+
 interface Beleg {
     id: number;
     belegKategorie: BelegKategorie;
@@ -93,6 +109,13 @@ interface Beleg {
     validiertVonName?: string | null;
     notiz?: string | null;
     eingangsrechnungId?: number | null;
+    // Beleg-Aufteilung (Issue #58): bei TEILWEISE ist nur ein Teil des Belegs
+    // betrieblich. Die Firma-Felder sind dann gefuellt; bei VOLLSTAENDIG null.
+    aufteilungsModus?: AufteilungsModus | null;
+    betragFirmaNetto?: number | null;
+    betragFirmaBrutto?: number | null;
+    betragFirmaMwst?: number | null;
+    positionen?: BelegPosition[] | null;
 }
 
 interface KassenBewegung {
@@ -232,6 +255,7 @@ export default function BelegeKasseEditor() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [umbuchungOpen, setUmbuchungOpen] = useState(false);
     const [monatsExportOpen, setMonatsExportOpen] = useState(false);
+    const [steuerberaterEmailOpen, setSteuerberaterEmailOpen] = useState(false);
 
     const loadBelege = useCallback(async () => {
         setLoading(true);
@@ -400,7 +424,12 @@ export default function BelegeKasseEditor() {
                     <Button variant="outline" onClick={() => setMonatsExportOpen(true)}
                             title="Monatsexport für den Steuerberater als PDF">
                         <FileDown className="w-4 h-4 mr-2" />
-                        Monats-Export (Steuerberater)
+                        Monats-Export (PDF)
+                    </Button>
+                    <Button variant="outline" onClick={() => setSteuerberaterEmailOpen(true)}
+                            title="Belegaufstellung als HTML-Tabelle per E-Mail an den Steuerberater">
+                        <FileText className="w-4 h-4 mr-2" />
+                        Belegliste per E-Mail
                     </Button>
                     <input
                         ref={fileInputRef}
@@ -534,6 +563,11 @@ export default function BelegeKasseEditor() {
             {monatsExportOpen && (
                 <MonatsExportModal onClose={() => setMonatsExportOpen(false)} />
             )}
+
+            <SteuerberaterBelegExportModal
+                isOpen={steuerberaterEmailOpen}
+                onClose={() => setSteuerberaterEmailOpen(false)}
+            />
         </PageLayout>
     );
 }
@@ -821,6 +855,12 @@ function TabButton({ active, onClick, icon, label, badge }: {
 
 function BelegRow({ beleg, onClick }: { beleg: Beleg; onClick: () => void }) {
     const ki = KI_LABEL[beleg.kiAnalyseStatus];
+    // Issue #58: Bei TEILWEISE-Belegen ist die relevante Buchhaltungs-Summe
+    // der Firma-Anteil — nicht der Gesamt-Brutto. Sonst sieht der Buchhalter
+    // bei einem Mischbeleg ueber 178,50 € am Listenrand 178,50 €, obwohl
+    // davon nur 30 € fuer die Firma gebucht werden.
+    const teilweise = beleg.aufteilungsModus === 'TEILWEISE' && beleg.betragFirmaBrutto != null;
+    const anzeigeBrutto = teilweise ? beleg.betragFirmaBrutto : beleg.betragBrutto;
     return (
         <button
             onClick={onClick}
@@ -837,6 +877,12 @@ function BelegRow({ beleg, onClick }: { beleg: Beleg; onClick: () => void }) {
                     <span className={`text-xs px-2 py-0.5 rounded-full ${KATEGORIE_FARBE[beleg.belegKategorie]}`}>
                         {KATEGORIE_LABELS[beleg.belegKategorie]}
                     </span>
+                    {teilweise && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 inline-flex items-center gap-1"
+                              title="Mischbeleg – nur ein Teil ist betrieblich">
+                            Mischbeleg
+                        </span>
+                    )}
                     {beleg.status === 'NEU' && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 inline-flex items-center gap-1">
                             <AlertCircle className="w-3 h-3" /> Zu prüfen
@@ -875,8 +921,14 @@ function BelegRow({ beleg, onClick }: { beleg: Beleg; onClick: () => void }) {
                 </div>
             </div>
             <div className="text-right flex-shrink-0">
-                <div className="font-semibold text-slate-900">{formatEuro(beleg.betragBrutto)} €</div>
-                {beleg.mwstSatz != null && <div className="text-xs text-slate-400">MwSt {beleg.mwstSatz}%</div>}
+                <div className="font-semibold text-slate-900">{formatEuro(anzeigeBrutto)} €</div>
+                {teilweise ? (
+                    <div className="text-xs text-rose-700">
+                        davon Firma · Gesamt {formatEuro(beleg.betragBrutto)} €
+                    </div>
+                ) : beleg.mwstSatz != null && (
+                    <div className="text-xs text-slate-400">MwSt {beleg.mwstSatz}%</div>
+                )}
             </div>
         </button>
     );
@@ -966,6 +1018,23 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
     onSaved: (b: Beleg) => void;
     onDeleted: (id: number) => void;
 }) {
+    // Issue #58: Detail-Beleg inkl. Positionen nachladen — die Listen-Query
+    // liefert positionen[] aus Performance-Gruenden nicht. Erst nach dem
+    // Nachladen kennen wir die Position-Details fuer den Aufteilungs-Bereich.
+    const [detailBeleg, setDetailBeleg] = useState<Beleg>(beleg);
+    useEffect(() => {
+        if (beleg.aufteilungsModus !== 'TEILWEISE') return;
+        let cancelled = false;
+        fetch(`/api/buchhaltung/belege/${beleg.id}`)
+            .then(r => r.ok ? r.json() : null)
+            .then((data: Beleg | null) => {
+                if (cancelled || !data) return;
+                setDetailBeleg(data);
+            })
+            .catch(err => console.error('Beleg-Detail laden fehlgeschlagen', err));
+        return () => { cancelled = true; };
+    }, [beleg.id, beleg.aufteilungsModus]);
+
     const [form, setForm] = useState({
         belegKategorie: beleg.belegKategorie,
         belegDatum: beleg.belegDatum ?? '',
@@ -1161,6 +1230,10 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                                 onChange={e => update('notiz', e.target.value)}
                                 className={inputCls} />
                         </Field>
+
+                        {detailBeleg.aufteilungsModus === 'TEILWEISE' && (
+                            <AufteilungsSektion beleg={detailBeleg} />
+                        )}
                     </div>
                 </div>
 
@@ -1192,6 +1265,101 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                     }}
                 />
             )}
+        </div>
+    );
+}
+
+/**
+ * Issue #58: Read-only Anzeige der Beleg-Positionen mit Hervorhebung der am
+ * Handy markierten Firma-Positionen. Korrektur am PC ist NICHT vorgesehen —
+ * die Mobile-Auswahl ist die Quelle der Wahrheit, der Buchhalter sieht hier
+ * nur, was der Scanner gewaehlt hat (und kann es ggf. ueber die Mobile-PWA
+ * korrigieren).
+ */
+function AufteilungsSektion({ beleg }: { beleg: Beleg }) {
+    const positionen = beleg.positionen ?? [];
+    if (positionen.length === 0) {
+        return (
+            <div className="bg-rose-50/60 border border-rose-100 rounded-lg p-3 text-sm text-slate-600">
+                <strong className="text-rose-700">Teil-Beleg.</strong>{' '}
+                Positionen werden geladen oder wurden vom Scanner noch nicht erfasst.
+            </div>
+        );
+    }
+    const firmaCount = positionen.filter(p => p.istFuerFirma).length;
+    return (
+        <div className="border border-rose-200 rounded-lg overflow-hidden">
+            <div className="bg-rose-50 px-3 py-2 flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                    Aufteilung – nur ein Teil ist betrieblich
+                </span>
+                <span className="text-xs text-slate-600">
+                    {firmaCount} von {positionen.length} Positionen für die Firma
+                </span>
+            </div>
+            <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                        <th className="text-center px-2 py-1.5 font-medium w-8">✓</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Beschreibung</th>
+                        <th className="text-right px-2 py-1.5 font-medium">Menge</th>
+                        <th className="text-right px-2 py-1.5 font-medium">Einzel</th>
+                        <th className="text-right px-2 py-1.5 font-medium">Brutto</th>
+                        <th className="text-right px-2 py-1.5 font-medium">MwSt</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {positionen.map(p => (
+                        <tr key={p.id} className={p.istFuerFirma ? 'bg-rose-50/60' : ''}>
+                            <td className="px-2 py-1.5 text-center">
+                                {p.istFuerFirma
+                                    ? <CheckCircle2 className="w-4 h-4 text-rose-600 inline" />
+                                    : <span className="text-slate-300">–</span>}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-800">{p.beschreibung || `Pos ${p.sortierung}`}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">
+                                {p.menge != null
+                                    ? `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 }).format(p.menge)}${p.einheit ? ' ' + p.einheit : ''}`
+                                    : '–'}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">
+                                {p.einzelpreis != null ? `${formatEuro(p.einzelpreis)} €` : '–'}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                                {p.betragBrutto != null ? `${formatEuro(p.betragBrutto)} €` : '–'}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+                                {p.mwstSatz != null ? `${p.mwstSatz}%` : '–'}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+                <tfoot className="bg-rose-50/40 border-t border-rose-200">
+                    <tr>
+                        <td colSpan={4} className="px-2 py-1.5 text-right text-xs font-semibold text-rose-700">
+                            Summe für Firma
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums font-bold text-rose-700">
+                            {formatEuro(beleg.betragFirmaBrutto)} €
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums text-rose-700">
+                            {formatEuro(beleg.betragFirmaMwst)} €
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colSpan={4} className="px-2 py-1.5 text-right text-xs text-slate-500">
+                            Netto / MwSt davon
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">
+                            {formatEuro(beleg.betragFirmaNetto)} € netto
+                        </td>
+                        <td className="px-2 py-1.5"></td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div className="px-3 py-2 text-xs text-slate-500 bg-white border-t border-slate-100">
+                Auswahl wurde am Handy getroffen. Zum Korrigieren in der Mobile-App neu auswählen.
+            </div>
         </div>
     );
 }

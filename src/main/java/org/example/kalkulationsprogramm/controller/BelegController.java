@@ -358,6 +358,45 @@ public class BelegController {
         return ok ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
+    // ===================== Steuerberater-Beleg-Export (Issue #58) =====================
+
+    /**
+     * Liefert eine flache Liste validierter Belege im Zeitraum fuer den
+     * Steuerberater. Eine Zeile pro Beleg, mit Firma-Anteilen bei TEILWEISE
+     * statt der Gesamt-Belegsummen. Das Frontend rendert daraus eine HTML-
+     * Tabelle im SteuerberaterBelegExportModal und sendet sie per E-Mail.
+     *
+     * Auth: Session (PC) ueber {@code resolveCaller} + {@code darfSehen}.
+     * Kein Mobile-Spiegel — der Export wird vom Buchhalter am PC erstellt.
+     */
+    @GetMapping("/steuerberater-export")
+    public ResponseEntity<?> steuerberaterExport(
+            @RequestParam(value = "von", required = false) String von,
+            @RequestParam(value = "bis", required = false) String bis,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication auth) {
+        Mitarbeiter caller = resolveCaller(token, auth);
+        if (caller == null || !belegService.darfSehen(caller)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        // Strenge Validierung: ein nicht-leerer, aber unparsebarer String darf
+        // NICHT silent zu null werden — sonst wuerde ein Tippfehler im Datum dazu
+        // fuehren, dass der Export auf den gesamten Datenbestand fallback'ed.
+        if (von != null && !von.isBlank() && parseDate(von) == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "'von' ist kein gueltiges Datum (YYYY-MM-DD)"));
+        }
+        if (bis != null && !bis.isBlank() && parseDate(bis) == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "'bis' ist kein gueltiges Datum (YYYY-MM-DD)"));
+        }
+        LocalDate vonDate = parseDate(von);
+        LocalDate bisDate = parseDate(bis);
+        if (vonDate != null && bisDate != null && bisDate.isBefore(vonDate)) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "'bis' liegt vor 'von'"));
+        }
+        return ResponseEntity.ok(belegService.listeFuerSteuerberaterExport(vonDate, bisDate));
+    }
+
     // ===================== Kassenbuch =====================
 
     @GetMapping("/kassenbuch")
