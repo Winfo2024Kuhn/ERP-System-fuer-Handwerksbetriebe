@@ -67,6 +67,20 @@ public class BelegKiKostenkontoService {
     private static final int MAX_ITERATIONS = 6;
     private static final int AEHNLICHE_BELEGE_LIMIT = 8;
 
+    /**
+     * Max. Anzahl Versuche pro Gemini-Call bei transienten Fehlern (HTTP 429
+     * Rate-Limit, HTTP 5xx Service-Storungen). Beim ersten Schluckauf von
+     * Google reicht meist ein einziger Retry, bei laenger andauernden
+     * Outages liefert der dritte Versuch ebenfalls keinen Erfolg mehr —
+     * dann uebernimmt der Buchhalter manuell.
+     */
+    static final int MAX_GEMINI_ATTEMPTS = 3;
+    /**
+     * Backoff vor Versuch 2 und 3 (Versuch 1 hat keinen Wait). Exponentiell:
+     * 1s, 3s. Halt kurz genug, dass der async-Worker nicht zu lange blockt.
+     */
+    private static final long[] RETRY_BACKOFF_MS = { 1_000L, 3_000L };
+
     private final KostenstelleRepository kostenstelleRepository;
     private final SachkontoRepository sachkontoRepository;
     private final BelegRepository belegRepository;
@@ -335,42 +349,97 @@ public class BelegKiKostenkontoService {
     // ---------------------------------------------------------------------
 
     private JsonNode callGemini(String apiKey, ArrayNode contents) {
-        try {
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel
-                    + ":generateContent?key=" + apiKey;
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel
+                + ":generateContent?key=" + apiKey;
 
+        String requestBody;
+        try {
             ObjectNode body = objectMapper.createObjectNode();
             body.set("contents", contents.deepCopy());
             body.set("tools", buildToolDeclarations());
-
-            // System-Instruction: leitet das Modell zum Agent-Verhalten an.
             ObjectNode systemInstruction = body.putObject("systemInstruction");
             ArrayNode sysParts = systemInstruction.putArray("parts");
             sysParts.addObject().put("text", SYSTEM_INSTRUCTION);
+            requestBody = objectMapper.writeValueAsString(body);
+        } catch (Exception e) {
+            log.warn("KI-Agent Gemini-Call: Request konnte nicht serialisiert werden: {}", e.getMessage());
+            return null;
+        }
 
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(45))
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
-                    .build();
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(45))
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
 
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                // Body auf 500 Zeichen kuerzen — Google liefert bei Fehlern teils das
-                // gesamte Request-Echo zurueck und wuerde sonst die Logs fluten.
+        // Retry-Loop: bei HTTP 429 / 5xx und IOExceptions bis zu MAX_GEMINI_ATTEMPTS
+        // Versuche. 4xx (auser 429) sind echte Client-Fehler und werden NICHT
+        // wiederholt — ein Retry wuerde nur dieselbe Antwort liefern.
+        for (int attempt = 1; attempt <= MAX_GEMINI_ATTEMPTS; attempt++) {
+            try {
+                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                int status = resp.statusCode();
+                if (status == 200) {
+                    return objectMapper.readTree(resp.body());
+                }
+
                 String errBody = resp.body();
                 if (errBody != null && errBody.length() > 500) {
                     errBody = errBody.substring(0, 500) + "...";
                 }
-                log.warn("KI-Agent Gemini-Call: HTTP {} — {}", resp.statusCode(), errBody);
+
+                if (isRetryableStatus(status) && attempt < MAX_GEMINI_ATTEMPTS) {
+                    long backoff = RETRY_BACKOFF_MS[attempt - 1];
+                    log.warn("KI-Agent Gemini-Call Versuch {}/{}: HTTP {} — retry in {} ms",
+                            attempt, MAX_GEMINI_ATTEMPTS, status, backoff);
+                    sleepQuiet(backoff);
+                    continue;
+                }
+
+                log.warn("KI-Agent Gemini-Call (Versuch {}/{}): HTTP {} — {}",
+                        attempt, MAX_GEMINI_ATTEMPTS, status, errBody);
+                return null;
+
+            } catch (java.io.IOException ioe) {
+                // Netzwerk-/Timeout-Fehler: ebenfalls retry-bar.
+                if (attempt < MAX_GEMINI_ATTEMPTS) {
+                    long backoff = RETRY_BACKOFF_MS[attempt - 1];
+                    log.warn("KI-Agent Gemini-Call Versuch {}/{}: IO-Fehler ({}) — retry in {} ms",
+                            attempt, MAX_GEMINI_ATTEMPTS, ioe.getMessage(), backoff);
+                    sleepQuiet(backoff);
+                    continue;
+                }
+                log.warn("KI-Agent Gemini-Call fehlgeschlagen nach {} Versuchen: {}",
+                        MAX_GEMINI_ATTEMPTS, ioe.getMessage());
+                return null;
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                log.warn("KI-Agent Gemini-Call unterbrochen: {}", ie.getMessage());
+                return null;
+            } catch (Exception e) {
+                log.warn("KI-Agent Gemini-Call fehlgeschlagen: {}", e.getMessage());
                 return null;
             }
-            return objectMapper.readTree(resp.body());
+        }
+        return null;
+    }
 
-        } catch (Exception e) {
-            log.warn("KI-Agent Gemini-Call fehlgeschlagen: {}", e.getMessage());
-            return null;
+    /**
+     * HTTP-Status, bei dem ein Retry sinnvoll ist: Rate-Limit (429) und
+     * serverseitige Storungen (5xx, inkl. dem von Gemini gelieferten 503
+     * UNAVAILABLE). 4xx-Antworten (Bad Request, Unauthorized, Not Found)
+     * sind deterministisch und werden nicht wiederholt.
+     */
+    static boolean isRetryableStatus(int status) {
+        return status == 429 || (status >= 500 && status < 600);
+    }
+
+    private static void sleepQuiet(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 
