@@ -37,6 +37,7 @@ import {
     syncClosureBlock,
     insertAtAnchor,
     insertBlocksBeforeClosure,
+    validateRootReorder,
 } from './blockOps';
 import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary } from './helpers';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
@@ -1132,40 +1133,23 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 // Root-level reorder mit CLOSURE-Constraint:
                 //  - Leistungen (SERVICE) und Bauabschnitte (SECTION_HEADER) muessen
                 //    vor dem CLOSURE-Block bleiben.
-                //  - CLOSURE selbst darf nicht vor die letzte Leistung wandern.
+                //  - CLOSURE selbst darf nicht vor die letzte Leistung/Bauabschnitt wandern.
                 //  - Textbausteine, Separatoren etc. duerfen frei umsortiert werden.
+                // Validation in blockOps.validateRootReorder (testabar mit Vitest).
                 setBlocks((items) => {
                     const oldIndex = items.findIndex((item) => item.id === activeId);
                     const newIndex = items.findIndex((item) => item.id === overId);
                     if (oldIndex === -1 || newIndex === -1) return items;
                     const newOrder = arrayMove(items, oldIndex, newIndex);
 
-                    // Constraint validieren: keine SERVICE/SECTION_HEADER hinter CLOSURE
-                    const closureIdx = newOrder.findIndex(b => b.id === CLOSURE_BLOCK_ID);
-                    if (closureIdx !== -1) {
-                        const activeBlock = items[oldIndex];
-                        const isProtectedMove = activeBlock.type === 'SERVICE'
-                            || activeBlock.type === 'SECTION_HEADER';
-                        const wouldEndAfterClosure = newOrder.findIndex(b => b.id === activeId) > closureIdx;
-                        if (isProtectedMove && wouldEndAfterClosure) {
-                            toast.warning('Leistungen müssen vor dem Abschluss bleiben.');
-                            return items; // revert
+                    const validation = validateRootReorder(newOrder, activeId);
+                    if (!validation.ok) {
+                        if (validation.reason === 'SERVICE_AFTER_CLOSURE') {
+                            toast.warning('Leistungen und Bauabschnitte müssen vor dem Abschluss bleiben.');
+                        } else {
+                            toast.warning('Der Abschluss muss nach allen Leistungen und Bauabschnitten stehen.');
                         }
-                        // CLOSURE selbst: nicht vor die letzte SERVICE/SECTION_HEADER schieben
-                        if (activeBlock.id === CLOSURE_BLOCK_ID) {
-                            const lastServiceIdx = (() => {
-                                for (let i = newOrder.length - 1; i >= 0; i--) {
-                                    const t = newOrder[i].type;
-                                    if (t === 'SERVICE' || t === 'SECTION_HEADER') return i;
-                                }
-                                return -1;
-                            })();
-                            const newClosureIdx = newOrder.findIndex(b => b.id === CLOSURE_BLOCK_ID);
-                            if (lastServiceIdx !== -1 && newClosureIdx < lastServiceIdx) {
-                                toast.warning('Der Abschluss muss nach allen Leistungen stehen.');
-                                return items;
-                            }
-                        }
+                        return items; // revert
                     }
                     return newOrder;
                 });

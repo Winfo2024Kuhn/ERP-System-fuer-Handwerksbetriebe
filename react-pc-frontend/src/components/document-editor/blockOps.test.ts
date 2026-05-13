@@ -16,6 +16,7 @@ import {
     insertBeforeNachtexte,
     insertAtAnchor,
     insertBlocksBeforeClosure,
+    validateRootReorder,
 } from './blockOps';
 import type { DocBlock } from './types';
 
@@ -269,5 +270,79 @@ describe('insertBlocksBeforeClosure', () => {
         const blocks: DocBlock[] = [service('s1'), text('nach', 'NACH'), closure];
         const result = insertBlocksBeforeClosure(blocks, [text('new')]);
         expect(result.map(b => b.id)).toEqual(['s1', 'new', 'nach', CLOSURE_BLOCK_ID]);
+    });
+});
+
+// ─── validateRootReorder ────────────────────────────────────────────────────
+describe('validateRootReorder', () => {
+    it('liefert ok=true wenn kein CLOSURE im Array ist', () => {
+        const order: DocBlock[] = [service('s1'), service('s2')];
+        expect(validateRootReorder(order, 's2')).toEqual({ ok: true });
+    });
+
+    it('liefert ok=true wenn activeId nicht im Array ist', () => {
+        const order: DocBlock[] = [service('s1'), closure];
+        expect(validateRootReorder(order, 'ghost')).toEqual({ ok: true });
+    });
+
+    it('blockt SERVICE hinter CLOSURE', () => {
+        // User hat 's1' (SERVICE) hinter CLOSURE geschoben
+        const order: DocBlock[] = [closure, service('s1')];
+        expect(validateRootReorder(order, 's1')).toEqual({
+            ok: false,
+            reason: 'SERVICE_AFTER_CLOSURE',
+        });
+    });
+
+    it('blockt SECTION_HEADER (Bauabschnitt) hinter CLOSURE', () => {
+        // Bug-Report 2026-05: Bauabschnitte muessen genauso wie Leistungen blockiert sein
+        const order: DocBlock[] = [closure, section('sec1', [service('c1')])];
+        expect(validateRootReorder(order, 'sec1')).toEqual({
+            ok: false,
+            reason: 'SERVICE_AFTER_CLOSURE',
+        });
+    });
+
+    it('erlaubt TEXT hinter CLOSURE (Nachtext-Position)', () => {
+        const order: DocBlock[] = [service('s1'), closure, text('nach')];
+        expect(validateRootReorder(order, 'nach')).toEqual({ ok: true });
+    });
+
+    it('erlaubt TEXT zwischen SERVICE und CLOSURE', () => {
+        const order: DocBlock[] = [service('s1'), text('mitten'), closure];
+        expect(validateRootReorder(order, 'mitten')).toEqual({ ok: true });
+    });
+
+    it('erlaubt SEPARATOR hinter CLOSURE', () => {
+        const order: DocBlock[] = [service('s1'), closure, separator('sep1')];
+        expect(validateRootReorder(order, 'sep1')).toEqual({ ok: true });
+    });
+
+    it('blockt CLOSURE wenn er vor die letzte SERVICE geschoben wird', () => {
+        // CLOSURE wurde vor 's2' geschoben, obwohl es weitere SERVICE danach gibt
+        const order: DocBlock[] = [service('s1'), closure, service('s2')];
+        expect(validateRootReorder(order, CLOSURE_BLOCK_ID)).toEqual({
+            ok: false,
+            reason: 'CLOSURE_BEFORE_LAST_SERVICE',
+        });
+    });
+
+    it('blockt CLOSURE wenn er vor einen Bauabschnitt geschoben wird', () => {
+        const order: DocBlock[] = [service('s1'), closure, section('sec1', [service('c1')])];
+        expect(validateRootReorder(order, CLOSURE_BLOCK_ID)).toEqual({
+            ok: false,
+            reason: 'CLOSURE_BEFORE_LAST_SERVICE',
+        });
+    });
+
+    it('erlaubt CLOSURE-Move solange er nach allen Leistungen bleibt', () => {
+        const order: DocBlock[] = [service('s1'), service('s2'), text('t'), closure];
+        expect(validateRootReorder(order, CLOSURE_BLOCK_ID)).toEqual({ ok: true });
+    });
+
+    it('erlaubt CLOSURE-Move wenn keine SERVICE/SECTION mehr existiert (lastServiceIdx=-1)', () => {
+        // Defensiver Pfad: CLOSURE im Array aber keine Leistungen mehr -> kein Block-Grund
+        const order: DocBlock[] = [text('t1'), closure];
+        expect(validateRootReorder(order, CLOSURE_BLOCK_ID)).toEqual({ ok: true });
     });
 });

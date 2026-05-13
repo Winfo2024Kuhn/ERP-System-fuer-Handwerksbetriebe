@@ -140,6 +140,56 @@ export function insertAtAnchor(
 }
 
 /**
+ * Validiert eine Root-Level-Reorder-Operation gegen die CLOSURE-Constraint.
+ * Liefert:
+ *  - { ok: true } wenn der Move erlaubt ist
+ *  - { ok: false, reason: 'SERVICE_AFTER_CLOSURE' } wenn eine Leistung
+ *    oder ein Bauabschnitt hinter den CLOSURE-Marker geschoben wuerde
+ *  - { ok: false, reason: 'CLOSURE_BEFORE_LAST_SERVICE' } wenn der CLOSURE
+ *    selbst vor die letzte Leistung/Bauabschnitt geschoben wuerde
+ *
+ * `newOrder` ist das Array nach arrayMove (dnd-kit). `activeId` ist die ID
+ * des aktiv gedraggten Blocks.
+ */
+export type MoveValidation =
+    | { ok: true }
+    | { ok: false; reason: 'SERVICE_AFTER_CLOSURE' | 'CLOSURE_BEFORE_LAST_SERVICE' };
+
+export function validateRootReorder(newOrder: DocBlock[], activeId: string): MoveValidation {
+    const closureIdx = newOrder.findIndex(b => b.id === CLOSURE_BLOCK_ID);
+    if (closureIdx === -1) return { ok: true };
+
+    const activeIdx = newOrder.findIndex(b => b.id === activeId);
+    if (activeIdx === -1) return { ok: true };
+    const activeBlock = newOrder[activeIdx];
+
+    // Constraint 1: SERVICE oder SECTION_HEADER (Bauabschnitt) duerfen nie
+    // hinter dem CLOSURE-Marker landen.
+    if ((activeBlock.type === 'SERVICE' || activeBlock.type === 'SECTION_HEADER')
+        && activeIdx > closureIdx) {
+        return { ok: false, reason: 'SERVICE_AFTER_CLOSURE' };
+    }
+
+    // Constraint 2: CLOSURE selbst darf nicht vor die letzte Leistung/Bauabschnitt
+    // wandern. Suche letzten SERVICE/SECTION_HEADER von hinten.
+    if (activeBlock.id === CLOSURE_BLOCK_ID) {
+        let lastServiceIdx = -1;
+        for (let i = newOrder.length - 1; i >= 0; i--) {
+            const t = newOrder[i].type;
+            if (t === 'SERVICE' || t === 'SECTION_HEADER') {
+                lastServiceIdx = i;
+                break;
+            }
+        }
+        if (lastServiceIdx !== -1 && closureIdx < lastServiceIdx) {
+            return { ok: false, reason: 'CLOSURE_BEFORE_LAST_SERVICE' };
+        }
+    }
+
+    return { ok: true };
+}
+
+/**
  * Fuegt mehrere Bloecke gemeinsam vor dem CLOSURE-Marker bzw. vor dem ersten
  * NACH-Textbaustein ein. Genutzt vom GAEB-Import (Bulk-Insert).
  */
