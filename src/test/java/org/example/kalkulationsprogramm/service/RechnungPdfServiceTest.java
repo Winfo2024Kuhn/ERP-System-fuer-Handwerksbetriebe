@@ -809,4 +809,115 @@ class RechnungPdfServiceTest {
             );
         }
     }
+
+    /**
+     * Regression-Pinning fuer den CLOSURE-Pfad in addMixedContent.
+     *
+     * Seit 2026-05 sendet der DocumentEditor den CLOSURE-Marker als realen Block
+     * im contentBlocks-Array mit (frueher beim Laden weggefiltert). Damit wird
+     * der CLOSURE-Branch in addMixedContent produktiv. Dieser darf das vom Frontend
+     * mitgegebene `betragNetto` (Abschlagsbetrag) und `abschlagInfo` (Eingabe-Hint)
+     * NICHT verlieren, sonst regressiert die PDF-Summe fuer Abschlagsrechnungen.
+     *
+     * Verifiziert via Reviewer-Befund #1 (review-and-ship, 2026-05-13).
+     */
+    @Nested
+    @DisplayName("CLOSURE-Pfad: Abschlagsrechnung muss betragNetto behalten")
+    class AbschlagsrechnungMitClosure {
+
+        @Test
+        @DisplayName("Abschlagsrechnung mit CLOSURE-Marker und betragNetto=500€ rendert 500€ - NICHT die Positionssumme")
+        void abschlagsrechnungBehaeltOverrideBetragNetto() {
+            // Arrange: zwei Leistungen mit Positions-Summe = 2.000€ + ein CLOSURE-Marker
+            // dahinter. Frontend wuerde dies bei einer Abschlagsrechnung so senden.
+            KopfdatenDto kopf = new KopfdatenDto(
+                    "AB-2026/05/00001",
+                    LocalDate.of(2026, 5, 13),
+                    LocalDate.of(2026, 5, 10),
+                    "Max Mustermann",
+                    "Max Mustermann\nMusterweg 1\n12345 Musterstadt",
+                    "1. Abschlag Bauvorhaben Musterweg",
+                    "KD-MUSTER",
+                    "Abschlagsrechnung",
+                    "AN-2026-MUSTER",
+                    "PRJ-2026-MUSTER",
+                    "Bauvorhaben Musterweg");
+
+            List<ContentBlockDto> contentBlocks = List.of(
+                    // 1. Leistung: 1.000€
+                    new ContentBlockDto("SERVICE", null, false, 0,
+                            "1", "Leistung A", null,
+                            BigDecimal.valueOf(1), "Stk", BigDecimal.valueOf(1000), BigDecimal.valueOf(1000),
+                            false, null, null),
+                    // 2. Leistung: 1.000€  -> Positions-Summe = 2.000€
+                    new ContentBlockDto("SERVICE", null, false, 0,
+                            "2", "Leistung B", null,
+                            BigDecimal.valueOf(1), "Stk", BigDecimal.valueOf(1000), BigDecimal.valueOf(1000),
+                            false, null, null),
+                    // CLOSURE-Marker direkt nach den Leistungen (vom DnD-Refactor synthetisiert)
+                    new ContentBlockDto("CLOSURE", null, false, 0,
+                            null, null, null, null, null, null, null, false, null, null)
+            );
+
+            List<FormBlockDto> formBlocks = createRealisticFormBlocks(kopf, false);
+            LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
+
+            // Abschlagsbetrag: 500€ (statt 2.000€ aus den Positionen)
+            BigDecimal abschlagBetrag = BigDecimal.valueOf(500);
+            AbschlagInfoPdfDto abschlagInfo = new AbschlagInfoPdfDto("netto", abschlagBetrag);
+
+            RechnungDto dto = new RechnungDto(
+                    layout, kopf, contentBlocks, formBlocks,
+                    null, // schlusstext
+                    null, null, // backgroundImagePage1/2
+                    null, // globalRabattProzent
+                    null, // abrechnungsverlauf
+                    abschlagBetrag,
+                    abschlagInfo);
+
+            // Act
+            String text = generateAndExtractText(dto);
+
+            // Assert: Der hinterlegte Abschlagsbetrag (500) muss als Netto im PDF stehen,
+            // NICHT die Positions-Summe (2.000).
+            assertTrue(text.contains("500,00"),
+                    "Abschlagsbetrag '500,00' fehlt im PDF. Text:\n" + text);
+            // MwSt auf 500 = 95,00 (statt 380 auf 2000)
+            assertTrue(text.contains("95,00"),
+                    "MwSt '95,00' (= 19% von 500) fehlt im PDF -> Override-Betrag wurde ignoriert. Text:\n" + text);
+            // Brutto = 500 + 95 = 595,00 (statt 2380 auf 2000)
+            assertTrue(text.contains("595,00"),
+                    "Brutto '595,00' fehlt im PDF -> Override-Betrag wurde ignoriert. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Normale Rechnung mit CLOSURE-Marker rendert weiterhin die Positionssumme")
+        void normaleRechnungMitClosureRendertPositionsSumme() {
+            // Normaler Fall: kein overrideBetragNetto, CLOSURE im Array -> Positions-Summe gewinnt
+            KopfdatenDto kopf = createTestKopfdaten();
+
+            List<ContentBlockDto> contentBlocks = List.of(
+                    new ContentBlockDto("SERVICE", null, false, 0,
+                            "1", "Test-Leistung", null,
+                            BigDecimal.valueOf(1), "Stk", BigDecimal.valueOf(100), BigDecimal.valueOf(100),
+                            false, null, null),
+                    new ContentBlockDto("CLOSURE", null, false, 0,
+                            null, null, null, null, null, null, null, false, null, null)
+            );
+
+            List<FormBlockDto> formBlocks = createRealisticFormBlocks(kopf, false);
+            LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
+
+            RechnungDto dto = new RechnungDto(
+                    layout, kopf, contentBlocks, formBlocks,
+                    null, null, null, null, null, null, null);
+
+            String text = generateAndExtractText(dto);
+
+            // Netto-Summe = 100, MwSt 19% = 19, Brutto = 119
+            assertTrue(text.contains("100,00"), "Positions-Netto '100,00' fehlt. Text:\n" + text);
+            assertTrue(text.contains("19,00"), "MwSt '19,00' fehlt. Text:\n" + text);
+            assertTrue(text.contains("119,00"), "Brutto '119,00' fehlt. Text:\n" + text);
+        }
+    }
 }

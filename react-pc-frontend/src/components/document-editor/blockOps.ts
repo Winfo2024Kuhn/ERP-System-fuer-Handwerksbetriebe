@@ -1,0 +1,158 @@
+/**
+ * Pure Block-Operationen fuer den DocumentEditor.
+ *
+ * Diese Datei kapselt die Insert-/Sync-Logik rund um den virtuellen CLOSURE-Marker.
+ * Sie wird sowohl von [index.tsx](./index.tsx) als auch von der Vitest-Suite in
+ * [blockOps.test.ts](./blockOps.test.ts) importiert.
+ *
+ * Hintergrund / Constraints (vgl. UX-Anforderung aus 2026-05):
+ *  - Es gibt genau einen "Abschluss"-Marker im Block-Array. Er ist Drag-and-Drop-baar,
+ *    aber Leistungen (SERVICE) und Bauabschnitte (SECTION_HEADER) duerfen nie hinter
+ *    ihm landen. Textbausteine und Separatoren sind frei positionierbar.
+ *  - Beim Hinzufuegen eines neuen Blocks soll dieser direkt unter dem aktuell
+ *    fokussierten Block einfuegt werden – nicht ans Ende des Dokuments.
+ *  - Der CLOSURE-Marker wird nicht persistiert; beim Laden synthetisch eingefuegt.
+ */
+
+import type { DocBlock } from './types';
+
+/**
+ * Sentinel-ID des virtuellen Abschluss-Blocks. Wird beim Save aus dem
+ * positionenJson herausgefiltert, sodass das gespeicherte Format mit bestehenden
+ * Dokumenten kompatibel bleibt.
+ */
+export const CLOSURE_BLOCK_ID = '__closure__';
+
+/**
+ * Synchronisiert das CLOSURE-Marker-Element in der Block-Liste.
+ *  - Wenn mindestens eine Leistung (SERVICE oder SECTION_HEADER mit Kindern)
+ *    existiert und kein CLOSURE im Array ist: einfuegen direkt nach dem
+ *    letzten SERVICE/SECTION_HEADER/SUBTOTAL/SEPARATOR.
+ *  - Wenn keine Leistung mehr existiert und CLOSURE noch vorhanden ist: entfernen.
+ *  - Sonst: identische Referenz zurueckgeben (kein Re-Render-Loop).
+ */
+export function syncClosureBlock(prev: DocBlock[]): DocBlock[] {
+    const closureIdx = prev.findIndex(b => b.id === CLOSURE_BLOCK_ID);
+    const hasServices = prev.some(b =>
+        (b.type === 'SERVICE')
+        || (b.type === 'SECTION_HEADER' && (b.children?.length ?? 0) > 0)
+    );
+
+    if (hasServices && closureIdx === -1) {
+        let lastIdx = -1;
+        for (let i = prev.length - 1; i >= 0; i--) {
+            const t = prev[i].type;
+            if (t === 'SERVICE' || t === 'SECTION_HEADER' || t === 'SUBTOTAL' || t === 'SEPARATOR') {
+                lastIdx = i;
+                break;
+            }
+        }
+        // hasServices=true impliziert immer einen Match im Loop oben (SERVICE oder
+        // SECTION_HEADER mit Kindern werden beide vom Loop erfasst), daher gilt
+        // lastIdx >= 0 by-construction. Kein separater -1-Fallback noetig:
+        // prev.slice(0, lastIdx + 1) liefert den Praefix bis einschliesslich der
+        // letzten Leistung.
+        const closureBlock: DocBlock = { id: CLOSURE_BLOCK_ID, type: 'CLOSURE' };
+        return [...prev.slice(0, lastIdx + 1), closureBlock, ...prev.slice(lastIdx + 1)];
+    }
+
+    if (!hasServices && closureIdx !== -1) {
+        return prev.filter(b => b.id !== CLOSURE_BLOCK_ID);
+    }
+
+    return prev;
+}
+
+/**
+ * Fuegt einen Block vor dem ersten NACH-Textbaustein ein. Wenn keine
+ * NACH-Bloecke vorhanden sind, wird ans Ende angehaengt. Respektiert
+ * CLOSURE-Constraint fuer SERVICE und SECTION_HEADER.
+ */
+export function insertBeforeNachtexte(prev: DocBlock[], block: DocBlock): DocBlock[] {
+    const closureIdx = prev.findIndex(b => b.id === CLOSURE_BLOCK_ID);
+    const firstNachIdx = prev.findIndex(b => b.textbausteinRolle === 'NACH');
+    const limit = block.type === 'SERVICE' || block.type === 'SECTION_HEADER'
+        ? closureIdx
+        : firstNachIdx;
+    if (limit === -1) {
+        return [...prev, block];
+    }
+    return [
+        ...prev.slice(0, limit),
+        block,
+        ...prev.slice(limit),
+    ];
+}
+
+/**
+ * Fuegt einen Block direkt nach dem aktuell selektierten Block ein, falls
+ * Anker existiert (typischerweise activeEditorId). Sonst Fallback auf
+ * "vor erstem NACH-Textbaustein". Respektiert die CLOSURE-Constraint: SERVICE
+ * und SECTION_HEADER duerfen nie nach CLOSURE_BLOCK_ID landen.
+ *
+ * Sonderfaelle:
+ *  - Anker liegt innerhalb einer SECTION (als child): ein neuer SERVICE wird
+ *    in dieselbe Section hinter dem Anker einsortiert; andere Block-Typen
+ *    landen auf Root-Ebene direkt nach der Section.
+ *  - Anker ist null, leer oder selbst der CLOSURE-Marker -> Fallback.
+ */
+export function insertAtAnchor(
+    prev: DocBlock[],
+    block: DocBlock,
+    anchorId: string | null,
+): DocBlock[] {
+    if (!anchorId || anchorId === CLOSURE_BLOCK_ID) {
+        return insertBeforeNachtexte(prev, block);
+    }
+    const closureIdx = prev.findIndex(b => b.id === CLOSURE_BLOCK_ID);
+
+    const topAnchorIdx = prev.findIndex(b => b.id === anchorId);
+    if (topAnchorIdx !== -1) {
+        let insertIdx = topAnchorIdx + 1;
+        if ((block.type === 'SERVICE' || block.type === 'SECTION_HEADER')
+            && closureIdx !== -1 && insertIdx > closureIdx) {
+            insertIdx = closureIdx;
+        }
+        return [...prev.slice(0, insertIdx), block, ...prev.slice(insertIdx)];
+    }
+
+    for (let i = 0; i < prev.length; i++) {
+        const b = prev[i];
+        if (b.type === 'SECTION_HEADER' && b.children) {
+            const childIdx = b.children.findIndex(c => c.id === anchorId);
+            if (childIdx !== -1) {
+                if (block.type === 'SERVICE') {
+                    const newChildren = [...b.children];
+                    newChildren.splice(childIdx + 1, 0, block);
+                    return prev.map(x => x.id === b.id ? { ...x, children: newChildren } : x);
+                }
+                let insertIdx = i + 1;
+                if (block.type === 'SECTION_HEADER'
+                    && closureIdx !== -1 && insertIdx > closureIdx) {
+                    insertIdx = closureIdx;
+                }
+                return [...prev.slice(0, insertIdx), block, ...prev.slice(insertIdx)];
+            }
+        }
+    }
+
+    return insertBeforeNachtexte(prev, block);
+}
+
+/**
+ * Fuegt mehrere Bloecke gemeinsam vor dem CLOSURE-Marker bzw. vor dem ersten
+ * NACH-Textbaustein ein. Genutzt vom GAEB-Import (Bulk-Insert).
+ */
+export function insertBlocksBeforeClosure(prev: DocBlock[], blocksToInsert: DocBlock[]): DocBlock[] {
+    if (blocksToInsert.length === 0) return prev;
+    const closureIdx = prev.findIndex(b => b.id === CLOSURE_BLOCK_ID);
+    const firstNachIdx = prev.findIndex(b => b.textbausteinRolle === 'NACH');
+    let insertAt = prev.length;
+    if (closureIdx !== -1) insertAt = Math.min(insertAt, closureIdx);
+    if (firstNachIdx !== -1) insertAt = Math.min(insertAt, firstNachIdx);
+    return [
+        ...prev.slice(0, insertAt),
+        ...blocksToInsert,
+        ...prev.slice(insertAt),
+    ];
+}

@@ -319,8 +319,10 @@ public class RechnungPdfService {
                     addSummenBlock(ct, data.contentBlocks(), data.globalRabattProzent(), data.abrechnungsverlauf(), data.betragNetto(), data.kopfdaten().dokumentTyp(), data.abschlagInfo());
                 }
             } else {
-                // CLOSURE vorhanden oder keine Blöcke - Summenblock wird in addMixedContent gehandelt
-                addMixedContent(ct, data.contentBlocks(), data.globalRabattProzent(), data.abrechnungsverlauf(), data.kopfdaten().dokumentTyp());
+                // CLOSURE vorhanden oder keine Blöcke - Summenblock wird in addMixedContent gehandelt.
+                // betragNetto + abschlagInfo durchreichen, damit Abschlags-/Schlussrechnungen
+                // ihren korrekten Nettobetrag und Eingabe-Hint behalten (sonst Regression!).
+                addMixedContent(ct, data.contentBlocks(), data.globalRabattProzent(), data.abrechnungsverlauf(), data.kopfdaten().dokumentTyp(), data.betragNetto(), data.abschlagInfo());
             }
 
             addSchlusstext(ct, data.schlusstext());
@@ -432,6 +434,16 @@ public class RechnungPdfService {
      * SUBTOTAL erzeugt eine Zwischensumme der vorherigen SERVICE-Blöcke bis zum letzten SECTION_HEADER/SUBTOTAL.
      */
     private void addMixedContent(ColumnText ct, List<ContentBlockDto> blocks, BigDecimal globalRabattProzent, AbrechnungsverlaufPdfDto abrechnungsverlauf, String dokumentTyp) throws DocumentException {
+        addMixedContent(ct, blocks, globalRabattProzent, abrechnungsverlauf, dokumentTyp, null, null);
+    }
+
+    /**
+     * Erweiterte Variante: Reicht overrideBetragNetto und abschlagInfo an den
+     * CLOSURE-Branch durch. Diese werden vom Summenblock nur bei Abschlags-/
+     * Schlussrechnungen ausgewertet (overrideBetragNetto != null) und sind fuer
+     * normale Rechnungen unkritisch. Backwards-kompatibel via 5-args-Delegate.
+     */
+    private void addMixedContent(ColumnText ct, List<ContentBlockDto> blocks, BigDecimal globalRabattProzent, AbrechnungsverlaufPdfDto abrechnungsverlauf, String dokumentTyp, BigDecimal overrideBetragNetto, AbschlagInfoPdfDto abschlagInfo) throws DocumentException {
         if (blocks == null || blocks.isEmpty()) return;
 
         NumberFormat nf = NumberFormat.getNumberInstance(Locale.GERMANY);
@@ -459,17 +471,29 @@ public class RechnungPdfService {
                     currentTable = null;
                 }
 
-                // 2. Bauabschnitt-Übersicht: Alle Bauabschnitte mit Summen auflisten
-                // plus "Sonstige Leistungen" für root-level Services
-                addClosureBreakdown(ct, blocks, i, nf, accentColor, textColor);
+                // Hinweis zu zwei Datenpfaden:
+                //  1. positionenJson (persistiert): Frontend filtert CLOSURE beim Save raus.
+                //     Bestehende Dokumente bleiben bytegenau lade-/speicherbar.
+                //  2. PDF-Request (createPdfRequest → flattenBlocksForPdf): Frontend reicht
+                //     den CLOSURE-Marker durch, damit dieser Backend-Branch produktiv wird
+                //     und Vor-/Nachtexte sauber relativ zum Summenblock platziert werden.
+                //
+                // addClosureBreakdown (Bauabschnitt-Uebersicht) wird bewusst NICHT mehr
+                // aufgerufen: bis 2026-05 war der CLOSURE-Pfad toter Code (Frontend
+                // filterte CLOSURE beim Laden), heute soll der Render-Output exakt dem
+                // alten lastServiceIdx-Pfad entsprechen. Die Methode bleibt erhalten,
+                // falls die Uebersicht spaeter pro Dokumenttyp/Template aktiviert wird.
 
-                // 3. Add Sums (calculating totals up to this point)
-                // Filter blocks up to this closure
+                // 3. Add Sums (calculating totals up to this point).
+                // overrideBetragNetto und abschlagInfo durchreichen, damit Abschlags-/
+                // Schlussrechnungen ihren hinterlegten Nettobetrag und Eingabe-Hint
+                // im PDF behalten (sonst wuerde die Summe aus den Positionen statt
+                // aus dem hinterlegten betragNetto berechnet).
                 List<ContentBlockDto> blocksBefore = new java.util.ArrayList<>();
                 for (int k = 0; k < i; k++) {
                     blocksBefore.add(blocks.get(k));
                 }
-                addSummenBlock(ct, blocksBefore, globalRabattProzent, abrechnungsverlauf, null, dokumentTyp);
+                addSummenBlock(ct, blocksBefore, globalRabattProzent, abrechnungsverlauf, overrideBetragNetto, dokumentTyp, abschlagInfo);
 
                 // 3. Render Closure Text (if any) as standalone Paragraph
                 if (block.text() != null && !block.text().isBlank()) {
@@ -750,6 +774,15 @@ public class RechnungPdfService {
         posCell.setPaddingBottom(cellPaddingBottom);
         posCell.setHorizontalAlignment(Element.ALIGN_CENTER);
         posCell.setVerticalAlignment(Element.ALIGN_TOP);
+        // Pos/Menge/Einzelpreis/Gesamt sind reine Phrase-Zellen, die Bezeichnung ist
+        // eine Composite-Zelle (addElement mit Paragraph + Leading). Ohne useAscender
+        // verankert iText ALIGN_TOP in der Composite-Zelle an der Leading-Box-Oberkante
+        // (Paragraph startet eine Leading-Strecke unterhalb), in Phrase-Zellen aber
+        // an der Font-Box-Oberkante. Das fuehrt zu sichtbarem Versatz: Pos-Nr. liegt
+        // hoeher als der Leistungstext. useAscender(true) verankert ALIGN_TOP einheitlich
+        // an der Ascender-Linie der ersten Glyphe, sodass alle Spalten auf gleicher
+        // Hoehe starten.
+        posCell.setUseAscender(true);
         posCell.setNoWrap(true); // Kein Umbruch in Pos-Spalte
         table.addCell(posCell);
 
@@ -764,6 +797,7 @@ public class RechnungPdfService {
         mengeCell.setPaddingBottom(cellPaddingBottom);
         mengeCell.setHorizontalAlignment(Element.ALIGN_CENTER);
         mengeCell.setVerticalAlignment(Element.ALIGN_TOP);
+        mengeCell.setUseAscender(true);
         table.addCell(mengeCell);
 
         // Bezeichnung: Titel + Beschreibung in EINER Zelle kombiniert
@@ -778,6 +812,7 @@ public class RechnungPdfService {
         descCell.setPaddingBottom(cellPaddingBottom);
         descCell.setHorizontalAlignment(Element.ALIGN_LEFT);
         descCell.setVerticalAlignment(Element.ALIGN_TOP);
+        descCell.setUseAscender(true);
         
         // Bezeichnung und Beschreibung:
         // Wenn beschreibungHtml vorhanden ist, nur diese rendern (enthält bereits alle Infos).
@@ -821,12 +856,13 @@ public class RechnungPdfService {
         epCell.setPaddingBottom(cellPaddingBottom);
         epCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
         epCell.setVerticalAlignment(Element.ALIGN_TOP);
+        epCell.setUseAscender(true);
         table.addCell(epCell);
 
         // Gesamtpreis - hervorgehoben
         boolean hasDiscount = block.rabattProzent() != null && block.rabattProzent().compareTo(BigDecimal.ZERO) > 0;
         Font gpFont = isAlternative ? currentLabelFont : FontFactory.getFont(FontFactory.TIMES_BOLD, 10, textColor);
-        
+
         PdfPCell gpCell = new PdfPCell();
         gpCell.setBorder(Rectangle.BOTTOM);
         gpCell.setBorderColor(borderColor);
@@ -836,6 +872,7 @@ public class RechnungPdfService {
         gpCell.setPaddingBottom(cellPaddingBottom);
         gpCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
         gpCell.setVerticalAlignment(Element.ALIGN_TOP);
+        gpCell.setUseAscender(true);
         
         if (isAlternative) {
             // Use Phrase directly so vertical alignment works
@@ -1849,6 +1886,7 @@ public class RechnungPdfService {
      * plus "Sonstige Leistungen" für Services außerhalb von Bauabschnitten.
      * Nur gerendert wenn es mindestens einen Bauabschnitt gibt.
      */
+    @SuppressWarnings("unused") // Aktuell deaktiviert (s. addMixedContent CLOSURE-Branch). Bewusst behalten.
     private void addClosureBreakdown(ColumnText ct, List<ContentBlockDto> blocks, int closureIndex,
                                       NumberFormat nf, Color accentColor, Color textColor) throws DocumentException {
         // Collect section summaries and loose services

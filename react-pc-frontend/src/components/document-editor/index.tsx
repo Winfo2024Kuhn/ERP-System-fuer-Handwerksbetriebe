@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Pencil, Plus, Check, X } from 'lucide-react';
 import { useEditor } from '@tiptap/react';
 import { TiptapToolbar } from '../TiptapEditor';
@@ -32,6 +32,12 @@ import {
 } from '@dnd-kit/sortable';
 
 import type { DocBlock, DocumentEditorProps, KontextDaten, TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, EditorInstance } from './types';
+import {
+    CLOSURE_BLOCK_ID,
+    syncClosureBlock,
+    insertAtAnchor,
+    insertBlocksBeforeClosure,
+} from './blockOps';
 import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary } from './helpers';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
 import { ServiceBlock } from './ServiceBlock';
@@ -229,6 +235,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         leistungName: string;
         kategorieId: number;
         kategoriePfad: string;
+        /** Anker-Block-ID zum Zeitpunkt des Picker-Klicks (fuer "nach Anker einfuegen"). */
+        anchorId: string | null;
     } | null>(null);
 
     // Abrechnungsverlauf: already-billed amount by other invoices (for Schlussrechnung etc.)
@@ -391,15 +399,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     }
                 }
 
-                setBlocks(current => {
-                    const firstNachIdx = current.findIndex(b => b.textbausteinRolle === 'NACH');
-                    if (firstNachIdx === -1) return [...current, ...mappedBlocks];
-                    return [
-                        ...current.slice(0, firstNachIdx),
-                        ...mappedBlocks,
-                        ...current.slice(firstNachIdx),
-                    ];
-                });
+                setBlocks(current => insertBlocksBeforeClosure(current, mappedBlocks));
                 const sectionCount = mappedBlocks.filter(b => b.type === 'SECTION_HEADER').length;
                 showImportToast('success',
                     'GAEB Import erfolgreich',
@@ -621,10 +621,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         setAbschlagBetragNetto(data.betragNetto);
                     }
 
-                    // Reset saved-state ref so loaded data doesn't count as "unsaved"
+                    // Reset saved-state ref so loaded data doesn't count as "unsaved".
+                    // CLOSURE-Marker ausschliessen, da er per useEffect zur Laufzeit
+                    // eingefuegt wird und nicht Teil der persistierten Daten ist.
                     setTimeout(() => {
+                        const persistedLoaded = loadedBlocks.filter(b => b.id !== CLOSURE_BLOCK_ID && b.type !== 'CLOSURE');
                         lastSavedStateRef.current = JSON.stringify({
-                            blocks: loadedBlocks,
+                            blocks: persistedLoaded,
                             datum: data.datum,
                             betreff: data.betreff || '',
                             dokumentTyp: data.typ
@@ -891,8 +894,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         if (isLocked) return null;
         setSaving(true);
         try {
-            const htmlInhalt = blocksToHtml(blocks);
-            const blockNetto = calculateNetto(blocks);
+            // CLOSURE-Marker wird NICHT persistiert: er ist ein UI-Konstrukt, der per
+            // useEffect bei Bedarf wieder eingefuegt wird. Damit bleibt positionenJson
+            // bytegenau kompatibel mit bestehenden Dokumenten.
+            const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
+            const htmlInhalt = blocksToHtml(persistedBlocks);
+            const blockNetto = calculateNetto(persistedBlocks);
             // Für Schlussrechnung: effektiven Restbetrag verwenden (Blocksumme minus bereits abgerechnete)
             let betragNetto = blockNetto;
             if (dokumentTyp === 'SCHLUSSRECHNUNG' && bereitsAbgerechnetDurchAndere !== null) {
@@ -902,7 +909,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 betragNetto = abschlagBetragNetto;
             }
             const positionenData = JSON.stringify({
-                blocks,
+                blocks: persistedBlocks,
                 globalRabatt,
                 ...(abschlagInfo ? { abschlagInfo } : {})
             });
@@ -940,7 +947,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setDokument(updated);
                     setDokumentNummer(updated.dokumentNummer);
                     syncDocumentIdInUrl(updated.id);
-                    const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+                    const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
@@ -973,7 +980,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setDokument(created);
                     setDokumentNummer(created.dokumentNummer);
                     syncDocumentIdInUrl(created.id);
-                    const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+                    const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
@@ -997,8 +1004,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, tryAcquireLock, bereitsAbgerechnetDurchAndere, globalRabatt]);
 
     // --- Change Detection ---
+    // CLOSURE-Marker beim State-Vergleich ausblenden, damit das automatische
+    // Einfuegen/Entfernen des Markers nicht als "ungespeicherte Aenderung" zaehlt.
     useEffect(() => {
-        const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+        const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
+        const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
         if (lastSavedStateRef.current === '') {
             lastSavedStateRef.current = currentState;
             return;
@@ -1010,7 +1020,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     useEffect(() => {
         if (isLocked) return;
         const intervalId = setInterval(() => {
-            const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+            const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
+            const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
             if (currentState !== lastSavedStateRef.current && !saving) {
                 console.log('Auto-Save: Speichere Änderungen...');
                 handleSave();
@@ -1118,12 +1129,44 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         if (activeContainer === overContainer) {
             // Same container: reorder
             if (activeContainer === 'root') {
-                // Root-level reorder
+                // Root-level reorder mit CLOSURE-Constraint:
+                //  - Leistungen (SERVICE) und Bauabschnitte (SECTION_HEADER) muessen
+                //    vor dem CLOSURE-Block bleiben.
+                //  - CLOSURE selbst darf nicht vor die letzte Leistung wandern.
+                //  - Textbausteine, Separatoren etc. duerfen frei umsortiert werden.
                 setBlocks((items) => {
                     const oldIndex = items.findIndex((item) => item.id === activeId);
                     const newIndex = items.findIndex((item) => item.id === overId);
                     if (oldIndex === -1 || newIndex === -1) return items;
                     const newOrder = arrayMove(items, oldIndex, newIndex);
+
+                    // Constraint validieren: keine SERVICE/SECTION_HEADER hinter CLOSURE
+                    const closureIdx = newOrder.findIndex(b => b.id === CLOSURE_BLOCK_ID);
+                    if (closureIdx !== -1) {
+                        const activeBlock = items[oldIndex];
+                        const isProtectedMove = activeBlock.type === 'SERVICE'
+                            || activeBlock.type === 'SECTION_HEADER';
+                        const wouldEndAfterClosure = newOrder.findIndex(b => b.id === activeId) > closureIdx;
+                        if (isProtectedMove && wouldEndAfterClosure) {
+                            toast.warning('Leistungen müssen vor dem Abschluss bleiben.');
+                            return items; // revert
+                        }
+                        // CLOSURE selbst: nicht vor die letzte SERVICE/SECTION_HEADER schieben
+                        if (activeBlock.id === CLOSURE_BLOCK_ID) {
+                            const lastServiceIdx = (() => {
+                                for (let i = newOrder.length - 1; i >= 0; i--) {
+                                    const t = newOrder[i].type;
+                                    if (t === 'SERVICE' || t === 'SECTION_HEADER') return i;
+                                }
+                                return -1;
+                            })();
+                            const newClosureIdx = newOrder.findIndex(b => b.id === CLOSURE_BLOCK_ID);
+                            if (lastServiceIdx !== -1 && newClosureIdx < lastServiceIdx) {
+                                toast.warning('Der Abschluss muss nach allen Leistungen stehen.');
+                                return items;
+                            }
+                        }
+                    }
                     return newOrder;
                 });
             } else {
@@ -1218,21 +1261,32 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         });
     }, []);
 
-    // Fuegt einen neuen Block vor dem ersten NACH-Textbaustein ein,
-    // damit neue Leistungen / Section-Header / Subtotals immer zwischen
-    // Vor- und Nachtexten landen. Wenn keine Nachtexte existieren,
-    // wird der Block ans Ende angehaengt.
-    const insertBeforeNachtexte = (prev: DocBlock[], block: DocBlock): DocBlock[] => {
-        const firstNachIdx = prev.findIndex(b => b.textbausteinRolle === 'NACH');
-        if (firstNachIdx === -1) {
-            return [...prev, block];
-        }
-        return [
-            ...prev.slice(0, firstNachIdx),
-            block,
-            ...prev.slice(firstNachIdx),
-        ];
-    };
+    // Hinweis: insertBeforeNachtexte und insertAtAnchor sind nach blockOps.ts ausgelagert,
+    // damit sie in der Vitest-Suite (blockOps.test.ts) direkt mit 100% Branch-Coverage
+    // getestet werden koennen.
+
+    // CLOSURE-Sync: fuegt den virtuellen Abschluss-Block automatisch nach der
+    // letzten Leistung/Section ein, sobald mindestens eine Leistung vorhanden ist.
+    // Entfernt ihn wieder, wenn keine Leistung mehr existiert ODER wenn die
+    // berechnete Nettosumme 0 ist (nur optionale Leistungen / alle Preise 0€).
+    // Wichtig: Reihenfolge bestehender Bloecke wird NICHT veraendert – nur das
+    // CLOSURE-Marker-Element wird ein-/ausgeblendet (Identity-preserved return
+    // wenn nichts zu tun -> kein Re-Render-Loop).
+    useEffect(() => {
+        if (loading) return;
+        setBlocks(prev => {
+            // Wenn gesamtNetto === 0, soll KEIN CLOSURE im Array sein – sonst
+            // hinge ein leerer SortableBlock-Wrapper inkl. Drag-Handle im DOM.
+            // computeClosureSummary direkt hier (noch keine Component-Variable,
+            // closureSummary wird erst weiter unten gebildet).
+            const gesamtNetto = computeClosureSummary(prev).gesamtNetto;
+            if (gesamtNetto <= 0) {
+                const hasClosure = prev.some(b => b.id === CLOSURE_BLOCK_ID);
+                return hasClosure ? prev.filter(b => b.id !== CLOSURE_BLOCK_ID) : prev;
+            }
+            return syncClosureBlock(prev);
+        });
+    }, [blocks, loading]);
 
     // --- Block Actions ---
     const addBlock = (type: DocBlock['type'], payload?: Partial<DocBlock>) => {
@@ -1260,6 +1314,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             fontSize: rawBlock.fontSize ?? 10,
         };
 
+        // Anker fuer die Einfuegeposition: aktuell fokussierter Editor (Text-/Service-/
+        // Section-Block). Damit landet ein neu hinzugefuegtes Item direkt unterhalb
+        // des Blocks, mit dem der User zuletzt interagiert hat – statt am Ende.
+        const anchorId = activeEditorId;
+
         // Wenn eine Leistung mit Produktkategorie in ein Projekt eingefügt wird,
         // den User fragen ob die Kategorie dem Projekt zugeordnet werden soll
         if (type === 'SERVICE' && newBlock.leistungId && newBlock.kategorieId && projektId) {
@@ -1269,17 +1328,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 leistungName: leistung?.name || newBlock.title || 'Leistung',
                 kategorieId: newBlock.kategorieId,
                 kategoriePfad: leistung?.kategoriePfad || `Kategorie #${newBlock.kategorieId}`,
+                anchorId,
             });
             return;
         }
 
-        setBlocks(prev => insertBeforeNachtexte(prev, newBlock));
+        setBlocks(prev => insertAtAnchor(prev, newBlock, anchorId));
     };
 
     const handleKategorieBestaetigt = async (kategorieId: number) => {
         if (!pendingLeistungInsert || !projektId) return;
         const finalBlock = { ...pendingLeistungInsert.block, kategorieId };
-        setBlocks(prev => insertBeforeNachtexte(prev, finalBlock));
+        const anchorId = pendingLeistungInsert.anchorId;
+        setBlocks(prev => insertAtAnchor(prev, finalBlock, anchorId));
         setPendingLeistungInsert(null);
         try {
             const res = await fetch(`/api/projekte/${projektId}/produktkategorien`, {
@@ -1304,7 +1365,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const handleKategorieUeberspringen = () => {
         if (!pendingLeistungInsert) return;
         const name = pendingLeistungInsert.leistungName;
-        setBlocks(prev => insertBeforeNachtexte(prev, pendingLeistungInsert.block));
+        const anchorId = pendingLeistungInsert.anchorId;
+        setBlocks(prev => insertAtAnchor(prev, pendingLeistungInsert.block, anchorId));
         setPendingLeistungInsert(null);
         toast.info(`Leistung „${name}“ ohne Kategorie eingefügt`);
     };
@@ -2055,17 +2117,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const positionMap = buildPositionMap(blocks);
     const closureSummary = computeClosureSummary(blocks);
 
-    // Index des letzten SERVICE/SECTION_HEADER/SUBTOTAL/SEPARATOR Blocks
-    // Der Abschluss wird direkt danach eingefügt (vor nachfolgenden TEXT-Blöcken)
-    const closureInsertAfterIdx = useMemo(() => {
-        for (let i = blocks.length - 1; i >= 0; i--) {
-            const t = blocks[i].type;
-            if (t === 'SERVICE' || t === 'SECTION_HEADER' || t === 'SUBTOTAL' || t === 'SEPARATOR') {
-                return i;
-            }
-        }
-        return blocks.length - 1;
-    }, [blocks]);
+    // Hinweis: Bis 2026-05 wurde der ClosureBlock als externer Render-Block nach
+    // einem berechneten Index eingefuegt. Seit dem DnD-Refactor lebt CLOSURE als
+    // echter Block im blocks-Array (id=CLOSURE_BLOCK_ID) und wird direkt im Map
+    // gerendert -> kein separater closureInsertAfterIdx mehr noetig.
 
     const getPositionString = (block: DocBlock): string => {
         return positionMap.get(block.id) || '';
@@ -2191,9 +2246,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     items={blocks.map(b => b.id)}
                                     strategy={verticalListSortingStrategy}
                                 >
-                                    {blocks.map((block, blockIndex) => (
-                                        <Fragment key={block.id}>
-                                        <SortableBlock block={block} isLocked={isLocked}>
+                                    {blocks.map((block) => (
+                                        <SortableBlock key={block.id} block={block} isLocked={isLocked}>
                                             {block.type === 'SEPARATOR' && (
                                                 <SeparatorBlock
                                                     blockId={block.id}
@@ -2249,18 +2303,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                                     onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
                                                 />
                                             )}
+                                            {block.type === 'CLOSURE' && closureSummary.gesamtNetto > 0 && (
+                                                <ClosureBlock
+                                                    summary={closureSummary}
+                                                    dokumentTyp={dokumentTyp}
+                                                    abschlagBetragNetto={abschlagBetragNetto}
+                                                    bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
+                                                    abrechnungsPositionen={abrechnungsPositionen}
+                                                    basisdokumentBetragNetto={basisdokumentBetragNetto}
+                                                />
+                                            )}
                                         </SortableBlock>
-                                        {blockIndex === closureInsertAfterIdx && closureSummary.gesamtNetto > 0 && (
-                                            <ClosureBlock
-                                                summary={closureSummary}
-                                                dokumentTyp={dokumentTyp}
-                                                abschlagBetragNetto={abschlagBetragNetto}
-                                                bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
-                                                abrechnungsPositionen={abrechnungsPositionen}
-                                                basisdokumentBetragNetto={basisdokumentBetragNetto}
-                                            />
-                                        )}
-                                        </Fragment>
                                     ))}
                                 </SortableContext>
                                 <DragOverlay dropAnimation={{
@@ -2300,22 +2353,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                                     <div className="text-sm font-medium text-slate-800 line-clamp-1">{activeDragBlock.title || 'Ohne Titel'}</div>
                                                 </div>
                                             )}
+                                            {activeDragBlock.type === 'CLOSURE' && (
+                                                <div className="bg-slate-50 rounded-lg border border-slate-200 p-3">
+                                                    <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Abschluss</div>
+                                                    <div className="text-sm font-medium text-slate-800 line-clamp-1">Zwischensumme &amp; Schluss</div>
+                                                </div>
+                                            )}
                                         </SortableBlock>
                                     ) : null}
                                 </DragOverlay>
                             </DndContext>
 
-                            {/* Fallback: Abschluss nach allen Blöcken (wenn kein SERVICE/SECTION_HEADER vorhanden) */}
-                            {closureInsertAfterIdx < 0 && closureSummary.gesamtNetto > 0 && (
-                                <ClosureBlock
-                                    summary={closureSummary}
-                                    dokumentTyp={dokumentTyp}
-                                    abschlagBetragNetto={abschlagBetragNetto}
-                                    bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
-                                    abrechnungsPositionen={abrechnungsPositionen}
-                                    basisdokumentBetragNetto={basisdokumentBetragNetto}
-                                />
-                            )}
+                            {/* CLOSURE wird inline im map oben gerendert (Block-Type 'CLOSURE'),
+                                eingefuegt durch den CLOSURE-Sync useEffect. */}
 
                             {/* Empty State */}
                             {blocks.length === 0 && (

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Vitest coverage reports (generiert von npm run test:coverage)
+coverage
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
