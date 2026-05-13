@@ -259,6 +259,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [emailLoading, setEmailLoading] = useState(false);
     const [emailAttachments, setEmailAttachments] = useState<File[]>([]);
     const [emailBody, setEmailBody] = useState<string>('');
+    // Entwurfs-Versand: PDF mit Watermark "ENTWURF", ohne Buchung/Sperrung und
+    // ohne serverseitiges PDF-Speichern. Erlaubt Vorab-Abstimmung mit dem Kunden,
+    // bevor das Dokument GoBD-fest wird.
+    const [draftSendMode, setDraftSendMode] = useState(false);
+    // Snapshot des Draft-Status für den onSuccess-Handler des EmailComposeModal.
+    // Ref statt State, weil der Wert synchron (ohne Re-Render-Race) zwischen
+    // "PDF wurde erzeugt" und "User hat Mail abgeschickt" erhalten bleiben muss.
+    // Nur wenn dieser true ist, darf der /email-versendet-Endpoint NICHT
+    // aufgerufen werden (sonst würde ein Entwurfsversand das Dokument
+    // fälschlich als „E-Mail versendet" markieren).
+    const lastSendWasDraftRef = useRef(false);
 
     // GAEB Import
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1590,14 +1601,22 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
     // --- E-Mail Versand ---
     const handleSendEmail = () => {
+        setDraftSendMode(false);
+        setShowFormatDialog(true);
+    };
+
+    // Entwurf per E-Mail: gleiches Format-Auswahl-UI, aber das Dokument wird
+    // NICHT gebucht/gesperrt und das PDF erhält ein "ENTWURF"-Wasserzeichen.
+    const handleSendDraft = () => {
+        setDraftSendMode(true);
         setShowFormatDialog(true);
     };
 
     const handleFormatSelected = (format: PdfFormat) => {
-        // Bei Angeboten muss vor dem Versand die Gültigkeit des Annahme-Links
-        // gewählt werden. Bei allen anderen Dokumenttypen gibt es keinen
-        // Freigabe-Link, also direkt weiter zur PDF-Erzeugung.
-        if (dokumentTyp === 'ANGEBOT') {
+        // Bei Angeboten muss vor dem finalen Versand die Gültigkeit des
+        // Annahme-Links gewählt werden. Im Entwurfs-Modus gibt es keinen
+        // Annahme-Link, also auch keinen Gültigkeits-Dialog.
+        if (dokumentTyp === 'ANGEBOT' && !draftSendMode) {
             setPendingFormat(format);
             setShowFormatDialog(false);
             setShowValidityDialog(true);
@@ -1616,6 +1635,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     };
 
     const prepareAndOpenEmail = async (format: PdfFormat, tage: number | null) => {
+        const isDraft = draftSendMode;
         setEmailLoading(true);
         try {
             // 1. Auto-Save wenn nötig – Rückgabewert liefert aktuelle ID (React-State ist async)
@@ -1626,13 +1646,15 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             }
 
             // 2. Rechnungstypen: sofort buchen & sperren (instant lock vor E-Mail)
-            if (showFinalizationPrompt) {
+            //    Im Entwurfs-Modus wird NICHT gebucht/gesperrt – das Dokument
+            //    bleibt offen und änderbar.
+            if (showFinalizationPrompt && !isDraft) {
                 const booked = await buchenUndSperren();
                 if (!booked) throw new Error('Buchung fehlgeschlagen');
             }
 
-            // 2. PDF generieren (normal oder ZUGFeRD)
-            const request = await createPdfRequest(false);
+            // 2. PDF generieren (normal oder ZUGFeRD); im Entwurfs-Modus mit "ENTWURF"-Wasserzeichen
+            const request = await createPdfRequest(false, isDraft);
             if (!request) throw new Error('Konnte PDF-Anfrage nicht erstellen');
 
             const endpoint = format === 'zugferd'
@@ -1651,8 +1673,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             // PDF serverseitig speichern:
             // - Immer für Angebote/AB → Dateiname wird an Freigabe-Token gehängt
             // - Nur bei Buchung für Rechnungen → Offene-Posten-Ansicht
+            // Im Entwurfs-Modus NICHT speichern: das Entwurfs-PDF darf nicht
+            // mit dem späteren finalen Versand verwechselt werden, und ein
+            // Freigabe-Link soll nicht auf ein Wasserzeichen-PDF zeigen.
             let pdfDateiname: string | null = null;
-            const brauchtPdfSpeicherung = aktiveDokumentId && (
+            const brauchtPdfSpeicherung = !isDraft && aktiveDokumentId && (
                 dokumentTyp === 'ANGEBOT' ||
                 dokumentTyp === 'AUFTRAGSBESTAETIGUNG' ||
                 showFinalizationPrompt
@@ -1676,7 +1701,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
             const dokumentTypLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp;
             const prefix = format === 'zugferd' ? 'ZUGFeRD_' : '';
-            const fileName = `${prefix}${dokumentTypLabel}_${dokumentNummer || 'Entwurf'}.pdf`;
+            const draftPrefix = isDraft ? 'ENTWURF_' : '';
+            const fileName = `${draftPrefix}${prefix}${dokumentTypLabel}_${dokumentNummer || 'Entwurf'}.pdf`;
             const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
 
             // 3. E-Mail-Body vom Backend generieren lassen
@@ -1726,7 +1752,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 console.warn('E-Mail-Template konnte nicht geladen werden:', e);
             }
 
-            // 4. Email-Modal öffnen
+            // 4. Email-Modal öffnen.
+            //    Draft-Status für den onSuccess-Handler festhalten – darf NICHT
+            //    aus dem React-State gelesen werden, weil draftSendMode bis dahin
+            //    schon zurückgesetzt sein kann.
+            lastSendWasDraftRef.current = isDraft;
             setEmailAttachments([pdfFile]);
             setEmailBody(generatedBody);
             setShowFormatDialog(false);
@@ -1830,7 +1860,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         }
     };
 
-    const createPdfRequest = async (isPreview: boolean) => {
+    const createPdfRequest = async (isPreview: boolean, withDraftWatermark: boolean = false) => {
         const { layoutBlocks, backgroundImage, backgroundImagePage2 } = await fetchTemplateData(dokumentTyp);
 
         const filledLayoutBlocks: PreviewLayoutBlock[] = layoutBlocks.map(b => {
@@ -1892,6 +1922,28 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 content: 'VORSCHAU / ENTWURF\nKein Beleg',
                 styles: {
                     fontSize: 48,
+                    fontWeight: 'bold',
+                    color: '#e2e8f0',
+                    textAlign: 'center'
+                }
+            });
+        }
+
+        // Entwurfs-Versand: Watermark "ENTWURF" einbauen (auf allen Seiten – der
+        // PDF-Service rendert Watermark-Blöcke seitenübergreifend).
+        if (withDraftWatermark) {
+            filledLayoutBlocks.push({
+                id: 'watermark',
+                type: 'watermark',
+                page: 1,
+                x: 100,
+                y: 300,
+                width: 400,
+                height: 200,
+                z: 1000,
+                content: 'ENTWURF',
+                styles: {
+                    fontSize: 72,
                     fontWeight: 'bold',
                     color: '#e2e8f0',
                     textAlign: 'center'
@@ -2100,6 +2152,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 onExport={handleExport}
                 onPrint={handlePrint}
                 onSendEmail={handleSendEmail}
+                onSendDraft={handleSendDraft}
                 onGaebImport={handleGaebImportClick}
                 fileInputRef={fileInputRef}
                 onFileChange={handleFileChange}
@@ -2447,9 +2500,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             {/* PDF-Format Auswahl Dialog */}
             <EmailFormatDialog
                 isOpen={showFormatDialog}
-                onClose={() => { setShowFormatDialog(false); setEmailLoading(false); }}
+                onClose={() => { setShowFormatDialog(false); setEmailLoading(false); setDraftSendMode(false); }}
                 onSelect={handleFormatSelected}
                 loading={emailLoading}
+                title={draftSendMode ? 'Entwurf per E-Mail senden' : undefined}
+                description={draftSendMode
+                    ? 'Das PDF wird mit Wasserzeichen „ENTWURF" verschickt. Das Dokument bleibt offen und änderbar.'
+                    : undefined}
+                loadingText={draftSendMode ? 'Entwurfs-PDF wird erstellt…' : undefined}
             />
 
             {/* Gültigkeitsdauer-Auswahl (nur Angebote) */}
@@ -2471,6 +2529,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setShowEmailModal(false);
                     setEmailAttachments([]);
                     setEmailBody('');
+                    setDraftSendMode(false);
+                    lastSendWasDraftRef.current = false;
                 }}
                 projektId={projektId}
                 anfrageId={anfrageId}
@@ -2488,8 +2548,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 initialBody={emailBody}
                 gueltigkeitTage={gueltigkeitTage ?? undefined}
                 onSuccess={async () => {
-                    // Versanddatum setzen (Buchung erfolgte bereits vor E-Mail-Vorbereitung)
-                    if (dokument?.id) {
+                    // Versanddatum setzen (Buchung erfolgte bereits vor E-Mail-Vorbereitung).
+                    // Bei Entwurfs-Versand wird der Endpoint NICHT aufgerufen, damit
+                    // emailVersandDatum nicht fälschlich gesetzt wird – der eigentliche
+                    // finale Versand kommt später separat.
+                    const wasDraft = lastSendWasDraftRef.current;
+                    if (!wasDraft && dokument?.id) {
                         try {
                             const res = await fetch(`/api/ausgangs-dokumente/${dokument.id}/email-versendet`, {
                                 method: 'POST',
@@ -2508,6 +2572,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setEmailBody('');
                     setGueltigkeitTage(null);
                     setPendingFormat(null);
+                    setDraftSendMode(false);
+                    lastSendWasDraftRef.current = false;
                 }}
             />
         </div>

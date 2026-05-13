@@ -1,4 +1,4 @@
-import { X, Save, Upload, Download, FileText, Wrench, Clock, Printer, Minus, FolderOpen, Percent, Mail } from 'lucide-react';
+import { X, Save, Upload, Download, FileText, Wrench, Clock, Printer, Minus, FolderOpen, Percent, Mail, FileEdit } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import type { AusgangsGeschaeftsDokument } from './types';
@@ -24,6 +24,7 @@ interface DocumentEditorHeaderProps {
     onExport: () => void;
     onPrint: () => void;
     onSendEmail: () => void;
+    onSendDraft: () => void;
     onGaebImport: () => void;
     fileInputRef: React.RefObject<HTMLInputElement | null>;
     onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -49,6 +50,7 @@ export function DocumentEditorHeader({
     onExport,
     onPrint,
     onSendEmail,
+    onSendDraft,
     onGaebImport,
     fileInputRef,
     onFileChange,
@@ -213,6 +215,21 @@ export function DocumentEditorHeader({
                 >
                     <Printer className="w-3 h-3" />
                     Drucken
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onSendDraft}
+                    disabled={emailLoading}
+                    className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
+                    title="Entwurf mit Wasserzeichen senden – Dokument bleibt offen und änderbar"
+                >
+                    {emailLoading ? (
+                        <div className="w-3 h-3 border-2 border-slate-300 border-t-rose-500 rounded-full animate-spin" />
+                    ) : (
+                        <FileEdit className="w-3 h-3" />
+                    )}
+                    Entwurf
                 </Button>
                 <Button
                     variant="ghost"
