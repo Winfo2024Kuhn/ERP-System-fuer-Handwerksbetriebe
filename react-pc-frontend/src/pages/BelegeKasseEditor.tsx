@@ -3,7 +3,7 @@ import {
     Receipt, Upload, Loader2, Search, Wallet, Banknote, CreditCard,
     Coins, FileQuestion, CheckCircle2, AlertCircle, Trash2, X, Truck,
     Save, RefreshCw, FileText, BookOpen, BarChart3, ArrowRightLeft, FileInput,
-    FileDown, Calendar,
+    FileDown, Calendar, ArrowRight,
 } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
@@ -953,6 +953,17 @@ function KassenbuchView({ kassenbuch, loading, onSelectBeleg }: {
     if (!kassenbuch) {
         return <Card className="p-12 text-center text-slate-500"><Coins className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>Kassenbuch konnte nicht geladen werden.</p></Card>;
     }
+
+    // T-Konto: Soll-Seite = Geld rein (Einnahmen + Privateinlagen),
+    // Haben-Seite = Geld raus (Ausgaben + Privatentnahmen). Sortierung folgt
+    // der Server-Reihenfolge (chronologisch). 0,00-€-Bewegungen (pathologisch
+    // aber moeglich) landen auf der Eingang-Seite, damit nichts stillschweigend
+    // verschwindet — Summenfuss-Konsistenz bleibt.
+    const eingaenge = kassenbuch.bewegungen.filter(b => b.betrag >= 0);
+    const ausgaenge = kassenbuch.bewegungen.filter(b => b.betrag < 0);
+    const summeEingang = kassenbuch.summeEinnahmen + kassenbuch.summePrivateinlagen;
+    const summeAusgang = kassenbuch.summeAusgaben + kassenbuch.summePrivatentnahmen;
+
     return (
         <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -964,45 +975,116 @@ function KassenbuchView({ kassenbuch, loading, onSelectBeleg }: {
             </div>
 
             <Card className="overflow-hidden">
-                <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-600">
-                        <tr>
-                            <th className="text-left px-4 py-2 font-medium">Datum</th>
-                            <th className="text-left px-4 py-2 font-medium">Kategorie</th>
-                            <th className="text-left px-4 py-2 font-medium">Beschreibung</th>
-                            <th className="text-right px-4 py-2 font-medium">Betrag</th>
-                            <th className="text-right px-4 py-2 font-medium">Saldo</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {kassenbuch.bewegungen.length === 0 ? (
-                            <tr><td colSpan={5} className="text-center py-8 text-slate-400">Keine Bar-Bewegungen erfasst.</td></tr>
-                        ) : kassenbuch.bewegungen.map(bew => (
-                            <tr key={bew.belegId}
-                                onClick={() => onSelectBeleg(bew.belegId)}
-                                className="hover:bg-slate-50 cursor-pointer">
-                                <td className="px-4 py-2">{formatDate(bew.datum)}</td>
-                                <td className="px-4 py-2">
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${KATEGORIE_FARBE[bew.kategorie]}`}>
-                                        {KATEGORIE_LABELS[bew.kategorie]}
-                                    </span>
-                                </td>
-                                <td className="px-4 py-2 text-slate-700">
-                                    {bew.beschreibung || '–'}
-                                    {bew.lieferantName && <span className="ml-2 text-slate-400">({bew.lieferantName})</span>}
-                                </td>
-                                <td className={`px-4 py-2 text-right font-medium tabular-nums ${bew.betrag < 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                    {bew.betrag > 0 ? '+' : ''}{formatEuro(bew.betrag)} €
-                                </td>
-                                <td className="px-4 py-2 text-right font-semibold tabular-nums">
-                                    {formatEuro(bew.saldoNachher)} €
-                                </td>
-                            </tr>
+                {/* Konto-Kopf */}
+                <div className="border-b-2 border-slate-800 bg-slate-50/60 px-6 py-3 text-center">
+                    <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500 font-semibold">Kasse · Bargeldkonto</div>
+                    <div className="text-lg font-bold text-slate-900 mt-0.5">Bar-Bewegungen</div>
+                </div>
+
+                {/* Spaltenköpfe */}
+                <div className="grid grid-cols-2 border-b border-slate-300">
+                    <div className="px-6 py-3 border-r-2 border-slate-800 bg-emerald-50/40">
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-sm font-bold text-emerald-800 uppercase tracking-wider">Eingang</span>
+                            <span className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider">Soll</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">Einnahmen + Privateinlagen</div>
+                    </div>
+                    <div className="px-6 py-3 bg-amber-50/40">
+                        <div className="flex items-baseline gap-2 justify-end">
+                            <span className="text-[10px] text-amber-700 font-medium uppercase tracking-wider">Haben</span>
+                            <span className="text-sm font-bold text-amber-800 uppercase tracking-wider">Ausgang</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5 text-right">Ausgaben + Privatentnahmen</div>
+                    </div>
+                </div>
+
+                {/* Buchungsspalten */}
+                <div className="grid grid-cols-2 min-h-[420px]">
+                    {/* Eingang / Soll */}
+                    <div className="border-r-2 border-slate-800 divide-y divide-slate-100">
+                        {eingaenge.length === 0 ? (
+                            <div className="px-6 py-10 text-center text-slate-400 text-sm">Keine Eingänge erfasst.</div>
+                        ) : eingaenge.map(bew => (
+                            <TKontoZeile key={`in-${bew.belegId}`} bew={bew} side="eingang" onClick={() => onSelectBeleg(bew.belegId)} />
                         ))}
-                    </tbody>
-                </table>
+                    </div>
+                    {/* Ausgang / Haben */}
+                    <div className="divide-y divide-slate-100">
+                        {ausgaenge.length === 0 ? (
+                            <div className="px-6 py-10 text-center text-slate-400 text-sm">Keine Ausgänge erfasst.</div>
+                        ) : ausgaenge.map(bew => (
+                            <TKontoZeile key={`out-${bew.belegId}`} bew={bew} side="ausgang" onClick={() => onSelectBeleg(bew.belegId)} />
+                        ))}
+                    </div>
+                </div>
+
+                {/* Doppelstrich nach Buchhalter-Tradition */}
+                <div className="border-t-2 border-slate-800" />
+                <div className="border-t border-slate-800 mt-[3px]" />
+
+                {/* Summenfuß */}
+                <div className="grid grid-cols-2 bg-slate-50">
+                    <div className="px-6 py-3 border-r-2 border-slate-800 flex items-baseline justify-between">
+                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Summe Eingang</span>
+                        <span className="text-xl font-bold text-emerald-700 tabular-nums">{formatEuro(summeEingang)} €</span>
+                    </div>
+                    <div className="px-6 py-3 flex items-baseline justify-between">
+                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Summe Ausgang</span>
+                        <span className="text-xl font-bold text-amber-700 tabular-nums">{formatEuro(summeAusgang)} €</span>
+                    </div>
+                </div>
+
+                {/* Saldo-Zeile */}
+                <div className="bg-rose-50/60 border-t border-rose-200 px-6 py-3">
+                    <div className="flex items-baseline justify-between max-w-2xl mx-auto gap-4">
+                        <div>
+                            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Anfangsbestand</div>
+                            <div className="text-sm text-slate-600 tabular-nums">{formatEuro(kassenbuch.saldoStart)} €</div>
+                        </div>
+                        <ArrowRight className="w-5 h-5 text-slate-300 shrink-0" aria-hidden />
+                        <div className="text-right">
+                            <div className="text-[10px] uppercase tracking-wider text-rose-600 font-semibold">Neuer Saldo</div>
+                            <div className="text-2xl font-bold text-rose-700 tabular-nums">{formatEuro(kassenbuch.saldoEnde)} €</div>
+                        </div>
+                    </div>
+                </div>
             </Card>
         </div>
+    );
+}
+
+function TKontoZeile({ bew, side, onClick }: {
+    bew: KassenBewegung;
+    side: 'eingang' | 'ausgang';
+    onClick: () => void;
+}) {
+    const istPrivat = bew.kategorie === 'PRIVATENTNAHME' || bew.kategorie === 'PRIVATEINLAGE';
+    const betragColor = side === 'eingang'
+        ? (istPrivat ? 'text-lime-700' : 'text-emerald-700')
+        : (istPrivat ? 'text-fuchsia-700' : 'text-amber-700');
+    const hoverBg = side === 'eingang' ? 'hover:bg-emerald-50/40' : 'hover:bg-amber-50/40';
+    return (
+        <button type="button" onClick={onClick}
+            className={`w-full text-left px-6 py-2.5 cursor-pointer ${hoverBg} focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-inset`}>
+            <div className="flex items-baseline justify-between gap-3">
+                <div className="flex items-baseline gap-3 min-w-0 flex-1">
+                    <span className="text-xs text-slate-500 tabular-nums w-20 shrink-0">{formatDate(bew.datum)}</span>
+                    <div className="min-w-0 flex-1">
+                        <div className="text-sm text-slate-800 font-medium truncate">
+                            {bew.beschreibung || '–'}
+                            {bew.lieferantName && <span className="ml-2 text-slate-400 font-normal">({bew.lieferantName})</span>}
+                        </div>
+                        <span className={`text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded ${KATEGORIE_FARBE[bew.kategorie]} mt-1 inline-block`}>
+                            {KATEGORIE_LABELS[bew.kategorie]}
+                        </span>
+                    </div>
+                </div>
+                <span className={`text-base font-semibold tabular-nums shrink-0 ${betragColor}`}>
+                    {formatEuro(Math.abs(bew.betrag))} €
+                </span>
+            </div>
+        </button>
     );
 }
 
