@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.KasseEinstellung;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.repository.KasseEinstellungRepository;
+import org.example.kalkulationsprogramm.repository.SachkontoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,13 +20,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
  * Unit-Tests fuer den EhegattengehaltSchedulerService — Stichtag-Pruefung,
- * Idempotenz pro YYYY-MM, Konfigurations-Validierung.
+ * Idempotenz pro YYYY-MM, Konfigurations-Validierung. Buchungskonto wird
+ * hart als "4120" vom SachkontoRepository nachgeschlagen.
  *
  * DSGVO-Dummy: Empfaenger ist immer "Diana Mustermann".
  */
@@ -34,12 +38,20 @@ class EhegattengehaltSchedulerServiceTest {
 
     @Mock private KasseEinstellungRepository kasseEinstellungRepository;
     @Mock private KasseShortcutService kasseShortcutService;
+    @Mock private SachkontoRepository sachkontoRepository;
 
     private EhegattengehaltSchedulerService service;
 
     @BeforeEach
     void setUp() {
-        service = new EhegattengehaltSchedulerService(kasseEinstellungRepository, kasseShortcutService);
+        service = new EhegattengehaltSchedulerService(
+                kasseEinstellungRepository, kasseShortcutService, sachkontoRepository);
+        // Default: Sachkonto 4120 ist da. Einzelne Tests koennen das ueberschreiben.
+        Sachkonto lohn = new Sachkonto();
+        lohn.setId(42L);
+        lohn.setNummer("4120");
+        lohn.setBezeichnung("Loehne & Gehaelter");
+        lenient().when(sachkontoRepository.findByNummer(eq("4120"))).thenReturn(Optional.of(lohn));
     }
 
     @Test
@@ -111,13 +123,14 @@ class EhegattengehaltSchedulerServiceTest {
     }
 
     @Test
-    @DisplayName("Aktiv ohne Sachkonto -> nicht gebucht (Konfigurationsfehler)")
+    @DisplayName("Sachkonto 4120 fehlt im Repository -> nicht gebucht (Konfigurationsfehler)")
     void aktivOhneSachkonto_buchtNicht() {
         KasseEinstellung k = einstellung();
-        k.setEhegattengehaltSachkonto(null);
         given(kasseEinstellungRepository.findSingleton()).willReturn(Optional.of(k));
+        given(sachkontoRepository.findByNummer(eq("4120"))).willReturn(Optional.empty());
 
         assertThat(service.tryLohnBuchung(LocalDate.of(2026, 5, 13))).isFalse();
+        verify(kasseShortcutService, never()).lohnZahlung(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -144,9 +157,6 @@ class EhegattengehaltSchedulerServiceTest {
         k.setEhegattengehaltBetrag(new BigDecimal("500.00"));
         k.setEhegattengehaltTag(1);
         k.setEhegattengehaltEmpfaengerName("Diana Mustermann");
-        Sachkonto sk = new Sachkonto();
-        sk.setId(42L);
-        k.setEhegattengehaltSachkonto(sk);
         return k;
     }
 }

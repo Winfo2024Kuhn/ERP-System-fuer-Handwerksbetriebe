@@ -3,7 +3,9 @@ package org.example.kalkulationsprogramm.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.KasseEinstellung;
+import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.repository.KasseEinstellungRepository;
+import org.example.kalkulationsprogramm.repository.SachkontoRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -13,8 +15,10 @@ import java.time.format.DateTimeFormatter;
 
 /**
  * Monatlicher Scheduler: bucht das Ehegattengehalt automatisch, sobald der
- * konfigurierte Stichtag erreicht ist. Falls der Bar-Saldo nicht reicht, wird
- * im KasseShortcutService.lohnZahlung() vorher automatisch eine Privateinlage
+ * konfigurierte Stichtag erreicht ist. Buchungskonto ist hart "4120 Loehne &
+ * Gehaelter" (siehe V307) — kein UI-Auswahlfeld; reine Buchhaltung, keine
+ * Kostenstelle. Falls der Bar-Saldo nicht reicht, wird im
+ * KasseShortcutService.lohnZahlung() vorher automatisch eine Privateinlage
  * gebucht — Ziel: am Monatsende so wenig Bar in der Kasse wie noetig.
  *
  * Idempotenz: pro YYYY-MM nur einmal buchen. Wird ueber
@@ -29,10 +33,14 @@ import java.time.format.DateTimeFormatter;
 @RequiredArgsConstructor
 public class EhegattengehaltSchedulerService {
 
+    /** Standard-Lohn-Sachkonto aus V307 (SKR Handwerker). */
+    public static final String LOHN_SACHKONTO_NUMMER = "4120";
+
     private static final DateTimeFormatter YEAR_MONTH = DateTimeFormatter.ofPattern("yyyy-MM");
 
     private final KasseEinstellungRepository kasseEinstellungRepository;
     private final KasseShortcutService kasseShortcutService;
+    private final SachkontoRepository sachkontoRepository;
 
     @Scheduled(cron = "0 30 6 * * *", zone = "Europe/Berlin")
     public void monatlicheLohnBuchung() {
@@ -75,8 +83,12 @@ public class EhegattengehaltSchedulerService {
             log.warn("Ehegattengehalt aktiv aber kein Stichtag konfiguriert");
             return false;
         }
-        if (k.getEhegattengehaltSachkonto() == null) {
-            log.warn("Ehegattengehalt aktiv aber kein Lohn-Sachkonto konfiguriert");
+        Sachkonto lohnKonto = sachkontoRepository.findByNummer(LOHN_SACHKONTO_NUMMER).orElse(null);
+        if (lohnKonto == null) {
+            // V307 legt 4120 als Standard an — fehlt nur, wenn der Operator es
+            // explizit geloescht hat. Nicht crashen, nur warnen + skippen.
+            log.warn("Ehegattengehalt: Sachkonto {} (Loehne & Gehaelter) nicht gefunden — bitte in Sachkonten anlegen",
+                    LOHN_SACHKONTO_NUMMER);
             return false;
         }
 
@@ -100,14 +112,15 @@ public class EhegattengehaltSchedulerService {
                 k.getEhegattengehaltBetrag(), aktuellerJahrmonat, k.getEhegattengehaltEmpfaengerName());
 
         // SCHRITT 2 (eigene Tx via kasseShortcutService): Belege anlegen.
+        // Kostenstelle = null: Ehegattengehalt ist reine Buchhaltung.
         kasseShortcutService.lohnZahlung(
                 k.getEhegattengehaltBetrag(),
                 heute,
                 k.getEhegattengehaltEmpfaengerName() != null
                         ? "Auto: " + k.getEhegattengehaltEmpfaengerName()
                         : "Auto: Ehegattengehalt",
-                k.getEhegattengehaltSachkonto(),
-                k.getEhegattengehaltKostenstelle(),
+                lohnKonto,
+                null,
                 null);
         return true;
     }

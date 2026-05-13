@@ -26,12 +26,6 @@ interface Sachkonto {
     sortierung: number;
 }
 
-interface Kostenstelle {
-    id: number;
-    bezeichnung: string;
-    nummer?: string | null;
-}
-
 interface SaldoInfo {
     saldo: number;
     mindestbestand: number;
@@ -43,10 +37,6 @@ interface KasseEinstellung {
     ehegattengehaltAktiv: boolean;
     ehegattengehaltBetrag?: number | null;
     ehegattengehaltTag?: number | null;
-    ehegattengehaltSachkontoId?: number | null;
-    ehegattengehaltSachkontoBezeichnung?: string | null;
-    ehegattengehaltKostenstelleId?: number | null;
-    ehegattengehaltKostenstelleBezeichnung?: string | null;
     ehegattengehaltEmpfaengerName?: string | null;
     privateinlageSachkontoId?: number | null;
 }
@@ -174,7 +164,6 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
             )}
             {openModal === 'lohn' && (
                 <LohnZahlungModal
-                    sachkonten={sachkonten}
                     onClose={() => setOpenModal(null)}
                     onSuccess={(msg) => { setOpenModal(null); refreshAlles(); showToast('ok', msg); }}
                     onError={(m) => showToast('err', m)}
@@ -420,8 +409,9 @@ function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClose, onS
 
 // ===================== Ehegattengehalt-Lohnzahlung =====================
 
-function LohnZahlungModal({ sachkonten, onClose, onSuccess, onError }: {
-    sachkonten: Sachkonto[];
+// Buchungskonto ist hart "4120 Loehne & Gehaelter" (Backend), keine Kosten-
+// stelle. Der Handwerker soll nichts auswaehlen muessen — reine Buchhaltung.
+function LohnZahlungModal({ onClose, onSuccess, onError }: {
     onClose: () => void;
     onSuccess: (msg: string) => void;
     onError: (msg: string) => void;
@@ -430,9 +420,6 @@ function LohnZahlungModal({ sachkonten, onClose, onSuccess, onError }: {
     const [betrag, setBetrag] = useState<string>('');
     const [datum, setDatum] = useState<string>(todayIso());
     const [empfaenger, setEmpfaenger] = useState<string>('');
-    const [sachkontoId, setSachkontoId] = useState<number | null>(null);
-    const [kostenstellen, setKostenstellen] = useState<Kostenstelle[]>([]);
-    const [kostenstelleId, setKostenstelleId] = useState<number | null>(null);
     const [saldo, setSaldo] = useState<SaldoInfo | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -444,17 +431,11 @@ function LohnZahlungModal({ sachkonten, onClose, onSuccess, onError }: {
                 setEinstellung(e);
                 if (e.ehegattengehaltBetrag) setBetrag(String(e.ehegattengehaltBetrag));
                 if (e.ehegattengehaltEmpfaengerName) setEmpfaenger(e.ehegattengehaltEmpfaengerName);
-                if (e.ehegattengehaltSachkontoId) setSachkontoId(e.ehegattengehaltSachkontoId);
-                if (e.ehegattengehaltKostenstelleId) setKostenstelleId(e.ehegattengehaltKostenstelleId);
             })
             .catch(err => console.error(err));
         fetch('/api/buchhaltung/kasse/saldo')
             .then(r => r.ok ? r.json() : null)
             .then((s: SaldoInfo | null) => s && setSaldo(s))
-            .catch(err => console.error(err));
-        fetch('/api/bestellungen-uebersicht/kostenstellen')
-            .then(r => r.ok ? r.json() : [])
-            .then((d: Kostenstelle[]) => setKostenstellen(Array.isArray(d) ? d : []))
             .catch(err => console.error(err));
     }, []);
 
@@ -466,7 +447,6 @@ function LohnZahlungModal({ sachkonten, onClose, onSuccess, onError }: {
 
     const submit = async () => {
         if (!valid) { onError('Bitte einen positiven Betrag eingeben.'); return; }
-        if (!sachkontoId) { onError('Bitte Lohn-Sachkonto wählen.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/buchhaltung/kasse/lohn-zahlung', {
@@ -474,7 +454,6 @@ function LohnZahlungModal({ sachkonten, onClose, onSuccess, onError }: {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     betrag: b, datum, empfaengerName: empfaenger || null,
-                    sachkontoId, kostenstelleId,
                 }),
             });
             if (res.ok) {
@@ -498,6 +477,9 @@ function LohnZahlungModal({ sachkonten, onClose, onSuccess, onError }: {
                     Default-Werte aus den Einstellungen geladen. Anpassbar für diese Buchung.
                 </div>
             )}
+            <div className="mb-3 text-xs text-slate-500 bg-rose-50 border border-rose-200 rounded p-2">
+                Wird automatisch auf <strong>Löhne &amp; Gehälter</strong> gebucht — reine Buchhaltung, keine Kostenstelle.
+            </div>
             <FieldRow label="Empfänger (Name)">
                 <input type="text" value={empfaenger}
                     onChange={e => setEmpfaenger(e.target.value)}
@@ -509,35 +491,7 @@ function LohnZahlungModal({ sachkonten, onClose, onSuccess, onError }: {
             <FieldRow label="Betrag (€)">
                 <input type="number" step="0.01" value={betrag}
                     onChange={e => setBetrag(e.target.value)}
-                    className={inputCls} />
-            </FieldRow>
-            <FieldRow label="Lohn-Sachkonto">
-                <Select
-                    value={sachkontoId != null ? String(sachkontoId) : ''}
-                    onChange={(v: string) => setSachkontoId(v ? Number(v) : null)}
-                    placeholder="– bitte wählen –"
-                    options={[
-                        { value: '', label: '– bitte wählen –' },
-                        ...sachkonten
-                            .filter(s => s.kontoTyp === 'AUFWAND')
-                            .sort((a, b) => a.sortierung - b.sortierung)
-                            .map(s => ({ value: String(s.id), label: `${s.nummer ? s.nummer + ' ' : ''}${s.bezeichnung}` })),
-                    ]}
-                />
-            </FieldRow>
-            <FieldRow label="Kostenstelle (optional)">
-                <Select
-                    value={kostenstelleId != null ? String(kostenstelleId) : ''}
-                    onChange={(v: string) => setKostenstelleId(v ? Number(v) : null)}
-                    placeholder="– keine –"
-                    options={[
-                        { value: '', label: '– keine –' },
-                        ...kostenstellen.map(k => ({
-                            value: String(k.id),
-                            label: `${k.nummer ? k.nummer + ' ' : ''}${k.bezeichnung}`,
-                        })),
-                    ]}
-                />
+                    className={inputCls} autoFocus />
             </FieldRow>
 
             {projSaldo != null && saldo && (
@@ -567,7 +521,6 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
     onError: (msg: string) => void;
 }) {
     const [einstellung, setEinstellung] = useState<KasseEinstellung | null>(null);
-    const [kostenstellen, setKostenstellen] = useState<Kostenstelle[]>([]);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -575,10 +528,6 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
             .then(r => r.ok ? r.json() : null)
             .then((e: KasseEinstellung | null) => setEinstellung(e ?? defaultEinstellung()))
             .catch(() => setEinstellung(defaultEinstellung()));
-        fetch('/api/bestellungen-uebersicht/kostenstellen')
-            .then(r => r.ok ? r.json() : [])
-            .then((d: Kostenstelle[]) => setKostenstellen(Array.isArray(d) ? d : []))
-            .catch(err => console.error(err));
     }, []);
 
     if (!einstellung) {
@@ -592,7 +541,6 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
     const update = <K extends keyof KasseEinstellung>(k: K, v: KasseEinstellung[K]) =>
         setEinstellung(e => e ? { ...e, [k]: v } : e);
 
-    const aufwandSachkonten = sachkonten.filter(s => s.kontoTyp === 'AUFWAND').sort((a, b) => a.sortierung - b.sortierung);
     const privatSachkonten = sachkonten.filter(s => s.kontoTyp === 'PRIVAT').sort((a, b) => a.sortierung - b.sortierung);
 
     const submit = async () => {
@@ -606,8 +554,6 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
                     ehegattengehaltAktiv: einstellung.ehegattengehaltAktiv,
                     ehegattengehaltBetrag: einstellung.ehegattengehaltBetrag ?? null,
                     ehegattengehaltTag: einstellung.ehegattengehaltTag ?? null,
-                    ehegattengehaltSachkontoId: einstellung.ehegattengehaltSachkontoId ?? null,
-                    ehegattengehaltKostenstelleId: einstellung.ehegattengehaltKostenstelleId ?? null,
                     ehegattengehaltEmpfaengerName: einstellung.ehegattengehaltEmpfaengerName ?? null,
                     privateinlageSachkontoId: einstellung.privateinlageSachkontoId ?? null,
                 }),
@@ -656,6 +602,10 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
             </FieldRow>
 
             <h3 className="font-semibold text-slate-900 mb-2 text-sm pt-2 border-t border-slate-200">Ehegattengehalt-Automatik</h3>
+            <p className="text-xs text-slate-500 mb-3">
+                Wird am Stichtag automatisch auf <strong>Löhne &amp; Gehälter</strong> gebucht — reine Buchhaltung, keine Kostenstelle.
+                Falls die Kasse danach unter den Mindestbestand fiele, wird vorher automatisch eine Privateinlage gebucht.
+            </p>
             <label className="flex items-center gap-2 mb-3">
                 <input type="checkbox" checked={einstellung.ehegattengehaltAktiv}
                     onChange={e => update('ehegattengehaltAktiv', e.target.checked)} />
@@ -677,34 +627,6 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
                         <input type="number" min={1} max={28} value={einstellung.ehegattengehaltTag ?? ''}
                             onChange={e => update('ehegattengehaltTag', e.target.value === '' ? null : Number(e.target.value))}
                             className={inputCls} />
-                    </FieldRow>
-                    <FieldRow label="Lohn-Sachkonto (Aufwand)">
-                        <Select
-                            value={einstellung.ehegattengehaltSachkontoId != null ? String(einstellung.ehegattengehaltSachkontoId) : ''}
-                            onChange={(v: string) => update('ehegattengehaltSachkontoId', v ? Number(v) : null)}
-                            placeholder="– bitte wählen –"
-                            options={[
-                                { value: '', label: '– bitte wählen –' },
-                                ...aufwandSachkonten.map(s => ({
-                                    value: String(s.id),
-                                    label: `${s.nummer ? s.nummer + ' ' : ''}${s.bezeichnung}`,
-                                })),
-                            ]}
-                        />
-                    </FieldRow>
-                    <FieldRow label="Kostenstelle (optional)">
-                        <Select
-                            value={einstellung.ehegattengehaltKostenstelleId != null ? String(einstellung.ehegattengehaltKostenstelleId) : ''}
-                            onChange={(v: string) => update('ehegattengehaltKostenstelleId', v ? Number(v) : null)}
-                            placeholder="– keine –"
-                            options={[
-                                { value: '', label: '– keine –' },
-                                ...kostenstellen.map(k => ({
-                                    value: String(k.id),
-                                    label: `${k.nummer ? k.nummer + ' ' : ''}${k.bezeichnung}`,
-                                })),
-                            ]}
-                        />
                     </FieldRow>
                 </>
             )}

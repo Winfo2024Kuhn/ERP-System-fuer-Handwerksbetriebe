@@ -14,8 +14,11 @@ import java.time.LocalDateTime;
  *   - Kassen-Mindestbestand: BelegService verhindert Buchungen, die den Saldo
  *     unter diesen Wert fallen lassen wuerden. Default 0 EUR.
  *   - Ehegattengehalt-Automatik: Monatlicher Scheduler bucht am konfigurierten
- *     Tag den Betrag als Kassenausgabe. Wenn der Bar-Saldo nicht reicht, wird
- *     vorher automatisch eine Privateinlage in genau passender Hoehe gebucht.
+ *     Tag den Betrag als Kassenausgabe. Das Buchungskonto ist hart "4120 Loehne
+ *     & Gehaelter" (siehe V307) — Ehegattengehalt ist rein buchhalterisch, der
+ *     Handwerker soll kein Konto auswaehlen muessen. Keine Kostenstelle.
+ *     Wenn der Bar-Saldo nicht reicht, wird vorher automatisch eine Privatein-
+ *     lage in genau passender Hoehe gebucht (Privateinlage-Sachkonto unten).
  *
  * letzteBuchungJahrmonat ist die Idempotenz-Sperre: pro YYYY-MM nur einmal
  * buchen, auch wenn der Scheduler mehrfach laeuft.
@@ -45,14 +48,6 @@ public class KasseEinstellung {
      */
     @Column(name = "ehegattengehalt_tag")
     private Integer ehegattengehaltTag;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ehegattengehalt_sachkonto_id")
-    private Sachkonto ehegattengehaltSachkonto;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ehegattengehalt_kostenstelle_id")
-    private Kostenstelle ehegattengehaltKostenstelle;
 
     @Column(name = "ehegattengehalt_empfaenger_name", length = 120)
     private String ehegattengehaltEmpfaengerName;

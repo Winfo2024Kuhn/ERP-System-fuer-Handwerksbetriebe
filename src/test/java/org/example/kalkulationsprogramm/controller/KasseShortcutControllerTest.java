@@ -9,7 +9,6 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.dto.BelegDto;
 import org.example.kalkulationsprogramm.repository.KasseEinstellungRepository;
-import org.example.kalkulationsprogramm.repository.KostenstelleRepository;
 import org.example.kalkulationsprogramm.repository.SachkontoRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.KasseSaldoService;
@@ -56,7 +55,6 @@ class KasseShortcutControllerTest {
     @MockBean private KasseSaldoService kasseSaldoService;
     @MockBean private KasseEinstellungRepository kasseEinstellungRepository;
     @MockBean private SachkontoRepository sachkontoRepository;
-    @MockBean private KostenstelleRepository kostenstelleRepository;
 
     @AfterEach
     void cleanup() {
@@ -222,18 +220,18 @@ class KasseShortcutControllerTest {
     }
 
     @Test
-    @DisplayName("POST /lohn-zahlung mit Long.MAX_VALUE als sachkontoId -> 404, kein 5xx")
-    void lohnZahlung_maxLongSachkontoId_404() throws Exception {
+    @DisplayName("POST /lohn-zahlung wenn Sachkonto 4120 fehlt -> 404, kein 5xx")
+    void lohnZahlung_kontoFehlt_404() throws Exception {
         mockAuth(true, true);
-        given(sachkontoRepository.findById(Long.MAX_VALUE)).willReturn(Optional.empty());
+        given(sachkontoRepository.findByNummer("4120")).willReturn(Optional.empty());
 
         String body = "{\"betrag\":500.00,\"datum\":\"2026-05-13\","
-                + "\"empfaengerName\":\"Diana Mustermann\","
-                + "\"sachkontoId\":" + Long.MAX_VALUE + "}";
+                + "\"empfaengerName\":\"Diana Mustermann\"}";
         mockMvc.perform(post("/api/buchhaltung/kasse/lohn-zahlung")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").exists());
     }
 
     @Test
@@ -271,18 +269,21 @@ class KasseShortcutControllerTest {
         given(kasseEinstellungRepository.findSingleton()).willReturn(Optional.of(k));
         given(kasseEinstellungRepository.save(any(KasseEinstellung.class)))
                 .willAnswer(inv -> inv.getArgument(0));
-        Sachkonto sk1 = new Sachkonto();
-        sk1.setId(10L);
-        sk1.setBezeichnung("Lohn-Konto");
-        Sachkonto sk2 = new Sachkonto();
-        sk2.setId(11L);
-        sk2.setBezeichnung("Privateinlage-Konto");
-        given(sachkontoRepository.findById(10L)).willReturn(Optional.of(sk1));
-        given(sachkontoRepository.findById(11L)).willReturn(Optional.of(sk2));
+        Sachkonto lohn = new Sachkonto();
+        lohn.setId(42L);
+        lohn.setNummer("4120");
+        lohn.setBezeichnung("Loehne & Gehaelter");
+        Sachkonto einlage = new Sachkonto();
+        einlage.setId(11L);
+        einlage.setBezeichnung("Privateinlage-Konto");
+        given(sachkontoRepository.findByNummer("4120")).willReturn(Optional.of(lohn));
+        given(sachkontoRepository.findById(11L)).willReturn(Optional.of(einlage));
 
+        // Body OHNE sachkontoId/kostenstelleId — wird hart auf 4120 gebucht,
+        // keine Kostenstelle.
         String body = "{\"mindestbestand\":50,\"ehegattengehaltAktiv\":true,"
                 + "\"ehegattengehaltBetrag\":500.00,\"ehegattengehaltTag\":1,"
-                + "\"ehegattengehaltSachkontoId\":10,\"privateinlageSachkontoId\":11,"
+                + "\"privateinlageSachkontoId\":11,"
                 + "\"ehegattengehaltEmpfaengerName\":\"Diana Mustermann\"}";
         mockMvc.perform(put("/api/buchhaltung/kasse/einstellung")
                         .contentType(MediaType.APPLICATION_JSON)

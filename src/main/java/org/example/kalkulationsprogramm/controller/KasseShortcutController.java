@@ -4,13 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.KasseEinstellung;
-import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.repository.KasseEinstellungRepository;
-import org.example.kalkulationsprogramm.repository.KostenstelleRepository;
 import org.example.kalkulationsprogramm.repository.SachkontoRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
+import org.example.kalkulationsprogramm.service.EhegattengehaltSchedulerService;
 import org.example.kalkulationsprogramm.service.KasseSaldoService;
 import org.example.kalkulationsprogramm.service.KasseShortcutService;
 import org.example.kalkulationsprogramm.service.KasseUnterdeckungException;
@@ -48,7 +47,6 @@ public class KasseShortcutController {
     private final KasseSaldoService kasseSaldoService;
     private final KasseEinstellungRepository kasseEinstellungRepository;
     private final SachkontoRepository sachkontoRepository;
-    private final KostenstelleRepository kostenstelleRepository;
 
     @PostMapping("/bank-abhebung")
     public ResponseEntity<?> bankAbhebung(
@@ -117,20 +115,19 @@ public class KasseShortcutController {
         if (caller == null || !belegService.darfScannen(caller)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+        // Buchungskonto ist hart "4120 Loehne & Gehaelter" — Ehegattengehalt
+        // ist rein buchhalterisch, der Handwerker soll kein Konto auswaehlen
+        // muessen. Keine Kostenstelle.
+        Sachkonto sk = sachkontoRepository.findByNummer(EhegattengehaltSchedulerService.LOHN_SACHKONTO_NUMMER)
+                .orElse(null);
+        if (sk == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "message", "Lohn-Sachkonto " + EhegattengehaltSchedulerService.LOHN_SACHKONTO_NUMMER
+                            + " (Loehne & Gehaelter) fehlt — bitte in Sachkonten anlegen"));
+        }
         try {
-            Sachkonto sk = null;
-            if (req.sachkontoId() != null) {
-                sk = sachkontoRepository.findById(req.sachkontoId()).orElse(null);
-                if (sk == null) {
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                            .body(Map.of("message", "Sachkonto nicht gefunden"));
-                }
-            }
-            Kostenstelle ks = req.kostenstelleId() != null
-                    ? kostenstelleRepository.findById(req.kostenstelleId()).orElse(null)
-                    : null;
             KasseShortcutService.LohnZahlungResult result = kasseShortcutService.lohnZahlung(
-                    req.betrag(), req.datum(), req.empfaengerName(), sk, ks, caller);
+                    req.betrag(), req.datum(), req.empfaengerName(), sk, null, caller);
             return ResponseEntity.ok(Map.of(
                     "privateinlage", result.privateinlage() != null ? belegService.toDto(result.privateinlage()) : null,
                     "lohnBeleg", belegService.toDto(result.lohnBeleg()),
@@ -164,8 +161,7 @@ public class KasseShortcutController {
         return ResponseEntity.ok(kasseEinstellungRepository.findSingleton()
                 .map(KasseShortcutController::toEinstellungDto)
                 .orElseGet(() -> new EinstellungResponse(
-                        null, BigDecimal.ZERO, false, null, null,
-                        null, null, null, null, null, null)));
+                        null, BigDecimal.ZERO, false, null, null, null, null)));
     }
 
     @PutMapping("/einstellung")
@@ -188,16 +184,6 @@ public class KasseShortcutController {
             k.setEhegattengehaltBetrag(req.ehegattengehaltBetrag());
             k.setEhegattengehaltTag(req.ehegattengehaltTag());
             k.setEhegattengehaltEmpfaengerName(req.ehegattengehaltEmpfaengerName());
-            if (req.ehegattengehaltSachkontoId() != null) {
-                k.setEhegattengehaltSachkonto(sachkontoRepository.findById(req.ehegattengehaltSachkontoId()).orElse(null));
-            } else {
-                k.setEhegattengehaltSachkonto(null);
-            }
-            if (req.ehegattengehaltKostenstelleId() != null) {
-                k.setEhegattengehaltKostenstelle(kostenstelleRepository.findById(req.ehegattengehaltKostenstelleId()).orElse(null));
-            } else {
-                k.setEhegattengehaltKostenstelle(null);
-            }
             if (req.privateinlageSachkontoId() != null) {
                 k.setPrivateinlageSachkonto(sachkontoRepository.findById(req.privateinlageSachkontoId()).orElse(null));
             } else {
@@ -211,7 +197,7 @@ public class KasseShortcutController {
         }
     }
 
-    private static void validateEhegattengehaltKonfig(KasseEinstellung k) {
+    private void validateEhegattengehaltKonfig(KasseEinstellung k) {
         if (!k.isEhegattengehaltAktiv()) {
             return;
         }
@@ -221,11 +207,15 @@ public class KasseShortcutController {
         if (k.getEhegattengehaltTag() == null || k.getEhegattengehaltTag() < 1 || k.getEhegattengehaltTag() > 28) {
             throw new IllegalArgumentException("Ehegattengehalt: Tag muss zwischen 1 und 28 liegen");
         }
-        if (k.getEhegattengehaltSachkonto() == null) {
-            throw new IllegalArgumentException("Ehegattengehalt: Lohn-Sachkonto fehlt");
-        }
         if (k.getPrivateinlageSachkonto() == null) {
             throw new IllegalArgumentException("Ehegattengehalt: Privateinlage-Sachkonto fehlt (fuer Auto-Auffuellen)");
+        }
+        // Lohn-Sachkonto "4120" wird zum Buchungszeitpunkt nachgeschlagen.
+        // Fail-fast bei Speichern, damit der Operator den Konfig-Fehler frueh sieht.
+        if (sachkontoRepository.findByNummer(EhegattengehaltSchedulerService.LOHN_SACHKONTO_NUMMER).isEmpty()) {
+            throw new IllegalArgumentException("Ehegattengehalt: Sachkonto "
+                    + EhegattengehaltSchedulerService.LOHN_SACHKONTO_NUMMER
+                    + " (Loehne & Gehaelter) fehlt in den Sachkonten");
         }
     }
 
@@ -243,10 +233,6 @@ public class KasseShortcutController {
                 k.isEhegattengehaltAktiv(),
                 k.getEhegattengehaltBetrag(),
                 k.getEhegattengehaltTag(),
-                k.getEhegattengehaltSachkonto() != null ? k.getEhegattengehaltSachkonto().getId() : null,
-                k.getEhegattengehaltSachkonto() != null ? k.getEhegattengehaltSachkonto().getBezeichnung() : null,
-                k.getEhegattengehaltKostenstelle() != null ? k.getEhegattengehaltKostenstelle().getId() : null,
-                k.getEhegattengehaltKostenstelle() != null ? k.getEhegattengehaltKostenstelle().getBezeichnung() : null,
                 k.getEhegattengehaltEmpfaengerName(),
                 k.getPrivateinlageSachkonto() != null ? k.getPrivateinlageSachkonto().getId() : null);
     }
@@ -257,16 +243,13 @@ public class KasseShortcutController {
 
     public record EinfacheKasseRequest(BigDecimal betrag, LocalDate datum, String beschreibung) {}
 
-    public record LohnZahlungRequest(BigDecimal betrag, LocalDate datum, String empfaengerName,
-                                     Long sachkontoId, Long kostenstelleId) {}
+    public record LohnZahlungRequest(BigDecimal betrag, LocalDate datum, String empfaengerName) {}
 
     public record EinstellungRequest(
             BigDecimal mindestbestand,
             Boolean ehegattengehaltAktiv,
             BigDecimal ehegattengehaltBetrag,
             Integer ehegattengehaltTag,
-            Long ehegattengehaltSachkontoId,
-            Long ehegattengehaltKostenstelleId,
             String ehegattengehaltEmpfaengerName,
             Long privateinlageSachkontoId) {}
 
@@ -276,10 +259,6 @@ public class KasseShortcutController {
             boolean ehegattengehaltAktiv,
             BigDecimal ehegattengehaltBetrag,
             Integer ehegattengehaltTag,
-            Long ehegattengehaltSachkontoId,
-            String ehegattengehaltSachkontoBezeichnung,
-            Long ehegattengehaltKostenstelleId,
-            String ehegattengehaltKostenstelleBezeichnung,
             String ehegattengehaltEmpfaengerName,
             Long privateinlageSachkontoId) {}
 }
