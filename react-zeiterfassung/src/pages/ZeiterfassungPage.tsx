@@ -160,10 +160,11 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                 }
             } catch {
                 console.log('Offline/Timeout - speichere Stop-Event lokal')
-                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
-                if (wasWorkSession && oldElapsedMinutes > 0) {
-                    await OfflineService.addOfflineWorkedMinutes(oldElapsedMinutes)
-                }
+                // Arbeitszeit der gerade beendeten Buchung im Pending-Eintrag
+                // mitführen, damit "heute gearbeitet" weiterhin stimmt - auch
+                // wenn der Server diesen Stop später ablehnt.
+                const stopDuration = wasWorkSession && oldElapsedMinutes > 0 ? oldElapsedMinutes : undefined
+                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId, stopDuration)
             }
 
             // Clear old session

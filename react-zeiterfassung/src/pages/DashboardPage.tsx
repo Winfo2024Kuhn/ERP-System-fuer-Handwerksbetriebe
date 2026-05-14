@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Receipt } from 'lucide-react'
-import { buildBookingRequestPayload, createOperationId, OfflineService } from '../services/OfflineService'
+import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench } from 'lucide-react'
+import { buildBookingRequestPayload, createOperationId, OfflineService, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
-import { shouldIncludeOfflineCompletedMinutes } from './DashboardPage.logic'
+import FailedEntriesModal from '../components/FailedEntriesModal'
 
 interface Session {
     projektId: number | null
@@ -88,6 +88,23 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
     }
     const [urlaubsWarnung, setUrlaubsWarnung] = useState<UrlaubsVerfallWarnung | null>(null)
 
+    // Reparatur-Liste (Failed Entries): Buchungen, die der Server beim
+    // Sync abgelehnt hat. "Mobile gewinnt" - der Handwerker sieht den
+    // Fehler statt dass die Buchung still gelöscht wird.
+    const [failedEntries, setFailedEntries] = useState<FailedEntry[]>([])
+    const [showFailedModal, setShowFailedModal] = useState(false)
+
+    const loadFailedEntries = async () => {
+        const entries = await OfflineService.getFailedEntries()
+        setFailedEntries(entries)
+    }
+
+    const handleDismissFailedEntry = async (id: string) => {
+        await OfflineService.removeFailedEntry(id)
+        await loadFailedEntries()
+        await loadHeuteGearbeitet()
+    }
+
     // Belegerfassung: Kachel nur sichtbar, wenn Mitarbeiter zur Abteilung Buchhaltung gehört
     // (Permission läuft über bestehendes System AbteilungDokumentBerechtigung 'BELEG').
     const [darfBelegeScannen, setDarfBelegeScannen] = useState(false)
@@ -103,18 +120,23 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
 
 
     // Load today's hours - OFFLINE FIRST: show local data immediately
+    //
+    // "Heute gearbeitet" muss IMMER stimmen. Quellen-Komposition:
+    //   serverMinuten        = abgeschlossene Buchungen, die der Server kennt
+    //   unsyncedStopMinutes  = Stop/Pause-Events, die der Server noch NICHT
+    //                          kennt (pending) ODER abgelehnt hat (failed).
+    //                          Jeder Eintrag trägt seine eigene Dauer, daher
+    //                          gibt es weder Doppelzählung beim Sync noch
+    //                          Datenverlust durch eine globale clear()-Aktion.
+    //   currentSessionMinuten = laufende Session (live aus localStorage)
     const loadHeuteGearbeitet = async () => {
         const token = localStorage.getItem('zeiterfassung_token')
         if (!token) return
 
-        // 1. Server-Wert: enthält NUR abgeschlossene Buchungen (keine laufende).
-        // Cache und Live-Wert haben damit dieselbe Semantik – keine Doppelzählung.
         const heuteData = await OfflineService.getHeuteGearbeitet(token)
         const serverMinuten = (heuteData.stunden || 0) * 60 + (heuteData.minuten || 0)
 
-        const pendingCount = await OfflineService.getPendingCount()
-
-        // 2. Laufende Session ermitteln. Quelle: lokale Session zuerst, dann
+        // Laufende Session ermitteln. Quelle: lokale Session zuerst, dann
         // Server-Antwort als Fallback (z.B. nach App-Neustart bevor lokale
         // Session geladen wurde).
         let currentSessionMinuten = 0
@@ -132,7 +154,6 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             } catch { /* ignore */ }
         } else if (heuteData.aktiveBuchungStartZeit) {
             runningStart = new Date(heuteData.aktiveBuchungStartZeit)
-            // Server liefert nur Arbeit (PAUSE wird im Backend gefiltert), also keine Abwesenheit
             runningIsAbwesenheit = false
         }
 
@@ -141,14 +162,12 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             currentSessionMinuten = Math.max(0, Math.floor((now.getTime() - runningStart.getTime()) / 60000))
         }
 
-        // 3. Offline-Minuten: Buchungen, die offline beendet wurden und noch
-        // nicht im Server-Wert enthalten sind. Sobald alle pending-Einträge
-        // gesynct sind, räumt App.tsx diese auf (clearOfflineHeuteMinuten).
-        const offlineMinuten = shouldIncludeOfflineCompletedMinutes(heuteData.fromCache, pendingCount)
-            ? await OfflineService.getOfflineHeuteMinuten()
-            : 0
+        // Unsynced Stop/Pause-Events (pending + Reparatur-Liste) tragen
+        // ihre eigene Dauer bei. Damit ist die Anzeige immer konsistent,
+        // egal ob der Server schon synchronisiert hat oder nicht.
+        const unsyncedMinuten = await OfflineService.getUnsyncedStopMinutes()
 
-        const totalMinuten = serverMinuten + offlineMinuten + currentSessionMinuten
+        const totalMinuten = serverMinuten + unsyncedMinuten + currentSessionMinuten
         setHeuteStunden(Math.floor(totalMinuten / 60))
         setHeuteMinuten(totalMinuten % 60)
     }
@@ -284,6 +303,8 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         loadHeuteGearbeitet()
         // Load vacation expiration warning
         loadUrlaubsVerfallWarnung()
+        // Load repair list (failed sync entries)
+        loadFailedEntries()
 
         // NOTE: Online/Heartbeat handlers wurden nach App.tsx verschoben
         // um globalen Sync auf allen Seiten zu ermöglichen
@@ -295,6 +316,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             // Reload both session and hours from server after successful sync
             loadActiveSession()
             loadHeuteGearbeitet()
+            loadFailedEntries()
         }
     }, [syncStatus])
 
@@ -360,18 +382,19 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             if (res.ok) {
                 const data = await res.json()
                 console.log('Buchung gestoppt:', data.stunden, 'Stunden')
-                // Online stop successful - clear any offline minutes as server has the real data now
+                // Online-Stop war erfolgreich - der Server kennt jetzt die
+                // tatsächliche Dauer. Lokale Legacy-Counter aufräumen.
                 await OfflineService.clearOfflineHeuteMinuten()
             } else {
                 throw new Error('Server error');
             }
         } catch {
             console.log('Offline (oder Timeout) - speichere Stop-Event lokal')
-            await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
-            // Track offline worked minutes (only for actual work, not pauses)
-            if (isWorkSession && elapsedMinutes > 0) {
-                await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
-            }
+            // durationMinutes wird im pending-Entry mitgespeichert, damit
+            // "heute gearbeitet" die Minuten weiterhin korrekt zeigt - auch
+            // wenn der Server diesen Eintrag später ablehnt (Reparatur-Liste).
+            const stopDuration = isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined
+            await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId, stopDuration)
         }
 
         // Stop-Cooldown setzen, damit ein nachfolgendes loadActiveSession()
@@ -391,6 +414,14 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         if (!token) return
         const pauseTime = new Date().toISOString()
         const pauseOperationId = createOperationId()
+
+        // Falls eine Arbeitsbuchung läuft: Dauer der gerade beendeten Arbeit
+        // ermitteln, damit "heute gearbeitet" auch offline korrekt bleibt.
+        let workDurationMinutes: number | undefined
+        if (activeSession && !isAbwesenheitOderPause(activeSession.typ)) {
+            const elapsed = Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 60000)
+            if (elapsed > 0) workDurationMinutes = elapsed
+        }
 
         try {
             const controller = new AbortController()
@@ -426,7 +457,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             }
         } catch {
             console.log('Offline - speichere Pause-Event lokal')
-            await OfflineService.addPendingEntryWithOperationId('pause', { token }, pauseTime, pauseOperationId)
+            await OfflineService.addPendingEntryWithOperationId('pause', { token }, pauseTime, pauseOperationId, workDurationMinutes)
             // Optimistic UI update for offline pause
             const pauseSession: Session = {
                 projektId: null,
@@ -598,16 +629,13 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             }
         } catch {
             console.log('Offline - Kategorie-Switch wird lokal gespeichert')
-            // Track offline worked minutes
-            if (isWorkSession && elapsedMinutes > 0) {
-                await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
-            }
+            const stopDuration = isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined
 
             // Nur Stop queuen wenn der online Stop NICHT bereits erfolgreich war.
             // Wenn stopRes.ok, hat der Server den Stop schon verarbeitet - ein erneuter
             // offline Stop würde die NEUE Buchung stoppen (Race-Condition).
             if (!stopRes || !stopRes.ok) {
-                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopOperationTime, stopOperationId)
+                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopOperationTime, stopOperationId, stopDuration)
             }
             await OfflineService.addPendingEntryWithOperationId('start', {
                 token,
@@ -733,16 +761,13 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             }
         } catch {
             console.log('Offline (oder Timeout) - Switch wird lokal gespeichert')
-            // Track offline worked minutes from the OLD session
-            if (isWorkSession && elapsedMinutes > 0) {
-                await OfflineService.addOfflineWorkedMinutes(elapsedMinutes)
-            }
+            const stopDuration = isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined
 
             // Nur Stop queuen wenn der online Stop NICHT bereits erfolgreich war.
             // Wenn stopRes.ok, hat der Server den Stop schon verarbeitet - ein erneuter
             // offline Stop würde die NEUE Buchung stoppen (Race-Condition).
             if (!stopRes || !stopRes.ok) {
-                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopOperationTime, stopOperationId)
+                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopOperationTime, stopOperationId, stopDuration)
             }
             await OfflineService.addPendingEntryWithOperationId('start', {
                 token,
@@ -792,6 +817,29 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
 
             {/* Main Content */}
             <main className="flex-1 p-4 space-y-4 overflow-y-auto safe-area-bottom pb-16">
+
+                {/* Reparatur-Banner: zeigt Buchungen, die der Server abgelehnt hat */}
+                {failedEntries.length > 0 && (
+                    <button
+                        onClick={() => setShowFailedModal(true)}
+                        className="w-full bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl p-4 shadow-sm flex items-center gap-3 hover:bg-amber-100 transition-colors text-left"
+                    >
+                        <div className="w-10 h-10 bg-amber-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <Wrench className="w-5 h-5 text-amber-700" />
+                        </div>
+                        <div className="flex-1">
+                            <p className="font-semibold">
+                                {failedEntries.length === 1
+                                    ? '1 Buchung konnte nicht gespeichert werden'
+                                    : `${failedEntries.length} Buchungen konnten nicht gespeichert werden`}
+                            </p>
+                            <p className="text-sm text-amber-800">
+                                Tippe hier, um sie zu prüfen
+                            </p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-amber-700 flex-shrink-0" />
+                    </button>
+                )}
 
                 {/* Aktive Buchung oder Start Button */}
                 {activeSession ? (
@@ -1189,6 +1237,14 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         </div>
                     </div>
                 </div>
+            )}
+
+            {showFailedModal && (
+                <FailedEntriesModal
+                    entries={failedEntries}
+                    onClose={() => setShowFailedModal(false)}
+                    onDismiss={handleDismissFailedEntry}
+                />
             )}
         </div>
     )

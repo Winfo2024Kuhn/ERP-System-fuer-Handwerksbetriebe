@@ -9,6 +9,17 @@ interface ZeiterfassungDB extends DBSchema {
         key: string
         value: PendingEntry
     }
+    /**
+     * "Reparatur-Liste": Buchungen, die der Server beim Sync mit 4xx
+     * abgelehnt hat (z.B. "keine aktive Buchung gefunden" für ein Stop).
+     * Stille Löschung wäre Datenverlust für den Handwerker - stattdessen
+     * landen sie hier mit Fehlerkontext, bis der User sie manuell verwirft
+     * oder ein Admin sie als Korrekturbuchung übernimmt.
+     */
+    failed: {
+        key: string
+        value: FailedEntry
+    }
     master_data: {
         key: string
         value: {
@@ -41,6 +52,36 @@ interface PendingEntry {
     attemptCount: number
     lastAttemptAt?: string
     lastError?: string
+    /**
+     * Dauer der durch dieses Event beendeten Buchung in Minuten.
+     * Wird bei 'stop' und 'pause' gesetzt (= Arbeitszeit, die der Mitarbeiter
+     * gerade beendet hat). Bei 'start' bleibt das Feld leer.
+     *
+     * Quelle für die "heute gearbeitet"-Anzeige, solange der Server die Buchung
+     * noch nicht kennt. Damit stimmt die Tagesanzeige auch dann, wenn ein
+     * Stop offline passiert oder vom Server abgelehnt wird (Reparatur-Liste).
+     */
+    durationMinutes?: number
+}
+
+/**
+ * Buchung, deren Sync vom Server final abgelehnt wurde (4xx).
+ * "Mobile gewinnt": Statt diese Daten zu löschen, behalten wir sie
+ * mit vollständigem Fehlerkontext in der Reparatur-Liste, damit der
+ * Handwerker (oder Admin) entscheiden kann was passieren soll.
+ */
+export interface FailedEntry {
+    id: string
+    type: 'start' | 'stop' | 'pause'
+    data: Record<string, unknown>
+    timestamp: string       // Wann ursprünglich offline eingereiht
+    originalTime: string    // Tatsächlicher Zeitpunkt der Aktion
+    failedAt: string        // Wann der Server final abgelehnt hat
+    httpStatus: number      // 4xx Status-Code
+    serverError: string     // Fehlertext vom Server
+    attemptCount: number    // Wie oft probiert wurde
+    /** Dauer der durch dieses Event beendeten Buchung in Minuten (stop/pause). */
+    durationMinutes?: number
 }
 
 export interface SyncResult {
@@ -82,7 +123,8 @@ export function buildBookingRequestPayload(
 }
 
 const DB_NAME = 'zeiterfassung-db'
-const DB_VERSION = 1
+// Version 2: 'failed' Store für Reparatur-Liste hinzugefügt (Mobile-First).
+const DB_VERSION = 2
 
 let dbPromise: Promise<IDBPDatabase<ZeiterfassungDB>>
 
@@ -92,6 +134,9 @@ const initDB = () => {
             upgrade(db) {
                 if (!db.objectStoreNames.contains('pending')) {
                     db.createObjectStore('pending', { keyPath: 'id' })
+                }
+                if (!db.objectStoreNames.contains('failed')) {
+                    db.createObjectStore('failed', { keyPath: 'id' })
                 }
                 if (!db.objectStoreNames.contains('master_data')) {
                     db.createObjectStore('master_data', { keyPath: 'key' })
@@ -476,7 +521,15 @@ export const OfflineService = {
 
     // Store time entry locally (will sync later)
     // originalTime: Der tatsächliche Zeitpunkt der Aktion (wichtig für Offline-Sync!)
-    async addPendingEntry(type: 'start' | 'stop' | 'pause', data: Record<string, unknown>, originalTime?: string) {
+    // durationMinutes: Bei stop/pause: Dauer der beendeten Buchung – fließt
+    //                  direkt in die "heute gearbeitet"-Anzeige ein, auch wenn
+    //                  der Server diesen Eintrag später ablehnt.
+    async addPendingEntry(
+        type: 'start' | 'stop' | 'pause',
+        data: Record<string, unknown>,
+        originalTime?: string,
+        durationMinutes?: number,
+    ) {
         const db = await initDB()
         const now = new Date().toISOString()
         const entry: PendingEntry = {
@@ -487,6 +540,7 @@ export const OfflineService = {
             originalTime: originalTime || now, // Fallback auf jetzt
             status: 'pending',
             attemptCount: 0,
+            durationMinutes,
         }
         await db.put('pending', entry)
         return entry
@@ -497,6 +551,7 @@ export const OfflineService = {
         data: Record<string, unknown>,
         originalTime: string | undefined,
         operationId: string,
+        durationMinutes?: number,
     ) {
         const db = await initDB()
         const now = new Date().toISOString()
@@ -508,6 +563,7 @@ export const OfflineService = {
             originalTime: originalTime || now,
             status: 'pending',
             attemptCount: 0,
+            durationMinutes,
         }
         await db.put('pending', entry)
         return entry
@@ -629,12 +685,32 @@ export const OfflineService = {
                     if (entry.type === 'start') startSynced = true
                     console.log(`✅ Sync OK: ${entry.type} (${entry.id.substring(0, 8)})`)
                 } else if (res.status >= 400 && res.status < 500) {
-                    // Client error (4xx) - this entry will NEVER succeed, discard it.
-                    // BUT: We NEVER touch the local session here!
-                    // The user might have started a completely different booking since this
-                    // entry was queued. Deleting their session would be catastrophic.
+                    // Client error (4xx) - dieser Eintrag wird so NIEMALS erfolgreich
+                    // syncen. Statt ihn STILL zu löschen (= Datenverlust für den
+                    // Handwerker!) verschieben wir ihn in die Reparatur-Liste.
+                    // Der Handwerker sieht in der App, dass etwas nicht durchkam,
+                    // und kann die Buchung manuell verwerfen oder ein Admin daraus
+                    // eine Korrekturbuchung machen.
+                    // WICHTIG: Wir berühren localStorage NIE - die lokale Session
+                    // gehört dem User und darf nur durch explizite User-Aktionen
+                    // gelöscht werden.
                     const errorBody = await res.json().catch(() => ({}))
-                    console.warn(`⚠️ Sync verworfen (${res.status}): ${entry.type} - ${errorBody.error || 'Unbekannt'}`)
+                    const serverError = String(errorBody.error || errorBody.message || `HTTP ${res.status}`)
+                    console.warn(`🔧 Sync abgelehnt (${res.status}), verschiebe in Reparatur-Liste: ${entry.type} - ${serverError}`)
+
+                    const failedEntry: FailedEntry = {
+                        id: entry.id,
+                        type: entry.type,
+                        data: entry.data,
+                        timestamp: entry.timestamp,
+                        originalTime: entry.originalTime,
+                        failedAt: new Date().toISOString(),
+                        httpStatus: res.status,
+                        serverError,
+                        attemptCount: inflightEntry.attemptCount,
+                        durationMinutes: entry.durationMinutes,
+                    }
+                    await db.put('failed', failedEntry)
                     await db.delete('pending', entry.id)
                     discarded++
                 } else {
@@ -674,6 +750,64 @@ export const OfflineService = {
     async getPendingCount() {
         const entries = await this.getPendingEntries()
         return entries.length
+    },
+
+    // ==================== REPARATUR-LISTE (Failed Entries) ====================
+    // "Mobile gewinnt": 4xx vom Server löscht keine Buchungen mehr still,
+    // sondern verschiebt sie hierher. Der Handwerker sieht sie in der App
+    // und kann sie verwerfen oder zur Korrektur freigeben.
+
+    async getFailedEntries(): Promise<FailedEntry[]> {
+        const db = await initDB()
+        return db.getAll('failed')
+    },
+
+    async getFailedCount(): Promise<number> {
+        const db = await initDB()
+        return db.count('failed')
+    },
+
+    async removeFailedEntry(id: string) {
+        const db = await initDB()
+        await db.delete('failed', id)
+    },
+
+    async clearFailed() {
+        const db = await initDB()
+        await db.clear('failed')
+    },
+
+    /**
+     * Summiert alle Minuten aus unsynchronisierten Stop/Pause-Events
+     * (pending + failed). Damit zeigt "heute gearbeitet" auch dann die
+     * tatsächlich gearbeitete Zeit, wenn der Server eine Buchung noch
+     * nicht hat oder abgelehnt hat. Pause-Events tragen hier ihre Arbeits-
+     * Vor-Dauer bei (= Zeit, die durch den Pause-Start beendet wurde).
+     *
+     * Tagesgrenzen werden LOKAL bestimmt (Mitternacht in der Geräte-Zeitzone),
+     * nicht UTC. Sonst wäre ein Stop um 00:30 Ortszeit (= 22:30/23:30 UTC am
+     * Vortag, je nach DST) plötzlich kein "heute" mehr – kritisch für
+     * Schichtdienst / Notdienst im Handwerk.
+     */
+    async getUnsyncedStopMinutes(): Promise<number> {
+        const now = new Date()
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+        const endOfDay = startOfDay + 24 * 60 * 60 * 1000
+
+        const inLocalToday = (iso: string): boolean => {
+            const t = new Date(iso).getTime()
+            return Number.isFinite(t) && t >= startOfDay && t < endOfDay
+        }
+
+        const pending = await OfflineService.getPendingEntries()
+        const failed = await OfflineService.getFailedEntries()
+
+        const sum = (entries: { type: string; originalTime: string; durationMinutes?: number }[]) =>
+            entries
+                .filter(e => (e.type === 'stop' || e.type === 'pause') && inLocalToday(e.originalTime))
+                .reduce((acc, e) => acc + (e.durationMinutes ?? 0), 0)
+
+        return sum(pending) + sum(failed)
     },
 
     // Clear all cached master data (projects, categories, etc.)

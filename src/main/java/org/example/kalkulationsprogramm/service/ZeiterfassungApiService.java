@@ -206,32 +206,36 @@ public class ZeiterfassungApiService {
     @Transactional
     public Map<String, Object> startZeiterfassung(String token, Long projektId, Long arbeitsgangId,
             Long produktkategorieId, LocalDateTime originalStartZeit, String idempotencyKey) {
-        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)
-                .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
-
-        // Idempotency-Check: Wenn dieser Key schon verarbeitet wurde, gib die
-        // existierende Buchung zurück (statt 4xx). So kann der Client sicher
-        // retries senden ohne Duplikate zu erzeugen.
+        // Idempotency-Check ZUERST (lock-frei): Wenn dieser Key bereits gespeichert
+        // wurde, geben wir die existierende Buchung direkt zurück. Das deckt den
+        // Retry-Fall ab, in dem der Client eine Server-Antwort verpasst hat und
+        // den Request erneut sendet.
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
-                Zeitbuchung b = existing.get();
-                Map<String, Object> result = new LinkedHashMap<>();
-                result.put("id", b.getId());
-                result.put("projektId", b.getProjekt() != null ? b.getProjekt().getId() : null);
-                result.put("projektName", b.getProjekt() != null ? b.getProjekt().getBauvorhaben() : null);
-                result.put("arbeitsgangId", b.getArbeitsgang() != null ? b.getArbeitsgang().getId() : null);
-                result.put("arbeitsgangName",
-                        b.getArbeitsgang() != null ? b.getArbeitsgang().getBeschreibung() : null);
-                result.put("produktkategorieId", produktkategorieId);
-                result.put("startZeit", b.getStartZeit().toString());
-                result.put("status", "already_exists");
-                result.put("idempotent", true);
-                return result;
+                return buildIdempotentStartResponse(existing.get(), produktkategorieId);
             }
         }
 
-        // Prüfe ob bereits eine aktive Buchung existiert (in neuer Zeitbuchung-Tabelle)
+        // Pessimistic Lock auf den Mitarbeiter (SELECT ... FOR UPDATE).
+        // Serialisiert alle Start/Stop/Pause-Operationen pro Mitarbeiter und
+        // verhindert die "check-then-insert"-Race-Condition, in der zwei Threads
+        // beide "keine aktive Buchung" sehen und beide eine neue Buchung anlegen.
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(token)
+                .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+
+        // Nach Lock-Acquire: Idempotency erneut prüfen, da inzwischen ein anderer
+        // Thread mit gleichem Key committet haben könnte.
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                return buildIdempotentStartResponse(existing.get(), produktkategorieId);
+            }
+        }
+
+        // Prüfe ob bereits eine aktive Buchung existiert. Innerhalb des Mitarbeiter-Locks
+        // ist diese Prüfung atomar: kein anderer Thread kann zwischen Read und Write
+        // eine neue Buchung anlegen.
         List<Zeitbuchung> aktiveBuchungen = zeitbuchungRepository
                 .findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId());
 
@@ -310,25 +314,25 @@ public class ZeiterfassungApiService {
      */
     @Transactional
     public Map<String, Object> stopZeiterfassung(String token, LocalDateTime originalEndeZeit, String idempotencyKey) {
-        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)
-                .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
-
+        // Idempotency-Check ZUERST (lock-frei): Retry-sicher.
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByStopIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
-                Zeitbuchung b = existing.get();
-                Map<String, Object> result = new LinkedHashMap<>();
-                result.put("id", b.getId());
-                result.put("projektName", b.getProjekt() != null ? b.getProjekt().getBauvorhaben() : null);
-                result.put("arbeitsgangName",
-                        b.getArbeitsgang() != null ? b.getArbeitsgang().getBeschreibung() : null);
-                result.put("startZeit", b.getStartZeit().toString());
-                result.put("endeZeit", b.getEndeZeit() != null ? b.getEndeZeit().toString() : null);
-                result.put("stunden", b.getAnzahlInStunden());
-                result.put("typ", b.getTyp() != null ? b.getTyp().name() : "ARBEIT");
-                result.put("status", "already_stopped");
-                result.put("idempotent", true);
-                return result;
+                return buildIdempotentStopResponse(existing.get());
+            }
+        }
+
+        // Pessimistic Lock auf Mitarbeiter, damit zwischen Read der aktiven
+        // Buchung und Update kein anderer Thread eine neue Buchung anlegen
+        // oder die gleiche Buchung stoppen kann.
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(token)
+                .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+
+        // Nach Lock-Acquire: Idempotency erneut prüfen.
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<Zeitbuchung> existing = zeitbuchungRepository.findByStopIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                return buildIdempotentStopResponse(existing.get());
             }
         }
 
@@ -399,9 +403,27 @@ public class ZeiterfassungApiService {
      */
     @Transactional
     public Map<String, Object> startPause(String token, LocalDateTime originalZeit, String idempotencyKey) {
-        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)
+        // Idempotency-Check ZUERST (lock-frei).
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                Zeitbuchung b = existing.get();
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("id", b.getId());
+                result.put("startZeit", b.getStartZeit().toString());
+                result.put("typ", b.getTyp() != null ? b.getTyp().name() : "PAUSE");
+                result.put("status", "already_exists");
+                result.put("idempotent", true);
+                return result;
+            }
+        }
+
+        // Pessimistic Lock auf Mitarbeiter: Pause stoppt eine aktive Arbeitsbuchung
+        // und legt eine neue Buchung an - das muss serialisiert ablaufen.
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(token)
                 .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
 
+        // Nach Lock-Acquire: Idempotency erneut prüfen.
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
@@ -647,6 +669,34 @@ public class ZeiterfassungApiService {
     }
 
     // ==================== Hilfsmethoden ====================
+
+    private Map<String, Object> buildIdempotentStartResponse(Zeitbuchung b, Long produktkategorieId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", b.getId());
+        result.put("projektId", b.getProjekt() != null ? b.getProjekt().getId() : null);
+        result.put("projektName", b.getProjekt() != null ? b.getProjekt().getBauvorhaben() : null);
+        result.put("arbeitsgangId", b.getArbeitsgang() != null ? b.getArbeitsgang().getId() : null);
+        result.put("arbeitsgangName", b.getArbeitsgang() != null ? b.getArbeitsgang().getBeschreibung() : null);
+        result.put("produktkategorieId", produktkategorieId);
+        result.put("startZeit", b.getStartZeit() != null ? b.getStartZeit().toString() : null);
+        result.put("status", "already_exists");
+        result.put("idempotent", true);
+        return result;
+    }
+
+    private Map<String, Object> buildIdempotentStopResponse(Zeitbuchung b) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", b.getId());
+        result.put("projektName", b.getProjekt() != null ? b.getProjekt().getBauvorhaben() : null);
+        result.put("arbeitsgangName", b.getArbeitsgang() != null ? b.getArbeitsgang().getBeschreibung() : null);
+        result.put("startZeit", b.getStartZeit() != null ? b.getStartZeit().toString() : null);
+        result.put("endeZeit", b.getEndeZeit() != null ? b.getEndeZeit().toString() : null);
+        result.put("stunden", b.getAnzahlInStunden());
+        result.put("typ", b.getTyp() != null ? b.getTyp().name() : "ARBEIT");
+        result.put("status", "already_stopped");
+        result.put("idempotent", true);
+        return result;
+    }
 
     private Map<String, Object> projektToSimpleMap(Projekt p) {
         Map<String, Object> map = new LinkedHashMap<>();

@@ -55,6 +55,7 @@ describe('OfflineService', () => {
         try {
             await OfflineService.clearCache()
             await OfflineService.clearPending()
+            await OfflineService.clearFailed()
         } catch {
             // First test: DB doesn't exist yet, that's fine - addPendingEntry will create it
         }
@@ -230,7 +231,7 @@ describe('OfflineService', () => {
             expect(callOrder[1]).toContain('/stop')
         })
 
-        it('sollte 4xx als discarded zählen und Entry löschen', async () => {
+        it('sollte 4xx als discarded zählen und Entry in Reparatur-Liste verschieben', async () => {
             vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(409))
             await OfflineService.addPendingEntry('stop', { token: 'a' })
 
@@ -238,6 +239,9 @@ describe('OfflineService', () => {
             expect(r.discarded).toBe(1)
             expect(r.synced).toBe(0)
             expect(await OfflineService.getPendingCount()).toBe(0)
+            // "Mobile gewinnt": Eintrag wird NICHT still gelöscht, sondern landet
+            // in der Reparatur-Liste, damit der Handwerker ihn sehen kann.
+            expect(await OfflineService.getFailedCount()).toBe(1)
         })
 
         it('sollte 5xx als failed zählen und Entry behalten', async () => {
@@ -547,6 +551,175 @@ describe('OfflineService', () => {
             const result = await OfflineService.getTagesbuchungen('tok', '2024-06-15')
 
             expect(result).toEqual({ buchungen: [], fromCache: true })
+        })
+    })
+
+    // ==================== REPARATUR-LISTE ("Mobile gewinnt") ====================
+    describe('Reparatur-Liste (Failed Entries)', () => {
+        it('sollte 4xx-Eintrag in die Reparatur-Liste verschieben statt zu löschen', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(409, { error: 'Keine aktive Buchung gefunden' }))
+            await OfflineService.addPendingEntryWithOperationId('stop', { token: 'a' }, '2024-06-15T17:00:00Z', 'op-failed', 60)
+
+            const r = await OfflineService._syncPendingInternal()
+
+            expect(r.discarded).toBe(1)
+            expect(await OfflineService.getPendingCount()).toBe(0)
+            const failed = await OfflineService.getFailedEntries()
+            expect(failed).toHaveLength(1)
+            expect(failed[0].id).toBe('op-failed')
+            expect(failed[0].httpStatus).toBe(409)
+            expect(failed[0].serverError).toBe('Keine aktive Buchung gefunden')
+            expect(failed[0].durationMinutes).toBe(60)
+        })
+
+        it('sollte mehrere 4xx-Einträge in der Reparatur-Liste sammeln', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(404))
+            await OfflineService.addPendingEntry('stop', { token: 'a' })
+            await OfflineService.addPendingEntry('stop', { token: 'b' })
+
+            await OfflineService._syncPendingInternal()
+
+            expect(await OfflineService.getFailedCount()).toBe(2)
+        })
+
+        it('sollte 5xx-Einträge NICHT in die Reparatur-Liste verschieben', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => serverError(503))
+            await OfflineService.addPendingEntry('stop', { token: 'a' })
+
+            await OfflineService._syncPendingInternal()
+
+            expect(await OfflineService.getFailedCount()).toBe(0)
+            expect(await OfflineService.getPendingCount()).toBe(1)
+        })
+
+        it('removeFailedEntry sollte einen einzelnen Eintrag entfernen', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(404))
+            const e1 = await OfflineService.addPendingEntry('stop', { token: 'a' })
+            await OfflineService.addPendingEntry('stop', { token: 'b' })
+            await OfflineService._syncPendingInternal()
+
+            await OfflineService.removeFailedEntry(e1.id)
+
+            const remaining = await OfflineService.getFailedEntries()
+            expect(remaining).toHaveLength(1)
+            expect(remaining[0].id).not.toBe(e1.id)
+        })
+
+        it('clearFailed sollte alle Einträge entfernen', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(404))
+            await OfflineService.addPendingEntry('stop', { token: 'a' })
+            await OfflineService.addPendingEntry('stop', { token: 'b' })
+            await OfflineService._syncPendingInternal()
+
+            await OfflineService.clearFailed()
+
+            expect(await OfflineService.getFailedCount()).toBe(0)
+        })
+
+        it('darf bei 4xx-Fehler localStorage Session NICHT löschen', async () => {
+            localStorage.setItem('zeiterfassung_active_session', JSON.stringify({
+                projektName: 'Aktive Buchung', startTime: new Date().toISOString(),
+            }))
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(409))
+            await OfflineService.addPendingEntry('stop', { token: 'a' })
+
+            await OfflineService._syncPendingInternal()
+
+            const session = JSON.parse(localStorage.getItem('zeiterfassung_active_session')!)
+            expect(session.projektName).toBe('Aktive Buchung')
+            expect(await OfflineService.getFailedCount()).toBe(1)
+        })
+    })
+
+    // ==================== HEUTE GEARBEITET (immer korrekt) ====================
+    describe('getUnsyncedStopMinutes', () => {
+        function isoToday(time: string): string {
+            const today = new Date().toISOString().split('T')[0]
+            return `${today}T${time}`
+        }
+
+        it('sollte 0 zurückgeben bei leeren Queues', async () => {
+            expect(await OfflineService.getUnsyncedStopMinutes()).toBe(0)
+        })
+
+        it('sollte Minuten von pending Stop-Einträgen für heute summieren', async () => {
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, isoToday('12:00:00Z'), 90)
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, isoToday('17:00:00Z'), 240)
+
+            expect(await OfflineService.getUnsyncedStopMinutes()).toBe(330)
+        })
+
+        it('sollte Minuten von pause-Einträgen ebenfalls zählen (= beendete Arbeitszeit)', async () => {
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, isoToday('12:00:00Z'), 120)
+            await OfflineService.addPendingEntry('pause', { token: 'a' }, isoToday('15:00:00Z'), 60)
+
+            expect(await OfflineService.getUnsyncedStopMinutes()).toBe(180)
+        })
+
+        it('sollte Start-Einträge ignorieren', async () => {
+            await OfflineService.addPendingEntry('start', { token: 'a' }, isoToday('08:00:00Z'), 0)
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, isoToday('12:00:00Z'), 240)
+
+            expect(await OfflineService.getUnsyncedStopMinutes()).toBe(240)
+        })
+
+        it('sollte auch Minuten aus der Reparatur-Liste summieren', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(409))
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, isoToday('12:00:00Z'), 150)
+            await OfflineService._syncPendingInternal()
+
+            // Eintrag ist jetzt in 'failed', nicht mehr in 'pending'
+            expect(await OfflineService.getFailedCount()).toBe(1)
+            expect(await OfflineService.getUnsyncedStopMinutes()).toBe(150)
+        })
+
+        it('sollte pending und failed gemeinsam summieren', async () => {
+            // Eintrag, der gleich failed → 90 Minuten
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(409))
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, isoToday('11:00:00Z'), 90)
+            await OfflineService._syncPendingInternal()
+
+            // Weiterer Eintrag bleibt pending → 60 Minuten
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, isoToday('14:00:00Z'), 60)
+
+            expect(await OfflineService.getUnsyncedStopMinutes()).toBe(150)
+        })
+
+        it('sollte Einträge von gestern NICHT mitzählen', async () => {
+            const gestern = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, gestern, 480)
+
+            expect(await OfflineService.getUnsyncedStopMinutes()).toBe(0)
+        })
+
+        it('sollte Einträge ohne durationMinutes mit 0 werten', async () => {
+            await OfflineService.addPendingEntry('stop', { token: 'a' }, isoToday('12:00:00Z'))
+            expect(await OfflineService.getUnsyncedStopMinutes()).toBe(0)
+        })
+    })
+
+    // ==================== Pending-Entry trägt durationMinutes ====================
+    describe('Pending Entry durationMinutes', () => {
+        it('addPendingEntry sollte durationMinutes speichern', async () => {
+            const e = await OfflineService.addPendingEntry('stop', { token: 'a' }, undefined, 120)
+            expect(e.durationMinutes).toBe(120)
+        })
+
+        it('addPendingEntryWithOperationId sollte durationMinutes speichern', async () => {
+            const e = await OfflineService.addPendingEntryWithOperationId(
+                'stop', { token: 'a' }, '2024-06-15T17:00:00Z', 'op-1', 180)
+            expect(e.durationMinutes).toBe(180)
+        })
+
+        it('durationMinutes überlebt das Verschieben in die Reparatur-Liste', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(404))
+            await OfflineService.addPendingEntryWithOperationId(
+                'stop', { token: 'a' }, '2024-06-15T17:00:00Z', 'op-keep', 240)
+
+            await OfflineService._syncPendingInternal()
+
+            const failed = await OfflineService.getFailedEntries()
+            expect(failed[0].durationMinutes).toBe(240)
         })
     })
 })
