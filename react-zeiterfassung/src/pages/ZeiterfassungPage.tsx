@@ -154,7 +154,6 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
 
                 if (stopRes.ok) {
                     console.log('Alte Buchung für Projektwechsel gestoppt')
-                    await OfflineService.clearOfflineHeuteMinuten()
                 } else {
                     throw new Error('Server error on stop')
                 }

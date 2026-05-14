@@ -66,9 +66,9 @@ export default function FailedEntriesModal({ entries, onClose, onDismiss }: Fail
                     <div className="flex items-start gap-2 text-sm text-amber-900">
                         <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                         <p>
-                            Deine Zeiten zählen weiter in <strong>heute gearbeitet</strong>.
-                            Sprich deinen Chef an, damit die Buchung manuell in den Server eingetragen werden kann.
-                            Mit <em>Verwerfen</em> entfernst du den Eintrag aus dieser Liste.
+                            Solange der Eintrag hier steht, zählt seine Zeit weiter in <strong>heute gearbeitet</strong>.
+                            Sprich deinen Chef an, damit die Buchung manuell im Server eingetragen werden kann.
+                            <em> Verwerfen</em> nimmt den Eintrag aus der Liste – dann zählt seine Zeit auch nicht mehr in <strong>heute gearbeitet</strong>.
                         </p>
                     </div>
                 </div>

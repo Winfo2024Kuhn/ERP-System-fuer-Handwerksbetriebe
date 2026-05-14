@@ -102,11 +102,6 @@ function App() {
       console.log('🌐 App ist online -> Sync pending entries');
       setSyncStatus('syncing');
       const result = await OfflineService.syncAll();
-      // Only clear offline minutes when ALL pending entries are gone.
-      // If any failed (5xx), they'll retry later and clearing now would lose hours.
-      if (result.allPendingCleared && result.pendingSynced > 0) {
-        await OfflineService.clearOfflineHeuteMinuten();
-      }
       // If a 'start' entry was just synced, set a cooldown so loadActiveSession
       // won't kill the local session before the server confirms it via GET
       if (result.startSynced) {
@@ -123,9 +118,6 @@ function App() {
         if (pendingCount > 0) {
           setSyncStatus('syncing');
           const result = await OfflineService.syncAll();
-          if (result.allPendingCleared && result.pendingSynced > 0) {
-            await OfflineService.clearOfflineHeuteMinuten();
-          }
           if (result.startSynced) {
             localStorage.setItem('zeiterfassung_start_synced_at', Date.now().toString());
           }
@@ -143,9 +135,6 @@ function App() {
       if (pendingCount > 0) {
         console.log(`❤️ Heartbeat: ${pendingCount} pending entries -> Sync`);
         const result = await OfflineService.syncAll();
-        if (result.allPendingCleared && result.pendingSynced > 0) {
-          await OfflineService.clearOfflineHeuteMinuten();
-        }
         if (result.startSynced) {
           localStorage.setItem('zeiterfassung_start_synced_at', Date.now().toString());
         }

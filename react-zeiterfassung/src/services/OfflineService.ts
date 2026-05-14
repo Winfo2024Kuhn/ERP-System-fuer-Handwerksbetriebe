@@ -154,7 +154,6 @@ const CACHE_KEYS = {
     arbeitsgaenge_personal: 'arbeitsgaenge_personal', // User specific list
     kunden: 'kunden',
     heute_gearbeitet: 'heute_gearbeitet', // Today's hours (cached)
-    offline_heute_minuten: 'offline_heute_minuten', // Offline tracked minutes (per day)
     buchungszeitfenster: 'buchungszeitfenster', // Booking time window config
     tagesbuchungen: 'tagesbuchungen', // Daily bookings per employee/date
     lastSync: 'last_sync',
@@ -823,37 +822,6 @@ export const OfflineService = {
     async clearPending() {
         const db = await initDB()
         await db.clear('pending')
-    },
-
-    // === OFFLINE HOURS TRACKING ===
-    // Track minutes worked offline today (stored per day)
-    async addOfflineWorkedMinutes(minutes: number) {
-        if (minutes <= 0) return
-        const db = await initDB()
-        const today = new Date().toISOString().split('T')[0]
-        const currentKey = `${CACHE_KEYS.offline_heute_minuten}_${today}`
-        const existing = await db.get('master_data', currentKey)
-        const total = ((existing?.value as number | undefined) || 0) + minutes
-        await db.put('master_data', { key: currentKey, value: total })
-        console.log(`📊 Offline-Minuten gespeichert: +${minutes} (Gesamt heute: ${total})`)
-    },
-
-    // Get total offline worked minutes for today
-    async getOfflineHeuteMinuten(): Promise<number> {
-        const db = await initDB()
-        const today = new Date().toISOString().split('T')[0]
-        const currentKey = `${CACHE_KEYS.offline_heute_minuten}_${today}`
-        const existing = await db.get('master_data', currentKey)
-        return (existing?.value as number | undefined) || 0
-    },
-
-    // Clear offline minutes after successful sync
-    async clearOfflineHeuteMinuten() {
-        const db = await initDB()
-        const today = new Date().toISOString().split('T')[0]
-        const currentKey = `${CACHE_KEYS.offline_heute_minuten}_${today}`
-        await db.delete('master_data', currentKey)
-        console.log('🧹 Offline-Minuten gelöscht nach Sync')
     },
 
     // === BUCHUNGSZEITFENSTER ===

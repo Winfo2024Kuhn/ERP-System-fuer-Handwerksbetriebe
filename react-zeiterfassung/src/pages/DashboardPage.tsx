@@ -382,9 +382,6 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             if (res.ok) {
                 const data = await res.json()
                 console.log('Buchung gestoppt:', data.stunden, 'Stunden')
-                // Online-Stop war erfolgreich - der Server kennt jetzt die
-                // tatsächliche Dauer. Lokale Legacy-Counter aufräumen.
-                await OfflineService.clearOfflineHeuteMinuten()
             } else {
                 throw new Error('Server error');
             }

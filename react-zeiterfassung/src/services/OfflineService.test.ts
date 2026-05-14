@@ -432,21 +432,6 @@ describe('OfflineService', () => {
         })
     })
 
-    // ==================== OFFLINE HOURS TRACKING ====================
-    describe('Offline Hours Tracking', () => {
-        it('sollte Offline-Minuten korrekt addieren', async () => {
-            await OfflineService.addOfflineWorkedMinutes(30)
-            await OfflineService.addOfflineWorkedMinutes(45)
-            expect(await OfflineService.getOfflineHeuteMinuten()).toBe(75)
-        })
-
-        it('sollte clearOfflineHeuteMinuten auf 0 setzen', async () => {
-            await OfflineService.addOfflineWorkedMinutes(120)
-            await OfflineService.clearOfflineHeuteMinuten()
-            expect(await OfflineService.getOfflineHeuteMinuten()).toBe(0)
-        })
-    })
-
     // ==================== isOnline ====================
     describe('isOnline', () => {
         it('sollte navigator.onLine zurückgeben', () => {
