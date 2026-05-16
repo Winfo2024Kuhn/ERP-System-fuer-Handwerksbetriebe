@@ -212,7 +212,9 @@ public class DokumentGeneratorController {
 
                     contentBlocks.add(new ContentBlockDto(
                             "SERVICE",
-                            null, false, 0,
+                            null,
+                            Boolean.TRUE.equals(b.fett()),
+                            b.fontSize() != null ? b.fontSize() : 10,
                             posStr,
                             titel,
                             beschreibungHtml,

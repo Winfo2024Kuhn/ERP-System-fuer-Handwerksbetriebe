@@ -614,7 +614,10 @@ public class AutoAuftragsbestaetigungVersandService
                     gesamt = gesamt.setScale(2, RoundingMode.HALF_UP);
                 }
                 out.add(new ContentBlockDto(
-                        "SERVICE", null, false, 0,
+                        "SERVICE",
+                        null,
+                        optBoolean(block, "fett", false),
+                        optInt(block, "fontSize", 10),
                         pos,
                         optString(block, "title"),
                         optString(block, "description"),

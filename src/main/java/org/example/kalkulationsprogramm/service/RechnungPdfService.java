@@ -824,7 +824,13 @@ public class RechnungPdfService {
                 descCell.addElement(altHint);
             }
             try {
-                java.util.List<com.lowagie.text.Element> elements = parseHtmlToElements(block.beschreibungHtml(), textColor);
+                // Block-Default-Schriftgröße/Fett aus dem ContentBlockDto verwenden, damit Service-
+                // Beschreibungen ohne inline <span style="font-size">-Tag dieselbe Größe wie der
+                // vom User im Editor gewählte Wert bekommen. Sonst fielen ungespannte Textteile
+                // auf 10pt zurück, während andere Teile (mit span) auf 12pt blieben.
+                float serviceDefaultFontSize = Math.max(10f, Math.min(20f, block.fontSize()));
+                java.util.List<com.lowagie.text.Element> elements = parseHtmlToElements(
+                        block.beschreibungHtml(), textColor, serviceDefaultFontSize, block.fett());
                 for (com.lowagie.text.Element el : elements) {
                     descCell.addElement(el);
                 }
