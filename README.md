@@ -78,10 +78,9 @@ Ich studiere **Wirtschaftsinformatik im 4. Semester** und habe das Projekt durch
 
 ---
 
-## 🔗 Lead-to-Cash in einem System – was sonst niemand am DACH-Markt hat
+## 🔗 Lead-to-Cash in einem System
 
-Plancraft, ToolTime, HERO und openHandwerk haben jeweils 4–8 Features dieser Kette.
-**Niemand hat sie alle in einem geschlossenen Loop:**
+Vom Website-Besucher bis zur Schlussrechnung – alles in einem geschlossenen Loop:
 
 ```text
 Website-Besucher
@@ -99,31 +98,29 @@ Lineare Regression lernt aus echter Zeit → kalibriert die nächste Kalkulation
 
 Das ist kein „ERP mit netten Features" – es ist ein **integriertes Business-Betriebssystem für Handwerksbetriebe**.
 
-### 19 Killer-USPs auf einen Blick
+### 19 Highlights auf einen Blick
 
-Jeder einzelne dieser Punkte gibt es woanders. Aber **alle 19 zusammen in einem System** — das ist die echte Differenzierung.
-
-| # | USP | Wer hat das sonst am DACH-Markt? |
-| --- | --- | --- |
-| 1 | **KI-Assistent mit RAG auf dem eigenen Code** – kontextbewusst, kennt jede Seite, jede Funktion, jeden Workflow | Niemand |
-| 2 | **KI-Eingangsrechnungs-Analyse** – ZUGFeRD-XML zuerst, dann Gemini-OCR-Fallback, automatische Lieferanten-Zuordnung | HERO mit Copilot teilweise |
-| 3 | **Google Search Grounding** – DIN-Normen, Materialdaten, Wetter für Baustellen direkt im KI-Chat | Niemand |
-| 4 | **E-Mail-Auto-Import** – IMAP-Polling 60 s, Anhänge werden direkt analysiert und an offene Bestellungen angedockt | Niemand geschlossen |
-| 5 | **ZUGFeRD/XRechnung-Versand** (EN 16931) direkt aus dem Dokumenteditor | Streit, HERO |
-| 6 | **Multi-Quellen-Materialkosten** – manuell + Artikel + Eingangsrechnung fließen automatisch in dasselbe Projekt | Niemand vollständig |
-| 7 | **4-Stufen-Bestellkette** – Anfrage → Bestellung → Rechnung eingegangen → Zugeordnet, durchgehend verfolgt | Plancraft teilweise |
-| 8 | **Lineare Regression auf echten Zeiten** – Programm lernt mit jedem Projekt mit, nach Kategorie + Arbeitsgang aufgelöst | Niemand |
-| 9 | **Controlling-Dashboard mit PLZ-Heatmap & Umsatz-Vorjahresvergleich** – Echtzeit-KPIs | Plancraft teilweise |
-| 10 | **Offline-First-Mobile-PWA** inkl. Bautagebuch, Reklamation, Lieferschein-Scan mit Perspektivkorrektur | ToolTime teilweise |
-| 11 | **Sammel-Container für Anfragen** – Eingangs-Mails und Fotos zur Anfrage sammeln, bevor sie zum Projekt werden | Niemand |
-| 12 | **Block-basierter Dokumenteditor** mit Live-PDF, GAEB-Import, 7 Dokumenttypen aus einem Editor | HERO, Streit teilweise |
-| 13 | **Digitale Angebots-Freigabe per Snapshot-Hash** – revisionssicher, GoBD-konform | Niemand |
-| 14 | **Verrechnungslohn-BAB** – Profitabilität pro Mitarbeiter, nicht nur pro Projekt | Niemand |
-| 15 | **Eingangsrechnung → Multi-Projekt/Kostenstellen-Split** prozentual oder absolut, mit Auto-Restbetrag | Niemand |
-| 16 | **Live-Vorkalkulation im Projekt** – Plan-Stunden und Plan-Material direkt aus dem Angebot | Plancraft teilweise |
-| 17 | **Live-Nachkalkulation aus 4 Quellen** – Gewinn wird rot, sobald er negativ wird | Niemand vollständig |
-| 18 | **Bautagebuch + Anfrage-Tagebuch** – durchgehend ab der Anfrage, Auto-Transfer ins Projekt | Bautagebuch ja, aber niemand ab Anfrage |
-| 19 | **Website-Anfrage-Funnel End-to-End** – Cloudflare-Tunnel → Spam-Filter → Kunden-Dedup → Push → Auto-Mail | Niemand geschlossen |
+| # | Feature |
+| --- | --- |
+| 1 | **KI-Assistent mit RAG auf dem eigenen Code** – kontextbewusst, kennt jede Seite, jede Funktion, jeden Workflow |
+| 2 | **KI-Eingangsrechnungs-Analyse** – ZUGFeRD-XML zuerst, dann Gemini-OCR-Fallback, automatische Lieferanten-Zuordnung |
+| 3 | **Google Search Grounding** – DIN-Normen, Materialdaten, Wetter für Baustellen direkt im KI-Chat |
+| 4 | **E-Mail-Auto-Import** – IMAP-Polling 60 s, Anhänge werden direkt analysiert und an offene Bestellungen angedockt |
+| 5 | **ZUGFeRD/XRechnung-Versand** (EN 16931) direkt aus dem Dokumenteditor |
+| 6 | **Multi-Quellen-Materialkosten** – manuell + Artikel + Eingangsrechnung fließen automatisch in dasselbe Projekt |
+| 7 | **4-Stufen-Bestellkette** – Anfrage → Bestellung → Rechnung eingegangen → Zugeordnet, durchgehend verfolgt |
+| 8 | **Lineare Regression auf echten Zeiten** – Programm lernt mit jedem Projekt mit, nach Kategorie + Arbeitsgang aufgelöst |
+| 9 | **Controlling-Dashboard mit PLZ-Heatmap & Umsatz-Vorjahresvergleich** – Echtzeit-KPIs |
+| 10 | **Offline-First-Mobile-PWA** inkl. Bautagebuch, Reklamation, Lieferschein-Scan mit Perspektivkorrektur |
+| 11 | **Sammel-Container für Anfragen** – Eingangs-Mails und Fotos zur Anfrage sammeln, bevor sie zum Projekt werden |
+| 12 | **Block-basierter Dokumenteditor** mit Live-PDF, GAEB-Import, 7 Dokumenttypen aus einem Editor |
+| 13 | **Digitale Angebots-Freigabe per Snapshot-Hash** – revisionssicher, GoBD-konform |
+| 14 | **Verrechnungslohn-BAB** – Profitabilität pro Mitarbeiter, nicht nur pro Projekt |
+| 15 | **Eingangsrechnung → Multi-Projekt/Kostenstellen-Split** prozentual oder absolut, mit Auto-Restbetrag |
+| 16 | **Live-Vorkalkulation im Projekt** – Plan-Stunden und Plan-Material direkt aus dem Angebot |
+| 17 | **Live-Nachkalkulation aus 4 Quellen** – Gewinn wird rot, sobald er negativ wird |
+| 18 | **Bautagebuch + Anfrage-Tagebuch** – durchgehend ab der Anfrage, Auto-Transfer ins Projekt |
+| 19 | **Website-Anfrage-Funnel End-to-End** – Cloudflare-Tunnel → Spam-Filter → Kunden-Dedup → Push → Auto-Mail |
 
 ---
 
@@ -251,20 +248,20 @@ Jede Firma hat ihren eigenen Stil. Im Formular-Designer gestaltest du deine **Do
 
 ### 📓 Bautagebuch & Anfrage-Tagebuch – durchgehend dokumentieren, von der ersten Anfrage bis zur Abnahme
 
-Andere ERPs fangen mit dem Bautagebuch erst beim Projekt an. Hier kannst du **schon ab der Anfrage** lückenlos dokumentieren – das ist im DACH-Handwerksmarkt ungewöhnlich:
+Das Bautagebuch beginnt **schon ab der Anfrage** – lückenlos vom ersten Vor-Ort-Termin bis zur Abnahme:
 
 - **Strukturierte Einträge:** Mitarbeiter + Freitext (bis 4 000 Zeichen) + Multi-Bild-Upload + Zeitstempel – pro Eintrag sauber zugeordnet
 - **Private Notizen:** Mit dem `nurFuerErsteller`-Flag bleiben sensible Beobachtungen nur für den Verfasser sichtbar
 - **Sichtbarkeits-Steuerung Mobile vs. PC:** Das `mobileSichtbar`-Flag steuert pro Eintrag, ob er auch auf der Baustelle angezeigt wird – Bürotinternes bleibt am Schreibtisch
 - **Anfrage-Tagebuch (AnfrageNotiz):** Schon in der Anfrage-Phase Notizen + Fotos sammeln – z. B. Vor-Ort-Aufmaßbilder oder Telefonate mit dem Interessenten
 - **Automatischer Transfer bei Konvertierung:** Wird die Anfrage zum Projekt, **wandern alle Notizen und Bilder automatisch ins Bautagebuch** – kein doppeltes Tippen, keine verlorenen Infos
-- **Parität mit den großen Anbietern – plus mehr:** openHandwerk, Plancraft, ToolTime und HERO haben ein Bautagebuch. Aber **keiner** dokumentiert durchgehend ab der Anfrage
+- **Durchgehende Dokumentation:** Von der ersten Anfrage bis zur Schlussrechnung – alles in einem Tagebuch
 
 > Beispiel: Du fotografierst beim Vor-Ort-Termin den maroden Dachstuhl und schreibst „Sparrenabstand 70 cm, drei Sparren angefault". Drei Wochen später wird daraus ein Projekt – und das Foto + die Notiz sind sofort im Bautagebuch des Projekts, ohne dass du sie umkopieren musst.
 
 ### 🌐 Website-Anfrage-Funnel End-to-End – kein Zapier, keine Bastelei
 
-Das ist der **echte Differenzierer**: eine geschlossene Lead-Pipeline, wie sie sonst niemand am DACH-Markt liefert. Vom Klick auf der Website bis zur Push-Nachricht beim zuständigen Mitarbeiter ist alles verkabelt:
+Eine geschlossene Lead-Pipeline: vom Klick auf der Website bis zur Push-Nachricht beim zuständigen Mitarbeiter ist alles verkabelt:
 
 - **Sichere S2S-Übermittlung:** Webseite spricht über einen **Cloudflare-Tunnel** mit dem ERP – kein Browser-API, kein Key-Leak, keine offenen Ports am Firmenrouter. Authentifizierung per Access-Token
 - **Spam-Filter VOR Persistenz:** Der `AnfrageFunnelSpamFilterService` prüft Honeypot-Felder, Rate-Limits und Heuristiken **bevor** überhaupt etwas in die Datenbank geschrieben wird – keine Müll-Anfragen, kein DB-Bloat
@@ -275,7 +272,7 @@ Das ist der **echte Differenzierer**: eine geschlossene Lead-Pipeline, wie sie s
 - **Web-Push an die richtigen Mitarbeiter:** Filterung über Abteilungs-Zuordnung (Flyway V311), Click auf die Push öffnet direkt die Mobile-PWA an der richtigen Stelle
 - **Auto-Transfer bei Konvertierung:** Wird die Anfrage zum Projekt, übernehmen `Notiz` + `Bilder` das Bautagebuch – die End-to-End-Kette schließt sich von selbst
 
-> Plancraft, ToolTime, HERO und openHandwerk haben „Webformular → E-Mail" oder „Zapier → CRM". Niemand hat das geschlossen: Cloudflare-Tunnel → Spam-Filter → Kunden-Dedup → Notiz → Bilder → Push → Mail → Auto-Transfer ins Projekt. **Das ist der Lead-to-Cash-Loop in einer Pipeline.**
+> Cloudflare-Tunnel → Spam-Filter → Kunden-Dedup → Notiz → Bilder → Push → Mail → Auto-Transfer ins Projekt. **Das ist der Lead-to-Cash-Loop in einer Pipeline.**
 
 ---
 
