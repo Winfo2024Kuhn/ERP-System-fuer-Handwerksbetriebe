@@ -173,6 +173,29 @@ public class SystemSettingsService {
         log.info("Funnel-Spam-Filter umgeschaltet: aktiv={}", aktiv);
     }
 
+    /**
+     * Auswahl des LLM-Backends für den Funnel-Spam-Filter. Erlaubte Werte:
+     * {@code "lokal"} (Default, lokales LLM), {@code "extern"} (konfigurierter
+     * externer Chat-Endpoint), {@code "aus"} (Backend bewusst nicht nutzen).
+     * Steuerung über System-Settings (Property-Key
+     * {@code anfrage.funnel.spamfilter.provider}); UI-Anbindung im FirmaEditor folgt separat.
+     */
+    public String getAnfrageFunnelSpamFilterProvider() {
+        String val = get("anfrage.funnel.spamfilter.provider", "lokal");
+        return val == null || val.isBlank() ? "lokal" : val.trim().toLowerCase(Locale.ROOT);
+    }
+
+    @Transactional
+    public void saveAnfrageFunnelSpamFilterProvider(String provider) {
+        String value = provider == null ? "lokal" : provider.trim().toLowerCase(Locale.ROOT);
+        if (!value.equals("lokal") && !value.equals("extern") && !value.equals("aus")) {
+            throw new IllegalArgumentException("Ungültiger Provider: " + provider);
+        }
+        save("anfrage.funnel.spamfilter.provider", value,
+                "LLM-Backend für Funnel-Spam-Filter (lokal/extern/aus)");
+        log.info("Funnel-Spam-Filter-Backend umgeschaltet: provider={}", value);
+    }
+
     public boolean isInitialConfigurationRequired() {
         return !hasConfiguredValue(getGeminiApiKey()) || !isSmtpConfigured();
     }

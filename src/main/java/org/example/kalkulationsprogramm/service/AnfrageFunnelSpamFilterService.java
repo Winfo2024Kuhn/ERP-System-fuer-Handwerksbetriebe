@@ -2,26 +2,33 @@ package org.example.kalkulationsprogramm.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageFunnelRequestDto;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
+import java.util.Optional;
+
 /**
- * Prüft eingehende Funnel-Anfragen mit Gemini (gemini-2.5-flash-lite) auf
- * offensichtliche Spaß-/Spam-Eingaben (z.B. "Test 123", Beleidigungen,
+ * Prüft eingehende Funnel-Anfragen mit einem austauschbaren LLM-Backend
+ * auf offensichtliche Spaß-/Spam-Eingaben (z. B. "Test 123", Beleidigungen,
  * unsinnige E-Mail-Adressen). Echte Anfragen werden durchgelassen, Spam
  * wird mit einer kurzen Begründung abgewiesen, damit das Webseiten-Frontend
  * dem Absender eine sinnvolle Fehlermeldung zeigen kann.
  *
- * <p>Verhalten bei Gemini-Ausfall oder fehlendem API-Key: <b>durchlassen</b>.
- * Wir wollen keine echten Kunden blockieren, nur weil die KI nicht erreichbar
- * ist – Spaß-Anfragen können der User später manuell löschen.
+ * <p>Welches Backend verwendet wird, entscheidet die System-Setting
+ * {@code anfrage.funnel.spamfilter.provider} (Default: {@code lokal} –
+ * spricht ein lokales LLM an, sodass personenbezogene Daten den Server
+ * nicht verlassen). Implementierungen siehe {@link SpamFilterChatBackend}.
+ *
+ * <p>Verhalten bei Backend-Ausfall oder fehlender Konfiguration:
+ * <b>durchlassen</b>. Wir wollen keine echten Kunden blockieren, nur weil
+ * die KI nicht erreichbar ist – Spaß-Anfragen können später manuell
+ * gelöscht werden.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AnfrageFunnelSpamFilterService {
 
     private static final String SYSTEM_PROMPT = """
@@ -47,9 +54,17 @@ public class AnfrageFunnelSpamFilterService {
             {"spam": true|false, "grund": "kurzer deutscher Grund, max. 80 Zeichen"}
             """;
 
-    private final EmailClassificationGeminiClient geminiClient;
+    private final List<SpamFilterChatBackend> backends;
     private final ObjectMapper objectMapper;
     private final SystemSettingsService systemSettingsService;
+
+    public AnfrageFunnelSpamFilterService(List<SpamFilterChatBackend> backends,
+                                          ObjectMapper objectMapper,
+                                          SystemSettingsService systemSettingsService) {
+        this.backends = backends;
+        this.objectMapper = objectMapper;
+        this.systemSettingsService = systemSettingsService;
+    }
 
     /**
      * Liefert {@link Result#ok()}, wenn die Anfrage durchgelassen werden soll,
@@ -63,19 +78,52 @@ public class AnfrageFunnelSpamFilterService {
             log.debug("Funnel-Spam-Filter übersprungen (im Firma-Editor deaktiviert)");
             return Result.ok();
         }
-        if (!geminiClient.isEnabled()) {
-            log.debug("Funnel-Spam-Filter übersprungen (Gemini nicht konfiguriert)");
-            return Result.ok();
-        }
 
-        String userPayload = baueUserPayload(dto);
-        try {
-            String raw = geminiClient.chat(SYSTEM_PROMPT, userPayload);
-            return parseAntwort(raw);
-        } catch (Exception e) {
-            log.warn("Funnel-Spam-Filter Fehler ({}), lasse Anfrage durch", e.getMessage());
+        Optional<SpamFilterChatBackend> backendOpt = waehleBackend();
+        if (backendOpt.isEmpty()) {
+            log.debug("Funnel-Spam-Filter übersprungen (kein Backend konfiguriert)");
             return Result.ok();
         }
+        SpamFilterChatBackend backend = backendOpt.get();
+
+        try {
+            String raw = backend.chat(SYSTEM_PROMPT, baueUserPayload(dto));
+            return parseAntwort(raw);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Funnel-Spam-Filter Backend '{}' unterbrochen, lasse Anfrage durch",
+                    backend.identifier());
+            return Result.ok();
+        } catch (Exception e) {
+            log.warn("Funnel-Spam-Filter Fehler über Backend '{}' ({}), lasse Anfrage durch",
+                    backend.identifier(), e.getMessage());
+            return Result.ok();
+        }
+    }
+
+    private Optional<SpamFilterChatBackend> waehleBackend() {
+        String gewuenscht = systemSettingsService.getAnfrageFunnelSpamFilterProvider();
+        if ("aus".equalsIgnoreCase(gewuenscht)) {
+            return Optional.empty();
+        }
+        // 1) Exakter Treffer auf den konfigurierten Provider, falls einsatzbereit.
+        for (SpamFilterChatBackend b : backends) {
+            if (b.identifier().equalsIgnoreCase(gewuenscht) && b.isEnabled()) {
+                return Optional.of(b);
+            }
+        }
+        // 2) Erstes einsatzbereites Backend (lokal hat Vorrang vor extern).
+        for (SpamFilterChatBackend b : backends) {
+            if (LocalSpamFilterChatBackend.ID.equals(b.identifier()) && b.isEnabled()) {
+                return Optional.of(b);
+            }
+        }
+        for (SpamFilterChatBackend b : backends) {
+            if (b.isEnabled()) {
+                return Optional.of(b);
+            }
+        }
+        return Optional.empty();
     }
 
     private String baueUserPayload(AnfrageFunnelRequestDto dto) {
