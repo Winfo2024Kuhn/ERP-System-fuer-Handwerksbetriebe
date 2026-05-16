@@ -187,6 +187,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [dokumentNummer, setDokumentNummer] = useState<string>('');
     const [betreff, setBetreff] = useState('');
     const [datum, setDatum] = useState(new Date().toISOString().split('T')[0]);
+    // Synchroner Spiegel von `datum` für stale-closure-freie Lesezugriffe (z.B.
+    // wenn wir das Datum direkt vor einem Versand bumpen und SOFORT in handleSave
+    // / createPdfRequest verwenden, bevor der nächste React-Render passiert).
+    const datumRef = useRef(datum);
+    useEffect(() => { datumRef.current = datum; }, [datum]);
     const [blocks, setBlocks] = useState<DocBlock[]>([]);
     const [kontextDaten, setKontextDaten] = useState<KontextDaten>({});
     const [dokument, setDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
@@ -323,7 +328,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             'PROJEKTNUMMER': kontextDaten.projektnummer || '',
             'DOKUMENTNUMMER': dokumentnummerValue,
             'RECHNUNGSNUMMER': dokumentnummerValue, // Alias für DOKUMENTNUMMER
-            'DATUM': datum ? new Date(datum).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE'),
+            'DATUM': datumRef.current ? new Date(datumRef.current).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE'),
             'BETREFF': betreff || '',
             'ANREDE': anredeDisplay,
             'ANSPRECHPARTNER': kontextDaten.ansprechpartner || '',
@@ -335,7 +340,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             'BEZUGSDOKUMENTDATUM': kontextDaten.bezugsdokumentDatum || '',
             'ZAHLUNGSZIEL': (() => {
                 const days = kontextDaten.zahlungsziel ?? 8;
-                const d = datum ? new Date(datum) : new Date();
+                const d = datumRef.current ? new Date(datumRef.current) : new Date();
                 d.setDate(d.getDate() + days);
                 return d.toLocaleDateString('de-DE');
             })(),
@@ -346,6 +351,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             const upperKey = key.toUpperCase();
             return dataMap[upperKey] !== undefined ? dataMap[upperKey] : match;
         });
+        // `datum` wird über `datumRef.current` im Body gelesen (für synchron
+        // gebumptes Versanddatum), bleibt aber in den Deps, damit nachgelagerte
+        // useMemo/useEffect-Verbraucher (Preview, PDF) bei DatePicker-Änderungen
+        // re-erzeugt werden.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [kontextDaten, dokumentTyp, dokumentNummer, datum, betreff]);
 
     // --- GAEB Import ---
@@ -495,7 +505,18 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setDokumentNummer(data.dokumentNummer);
                     setDokumentTyp(data.typ);
                     setBetreff(data.betreff || '');
-                    setDatum(data.datum);
+                    // Solange das Dokument noch nicht versendet/gebucht/angenommen/storniert ist,
+                    // läuft das Dokumentdatum mit "heute" mit. Sonst würde der User im Editor
+                    // noch das Anlage-Datum von vor X Tagen sehen, obwohl beim Versand sowieso
+                    // auf heute gebumpt wird. So bleibt UI und gerendertes PDF konsistent –
+                    // und das Zahlungsziel passt unmittelbar zur tatsächlichen Bearbeitungszeit.
+                    const heuteIso = new Date().toISOString().split('T')[0];
+                    const istNochNichtVersendet = !data.gebucht && !data.digitalAngenommen && !data.storniert && !data.versandDatum;
+                    const datumZuVerwenden = istNochNichtVersendet && data.datum && data.datum < heuteIso
+                        ? heuteIso
+                        : data.datum;
+                    setDatum(datumZuVerwenden);
+                    datumRef.current = datumZuVerwenden;
 
                     if (data.gebucht) {
                         setKontextDaten({
@@ -918,7 +939,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             if (dokument?.id) {
                 const id = dokument.id;
                 const body = JSON.stringify({
-                    datum,
+                    datum: datumRef.current,
                     betreff,
                     betragNetto,
                     htmlInhalt,
@@ -948,7 +969,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setDokument(updated);
                     setDokumentNummer(updated.dokumentNummer);
                     syncDocumentIdInUrl(updated.id);
-                    const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
+                    const currentState = JSON.stringify({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
@@ -963,7 +984,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             } else {
                 const dto: AusgangsGeschaeftsDokumentErstellen = {
                     typ: dokumentTyp,
-                    datum,
+                    datum: datumRef.current,
                     betreff,
                     betragNetto,
                     htmlInhalt,
@@ -981,7 +1002,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setDokument(created);
                     setDokumentNummer(created.dokumentNummer);
                     syncDocumentIdInUrl(created.id);
-                    const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
+                    const currentState = JSON.stringify({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
@@ -1003,6 +1024,22 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, tryAcquireLock, bereitsAbgerechnetDurchAndere, globalRabatt]);
+
+    /**
+     * Setzt das Dokumentdatum auf heute, sofern das Dokument noch bearbeitbar
+     * ist. Wird unmittelbar vor jedem finalen Versand (Export, Druck, Mail –
+     * jeweils ohne Entwurfs-Modus) aufgerufen, damit Rechnungsdatum und das
+     * darauf basierende Zahlungsziel zum tatsächlichen Versandtag passen.
+     * `datumRef` wird synchron mitgezogen, damit handleSave / createPdfRequest
+     * im selben Tick bereits den neuen Wert verwenden.
+     */
+    const bumpDatumAufHeute = useCallback((): void => {
+        if (isLocked) return;
+        const heute = new Date().toISOString().split('T')[0];
+        if (datumRef.current === heute) return;
+        datumRef.current = heute;
+        setDatum(heute);
+    }, [isLocked]);
 
     // --- Change Detection ---
     // CLOSURE-Marker beim State-Vergleich ausblenden, damit das automatische
@@ -1521,6 +1558,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         try {
             // Rechnungstypen: IMMER buchen & sperren beim Drucken (instant lock)
             const shouldBook = options.isFinal || showFinalizationPrompt;
+            // Beim finalen Druck (= Dokument verlässt das Haus) Versanddatum auf
+            // heute setzen. Vorschau-Druck mit Wasserzeichen (nicht final) lässt
+            // das Datum unangetastet, damit der User vor dem echten Versand noch
+            // weiterarbeiten kann.
+            if (shouldBook) {
+                bumpDatumAufHeute();
+                await handleSave();
+            }
             if (shouldBook) {
                 if (!dokument?.id) throw new Error('Dokument muss zuerst gespeichert werden');
                 const booked = await buchenUndSperren();
@@ -1594,6 +1639,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         if (!dokument?.id) return;
 
         try {
+            // Beim Export gilt: Versanddatum = heute. Dadurch passt das
+            // Zahlungsziel (Rechnungsdatum + N Tage), egal wie lange der User
+            // am Dokument gearbeitet hat. Gilt für ALLE Dokumenttypen
+            // (Angebot/AB/Rechnung) — sobald das Dokument das Haus verlässt,
+            // ist heute das offizielle Datum.
+            bumpDatumAufHeute();
+            await handleSave();
             // Sofort buchen & sperren (instant lock, kein nachträgliches Refresh nötig)
             if (shouldBook) {
                 const booked = await buchenUndSperren();
@@ -1684,9 +1736,16 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         const isDraft = draftSendMode;
         setEmailLoading(true);
         try {
+            // Beim echten Mail-Versand (kein Entwurf) Versanddatum auf heute
+            // setzen, damit Rechnungsdatum + Zahlungsziel ab tatsächlichem
+            // Versandtag laufen. Im Entwurfs-Modus bleibt das Datum stehen,
+            // weil das Dokument noch nicht final rausgeht.
+            if (!isDraft) {
+                bumpDatumAufHeute();
+            }
             // 1. Auto-Save wenn nötig – Rückgabewert liefert aktuelle ID (React-State ist async)
             let aktiveDokumentId = dokument?.id ?? null;
-            if (!dokument?.id || hasUnsavedChanges) {
+            if (!dokument?.id || hasUnsavedChanges || !isDraft) {
                 const saved = await handleSave();
                 if (saved?.id) aktiveDokumentId = saved.id;
             }
@@ -1757,7 +1816,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             // Wir bauen das Datum aus lokalen Komponenten, weil `new Date('YYYY-MM-DD')`
             // als UTC-Mitternacht parst und der anschließende `toISOString()`-Roundtrip
             // in CET/CEST das Datum um einen Tag vor verschieben kann.
-            const rechnungsdatumIso = datum || (() => {
+            const rechnungsdatumIso = datumRef.current || (() => {
                 const t = new Date();
                 return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
             })();
@@ -1919,7 +1978,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     copy.content = dokumentNummer || (isPreview ? 'VORSCHAU' : 'ENTWURF');
                     break;
                 case 'datum':
-                    copy.content = datum ? new Date(datum).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE');
+                    copy.content = datumRef.current ? new Date(datumRef.current).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE');
                     break;
                 case 'projektnr':
                     copy.content = kontextDaten.projektnummer || '';
@@ -2021,8 +2080,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
         const kopfdaten = {
             dokumentnummer: dokumentNummer || (isPreview ? 'VORSCHAU' : 'ENTWURF'),
-            rechnungsDatum: datum,
-            leistungsDatum: datum,
+            rechnungsDatum: datumRef.current,
+            leistungsDatum: datumRef.current,
             kundenName: kontextDaten.kundenName || 'Musterkunde',
             kundenAdresse: kontextDaten.rechnungsadresse || '',
             betreff: betreff,
