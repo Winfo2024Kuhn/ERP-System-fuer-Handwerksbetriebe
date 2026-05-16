@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript" alt="TypeScript" />
   <img src="https://img.shields.io/badge/MariaDB-11-003545?logo=mariadb&logoColor=white" alt="MariaDB" />
   <img src="https://img.shields.io/badge/KI--Assistent-Gemini-4285F4?logo=google&logoColor=white" alt="KI" />
-  <img src="https://img.shields.io/badge/Lizenz-MIT-green" alt="Lizenz" />
+  <img src="https://img.shields.io/badge/Lizenz-AGPL_v3-blue" alt="Lizenz AGPL v3" />
 </p>
 
 <div align="center">
@@ -75,6 +75,55 @@
 Ich habe dieses Programm entwickelt, um meinem Vater in seinem Handwerksbetrieb zu helfen. Was als kleines Tool zur Projektkalkulation begann, ist über die Zeit zu einem vollständigen ERP-System gewachsen – mit eingebautem KI-Assistenten, automatischer Zeitkalkulation, Echtzeit-Nachkalkulation, E-Mail-Integration und vielem mehr.
 
 Ich studiere **Wirtschaftsinformatik im 4. Semester** und habe das Projekt durch **Pair-Programming mit Claude (AI)** entwickelt. Jetzt möchte ich es als Open Source verfügbar machen, damit auch andere Handwerksbetriebe davon profitieren können.
+
+---
+
+## 🔗 Lead-to-Cash in einem System – was sonst niemand am DACH-Markt hat
+
+Plancraft, ToolTime, HERO und openHandwerk haben jeweils 4–8 Features dieser Kette.
+**Niemand hat sie alle in einem geschlossenen Loop:**
+
+```text
+Website-Besucher
+   ↓ Anfrage-Formular (Cloudflare-Tunnel + Spam-Filter VOR Persistenz)
+   ↓ Auto-Push an zuständige Mitarbeiter, Auto-Bestätigungsmail an Lead
+Sammel-Container für Eingangs-Mails & Fotos zur Anfrage
+   ↓ Konvertierung zum Projekt – Notizen & Bilder wandern automatisch ins Bautagebuch
+ProjektEditor mit Live-Vor- & Nachkalkulation aus 4 Quellen
+   (Zeit + Material + Artikel + Eingangsrechnung)
+   ↓ Angebot → Digitale Freigabe per Snapshot-Hash
+ZUGFeRD/XRechnung-Versand (EN 16931) direkt aus dem Dokumenteditor
+   ↓ Multi-Kostenstellen-Split & Verrechnungslohn-BAB
+Lineare Regression lernt aus echter Zeit → kalibriert die nächste Kalkulation
+```
+
+Das ist kein „ERP mit netten Features" – es ist ein **integriertes Business-Betriebssystem für Handwerksbetriebe**.
+
+### 19 Killer-USPs auf einen Blick
+
+Jeder einzelne dieser Punkte gibt es woanders. Aber **alle 19 zusammen in einem System** — das ist die echte Differenzierung.
+
+| # | USP | Wer hat das sonst am DACH-Markt? |
+| --- | --- | --- |
+| 1 | **KI-Assistent mit RAG auf dem eigenen Code** – kontextbewusst, kennt jede Seite, jede Funktion, jeden Workflow | Niemand |
+| 2 | **KI-Eingangsrechnungs-Analyse** – ZUGFeRD-XML zuerst, dann Gemini-OCR-Fallback, automatische Lieferanten-Zuordnung | HERO mit Copilot teilweise |
+| 3 | **Google Search Grounding** – DIN-Normen, Materialdaten, Wetter für Baustellen direkt im KI-Chat | Niemand |
+| 4 | **E-Mail-Auto-Import** – IMAP-Polling 60 s, Anhänge werden direkt analysiert und an offene Bestellungen angedockt | Niemand geschlossen |
+| 5 | **ZUGFeRD/XRechnung-Versand** (EN 16931) direkt aus dem Dokumenteditor | Streit, HERO |
+| 6 | **Multi-Quellen-Materialkosten** – manuell + Artikel + Eingangsrechnung fließen automatisch in dasselbe Projekt | Niemand vollständig |
+| 7 | **4-Stufen-Bestellkette** – Anfrage → Bestellung → Rechnung eingegangen → Zugeordnet, durchgehend verfolgt | Plancraft teilweise |
+| 8 | **Lineare Regression auf echten Zeiten** – Programm lernt mit jedem Projekt mit, nach Kategorie + Arbeitsgang aufgelöst | Niemand |
+| 9 | **Controlling-Dashboard mit PLZ-Heatmap & Umsatz-Vorjahresvergleich** – Echtzeit-KPIs | Plancraft teilweise |
+| 10 | **Offline-First-Mobile-PWA** inkl. Bautagebuch, Reklamation, Lieferschein-Scan mit Perspektivkorrektur | ToolTime teilweise |
+| 11 | **Sammel-Container für Anfragen** – Eingangs-Mails und Fotos zur Anfrage sammeln, bevor sie zum Projekt werden | Niemand |
+| 12 | **Block-basierter Dokumenteditor** mit Live-PDF, GAEB-Import, 7 Dokumenttypen aus einem Editor | HERO, Streit teilweise |
+| 13 | **Digitale Angebots-Freigabe per Snapshot-Hash** – revisionssicher, GoBD-konform | Niemand |
+| 14 | **Verrechnungslohn-BAB** – Profitabilität pro Mitarbeiter, nicht nur pro Projekt | Niemand |
+| 15 | **Eingangsrechnung → Multi-Projekt/Kostenstellen-Split** prozentual oder absolut, mit Auto-Restbetrag | Niemand |
+| 16 | **Live-Vorkalkulation im Projekt** – Plan-Stunden und Plan-Material direkt aus dem Angebot | Plancraft teilweise |
+| 17 | **Live-Nachkalkulation aus 4 Quellen** – Gewinn wird rot, sobald er negativ wird | Niemand vollständig |
+| 18 | **Bautagebuch + Anfrage-Tagebuch** – durchgehend ab der Anfrage, Auto-Transfer ins Projekt | Bautagebuch ja, aber niemand ab Anfrage |
+| 19 | **Website-Anfrage-Funnel End-to-End** – Cloudflare-Tunnel → Spam-Filter → Kunden-Dedup → Push → Auto-Mail | Niemand geschlossen |
 
 ---
 
@@ -200,6 +249,34 @@ Jede Firma hat ihren eigenen Stil. Im Formular-Designer gestaltest du deine **Do
 
 > Einmal das Firmen-Layout gestalten – danach werden alle Angebote, Rechnungen und Lieferscheine automatisch in deinem Corporate Design erzeugt.
 
+### 📓 Bautagebuch & Anfrage-Tagebuch – durchgehend dokumentieren, von der ersten Anfrage bis zur Abnahme
+
+Andere ERPs fangen mit dem Bautagebuch erst beim Projekt an. Hier kannst du **schon ab der Anfrage** lückenlos dokumentieren – das ist im DACH-Handwerksmarkt ungewöhnlich:
+
+- **Strukturierte Einträge:** Mitarbeiter + Freitext (bis 4 000 Zeichen) + Multi-Bild-Upload + Zeitstempel – pro Eintrag sauber zugeordnet
+- **Private Notizen:** Mit dem `nurFuerErsteller`-Flag bleiben sensible Beobachtungen nur für den Verfasser sichtbar
+- **Sichtbarkeits-Steuerung Mobile vs. PC:** Das `mobileSichtbar`-Flag steuert pro Eintrag, ob er auch auf der Baustelle angezeigt wird – Bürotinternes bleibt am Schreibtisch
+- **Anfrage-Tagebuch (AnfrageNotiz):** Schon in der Anfrage-Phase Notizen + Fotos sammeln – z. B. Vor-Ort-Aufmaßbilder oder Telefonate mit dem Interessenten
+- **Automatischer Transfer bei Konvertierung:** Wird die Anfrage zum Projekt, **wandern alle Notizen und Bilder automatisch ins Bautagebuch** – kein doppeltes Tippen, keine verlorenen Infos
+- **Parität mit den großen Anbietern – plus mehr:** openHandwerk, Plancraft, ToolTime und HERO haben ein Bautagebuch. Aber **keiner** dokumentiert durchgehend ab der Anfrage
+
+> Beispiel: Du fotografierst beim Vor-Ort-Termin den maroden Dachstuhl und schreibst „Sparrenabstand 70 cm, drei Sparren angefault". Drei Wochen später wird daraus ein Projekt – und das Foto + die Notiz sind sofort im Bautagebuch des Projekts, ohne dass du sie umkopieren musst.
+
+### 🌐 Website-Anfrage-Funnel End-to-End – kein Zapier, keine Bastelei
+
+Das ist der **echte Differenzierer**: eine geschlossene Lead-Pipeline, wie sie sonst niemand am DACH-Markt liefert. Vom Klick auf der Website bis zur Push-Nachricht beim zuständigen Mitarbeiter ist alles verkabelt:
+
+- **Sichere S2S-Übermittlung:** Webseite spricht über einen **Cloudflare-Tunnel** mit dem ERP – kein Browser-API, kein Key-Leak, keine offenen Ports am Firmenrouter. Authentifizierung per Access-Token
+- **Spam-Filter VOR Persistenz:** Der `AnfrageFunnelSpamFilterService` prüft Honeypot-Felder, Rate-Limits und Heuristiken **bevor** überhaupt etwas in die Datenbank geschrieben wird – keine Müll-Anfragen, kein DB-Bloat
+- **System-Identität als Audit-Subjekt:** Anlegender Mitarbeiter ist „Webseite" (eigener System-Mitarbeiter aus Flyway V221) – damit bleibt der Audit-Trail GoBD-konform, ohne dass ein echter Mitarbeiter die Aktion „signiert"
+- **Smart-Dedup per E-Mail-Match:** Kommt eine Anfrage von einer bekannten Kunden-E-Mail rein, wird sie automatisch dem bestehenden Kunden zugeordnet – keine Karteileichen-Dubletten
+- **Multi-Bild-Upload → Auto-Notiz:** Die Bilder aus dem Webformular landen automatisch als `AnfrageNotizBild` an einer neu erzeugten `AnfrageNotiz` – fertig sortiert, ohne Klick
+- **Auto-Bestätigungsmail an den Lead:** Vorlage liegt in der DB, ist im PC-Frontend editierbar – jede Anfrage bekommt sofort eine professionelle Eingangsbestätigung
+- **Web-Push an die richtigen Mitarbeiter:** Filterung über Abteilungs-Zuordnung (Flyway V311), Click auf die Push öffnet direkt die Mobile-PWA an der richtigen Stelle
+- **Auto-Transfer bei Konvertierung:** Wird die Anfrage zum Projekt, übernehmen `Notiz` + `Bilder` das Bautagebuch – die End-to-End-Kette schließt sich von selbst
+
+> Plancraft, ToolTime, HERO und openHandwerk haben „Webformular → E-Mail" oder „Zapier → CRM". Niemand hat das geschlossen: Cloudflare-Tunnel → Spam-Filter → Kunden-Dedup → Notiz → Bilder → Push → Mail → Auto-Transfer ins Projekt. **Das ist der Lead-to-Cash-Loop in einer Pipeline.**
+
 ---
 
 ## 📋 Weitere Module
@@ -234,9 +311,9 @@ graph TB
     end
 
     subgraph Backend["Spring Boot Backend"]
-        API["REST API<br/>(56 Controller)"]
-        Services["Business Logic<br/>(84 Services)"]
-        Domain["Domain Model<br/>(90 Entities)"]
+        API["REST API<br/>(73 Controller)"]
+        Services["Business Logic<br/>(113 Services)"]
+        Domain["Domain Model<br/>(104 Entities)"]
         RAG["🔍 Local RAG Service<br/>(Vektor-Index im RAM)"]
     end
 
@@ -384,11 +461,13 @@ Architektur-Diagramme (draw.io) liegen in [`docs/Dokumentation/`](docs/Dokumenta
 
 | Metrik | Wert |
 |--------|------|
-| REST-Controller | 56 |
-| Business-Services | 84 |
-| Domain-Entities | 90 |
-| Desktop-Seiten (PC) | 31 |
-| Mobile-Seiten (PWA) | 18 |
+| REST-Controller | 73 |
+| Business-Services | 113 |
+| Domain-Entities | 104 |
+| Repositories | 97 |
+| Flyway-Migrationen | 63 |
+| Desktop-Seiten (PC) | 38 |
+| Mobile-Seiten (PWA) | 22 |
 | Dokumentationen | 7 |
 | Architektur-Diagramme | 7 |
 
@@ -415,7 +494,18 @@ Beiträge sind willkommen! Dieses Projekt lebt davon, dass Handwerksbetriebe und
 
 ## 📜 Lizenz
 
-Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
+Dieses Projekt steht unter der **[GNU Affero General Public License v3 (AGPL v3)](LICENSE)**.
+
+Was das bedeutet:
+
+- ✅ **Du darfst es kostenlos nutzen** – auch im kommerziellen Handwerksbetrieb
+- ✅ **Du darfst es modifizieren** und an deine Bedürfnisse anpassen
+- ✅ **Du darfst es weiterverteilen** – inklusive deiner Änderungen
+- 📤 **Du musst Modifikationen offenlegen**, auch wenn du es als SaaS / Webdienst betreibst (das ist der „Affero"-Teil)
+
+Diese Lizenz schützt das Projekt davor, dass kommerzielle Anbieter es einfach in ihre Closed-Source-SaaS-Plattform übernehmen, ohne ihre Modifikationen zurück an die Community zu geben.
+
+Für proprietäre Nutzung (z. B. Einbettung in ein Closed-Source-Produkt ohne AGPL-Verpflichtung): Kommerzielle Lizenz auf Anfrage.
 
 Eine vollständige Auflistung aller verwendeten Drittanbieter-Bibliotheken und deren Lizenzen
 findet sich in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).

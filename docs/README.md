@@ -20,6 +20,7 @@ Willkommen in der Dokumentation des Handwerkerprogramms. Hier findest du alle te
 | [LIEFERANTEN_DOKUMENTEN.md](LIEFERANTEN_DOKUMENTEN.md) | Eingangsrechnungen, KI-Erkennung, Freigabeprozess |
 | [ZUGFERD_E_INVOICING.md](ZUGFERD_E_INVOICING.md) | Elektronische Rechnungsstellung nach EU-Norm (ZUGFeRD) |
 | [BESTELLWESEN.md](BESTELLWESEN.md) | Einkauf, Bestellungen, PDF-Generierung |
+| [KASSE_BUCHHALTUNG.md](KASSE_BUCHHALTUNG.md) | Bar-Kassenbuch, Doppik-Variante A, Ehegattengehalt-Scheduler, T-Konto-Export |
 | [ANGEBOTSWESEN.md](ANGEBOTSWESEN.md) | Angebotserstellung, Kundenmanagement, Konversionsrate |
 | [MONATS_SALDO_CACHING.md](MONATS_SALDO_CACHING.md) | Performance-Optimierung für monatliche Zeitkonto-Salden |
 | [API_REFERENZ.md](API_REFERENZ.md) | REST-Endpoint-Übersicht für alle Module (53 Controller) |
@@ -60,8 +61,9 @@ Im Verzeichnis [`Dokumentation/`](Dokumentation/) befinden sich draw.io-Diagramm
 9. **[BESTELLWESEN.md](BESTELLWESEN.md)** – Einkauf & Bestellungen
 10. **[ANGEBOTSWESEN.md](ANGEBOTSWESEN.md)** – Angebotserstellung
 11. **[ZEITERFASSUNG_WORKFLOWS.md](ZEITERFASSUNG_WORKFLOWS.md)** – Mobile App
-12. **[MONATS_SALDO_CACHING.md](MONATS_SALDO_CACHING.md)** – Performance-Caching
-13. **[API_REFERENZ.md](API_REFERENZ.md)** – REST-Endpoints
+12. **[KASSE_BUCHHALTUNG.md](KASSE_BUCHHALTUNG.md)** – Bar-Kassenbuch & Doppik
+13. **[MONATS_SALDO_CACHING.md](MONATS_SALDO_CACHING.md)** – Performance-Caching
+14. **[API_REFERENZ.md](API_REFERENZ.md)** – REST-Endpoints
 
 ---
 

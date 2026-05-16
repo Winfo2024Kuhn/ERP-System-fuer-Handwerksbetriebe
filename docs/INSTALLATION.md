@@ -427,3 +427,95 @@ cloudflared tunnel --url http://localhost:8080 run handwerkerprogramm
 | Öffentlich erreichbar | ❌ | ❌ | ✅ | ✅ |
 | HTTPS | Nicht nötig | Optional | ✅ Automatisch | ✅ Automatisch |
 | Port öffnen | Nur LAN | Kein Port | Port 80 + 443 | Kein Port |
+
+---
+
+## Skript-Referenz
+
+<!-- AUTO-GENERATED: scripts-table START -->
+> Erzeugt aus `pom.xml`, `react-pc-frontend/package.json`, `react-zeiterfassung/package.json`. **Nicht manuell editieren** – per `/ecc:update-docs` regenerieren.
+
+### Backend (Maven Wrapper)
+
+Aufruf aus dem Projekt-Root. Unter Windows `./mvnw.cmd …`, unter Linux/macOS `./mvnw …`.
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| `./mvnw spring-boot:run` | Backend starten (Port 8080, Profile `local` über `application-local.properties`) |
+| `./mvnw clean package` | JAR bauen inkl. Tests (`target/Kalkulationsprogramm-<Version>.jar`) |
+| `./mvnw clean package -DskipTests` | JAR ohne Test-Lauf bauen (für Installer-Build) |
+| `./mvnw test` | Nur Backend-Tests ausführen (JUnit 5 + Spring Boot Test) |
+| `./mvnw jpackage:jpackage` | Windows-Installer erzeugen (`target/installer/`) |
+
+### Desktop-Frontend (`react-pc-frontend/`)
+
+Aufruf nach `cd react-pc-frontend`. Voraussetzung: `npm install` einmalig.
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| `npm run dev` | Vite-Dev-Server mit HMR |
+| `npm run build` | Produktiv-Build mit `tsc -b` + `vite build` |
+| `npm run preview` | Produktiv-Build lokal probefahren |
+| `npm run lint` | ESLint über das gesamte Frontend |
+| `npm test` | Vitest-Suite einmal ausführen |
+| `npm run test:watch` | Vitest im Watch-Modus |
+| `npm run test:coverage` | Vitest mit V8-Coverage-Report |
+
+### Mobile Zeiterfassung (`react-zeiterfassung/`)
+
+Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| `npm run dev` | Vite-Dev-Server (HTTPS via `@vitejs/plugin-basic-ssl` für Kamera-/Geolocation-Tests) |
+| `npm run build` | Produktiv-PWA-Build inkl. Service-Worker |
+| `npm run preview` | Produktiv-Build lokal probefahren |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest-Suite einmal ausführen |
+| `npm run test:watch` | Vitest im Watch-Modus |
+| `npm run test:coverage` | Vitest mit V8-Coverage-Report |
+<!-- AUTO-GENERATED: scripts-table END -->
+
+---
+
+## Umgebungsvariablen-Referenz
+
+<!-- AUTO-GENERATED: env-table START -->
+> Erzeugt aus `.env.example`. **Nicht manuell editieren** – per `/ecc:update-docs` regenerieren.
+>
+> Hinweis: SMTP/IMAP-Zugangsdaten und der Gemini-API-Key werden **nicht** über ENV-Variablen, sondern nach dem ersten Start in der UI unter **System-Einstellungen → E-Mail-Konto / KI Gemini** in der Datenbank gepflegt.
+
+### Docker-Compose (MariaDB)
+
+| Variable | Pflicht | Beschreibung | Beispielwert |
+|----------|---------|--------------|--------------|
+| `MARIADB_ROOT_PASSWORD` | Optional¹ | Root-Passwort der MariaDB im Compose-Stack | `CHANGE_ME_ROOT_PW` |
+| `MARIADB_DATABASE` | Optional¹ | Name der App-Datenbank | `kalkulationsprogramm_db` |
+| `MARIADB_USER` | Optional¹ | App-DB-Benutzer | `erp_user` |
+| `MARIADB_PASSWORD` | Optional¹ | App-DB-Passwort | `CHANGE_ME_DB_PW` |
+
+¹ Nur nötig, wenn die Default-Werte aus `docker-compose.yml` überschrieben werden sollen.
+
+### Externe Datenbank (überschreibt Default-Verbindung)
+
+| Variable | Pflicht | Beschreibung | Beispielwert |
+|----------|---------|--------------|--------------|
+| `APP_DB_URL` | Optional² | JDBC-URL für externes MariaDB/MySQL | `jdbc:mariadb://host.docker.internal:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8` |
+| `APP_DB_USER` | Optional² | DB-Benutzer für externe DB | `mariadb_user` |
+| `APP_DB_PASS` | Optional² | DB-Passwort für externe DB | `mariadb_password` |
+
+² Nur setzen, wenn die App auf eine DB außerhalb des Compose-Stacks zeigen soll.
+
+### Admin-Zugangsdaten
+
+| Variable | Pflicht | Beschreibung | Beispielwert |
+|----------|---------|--------------|--------------|
+| `APP_ADMIN_USER` | Ja | Login-Name des initialen Admin-Users | `Marvin` |
+| `APP_ADMIN_PASS` | Ja | Initiales Admin-Passwort (nach erstem Login ändern!) | `change_me_strong_password` |
+
+### Optionale Integration
+
+| Variable | Pflicht | Beschreibung | Beispielwert |
+|----------|---------|--------------|--------------|
+| `ZEITERFASSUNG_URL` | Nein | Basis-URL der mobilen Zeiterfassung (für Deep-Links) | `http://localhost:8080` |
+<!-- AUTO-GENERATED: env-table END -->

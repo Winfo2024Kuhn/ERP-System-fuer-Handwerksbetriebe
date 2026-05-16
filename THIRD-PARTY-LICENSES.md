@@ -62,6 +62,7 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | React Router DOM | ^7.10.1 | MIT License | https://reactrouter.com/ |
 | html5-qrcode | ^2.3.8 | Apache License 2.0 | https://github.com/nicbarker/html5-qrcode |
 | idb | ^8.0.3 | ISC License | https://github.com/nicbarker/html5-qrcode |
+| jscanify | ^1.4.2 | MIT License | https://colonelparrot.github.io/jscanify/ |
 | jsPDF | ^3.0.4 | MIT License | https://github.com/parallax/jsPDF |
 | Lucide React | ^0.556.0 | ISC License | https://lucide.dev/ |
 | react-webcam | ^7.2.0 | MIT License | https://github.com/nicbarker/html5-qrcode |
@@ -96,7 +97,7 @@ ZXing, html5-qrcode, class-variance-authority, TypeScript, google-generativeai, 
 
 ### MIT License
 Betrifft: Lombok, jsoup, React, React DOM, React Router, dnd-kit, Tiptap, Chart.js,
-clsx, tailwind-merge, Tailwind CSS, Vite, Vitest, jsPDF, react-dropzone, react-webcam u.a.
+clsx, tailwind-merge, Tailwind CSS, Vite, Vitest, jsPDF, jscanify, react-dropzone, react-webcam u.a.
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy of this
 > software and associated documentation files (the "Software"), to deal in the Software
@@ -166,4 +167,4 @@ Diese Datei dient der Erfüllung der Lizenzbedingungen aller eingebundenen Dritt
 Bibliotheken. Für die vollständigen Lizenztexte wird auf die jeweiligen Quellen und die
 Dateien in den Bibliotheks-Archiven (JAR/node_modules) verwiesen.
 
-Letzte Aktualisierung: März 2026
+Letzte Aktualisierung: Mai 2026
