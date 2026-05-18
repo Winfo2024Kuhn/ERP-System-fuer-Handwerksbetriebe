@@ -12,8 +12,11 @@ import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -57,15 +60,10 @@ public class AnfrageFunnelService {
     private final AnfrageFunnelSpamFilterService spamFilterService;
     private final AnfrageBestaetigungVersandService anfrageBestaetigungVersandService;
     private final WebPushService webPushService;
+    private final TaskExecutor taskExecutor;
 
     @Transactional
     public Anfrage verarbeiteFunnelAnfrage(AnfrageFunnelRequestDto dto, List<MultipartFile> bilder) {
-        AnfrageFunnelSpamFilterService.Result spamCheck = spamFilterService.pruefe(dto);
-        if (spamCheck.spam()) {
-            log.info("Funnel-Anfrage als Spam abgelehnt: {}", spamCheck.grund());
-            throw new FunnelAnfrageAbgelehntException(spamCheck.grund());
-        }
-
         Mitarbeiter systemMitarbeiter = mitarbeiterRepository.findByLoginToken(SYSTEM_MITARBEITER_TOKEN)
                 .orElseThrow(() -> new IllegalStateException(
                         "System-Mitarbeiter 'Webseite' nicht gefunden. Migration V221 ausgeführt?"));
@@ -82,6 +80,23 @@ public class AnfrageFunnelService {
 
         log.info("Funnel-Anfrage angelegt: anfrageId={}, kundeId={}, bilder={}",
                 anfrage.getId(), kunde.getId(), bilder != null ? bilder.size() : 0);
+
+        // Spam-Check asynchron nach DB-Commit — blockiert die Website-Antwort nicht.
+        // Erkannte Spam-Anfragen werden geloggt (anfrageId) und können manuell
+        // gelöscht werden. Der Check läuft nur, wenn Gemini konfiguriert ist;
+        // ein Ausfall hat keinen Einfluss auf die Persistenz.
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            final long anfrageId = anfrage.getId();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    taskExecutor.execute(() -> pruefSpamAsync(anfrageId, dto));
+                }
+            });
+        } else {
+            log.warn("Spam-Check übersprungen — keine aktive TX-Synchronisation für anfrageId={}",
+                    anfrage.getId());
+        }
 
         // Bestaetigungsmail an den Lead — fire & forget. Der Service schluckt
         // alle Exceptions, sodass ein SMTP-Ausfall die Funnel-Persistenz nicht
@@ -315,6 +330,18 @@ public class AnfrageFunnelService {
 
         private static String emptyToNull(String value) {
             return StringUtils.hasText(value) ? value : null;
+        }
+    }
+
+    private void pruefSpamAsync(long anfrageId, AnfrageFunnelRequestDto dto) {
+        try {
+            AnfrageFunnelSpamFilterService.Result spamCheck = spamFilterService.pruefe(dto);
+            if (spamCheck.spam()) {
+                log.warn("Spam-Nachprüfung: anfrageId={} als Spam erkannt – {}",
+                        anfrageId, spamCheck.grund());
+            }
+        } catch (Exception e) {
+            log.warn("Async-Spam-Check für anfrageId={} fehlgeschlagen: {}", anfrageId, e.getMessage());
         }
     }
 }

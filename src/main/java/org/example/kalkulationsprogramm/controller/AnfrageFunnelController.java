@@ -72,6 +72,10 @@ public class AnfrageFunnelController {
                     "message", "Anfrage erfolgreich angelegt."
             ));
         } catch (FunnelAnfrageAbgelehntException e) {
+            // Spam-Check läuft seit Refactor asynchron — dieser Branch wird aktuell
+            // nicht mehr ausgelöst. Er bleibt bewusst erhalten, da die Funnel-Webseite
+            // den Code SPAM_ABGELEHNT auswertet und ein künftiger synchroner Check
+            // (z. B. regelbasiert ohne KI) ihn wieder nutzen könnte.
             log.info("Funnel-Anfrage als Spam abgelehnt: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                     .body(Map.of("success", false, "code", "SPAM_ABGELEHNT",

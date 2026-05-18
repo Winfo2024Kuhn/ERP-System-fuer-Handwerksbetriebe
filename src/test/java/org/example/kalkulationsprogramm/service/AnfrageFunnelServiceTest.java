@@ -13,6 +13,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,6 +40,7 @@ class AnfrageFunnelServiceTest {
     private AnfrageFunnelSpamFilterService spamFilterService;
     private AnfrageBestaetigungVersandService bestaetigungVersandService;
     private WebPushService webPushService;
+    private TaskExecutor taskExecutor;
 
     private AnfrageFunnelService service;
 
@@ -52,11 +58,12 @@ class AnfrageFunnelServiceTest {
         given(spamFilterService.pruefe(any())).willReturn(AnfrageFunnelSpamFilterService.Result.ok());
         bestaetigungVersandService = mock(AnfrageBestaetigungVersandService.class);
         webPushService = mock(WebPushService.class);
+        taskExecutor = mock(TaskExecutor.class);
 
         service = new AnfrageFunnelService(
                 kundeRepository, anfrageRepository, anfrageNotizRepository,
                 mitarbeiterRepository, kundennummerService, dateiSpeicherService,
-                spamFilterService, bestaetigungVersandService, webPushService
+                spamFilterService, bestaetigungVersandService, webPushService, taskExecutor
         );
 
         systemMitarbeiter = new Mitarbeiter();
@@ -223,29 +230,56 @@ class AnfrageFunnelServiceTest {
     }
 
     @Test
-    void schicktKeineBestaetigungsmailWennSpamErkanntWurde() {
+    void schicktBestaetigungsmailAuchWennSpamfilterAsynchronSpamErkennt() {
+        // Spam-Check läuft jetzt asynchron nach Commit — die Bestätigungsmail
+        // wird immer versendet, unabhängig vom späteren Spam-Befund.
         given(spamFilterService.pruefe(any()))
                 .willReturn(AnfrageFunnelSpamFilterService.Result.spam("Spam"));
+        given(kundeRepository.findByKundenEmailIgnoreCase(any())).willReturn(List.of());
+        given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
 
-        try {
-            service.verarbeiteFunnelAnfrage(baseDto(), List.of());
-        } catch (FunnelAnfrageAbgelehntException ignored) {
-            // erwartetes Verhalten — wir interessieren uns hier nur fuer den
-            // ausbleibenden Versand der Bestaetigungsmail.
-        }
+        service.verarbeiteFunnelAnfrage(baseDto(), List.of());
 
-        verify(bestaetigungVersandService, never()).versendeBestaetigung(any(), any(), any(), any());
+        verify(bestaetigungVersandService).versendeBestaetigung(any(), any(), any(), any());
     }
 
     @Test
-    void wirftAusnahmeWennSpamFilterAnfrageAblehnt() {
+    void persistiertAnfrageAuchWennSpamfilterAsynchronSpamErkennt() {
+        // Spam-Check läuft asynchron — Anfrage wird immer gespeichert.
         given(spamFilterService.pruefe(any()))
                 .willReturn(AnfrageFunnelSpamFilterService.Result.spam("Test-Eingabe"));
+        given(kundeRepository.findByKundenEmailIgnoreCase(any())).willReturn(List.of());
+        given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
 
-        assertThatThrownBy(() -> service.verarbeiteFunnelAnfrage(baseDto(), List.of()))
-                .isInstanceOf(FunnelAnfrageAbgelehntException.class)
-                .hasMessageContaining("Test-Eingabe");
-        verify(anfrageRepository, never()).save(any(Anfrage.class));
+        Anfrage anfrage = service.verarbeiteFunnelAnfrage(baseDto(), List.of());
+
+        assertThat(anfrage.getId()).isEqualTo(1L);
+        verify(anfrageRepository).save(any(Anfrage.class));
+    }
+
+    @Test
+    void triggertSpamCheckAsynchronNachTransaktionsCommit() {
+        // Verifiziert, dass pruefSpamAsync() nach afterCommit() aufgerufen wird.
+        given(kundeRepository.findByKundenEmailIgnoreCase(any())).willReturn(List.of());
+        given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
+        given(spamFilterService.pruefe(any()))
+                .willReturn(AnfrageFunnelSpamFilterService.Result.spam("Test-Spam"));
+        // TaskExecutor führt Runnable sofort synchron aus, damit der Spam-Check im Test beobachtbar ist.
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.verarbeiteFunnelAnfrage(baseDto(), List.of());
+            // afterCommit der registrierten Synchronizations auslösen
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(spamFilterService).pruefe(any());
     }
 
     @Test
