@@ -234,8 +234,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
     void startPause_verwendetPessimisticLockedFinder() {
         when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
                 .thenReturn(Optional.of(dummyMitarbeiter()));
-        when(zeitbuchungRepository.findFirstByMitarbeiterIdAndEndeZeitIsNullOrderByStartZeitDesc(MITARBEITER_ID))
-                .thenReturn(Optional.empty());
+        when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
+                .thenReturn(List.of());
         when(zeitbuchungRepository.save(any(Zeitbuchung.class))).thenAnswer(inv -> {
             Zeitbuchung b = inv.getArgument(0);
             b.setId(111L);
@@ -247,4 +247,69 @@ class ZeiterfassungApiServiceConcurrencyTest {
         verify(mitarbeiterRepository, times(1)).findByLoginTokenAndAktivTrueForUpdate(TOKEN);
         verify(mitarbeiterRepository, never()).findByLoginTokenAndAktivTrue(TOKEN);
     }
+
+    /**
+     * "Handy gewinnt": Wenn der Mitarbeiter mehr als eine offene Buchung hat
+     * (z.B. Altdaten vor V321, manueller Stop am PC verpasst, Race zwischen
+     * pending Sync-Wellen), muss startPause ALLE offenen Buchungen schliessen
+     * - sonst krachte das spaetere save(pauseBuchung) am V321-Unique-Index
+     * und das Handy bekaeme 4xx zurueck, obwohl der Mitarbeiter klar Pause
+     * anstechen wollte.
+     */
+    @Test
+    void startPause_schliesstAlleOffenenBuchungen_damitPauseAnlegbarBleibt() {
+        Mitarbeiter mitarbeiter = dummyMitarbeiter();
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
+                .thenReturn(Optional.of(mitarbeiter));
+
+        Zeitbuchung offen1 = new Zeitbuchung();
+        offen1.setId(501L);
+        offen1.setMitarbeiter(mitarbeiter);
+        offen1.setStartZeit(LocalDateTime.now().minusHours(2));
+        offen1.setVersion(1);
+
+        Zeitbuchung offen2 = new Zeitbuchung();
+        offen2.setId(502L);
+        offen2.setMitarbeiter(mitarbeiter);
+        offen2.setStartZeit(LocalDateTime.now().minusMinutes(30));
+        offen2.setVersion(1);
+
+        when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
+                .thenReturn(List.of(offen1, offen2));
+        when(zeitbuchungRepository.save(any(Zeitbuchung.class))).thenAnswer(inv -> {
+            Zeitbuchung b = inv.getArgument(0);
+            if (b.getId() == null) b.setId(999L);
+            return b;
+        });
+
+        Map<String, Object> result = service.startPause(TOKEN, null, null);
+
+        assertThat(offen1.getEndeZeit()).as("erste offene Buchung gestoppt").isNotNull();
+        assertThat(offen2.getEndeZeit()).as("zweite offene Buchung gestoppt").isNotNull();
+        assertThat(result.get("typ")).isEqualTo("PAUSE");
+        assertThat(result.get("status")).isEqualTo("gestartet");
+
+        // markiereAlsGeaendert() hat Version++ ausgefuehrt - genau das verhindert
+        // den Unique-Constraint-Konflikt im zeitbuchung_audit (Version 1 existiert
+        // bereits vom Start). Wer den Aufruf aus der Schleife entfernt, faellt
+        // hier rein.
+        assertThat(offen1.getVersion()).as("Version von Buchung 1 erhoeht").isEqualTo(2);
+        assertThat(offen2.getVersion()).as("Version von Buchung 2 erhoeht").isEqualTo(2);
+
+        // Audit-Trail GoBD-konform fuer jede gestoppte Buchung + die neue Pause
+        verify(auditService, times(2)).protokolliereAenderung(
+                any(Zeitbuchung.class), eq(mitarbeiter), any(), any(String.class));
+        verify(auditService, times(1)).protokolliereErstellung(
+                any(Zeitbuchung.class), eq(mitarbeiter), any());
+
+        // MonatsSaldo-Cache muss fuer jede betroffene Buchung invalidiert werden
+        // (2x gestoppt + 1x neue Pause = 3 Aufrufe). Sonst zeigt der PC-Saldo
+        // bis zum naechsten Trigger veraltete Werte.
+        verify(monatsSaldoService, times(3)).invalidiereFuerDateTime(eq(MITARBEITER_ID), any(LocalDateTime.class));
+    }
+
+    // TODO (Folge-PR): Integrationstest mit echter H2 + V321-Migration, der
+    //   zwei offene Buchungen anlegt und sicherstellt, dass startPause vorm
+    //   Fix mit DataIntegrityViolation gescheitert waere. Aktueller Mock-Test
+    //   belegt nur die Service-Logik, nicht den DB-Constraint-Pfad.
 }

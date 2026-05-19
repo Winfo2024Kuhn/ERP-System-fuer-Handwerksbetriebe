@@ -438,26 +438,55 @@ public class ZeiterfassungApiService {
             }
         }
 
-        // Stoppe aktive Buchung (falls vorhanden)
-        Optional<Zeitbuchung> aktiveBuchung = zeitbuchungRepository
-                .findFirstByMitarbeiterIdAndEndeZeitIsNullOrderByStartZeitDesc(mitarbeiter.getId());
+        // "Handy gewinnt": ALLE noch offenen Buchungen schliessen, bevor die
+        // Pause angelegt wird. Wenn aus irgendeinem Grund mehr als eine
+        // Buchung offen ist (z.B. Altdaten vor V321, manueller Stop am PC
+        // gerade verpasst, oder eine pending offline 'start'-Buchung wurde
+        // gerade verbucht), wuerde das anschliessende save(pauseBuchung)
+        // sonst am V321-Unique-Index scheitern (DataIntegrityViolation)
+        // und das Handy bekaeme 4xx zurueck - obwohl der Mitarbeiter klar
+        // signalisiert hat, dass jetzt Pause ist.
+        LocalDateTime pauseStartZeit = originalZeit != null ? originalZeit : LocalDateTime.now();
+        // Deterministische Reihenfolge fuer den Audit-Trail: chronologisch nach
+        // Start der Buchung. Bei normalem Betrieb gibt es genau eine offene
+        // Buchung, dann ist die Sortierung irrelevant - aber im Recovery-Fall
+        // (mehrere offen) sollte die Buchhaltung die Beendigungs-Reihenfolge
+        // nachvollziehen koennen.
+        List<Zeitbuchung> aktiveBuchungen = zeitbuchungRepository
+                .findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId())
+                .stream()
+                .sorted(Comparator.comparing(Zeitbuchung::getStartZeit))
+                .collect(Collectors.toList());
 
-        if (aktiveBuchung.isPresent()) {
-            Zeitbuchung buchung = aktiveBuchung.get();
-            // Stoppe die aktive Arbeitsbuchung
-            buchung.setEndeZeit(originalZeit != null ? originalZeit : LocalDateTime.now());
+        for (Zeitbuchung buchung : aktiveBuchungen) {
+            // endeZeit muss nach startZeit liegen (gleicher Schutz wie in
+            // stopZeiterfassung). Bei Mehrfach-Aktivbuchungen kann eine
+            // spaeter gestartet sein als pauseStartZeit, dann +1 min Korrektur.
+            LocalDateTime endeZeit = pauseStartZeit;
+            if (!endeZeit.isAfter(buchung.getStartZeit())) {
+                log.warn("endeZeit ({}) <= startZeit ({}) fuer Buchung {} (Mitarbeiter {}) - korrigiere auf startZeit + 1 Min (Recovery: Pause-Start fiel in spaeter gestartete Buchung)",
+                        endeZeit, buchung.getStartZeit(), buchung.getId(), mitarbeiter.getId());
+                endeZeit = buchung.getStartZeit().plusMinutes(1);
+            }
+            buchung.setEndeZeit(endeZeit);
             Duration dauer = Duration.between(buchung.getStartZeit(), buchung.getEndeZeit());
             BigDecimal stunden = BigDecimal.valueOf(dauer.toMinutes())
                     .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
             buchung.setAnzahlInStunden(stunden);
+            // GoBD-Audit: Erst Version erhoehen, dann Audit protokollieren.
+            buchung.markiereAlsGeaendert(mitarbeiter);
+            auditService.protokolliereAenderung(buchung, mitarbeiter, ErfassungsQuelle.MOBILE_APP,
+                    "Beendet beim Anstechen einer Pause am Handy");
             zeitbuchungRepository.save(buchung);
+            // MonatsSaldo-Cache invalidieren (analog stopZeiterfassung Zeile ~378)
+            monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), buchung.getStartZeit());
         }
 
         // Neue Pausenbuchung erstellen - OHNE Projekt
         Zeitbuchung pauseBuchung = new Zeitbuchung();
         pauseBuchung.setMitarbeiter(mitarbeiter);
         pauseBuchung.setProjekt(null); // Pausen haben kein Projekt
-        pauseBuchung.setStartZeit(originalZeit != null ? originalZeit : LocalDateTime.now());
+        pauseBuchung.setStartZeit(pauseStartZeit);
         pauseBuchung.setTyp(BuchungsTyp.PAUSE);
         pauseBuchung.setNotiz("Pausenbuchung");
 
@@ -471,6 +500,9 @@ public class ZeiterfassungApiService {
         }
 
         Zeitbuchung gespeichert = zeitbuchungRepository.save(pauseBuchung);
+        auditService.protokolliereErstellung(gespeichert, mitarbeiter, ErfassungsQuelle.MOBILE_APP);
+        // MonatsSaldo-Cache fuer den Monat der Pause invalidieren
+        monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), gespeichert.getStartZeit());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", gespeichert.getId());
