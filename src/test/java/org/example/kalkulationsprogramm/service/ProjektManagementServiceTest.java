@@ -110,7 +110,7 @@ class ProjektManagementServiceTest {
 
     @BeforeEach
     void setup() {
-        when(artikelInProjektRepository.sumKilogrammByProjektGroupedByWerkstoff(any()))
+        lenient().when(artikelInProjektRepository.sumKilogrammByProjektGroupedByWerkstoff(any()))
                 .thenReturn(List.of());
         service = new ProjektManagementService(projektRepository,
                 anfrageNotizRepository,
@@ -654,6 +654,121 @@ class ProjektManagementServiceTest {
         assertEquals("Notiz mit kaputter Bilddatei", saved.getNotiz());
         assertTrue(saved.getBilder().isEmpty(),
                 "Bild ohne Quelldatei darf nicht mit altem (nicht auflösbarem) Dateinamen gespeichert werden.");
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // generiereKundenAuftragsnummer – Auftragsnummer-Logik nach digitaler Angebots-Annahme.
+    // Format YYYY/MM/NNNCC: NNN = Kunden-Slot im Jahr, CC = Auftrags-Zähler dieses Kunden im Jahr.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    void generiereKundenAuftragsnummer_neuerKundeOhneVorAuftraege_startetMitErstemSlotUndCcNull() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(42L, "2026/"))
+                .thenReturn(List.of());
+        when(projektRepository.findAuftragsnummernByYearPrefix("2026/"))
+                .thenReturn(List.of());
+        when(projektRepository.existsByAuftragsnummer("2026/05/00100")).thenReturn(false);
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, 42L);
+
+        assertEquals("2026/05/00100", nummer);
+    }
+
+    @Test
+    void generiereKundenAuftragsnummer_bestehenderKundeImSelbenJahr_behaeltSlotUndZaehltCcHoch() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(42L, "2026/"))
+                .thenReturn(List.of("2026/01/00100"));
+        when(projektRepository.existsByAuftragsnummer("2026/05/00101")).thenReturn(false);
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, 42L);
+
+        assertEquals("2026/05/00101", nummer);
+    }
+
+    @Test
+    void generiereKundenAuftragsnummer_neuerKundeBeiBelegtenSlots_vergibtNaechstenFreienSlot() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(43L, "2026/"))
+                .thenReturn(List.of());
+        when(projektRepository.findAuftragsnummernByYearPrefix("2026/"))
+                .thenReturn(List.of("2026/01/00100", "2026/05/00101"));
+        when(projektRepository.existsByAuftragsnummer("2026/05/00200")).thenReturn(false);
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, 43L);
+
+        assertEquals("2026/05/00200", nummer);
+    }
+
+    @Test
+    void generiereKundenAuftragsnummer_ohneKundeId_faelltAufAlteFortlaufendeNummerZurueck() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByPrefix("2026/05/"))
+                .thenReturn(List.of());
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, null);
+
+        assertEquals("2026/05/00001", nummer);
+    }
+
+    @Test
+    void generiereKundenAuftragsnummer_ccUeberlauf_faelltAufAlteFortlaufendeNummerZurueck() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(42L, "2026/"))
+                .thenReturn(List.of("2026/01/00199"));
+        when(projektRepository.findAuftragsnummernByPrefix("2026/05/"))
+                .thenReturn(List.of("2026/05/00050"));
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, 42L);
+
+        assertEquals("2026/05/00051", nummer);
+    }
+
+    @Test
+    void generiereKundenAuftragsnummer_kollidierendeNummer_faelltAufAlteFortlaufendeNummerZurueck() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(42L, "2026/"))
+                .thenReturn(List.of());
+        when(projektRepository.findAuftragsnummernByYearPrefix("2026/"))
+                .thenReturn(List.of());
+        when(projektRepository.existsByAuftragsnummer("2026/05/00100")).thenReturn(true);
+        when(projektRepository.findAuftragsnummernByPrefix("2026/05/"))
+                .thenReturn(List.of("2026/05/00100"));
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, 42L);
+
+        assertEquals("2026/05/00101", nummer);
+    }
+
+    @Test
+    void generiereKundenAuftragsnummer_nnnUeberlauf_faelltAufAlteFortlaufendeNummerZurueck() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(99L, "2026/"))
+                .thenReturn(List.of());
+        when(projektRepository.findAuftragsnummernByYearPrefix("2026/"))
+                .thenReturn(List.of("2026/01/99900"));
+        when(projektRepository.findAuftragsnummernByPrefix("2026/05/"))
+                .thenReturn(List.of("2026/05/00010"));
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, 99L);
+
+        assertEquals("2026/05/00011", nummer);
+    }
+
+    @Test
+    void generiereKundenAuftragsnummer_ignoriertNichtParsbareBestandsnummern() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        // Bestandsdaten in unerwarteten Formaten dürfen die Slot-Vergabe nicht stören.
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(42L, "2026/"))
+                .thenReturn(List.of());
+        when(projektRepository.findAuftragsnummernByYearPrefix("2026/"))
+                .thenReturn(List.of("2026/01/ABCDE", "2026/01/1234", "2026/01/00200"));
+        when(projektRepository.existsByAuftragsnummer("2026/05/00300")).thenReturn(false);
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, 42L);
+
+        assertEquals("2026/05/00300", nummer);
     }
 }
 

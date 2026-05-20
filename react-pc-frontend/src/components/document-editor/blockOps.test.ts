@@ -149,6 +149,21 @@ describe('insertBeforeNachtexte', () => {
         const result = insertBeforeNachtexte(blocks, section('new'));
         expect(result.map(b => b.id)).toEqual(['s1', 'new', CLOSURE_BLOCK_ID]);
     });
+
+    it('REGRESSION 2026-05-16: SERVICE landet vor NACH-Text wenn KEIN CLOSURE existiert', () => {
+        // Frisch angelegtes Dokument: Vor- und Nachtext sind geladen, aber noch keine
+        // Leistung -> kein CLOSURE-Marker im Array. Vor dem Fix landete die erste
+        // Leistung ans Dokument-Ende (hinter dem Nachtext).
+        const blocks: DocBlock[] = [text('vor', 'VOR'), text('nach', 'NACH')];
+        const result = insertBeforeNachtexte(blocks, service('new'));
+        expect(result.map(b => b.id)).toEqual(['vor', 'new', 'nach']);
+    });
+
+    it('REGRESSION 2026-05-16: SECTION_HEADER landet vor NACH-Text wenn KEIN CLOSURE existiert', () => {
+        const blocks: DocBlock[] = [text('vor', 'VOR'), text('nach', 'NACH')];
+        const result = insertBeforeNachtexte(blocks, section('new'));
+        expect(result.map(b => b.id)).toEqual(['vor', 'new', 'nach']);
+    });
 });
 
 // ─── insertAtAnchor ─────────────────────────────────────────────────────────
@@ -229,6 +244,20 @@ describe('insertAtAnchor', () => {
         const blocks: DocBlock[] = [service('s1'), text('nach', 'NACH')];
         const result = insertAtAnchor(blocks, text('new'), 'ghost-id');
         expect(result.map(b => b.id)).toEqual(['s1', 'new', 'nach']);
+    });
+
+    it('REGRESSION 2026-05-16: SERVICE clampt vor NACH-Text wenn KEIN CLOSURE und Anker = NACH-Block', () => {
+        // User fokussiert NACH-Textbaustein und drueckt "+ Leistung". Ohne Fix landete
+        // die Leistung direkt hinter dem NACH-Block, also ans Dokument-Ende.
+        const blocks: DocBlock[] = [text('vor', 'VOR'), text('nach', 'NACH')];
+        const result = insertAtAnchor(blocks, service('new'), 'nach');
+        expect(result.map(b => b.id)).toEqual(['vor', 'new', 'nach']);
+    });
+
+    it('REGRESSION 2026-05-16: SECTION_HEADER clampt vor NACH-Text wenn KEIN CLOSURE und Anker = NACH-Block', () => {
+        const blocks: DocBlock[] = [text('vor', 'VOR'), text('nach', 'NACH')];
+        const result = insertAtAnchor(blocks, section('new'), 'nach');
+        expect(result.map(b => b.id)).toEqual(['vor', 'new', 'nach']);
     });
 
     it('iteriert ueber Sections und fallbackt wenn child-Anker nirgends gefunden wird', () => {

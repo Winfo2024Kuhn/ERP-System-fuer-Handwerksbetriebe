@@ -71,8 +71,12 @@ export function syncClosureBlock(prev: DocBlock[]): DocBlock[] {
 export function insertBeforeNachtexte(prev: DocBlock[], block: DocBlock): DocBlock[] {
     const closureIdx = prev.findIndex(b => b.id === CLOSURE_BLOCK_ID);
     const firstNachIdx = prev.findIndex(b => b.textbausteinRolle === 'NACH');
+    // SERVICE/SECTION_HEADER: bevorzugt vor CLOSURE; Fallback: vor erstem NACH-Text.
+    // Bug 2026-05-16: Ohne den Fallback landete die erste Leistung in einem frisch
+    // angelegten Dokument (Vor-/Nachtext bereits geladen, aber noch keine Leistung
+    // -> kein CLOSURE) ans Ende, also hinter dem NACH-Textbaustein.
     const limit = block.type === 'SERVICE' || block.type === 'SECTION_HEADER'
-        ? closureIdx
+        ? (closureIdx !== -1 ? closureIdx : firstNachIdx)
         : firstNachIdx;
     if (limit === -1) {
         return [...prev, block];
@@ -110,9 +114,18 @@ export function insertAtAnchor(
     const topAnchorIdx = prev.findIndex(b => b.id === anchorId);
     if (topAnchorIdx !== -1) {
         let insertIdx = topAnchorIdx + 1;
-        if ((block.type === 'SERVICE' || block.type === 'SECTION_HEADER')
-            && closureIdx !== -1 && insertIdx > closureIdx) {
-            insertIdx = closureIdx;
+        if (block.type === 'SERVICE' || block.type === 'SECTION_HEADER') {
+            if (closureIdx !== -1 && insertIdx > closureIdx) {
+                insertIdx = closureIdx;
+            } else if (closureIdx === -1) {
+                // Ohne CLOSURE auf den ersten NACH-Textbaustein clampen, damit eine
+                // Leistung nicht hinter dem Nachtext landet (Bug 2026-05-16: User hat
+                // den NACH-Block fokussiert und dann "+ Leistung" gedrueckt).
+                const firstNachIdx = prev.findIndex(b => b.textbausteinRolle === 'NACH');
+                if (firstNachIdx !== -1 && insertIdx > firstNachIdx) {
+                    insertIdx = firstNachIdx;
+                }
+            }
         }
         return [...prev.slice(0, insertIdx), block, ...prev.slice(insertIdx)];
     }

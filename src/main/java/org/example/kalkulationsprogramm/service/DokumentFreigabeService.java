@@ -578,8 +578,13 @@ public class DokumentFreigabeService
 
         ProjektErstellenDto dto = new ProjektErstellenDto();
         dto.setAnfrageIds(List.of(anfrageId));
-        dto.setAnlegedatum(LocalDate.now());
-        dto.setAuftragsnummer(projektManagementService.generiereNaechsteAuftragsnummer(LocalDate.now()));
+        LocalDate heute = LocalDate.now();
+        dto.setAnlegedatum(heute);
+        // Auftragsnummer folgt der festen Logik YYYY/MM/NNNCC: NNN = Kunden-Slot im Jahr,
+        // CC = laufender Auftrag dieses Kunden im Jahr. Folgeaufträge desselben Kunden
+        // im selben Jahr teilen sich den Slot, neue Kunden bekommen den nächsten Slot.
+        Long kundeIdFuerNummer = anfrage.getKunde() != null ? anfrage.getKunde().getId() : null;
+        dto.setAuftragsnummer(projektManagementService.generiereKundenAuftragsnummer(heute, kundeIdFuerNummer));
         dto.setProjektArt("PAUSCHAL");
 
         // Produktkategorien-Mapping aus Angebot/AB ableiten — gleiche Logik wie
@@ -610,7 +615,10 @@ public class DokumentFreigabeService
         }
         catch (Exception e)
         {
-            log.warn("Auto-Projektanlage aus Anfrage {} fehlgeschlagen: {}", anfrageId, e.getMessage());
+            // Stacktrace mitloggen, damit z.B. DataIntegrityViolationException bei einer
+            // Auftragsnummer-Race-Kollision (UNIQUE-Constraint) sichtbar wird und nicht
+            // stillschweigend untergeht.
+            log.warn("Auto-Projektanlage aus Anfrage {} fehlgeschlagen", anfrageId, e);
         }
     }
 

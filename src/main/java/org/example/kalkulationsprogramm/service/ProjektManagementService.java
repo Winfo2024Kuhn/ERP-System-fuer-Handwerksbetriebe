@@ -1450,6 +1450,131 @@ ProjektManagementService {
     }
 
     /**
+     * Generiert eine kundenspezifische Auftragsnummer für die Anfrage→Projekt-Konvertierung
+     * nach digitaler Angebots-Annahme.
+     *
+     * <p>Format: {@code YYYY/MM/NNNCC}
+     * <ul>
+     *   <li>{@code YYYY} – Jahr aus {@code anlegedatum}</li>
+     *   <li>{@code MM}   – Monat aus {@code anlegedatum}</li>
+     *   <li>{@code NNN}  – Kunden-Slot innerhalb des Jahres (001–999):
+     *       Erste Bestellung eines Kunden im Jahr → neuer Slot. Folgebestellungen
+     *       desselben Kunden im selben Jahr behalten den Slot.</li>
+     *   <li>{@code CC}   – Laufende Auftragsnummer dieses Kunden im Jahr (00–99).</li>
+     * </ul>
+     *
+     * <p>Beispiele:
+     * <ul>
+     *   <li>Erster Auftrag von Kunde A (neu im Jahr) im Januar 2026 → {@code 2026/01/00100}</li>
+     *   <li>Zweiter Auftrag von Kunde A im Mai 2026 → {@code 2026/05/00101}</li>
+     *   <li>Erster Auftrag von Kunde B im Mai 2026 → {@code 2026/05/00200}</li>
+     * </ul>
+     *
+     * <p>Fallback auf {@link #generiereNaechsteAuftragsnummer(LocalDate)}, wenn:
+     * <ul>
+     *   <li>{@code kundeId == null} (kein Kunde verknüpft)</li>
+     *   <li>Slot- oder Auftragszähler die Grenzen überschreitet (NNN > 999 / CC > 99)</li>
+     *   <li>Die berechnete Nummer bereits vergeben ist (Race-Condition-Schutz)</li>
+     * </ul>
+     */
+    public String generiereKundenAuftragsnummer(LocalDate anlegedatum, Long kundeId) {
+        if (anlegedatum == null) {
+            anlegedatum = LocalDate.now();
+        }
+        if (kundeId == null) {
+            return generiereNaechsteAuftragsnummer(anlegedatum);
+        }
+
+        String jahrPrefix = "%d/".formatted(anlegedatum.getYear());
+        String monatPrefix = "%d/%02d/".formatted(anlegedatum.getYear(), anlegedatum.getMonthValue());
+
+        List<String> kundenAuftraege =
+                projektRepository.findAuftragsnummernByKundeAndYearPrefix(kundeId, jahrPrefix);
+
+        int nnn;
+        int cc;
+
+        if (!kundenAuftraege.isEmpty()) {
+            // Kunde hat in diesem Jahr bereits Aufträge → existierenden Slot wiederverwenden,
+            // höchstes CC ermitteln und +1.
+            Integer slotFromKunde = null;
+            int hoechstesCc = -1;
+            for (String nr : kundenAuftraege) {
+                int[] parsed = parseSlotUndCc(nr, jahrPrefix);
+                if (parsed == null) {
+                    continue;
+                }
+                if (slotFromKunde == null) {
+                    slotFromKunde = parsed[0];
+                }
+                if (parsed[1] > hoechstesCc) {
+                    hoechstesCc = parsed[1];
+                }
+            }
+            if (slotFromKunde == null || hoechstesCc < 0 || hoechstesCc >= 99) {
+                return generiereNaechsteAuftragsnummer(anlegedatum);
+            }
+            nnn = slotFromKunde;
+            cc = hoechstesCc + 1;
+        } else {
+            // Neuer Kunden-Slot im Jahr → höchste vorhandene NNN-Komponente + 1.
+            // Hinweis: Bestandsdaten aus der alten reinen Fortlauf-Logik (z.B. "2026/01/00007")
+            // werden vom Parser als Slot=000, CC=07 interpretiert. Das ist bewusst akzeptiert:
+            // - Slot-Vergabe für neue Kunden bleibt korrekt (Start bei 001, Konflikte verhindert
+            //   der existsByAuftragsnummer-Fallback unten und der UNIQUE-Constraint der DB).
+            // - Bestandskunden bleiben semantisch im "Legacy-Slot 000" — eine Migration der
+            //   Alt-Auftragsnummern ist GoBD-relevant und daher nicht gewünscht.
+            List<String> alleAuftraegeImJahr = projektRepository.findAuftragsnummernByYearPrefix(jahrPrefix);
+            int hoechsterSlot = 0;
+            for (String nr : alleAuftraegeImJahr) {
+                int[] parsed = parseSlotUndCc(nr, jahrPrefix);
+                if (parsed != null && parsed[0] > hoechsterSlot) {
+                    hoechsterSlot = parsed[0];
+                }
+            }
+            if (hoechsterSlot >= 999) {
+                return generiereNaechsteAuftragsnummer(anlegedatum);
+            }
+            nnn = hoechsterSlot + 1;
+            cc = 0;
+        }
+
+        String kandidat = "%s%03d%02d".formatted(monatPrefix, nnn, cc);
+        if (projektRepository.existsByAuftragsnummer(kandidat)) {
+            // Sehr unwahrscheinlich (Race oder Altdaten-Kollision) – sicherer Fallback.
+            return generiereNaechsteAuftragsnummer(anlegedatum);
+        }
+        return kandidat;
+    }
+
+    /**
+     * Parst eine Auftragsnummer im Format {@code YYYY/MM/NNNCC} und liefert
+     * {@code int[]{NNN, CC}} oder {@code null}, wenn das Format nicht passt
+     * (z.B. Bestandsdaten mit abweichender Stellenzahl).
+     */
+    private static int[] parseSlotUndCc(String auftragsnummer, String jahrPrefix) {
+        if (auftragsnummer == null || jahrPrefix == null || !auftragsnummer.startsWith(jahrPrefix)) {
+            return null;
+        }
+        String rest = auftragsnummer.substring(jahrPrefix.length());
+        int slash = rest.indexOf('/');
+        if (slash < 0) {
+            return null;
+        }
+        String zaehler = rest.substring(slash + 1);
+        if (zaehler.length() != 5) {
+            return null;
+        }
+        try {
+            int nnn = Integer.parseInt(zaehler.substring(0, 3));
+            int cc = Integer.parseInt(zaehler.substring(3, 5));
+            return new int[]{nnn, cc};
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    /**
      * Gibt nur den Zähler-Teil (XXXXX) für eine Auftragsnummer zurück.
      */
     public long getNaechsterAuftragsnummerZaehler(LocalDate anlegedatum) {

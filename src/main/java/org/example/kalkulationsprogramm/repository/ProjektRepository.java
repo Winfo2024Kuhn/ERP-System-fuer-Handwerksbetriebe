@@ -90,6 +90,23 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
         List<String> findAuftragsnummernByPrefix(@Param("prefix") String prefix);
 
         /**
+         * Liefert alle Auftragsnummern eines bestimmten Kunden, deren Präfix dem Jahres-Präfix
+         * entspricht (z.B. "2026/"). Wird für die kundenspezifische Auftragsnummern-Vergabe
+         * bei Anfrage→Projekt-Konvertierung verwendet.
+         */
+        @Query("SELECT p.auftragsnummer FROM Projekt p WHERE p.kundenId.id = :kundeId AND p.auftragsnummer LIKE CONCAT(:jahrPrefix, '%')")
+        List<String> findAuftragsnummernByKundeAndYearPrefix(@Param("kundeId") Long kundeId,
+                        @Param("jahrPrefix") String jahrPrefix);
+
+        /**
+         * Liefert alle Auftragsnummern eines Jahres (Präfix z.B. "2026/").
+         * Wird benötigt, um beim Anlegen eines neuen Kunden-Slots im Jahr den
+         * nächsten freien NNN-Wert zu bestimmen.
+         */
+        @Query("SELECT p.auftragsnummer FROM Projekt p WHERE p.auftragsnummer LIKE CONCAT(:jahrPrefix, '%')")
+        List<String> findAuftragsnummernByYearPrefix(@Param("jahrPrefix") String jahrPrefix);
+
+        /**
          * Prüft ob eine Auftragsnummer bereits existiert.
          */
         boolean existsByAuftragsnummer(String auftragsnummer);
