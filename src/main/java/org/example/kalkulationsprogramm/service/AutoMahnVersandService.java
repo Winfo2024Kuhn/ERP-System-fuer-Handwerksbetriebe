@@ -558,19 +558,31 @@ public class AutoMahnVersandService
 
     /**
      * Liefert den Namen der im Formularwesen für die Mahnstufe zugewiesenen
-     * Vorlage. Symmetrisch zum {@code AutoAuftragsbestaetigungVersandService}
-     * — siehe dort für Details.
+     * Vorlage. Symmetrisch zum {@code AutoAuftragsbestaetigungVersandService}.
+     *
+     * <p>Fallback auf die Vorlage von "Rechnung", weil Inhaber im Formularwesen
+     * typischerweise nur eine globale Briefpapier-Vorlage explizit zuordnen
+     * (oft an "Rechnung") und darunter die Default-Textbausteine für alle
+     * Dokumenttypen pflegen. Ohne diesen Fallback bleibt das Mahn-PDF ohne
+     * Vor-/Nachtexte, weil keine Mahnstufen-spezifische Zuordnung existiert.</p>
      */
-    private Optional<String> ladeTemplateName(String typLabel)
+    Optional<String> ladeTemplateName(String typLabel)
+    {
+        Optional<String> direkt = ladeTemplateNameFuer(typLabel);
+        if (direkt.isPresent()) return direkt;
+        return ladeTemplateNameFuer("Rechnung");
+    }
+
+    private Optional<String> ladeTemplateNameFuer(String dokumenttypLabel)
     {
         try
         {
-            return formularTemplateService.getPreferredTemplateForDokumenttyp(typLabel, null);
+            return formularTemplateService.getPreferredTemplateForDokumenttyp(dokumenttypLabel, null);
         }
         catch (Exception e)
         {
-            log.warn("Vorlagenzuordnung fuer Mahnstufe '{}' konnte nicht ermittelt werden: {}",
-                    typLabel, e.getMessage());
+            log.warn("Vorlagenzuordnung fuer '{}' konnte nicht ermittelt werden: {}",
+                    dokumenttypLabel, e.getMessage());
             return Optional.empty();
         }
     }

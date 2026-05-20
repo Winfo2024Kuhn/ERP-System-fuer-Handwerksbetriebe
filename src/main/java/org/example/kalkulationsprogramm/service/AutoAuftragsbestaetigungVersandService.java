@@ -162,7 +162,7 @@ public class AutoAuftragsbestaetigungVersandService
     private byte[] generierePdfFuerAB(AusgangsGeschaeftsDokument ab)
     {
         KopfdatenDto kopfdaten = buildKopfdaten(ab);
-        String templateName = ladeTemplateName().orElse(null);
+        String templateName = ladeTemplateName(ab).orElse(null);
         List<ContentBlockDto> contentBlocks = baueContentBlocks(ab, templateName);
         VorlagenDaten vorlage = ladeVorlagenDaten(templateName);
         return buildPdfBytes(ab, kopfdaten, contentBlocks, vorlage);
@@ -372,13 +372,37 @@ public class AutoAuftragsbestaetigungVersandService
      * Liefert den Namen der im Formularwesen für "Auftragsbestätigung"
      * zugewiesenen Vorlage. Dient sowohl zum Laden des Layouts als auch der
      * Standard-Textbausteine — beides muss aus derselben Vorlage stammen.
+     *
+     * <p>Fallback-Kette (von explizit zu implizit), damit Auto-AB nach
+     * digitaler Annahme auch dann mit Vor-/Nachtexten rendert, wenn der
+     * Inhaber im Formularwesen nur eine globale Vorlage zugewiesen hat:
+     * <ol>
+     *   <li>Vorlage explizit für "Auftragsbestätigung" zugewiesen</li>
+     *   <li>Vorlage des Vorgängers (typischerweise "Angebot") — daraus werden
+     *       die AB-Defaults gelesen, falls in dieser Vorlage gepflegt</li>
+     * </ol>
+     * Die eigentlichen Default-Textbausteine werden anschliessend immer für
+     * "Auftragsbestätigung" geladen — die Vorlage wirkt nur als Adresse,
+     * unter der die Defaults persistiert sind.</p>
      */
-    private Optional<String> ladeTemplateName()
+    Optional<String> ladeTemplateName(AusgangsGeschaeftsDokument ab)
     {
-        try { return formularTemplateService.getPreferredTemplateForDokumenttyp("Auftragsbestätigung", null); }
+        Optional<String> direkt = ladeTemplateNameFuer("Auftragsbestätigung");
+        if (direkt.isPresent()) return direkt;
+        if (ab != null && ab.getVorgaenger() != null && ab.getVorgaenger().getTyp() != null)
+        {
+            return ladeTemplateNameFuer(typLabel(ab.getVorgaenger().getTyp()));
+        }
+        return Optional.empty();
+    }
+
+    private Optional<String> ladeTemplateNameFuer(String dokumenttypLabel)
+    {
+        try { return formularTemplateService.getPreferredTemplateForDokumenttyp(dokumenttypLabel, null); }
         catch (Exception e)
         {
-            log.warn("Vorlagenzuordnung für AB konnte nicht ermittelt werden: {}", e.getMessage());
+            log.warn("Vorlagenzuordnung für '{}' konnte nicht ermittelt werden: {}",
+                    dokumenttypLabel, e.getMessage());
             return Optional.empty();
         }
     }

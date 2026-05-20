@@ -1,19 +1,47 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
+import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.ContentBlockDto;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests für den positionenJson-Parser des AutoAuftragsbestaetigungVersandService.
  * Der Parser ist die einzige nicht-triviale Logik des Service — der Rest ist
  * Verdrahtung von bestehenden Bausteinen (PDF-Service, EmailService).
  */
+@ExtendWith(MockitoExtension.class)
 class AutoAuftragsbestaetigungVersandServiceTest {
+
+    @Mock RechnungPdfService rechnungPdfService;
+    @Mock SystemSettingsService systemSettingsService;
+    @Mock EmailTextTemplateService emailTextTemplateService;
+    @Mock AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
+    @Mock FormularTemplateService formularTemplateService;
+    @Mock FormularTextbausteinDefaultService formularTextbausteinDefaultService;
+    @Mock EmailSignatureService emailSignatureService;
+
+    private AutoAuftragsbestaetigungVersandService neuService() {
+        return new AutoAuftragsbestaetigungVersandService(
+                rechnungPdfService,
+                systemSettingsService,
+                emailTextTemplateService,
+                ausgangsGeschaeftsDokumentRepository,
+                formularTemplateService,
+                formularTextbausteinDefaultService,
+                emailSignatureService);
+    }
 
     @Test
     void parser_leererInputLiefertLeereListe() {
@@ -88,5 +116,56 @@ class AutoAuftragsbestaetigungVersandServiceTest {
     void parser_kaputtesJsonLiefertLeereListe() {
         List<ContentBlockDto> result = AutoAuftragsbestaetigungVersandService.parsePositionenJsonZuContentBlocks("nicht-json");
         assertThat(result).isEmpty();
+    }
+
+    // ------------- ladeTemplateName: Fallback-Kette -------------
+    // Hintergrund: Inhaber pflegen im Formularwesen typischerweise eine
+    // einzige Briefpapier-Vorlage mit Vor-/Nachtexten für ALLE Dokumenttypen
+    // und weisen diese nur dem Angebot zu. Ohne Fallback käme die Auto-AB
+    // nach digitaler Annahme ohne Vor-/Nachtexte raus.
+
+    @Test
+    void ladeTemplateName_explizitAbZuordnungWirdBevorzugt() {
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp("Auftragsbestätigung", null))
+                .thenReturn(Optional.of("AB-spezial"));
+
+        AusgangsGeschaeftsDokument ab = baueAbMitVorgaengerAngebot();
+
+        assertThat(neuService().ladeTemplateName(ab)).contains("AB-spezial");
+    }
+
+    @Test
+    void ladeTemplateName_falltAufVorgaengerVorlageZurueckWennAbNichtZugewiesen() {
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp("Auftragsbestätigung", null))
+                .thenReturn(Optional.empty());
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp("Angebot", null))
+                .thenReturn(Optional.of("standard-briefpapier"));
+
+        AusgangsGeschaeftsDokument ab = baueAbMitVorgaengerAngebot();
+
+        assertThat(neuService().ladeTemplateName(ab)).contains("standard-briefpapier");
+    }
+
+    @Test
+    void ladeTemplateName_ohneVorgaengerUndOhneAbZuordnungLiefertEmpty() {
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp("Auftragsbestätigung", null))
+                .thenReturn(Optional.empty());
+
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+
+        assertThat(neuService().ladeTemplateName(ab)).isEmpty();
+    }
+
+    private static AusgangsGeschaeftsDokument baueAbMitVorgaengerAngebot() {
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angebot.setDokumentNummer("AN-2026/05/0042");
+
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setDokumentNummer("AB-2026/05/0042");
+        ab.setVorgaenger(angebot);
+        return ab;
     }
 }
