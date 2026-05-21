@@ -311,10 +311,11 @@ describe('insertIntoSection', () => {
     });
 
     it('fallbackt auf insertBeforeNachtexte, wenn sectionId nicht existiert', () => {
-        // SERVICE ohne CLOSURE: insertBeforeNachtexte haengt ans Ende an (Limit=-1).
+        // Section unauffindbar -> Fallback. insertBeforeNachtexte clampt SERVICE
+        // seit Fix 362aa9f auf firstNachIdx, auch wenn kein CLOSURE existiert.
         const blocks: DocBlock[] = [service('s1'), text('nach', 'NACH')];
         const result = insertIntoSection(blocks, service('new'), 'ghost-sec');
-        expect(result.map(b => b.id)).toEqual(['s1', 'nach', 'new']);
+        expect(result.map(b => b.id)).toEqual(['s1', 'new', 'nach']);
     });
 });
 
