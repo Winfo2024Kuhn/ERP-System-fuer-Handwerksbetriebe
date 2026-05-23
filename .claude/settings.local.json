@@ -15,6 +15,15 @@
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\check-doc-read.ps1\""
           }
         ]
+      },
+      {
+        "matcher": "grep_search|file_search|semantic_search",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\graphify-research-reminder.ps1\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -24,6 +33,15 @@
           {
             "type": "command",
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\mark-doc-read.ps1\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\graphify-auto-update.ps1\""
           }
         ]
       }
