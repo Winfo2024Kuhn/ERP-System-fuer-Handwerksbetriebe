@@ -66,3 +66,13 @@ src/main/resources/keystore.p12
 package-lock.json
 .claude/fix_zeitbuchungen.py
 .claude/scheduled_tasks.lock
+
+# Graphify
+graphify-out/cache/
+graphify-out/manifest.json
+graphify-out/.graphify_*
+
+# Graphify
+graphify-out/cache/
+graphify-out/manifest.json
+graphify-out/.graphify_*
