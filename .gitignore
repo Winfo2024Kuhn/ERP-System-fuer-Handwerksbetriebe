@@ -66,6 +66,7 @@ src/main/resources/keystore.p12
 package-lock.json
 .claude/fix_zeitbuchungen.py
 .claude/scheduled_tasks.lock
+.claude/reviews/
 
 # Graphify
 graphify-out/cache/
