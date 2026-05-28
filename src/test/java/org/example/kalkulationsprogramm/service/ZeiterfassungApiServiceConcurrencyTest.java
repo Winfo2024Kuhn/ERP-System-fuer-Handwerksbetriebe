@@ -276,6 +276,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
 
         when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
                 .thenReturn(List.of(offen1, offen2));
+        // saveAndFlush wird in der Schleife fuer aktive Buchungen verwendet (Flush-Ordering-Fix)
+        when(zeitbuchungRepository.saveAndFlush(any(Zeitbuchung.class))).thenAnswer(inv -> inv.getArgument(0));
         when(zeitbuchungRepository.save(any(Zeitbuchung.class))).thenAnswer(inv -> {
             Zeitbuchung b = inv.getArgument(0);
             if (b.getId() == null) b.setId(999L);
@@ -306,6 +308,48 @@ class ZeiterfassungApiServiceConcurrencyTest {
         // (2x gestoppt + 1x neue Pause = 3 Aufrufe). Sonst zeigt der PC-Saldo
         // bis zum naechsten Trigger veraltete Werte.
         verify(monatsSaldoService, times(3)).invalidiereFuerDateTime(eq(MITARBEITER_ID), any(LocalDateTime.class));
+    }
+
+    /**
+     * Regression: startPause muss saveAndFlush (nicht save) fuer aktive Buchungen
+     * verwenden, damit der UPDATE (ende_zeit setzen) die DB erreicht BEVOR Hibernate
+     * den INSERT der Pause-Buchung absendet.
+     *
+     * Ohne Flush batcht Hibernate UPDATE + INSERT und kann sie in falscher
+     * Reihenfolge ausfuehren. MySQL sieht dann kurz zwei Zeilen mit
+     * aktiver_mitarbeiter != NULL (Generated Column aus V321) und wirft:
+     *   "Duplicate entry '10000' for key 'uk_zeitbuchung_aktiv_pro_mitarbeiter'"
+     * → 4xx → Reparatur-Liste → "1 Buchung konnte nicht gespeichert werden".
+     */
+    @Test
+    void startPause_ruftSaveAndFlushFuerAktiveBuchungen_verhindertConstraintViolation() {
+        Mitarbeiter mitarbeiter = dummyMitarbeiter();
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
+                .thenReturn(Optional.of(mitarbeiter));
+
+        Zeitbuchung offeneBuchung = new Zeitbuchung();
+        offeneBuchung.setId(501L);
+        offeneBuchung.setMitarbeiter(mitarbeiter);
+        offeneBuchung.setStartZeit(LocalDateTime.now().minusHours(2));
+        offeneBuchung.setVersion(1);
+
+        when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
+                .thenReturn(List.of(offeneBuchung));
+        when(zeitbuchungRepository.saveAndFlush(any(Zeitbuchung.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(zeitbuchungRepository.save(any(Zeitbuchung.class))).thenAnswer(inv -> {
+            Zeitbuchung b = inv.getArgument(0);
+            if (b.getId() == null) b.setId(999L);
+            return b;
+        });
+
+        service.startPause(TOKEN, null, null);
+
+        // saveAndFlush (nicht save) muss fuer die aktive Buchung aufgerufen werden.
+        // Das ist der einzige Weg sicherzustellen, dass der UPDATE in der DB
+        // sichtbar ist, bevor Hibernate den INSERT der Pause-Buchung sendet.
+        verify(zeitbuchungRepository, times(1)).saveAndFlush(offeneBuchung);
+        // Die neue Pause-Buchung selbst wird mit save() angelegt (kein extra Flush noetig)
+        verify(zeitbuchungRepository, times(1)).save(any(Zeitbuchung.class));
     }
 
     // TODO (Folge-PR): Integrationstest mit echter H2 + V321-Migration, der
