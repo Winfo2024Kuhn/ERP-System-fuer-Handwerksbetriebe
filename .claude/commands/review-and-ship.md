@@ -61,28 +61,48 @@ Rufe das `Agent`-Tool auf mit `run_in_background: true`:
 
 ### 0b. Codex-Reviewer (ChatGPT-Account, parallel)
 
-Starte den Codex-Review **im Hintergrund** via `PowerShell` mit `run_in_background: true`. Output-Verzeichnis sicherstellen, Diff in Datei schreiben, dann an `codex exec review` pipen:
+Starte den Codex-Review **im Hintergrund** via `PowerShell` mit `run_in_background: true`. Output-Verzeichnis sicherstellen, **sauberen** Diff in Datei schreiben (nur echte Quelldateien!), dann an `codex exec review` pipen:
 
 ```powershell
+if (Test-Path Env:OPENAI_API_KEY) { Remove-Item Env:OPENAI_API_KEY }
 New-Item -ItemType Directory -Force -Path .claude\reviews | Out-Null
-$diffMain = git diff main...HEAD
-$diffUnstaged = git diff
-"$diffMain`n`n---UNSTAGED---`n$diffUnstaged" | Out-File -Encoding utf8 .claude\reviews\diff.patch
+
+# WICHTIG: Generierte/aufgeblaehte Artefakte AUSSCHLIESSEN, sonst ersaeuft der Review
+# in JSON-Rauschen (graphify-out kann >1 MB sein) und liefert keine saubere AMPEL.
+# Pathspec-Excludes via ':(exclude)...'. Untracked Tests via intent-to-add sichtbar machen.
+$excludes = @(
+  ':(exclude)graphify-out/**',
+  ':(exclude)**/graph.json',
+  ':(exclude)**/GRAPH_REPORT.md',
+  ':(exclude)src/main/resources/static/**',
+  ':(exclude)**/dist/**',
+  ':(exclude)**/*.lock',
+  ':(exclude)**/package-lock.json'
+)
+git add -N . 2>$null   # neue, noch untracked Dateien (z.B. neue Tests) im Diff sichtbar machen
+git diff --stat HEAD -- . $excludes
+git diff HEAD -- . $excludes | Out-File -Encoding utf8 .claude\reviews\diff.patch
+git reset -q             # intent-to-add wieder zuruecknehmen (nichts bleibt gestaged)
+
+# Groessen-Guard: ueber ~400 KB wird der Review unzuverlaessig -> Hinweis ins Log
+$sizeKB = [math]::Round((Get-Item .claude\reviews\diff.patch).Length / 1KB)
+"Diff-Groesse: ${sizeKB} KB" | Out-File -Encoding utf8 .claude\reviews\diff-size.txt
 
 Get-Content .claude\reviews\diff.patch | codex exec review `
   -m gpt-5.5 `
-  --sandbox read-only `
-  "Du bist Senior-Reviewer fuer ein Spring-Boot + React ERP (Handwerker-Software). Pruefe den angehaengten Diff streng gegen die Projekt-Regeln: Constructor Injection (kein @Autowired auf Feldern), Flyway-Versionen V288+, Named-Params in JPA-Queries, rose-/slate-Farben + Pflicht-Komponenten im Frontend, DSGVO-Dummy-Daten 'Max Mustermann' in Tests, keine Secrets in Code, keine SQL-Injection, keine XSS, Handwerker-Sprache statt Buchhalter-Begriffen. Liefere zuerst kritische Findings (Datei:Zeile + Begruendung), dann nicht-kritische Hinweise, am Ende GENAU EINE Zeile: 'AMPEL: GRUEN' ODER 'AMPEL: GELB' ODER 'AMPEL: ROT'. Antworte auf Deutsch." `
+  "Du bist Senior-Reviewer fuer ein Spring-Boot + React ERP (Handwerker-Software). Pruefe den angehaengten Diff streng gegen die Projekt-Regeln: Constructor Injection (kein @Autowired auf Feldern; @Autowired MockMvc in Tests ist projektweit ueblich und KEIN Fehler), Flyway-Versionen, Named-Params in JPA-Queries, rose-/slate-Farben + Pflicht-Komponenten im Frontend, DSGVO-Dummy-Daten 'Max Mustermann' in Tests, keine Secrets in Code, keine SQL-Injection, keine XSS, Handwerker-Sprache statt Buchhalter-Begriffen. Liefere zuerst kritische Findings (Datei:Zeile + Begruendung), dann nicht-kritische Hinweise, am Ende GENAU EINE Zeile: 'AMPEL: GRUEN' ODER 'AMPEL: GELB' ODER 'AMPEL: ROT'. Antworte auf Deutsch." `
   *> .claude\reviews\codex-review.md
 ```
 
 Wichtig:
 
-- `codex exec review` (nicht `codex exec`) → spezialisierter Review-Modus mit Diff-Verstaendnis
+- `codex exec review` (nicht `codex exec`) → spezialisierter Review-Modus mit Diff-Verstaendnis.
+- **KEIN `--sandbox`-Flag!** `codex exec review` kennt es nicht und bricht mit Exit 2 ab (`error: unexpected argument '--sandbox'`). Der Review-Modus ist ohnehin read-only.
+- **Sauberer Diff ist Pflicht:** `graphify-out/`, `graph.json`, `GRAPH_REPORT.md`, `static/**`-Build-Artefakte und Lockfiles via `:(exclude)` rausfiltern. Sonst echot das Modell MB-weise JSON statt zu reviewen und gibt keine AMPEL-Zeile aus. (Tipp: `graphify update` erst NACH dem Commit laufen lassen, nicht davor.)
+- `git diff HEAD` (statt `main...HEAD` + separatem `git diff`) erfasst getrackte **und** – dank `git add -N` – neue Dateien in EINEM Aufruf. `git reset` macht das intent-to-add sofort rueckgaengig (kein Stagen).
 - `-m gpt-5.5` → Modell-Override; falls Codex 5.5 nicht kennt, fällt es auf den Default zurück. Liste der verfügbaren Modelle: `codex features` bzw. `~/.codex/config.toml`.
-- `--sandbox read-only` → Codex darf nichts schreiben, nur analysieren
-- `*> ...` leitet stdout+stderr in die Report-Datei
-- **NIEMALS `OPENAI_API_KEY` env setzen** vor diesem Aufruf, sonst wechselt Codex auf API-Abrechnung statt ChatGPT-Abo. Falls die Variable in dieser Session gesetzt ist: `Remove-Item Env:OPENAI_API_KEY` vorher.
+- `*> ...` leitet stdout+stderr in die Report-Datei. Codex gibt seine finale Bewertung **am Dateiende** aus – mit `Select-String -Pattern "AMPEL"` bzw. `Get-Content -Tail 40` auslesen, nicht die ganze (ggf. grosse) Datei lesen.
+- **NIEMALS `OPENAI_API_KEY` env setzen** vor diesem Aufruf, sonst wechselt Codex auf API-Abrechnung statt ChatGPT-Abo. Die `Remove-Item Env:OPENAI_API_KEY`-Zeile oben raeumt eine evtl. gesetzte Variable praeventiv ab.
 
 ### 0c. Sofort weiter zu Phase 1
 
@@ -143,7 +163,7 @@ Sobald **beide** Hintergrund-Reviewer (Claude-Subagent UND Codex) fertig sind:
 
 1. **Beide Reports einlesen:**
    - Claude-Subagent: Output aus dem `Agent`-Tool-Result.
-   - Codex: `Read` auf `.claude\reviews\codex-review.md`, letzte Zeile ist die `AMPEL: …`.
+   - Codex: Die Datei `.claude\reviews\codex-review.md` kann gross sein (sie enthaelt das gesamte Streaming-Log). **NICHT komplett mit `Read` laden.** Stattdessen die Bewertung gezielt am Ende ziehen, z.B. `Get-Content .claude\reviews\codex-review.md -Tail 40` oder `Select-String -Path .claude\reviews\codex-review.md -Pattern "AMPEL"`. Die Bewertung steht am Dateiende. Wenn Codex statt `AMPEL: …` nur einen Fliesstext-Befund liefert (kommt vor), die Ampel sinngemaess ableiten: „keine blockierenden Findings" → GRUEN, „sollte behoben werden" → GELB, „kritisch/blockiert" → ROT. **[P3]/Fliesstext-Hinweise ohne funktionalen Fehler sind GRUEN**, kein GELB.
 2. **Effektive Ampel = strengste der zwei** (ROT schlägt GELB schlägt GRÜN). Beispiel: Claude 🟢, Codex 🔴 → effektiv 🔴.
 3. **🔴 ROT** (mind. einer rot) → ALLE kritischen Findings BEIDER Reports fixen. Danach Phase 1b–1d für die betroffenen Bereiche erneut. Danach **erneut Phase 0** (beide Reviewer neu starten).
 4. **🟡 GELB** (kein rot, mind. einer gelb) → Findings beider Reports zusammengefasst dem User zeigen + fragen ob er trotzdem freigeben will. Ohne Freigabe wie 🔴 behandeln.
