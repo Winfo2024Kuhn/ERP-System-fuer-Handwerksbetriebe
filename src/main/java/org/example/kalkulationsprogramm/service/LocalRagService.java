@@ -691,13 +691,28 @@ public class LocalRagService {
         }
         body.set("requests", requests);
 
-        HttpResponse<String> response = httpClient.send(
-                HttpRequest.newBuilder(URI.create(url))
-                        .header("Content-Type", "application/json")
-                        .timeout(Duration.ofSeconds(60))
-                        .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(120))
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = null;
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                break;
+            } catch (java.net.http.HttpTimeoutException e) {
+                if (attempt == maxRetries) {
+                    log.error("Gemini Batch Embedding: Timeout nach {} Versuchen", maxRetries);
+                    throw e;
+                }
+                long waitMs = 2000L * attempt;
+                log.warn("Gemini Batch Embedding: Timeout (Versuch {}/{}), warte {}ms...", attempt, maxRetries, waitMs);
+                Thread.sleep(waitMs);
+            }
+        }
 
         if (response.statusCode() != 200) {
             log.error("Gemini Batch Embedding Error {}: {}", response.statusCode(), response.body());
