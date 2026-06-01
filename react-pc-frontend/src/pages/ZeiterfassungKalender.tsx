@@ -1157,7 +1157,49 @@ function DayEditorModal({
                                 <p className="text-sm">Klicke auf "Neue Buchung" um zu starten.</p>
                             </div>
                         ) : (
-                            buchungen.map((b, index) => (
+                            buchungen.map((b, index) => {
+                                // Abwesenheiten (Urlaub/Krankheit/Fortbildung/Zeitausgleich) bekommen eine
+                                // eigene, kompakte Karten-Ansicht – keine Projekt-/Tätigkeits-Felder.
+                                const isAbwesenheit = !!b.typ && ['URLAUB', 'KRANKHEIT', 'FORTBILDUNG', 'ZEITAUSGLEICH'].includes(b.typ);
+                                if (isAbwesenheit) {
+                                    const abwesenheitConfig = {
+                                        URLAUB: { label: 'Urlaub', Icon: Plane, card: 'bg-green-50 border-green-200', iconBox: 'bg-green-100 text-green-600', text: 'text-green-800' },
+                                        KRANKHEIT: { label: 'Krankheit', Icon: Stethoscope, card: 'bg-red-50 border-red-200', iconBox: 'bg-red-100 text-red-600', text: 'text-red-800' },
+                                        FORTBILDUNG: { label: 'Fortbildung', Icon: GraduationCap, card: 'bg-blue-50 border-blue-200', iconBox: 'bg-blue-100 text-blue-600', text: 'text-blue-800' },
+                                        ZEITAUSGLEICH: { label: 'Zeitausgleich', Icon: RefreshCw, card: 'bg-amber-50 border-amber-200', iconBox: 'bg-amber-100 text-amber-600', text: 'text-amber-800' },
+                                    } as const;
+                                    const cfg = abwesenheitConfig[b.typ as keyof typeof abwesenheitConfig];
+                                    const Icon = cfg.Icon;
+                                    const stunden = b.dauerMinuten != null ? b.dauerMinuten / 60 : null;
+                                    return (
+                                        <div
+                                            key={b.id}
+                                            className={`rounded-lg border shadow-sm p-4 animate-in slide-in-from-bottom-2 duration-300 fill-mode-backwards ${cfg.card}`}
+                                            style={{ animationDelay: `${index * 50}ms` }}
+                                        >
+                                            <div className="flex items-center gap-4">
+                                                <div className={`p-3 rounded-xl flex-shrink-0 ${cfg.iconBox}`}>
+                                                    <Icon className="w-6 h-6" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`font-semibold ${cfg.text}`}>{cfg.label}</p>
+                                                    <p className="text-sm text-slate-500">
+                                                        {stunden != null ? `${stunden.toFixed(1).replace('.', ',')} Std. angerechnet` : 'Ganzer Tag'}
+                                                    </p>
+                                                    {b.notiz && <p className="text-xs text-slate-400 mt-0.5 truncate" title={b.notiz}>{b.notiz}</p>}
+                                                </div>
+                                                <button
+                                                    onClick={() => handleDelete(b)}
+                                                    className="p-2 bg-white/60 text-slate-400 rounded hover:bg-white hover:text-red-500 transition-colors flex-shrink-0"
+                                                    title="Entfernen"
+                                                >
+                                                    <Trash2 className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                return (
                                 <div
                                     key={b.id}
                                     onClick={() => setFocusedIndex(index)}
@@ -1300,7 +1342,8 @@ function DayEditorModal({
                                         </div>
                                     </div>
                                 </div>
-                            ))
+                                );
+                            })
                         )}
 
                         {/* Add Button Area */}
