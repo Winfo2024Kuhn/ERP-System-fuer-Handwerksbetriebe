@@ -49,6 +49,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "WHERE d.typ IN (org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.GUTSCHRIFT) "
                         +
                         "AND gd.bezahlt = false " +
+                        "AND (gd.bereitsGezahlt IS NULL OR gd.bereitsGezahlt = false) " +
                         "ORDER BY gd.zahlungsziel ASC NULLS LAST, gd.dokumentDatum ASC")
         List<LieferantGeschaeftsdokument> findAllOffeneEingangsrechnungen();
 
@@ -61,6 +62,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "WHERE d.typ IN (org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.GUTSCHRIFT) "
                         +
                         "AND gd.bezahlt = false " +
+                        "AND (gd.bereitsGezahlt IS NULL OR gd.bereitsGezahlt = false) " +
                         "AND gd.genehmigt = true " +
                         "ORDER BY gd.zahlungsziel ASC NULLS LAST, gd.dokumentDatum ASC")
         List<LieferantGeschaeftsdokument> findAllOffeneGenehmigte();

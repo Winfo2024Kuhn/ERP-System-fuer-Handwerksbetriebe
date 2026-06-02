@@ -124,6 +124,119 @@ class ZugferdExtractorServiceTest {
     }
 
     @Nested
+    class BereitsBezahlteRechnungOhneFaelligkeitsdatum {
+
+        /**
+         * Erzeugt eine echte ZUGFeRD-PDF einer bereits bezahlten Rechnung
+         * (= ohne Fälligkeitsdatum), wie sie z.B. Amazon ausstellt.
+         * Nur Dummy-Daten (Max Mustermann).
+         */
+        private java.nio.file.Path erzeugeBezahlteRechnungOhneFaelligkeit() throws Exception {
+            ZugferdDaten daten = new ZugferdDaten();
+            daten.setRechnungsnummer("RE-2026-TEST");
+            daten.setRechnungsdatum(java.time.LocalDate.of(2026, 6, 2));
+            daten.setKundenName("Max Mustermann");
+            daten.setBetrag(new java.math.BigDecimal("119.00"));
+            daten.setGeschaeftsdokumentart("Rechnung");
+            // KEIN Fälligkeitsdatum -> im XML fehlt DueDateDateTime (bereits bezahlt)
+
+            return new ZugferdErstellService().erzeuge(erzeugeBasisPdf().toString(), daten);
+        }
+
+        /**
+         * Erzeugt eine Basis-PDF mit Text-Inhalt (Seite besitzt /Resources,
+         * sonst scheitert Mustangs A3-Exporter mit "res is null").
+         */
+        private java.nio.file.Path erzeugeBasisPdf() throws Exception {
+            java.nio.file.Path basis = java.nio.file.Files.createTempFile("basis-", ".pdf");
+            try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument()) {
+                org.apache.pdfbox.pdmodel.PDPage page = new org.apache.pdfbox.pdmodel.PDPage(
+                        org.apache.pdfbox.pdmodel.common.PDRectangle.A4);
+                doc.addPage(page);
+                try (org.apache.pdfbox.pdmodel.PDPageContentStream cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(
+                        doc, page)) {
+                    cs.beginText();
+                    cs.setFont(new org.apache.pdfbox.pdmodel.font.PDType1Font(
+                            org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName.HELVETICA), 12);
+                    cs.newLineAtOffset(50, 750);
+                    cs.showText("Rechnung Max Mustermann");
+                    cs.endText();
+                }
+                doc.save(basis.toFile());
+            }
+            return basis;
+        }
+
+        /**
+         * Erzeugt eine vorausbezahlte ZUGFeRD-PDF (TotalPrepaidAmount = Bruttobetrag),
+         * wie sie Amazon ausstellt. Baut die Mustang-Rechnung direkt, um den
+         * Prepaid-Betrag setzen zu können (der ErstellService kann das nicht).
+         * Nur Dummy-Daten (Max Mustermann).
+         */
+        private java.nio.file.Path erzeugeVorausbezahlteRechnung() throws Exception {
+            java.nio.file.Path ziel = java.nio.file.Files.createTempFile("zugferd-paid-", ".pdf");
+            java.math.BigDecimal brutto = new java.math.BigDecimal("119.00");
+
+            try (org.mustangproject.ZUGFeRD.ZUGFeRDExporterFromA3 exporter =
+                    new org.mustangproject.ZUGFeRD.ZUGFeRDExporterFromA3()
+                            .setCreator("Test").setProducer("Test")
+                            .load(erzeugeBasisPdf().toString())) {
+
+                org.mustangproject.TradeParty seller = new org.mustangproject.TradeParty();
+                seller.setName("Bauschlosserei Kuhn");
+                org.mustangproject.TradeParty buyer = new org.mustangproject.TradeParty();
+                buyer.setName("Max Mustermann");
+
+                org.mustangproject.Product product = new org.mustangproject.Product();
+                product.setName("Rechnung");
+                product.setVATPercent(new java.math.BigDecimal("19"));
+
+                org.mustangproject.Invoice invoice = new org.mustangproject.Invoice();
+                invoice.setNumber("RE-2026-PAID");
+                invoice.setIssueDate(java.util.Date.from(java.time.LocalDate.of(2026, 6, 2)
+                        .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()));
+                invoice.setSender(seller);
+                invoice.setRecipient(buyer);
+                invoice.addItem(new org.mustangproject.Item(product, java.math.BigDecimal.ONE,
+                        new java.math.BigDecimal("100.00")));
+                // Komplett vorausbezahlt -> DuePayableAmount = 0
+                invoice.setTotalPrepaidAmount(brutto);
+
+                exporter.setTransaction(invoice);
+                exporter.export(ziel.toString());
+            }
+            return ziel;
+        }
+
+        @Test
+        void liestBetragTrotzFehlendemFaelligkeitsdatum() throws Exception {
+            java.nio.file.Path pdf = erzeugeBezahlteRechnungOhneFaelligkeit();
+
+            ZugferdDaten result = service.extract(pdf.toString(), "rechnung.pdf");
+
+            // Regression: getDueDate() warf eine NPE und brach die gesamte
+            // Extraktion ab -> Betrag/Netto blieben null (Symptom: Spalten "–").
+            assertThat(result.getRechnungsnummer()).isEqualTo("RE-2026-TEST");
+            assertThat(result.getFaelligkeitsdatum()).isNull();
+            assertThat(result.getBetrag()).isNotNull();
+            assertThat(result.getBetrag()).isPositive();
+            assertThat(result.getBetragNetto()).isNotNull();
+        }
+
+        @Test
+        void erkenntVorausbezahlteRechnungAlsBereitsGezahlt() throws Exception {
+            java.nio.file.Path pdf = erzeugeVorausbezahlteRechnung();
+
+            ZugferdDaten result = service.extract(pdf.toString(), "amazon.pdf");
+
+            // Vorauszahlung deckt den Bruttobetrag -> bereits bezahlt,
+            // soll nicht mehr in den Offenen Posten erscheinen.
+            assertThat(result.getBetrag()).isNotNull();
+            assertThat(result.getBereitsGezahlt()).isTrue();
+        }
+    }
+
+    @Nested
     class FallbackBeiUngueltigemPdf {
 
         @Test

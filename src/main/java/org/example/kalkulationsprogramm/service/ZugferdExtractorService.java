@@ -39,14 +39,42 @@ public class ZugferdExtractorService {
             if (rechnungsdatum != null) {
                 data.setRechnungsdatum(parseDate(rechnungsdatum));
             }
-            String faelligkeitsdatum = zugFeRDImporter.getDueDate();
-            if (faelligkeitsdatum != null) {
-                data.setFaelligkeitsdatum(parseDate(faelligkeitsdatum));
+            // getDueDate() wirft in Mustang eine NPE, wenn die Rechnung KEIN
+            // Fälligkeitsdatum hat (z.B. bereits bezahlte Amazon-Rechnungen).
+            // Eigenes try-catch, damit das nicht die gesamte Extraktion abbricht
+            // und Betrag/Netto trotzdem ausgelesen werden.
+            try {
+                String faelligkeitsdatum = zugFeRDImporter.getDueDate();
+                if (faelligkeitsdatum != null) {
+                    data.setFaelligkeitsdatum(parseDate(faelligkeitsdatum));
+                }
+            } catch (Exception e) {
+                log.debug("Kein Fälligkeitsdatum in ZUGFeRD (z.B. bereits bezahlte Rechnung): {}", e.getMessage());
             }
             String amount = zugFeRDImporter.getAmount();
             if (amount != null) {
                 data.setBetrag(new BigDecimal(amount.replace(',', '.')));
             }
+
+            // Bereits-bezahlt-Erkennung: ZUGFeRD führt den schon gezahlten Betrag in
+            // <ram:TotalPrepaidAmount> (Mustang: getPaidAmount()). Deckt der den
+            // Bruttobetrag, ist die Rechnung bereits bezahlt (z.B. Amazon, Vorauskasse)
+            // und soll nicht mehr in den Offenen Posten erscheinen.
+            try {
+                String paid = zugFeRDImporter.getPaidAmount();
+                if (paid != null && data.getBetrag() != null) {
+                    BigDecimal paidAmount = new BigDecimal(paid.replace(',', '.'));
+                    if (paidAmount.compareTo(data.getBetrag()) >= 0
+                            && paidAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        data.setBereitsGezahlt(true);
+                        log.info("ZUGFeRD-Rechnung bereits bezahlt (gezahlt={}, brutto={})",
+                                paidAmount, data.getBetrag());
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Konnte bezahlten Betrag nicht auslesen: {}", e.getMessage());
+            }
+
             data.setKundenName(restoreUmlauts(zugFeRDImporter.getBuyerTradePartyName()));
             data.setKundennummer(zugFeRDImporter.getBuyerTradePartyID());
 

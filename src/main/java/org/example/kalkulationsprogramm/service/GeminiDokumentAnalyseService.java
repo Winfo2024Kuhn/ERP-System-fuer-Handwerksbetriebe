@@ -696,6 +696,7 @@ public class GeminiDokumentAnalyseService {
                     .skontoTage(zugferd.getSkontoTage())
                     .skontoProzent(zugferd.getSkontoProzent())
                     .nettoTage(zugferd.getNettoTage())
+                    .bereitsGezahlt(zugferd.getBereitsGezahlt())
                     .aiConfidence(1.0)
                     .analyseQuelle("ZUGFeRD")
                     .build();
@@ -1167,6 +1168,17 @@ public class GeminiDokumentAnalyseService {
             }
             if (zugferd.getReferenzNummer() != null) {
                 gd.setReferenzNummer(zugferd.getReferenzNummer());
+            }
+
+            // Bereits bezahlt (z.B. Amazon, Vorauskasse): nicht mehr in Offene Posten zeigen
+            if (Boolean.TRUE.equals(zugferd.getBereitsGezahlt())) {
+                gd.setBereitsGezahlt(true);
+                gd.setBezahlt(true); // Wenn bereits gezahlt, setze auch bezahlt-Flag
+                // Das echte Zahldatum liefert die ZUGFeRD-Rechnung nicht; bei Vorauskasse/Amazon
+                // ist die Zahlung zum Rechnungsdatum erfolgt -> als Bezahldatum übernehmen.
+                if (zugferd.getRechnungsdatum() != null) {
+                    gd.setBezahltAm(zugferd.getRechnungsdatum());
+                }
             }
 
             // Dokumenttyp aus ZUGFeRD-Daten

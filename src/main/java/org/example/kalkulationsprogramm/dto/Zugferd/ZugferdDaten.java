@@ -26,6 +26,7 @@ public class ZugferdDaten {
     // Erweiterte Felder für Zahlungskonditionen
     private BigDecimal betragNetto;
     private BigDecimal mwstSatz;
+    private Boolean bereitsGezahlt = false; // true wenn laut XML schon bezahlt (z.B. Amazon, Vorauskasse)
     private Integer skontoTage;
     private BigDecimal skontoProzent;
     private Integer nettoTage;
