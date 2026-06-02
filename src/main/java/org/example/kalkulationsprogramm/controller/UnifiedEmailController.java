@@ -77,6 +77,7 @@ public class UnifiedEmailController {
     private final KundeRepository kundeRepository;
     private final EmailAutoAssignmentService emailAutoAssignmentService;
     private final EmailImportService emailImportService;
+    private final org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
     private final SpamFilterService spamFilterService;
     private final InquiryDetectionService inquiryDetectionService;
     private final EmailBlacklistRepository emailBlacklistRepository;
@@ -739,6 +740,21 @@ public class UnifiedEmailController {
     public ResponseEntity<Map<String, Object>> backfillAttachmentFilenames() {
         log.info("Backfill attachment filenames gestartet");
         int updated = emailImportService.backfillAttachmentFilenames();
+        return ResponseEntity.ok(Map.of(
+                "status", "ok",
+                "updated", updated
+        ));
+    }
+
+    /**
+     * Einmaliger Backfill: Lieferanten-Dokumente, die durch den alten PDF+XML-Bug
+     * die XML im Viewer anzeigen, werden auf die zugehörige PDF aus derselben Mail
+     * umgestellt. Idempotent.
+     */
+    @PostMapping("/admin/backfill-xml-to-pdf")
+    public ResponseEntity<Map<String, Object>> backfillXmlDokumenteAufPdf() {
+        log.info("Backfill XML->PDF (Lieferanten-Dokumente) gestartet");
+        int updated = emailAttachmentProcessingService.backfillXmlDokumenteAufPdf();
         return ResponseEntity.ok(Map.of(
                 "status", "ok",
                 "updated", updated

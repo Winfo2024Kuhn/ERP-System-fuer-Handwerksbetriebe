@@ -457,6 +457,55 @@ class GeminiDokumentAnalyseServiceTest {
                 Files.deleteIfExists(tempFile);
             }
         }
+
+        /**
+         * Regression: UBL-XRechnung führt Beträge mit currencyID-Attribut
+         * (z.B. {@code <cbc:PayableAmount currencyID="EUR">}). Vorher matchte das
+         * Regex nur attributlose Tags -> Netto/Brutto blieben leer (0,00 € in den
+         * Offenen Posten). Netto, Brutto, MwSt und Fälligkeit müssen extrahiert werden.
+         */
+        @Test
+        void liest_betraege_aus_ubl_xrechnung_mit_currencyId_attribut() throws Exception {
+            String xmlContent = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <ubl:Invoice xmlns:cbc="urn:cbc" xmlns:cac="urn:cac" xmlns:ubl="urn:ubl">
+                    <cbc:ID>2026-0814</cbc:ID>
+                    <cbc:IssueDate>2026-05-29</cbc:IssueDate>
+                    <cbc:DueDate>2026-06-12</cbc:DueDate>
+                    <cac:TaxTotal>
+                        <cbc:TaxAmount currencyID="EUR">138.47</cbc:TaxAmount>
+                        <cac:TaxSubtotal>
+                            <cbc:TaxableAmount currencyID="EUR">728.80</cbc:TaxableAmount>
+                            <cac:TaxCategory>
+                                <cbc:Percent>19.00</cbc:Percent>
+                            </cac:TaxCategory>
+                        </cac:TaxSubtotal>
+                    </cac:TaxTotal>
+                    <cac:LegalMonetaryTotal>
+                        <cbc:TaxExclusiveAmount currencyID="EUR">728.80</cbc:TaxExclusiveAmount>
+                        <cbc:TaxInclusiveAmount currencyID="EUR">867.27</cbc:TaxInclusiveAmount>
+                        <cbc:PayableAmount currencyID="EUR">867.27</cbc:PayableAmount>
+                    </cac:LegalMonetaryTotal>
+                </ubl:Invoice>
+                """;
+
+            Path tempFile = Files.createTempFile("test_ubl", ".xml");
+            try {
+                Files.writeString(tempFile, xmlContent);
+
+                LieferantGeschaeftsdokument result = invokeXmlExtraktion(tempFile, null);
+
+                assertThat(result).isNotNull();
+                assertThat(result.getDokumentNummer()).isEqualTo("2026-0814");
+                assertThat(result.getBetragBrutto()).isEqualByComparingTo(new BigDecimal("867.27"));
+                assertThat(result.getBetragNetto()).isEqualByComparingTo(new BigDecimal("728.80"));
+                assertThat(result.getMwstSatz()).isEqualByComparingTo(new BigDecimal("0.19"));
+                assertThat(result.getDokumentDatum()).isEqualTo(LocalDate.of(2026, 5, 29));
+                assertThat(result.getZahlungsziel()).isEqualTo(LocalDate.of(2026, 6, 12));
+            } finally {
+                Files.deleteIfExists(tempFile);
+            }
+        }
     }
 
     @Nested

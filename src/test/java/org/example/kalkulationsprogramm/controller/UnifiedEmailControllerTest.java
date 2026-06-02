@@ -68,6 +68,7 @@ class UnifiedEmailControllerTest {
     @MockBean private KundeRepository kundeRepository;
     @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
     @MockBean private EmailImportService emailImportService;
+    @MockBean private org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
     @MockBean private SpamFilterService spamFilterService;
     @MockBean private InquiryDetectionService inquiryDetectionService;
     @MockBean private EmailBlacklistRepository emailBlacklistRepository;
@@ -592,6 +593,43 @@ class UnifiedEmailControllerTest {
             mockMvc.perform(post("/api/emails/backfill-parents"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.updatedCount").value(0));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/emails/admin/backfill-xml-to-pdf")
+    class BackfillXmlToPdf {
+
+        @Test
+        @DisplayName("Stellt XML-Dokumente auf PDF um und gibt Anzahl zurück")
+        void backfillSuccess() throws Exception {
+            given(emailAttachmentProcessingService.backfillXmlDokumenteAufPdf()).willReturn(3);
+
+            mockMvc.perform(post("/api/emails/admin/backfill-xml-to-pdf"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("ok"))
+                    .andExpect(jsonPath("$.updated").value(3));
+        }
+
+        @Test
+        @DisplayName("Backfill ohne Treffer gibt 0 zurück")
+        void backfillNoUpdates() throws Exception {
+            given(emailAttachmentProcessingService.backfillXmlDokumenteAufPdf()).willReturn(0);
+
+            mockMvc.perform(post("/api/emails/admin/backfill-xml-to-pdf"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.updated").value(0));
+        }
+
+        @Test
+        @DisplayName("Fehler im Service wird nicht verschluckt (kein stiller Erfolg)")
+        void backfillServiceFehler() {
+            given(emailAttachmentProcessingService.backfillXmlDokumenteAufPdf())
+                    .willThrow(new RuntimeException("DB nicht erreichbar"));
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    mockMvc.perform(post("/api/emails/admin/backfill-xml-to-pdf")))
+                    .hasRootCauseInstanceOf(RuntimeException.class);
         }
     }
 

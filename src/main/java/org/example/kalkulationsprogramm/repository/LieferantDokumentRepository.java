@@ -94,4 +94,15 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
                         "LEFT JOIN FETCH d.geschaeftsdaten " +
                         "WHERE d.beleg.id = :belegId")
         java.util.Optional<LieferantDokument> findByBelegId(@Param("belegId") Long belegId);
+
+        /**
+         * Findet Dokumente, deren Anzeige-Datei (Fallback-Feld) eine XML ist und die
+         * KEIN verknüpftes Attachment haben (= aus dem Mail-Import erzeugt).
+         * Basis für den Backfill, der die XML-Anzeige durch die zugehörige PDF ersetzt.
+         */
+        @Query("SELECT d FROM LieferantDokument d " +
+                        "LEFT JOIN FETCH d.geschaeftsdaten " +
+                        "WHERE d.attachment IS NULL " +
+                        "AND LOWER(d.gespeicherterDateiname) LIKE '%.xml'")
+        List<LieferantDokument> findMitXmlAnzeigedatei();
 }

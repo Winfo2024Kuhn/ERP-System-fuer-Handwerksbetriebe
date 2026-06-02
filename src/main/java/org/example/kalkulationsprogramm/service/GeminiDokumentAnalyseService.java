@@ -1261,25 +1261,49 @@ public class GeminiDokumentAnalyseService {
             // Dokumentnummer extrahieren
             gd.setDokumentNummer(extractXmlValue(xmlContent, "ID", "InvoiceNumber", "ram:ID"));
 
-            // Betrag extrahieren
-            String betrag = extractXmlValue(xmlContent, "GrandTotalAmount", "PayableAmount", "ram:GrandTotalAmount");
-            if (betrag != null) {
-                try {
-                    gd.setBetragBrutto(new BigDecimal(betrag.replace(',', '.')));
-                } catch (NumberFormatException ignored) {
-                }
+            // Bruttobetrag (Gesamtsumme inkl. MwSt).
+            // UBL: TaxInclusiveAmount/PayableAmount, CII: GrandTotalAmount.
+            BigDecimal brutto = parseXmlBetrag(extractXmlValue(xmlContent,
+                    "GrandTotalAmount", "PayableAmount", "TaxInclusiveAmount", "ram:GrandTotalAmount"));
+            if (brutto != null) {
+                gd.setBetragBrutto(brutto);
             }
 
-            // Datum extrahieren
-            String datum = extractXmlValue(xmlContent, "IssueDate", "IssueDateTime", "ram:DateTimeString");
-            if (datum != null) {
-                try {
-                    datum = datum.replaceAll("[^0-9]", "");
-                    if (datum.length() >= 8) {
-                        gd.setDokumentDatum(LocalDate.parse(datum.substring(0, 8), DateTimeFormatter.BASIC_ISO_DATE));
-                    }
-                } catch (Exception ignored) {
-                }
+            // Nettobetrag (Summe ohne MwSt).
+            // UBL: TaxExclusiveAmount, CII: TaxBasisTotalAmount.
+            BigDecimal netto = parseXmlBetrag(extractXmlValue(xmlContent,
+                    "TaxBasisTotalAmount", "TaxExclusiveAmount", "ram:TaxBasisTotalAmount"));
+
+            // MwSt-Satz (z.B. 19.00 -> 0.19, konsistent zur ZUGFeRD-Extraktion).
+            BigDecimal mwstSatz = parseXmlBetrag(extractXmlValue(xmlContent,
+                    "RateApplicablePercent", "ApplicablePercent", "Percent", "ram:RateApplicablePercent"));
+            if (mwstSatz != null && mwstSatz.compareTo(BigDecimal.ONE) > 0) {
+                mwstSatz = mwstSatz.movePointLeft(2);
+            }
+            if (mwstSatz != null) {
+                gd.setMwstSatz(mwstSatz);
+            }
+
+            // Netto notfalls aus Brutto + MwSt-Satz berechnen.
+            if (netto == null && brutto != null && mwstSatz != null
+                    && mwstSatz.compareTo(BigDecimal.ZERO) > 0) {
+                netto = brutto.divide(BigDecimal.ONE.add(mwstSatz), 2, java.math.RoundingMode.HALF_UP);
+            }
+            if (netto != null) {
+                gd.setBetragNetto(netto);
+            }
+
+            // Rechnungsdatum.
+            LocalDate dokumentDatum = parseXmlDatum(
+                    extractXmlValue(xmlContent, "IssueDate", "IssueDateTime", "ram:DateTimeString"));
+            if (dokumentDatum != null) {
+                gd.setDokumentDatum(dokumentDatum);
+            }
+
+            // Fälligkeitsdatum / Zahlungsziel (UBL: DueDate).
+            LocalDate faelligkeit = parseXmlDatum(extractXmlValue(xmlContent, "DueDate"));
+            if (faelligkeit != null) {
+                gd.setZahlungsziel(faelligkeit);
             }
 
             // Dokumenttyp aus XML-Inhalt bestimmen (TypeCode per extractXmlValue, unterstützt Namespace-Prefixe)
@@ -1307,10 +1331,13 @@ public class GeminiDokumentAnalyseService {
      */
     private String extractXmlValue(String xml, String... tagNames) {
         for (String tag : tagNames) {
-            // Versuche verschiedene Formate
+            // Versuche verschiedene Formate.
+            // (?:\\s[^>]*)? erlaubt Attribute am Tag, z.B. <cbc:PayableAmount currencyID="EUR">.
+            // UBL/XRechnung führt Beträge IMMER mit currencyID-Attribut -> ohne diese
+            // Toleranz blieben Netto/Brutto leer (Bug: Offene Posten zeigten 0,00 €).
             String[] patterns = {
-                    "<" + tag + ">([^<]+)</" + tag + ">",
-                    "<[^:]+:" + tag + ">([^<]+)</[^:]+:" + tag + ">"
+                    "<" + tag + "(?:\\s[^>]*)?>([^<]+)</" + tag + ">",
+                    "<[^:]+:" + tag + "(?:\\s[^>]*)?>([^<]+)</[^:]+:" + tag + ">"
             };
             for (String pattern : patterns) {
                 java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
@@ -1319,6 +1346,40 @@ public class GeminiDokumentAnalyseService {
                     return m.group(1).trim();
                 }
             }
+        }
+        return null;
+    }
+
+    /**
+     * Parst einen Betrag aus einem XML-Wert (z.B. "867.27" oder "867,27").
+     * Gibt {@code null} zurück, wenn der Wert fehlt oder nicht parsbar ist.
+     */
+    private BigDecimal parseXmlBetrag(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(raw.trim().replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Parst ein Datum aus einem XML-Wert. Akzeptiert ISO (2026-05-29) und
+     * BASIC_ISO (20260529); nicht-numerische Zeichen werden entfernt.
+     */
+    private LocalDate parseXmlDatum(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            String digits = raw.replaceAll("[^0-9]", "");
+            if (digits.length() >= 8) {
+                return LocalDate.parse(digits.substring(0, 8), DateTimeFormatter.BASIC_ISO_DATE);
+            }
+        } catch (Exception ignored) {
+            // ungültiges Datum -> null
         }
         return null;
     }

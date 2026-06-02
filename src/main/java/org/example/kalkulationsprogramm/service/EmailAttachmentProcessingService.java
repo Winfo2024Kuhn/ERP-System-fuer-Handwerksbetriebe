@@ -12,10 +12,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Service zur Verarbeitung von Email-Attachments für Lieferanten.
@@ -74,21 +80,53 @@ public class EmailAttachmentProcessingService {
 
         int geschaeftsdokumenteErstellt = 0;
 
+        // Nur noch nicht verarbeitete PDF/XML-Anhänge (keine Inline-Bilder).
+        List<EmailAttachment> toProcess = new ArrayList<>();
         for (EmailAttachment attachment : attachments) {
-            // Nur PDF und XML verarbeiten, keine Inline-Bilder
-            if (!isProcessableAttachment(attachment)) {
+            if (isProcessableAttachment(attachment) && !Boolean.TRUE.equals(attachment.getAiProcessed())) {
+                toProcess.add(attachment);
+            }
+        }
+
+        long pdfCount = toProcess.stream().filter(this::isPdf).count();
+        long xmlCount = toProcess.stream().filter(this::isXml).count();
+        Set<Long> consumed = new HashSet<>();
+
+        // Durchgang 1: E-Rechnungs-XML mit passender PDF paaren.
+        // Anzeige-Datei = PDF (für den Viewer), Metadaten = XML.
+        // Verhindert, dass die XML im PDF-Viewer als Rohtext erscheint und die
+        // echte PDF als "Duplikat" verworfen wird.
+        for (EmailAttachment xml : toProcess) {
+            if (!isXml(xml) || consumed.contains(xml.getId())) {
                 continue;
             }
-
-            // Prüfe ob bereits verarbeitet
-            if (Boolean.TRUE.equals(attachment.getAiProcessed())) {
+            EmailAttachment pdf = findMatchingPdf(xml, toProcess, consumed, pdfCount, xmlCount);
+            if (pdf == null) {
                 continue;
             }
+            try {
+                log.info("Paare PDF '{}' (Anzeige) mit XML '{}' (Metadaten), Email-ID: {}",
+                        pdf.getOriginalFilename(), xml.getOriginalFilename(), email.getId());
+                if (processAttachment(pdf, xml, lieferant.getId())) {
+                    geschaeftsdokumenteErstellt++;
+                }
+            } catch (Exception e) {
+                log.error("Fehler beim Paaren von PDF {} mit XML {}: {}",
+                        pdf.getId(), xml.getId(), e.getMessage());
+            }
+            consumed.add(xml.getId());
+            consumed.add(pdf.getId());
+        }
 
+        // Durchgang 2: verbleibende Einzel-Anhänge (PDF-only oder XML-only).
+        for (EmailAttachment attachment : toProcess) {
+            if (consumed.contains(attachment.getId())) {
+                continue;
+            }
             try {
                 log.info("Starte Dokumentanalyse für Attachment: {} (Email-ID: {})",
                         attachment.getOriginalFilename(), email.getId());
-                boolean success = processAttachment(attachment, lieferant.getId());
+                boolean success = processAttachment(attachment, attachment, lieferant.getId());
                 log.info("Dokumentanalyse abgeschlossen für {}: Erfolg={}",
                         attachment.getOriginalFilename(), success);
                 if (success) {
@@ -98,33 +136,247 @@ public class EmailAttachmentProcessingService {
                 log.error("Fehler bei Verarbeitung von Attachment {}: {}",
                         attachment.getId(), e.getMessage());
             }
+            consumed.add(attachment.getId());
         }
 
         return geschaeftsdokumenteErstellt;
     }
 
     /**
-     * Verarbeitet ein einzelnes Attachment.
-     * 
-     * @return true wenn Geschäftsdokument erstellt wurde
+     * Einmaliger Backfill für bereits importierte Dokumente: Findet alle
+     * Lieferanten-Dokumente, deren Anzeige-Datei eine XML ist (alter Bug: die XML
+     * landete im PDF-Viewer), und stellt sie auf die zugehörige PDF aus derselben
+     * Mail um. Die Metadaten bleiben unverändert (kamen bereits aus der XML).
+     * <p>
+     * Idempotent: Dokumente ohne passende PDF bleiben unangetastet; ein erneuter
+     * Lauf findet bereits umgestellte Dokumente nicht mehr (referenzieren dann PDF).
+     *
+     * @return Anzahl der umgestellten Dokumente
      */
-    private boolean processAttachment(EmailAttachment attachment, Long lieferantId) {
-        String filename = attachment.getOriginalFilename();
-        if (filename == null) {
+    @Transactional
+    public int backfillXmlDokumenteAufPdf() {
+        List<LieferantDokument> xmlDocs = lieferantDokumentRepository.findMitXmlAnzeigedatei();
+        int umgestellt = 0;
+
+        for (LieferantDokument doc : xmlDocs) {
+            try {
+                List<EmailAttachment> verknuepft = emailAttachmentRepository.findByLieferantDokumentId(doc.getId());
+                EmailAttachment xmlAtt = verknuepft.stream().filter(this::isXml).findFirst().orElse(null);
+                if (xmlAtt == null || xmlAtt.getEmail() == null) {
+                    log.info("Backfill XML->PDF: kein XML-Attachment/Email für Dokument {}", doc.getId());
+                    continue;
+                }
+
+                EmailAttachment pdf = findePdfImSelbenEmail(xmlAtt, doc);
+                if (pdf == null) {
+                    log.info("Backfill XML->PDF: kein passendes PDF für Dokument {} (XML '{}')",
+                            doc.getId(), xmlAtt.getOriginalFilename());
+                    continue;
+                }
+
+                // Dokument auf die PDF umstellen (Viewer zeigt jetzt PDF statt XML-Rohtext)
+                doc.setGespeicherterDateiname(pdf.getStoredFilename());
+                doc.setOriginalDateiname(pdf.getOriginalFilename());
+                lieferantDokumentRepository.save(doc);
+
+                // PDF-Attachment nachträglich verknüpfen, falls noch verwaist
+                if (pdf.getLieferantDokument() == null) {
+                    markProcessed(pdf, doc);
+                }
+
+                umgestellt++;
+                log.info("Backfill XML->PDF: Dokument {} von '{}' auf '{}' umgestellt",
+                        doc.getId(), xmlAtt.getOriginalFilename(), pdf.getOriginalFilename());
+            } catch (Exception e) {
+                log.error("Backfill XML->PDF fehlgeschlagen für Dokument {}: {}", doc.getId(), e.getMessage());
+            }
+        }
+
+        log.info("Backfill XML->PDF abgeschlossen: {} von {} Dokumenten umgestellt", umgestellt, xmlDocs.size());
+        return umgestellt;
+    }
+
+    /**
+     * Sucht im selben Mail-Anhang die zur XML passende PDF (für den Backfill).
+     * Nutzt die bereits extrahierte Rechnungsnummer aus den Geschäftsdaten,
+     * sonst die XML-Datei selbst; Fallback bei genau 1 PDF + 1 XML.
+     */
+    private EmailAttachment findePdfImSelbenEmail(EmailAttachment xmlAtt, LieferantDokument doc) {
+        List<EmailAttachment> atts = xmlAtt.getEmail().getAttachments();
+        if (atts == null || atts.isEmpty()) {
+            return null;
+        }
+        List<EmailAttachment> pdfs = new ArrayList<>();
+        long xmlCount = 0;
+        for (EmailAttachment a : atts) {
+            if (Boolean.TRUE.equals(a.getInlineAttachment())) {
+                continue;
+            }
+            if (isPdf(a)) {
+                // Keine PDF hijacken, die bereits zu einem ANDEREN Dokument gehört.
+                // Nur verwaiste PDFs (dup-skip-Fall) oder solche, die ohnehin schon
+                // zu DIESEM Dokument verlinkt sind, sind gültige Anzeige-Kandidaten.
+                LieferantDokument vorhanden = a.getLieferantDokument();
+                boolean freiOderEigen = vorhanden == null || java.util.Objects.equals(vorhanden.getId(), doc.getId());
+                // Die PDF muss auch physisch existieren – sonst würde der Backfill ein
+                // noch anzeigbares XML-Dokument auf eine fehlende Datei umbiegen.
+                Path pdfPath = resolveAttachmentPath(a);
+                boolean existiert = pdfPath != null && Files.exists(pdfPath);
+                if (freiOderEigen && existiert) {
+                    pdfs.add(a);
+                }
+            } else if (isXml(a)) {
+                xmlCount++;
+            }
+        }
+        if (pdfs.isEmpty()) {
+            return null;
+        }
+
+        // a) Nummern-Abgleich (bevorzugt aus bereits gespeicherten Geschäftsdaten)
+        String nummer = doc.getGeschaeftsdaten() != null ? doc.getGeschaeftsdaten().getDokumentNummer() : null;
+        if (nummer == null || nummer.isBlank()) {
+            nummer = extractInvoiceNumberFromXml(resolveAttachmentPath(xmlAtt));
+        }
+        String needle = normalizeForMatch(nummer);
+        if (!needle.isEmpty()) {
+            for (EmailAttachment pdf : pdfs) {
+                if (normalizeForMatch(pdf.getOriginalFilename()).contains(needle)) {
+                    return pdf;
+                }
+            }
+        }
+
+        // b) Fallback: genau 1 PDF + 1 XML in der Mail
+        if (pdfs.size() == 1 && xmlCount == 1) {
+            return pdfs.get(0);
+        }
+        return null;
+    }
+
+    /**
+     * Sucht zu einer E-Rechnungs-XML die zugehörige PDF im selben Mail-Anhang.
+     * <p>
+     * Strategie (siehe Bugfix PDF+XML-Import):
+     * <ol>
+     * <li><b>Nummern-Abgleich:</b> Steht die Rechnungsnummer aus der XML im
+     * PDF-Dateinamen (z.B. XML "2026-0814" ↔ "ReNr. 2026-0814.pdf")?</li>
+     * <li><b>Fallback:</b> Enthält die Mail genau eine PDF und genau eine XML,
+     * werden sie als Paar behandelt.</li>
+     * </ol>
+     *
+     * @return die passende PDF oder {@code null}, wenn kein eindeutiges Paar
+     */
+    private EmailAttachment findMatchingPdf(EmailAttachment xml, List<EmailAttachment> candidates,
+            Set<Long> consumed, long pdfCount, long xmlCount) {
+        List<EmailAttachment> freePdfs = new ArrayList<>();
+        for (EmailAttachment candidate : candidates) {
+            if (isPdf(candidate) && !consumed.contains(candidate.getId())) {
+                freePdfs.add(candidate);
+            }
+        }
+        if (freePdfs.isEmpty()) {
+            return null;
+        }
+
+        // a) Nummern-Abgleich
+        String invoiceNr = extractInvoiceNumberFromXml(resolveAttachmentPath(xml));
+        String needle = normalizeForMatch(invoiceNr);
+        if (!needle.isEmpty()) {
+            for (EmailAttachment pdf : freePdfs) {
+                if (normalizeForMatch(pdf.getOriginalFilename()).contains(needle)) {
+                    return pdf;
+                }
+            }
+        }
+
+        // b) Fallback: genau 1 PDF + 1 XML in der Mail
+        if (pdfCount == 1 && xmlCount == 1) {
+            return freePdfs.get(0);
+        }
+        return null;
+    }
+
+    /** Liest die Rechnungsnummer (Invoice-ID) lightweight per Regex aus der XML. */
+    private String extractInvoiceNumberFromXml(Path xmlPath) {
+        if (xmlPath == null || !Files.exists(xmlPath)) {
+            return null;
+        }
+        try {
+            String xml = new String(Files.readAllBytes(xmlPath), StandardCharsets.UTF_8);
+            // <cbc:ID>, <ram:ID> oder <ID> bzw. <InvoiceNumber>, ohne Customization-/ProfileID zu treffen.
+            Matcher m = Pattern.compile(
+                    "<(?:[^:>]+:)?(?:ID|InvoiceNumber)(?:\\s[^>]*)?>([^<]+)</",
+                    Pattern.CASE_INSENSITIVE).matcher(xml);
+            if (m.find()) {
+                return m.group(1).trim();
+            }
+        } catch (Exception e) {
+            log.debug("Konnte Rechnungsnummer nicht aus XML lesen ({}): {}", xmlPath, e.getMessage());
+        }
+        return null;
+    }
+
+    /** Normalisiert einen String für den Datei-/Nummern-Abgleich (nur a-z0-9). */
+    private String normalizeForMatch(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase().replaceAll("[^a-z0-9]", "");
+    }
+
+    private boolean isPdf(EmailAttachment attachment) {
+        String name = attachment.getOriginalFilename();
+        return name != null && name.toLowerCase().endsWith(".pdf");
+    }
+
+    private boolean isXml(EmailAttachment attachment) {
+        String name = attachment.getOriginalFilename();
+        return name != null && name.toLowerCase().endsWith(".xml");
+    }
+
+    /**
+     * Verarbeitet ein Attachment (bzw. ein PDF+XML-Paar) zu einem Geschäftsdokument.
+     * <p>
+     * Die <b>Anzeige-Datei</b> ({@code displayAttachment}) wird im Dokument
+     * referenziert und im Viewer angezeigt – bei einem PDF+XML-Paar also die PDF.
+     * Die <b>Metadaten-Datei</b> ({@code metaAttachment}) wird analysiert – bei
+     * einem Paar die strukturierte XML. Für Einzel-Anhänge sind beide identisch.
+     *
+     * @return true wenn ein Geschäftsdokument erstellt wurde
+     */
+    private boolean processAttachment(EmailAttachment displayAttachment, EmailAttachment metaAttachment,
+            Long lieferantId) {
+        String displayFilename = displayAttachment.getOriginalFilename();
+        String metaFilename = metaAttachment.getOriginalFilename();
+        if (displayFilename == null || metaFilename == null) {
             return false;
         }
 
-        Path filePath = resolveAttachmentPath(attachment);
-
-        if (filePath == null || !Files.exists(filePath)) {
-            log.warn("Attachment-Datei nicht gefunden: {}", attachment.getStoredFilename());
+        Path metaPath = resolveAttachmentPath(metaAttachment);
+        if (metaPath == null || !Files.exists(metaPath)) {
+            log.warn("Attachment-Datei nicht gefunden: {}", metaAttachment.getStoredFilename());
             return false;
         }
+
+        // Anzeige-Datei (PDF bei einem Paar) muss auf der Platte existieren – sonst
+        // zeigt der Viewer wieder ins Leere. Fehlt sie, fallen wir auf die
+        // (garantiert vorhandene) Metadaten-Datei als Anzeige zurück.
+        EmailAttachment effektiveAnzeige = displayAttachment;
+        if (!displayAttachment.getId().equals(metaAttachment.getId())) {
+            Path displayPath = resolveAttachmentPath(displayAttachment);
+            if (displayPath == null || !Files.exists(displayPath)) {
+                log.warn("Anzeige-Datei fehlt auf der Platte ({}), nutze Metadaten-Datei als Anzeige",
+                        displayAttachment.getStoredFilename());
+                effektiveAnzeige = metaAttachment;
+            }
+        }
+        String anzeigeFilename = effektiveAnzeige.getOriginalFilename();
 
         // 1. Analyse durchführen (InMemory, noch keine DB-Erstellung)
         // Das verhindert, dass leere Dokumente im Frontend auftauchen während die
-        // Analyse läuft.
-        LieferantGeschaeftsdokument geschaeftsdaten = geminiAnalyseService.analyzeAndReturnData(filePath, filename);
+        // Analyse läuft. Metadaten kommen aus der Metadaten-Datei (XML bei einem Paar).
+        LieferantGeschaeftsdokument geschaeftsdaten = geminiAnalyseService.analyzeAndReturnData(metaPath, metaFilename);
 
         // 2. Lieferant laden (Referenz)
         Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
@@ -141,19 +393,18 @@ public class EmailAttachmentProcessingService {
             if (duplikat) {
                 log.info("Duplikat erkannt: Dokumentnummer {} existiert bereits bei Lieferant {}. Überspringe.",
                         geschaeftsdaten.getDokumentNummer(), lieferantId);
-                // Attachment als verarbeitet markieren, aber kein neues Dokument erstellen
-                attachment.setAiProcessed(true);
-                attachment.setAiProcessedAt(java.time.LocalDateTime.now());
-                emailAttachmentRepository.save(attachment);
+                // Beide Attachments als verarbeitet markieren, aber kein neues Dokument erstellen
+                markProcessed(effektiveAnzeige, null);
+                markProcessed(metaAttachment, null);
                 return false;
             }
         }
 
-        // 3. Dokument erstellen (Atomic Save)
+        // 3. Dokument erstellen (Atomic Save) – referenziert die Anzeige-Datei (PDF bei einem Paar)
         LieferantDokument dokument = new LieferantDokument();
         dokument.setLieferant(lieferant);
-        dokument.setOriginalDateiname(filename);
-        dokument.setGespeicherterDateiname(attachment.getStoredFilename()); // Korrekter Setter
+        dokument.setOriginalDateiname(anzeigeFilename);
+        dokument.setGespeicherterDateiname(effektiveAnzeige.getStoredFilename()); // Korrekter Setter
         dokument.setUploadDatum(LocalDateTime.now());
 
         // Typ setzen basierend auf KI-Analyse, Nummer oder Default
@@ -203,17 +454,30 @@ public class EmailAttachmentProcessingService {
                     dokument.getId(), e.getMessage());
         }
 
-        // 5. Attachment verknüpfen
-        attachment.setAiProcessed(true);
-        attachment.setAiProcessedAt(java.time.LocalDateTime.now());
-        attachment.setLieferantDokument(dokument);
-        emailAttachmentRepository.save(attachment);
+        // 5. Beide Attachments mit dem Dokument verknüpfen (PDF + ggf. XML)
+        markProcessed(effektiveAnzeige, dokument);
+        if (!metaAttachment.getId().equals(effektiveAnzeige.getId())) {
+            markProcessed(metaAttachment, dokument);
+        }
 
         log.info("Geschäftsdokument atomar erstellt für: {} (Lieferant-ID: {}, Typ: {}, Data: {})",
-                filename, lieferantId, dokument.getTyp(),
+                anzeigeFilename, lieferantId, dokument.getTyp(),
                 geschaeftsdaten != null ? "Ja" : "Nein");
 
         return true;
+    }
+
+    /**
+     * Markiert ein Attachment als verarbeitet und verknüpft es optional mit dem
+     * erzeugten Dokument.
+     */
+    private void markProcessed(EmailAttachment attachment, LieferantDokument dokument) {
+        attachment.setAiProcessed(true);
+        attachment.setAiProcessedAt(java.time.LocalDateTime.now());
+        if (dokument != null) {
+            attachment.setLieferantDokument(dokument);
+        }
+        emailAttachmentRepository.save(attachment);
     }
 
     private LieferantDokumentTyp inferDokumentTyp(String nummer) {

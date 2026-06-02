@@ -78,3 +78,5 @@ package-lock.json
 # komplett ignoriert — Quelle der Wahrheit ist der Root-Graph.
 react-pc-frontend/graphify-out/
 react-zeiterfassung/graphify-out/
+.claude/settings.local.json
+.claude/settings.local.json
