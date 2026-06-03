@@ -135,7 +135,8 @@ public class FreigabeInternalController
                     request.getEmail(),
                     request.getVorname(),
                     request.getNachname(),
-                    request.getUnterzeichnerName());
+                    request.getUnterzeichnerName(),
+                    request.getAusgewaehlteAlternativen());
             return ResponseEntity.ok(FreigabeAkzeptiertResponse.builder()
                     .uuid(freigabe.getUuid())
                     .dokumentNummer(freigabe.getDokumentNummer())
@@ -170,7 +171,7 @@ public class FreigabeInternalController
 
     private FreigabeAnsichtDto toDto(DokumentFreigabe f)
     {
-        return FreigabeAnsichtDto.builder()
+        FreigabeAnsichtDto.FreigabeAnsichtDtoBuilder builder = FreigabeAnsichtDto.builder()
                 .uuid(f.getUuid())
                 .status(f.getStatus().name())
                 .dokumentNummer(f.getDokumentNummer())
@@ -183,8 +184,20 @@ public class FreigabeInternalController
                 .ablaufDatum(f.getAblaufDatum())
                 .akzeptiertAm(f.getAkzeptiertAm())
                 .abgelaufen(f.istAbgelaufen())
-                .pdfPfad("/api/internal/freigabe/" + f.getUuid() + "/pdf")
-                .build();
+                .pdfPfad("/api/internal/freigabe/" + f.getUuid() + "/pdf");
+
+        // Positionen + Basisbeträge anreichern, damit das Frontend Alternativen als
+        // Checkboxen rendern und die Endsumme live berechnen kann.
+        DokumentFreigabeService.FreigabePositionsAnsicht ansicht = freigabeService.ladePositionsAnsicht(f);
+        if (ansicht != null)
+        {
+            builder.positionen(ansicht.positionen())
+                    .basisNetto(ansicht.basisNetto())
+                    .basisBrutto(ansicht.basisBrutto())
+                    .mwstProzent(ansicht.mwstProzent())
+                    .hatAlternativen(ansicht.hatAlternativen());
+        }
+        return builder.build();
     }
 
     private static String truncate(String s, int max)

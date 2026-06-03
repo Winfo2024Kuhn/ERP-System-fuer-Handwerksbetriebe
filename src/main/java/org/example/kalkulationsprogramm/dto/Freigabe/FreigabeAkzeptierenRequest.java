@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 /**
  * Request-Body für POST /api/internal/freigabe/{uuid}/akzeptieren.
  *
@@ -44,4 +46,12 @@ public class FreigabeAkzeptierenRequest
     private String clientIp;
     /** Vom Astro-Layer extrahierter User-Agent. */
     private String userAgent;
+
+    /**
+     * blockIds der optionalen (alternativen) Positionen, die der Kunde mitbeauftragt.
+     * Leer/null = keine Alternativen gewählt. Der Server validiert jede ID gegen die
+     * tatsächlich optionalen Positionen des Dokuments und berechnet den verbindlichen
+     * Betrag selbst neu – der Client-Betrag wird nie vertraut.
+     */
+    private List<String> ausgewaehlteAlternativen;
 }

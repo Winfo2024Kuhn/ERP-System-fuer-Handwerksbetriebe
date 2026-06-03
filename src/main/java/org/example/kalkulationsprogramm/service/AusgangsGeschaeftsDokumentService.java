@@ -33,6 +33,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.Abrechnun
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
+import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
@@ -1926,5 +1927,217 @@ public class AusgangsGeschaeftsDokumentService {
                 collectLeistungMengen(child, result);
             }
         }
+    }
+
+    // === Digitale Freigabe: Alternativ-Positionen ===========================
+    // Helfer für die kundenseitige Freigabe-Ansicht und das Mitbeauftragen optionaler
+    // (alternativer) Positionen. Die Traversierung (Top-Level + eine Ebene
+    // SECTION_HEADER-children) spiegelt bewusst die Frontend-Logik in
+    // document-editor/helpers.ts (calculateNetto), damit serverseitig berechnete Beträge
+    // mit der Editor-Anzeige übereinstimmen.
+
+    /** Thread-safe und wiederverwendbar — einmalig statt pro Aufruf neu instanziieren. */
+    private static final ObjectMapper ALTERNATIV_MAPPER = new ObjectMapper();
+
+    /**
+     * Baut die kundensichere Positions-Liste für die Freigabe-Ansicht aus dem
+     * positionenJson. Liefert {@code null}, wenn kein/ungültiges JSON vorliegt.
+     */
+    public List<FreigabePositionDto> baueKundenPositionen(String positionenJson) {
+        JsonNode blocks = leseBlocks(positionenJson);
+        if (blocks == null) return null;
+        List<FreigabePositionDto> result = new ArrayList<>();
+        for (JsonNode block : blocks) {
+            result.add(mapBlockZuPositionDto(block));
+        }
+        return result;
+    }
+
+    private FreigabePositionDto mapBlockZuPositionDto(JsonNode block) {
+        String typ = textOrNull(block, "type");
+        FreigabePositionDto.FreigabePositionDtoBuilder b = FreigabePositionDto.builder()
+                .blockId(textOrNull(block, "id"))
+                .typ(typ)
+                .pos(textOrNull(block, "pos"))
+                .bezeichnung(textOrNull(block, "title"))
+                .beschreibungHtml(textOrNull(block, "description"))
+                .sectionLabel(textOrNull(block, "sectionLabel"))
+                .optional(block.path("optional").asBoolean(false));
+
+        if ("SERVICE".equals(typ)) {
+            BigDecimal menge = decimalOrNull(block, "quantity");
+            BigDecimal preis = decimalOrNull(block, "price");
+            BigDecimal rabatt = decimalOrNull(block, "discount");
+            b.menge(menge)
+             .einheit(textOrNull(block, "unit"))
+             .einzelpreisNetto(preis)
+             .rabattProzent(rabatt)
+             .gesamtpreisNetto(zeilenSummeNetto(menge, preis, rabatt));
+        }
+
+        if ("SECTION_HEADER".equals(typ) && block.has("children") && block.get("children").isArray()) {
+            List<FreigabePositionDto> children = new ArrayList<>();
+            for (JsonNode child : block.get("children")) {
+                children.add(mapBlockZuPositionDto(child));
+            }
+            b.children(children);
+        }
+        return b.build();
+    }
+
+    /**
+     * Sammelt die blockIds aller optionalen (alternativen) SERVICE-Positionen.
+     * Dient der serverseitigen Validierung der vom Kunden gewählten Alternativen.
+     */
+    public Set<String> sammleOptionaleAlternativIds(String positionenJson) {
+        Set<String> ids = new HashSet<>();
+        JsonNode blocks = leseBlocks(positionenJson);
+        if (blocks == null) return ids;
+        for (JsonNode block : blocks) {
+            sammleOptionaleAlternativIds(block, ids);
+        }
+        return ids;
+    }
+
+    private void sammleOptionaleAlternativIds(JsonNode block, Set<String> ids) {
+        String typ = textOrNull(block, "type");
+        if ("SERVICE".equals(typ) && block.path("optional").asBoolean(false)) {
+            String id = textOrNull(block, "id");
+            if (id != null) ids.add(id);
+        }
+        if ("SECTION_HEADER".equals(typ) && block.has("children") && block.get("children").isArray()) {
+            for (JsonNode child : block.get("children")) {
+                sammleOptionaleAlternativIds(child, ids);
+            }
+        }
+    }
+
+    /**
+     * Summiert die Netto-Zeilensummen der ausgewählten optionalen Positionen (nur SERVICE-
+     * Blöcke, die tatsächlich optional sind und deren id ausgewählt wurde). Defensive
+     * Filterung: nicht-optionale oder unbekannte IDs werden ignoriert.
+     */
+    public BigDecimal summeAusgewaehlterAlternativenNetto(String positionenJson, Set<String> blockIds) {
+        if (blockIds == null || blockIds.isEmpty()) return BigDecimal.ZERO;
+        JsonNode blocks = leseBlocks(positionenJson);
+        if (blocks == null) return BigDecimal.ZERO;
+        BigDecimal summe = BigDecimal.ZERO;
+        for (JsonNode block : blocks) {
+            summe = summe.add(summeAusgewaehlt(block, blockIds));
+        }
+        return summe.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal summeAusgewaehlt(JsonNode block, Set<String> blockIds) {
+        BigDecimal summe = BigDecimal.ZERO;
+        String typ = textOrNull(block, "type");
+        if ("SERVICE".equals(typ) && block.path("optional").asBoolean(false)) {
+            String id = textOrNull(block, "id");
+            if (id != null && blockIds.contains(id)) {
+                summe = summe.add(nonNull(zeilenSummeNetto(
+                        decimalOrNull(block, "quantity"),
+                        decimalOrNull(block, "price"),
+                        decimalOrNull(block, "discount"))));
+            }
+        }
+        if ("SECTION_HEADER".equals(typ) && block.has("children") && block.get("children").isArray()) {
+            for (JsonNode child : block.get("children")) {
+                summe = summe.add(summeAusgewaehlt(child, blockIds));
+            }
+        }
+        return summe;
+    }
+
+    /**
+     * Setzt {@code optional=false} auf allen SERVICE-Blöcken, deren id ausgewählt wurde,
+     * sodass sie in einem Folgedokument (Auftragsbestätigung) als feste Positionen zählen.
+     * Liefert das modifizierte JSON; bei Fehlern unverändert das Eingangs-JSON.
+     */
+    public String markiereAlternativenAlsBeauftragt(String positionenJson, Set<String> blockIds) {
+        if (positionenJson == null || positionenJson.isBlank() || blockIds == null || blockIds.isEmpty()) {
+            return positionenJson;
+        }
+        try {
+            JsonNode root = ALTERNATIV_MAPPER.readTree(positionenJson);
+            JsonNode blocks = root.isArray() ? root
+                    : (root.isObject() && root.has("blocks") && root.get("blocks").isArray() ? root.get("blocks") : null);
+            if (blocks == null) return positionenJson;
+            for (JsonNode block : blocks) {
+                markiereBlock(block, blockIds);
+            }
+            return ALTERNATIV_MAPPER.writeValueAsString(root);
+        } catch (Exception e) {
+            log.warn("Fehler beim Markieren beauftragter Alternativen: {}", e.getMessage());
+            return positionenJson;
+        }
+    }
+
+    private void markiereBlock(JsonNode block, Set<String> blockIds) {
+        String typ = textOrNull(block, "type");
+        if ("SERVICE".equals(typ) && block.path("optional").asBoolean(false)
+                && block instanceof ObjectNode on) {
+            String id = textOrNull(block, "id");
+            if (id != null && blockIds.contains(id)) {
+                on.put("optional", false);
+            }
+        }
+        if ("SECTION_HEADER".equals(typ) && block.has("children") && block.get("children").isArray()) {
+            for (JsonNode child : block.get("children")) {
+                markiereBlock(child, blockIds);
+            }
+        }
+    }
+
+    /**
+     * Entfernt die Standard-Textbausteine (VOR/NACH) aus einem positionenJson — öffentliche
+     * Variante für die Auftragsbestätigungs-Erzeugung mit Alternativen (gleiche Logik wie
+     * beim Typwechsel in {@link #erstellen}).
+     */
+    public String bereitePositionenFuerTypwechsel(String positionenJson) {
+        return entferneStandardTextbausteine(positionenJson);
+    }
+
+    // --- kleine JSON-Helfer für die Alternativ-Logik ---
+
+    private JsonNode leseBlocks(String positionenJson) {
+        if (positionenJson == null || positionenJson.isBlank()) return null;
+        try {
+            JsonNode root = ALTERNATIV_MAPPER.readTree(positionenJson);
+            if (root.isArray()) return root;
+            if (root.isObject() && root.has("blocks") && root.get("blocks").isArray()) return root.get("blocks");
+            return null;
+        } catch (Exception e) {
+            log.warn("positionenJson nicht lesbar: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String textOrNull(JsonNode node, String field) {
+        JsonNode v = node.get(field);
+        return v == null || v.isNull() ? null : v.asText();
+    }
+
+    private static BigDecimal decimalOrNull(JsonNode node, String field) {
+        JsonNode v = node.get(field);
+        if (v == null || v.isNull() || (!v.isNumber() && !v.isTextual())) return null;
+        try {
+            return new BigDecimal(v.asText());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static BigDecimal zeilenSummeNetto(BigDecimal menge, BigDecimal preis, BigDecimal rabattProzent) {
+        if (menge == null || preis == null) return null;
+        BigDecimal base = menge.multiply(preis);
+        if (rabattProzent != null && rabattProzent.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal faktor = BigDecimal.ONE.subtract(rabattProzent.divide(new BigDecimal("100")));
+            base = base.multiply(faktor);
+        }
+        return base.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal nonNull(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 }

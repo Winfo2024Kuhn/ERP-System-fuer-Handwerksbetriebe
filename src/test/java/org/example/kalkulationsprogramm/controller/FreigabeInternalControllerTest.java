@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.util.ConstraintMessageResolver;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -18,10 +19,14 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -74,7 +79,7 @@ class FreigabeInternalControllerTest {
         saved.setUnterzeichnerName("Max Mustermann");
         given(freigabeService.akzeptiere(
                 eq("uuid-ok"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann")))
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any()))
                 .willReturn(saved);
 
         String json = objectMapper.writeValueAsString(validRequest());
@@ -85,6 +90,37 @@ class FreigabeInternalControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.uuid").value("uuid-ok"))
                 .andExpect(jsonPath("$.unterzeichnerName").value("Max Mustermann"));
+    }
+
+    @Test
+    void akzeptieren_reichtAusgewaehlteAlternativenAnService() throws Exception {
+        DokumentFreigabe saved = new DokumentFreigabe();
+        saved.setUuid("uuid-alt");
+        saved.setDokumentNummer("ANG-2026-0002");
+        saved.setDokumentArt("Angebot");
+        saved.setStatus(FreigabeStatus.ACCEPTED);
+        saved.setAkzeptiertAm(LocalDateTime.of(2026, 5, 12, 10, 30));
+        saved.setUnterzeichnerName("Max Mustermann");
+        given(freigabeService.akzeptiere(
+                eq("uuid-alt"), anyString(), anyString(), anyString(),
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any()))
+                .willReturn(saved);
+
+        FreigabeAkzeptierenRequest req = validRequest();
+        req.setAusgewaehlteAlternativen(List.of("alt-1", "alt-2"));
+        String json = objectMapper.writeValueAsString(req);
+
+        mockMvc.perform(post("/api/internal/freigabe/uuid-alt/akzeptieren")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isOk());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass(List.class);
+        verify(freigabeService).akzeptiere(
+                eq("uuid-alt"), anyString(), anyString(), anyString(),
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), captor.capture());
+        assertThat(captor.getValue()).containsExactly("alt-1", "alt-2");
     }
 
     @Test

@@ -17,15 +17,21 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
+import org.mockito.ArgumentCaptor;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -166,6 +172,138 @@ class DokumentFreigabeServiceTest {
         assertThat(result.getUnterzeichnerName()).isEqualTo("Max Mustermann");
         assertThat(result.getAkzeptiertIp()).isEqualTo("1.1.1.1");
         assertThat(result.getHashAcceptance()).isEqualTo("hash-vom-ersten-klick");
+    }
+
+    // ============== Mitbeauftragte Alternativpositionen ==============
+
+    @Test
+    void akzeptiere_mitAlternativen_speichertAuswahlBetragUndErzeugtAbMitMergePositionen() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-alt");
+        when(repository.findByUuid("uuid-alt")).thenReturn(Optional.of(pending));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        String positionenJson = "{\"blocks\":[]}";
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angebot.setPositionenJson(positionenJson);
+        angebot.setBetragNetto(new BigDecimal("1000.00"));
+        angebot.setMwstSatz(new BigDecimal("0.19"));
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+        when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Nur diese beiden IDs sind im Dokument tatsächlich optional.
+        when(ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(positionenJson))
+                .thenReturn(Set.of("alt-1", "alt-2"));
+        when(ausgangsGeschaeftsDokumentService.summeAusgewaehlterAlternativenNetto(eq(positionenJson), any()))
+                .thenReturn(new BigDecimal("200.00"));
+        when(ausgangsGeschaeftsDokumentService.bereitePositionenFuerTypwechsel(positionenJson))
+                .thenReturn(positionenJson);
+        when(ausgangsGeschaeftsDokumentService.markiereAlternativenAlsBeauftragt(eq(positionenJson), any()))
+                .thenReturn("{\"merged\":true}");
+        when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(null);
+
+        // "fremd-999" ist nicht optional → muss verworfen werden (Tamper-Schutz).
+        DokumentFreigabe result = service.akzeptiere(
+                "uuid-alt", "1.2.3.4", "UA", "max@mustermann.de",
+                "Max", "Mustermann", "Max Mustermann",
+                List.of("alt-2", "alt-1", "fremd-999"));
+
+        // Auswahl persistiert: nur gültige IDs, sortiert, als JSON.
+        assertThat(result.getAkzeptierteAlternativen()).isEqualTo("[\"alt-1\",\"alt-2\"]");
+        // Verbindlicher Betrag = (1000 + 200) * 1,19 = 1428,00.
+        assertThat(result.getAkzeptierterBetrag()).isEqualByComparingTo("1428.00");
+
+        // AB wurde mit den zusammengeführten Positionen und neuem Netto (1200) erzeugt.
+        ArgumentCaptor<AusgangsGeschaeftsDokumentErstellenDto> captor =
+                ArgumentCaptor.forClass(AusgangsGeschaeftsDokumentErstellenDto.class);
+        verify(ausgangsGeschaeftsDokumentService).erstellen(captor.capture());
+        assertThat(captor.getValue().getPositionenJson()).isEqualTo("{\"merged\":true}");
+        assertThat(captor.getValue().getBetragNetto()).isEqualByComparingTo("1200.00");
+        assertThat(captor.getValue().getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+    }
+
+    @Test
+    void akzeptiere_nurUngueltigeAlternativIds_speichertKeineAuswahlUndKeinenBetrag() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-fremd");
+        when(repository.findByUuid("uuid-fremd")).thenReturn(Optional.of(pending));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        String positionenJson = "{\"blocks\":[]}";
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angebot.setPositionenJson(positionenJson);
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+        when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(positionenJson))
+                .thenReturn(Set.of("alt-1"));
+        when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(null);
+
+        DokumentFreigabe result = service.akzeptiere(
+                "uuid-fremd", "1.2.3.4", "UA", "max@mustermann.de",
+                "Max", "Mustermann", "Max Mustermann",
+                List.of("fremd-1", "fremd-2"));
+
+        assertThat(result.getStatus()).isEqualTo(FreigabeStatus.ACCEPTED);
+        assertThat(result.getAkzeptierteAlternativen()).isNull();
+        assertThat(result.getAkzeptierterBetrag()).isNull();
+
+        // AB ohne explizite Positionen/Betrag (Standard-Pfad, Service erbt selbst).
+        ArgumentCaptor<AusgangsGeschaeftsDokumentErstellenDto> captor =
+                ArgumentCaptor.forClass(AusgangsGeschaeftsDokumentErstellenDto.class);
+        verify(ausgangsGeschaeftsDokumentService).erstellen(captor.capture());
+        assertThat(captor.getValue().getPositionenJson()).isNull();
+        assertThat(captor.getValue().getBetragNetto()).isNull();
+    }
+
+    @Test
+    void akzeptiere_mitSnapshot_rechnetGegenSnapshotNichtGegenGeaendertesLiveDokument() {
+        // GoBD/Tamper: Snapshot vom Versand-Zeitpunkt ist maßgeblich, auch wenn das
+        // Live-Dokument danach bearbeitet wurde.
+        DokumentFreigabe pending = pendingFreigabe("uuid-snap");
+        String snapshotJson = "{\"snapshot\":true}";
+        pending.setPositionenSnapshot(snapshotJson);
+        pending.setBasisNetto(new BigDecimal("1000.00"));
+        pending.setMwstSatz(new BigDecimal("0.19"));
+        when(repository.findByUuid("uuid-snap")).thenReturn(Optional.of(pending));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Live-Dokument wurde NACH Versand geändert (andere Positionen + völlig anderer Betrag).
+        AusgangsGeschaeftsDokument liveGeaendert = new AusgangsGeschaeftsDokument();
+        liveGeaendert.setId(123L);
+        liveGeaendert.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        liveGeaendert.setPositionenJson("{\"live\":\"changed\"}");
+        liveGeaendert.setBetragNetto(new BigDecimal("9999.00"));
+        liveGeaendert.setMwstSatz(new BigDecimal("0.19"));
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(liveGeaendert));
+        when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Alle Helfer arbeiten auf dem SNAPSHOT-JSON, nie auf dem Live-JSON.
+        when(ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(snapshotJson))
+                .thenReturn(Set.of("alt-1"));
+        when(ausgangsGeschaeftsDokumentService.summeAusgewaehlterAlternativenNetto(eq(snapshotJson), any()))
+                .thenReturn(new BigDecimal("200.00"));
+        when(ausgangsGeschaeftsDokumentService.bereitePositionenFuerTypwechsel(snapshotJson))
+                .thenReturn(snapshotJson);
+        when(ausgangsGeschaeftsDokumentService.markiereAlternativenAlsBeauftragt(eq(snapshotJson), any()))
+                .thenReturn("{\"merged\":true}");
+        when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(null);
+
+        DokumentFreigabe result = service.akzeptiere(
+                "uuid-snap", "1.2.3.4", "UA", "max@mustermann.de",
+                "Max", "Mustermann", "Max Mustermann", List.of("alt-1"));
+
+        // Betrag aus Snapshot-Basis (1000), NICHT aus Live (9999): (1000+200)*1,19 = 1428,00.
+        assertThat(result.getAkzeptierterBetrag()).isEqualByComparingTo("1428.00");
+        assertThat(result.getAkzeptierteAlternativen()).isEqualTo("[\"alt-1\"]");
+
+        // AB-Positionen + Netto stammen aus dem Snapshot (1000 + 200), nicht aus 9999.
+        ArgumentCaptor<AusgangsGeschaeftsDokumentErstellenDto> captor =
+                ArgumentCaptor.forClass(AusgangsGeschaeftsDokumentErstellenDto.class);
+        verify(ausgangsGeschaeftsDokumentService).erstellen(captor.capture());
+        assertThat(captor.getValue().getPositionenJson()).isEqualTo("{\"merged\":true}");
+        assertThat(captor.getValue().getBetragNetto()).isEqualByComparingTo("1200.00");
     }
 
     /**

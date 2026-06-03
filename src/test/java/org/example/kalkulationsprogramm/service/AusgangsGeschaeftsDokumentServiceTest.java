@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
@@ -22,6 +23,7 @@ import org.example.kalkulationsprogramm.domain.Leistung;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
+import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
@@ -82,6 +84,91 @@ class AusgangsGeschaeftsDokumentServiceTest {
         counter.setZaehler(0L);
         when(counterRepository.findByMonatKeyForUpdate(any())).thenReturn(Optional.of(counter));
         when(counterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    /**
+     * Helfer für die digitale Freigabe mit Alternativ-Auswahl: reine JSON-/Geldlogik
+     * auf {@code positionenJson}. Spiegelt bewusst die Frontend-Traversierung
+     * (Top-Level + eine Ebene SECTION_HEADER-children) inkl. Rabatt.
+     */
+    @Nested
+    class AlternativPositionen {
+
+        // Top-Level: 1 feste Leistung + 1 optionale; ein Abschnitt mit 1 fester (mit Rabatt)
+        // + 1 optionaler Leistung.
+        private static final String JSON = """
+                {"blocks":[
+                  {"id":"s1","type":"SERVICE","title":"Tür","quantity":2,"price":100,"unit":"Stk"},
+                  {"id":"a1","type":"SERVICE","title":"Extra-Schloss","quantity":1,"price":50,"optional":true},
+                  {"id":"sec1","type":"SECTION_HEADER","sectionLabel":"Abschnitt 1","children":[
+                     {"id":"s2","type":"SERVICE","title":"Montage","quantity":3,"price":20,"discount":10},
+                     {"id":"a2","type":"SERVICE","title":"Premium-Beschlag","quantity":2,"price":30,"optional":true}
+                  ]}
+                ]}
+                """;
+
+        @Test
+        void sammleOptionaleAlternativIds_findetNurOptionaleService_auchInAbschnitten() {
+            assertThat(service.sammleOptionaleAlternativIds(JSON))
+                    .containsExactlyInAnyOrder("a1", "a2");
+        }
+
+        @Test
+        void sammleOptionaleAlternativIds_ungueltigesJson_liefertLeer() {
+            assertThat(service.sammleOptionaleAlternativIds("kein json")).isEmpty();
+            assertThat(service.sammleOptionaleAlternativIds(null)).isEmpty();
+        }
+
+        @Test
+        void summeAusgewaehlterAlternativenNetto_summiertNurGewaehlteOptionale() {
+            // a1 = 1*50 = 50,00 ; a2 = 2*30 = 60,00
+            assertThat(service.summeAusgewaehlterAlternativenNetto(JSON, Set.of("a1")))
+                    .isEqualByComparingTo("50.00");
+            assertThat(service.summeAusgewaehlterAlternativenNetto(JSON, Set.of("a1", "a2")))
+                    .isEqualByComparingTo("110.00");
+        }
+
+        @Test
+        void summeAusgewaehlterAlternativenNetto_ignoriertNichtOptionaleUndUnbekannteIds() {
+            // s1 ist nicht optional, "x" existiert nicht → 0.
+            assertThat(service.summeAusgewaehlterAlternativenNetto(JSON, Set.of("s1", "x")))
+                    .isEqualByComparingTo("0.00");
+        }
+
+        @Test
+        void summeAusgewaehlterAlternativenNetto_leereAuswahl_liefertNull() {
+            assertThat(service.summeAusgewaehlterAlternativenNetto(JSON, Set.of()))
+                    .isEqualByComparingTo("0");
+        }
+
+        @Test
+        void baueKundenPositionen_mapptTypenMengenUndZeilensummen() {
+            List<FreigabePositionDto> positionen = service.baueKundenPositionen(JSON);
+            assertThat(positionen).hasSize(3);
+
+            FreigabePositionDto s1 = positionen.get(0);
+            assertThat(s1.getBlockId()).isEqualTo("s1");
+            assertThat(s1.isOptional()).isFalse();
+            assertThat(s1.getGesamtpreisNetto()).isEqualByComparingTo("200.00");
+
+            FreigabePositionDto a1 = positionen.get(1);
+            assertThat(a1.isOptional()).isTrue();
+
+            FreigabePositionDto sec = positionen.get(2);
+            assertThat(sec.getTyp()).isEqualTo("SECTION_HEADER");
+            assertThat(sec.getChildren()).hasSize(2);
+            // Montage mit 10% Rabatt: 3*20 = 60 → 54,00
+            assertThat(sec.getChildren().get(0).getGesamtpreisNetto()).isEqualByComparingTo("54.00");
+            assertThat(sec.getChildren().get(1).isOptional()).isTrue();
+        }
+
+        @Test
+        void markiereAlternativenAlsBeauftragt_entferntOptionalFlagNurFuerGewaehlte() {
+            String merged = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("a1"));
+            // a1 ist jetzt fest → nur noch a2 bleibt optional.
+            assertThat(service.sammleOptionaleAlternativIds(merged))
+                    .containsExactly("a2");
+        }
     }
 
     @Nested

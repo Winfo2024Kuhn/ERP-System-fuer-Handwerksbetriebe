@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto;
+import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieErfassenDto;
@@ -27,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Locale;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -34,12 +36,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Verwaltet die digitale Freigabe von Geschäftsdokumenten (Angebot, Auftragsbestätigung)
@@ -70,6 +76,9 @@ public class DokumentFreigabeService
     private static final int MAX_GUELTIGKEITS_TAGE = 365;
 
     private static final DateTimeFormatter ABLAUF_DATUM_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+
+    /** Thread-safe und wiederverwendbar — einmalig statt pro Annahme neu instanziieren. */
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final DokumentFreigabeRepository repository;
     private final AnfrageDokumentRepository anfrageDokumentRepository;
@@ -236,6 +245,14 @@ public class DokumentFreigabeService
         freigabe.setBauvorhaben(bauvorhaben);
         freigabe.setKundeName(kundeName);
         freigabe.setKundeEmail(kundeEmail);
+
+        // GoBD-/Tamper-Schutz: Positions-Stand, Netto-Basis und MwSt zum Versand-Zeitpunkt
+        // einfrieren. Wird das Dokument später bearbeitet, bleiben Ansicht, Alternativ-
+        // Validierung und AB-Erzeugung an genau diesen Stand gebunden.
+        freigabe.setPositionenSnapshot(dok.getPositionenJson());
+        freigabe.setBasisNetto(dok.getBetragNetto());
+        freigabe.setMwstSatz(dok.getMwstSatz());
+
         freigabe.setHashOriginal(berechneHashOriginal(freigabe));
         return repository.save(freigabe);
     }
@@ -396,6 +413,24 @@ public class DokumentFreigabeService
     public DokumentFreigabe akzeptiere(String uuid, String ip, String userAgent, String email,
                                        String vorname, String nachname, String unterzeichnerName)
     {
+        return akzeptiere(uuid, ip, userAgent, email, vorname, nachname, unterzeichnerName, null);
+    }
+
+    /**
+     * Wie {@link #akzeptiere(String, String, String, String, String, String, String)}, nimmt
+     * aber zusätzlich die vom Kunden mitbeauftragten Alternativpositionen entgegen
+     * ({@code ausgewaehlteAlternativen} = blockIds). Der Service validiert jede ID gegen die
+     * tatsächlich optionalen Positionen des Quelldokuments, berechnet den verbindlichen
+     * Brutto-Betrag selbst neu (Client-Betrag wird nie vertraut) und speichert Auswahl +
+     * Betrag als Teil der Beweissicherung (fließen in den Acceptance-Hash ein). Die gewählten
+     * Alternativen werden anschließend in der automatisch erzeugten Auftragsbestätigung zu
+     * festen Positionen.
+     */
+    @Transactional
+    public DokumentFreigabe akzeptiere(String uuid, String ip, String userAgent, String email,
+                                       String vorname, String nachname, String unterzeichnerName,
+                                       List<String> ausgewaehlteAlternativen)
+    {
         DokumentFreigabe freigabe = repository.findByUuid(uuid)
                 .orElseThrow(() -> new IllegalArgumentException(UNBEKANNTE_UUID_MESSAGE));
 
@@ -429,6 +464,11 @@ public class DokumentFreigabeService
             anzeigeName = (vornameNorm + " " + nachnameNorm).trim();
         }
 
+        // Vom Kunden mitbeauftragte Alternativen serverseitig auflösen und verbindlichen
+        // Betrag neu berechnen — BEVOR der Acceptance-Hash gebildet wird, damit Auswahl und
+        // Betrag in die unveränderbare Beweissicherung einfließen.
+        AlternativAuswahl auswahl = loeseAlternativAuswahl(freigabe, ausgewaehlteAlternativen);
+
         LocalDateTime jetzt = LocalDateTime.now();
         freigabe.setStatus(FreigabeStatus.ACCEPTED);
         freigabe.setAkzeptiertAm(jetzt);
@@ -438,6 +478,8 @@ public class DokumentFreigabeService
         freigabe.setUnterzeichnerVorname(vornameNorm);
         freigabe.setUnterzeichnerNachname(nachnameNorm);
         freigabe.setUnterzeichnerName(anzeigeName);
+        freigabe.setAkzeptierteAlternativen(auswahl.json());
+        freigabe.setAkzeptierterBetrag(auswahl.betragBrutto());
         freigabe.setHashAcceptance(berechneHashAcceptance(freigabe, ip, email, jetzt));
         DokumentFreigabe saved = repository.save(freigabe);
 
@@ -467,12 +509,147 @@ public class DokumentFreigabeService
         // direkt eine Auftragsbestätigung als Folgedokument (mit den geerbten Positionen
         // und den ABS-Standard-Textbausteinen). Fehler dürfen die Annahme nicht blockieren.
         try {
-            erzeugeAutoAuftragsbestaetigungWennAngebot(saved);
-        } catch (Exception ignored) {
-            // bewusst geschluckt: AB-Erstellung ist Komfort, nicht kritisch
+            erzeugeAutoAuftragsbestaetigungWennAngebot(saved, auswahl.idSet());
+        } catch (Exception e) {
+            // AB-Erstellung darf die (bereits gespeicherte) Annahme nie blockieren — aber
+            // mit Stacktrace loggen: schlägt sie fehl, fehlt sonst still die AB inkl. der
+            // mitbeauftragten Alternativen.
+            log.warn("Auto-Auftragsbestätigung nach digitaler Annahme fehlgeschlagen (Freigabe {})",
+                    saved.getUuid(), e);
         }
         return saved;
     }
+
+    /**
+     * Aufgelöste, validierte Alternativ-Auswahl eines Kunden.
+     *
+     * @param ids         gültige blockIds (sortiert, dedupliziert)
+     * @param idSet       dieselben IDs als Set für Lookups
+     * @param betragBrutto verbindlicher Brutto-Endbetrag inkl. gewählter Alternativen
+     *                     ({@code null}, wenn keine Alternativen gewählt wurden)
+     * @param json        JSON-Array der IDs für die Persistenz ({@code null} wenn leer)
+     */
+    private record AlternativAuswahl(List<String> ids, Set<String> idSet, BigDecimal betragBrutto, String json)
+    {
+        static final AlternativAuswahl LEER = new AlternativAuswahl(List.of(), Set.of(), null, null);
+    }
+
+    /**
+     * Validiert die vom Kunden gewählten Alternativ-blockIds gegen die tatsächlich optionalen
+     * Positionen des Quelldokuments und berechnet den verbindlichen Brutto-Endbetrag neu.
+     * Greift nur für AUSGANGS_DOKUMENT-Freigaben; alle übrigen liefern {@link AlternativAuswahl#LEER}.
+     */
+    private AlternativAuswahl loeseAlternativAuswahl(DokumentFreigabe freigabe, List<String> angefragt)
+    {
+        if (angefragt == null || angefragt.isEmpty()
+                || freigabe.getQuellTyp() != FreigabeQuellTyp.AUSGANGS_DOKUMENT
+                || freigabe.getQuellDokumentId() == null)
+        {
+            return AlternativAuswahl.LEER;
+        }
+
+        // Gegen den Snapshot vom Versand-Zeitpunkt rechnen (GoBD/Tamper) — nur Alt-Freigaben
+        // ohne Snapshot greifen ersatzweise auf das Live-Dokument zurück.
+        String json = freigabe.getPositionenSnapshot();
+        BigDecimal basisNetto = freigabe.getBasisNetto();
+        BigDecimal mwst = freigabe.getMwstSatz();
+        if (json == null)
+        {
+            AusgangsGeschaeftsDokument dok = ausgangsGeschaeftsDokumentRepository
+                    .findById(freigabe.getQuellDokumentId()).orElse(null);
+            if (dok == null || dok.getPositionenJson() == null)
+            {
+                return AlternativAuswahl.LEER;
+            }
+            json = dok.getPositionenJson();
+            basisNetto = dok.getBetragNetto();
+            mwst = dok.getMwstSatz();
+        }
+
+        // Tamper-Schutz: nur IDs übernehmen, die im Snapshot tatsächlich als optionale
+        // (alternative) SERVICE-Position existieren. Unbekanntes/Manipuliertes wird verworfen.
+        Set<String> erlaubt = ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(json);
+        List<String> gueltig = angefragt.stream()
+                .filter(erlaubt::contains)
+                .distinct()
+                .sorted()
+                .toList();
+        if (gueltig.isEmpty())
+        {
+            return AlternativAuswahl.LEER;
+        }
+
+        Set<String> idSet = new HashSet<>(gueltig);
+        // Verbindlicher Betrag = Snapshot-Basis (betragNetto ohne Optionale, vom Frontend per
+        // calculateNetto gerechnet) + Delta der gewählten Alternativen (gleiche Top-Level+
+        // 1-Ebene-Traversierung inkl. Rabatt). mwst ist der Faktor (z.B. 0,19), kein Prozent.
+        BigDecimal basis = basisNetto != null ? basisNetto : BigDecimal.ZERO;
+        BigDecimal deltaNetto = ausgangsGeschaeftsDokumentService
+                .summeAusgewaehlterAlternativenNetto(json, idSet);
+        BigDecimal m = mwst != null ? mwst : new BigDecimal("0.19");
+        BigDecimal nettoGesamt = basis.add(deltaNetto);
+        BigDecimal bruttoGesamt = nettoGesamt.add(nettoGesamt.multiply(m)).setScale(2, RoundingMode.HALF_UP);
+
+        String auswahlJson;
+        try
+        {
+            auswahlJson = OBJECT_MAPPER.writeValueAsString(gueltig);
+        }
+        catch (Exception e)
+        {
+            log.warn("Konnte gewählte Alternativen nicht serialisieren: {}", e.getMessage());
+            auswahlJson = null;
+        }
+        return new AlternativAuswahl(gueltig, idSet, bruttoGesamt, auswahlJson);
+    }
+
+    /**
+     * Kundensichere Positions-Ansicht einer Freigabe für die öffentliche Freigabe-Seite:
+     * die HTML-Positionen des Quelldokuments samt Basisbeträgen und MwSt-Satz, damit das
+     * Frontend Alternativen als Checkboxen rendern und die Endsumme live berechnen kann.
+     * Liefert {@code null}, wenn die Freigabe kein positionsführendes Dokument referenziert
+     * (z.B. Alt-Freigaben des Anfrage-/Projekt-Dokumentsystems).
+     */
+    @Transactional(readOnly = true)
+    public FreigabePositionsAnsicht ladePositionsAnsicht(DokumentFreigabe f)
+    {
+        if (f == null || f.getQuellTyp() != FreigabeQuellTyp.AUSGANGS_DOKUMENT || f.getQuellDokumentId() == null)
+        {
+            return null;
+        }
+        // Snapshot vom Versand-Zeitpunkt bevorzugen; Fallback auf das Live-Dokument nur für
+        // Alt-Freigaben (vor V326), die noch keinen Snapshot tragen.
+        String json = f.getPositionenSnapshot();
+        BigDecimal basisNetto = f.getBasisNetto();
+        BigDecimal basisBrutto = f.getDokumentBetrag();
+        BigDecimal mwst = f.getMwstSatz();
+        if (json == null)
+        {
+            AusgangsGeschaeftsDokument dok = ausgangsGeschaeftsDokumentRepository
+                    .findById(f.getQuellDokumentId()).orElse(null);
+            if (dok == null || dok.getPositionenJson() == null)
+            {
+                return null;
+            }
+            json = dok.getPositionenJson();
+            basisNetto = dok.getBetragNetto();
+            basisBrutto = dok.getBetragBrutto();
+            mwst = dok.getMwstSatz();
+        }
+        List<FreigabePositionDto> positionen = ausgangsGeschaeftsDokumentService.baueKundenPositionen(json);
+        if (positionen == null)
+        {
+            return null;
+        }
+        boolean hatAlternativen = !ausgangsGeschaeftsDokumentService
+                .sammleOptionaleAlternativIds(json).isEmpty();
+        BigDecimal mwstProzent = mwst != null ? mwst.multiply(new BigDecimal("100")) : null;
+        return new FreigabePositionsAnsicht(positionen, basisNetto, basisBrutto, mwstProzent, hatAlternativen);
+    }
+
+    /** Kundensichere Positions-Ansicht inkl. Basisbeträge und MwSt-Satz für die Freigabe-Seite. */
+    public record FreigabePositionsAnsicht(List<FreigabePositionDto> positionen, BigDecimal basisNetto,
+                                           BigDecimal basisBrutto, BigDecimal mwstProzent, boolean hatAlternativen) {}
 
     /**
      * Wenn die akzeptierte Freigabe zu einem AusgangsGeschaeftsDokument vom Typ ANGEBOT gehört
@@ -485,7 +662,7 @@ public class DokumentFreigabeService
      * ProjektEditor. Damit ist die {@code PROJEKTNUMMER} bei der AB-Erzeugung bereits
      * verfügbar und wird in PDF- und E-Mail-Platzhaltern korrekt aufgelöst.</p>
      */
-    private void erzeugeAutoAuftragsbestaetigungWennAngebot(DokumentFreigabe freigabe)
+    private void erzeugeAutoAuftragsbestaetigungWennAngebot(DokumentFreigabe freigabe, Set<String> ausgewaehlteAlternativen)
     {
         if (freigabe.getQuellTyp() != FreigabeQuellTyp.AUSGANGS_DOKUMENT) return;
         Long angebotId = freigabe.getQuellDokumentId();
@@ -532,6 +709,29 @@ public class DokumentFreigabeService
         dto.setVorgaengerId(angebotId);
         // Datum/Betreff/Inhalt werden vom Service aus dem Vorgänger geerbt.
         // Standard-Textbausteine werden beim Typwechsel auf AB getauscht.
+
+        // Hat der Kunde Alternativen mitbeauftragt, werden sie in der AB zu festen Positionen:
+        // wir reichen ein explizit aufbereitetes positionenJson + den neuen Betrag mit. Basis
+        // ist der Freigabe-Snapshot (NICHT das ggf. zwischenzeitlich bearbeitete Live-Angebot),
+        // sodass die AB genau das abbildet, was der Kunde gesehen und angenommen hat. Ohne
+        // Alternativen bleibt alles wie bisher (Service erbt Positionen/Textbausteine selbst).
+        String snapshotJson = freigabe.getPositionenSnapshot() != null
+                ? freigabe.getPositionenSnapshot() : angebot.getPositionenJson();
+        if (ausgewaehlteAlternativen != null && !ausgewaehlteAlternativen.isEmpty() && snapshotJson != null)
+        {
+            String basisJson = ausgangsGeschaeftsDokumentService.bereitePositionenFuerTypwechsel(snapshotJson);
+            String mergedJson = ausgangsGeschaeftsDokumentService
+                    .markiereAlternativenAlsBeauftragt(basisJson, ausgewaehlteAlternativen);
+            dto.setPositionenJson(mergedJson);
+
+            BigDecimal basisNetto = freigabe.getBasisNetto() != null ? freigabe.getBasisNetto()
+                    : (angebot.getBetragNetto() != null ? angebot.getBetragNetto() : BigDecimal.ZERO);
+            BigDecimal deltaNetto = ausgangsGeschaeftsDokumentService
+                    .summeAusgewaehlterAlternativenNetto(snapshotJson, ausgewaehlteAlternativen);
+            dto.setBetragNetto(basisNetto.add(deltaNetto));
+            dto.setMwstSatz(freigabe.getMwstSatz() != null ? freigabe.getMwstSatz() : angebot.getMwstSatz());
+        }
+
         AusgangsGeschaeftsDokument ab = ausgangsGeschaeftsDokumentService.erstellen(dto);
 
         // Auftragsbestätigung ist das verbindliche Folgedokument der Annahme — direkt sperren.
@@ -829,6 +1029,10 @@ public class DokumentFreigabeService
                 f.getDokumentArt() == null ? "" : f.getDokumentArt(),
                 betrag == null ? "" : betrag.toPlainString(),
                 f.getKundeEmail() == null ? "" : f.getKundeEmail(),
+                // Positions-Snapshot mitfingerabdrucken — macht den exakten versendeten
+                // Stand tamper-evident. Alt-Freigaben ohne Snapshot tragen ein leeres
+                // Segment (abwärtskompatibel, ändert deren bereits gespeicherten Hash nicht).
+                f.getPositionenSnapshot() == null ? "" : f.getPositionenSnapshot(),
                 hashSalt
         );
         return sha256Hex(input);
@@ -846,6 +1050,11 @@ public class DokumentFreigabeService
                 // unveränderbaren Acceptance-Hash mit ein. Altdatensätze (vor V317) haben
                 // keinen Namen — String.join behandelt null wie ein leeres Segment.
                 freigabe.getUnterzeichnerName() == null ? "" : freigabe.getUnterzeichnerName(),
+                // Mitbeauftragte Alternativen + daraus resultierender verbindlicher Betrag
+                // sind ebenfalls beweisrelevant (was genau wurde zu welchem Preis beauftragt).
+                // Altannahmen ohne Auswahl tragen leere Segmente — abwärtskompatibel.
+                freigabe.getAkzeptierteAlternativen() == null ? "" : freigabe.getAkzeptierteAlternativen(),
+                freigabe.getAkzeptierterBetrag() == null ? "" : freigabe.getAkzeptierterBetrag().toPlainString(),
                 hashSalt
         );
         return sha256Hex(input);

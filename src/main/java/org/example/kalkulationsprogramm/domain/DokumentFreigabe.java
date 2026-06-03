@@ -106,6 +106,40 @@ public class DokumentFreigabe
     @Column(name = "hash_acceptance", length = 128)
     private String hashAcceptance;
 
+    /**
+     * JSON-Array der blockIds der optionalen (alternativen) Positionen, die der Kunde
+     * bei der digitalen Annahme per Checkbox mitbeauftragt hat (z.B. {@code ["a1","b2"]}).
+     * NULL/leer = es wurden keine Alternativen gewählt. Fließt als Teil der Beweissicherung
+     * in den {@code hashAcceptance} ein.
+     */
+    @Column(name = "akzeptierte_alternativen", columnDefinition = "LONGTEXT")
+    private String akzeptierteAlternativen;
+
+    /**
+     * Verbindlicher Brutto-Endbetrag der Annahme inkl. der mitbeauftragten Alternativen.
+     * NULL = es wurden keine Alternativen gewählt, dann gilt {@link #dokumentBetrag}.
+     */
+    @Column(name = "akzeptierter_betrag", precision = 12, scale = 2)
+    private BigDecimal akzeptierterBetrag;
+
+    /**
+     * Snapshot des {@code positionenJson} des Quelldokuments zum Versand-Zeitpunkt.
+     * GoBD-/Tamper-Schutz: Ansicht, Alternativ-Validierung und die automatisch erzeugte
+     * Auftragsbestätigung leiten sich hieraus ab — nicht aus dem ggf. zwischenzeitlich
+     * bearbeiteten Live-Dokument. NULL bei Alt-Freigaben (vor V326) und bei Quelltypen
+     * ohne Positionen; der Service fällt dann auf das Live-Dokument zurück.
+     */
+    @Column(name = "positionen_snapshot", columnDefinition = "LONGTEXT")
+    private String positionenSnapshot;
+
+    /** Netto-Basisbetrag (ohne Alternativen) zum Versand-Zeitpunkt. Siehe {@link #positionenSnapshot}. */
+    @Column(name = "basis_netto", precision = 12, scale = 2)
+    private BigDecimal basisNetto;
+
+    /** MwSt-Faktor (z.B. 0.1900) zum Versand-Zeitpunkt. Siehe {@link #positionenSnapshot}. */
+    @Column(name = "mwst_satz", precision = 5, scale = 4)
+    private BigDecimal mwstSatz;
+
     @PrePersist
     protected void onCreate()
     {
