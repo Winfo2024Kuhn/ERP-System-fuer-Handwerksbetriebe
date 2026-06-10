@@ -477,6 +477,21 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     useEffect(() => {
         const loadKontext = async () => {
             try {
+                // Geerbte Rechnungsanschrift: Wurde in einem Dokument dieses Vorgangs
+                // (z.B. dem Angebot) die Adresse bearbeitet, zeigt ein NEUES Dokument
+                // sie sofort an. Beim Erstellen übernimmt das Backend sie ohnehin —
+                // hier geht es nur darum, vor dem ersten Speichern keine veraltete
+                // Kundenadresse anzuzeigen oder in die PDF-Vorschau zu geben.
+                let geerbteAdresse: string | null = null;
+                if (!dokumentId && (projektId || anfrageId)) {
+                    try {
+                        const basis = projektId ? `projekt/${projektId}` : `anfrage/${anfrageId}`;
+                        const ovRes = await fetch(`/api/ausgangs-dokumente/${basis}/geerbte-rechnungsadresse`);
+                        if (ovRes.ok) {
+                            geerbteAdresse = (await ovRes.json()).rechnungsadresseOverride || null;
+                        }
+                    } catch { /* Fallback: berechnete Kundenadresse anzeigen */ }
+                }
                 if (projektId) {
                     const res = await fetch(`/api/projekte/${projektId}`);
                     if (res.ok) {
@@ -494,7 +509,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             // darf loadKontext sie nicht überschreiben.
                             rechnungsadresse: adresseUserEditedRef.current
                                 ? prev.rechnungsadresse
-                                : buildAdresse(projekt.kundeDto),
+                                : (geerbteAdresse || buildAdresse(projekt.kundeDto)),
                             anrede: projekt.kundeDto?.anrede,
                             ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
                             kundenEmails: emails,
@@ -516,7 +531,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             // Wenn User die Adresse bereits bearbeitet hat, nicht überschreiben.
                             rechnungsadresse: adresseUserEditedRef.current
                                 ? prev.rechnungsadresse
-                                : buildAdresseFromAnfrage(anfrage),
+                                : (geerbteAdresse || buildAdresseFromAnfrage(anfrage)),
                             anrede: anfrage.kundenAnrede || anfrage.anrede,
                             ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
                             kundenEmails: emails,
@@ -1044,7 +1059,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     htmlInhalt,
                     positionenJson: positionenData,
                     projektId,
-                    anfrageId
+                    anfrageId,
+                    // Hat der User die Adresse schon vor dem ersten Speichern bearbeitet,
+                    // gilt seine Fassung — sonst erbt das Backend die zuletzt geänderte
+                    // Rechnungsanschrift des Vorgangs.
+                    ...(adresseUserEditedRef.current && kontextDaten.rechnungsadresse
+                        ? { rechnungsadresseOverride: kontextDaten.rechnungsadresse }
+                        : {})
                 };
                 const res = await fetch('/api/ausgangs-dokumente', {
                     method: 'POST',

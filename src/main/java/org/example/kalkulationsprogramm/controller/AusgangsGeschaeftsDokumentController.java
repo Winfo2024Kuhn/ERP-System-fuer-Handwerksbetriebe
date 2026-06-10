@@ -1,6 +1,8 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.FreigabeQuellTyp;
@@ -133,6 +135,28 @@ public class AusgangsGeschaeftsDokumentController {
     @GetMapping("/anfrage/{anfrageId}")
     public ResponseEntity<List<AusgangsGeschaeftsDokumentResponseDto>> getByAnfrage(@PathVariable Long anfrageId) {
         return ResponseEntity.ok(service.findByAnfrage(anfrageId));
+    }
+
+    /**
+     * Zuletzt geänderte, vom User bearbeitete Rechnungsanschrift des Projekts.
+     * Der Dokument-Editor zeigt sie beim Erstellen eines neuen Dokuments an,
+     * damit vor dem ersten Speichern keine veraltete Kundenadresse zu sehen ist.
+     * Wert ist {@code null}, wenn kein Dokument eine bearbeitete Anschrift hat.
+     */
+    @GetMapping("/projekt/{projektId}/geerbte-rechnungsadresse")
+    public ResponseEntity<Map<String, String>> getGeerbteRechnungsadresseByProjekt(@PathVariable Long projektId) {
+        String adresse = service.findGeerbteRechnungsadresse(projektId, null);
+        return ResponseEntity.ok(Collections.singletonMap("rechnungsadresseOverride", adresse));
+    }
+
+    /**
+     * Pendant zu {@link #getGeerbteRechnungsadresseByProjekt} für Anfragen;
+     * berücksichtigt auch das ggf. mit der Anfrage verknüpfte Projekt.
+     */
+    @GetMapping("/anfrage/{anfrageId}/geerbte-rechnungsadresse")
+    public ResponseEntity<Map<String, String>> getGeerbteRechnungsadresseByAnfrage(@PathVariable Long anfrageId) {
+        String adresse = service.findGeerbteRechnungsadresseFuerAnfrage(anfrageId);
+        return ResponseEntity.ok(Collections.singletonMap("rechnungsadresseOverride", adresse));
     }
 
     /**

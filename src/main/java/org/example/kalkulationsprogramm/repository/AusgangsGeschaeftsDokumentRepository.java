@@ -109,4 +109,29 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
      */
     @Query("SELECT d.id, d.projekt.id FROM AusgangsGeschaeftsDokument d WHERE d.projekt.id IN :projektIds")
     List<Object[]> findIdProjektIdMappingByProjektIds(@org.springframework.data.repository.query.Param("projektIds") List<Long> projektIds);
+
+    /**
+     * Liefert die vom User bearbeiteten Rechnungsanschriften aller Dokumente
+     * eines Projekts (direkt oder über die Anfrage verknüpft), zuletzt
+     * geänderte zuerst. Quelle für die Adress-Übernahme beim Erstellen
+     * neuer Dokumente im selben Vorgang.
+     */
+    @Query("SELECT d.rechnungsadresseOverride FROM AusgangsGeschaeftsDokument d " +
+            "LEFT JOIN d.projekt p LEFT JOIN d.anfrage a LEFT JOIN a.projekt ap " +
+            "WHERE (p.id = :projektId OR ap.id = :projektId) " +
+            "AND d.rechnungsadresseOverride IS NOT NULL AND TRIM(d.rechnungsadresseOverride) <> '' " +
+            "ORDER BY d.geaendertAm DESC")
+    List<String> findRechnungsadresseOverridesByProjektId(
+            @org.springframework.data.repository.query.Param("projektId") Long projektId);
+
+    /**
+     * Pendant zu {@link #findRechnungsadresseOverridesByProjektId} für
+     * Anfragen ohne Projekt-Verknüpfung.
+     */
+    @Query("SELECT d.rechnungsadresseOverride FROM AusgangsGeschaeftsDokument d " +
+            "WHERE d.anfrage.id = :anfrageId " +
+            "AND d.rechnungsadresseOverride IS NOT NULL AND TRIM(d.rechnungsadresseOverride) <> '' " +
+            "ORDER BY d.geaendertAm DESC")
+    List<String> findRechnungsadresseOverridesByAnfrageId(
+            @org.springframework.data.repository.query.Param("anfrageId") Long anfrageId);
 }

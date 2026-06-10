@@ -106,6 +106,60 @@ class AusgangsGeschaeftsDokumentControllerTest {
     }
 
     @Nested
+    @DisplayName("GET /api/ausgangs-dokumente/{projekt|anfrage}/{id}/geerbte-rechnungsadresse")
+    class GeerbteRechnungsadresse {
+
+        private static final String ADRESSE = "Max Mustermann\nMusterweg 1\n12345 Musterstadt";
+
+        @Test
+        @DisplayName("Projekt: Gibt 200 mit geerbter Adresse zurück")
+        void projektGibtAdresseZurueck() throws Exception {
+            given(service.findGeerbteRechnungsadresse(5L, null)).willReturn(ADRESSE);
+
+            mockMvc.perform(get("/api/ausgangs-dokumente/projekt/5/geerbte-rechnungsadresse"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.rechnungsadresseOverride").value(ADRESSE));
+        }
+
+        @Test
+        @DisplayName("Projekt: Gibt 200 mit null zurück wenn keine Adresse bearbeitet wurde")
+        void projektGibtNullZurueckWennKeineBearbeiteteAdresse() throws Exception {
+            given(service.findGeerbteRechnungsadresse(5L, null)).willReturn(null);
+
+            mockMvc.perform(get("/api/ausgangs-dokumente/projekt/5/geerbte-rechnungsadresse"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.rechnungsadresseOverride").value(org.hamcrest.Matchers.nullValue()));
+        }
+
+        @Test
+        @DisplayName("Anfrage: Gibt 200 mit geerbter Adresse zurück")
+        void anfrageGibtAdresseZurueck() throws Exception {
+            given(service.findGeerbteRechnungsadresseFuerAnfrage(7L)).willReturn(ADRESSE);
+
+            mockMvc.perform(get("/api/ausgangs-dokumente/anfrage/7/geerbte-rechnungsadresse"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.rechnungsadresseOverride").value(ADRESSE));
+        }
+
+        @Test
+        @DisplayName("Nicht-numerische ID wird mit 400 abgelehnt")
+        void nichtNumerischeIdWirdAbgelehnt() throws Exception {
+            mockMvc.perform(get("/api/ausgangs-dokumente/projekt/abc/geerbte-rechnungsadresse"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Unbekannte/negative ID liefert 200 mit null (kein Datenleck)")
+        void negativeIdLiefertNull() throws Exception {
+            given(service.findGeerbteRechnungsadresse(-1L, null)).willReturn(null);
+
+            mockMvc.perform(get("/api/ausgangs-dokumente/projekt/-1/geerbte-rechnungsadresse"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.rechnungsadresseOverride").value(org.hamcrest.Matchers.nullValue()));
+        }
+    }
+
+    @Nested
     @DisplayName("GET /api/ausgangs-dokumente/{id}")
     class GetById {
 

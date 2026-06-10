@@ -497,6 +497,161 @@ class AusgangsGeschaeftsDokumentServiceTest {
     }
 
     @Nested
+    class RechnungsadresseVererbung {
+
+        private static final String ADRESSE_NEU = "Max Mustermann\nNeue Musterstraße 1\n12345 Musterstadt";
+        private static final String ADRESSE_ALT = "Max Mustermann\nAlte Mustergasse 9\n54321 Beispieldorf";
+
+        private void mockSave() {
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+        }
+
+        @Test
+        void neuesDokumentErbtZuletztGeaenderteAdresseAusProjekt() {
+            mockCounterForNummer();
+            mockSave();
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findRechnungsadresseOverridesByProjektId(5L))
+                    .thenReturn(List.of(ADRESSE_NEU, ADRESSE_ALT));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setProjektId(5L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getRechnungsadresseOverride()).isEqualTo(ADRESSE_NEU);
+        }
+
+        @Test
+        void nachtragsangebotErbtBearbeiteteAdresseDesProjekts() {
+            mockCounterForNummer();
+            mockSave();
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+                    .thenReturn(true);
+            when(dokumentRepository.findRechnungsadresseOverridesByProjektId(5L))
+                    .thenReturn(List.of(ADRESSE_NEU));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT);
+            dto.setProjektId(5L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getRechnungsadresseOverride()).isEqualTo(ADRESSE_NEU);
+        }
+
+        @Test
+        void explizitMitgeschickteAdresseHatVorrangVorVererbung() {
+            mockCounterForNummer();
+            mockSave();
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setProjektId(5L);
+            dto.setRechnungsadresseOverride(ADRESSE_ALT);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getRechnungsadresseOverride()).isEqualTo(ADRESSE_ALT);
+            verify(dokumentRepository, never()).findRechnungsadresseOverridesByProjektId(anyLong());
+        }
+
+        @Test
+        void keineVererbungWennKeinDokumentBearbeiteteAdresseHat() {
+            mockCounterForNummer();
+            mockSave();
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findRechnungsadresseOverridesByProjektId(5L))
+                    .thenReturn(Collections.emptyList());
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setProjektId(5L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getRechnungsadresseOverride()).isNull();
+        }
+
+        @Test
+        void erbtUeberAnfrageWennKeinProjektVerknuepft() {
+            mockCounterForNummer();
+            mockSave();
+            Anfrage anfrage = new Anfrage();
+            anfrage.setId(7L);
+            when(anfrageRepository.findById(7L)).thenReturn(Optional.of(anfrage));
+            when(dokumentRepository.findRechnungsadresseOverridesByAnfrageId(7L))
+                    .thenReturn(List.of(ADRESSE_NEU));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setAnfrageId(7L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getRechnungsadresseOverride()).isEqualTo(ADRESSE_NEU);
+        }
+
+        @Test
+        void erbtAusProjektScopeWennAnfrageEinProjektHat() {
+            // Regressionstest: erstellen() übernimmt das Projekt der Anfrage auf
+            // das Dokument, BEVOR der Vererbungs-Hook läuft — der Hook muss also
+            // im Projekt-Scope suchen, genau wie der GET-Endpoint.
+            mockCounterForNummer();
+            mockSave();
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            Anfrage anfrage = new Anfrage();
+            anfrage.setId(7L);
+            anfrage.setProjekt(projekt);
+            when(anfrageRepository.findById(7L)).thenReturn(Optional.of(anfrage));
+            when(dokumentRepository.findRechnungsadresseOverridesByProjektId(5L))
+                    .thenReturn(List.of(ADRESSE_NEU));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            dto.setAnfrageId(7L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getRechnungsadresseOverride()).isEqualTo(ADRESSE_NEU);
+            verify(dokumentRepository, never()).findRechnungsadresseOverridesByAnfrageId(anyLong());
+        }
+
+        @Test
+        void findGeerbteRechnungsadresseFuerAnfrageNutztProjektDerAnfrage() {
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            Anfrage anfrage = new Anfrage();
+            anfrage.setId(7L);
+            anfrage.setProjekt(projekt);
+            when(anfrageRepository.findById(7L)).thenReturn(Optional.of(anfrage));
+            when(dokumentRepository.findRechnungsadresseOverridesByProjektId(5L))
+                    .thenReturn(List.of(ADRESSE_NEU));
+
+            String result = service.findGeerbteRechnungsadresseFuerAnfrage(7L);
+
+            assertThat(result).isEqualTo(ADRESSE_NEU);
+            verify(dokumentRepository, never()).findRechnungsadresseOverridesByAnfrageId(anyLong());
+        }
+    }
+
+    @Nested
     class Aktualisieren {
 
         @Test

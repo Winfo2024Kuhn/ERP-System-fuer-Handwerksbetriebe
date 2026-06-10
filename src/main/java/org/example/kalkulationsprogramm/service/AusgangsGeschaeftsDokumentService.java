@@ -256,6 +256,23 @@ public class AusgangsGeschaeftsDokumentService {
             }
         }
 
+        // Bearbeitete Rechnungsanschrift übernehmen: Hat der User in einem
+        // Dokument dieses Vorgangs (z.B. dem Angebot) die Rechnungsanschrift
+        // geändert, erbt jedes NEUE Dokument die zuletzt geänderte Fassung.
+        // Nur beim Erstellen — danach hat jedes Dokument seine eigene,
+        // unabhängig editierbare Kopie. Hängt das Dokument nur an einer
+        // Anfrage, ist deren Projekt oben bereits auf das Dokument übernommen
+        // worden — der Hook nutzt damit denselben Auflösungsweg wie
+        // findGeerbteRechnungsadresseFuerAnfrage() (GET-Endpoint).
+        if (dokument.getRechnungsadresseOverride() == null || dokument.getRechnungsadresseOverride().isBlank()) {
+            String geerbt = findGeerbteRechnungsadresse(
+                    dokument.getProjekt() != null ? dokument.getProjekt().getId() : null,
+                    dokument.getAnfrage() != null ? dokument.getAnfrage().getId() : null);
+            if (geerbt != null) {
+                dokument.setRechnungsadresseOverride(geerbt);
+            }
+        }
+
         // Zahlungsziel aus Kunde übernehmen falls nicht explizit gesetzt
         if (dokument.getZahlungszielTage() == null && dokument.getKunde() != null
                 && dokument.getKunde().getZahlungsziel() != null) {
@@ -296,6 +313,40 @@ public class AusgangsGeschaeftsDokumentService {
         }
 
         return saved;
+    }
+
+    /**
+     * Ermittelt die Rechnungsanschrift, die ein neues Dokument in diesem
+     * Vorgang erben würde: die zuletzt geänderte, vom User bearbeitete
+     * Anschrift aller Dokumente des Projekts (bzw. der Anfrage, wenn kein
+     * Projekt verknüpft ist). Liefert {@code null}, wenn nirgends eine
+     * bearbeitete Anschrift existiert.
+     */
+    @Transactional(readOnly = true)
+    public String findGeerbteRechnungsadresse(Long projektId, Long anfrageId) {
+        List<String> overrides;
+        if (projektId != null) {
+            overrides = dokumentRepository.findRechnungsadresseOverridesByProjektId(projektId);
+        } else if (anfrageId != null) {
+            overrides = dokumentRepository.findRechnungsadresseOverridesByAnfrageId(anfrageId);
+        } else {
+            return null;
+        }
+        return overrides.isEmpty() ? null : overrides.get(0);
+    }
+
+    /**
+     * Wie {@link #findGeerbteRechnungsadresse(Long, Long)}, löst aber vorher
+     * das Projekt der Anfrage auf, damit auch Dokumente des verknüpften
+     * Projekts als Quelle dienen.
+     */
+    @Transactional(readOnly = true)
+    public String findGeerbteRechnungsadresseFuerAnfrage(Long anfrageId) {
+        Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
+        Long projektId = (anfrage != null && anfrage.getProjekt() != null)
+                ? anfrage.getProjekt().getId()
+                : null;
+        return findGeerbteRechnungsadresse(projektId, anfrageId);
     }
 
     /**
