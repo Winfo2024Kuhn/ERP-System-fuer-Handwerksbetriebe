@@ -73,6 +73,52 @@ export const extractBoldFromHtml = (html: string): boolean => {
     return /<(strong|b)\b/i.test(html) || /font-weight:\s*(bold|700|800|900)/i.test(html);
 };
 
+// --- Zahlungsziel-Chip: geschützter Platzhalter in Textbausteinen ---
+// {{ZAHLUNGSZIEL}} wird im Editor als nicht editierbarer Chip gerendert und beim
+// Speichern wieder als Platzhalter serialisiert, damit das Datum nie als
+// Klartext "einfriert" und immer aus Rechnungsdatum + Zahlungsziel-Tagen folgt.
+
+export const ZAHLUNGSZIEL_PLACEHOLDER = '{{ZAHLUNGSZIEL}}';
+
+/**
+ * Fallback-Zahlungsziel in Tagen, wenn weder Dokument noch Kunde/Anfrage eines
+ * gepflegt haben. Historischer Standardwert des Dokument-Editors (§ 286 BGB
+ * lässt freie Vereinbarung zu; 8 Tage waren hier schon immer der Default).
+ */
+export const DEFAULT_ZAHLUNGSZIEL_TAGE = 8;
+
+/** Matcht {{ZAHLUNGSZIEL}} (case-insensitive, mit Leerraum), aber NICHT {{ZAHLUNGSZIEL_TAGE}}. */
+const ZAHLUNGSZIEL_PLACEHOLDER_REGEX = /\{\{\s*ZAHLUNGSZIEL\s*\}\}/gi;
+
+/** Matcht den vom Editor gerenderten Chip-Span (Attribut-Reihenfolge tolerant). */
+const ZAHLUNGSZIEL_CHIP_REGEX = /<span[^>]*data-zahlungsziel-chip[^>]*>[\s\S]*?<\/span>/gi;
+
+/**
+ * Ersetzt den Platzhalter durch das Chip-Span, das die Tiptap-Extension
+ * als geschützten Atom-Node parst. Muss exakt das HTML erzeugen, das
+ * editor.getHTML() für den Node liefert (sonst Sync-Loop im TiptapEditor).
+ */
+export function zahlungszielPlaceholderToChipHtml(html: string, displayDatum: string): string {
+    if (!html) return html;
+    return html.replace(ZAHLUNGSZIEL_PLACEHOLDER_REGEX, `<span data-zahlungsziel-chip="true">${displayDatum}</span>`);
+}
+
+/** Serialisiert Chip-Spans zurück zum Platzhalter (für block.content / Persistenz). */
+export function chipHtmlToZahlungszielPlaceholder(html: string): string {
+    if (!html) return html;
+    return html.replace(ZAHLUNGSZIEL_CHIP_REGEX, ZAHLUNGSZIEL_PLACEHOLDER);
+}
+
+/**
+ * Fälligkeitsdatum als deutsche Datums-Anzeige: Dokumentdatum + Zahlungsziel-Tage.
+ * Fehlt das Dokumentdatum, wird ab heute gerechnet (analog replacePlaceholders).
+ */
+export function berechneZahlungszielDatum(datumIso: string | undefined, zahlungszielTage: number): string {
+    const d = datumIso ? new Date(datumIso) : new Date();
+    d.setDate(d.getDate() + zahlungszielTage);
+    return d.toLocaleDateString('de-DE');
+}
+
 export function buildAdresse(kunde: AdresseKundeLike | null | undefined): string {
     if (!kunde) return '';
     const parts = [];

@@ -14,7 +14,12 @@ interface TextBlockProps {
     onRemove: (id: string) => void;
     onFocus: (blockId: string) => void;
     onEditorFocus: (editor: EditorInstance | null) => void;
-    replacePlaceholders: (text: string) => string;
+    /** Bereitet block.content fuer den Editor auf: {{ZAHLUNGSZIEL}} → Chip, restliche Platzhalter → Klartext. */
+    prepareContent: (text: string) => string;
+    /** Serialisiert Editor-HTML zurueck fuer block.content: Chip → {{ZAHLUNGSZIEL}}. */
+    serializeContent: (html: string) => string;
+    /** Klick auf den Zahlungsziel-Chip: oeffnet das Bearbeitungs-Popover (Anker = Chip-Position). */
+    onZahlungszielChipClick?: (anchor: DOMRect) => void;
     /** Optional: oeffnet den AddTypeDialog mit dieser Karte als Anker (Insert direkt darunter). */
     onAddBelow?: (anchorId: string) => void;
 }
@@ -29,7 +34,9 @@ export function TextBlock({
     onRemove,
     onFocus,
     onEditorFocus,
-    replacePlaceholders,
+    prepareContent,
+    serializeContent,
+    onZahlungszielChipClick,
     onAddBelow,
 }: TextBlockProps) {
     return (
@@ -41,7 +48,13 @@ export function TextBlock({
                     ? "border-l-rose-500 border-rose-200 ring-2 ring-rose-500/30 shadow-md shadow-rose-50"
                     : "border-l-rose-300 border-slate-200 hover:border-slate-300 hover:shadow-sm"
             )}
-            onClick={() => onFocus(block.id)}
+            onClick={(e) => {
+                onFocus(block.id);
+                const chip = (e.target as HTMLElement).closest?.('[data-zahlungsziel-chip]');
+                if (chip && !isLocked && onZahlungszielChipClick) {
+                    onZahlungszielChipClick(chip.getBoundingClientRect());
+                }
+            }}
         >
             <div className="p-4">
                 {/* Header */}
@@ -68,8 +81,8 @@ export function TextBlock({
                 {/* Editor */}
                 <div className="ml-0.5">
                     <TiptapEditor
-                        value={replacePlaceholders(block.content || '')}
-                        onChange={(val) => onUpdate(block.id, { content: val })}
+                        value={prepareContent(block.content || '')}
+                        onChange={(val) => onUpdate(block.id, { content: serializeContent(val) })}
                         readOnly={isLocked}
                         hideToolbar={true}
                         compactMode={true}

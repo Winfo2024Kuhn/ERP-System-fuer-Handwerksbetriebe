@@ -66,7 +66,7 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
             return insertIntoSection(prev, block, anchor.sectionId);
     }
 }
-import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary } from './helpers';
+import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE } from './helpers';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
@@ -346,6 +346,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     // --- Placeholders ---
     const replacePlaceholders = useCallback((text: string, isPreview: boolean = true): string => {
         if (!text) return text;
+        // Defensiv: Sollte ein Chip-Span im Content stehen (statt des Platzhalters),
+        // zuerst zurueck zum Platzhalter normalisieren — so steht im PDF/Versand
+        // garantiert das aktuelle Datum, nie ein eingefrorener Chip-Text.
+        text = chipHtmlToZahlungszielPlaceholder(text);
         const dokumentTypLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp;
         const anredeMap: Record<string, string> = {
             'HERR': 'Sehr geehrter Herr',
@@ -375,13 +379,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             'BEZUGSDOKUMENTNUMMER': kontextDaten.bezugsdokument || '',
             'BEZUGSDOKUMENTTYP': kontextDaten.bezugsdokumentTyp || '',
             'BEZUGSDOKUMENTDATUM': kontextDaten.bezugsdokumentDatum || '',
-            'ZAHLUNGSZIEL': (() => {
-                const days = kontextDaten.zahlungsziel ?? 8;
-                const d = datumRef.current ? new Date(datumRef.current) : new Date();
-                d.setDate(d.getDate() + days);
-                return d.toLocaleDateString('de-DE');
-            })(),
-            'ZAHLUNGSZIEL_TAGE': String(kontextDaten.zahlungsziel ?? 8)
+            'ZAHLUNGSZIEL': berechneZahlungszielDatum(datumRef.current, kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE),
+            'ZAHLUNGSZIEL_TAGE': String(kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE)
         };
 
         return text.replace(/\{\{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*\}\}/g, (match, key) => {
@@ -394,6 +393,63 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         // re-erzeugt werden.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [kontextDaten, dokumentTyp, dokumentNummer, datum, betreff]);
+
+    // --- Zahlungsziel: geschuetzter Chip in Textbausteinen ---
+    // {{ZAHLUNGSZIEL}} bleibt in block.content erhalten (friert nicht als
+    // Klartext ein) und wird im Editor als nicht editierbarer Chip angezeigt.
+    // Einzige Wahrheit ist kontextDaten.zahlungsziel — daraus folgen Chip-Text,
+    // PDF-Text und das beim Buchen gespeicherte Faelligkeitsdatum.
+    const zahlungszielTage = kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE;
+    const zahlungszielDatumDisplay = useMemo(
+        () => berechneZahlungszielDatum(datum, zahlungszielTage),
+        [datum, zahlungszielTage]
+    );
+
+    /** block.content → Editor-HTML: erst Chip (schuetzt {{ZAHLUNGSZIEL}} vor der Klartext-Ersetzung), dann restliche Platzhalter. */
+    const prepareEditorContent = useCallback(
+        (text: string) => replacePlaceholders(zahlungszielPlaceholderToChipHtml(text, zahlungszielDatumDisplay)),
+        [replacePlaceholders, zahlungszielDatumDisplay]
+    );
+
+    /** Editor-HTML → block.content: Chip wieder als Platzhalter serialisieren. */
+    const serializeEditorContent = useCallback(
+        (html: string) => chipHtmlToZahlungszielPlaceholder(html),
+        []
+    );
+
+    const handleZahlungszielChange = useCallback((tage: number) => {
+        if (isLocked) return;
+        setKontextDaten(prev => ({ ...prev, zahlungsziel: tage }));
+    }, [isLocked]);
+
+    /** Position des Chip-Bearbeitungs-Popovers (null = geschlossen). */
+    const [zahlungszielPopover, setZahlungszielPopover] = useState<{ top: number; left: number } | null>(null);
+    const zahlungszielPopoverRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!zahlungszielPopover) return;
+        const handler = (e: MouseEvent) => {
+            if (zahlungszielPopoverRef.current && !zahlungszielPopoverRef.current.contains(e.target as Node)) {
+                setZahlungszielPopover(null);
+            }
+        };
+        const escHandler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setZahlungszielPopover(null);
+        };
+        document.addEventListener('mousedown', handler);
+        document.addEventListener('keydown', escHandler);
+        return () => {
+            document.removeEventListener('mousedown', handler);
+            document.removeEventListener('keydown', escHandler);
+        };
+    }, [zahlungszielPopover]);
+
+    const handleZahlungszielChipClick = useCallback((anchor: DOMRect) => {
+        setZahlungszielPopover({
+            top: anchor.bottom + 8,
+            left: Math.max(8, Math.min(anchor.left, window.innerWidth - 280)),
+        });
+    }, []);
 
     // --- GAEB Import ---
     const handleGaebImportClick = () => {
@@ -513,7 +569,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             anrede: projekt.kundeDto?.anrede,
                             ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
                             kundenEmails: emails,
-                            zahlungsziel: projekt.kundeDto?.zahlungsziel ?? 8,
+                            zahlungsziel: projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
                         }));
                         setBetreff(projekt.bauvorhaben || '');
                     }
@@ -535,7 +591,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             anrede: anfrage.kundenAnrede || anfrage.anrede,
                             ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
                             kundenEmails: emails,
-                            zahlungsziel: anfrage.zahlungsziel ?? 8,
+                            zahlungsziel: anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
                             ...(isFollowUp ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' } : {})
                         }));
                         setBetreff(anfrage.bauvorhaben || '');
@@ -590,7 +646,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             projektnummer: data.projektnummer,
                             projektBauvorhaben: data.projektBauvorhaben,
                             bezugsdokument: data.vorgaengerNummer,
-                            zahlungsziel: data.zahlungszielTage ?? 8
+                            zahlungsziel: data.zahlungszielTage ?? DEFAULT_ZAHLUNGSZIEL_TAGE
                         });
                     } else {
                         if (data.projektId) {
@@ -608,7 +664,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     anrede: projekt.kundeDto?.anrede,
                                     ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
                                     bezugsdokument: data.vorgaengerNummer,
-                                    zahlungsziel: data.zahlungszielTage ?? projekt.kundeDto?.zahlungsziel ?? 8
+                                    zahlungsziel: data.zahlungszielTage ?? projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE
                                 });
                             }
                         } else if (data.anfrageId) {
@@ -624,7 +680,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     rechnungsadresse: data.rechnungsadresseOverride || buildAdresseFromAnfrage(anfrage),
                                     anrede: anfrage.kundenAnrede || anfrage.anrede,
                                     ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
-                                    zahlungsziel: data.zahlungszielTage ?? anfrage.zahlungsziel ?? 8,
+                                    zahlungsziel: data.zahlungszielTage ?? anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
                                     ...(isFollowUp ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' } : {})
                                 });
                             }
@@ -643,7 +699,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     anrede: kunde.anrede,
                                     ansprechpartner: kunde.ansprechspartner || kunde.ansprechpartner,
                                     bezugsdokument: data.vorgaengerNummer,
-                                    zahlungsziel: data.zahlungszielTage ?? kunde.zahlungsziel ?? 8
+                                    zahlungsziel: data.zahlungszielTage ?? kunde.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE
                                 }));
                             }
                         } else {
@@ -654,7 +710,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 projektnummer: data.projektnummer,
                                 projektBauvorhaben: data.projektBauvorhaben,
                                 bezugsdokument: data.vorgaengerNummer,
-                                zahlungsziel: data.zahlungszielTage ?? 8
+                                zahlungsziel: data.zahlungszielTage ?? DEFAULT_ZAHLUNGSZIEL_TAGE
                             });
                         }
                     }
@@ -1945,7 +2001,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 const t = new Date();
                 return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
             })();
-            const zahlungszielTage = kontextDaten.zahlungsziel ?? 8;
+            const zahlungszielTage = kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE;
             const [yy, mm, dd] = rechnungsdatumIso.split('-').map(Number);
             const faelligDate = new Date(yy, mm - 1, dd);
             faelligDate.setDate(faelligDate.getDate() + zahlungszielTage);
@@ -2475,7 +2531,9 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                                     onRemove={removeBlock}
                                                     onFocus={(id) => setActiveEditorId(id)}
                                                     onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
-                                                    replacePlaceholders={replacePlaceholders}
+                                                    prepareContent={prepareEditorContent}
+                                                    serializeContent={serializeEditorContent}
+                                                    onZahlungszielChipClick={handleZahlungszielChipClick}
                                                     onAddBelow={handleAddBelow}
                                                 />
                                             )}
@@ -2603,7 +2661,33 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 }}
                 globalRabatt={globalRabatt}
                 istRestbetrag={bereitsAbgerechnetDurchAndere !== null && bereitsAbgerechnetDurchAndere > 0}
+                zahlungsziel={zahlungszielTage}
+                zahlungszielDatum={zahlungszielDatumDisplay}
+                onZahlungszielChange={isLocked ? undefined : handleZahlungszielChange}
             />
+
+            {/* Zahlungsziel-Chip Popover */}
+            {zahlungszielPopover && (
+                <div
+                    ref={zahlungszielPopoverRef}
+                    style={{ position: 'fixed', top: zahlungszielPopover.top, left: zahlungszielPopover.left, zIndex: 200 }}
+                    className="w-64 rounded-lg border border-rose-200 bg-white p-3 shadow-xl"
+                >
+                    <p className="text-xs font-semibold text-slate-700 mb-2">Zahlungsziel</p>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="number"
+                            min={1}
+                            value={zahlungszielTage}
+                            onChange={(e) => handleZahlungszielChange(parseInt(e.target.value) || DEFAULT_ZAHLUNGSZIEL_TAGE)}
+                            className="w-16 rounded border border-slate-300 px-2 py-1 text-sm text-center focus:border-rose-400 focus:outline-none"
+                            autoFocus
+                        />
+                        <span className="text-xs text-slate-500">Tage</span>
+                        <span className="text-xs text-slate-400">=&nbsp;fällig {zahlungszielDatumDisplay}</span>
+                    </div>
+                </div>
+            )}
 
             {/* Modals */}
             {showExportWarning && (

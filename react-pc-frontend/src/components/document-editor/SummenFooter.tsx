@@ -22,9 +22,15 @@ interface SummenFooterProps {
     globalRabatt?: number;
     /** If true, the amounts shown are the effective rest (after deducting previous invoices) */
     istRestbetrag?: boolean;
+    /** Zahlungsziel in Tagen (editierbar wenn onZahlungszielChange vorhanden). */
+    zahlungsziel?: number;
+    /** Errechnetes Fälligkeitsdatum als formatierter String (z.B. "25.06.2026"). */
+    zahlungszielDatum?: string;
+    /** Callback wenn der Benutzer das Zahlungsziel ändert. Fehlt = read-only. */
+    onZahlungszielChange?: (tage: number) => void;
 }
 
-export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, kundennummer, projektnummer, betreff, isLocked, onDatumChange, globalRabatt, istRestbetrag }: SummenFooterProps) {
+export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, kundennummer, projektnummer, betreff, isLocked, onDatumChange, globalRabatt, istRestbetrag, zahlungsziel, zahlungszielDatum, onZahlungszielChange }: SummenFooterProps) {
     const hasGlobalRabatt = (globalRabatt ?? 0) > 0;
     const rabattBetrag = hasGlobalRabatt ? nettosumme * (globalRabatt! / 100) : 0;
     const nettoNachRabatt = nettosumme - rabattBetrag;
@@ -169,6 +175,30 @@ export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, 
                 )}
                 <span className="text-slate-300">|</span>
                 <span className="flex-shrink-0">{blockCount} {blockCount === 1 ? 'Block' : 'Blöcke'}</span>
+                {zahlungsziel !== undefined && (
+                    <>
+                        <span className="text-slate-300">|</span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                            <span className="text-slate-500">Zahlungsziel:</span>
+                            {onZahlungszielChange ? (
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={zahlungsziel}
+                                    onChange={(e) => onZahlungszielChange(parseInt(e.target.value) || 8)}
+                                    className="w-10 rounded border border-slate-200 bg-white px-1 text-center text-[11px] text-slate-700 focus:border-rose-400 focus:outline-none"
+                                    title="Zahlungsziel in Tagen"
+                                />
+                            ) : (
+                                <span className="text-slate-700">{zahlungsziel}</span>
+                            )}
+                            <span className="text-slate-500">Tage</span>
+                            {zahlungszielDatum && (
+                                <span className="text-slate-400">= fällig {zahlungszielDatum}</span>
+                            )}
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Right: summen */}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, ShieldCheck, AtSign, HeartPulse } from 'lucide-react';
+import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, ShieldCheck, AtSign, HeartPulse, CalendarClock, BellRing, Mail, MailWarning, Info, type LucideIcon } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -152,6 +152,44 @@ const KOSTENSTELLEN_TYP_OPTIONS = [
     { value: 'PROJEKT', label: 'Projekt' },
     { value: 'SONSTIG', label: 'Sonstige' },
 ];
+
+// --- Mahnverfahren-Zeitstrahl (lokale Bausteine, nur in dieser Seite verwendet) ---
+
+const MAHN_DEFAULT_TAGE = 7;
+
+/** Eine Station auf dem Zeitstrahl: Kreis-Marker mit Icon, Label daneben (mobil) bzw. darunter (Desktop). */
+function ZeitstrahlStation({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+    return (
+        <div className="flex shrink-0 items-center gap-3 md:w-32 md:flex-col md:gap-2">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-rose-300 bg-rose-50 text-rose-600">
+                <Icon className="h-5 w-5" />
+            </div>
+            <span className="text-sm font-medium text-slate-700 md:text-center">{label}</span>
+        </div>
+    );
+}
+
+/** Verbindung zwischen zwei Stationen mit Tage-Eingabefeld: mobil vertikal, ab md horizontal. */
+function ZeitstrahlAbstand({ value, onChange, beschriftung }: { value: number; onChange: (tage: number) => void; beschriftung: string }) {
+    return (
+        <div className="flex md:flex-1 md:flex-col">
+            {/* Verbindungslinie: mobil senkrecht unter dem Kreis, ab md waagerecht auf Kreis-Mitte */}
+            <div className="flex w-10 shrink-0 justify-center self-stretch md:h-5 md:w-full md:items-end md:self-auto">
+                <div className="min-h-[3.5rem] w-px bg-rose-200 md:h-px md:min-h-0 md:w-full" />
+            </div>
+            <div className="flex items-center gap-2 py-3 md:mt-2 md:flex-col md:gap-1 md:px-2 md:py-0">
+                <Input
+                    type="number"
+                    min={1}
+                    value={value}
+                    onChange={e => onChange(parseInt(e.target.value) || MAHN_DEFAULT_TAGE)}
+                    className="w-20 text-center"
+                />
+                <span className="text-xs text-slate-500 md:text-center">{beschriftung}</span>
+            </div>
+        </div>
+    );
+}
 
 export default function FirmaEditor() {
     const toast = useToast();
@@ -920,47 +958,58 @@ export default function FirmaEditor() {
                                     </label>
                                 </div>
                                 <p className="text-sm text-slate-500">
-                                    Wenn aktiviert, prüft das System täglich überfällige Rechnungen und versendet automatisch
-                                    Zahlungserinnerungen sowie 1. und 2. Mahnungen per E-Mail an den Kunden. Die Tagesangaben
-                                    zählen ab dem Fälligkeitsdatum der Original-Rechnung.
+                                    Wenn aktiviert, verschickt das System automatisch Zahlungserinnerung sowie 1. und 2. Mahnung
+                                    per E-Mail an den Kunden. Jeder Schritt wird erst verschickt, wenn seit dem vorherigen
+                                    Schritt die eingestellte Anzahl an Tagen vergangen ist.
                                 </p>
-                                <div className={cn("grid grid-cols-1 md:grid-cols-4 gap-4 transition-opacity", !firma.mahnverfahrenAktiv && "opacity-50 pointer-events-none")}>
+                                <div className={cn("space-y-6 transition-opacity", !firma.mahnverfahrenAktiv && "opacity-50 pointer-events-none")}>
+                                    {/* Zeitstrahl: Rechnung fällig -> Zahlungserinnerung -> 1. Mahnung -> 2. Mahnung */}
+                                    <div className="flex flex-col pt-2 md:flex-row md:items-start">
+                                        <ZeitstrahlStation icon={CalendarClock} label="Rechnung fällig" />
+                                        <ZeitstrahlAbstand
+                                            value={firma.tageBisZahlungserinnerung || MAHN_DEFAULT_TAGE}
+                                            onChange={tage => setFirma({ ...firma, tageBisZahlungserinnerung: tage })}
+                                            beschriftung="Tage nach Fälligkeit"
+                                        />
+                                        <ZeitstrahlStation icon={BellRing} label="Zahlungserinnerung" />
+                                        <ZeitstrahlAbstand
+                                            value={firma.tageBisErsteMahnung || MAHN_DEFAULT_TAGE}
+                                            onChange={tage => setFirma({ ...firma, tageBisErsteMahnung: tage })}
+                                            beschriftung="Tage nach der Zahlungserinnerung"
+                                        />
+                                        <ZeitstrahlStation icon={Mail} label="1. Mahnung" />
+                                        <ZeitstrahlAbstand
+                                            value={firma.tageBisZweiteMahnung || MAHN_DEFAULT_TAGE}
+                                            onChange={tage => setFirma({ ...firma, tageBisZweiteMahnung: tage })}
+                                            beschriftung="Tage nach der 1. Mahnung"
+                                        />
+                                        <ZeitstrahlStation icon={MailWarning} label="2. Mahnung" />
+                                    </div>
+
+                                    {/* Neues Zahlungsziel auf der Mahnung */}
                                     <div>
-                                        <Label>Zahlungserinnerung nach (Tagen)</Label>
+                                        <Label>Neues Zahlungsziel auf der Mahnung (Tage)</Label>
                                         <Input
                                             type="number"
                                             min={1}
-                                            value={firma.tageBisZahlungserinnerung || 7}
-                                            onChange={e => setFirma({ ...firma, tageBisZahlungserinnerung: parseInt(e.target.value) || 7 })}
+                                            value={firma.mahnverfahrenNeuesZahlungszielTage || MAHN_DEFAULT_TAGE}
+                                            onChange={e => setFirma({ ...firma, mahnverfahrenNeuesZahlungszielTage: parseInt(e.target.value) || MAHN_DEFAULT_TAGE })}
+                                            className="w-24"
                                         />
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            So viele Tage Zeit geben wir dem Kunden auf jeder Mahnung, den Betrag noch zu überweisen.
+                                        </p>
                                     </div>
-                                    <div>
-                                        <Label>1. Mahnung nach (Tagen)</Label>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            value={firma.tageBisErsteMahnung || 14}
-                                            onChange={e => setFirma({ ...firma, tageBisErsteMahnung: parseInt(e.target.value) || 14 })}
-                                        />
-                                    </div>
-                                    <div>
-                                        <Label>2. Mahnung nach (Tagen)</Label>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            value={firma.tageBisZweiteMahnung || 21}
-                                            onChange={e => setFirma({ ...firma, tageBisZweiteMahnung: parseInt(e.target.value) || 21 })}
-                                        />
-                                    </div>
-                                    <div>
-                                        <Label>Neues Zahlungsziel (Tage)</Label>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            value={firma.mahnverfahrenNeuesZahlungszielTage || 7}
-                                            onChange={e => setFirma({ ...firma, mahnverfahrenNeuesZahlungszielTage: parseInt(e.target.value) || 7 })}
-                                        />
-                                    </div>
+                                </div>
+
+                                {/* Hinweis zur Funktionsweise */}
+                                <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                                    <p className="text-sm text-slate-600">
+                                        Schon überfällige Rechnungen starten mit der Zahlungserinnerung — danach gelten die
+                                        eingestellten Abstände. Automatisch gemahnt werden nur Rechnungen, die mit dem Programm
+                                        geschrieben wurden.
+                                    </p>
                                 </div>
                             </div>
 

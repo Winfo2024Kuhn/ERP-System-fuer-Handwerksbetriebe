@@ -128,6 +128,30 @@ body {
 }
 
 /* ========================================
+   Zahlungsziel-Chip (geschützter Platzhalter im Textbaustein)
+   Styling bewusst per Attribut-Selektor statt class im HTML,
+   damit editor.getHTML() dem serialisierten Markup entspricht.
+   ======================================== */
+[data-zahlungsziel-chip] {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 6px;
+  background-color: #fff1f2; /* rose-50 */
+  border: 1px solid #fecdd3; /* rose-200 */
+  color: #be123c; /* rose-700 */
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+[data-zahlungsziel-chip]:hover {
+  background-color: #ffe4e6; /* rose-100 */
+  border-color: #fda4af; /* rose-300 */
+}
+
+/* ========================================
    TipTap Image – Selection, Resize, Drag
    ======================================== */
 .tiptap-image-wrapper {

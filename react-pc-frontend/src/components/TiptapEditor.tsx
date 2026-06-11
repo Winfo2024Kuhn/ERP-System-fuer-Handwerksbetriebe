@@ -8,6 +8,7 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import { Extension } from '@tiptap/core';
 import Color from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
+import { ZahlungszielChip } from './document-editor/zahlungszielChipExtension';
 import {
     AlignCenter,
     AlignJustify,
@@ -584,6 +585,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                 inline: true,
                 allowBase64: true,
             }),
+            ZahlungszielChip,
         ],
         content: value,
         editable: !readOnly,
