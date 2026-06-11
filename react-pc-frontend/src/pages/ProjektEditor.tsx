@@ -1138,7 +1138,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
                     <Button variant="outline" onClick={openAnfrageMergeDialog}>
-                        <GitMerge className="w-4 h-4 mr-2" /> Anfrage zusammenführen
+                        <GitMerge className="w-4 h-4 mr-2" /> mit Anfrage zusammenführen
                     </Button>
                 </div>
             </div>
