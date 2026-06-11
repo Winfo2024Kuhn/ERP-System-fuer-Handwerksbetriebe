@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.AnfrageNotiz;
 import org.example.kalkulationsprogramm.domain.AnfrageNotizBild;
 import org.example.kalkulationsprogramm.domain.Arbeitsgang;
@@ -11,12 +12,14 @@ import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Materialkosten;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ProjektProduktkategorie;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
@@ -30,6 +33,7 @@ import org.example.kalkulationsprogramm.mapper.ProjektMapper;
 import org.example.kalkulationsprogramm.repository.AbteilungRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
+import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
@@ -88,6 +92,8 @@ class ProjektManagementServiceTest {
     @Mock
     private AnfrageRepository anfrageRepository;
     @Mock
+    private AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
+    @Mock
     private ZeitbuchungRepository ZeitbuchungRepository;
     @Mock
     private ArbeitsgangStundensatzRepository stundensatzRepository;
@@ -117,7 +123,7 @@ class ProjektManagementServiceTest {
                 projektNotizRepository,
                 produktkategorieRepository,
                 arbeitsgangRepository, kundeRepository, dateiSpeicherService, projektMapper,
-                anfrageRepository, ZeitbuchungRepository, stundensatzRepository,
+                anfrageRepository, ausgangsGeschaeftsDokumentRepository, ZeitbuchungRepository, stundensatzRepository,
                 artikelRepository, artikelInProjektRepository, projektPersistenceService,
                 lieferantenRepository, emailRepository, eventPublisher);
         service.setAusgangsGeschaeftsDokumentService(ausgangsGeschaeftsDokumentService);
@@ -654,6 +660,135 @@ class ProjektManagementServiceTest {
         assertEquals("Notiz mit kaputter Bilddatei", saved.getNotiz());
         assertTrue(saved.getBilder().isEmpty(),
                 "Bild ohne Quelldatei darf nicht mit altem (nicht auflösbarem) Dateinamen gespeichert werden.");
+    }
+
+    @Test
+    void fuehrtAnfrageVollstaendigMitBestehendemProjektZusammen() {
+        Projekt projekt = new Projekt();
+        projekt.setId(100L);
+        projekt.setKurzbeschreibung("Bestehende Projektbeschreibung");
+        Kunde kunde = new Kunde();
+        kunde.setId(5L);
+        projekt.setKundenId(kunde);
+
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(10L);
+        anfrage.setKunde(kunde);
+        anfrage.setBauvorhaben("Carport");
+        anfrage.setKurzbeschreibung("Beschreibung aus der Anfrage");
+        anfrage.setKundenEmails(new ArrayList<>(List.of("projektkontakt@example.de")));
+        AnfrageDokument datei = new AnfrageDokument();
+        datei.setAnfrage(anfrage);
+        anfrage.setDokumente(new ArrayList<>(List.of(datei)));
+
+        Email email = new Email();
+        AnfrageNotiz notiz = new AnfrageNotiz();
+        notiz.setNotiz("Bautagebuch-Eintrag");
+        notiz.setMitarbeiter(new Mitarbeiter());
+        notiz.setErstelltAm(java.time.LocalDateTime.now());
+        notiz.setNurFuerErsteller(true);
+        notiz.setBilder(new ArrayList<>());
+
+        when(projektRepository.findById(100L)).thenReturn(Optional.of(projekt));
+        when(anfrageRepository.findById(10L)).thenReturn(Optional.of(anfrage));
+        when(ausgangsGeschaeftsDokumentRepository.existsByProjektId(100L)).thenReturn(false);
+        when(dateiSpeicherService.holeDokumenteZuProjekt(100L)).thenReturn(List.of());
+        when(emailRepository.findByAnfrageOrderBySentAtDesc(anfrage)).thenReturn(List.of(email));
+        when(anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(10L)).thenReturn(List.of(notiz));
+        when(projektMapper.toProjektResponseDto(projekt)).thenReturn(new ProjektResponseDto());
+
+        ProjektResponseDto result = service.fuehreAnfrageZusammen(100L, 10L);
+
+        assertNotNull(result);
+        assertSame(projekt, email.getProjekt());
+        assertNull(email.getAnfrage());
+        assertTrue(projekt.getKurzbeschreibung().contains("Beschreibung aus der Anfrage"));
+        assertEquals(List.of("projektkontakt@example.de"), projekt.getKundenEmails());
+        verify(dateiSpeicherService).verschiebeAnfragesDatei(datei, projekt);
+        verify(emailRepository).saveAll(List.of(email));
+        verify(ausgangsGeschaeftsDokumentService).migrateFromAnfrageToProjekt(10L, projekt);
+        verify(anfrageRepository).delete(anfrage);
+        verify(anfrageRepository).flush();
+
+        ArgumentCaptor<ProjektNotiz> notizCaptor = ArgumentCaptor.forClass(ProjektNotiz.class);
+        verify(projektNotizRepository).save(notizCaptor.capture());
+        assertEquals("Bautagebuch-Eintrag", notizCaptor.getValue().getNotiz());
+        assertTrue(notizCaptor.getValue().isNurFuerErsteller());
+    }
+
+    @Test
+    void lehntZusammenfuehrenBeiVorhandenemAusgangsgeschaeftsdokumentAb() {
+        Projekt projekt = new Projekt();
+        projekt.setId(100L);
+        Kunde kunde = new Kunde();
+        kunde.setId(5L);
+        projekt.setKundenId(kunde);
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(10L);
+        anfrage.setKunde(kunde);
+
+        when(projektRepository.findById(100L)).thenReturn(Optional.of(projekt));
+        when(anfrageRepository.findById(10L)).thenReturn(Optional.of(anfrage));
+        when(ausgangsGeschaeftsDokumentRepository.existsByProjektId(100L)).thenReturn(true);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> service.fuehreAnfrageZusammen(100L, 10L));
+
+        assertEquals(
+                "Zusammenführen nicht möglich, da im Projekt bereits Ausgangsgeschäftsdokumente vorhanden sind.",
+                exception.getMessage());
+        verify(dateiSpeicherService, never()).verschiebeAnfragesDatei(any(), any());
+        verify(anfrageRepository, never()).delete(any());
+    }
+
+    @Test
+    void lehntZusammenfuehrenAuchBeiLegacyAusgangsgeschaeftsdokumentAb() {
+        Projekt projekt = new Projekt();
+        projekt.setId(100L);
+        Kunde kunde = new Kunde();
+        kunde.setId(5L);
+        projekt.setKundenId(kunde);
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(10L);
+        anfrage.setKunde(kunde);
+
+        when(projektRepository.findById(100L)).thenReturn(Optional.of(projekt));
+        when(anfrageRepository.findById(10L)).thenReturn(Optional.of(anfrage));
+        when(ausgangsGeschaeftsDokumentRepository.existsByProjektId(100L)).thenReturn(false);
+        when(dateiSpeicherService.holeDokumenteZuProjekt(100L))
+                .thenReturn(List.of(new ProjektGeschaeftsdokument()));
+
+        assertThrows(IllegalStateException.class, () -> service.fuehreAnfrageZusammen(100L, 10L));
+
+        verify(anfrageRepository, never()).delete(any());
+    }
+
+    @Test
+    void lehntZusammenfuehrenBeiAnderemKundenAb() {
+        Projekt projekt = new Projekt();
+        projekt.setId(100L);
+        Kunde projektKunde = new Kunde();
+        projektKunde.setId(5L);
+        projekt.setKundenId(projektKunde);
+
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(10L);
+        Kunde anfrageKunde = new Kunde();
+        anfrageKunde.setId(6L);
+        anfrage.setKunde(anfrageKunde);
+
+        when(projektRepository.findById(100L)).thenReturn(Optional.of(projekt));
+        when(anfrageRepository.findById(10L)).thenReturn(Optional.of(anfrage));
+        when(ausgangsGeschaeftsDokumentRepository.existsByProjektId(100L)).thenReturn(false);
+        when(dateiSpeicherService.holeDokumenteZuProjekt(100L)).thenReturn(List.of());
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> service.fuehreAnfrageZusammen(100L, 10L));
+
+        assertEquals(
+                "Zusammenführen nicht möglich, da Projekt und Anfrage nicht demselben Kunden zugewiesen sind.",
+                exception.getMessage());
+        verify(anfrageRepository, never()).delete(any());
     }
 
     // ---------------------------------------------------------------------------------------

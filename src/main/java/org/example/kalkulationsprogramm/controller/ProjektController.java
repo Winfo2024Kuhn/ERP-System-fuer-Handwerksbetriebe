@@ -42,6 +42,7 @@ import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProdu
 import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
+import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -170,6 +171,17 @@ public class ProjektController {
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        }
+    }
+
+    @PostMapping("/{projektId}/anfragen/{anfrageId}/zusammenfuehren")
+    public ResponseEntity<?> fuehreAnfrageZusammen(@PathVariable Long projektId, @PathVariable Long anfrageId) {
+        try {
+            return ResponseEntity.ok(projektManagementService.fuehreAnfrageZusammen(projektId, anfrageId));
+        } catch (NotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", e.getMessage()));
         }
     }
 

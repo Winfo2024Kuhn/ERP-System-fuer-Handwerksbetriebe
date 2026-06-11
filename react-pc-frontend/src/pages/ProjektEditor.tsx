@@ -16,6 +16,7 @@ import {
     FileText,
     FolderOpen,
     Hammer,
+    GitMerge,
     Lock,
     Mail,
     MapPin,
@@ -36,7 +37,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import type { Projekt, ProjektDetail, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel } from "../types";
+import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel } from "../types";
 import { canCreateEinfacheRechnung } from "../lib/abrechnungsverlauf";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
 import { DetailLayout } from "../components/DetailLayout";
@@ -61,6 +62,7 @@ import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { ZuordnungModal } from '../components/ZuordnungModal';
 import { DokumentLoeschenDialog } from '../components/dokument/DokumentLoeschenDialog';
 import { DokumentVerlaufDrawer } from '../components/dokument/DokumentVerlaufDrawer';
+import { AnfrageSearchModal } from '../components/AnfrageSearchModal';
 
 interface Supplier {
     id: number;
@@ -413,6 +415,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Ausgangs-Geschäftsdokumente State
     const [ausgangsDokumente, setAusgangsDokumente] = useState<AusgangsGeschaeftsDokument[]>([]);
+    const [showAnfrageSearchModal, setShowAnfrageSearchModal] = useState(false);
+    const [showAnfrageMergeDialog, setShowAnfrageMergeDialog] = useState(false);
+    const [selectedMergeAnfrage, setSelectedMergeAnfrage] = useState<Anfrage | null>(null);
+    const [mergingAnfrage, setMergingAnfrage] = useState(false);
+    const [documentManagerKey, setDocumentManagerKey] = useState(0);
 
     // Digitale Freigabe-Stati pro Dokument-ID — gleiche Anzeige wie im AnfrageEditor
     // (DokumentHierarchie). Geladen über /api/ausgangs-dokumente/freigabe-status,
@@ -470,6 +477,57 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     useEffect(() => {
         loadAusgangsDokumente();
     }, [loadAusgangsDokumente]);
+
+    const openAnfrageMergeDialog = () => {
+        if (ausgangsDokumente.length > 0) {
+            toast.error('Zusammenführen nicht möglich, da im Projekt bereits Ausgangsgeschäftsdokumente vorhanden sind.');
+            return;
+        }
+        setSelectedMergeAnfrage(null);
+        setShowAnfrageSearchModal(true);
+    };
+
+    const handleAnfrageMerge = async () => {
+        if (!selectedMergeAnfrage) return;
+        setMergingAnfrage(true);
+        try {
+            const res = await fetch(
+                `/api/projekte/${projekt.id}/anfragen/${selectedMergeAnfrage.id}/zusammenfuehren`,
+                { method: 'POST' }
+            );
+            if (!res.ok) {
+                let message = 'Anfrage konnte nicht zusammengeführt werden.';
+                try {
+                    const data = await res.json();
+                    if (typeof data?.message === 'string') message = data.message;
+                } catch {
+                    // Leere oder nicht-json Antwort.
+                }
+                toast.error(message);
+                return;
+            }
+
+            setShowAnfrageMergeDialog(false);
+            setSelectedMergeAnfrage(null);
+            await Promise.all([
+                onRefresh(),
+                loadAusgangsDokumente(),
+                loadNotizen(),
+            ]);
+            const dokumenteRes = await fetch(`/api/projekte/${projekt.id}/dokumente`);
+            if (dokumenteRes.ok) {
+                const dokumente = await dokumenteRes.json();
+                setDokumenteCount(Array.isArray(dokumente) ? dokumente.length : 0);
+            }
+            setDocumentManagerKey(key => key + 1);
+            toast.success('Anfrage wurde vollständig mit dem Projekt zusammengeführt und gelöscht.');
+        } catch (error) {
+            console.error('Anfrage-Zusammenführung fehlgeschlagen:', error);
+            toast.error('Anfrage konnte nicht zusammengeführt werden.');
+        } finally {
+            setMergingAnfrage(false);
+        }
+    };
 
     // Freigabe-Status für alle aktuell geladenen Dokumente nachziehen.
     // Symmetrisch zu DokumentHierarchie — sobald die Dokumentliste sich ändert,
@@ -1078,6 +1136,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <div className="flex items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
+                    </Button>
+                    <Button variant="outline" onClick={openAnfrageMergeDialog}>
+                        <GitMerge className="w-4 h-4 mr-2" /> Anfrage zusammenführen
                     </Button>
                 </div>
             </div>
@@ -2819,7 +2880,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-lg font-medium text-slate-900">Projekt-Dateien</h3>
                         </div>
-                        <DocumentManager projektId={projekt.id} />
+                        <DocumentManager key={documentManagerKey} projektId={projekt.id} />
                     </div>
                 </div>
             )}
@@ -3127,6 +3188,66 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 );
                             })}
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            <AnfrageSearchModal
+                isOpen={showAnfrageSearchModal}
+                onClose={() => setShowAnfrageSearchModal(false)}
+                kundenId={projekt.kundeDto?.id ?? projekt.kundenId}
+                onSelect={(anfrage) => {
+                    setSelectedMergeAnfrage(anfrage);
+                    setShowAnfrageMergeDialog(true);
+                }}
+            />
+
+            <Dialog
+                open={showAnfrageMergeDialog}
+                onOpenChange={(open) => {
+                    if (mergingAnfrage) return;
+                    setShowAnfrageMergeDialog(open);
+                    if (!open) setSelectedMergeAnfrage(null);
+                }}
+            >
+                <DialogContent className="sm:max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Anfrage endgültig zusammenführen?</DialogTitle>
+                        <p className="text-sm text-slate-500">
+                            Dateien, Geschäftsdokumente, Beschreibung, Bautagebuch und E-Mails werden übernommen.
+                            Anschließend wird die Anfrage gelöscht.
+                        </p>
+                    </DialogHeader>
+
+                    {selectedMergeAnfrage && (
+                        <div className="my-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                            <p className="font-semibold">{selectedMergeAnfrage.bauvorhaben || 'Unbenannte Anfrage'}</p>
+                            <p className="mt-1">
+                                {selectedMergeAnfrage.anfragesnummer
+                                    ? `Anfrage ${selectedMergeAnfrage.anfragesnummer} wird nach erfolgreicher Übernahme dauerhaft gelöscht.`
+                                    : 'Diese Anfrage wird nach erfolgreicher Übernahme dauerhaft gelöscht.'}
+                            </p>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowAnfrageMergeDialog(false)}
+                            disabled={mergingAnfrage}
+                        >
+                            Abbrechen
+                        </Button>
+                        <Button
+                            onClick={handleAnfrageMerge}
+                            disabled={!selectedMergeAnfrage || mergingAnfrage}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                            {mergingAnfrage
+                                ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                : <GitMerge className="w-4 h-4 mr-2" />}
+                            Zusammenführen und Anfrage löschen
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </>

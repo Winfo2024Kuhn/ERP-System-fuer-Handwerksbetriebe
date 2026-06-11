@@ -29,6 +29,7 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektArt;
+import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ProjektNotizBild;
 import org.example.kalkulationsprogramm.domain.ProjektProduktkategorie;
@@ -47,6 +48,7 @@ import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.mapper.ProjektMapper;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
+import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
@@ -88,6 +90,7 @@ ProjektManagementService {
     private final DateiSpeicherService dateiSpeicherService;
     private final ProjektMapper projektMapper;
     private final AnfrageRepository anfrageRepository;
+    private final AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
     private final ZeitbuchungRepository ZeitbuchungRepository;
     private final ArbeitsgangStundensatzRepository stundensatzRepository;
     private final ArtikelRepository artikelRepository;
@@ -112,6 +115,7 @@ ProjektManagementService {
             DateiSpeicherService dateiSpeicherService,
             ProjektMapper projektMapper,
             AnfrageRepository anfrageRepository,
+            AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository,
             ZeitbuchungRepository ZeitbuchungRepository,
             ArbeitsgangStundensatzRepository stundensatzRepository,
             ArtikelRepository artikelRepository,
@@ -129,6 +133,7 @@ ProjektManagementService {
         this.dateiSpeicherService = dateiSpeicherService;
         this.projektMapper = projektMapper;
         this.anfrageRepository = anfrageRepository;
+        this.ausgangsGeschaeftsDokumentRepository = ausgangsGeschaeftsDokumentRepository;
         this.ZeitbuchungRepository = ZeitbuchungRepository;
         this.stundensatzRepository = stundensatzRepository;
         this.artikelRepository = artikelRepository;
@@ -137,6 +142,126 @@ ProjektManagementService {
         this.lieferantenRepository = lieferantenRepository;
         this.emailRepository = emailRepository;
         this.eventPublisher = eventPublisher;
+    }
+
+    /**
+     * Überträgt den vollständigen Inhalt einer noch offenen Anfrage in ein
+     * bestehendes Projekt und löscht die Anfrage anschließend.
+     */
+    @Transactional
+    public ProjektResponseDto fuehreAnfrageZusammen(Long projektId, Long anfrageId) {
+        Projekt projekt = projektRepository.findById(projektId)
+                .orElseThrow(() -> new NotFoundException("Projekt mit ID " + projektId + " nicht gefunden."));
+        Anfrage anfrage = anfrageRepository.findById(anfrageId)
+                .orElseThrow(() -> new NotFoundException("Anfrage mit ID " + anfrageId + " nicht gefunden."));
+
+        boolean hatNeueAusgangsdokumente = ausgangsGeschaeftsDokumentRepository.existsByProjektId(projektId);
+        boolean hatLegacyAusgangsdokumente = dateiSpeicherService.holeDokumenteZuProjekt(projektId).stream()
+                .anyMatch(ProjektGeschaeftsdokument.class::isInstance);
+        if (hatNeueAusgangsdokumente || hatLegacyAusgangsdokumente) {
+            throw new IllegalStateException(
+                    "Zusammenführen nicht möglich, da im Projekt bereits Ausgangsgeschäftsdokumente vorhanden sind.");
+        }
+        Long projektKundeId = projekt.getKundenId() != null ? projekt.getKundenId().getId() : null;
+        Long anfrageKundeId = anfrage.getKunde() != null ? anfrage.getKunde().getId() : null;
+        if (projektKundeId == null || !projektKundeId.equals(anfrageKundeId)) {
+            throw new IllegalStateException(
+                    "Zusammenführen nicht möglich, da Projekt und Anfrage nicht demselben Kunden zugewiesen sind.");
+        }
+        if (anfrage.getProjekt() != null) {
+            throw new IllegalStateException("Diese Anfrage wurde bereits einem Projekt zugeordnet.");
+        }
+
+        for (AnfrageDokument dokument : anfrage.getDokumente()) {
+            dateiSpeicherService.verschiebeAnfragesDatei(dokument, projekt);
+        }
+
+        copyAnfrageEmailsToProjektOhneFehlerunterdrueckung(anfrage, projekt);
+        copyAnfrageNotizenToProjekt(anfrage, projekt);
+        mergeAnfrageKontaktEmails(projekt, anfrage);
+        mergeKurzbeschreibung(projekt, anfrage);
+
+        ausgangsGeschaeftsDokumentService.migrateFromAnfrageToProjekt(anfrageId, projekt);
+        projektRepository.save(projekt);
+        anfrageRepository.delete(anfrage);
+        anfrageRepository.flush();
+
+        return findeProjektById(projektId);
+    }
+
+    private void copyAnfrageEmailsToProjektOhneFehlerunterdrueckung(Anfrage anfrage, Projekt projekt) {
+        List<Email> anfrageEmails = emailRepository.findByAnfrageOrderBySentAtDesc(anfrage);
+        for (Email email : anfrageEmails) {
+            email.assignToProjekt(projekt);
+        }
+        emailRepository.saveAll(anfrageEmails);
+    }
+
+    private void copyAnfrageNotizenToProjekt(Anfrage anfrage, Projekt projekt) {
+        List<AnfrageNotiz> anfrageNotizen = anfrageNotizRepository
+                .findByAnfrageIdOrderByErstelltAmDesc(anfrage.getId());
+        for (AnfrageNotiz anfrageNotiz : anfrageNotizen) {
+            ProjektNotiz projektNotiz = new ProjektNotiz();
+            projektNotiz.setProjekt(projekt);
+            projektNotiz.setMitarbeiter(anfrageNotiz.getMitarbeiter());
+            projektNotiz.setNotiz(anfrageNotiz.getNotiz());
+            projektNotiz.setErstelltAm(anfrageNotiz.getErstelltAm());
+            projektNotiz.setMobileSichtbar(anfrageNotiz.isMobileSichtbar());
+            projektNotiz.setNurFuerErsteller(anfrageNotiz.isNurFuerErsteller());
+
+            List<ProjektNotizBild> bilder = new ArrayList<>();
+            if (anfrageNotiz.getBilder() != null) {
+                for (AnfrageNotizBild anfrageBild : anfrageNotiz.getBilder()) {
+                    String neuerDateiname = dateiSpeicherService
+                            .kopiereBildZuDokumenten(anfrageBild.getGespeicherterDateiname());
+                    ProjektNotizBild projektBild = new ProjektNotizBild();
+                    projektBild.setNotiz(projektNotiz);
+                    projektBild.setOriginalDateiname(anfrageBild.getOriginalDateiname());
+                    projektBild.setGespeicherterDateiname(neuerDateiname);
+                    projektBild.setDateityp(anfrageBild.getDateityp());
+                    projektBild.setErstelltAm(anfrageBild.getErstelltAm());
+                    bilder.add(projektBild);
+                }
+            }
+            projektNotiz.setBilder(bilder);
+            projektNotizRepository.save(projektNotiz);
+        }
+    }
+
+    private void mergeKurzbeschreibung(Projekt projekt, Anfrage anfrage) {
+        if (!StringUtils.hasText(anfrage.getKurzbeschreibung())) {
+            return;
+        }
+        String anfrageBeschreibung = anfrage.getKurzbeschreibung().trim();
+        if (!StringUtils.hasText(projekt.getKurzbeschreibung())) {
+            projekt.setKurzbeschreibung(anfrageBeschreibung);
+            return;
+        }
+        if (projekt.getKurzbeschreibung().contains(anfrageBeschreibung)) {
+            return;
+        }
+        String quelle = StringUtils.hasText(anfrage.getBauvorhaben())
+                ? anfrage.getBauvorhaben().trim()
+                : "Anfrage " + anfrage.getId();
+        projekt.setKurzbeschreibung(projekt.getKurzbeschreibung().trim()
+                + "\n\n--- Übernommen aus Anfrage: " + quelle + " ---\n"
+                + anfrageBeschreibung);
+    }
+
+    private void mergeAnfrageKontaktEmails(Projekt projekt, Anfrage anfrage) {
+        if (anfrage.getKundenEmails() == null) {
+            return;
+        }
+        for (String email : anfrage.getKundenEmails()) {
+            if (!StringUtils.hasText(email)) {
+                continue;
+            }
+            boolean bereitsVorhanden = projekt.getKundenEmails().stream()
+                    .anyMatch(vorhanden -> vorhanden != null && vorhanden.equalsIgnoreCase(email.trim()));
+            if (!bereitsVorhanden) {
+                projekt.getKundenEmails().add(email.trim());
+            }
+        }
     }
 
     @Transactional

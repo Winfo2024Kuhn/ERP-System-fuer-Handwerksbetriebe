@@ -30,7 +30,8 @@ public class Projekt {
     @Column
     private String ort;
 
-    @Column(length = 1000)
+    @Lob
+    @Column(columnDefinition = "TEXT")
     private String kurzbeschreibung;
 
     @Column(nullable = false, unique = true)

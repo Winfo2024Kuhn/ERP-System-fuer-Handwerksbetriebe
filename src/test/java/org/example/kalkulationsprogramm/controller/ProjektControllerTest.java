@@ -37,6 +37,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -133,6 +134,31 @@ class ProjektControllerTest {
                                 isNull(),
                                 eq(0),
                                 eq(50));
+        }
+
+        @Test
+        void fuehreAnfrageZusammenGibtProjektZurueck() throws Exception {
+                ProjektResponseDto dto = new ProjektResponseDto();
+                dto.setId(100L);
+                when(projektManagementService.fuehreAnfrageZusammen(100L, 10L)).thenReturn(dto);
+
+                mockMvc.perform(post("/api/projekte/100/anfragen/10/zusammenfuehren"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value(100));
+
+                verify(projektManagementService).fuehreAnfrageZusammen(100L, 10L);
+        }
+
+        @Test
+        void fuehreAnfrageZusammenGibtKonfliktMitHinweisZurueck() throws Exception {
+                when(projektManagementService.fuehreAnfrageZusammen(100L, 10L))
+                                .thenThrow(new IllegalStateException(
+                                                "Zusammenführen nicht möglich, da im Projekt bereits Ausgangsgeschäftsdokumente vorhanden sind."));
+
+                mockMvc.perform(post("/api/projekte/100/anfragen/10/zusammenfuehren"))
+                                .andExpect(status().isConflict())
+                                .andExpect(jsonPath("$.message").value(
+                                                "Zusammenführen nicht möglich, da im Projekt bereits Ausgangsgeschäftsdokumente vorhanden sind."));
         }
 
         // --- Tests: PATCH /api/projekte/dokumente/{id}/bezahlt ---

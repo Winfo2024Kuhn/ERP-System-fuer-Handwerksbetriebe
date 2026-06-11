@@ -17,6 +17,8 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
      */
     List<AusgangsGeschaeftsDokument> findByProjektIdOrderByDatumDesc(Long projektId);
 
+    boolean existsByProjektId(Long projektId);
+
     /**
      * Findet alle Dokumente für ein Anfrage, sortiert nach Datum absteigend
      */
