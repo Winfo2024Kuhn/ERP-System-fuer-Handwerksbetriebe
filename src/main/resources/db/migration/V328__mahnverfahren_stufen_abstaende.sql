@@ -14,3 +14,10 @@
 UPDATE firmeninformation
 SET tage_bis_zweite_mahnung = GREATEST(1, tage_bis_zweite_mahnung - tage_bis_erste_mahnung),
     tage_bis_erste_mahnung  = GREATEST(1, tage_bis_erste_mahnung - tage_bis_zahlungserinnerung);
+
+-- Spalten-Defaults an die neue Abstands-Semantik anpassen: Die alten
+-- Defaults 14/21 stammten aus der Absolut-Semantik (Tage ab Faelligkeit).
+-- Als Abstand zwischen den Stufen sind jeweils 7 Tage der sinnvolle Default.
+ALTER TABLE firmeninformation
+    ALTER COLUMN tage_bis_erste_mahnung SET DEFAULT 7,
+    ALTER COLUMN tage_bis_zweite_mahnung SET DEFAULT 7;

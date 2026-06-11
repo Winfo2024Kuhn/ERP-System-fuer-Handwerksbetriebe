@@ -222,8 +222,11 @@ public class AutoMahnVersandService
     }
 
     /**
-     * Datum, an dem die uebergebene Mahnstufe versendet wurde. Fallback-Kette
-     * pro Mahn-Dokument: {@code emailVersandDatum} → {@code rechnungsdatum} →
+     * Datum, an dem die uebergebene Mahnstufe versendet wurde. Existieren
+     * mehrere Mahn-Dokumente derselben Stufe (z.B. manuell erstellte neben
+     * automatisch versendeten — die Listen-Reihenfolge aus der DB ist dabei
+     * zufaellig), zaehlt konservativ das SPAETESTE Datum. Fallback-Kette pro
+     * Mahn-Dokument: {@code emailVersandDatum} → {@code rechnungsdatum} →
      * {@code uploadDatum}. Ist alles {@code null} (oder das Mahn-Dokument
      * unauffindbar), gilt die Stufe als heute versendet — Ergebnis: keine
      * Eskalation am selben Tag.
@@ -233,14 +236,22 @@ public class AutoMahnVersandService
                                            LocalDate heute)
     {
         if (rechnung.getMahnungen() == null) return heute;
+        LocalDate spaetestes = null;
         for (ProjektGeschaeftsdokument mahnung : rechnung.getMahnungen())
         {
             if (mahnung.getMahnstufe() != stufe) continue;
-            if (mahnung.getEmailVersandDatum() != null) return mahnung.getEmailVersandDatum();
-            if (mahnung.getRechnungsdatum() != null) return mahnung.getRechnungsdatum();
-            if (mahnung.getUploadDatum() != null) return mahnung.getUploadDatum();
-            return heute;
+            LocalDate datum = datumDesMahnDokuments(mahnung, heute);
+            if (spaetestes == null || datum.isAfter(spaetestes)) spaetestes = datum;
         }
+        return spaetestes != null ? spaetestes : heute;
+    }
+
+    /** Fallback-Kette fuer das Versanddatum eines einzelnen Mahn-Dokuments. */
+    private static LocalDate datumDesMahnDokuments(ProjektGeschaeftsdokument mahnung, LocalDate heute)
+    {
+        if (mahnung.getEmailVersandDatum() != null) return mahnung.getEmailVersandDatum();
+        if (mahnung.getRechnungsdatum() != null) return mahnung.getRechnungsdatum();
+        if (mahnung.getUploadDatum() != null) return mahnung.getUploadDatum();
         return heute;
     }
 

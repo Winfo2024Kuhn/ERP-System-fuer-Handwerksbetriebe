@@ -284,6 +284,50 @@ class AutoMahnVersandServiceTest
     }
 
     @Test
+    void ermittleNaechsteStufe_abstandNullWirdAufEinenTagGeklemmt_keineSameDayEskalation()
+    {
+        // Abstand 0 nach der Zahlungserinnerung: Math.max(1, 0) klemmt auf 1 Tag.
+        Firmeninformation firma = firmaMitAbstaenden(7, 0, 7);
+        ProjektGeschaeftsdokument rechnung = offeneRechnung();
+        rechnung.getMahnungen().add(mahnDokument(Mahnstufe.ZAHLUNGSERINNERUNG, HEUTE));
+
+        Mahnstufe stufe = AutoMahnVersandService.ermittleNaechsteStufe(
+                rechnung, firma, 7, HEUTE);
+
+        assertThat(stufe).isNull();
+    }
+
+    @Test
+    void ermittleNaechsteStufe_abstandNullEskaliertFruehestensAmFolgetag()
+    {
+        Firmeninformation firma = firmaMitAbstaenden(7, 0, 7);
+        ProjektGeschaeftsdokument rechnung = offeneRechnung();
+        rechnung.getMahnungen().add(mahnDokument(Mahnstufe.ZAHLUNGSERINNERUNG, HEUTE.minusDays(1)));
+
+        Mahnstufe stufe = AutoMahnVersandService.ermittleNaechsteStufe(
+                rechnung, firma, 8, HEUTE);
+
+        assertThat(stufe).isEqualTo(Mahnstufe.ERSTE_MAHNUNG);
+    }
+
+    @Test
+    void ermittleNaechsteStufe_beiMehrerenDokumentenDerselbenStufeZaehltDasSpaetesteDatum()
+    {
+        // Manuelle + automatische Zahlungserinnerung koexistieren; die
+        // Listen-Reihenfolge aus der DB ist zufaellig. Konservativ zaehlt
+        // das spaetere Datum — der Abstand (7 Tage) ist hier erst 5 Tage alt.
+        Firmeninformation firma = firmaMitAbstaenden(7, 7, 7);
+        ProjektGeschaeftsdokument rechnung = offeneRechnung();
+        rechnung.getMahnungen().add(mahnDokument(Mahnstufe.ZAHLUNGSERINNERUNG, HEUTE.minusDays(20)));
+        rechnung.getMahnungen().add(mahnDokument(Mahnstufe.ZAHLUNGSERINNERUNG, HEUTE.minusDays(5)));
+
+        Mahnstufe stufe = AutoMahnVersandService.ermittleNaechsteStufe(
+                rechnung, firma, 30, HEUTE);
+
+        assertThat(stufe).isNull();
+    }
+
+    @Test
     void ermittleNaechsteStufe_alleStufenVersendetLiefertNull()
     {
         Firmeninformation firma = firmaMitAbstaenden(7, 7, 7);
