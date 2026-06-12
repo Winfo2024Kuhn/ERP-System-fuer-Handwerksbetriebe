@@ -66,7 +66,7 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
             return insertIntoSection(prev, block, anchor.sectionId);
     }
 }
-import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufKontextWarten } from './helpers';
+import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
@@ -916,14 +916,20 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         // aber nur, solange der Kontext-Load noch laeuft (siehe helpers.ts).
         if (mussAufKontextWarten(kontextDaten, kontextGeladen, !!(projektId || anfrageId))) return;
 
+        // setKontextDaten aus dem Vorgaenger-Request ist asynchron. Deshalb
+        // reicht es nicht, den Request in loadDokument nur abzuwarten: Der
+        // Defaults-Effekt kann vorher noch einen Zwischenrender mit leerem
+        // Bezugsdatum sehen und den Platzhalter dauerhaft zu "" aufloesen.
+        if (mussAufBezugsdokumentWarten(dokument?.vorgaengerId, kontextDaten)) return;
+
         if (lastAppliedDefaultsTypRef.current === dokumentTyp) return;
 
-        // Bestehendes Dokument (bereits gespeichert): keine automatischen Defaults
-        // nachladen — ausser das Backend hat es beim Umwandeln explizit per Flag
-        // angefordert (siehe Kommentar oben). Bewusst KEIN Marker-Set hier: das
-        // Flag wird asynchron aus positionenJson geparst und darf den Effekt
-        // auch dann noch ausloesen, wenn er vorher schon einmal gelaufen ist.
-        if (dokumentId && !standardTexteErneuern) {
+        // Bestehende Dokumente erhalten keine neuen Defaults. Sie durchlaufen
+        // den Fetch nur fuer die eng begrenzte Reparatur des frueher zu ""
+        // aufgeloesten {{BEZUGSDOKUMENTDATUM}}-Platzhalters.
+        const nurLeeresBezugsdatumReparieren = !!dokumentId && !standardTexteErneuern;
+        if (nurLeeresBezugsdatumReparieren && !dokument?.vorgaengerId) {
+            lastAppliedDefaultsTypRef.current = dokumentTyp;
             return;
         }
 
@@ -968,6 +974,32 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 }
 
                 if (!data) return;
+                if (nurLeeresBezugsdatumReparieren) {
+                    const defaultsByKey = new Map<string, { html?: string; beschreibung?: string }>();
+                    for (const item of data.vortexte || []) defaultsByKey.set(`VOR:${item.id}`, item);
+                    for (const item of data.nachtexte || []) defaultsByKey.set(`NACH:${item.id}`, item);
+
+                    setBlocks(prev => prev.map(block => {
+                        if (!block.textbausteinRolle || block.textbausteinId == null) return block;
+                        const item = defaultsByKey.get(`${block.textbausteinRolle}:${block.textbausteinId}`);
+                        const rawHtml = item?.html || item?.beschreibung || '';
+                        const reparierterInhalt = repariereLeeresBezugsdatumInStandardtext(
+                            block.content || '',
+                            rawHtml,
+                            kontextDaten.bezugsdokumentDatum || '',
+                            html => replacePlaceholders(html, false, true),
+                        );
+                        if (reparierterInhalt === (block.content || '')) return block;
+
+                        return {
+                            ...block,
+                            content: reparierterInhalt,
+                        };
+                    }));
+                    lastAppliedDefaultsTypRef.current = dokumentTyp;
+                    return;
+                }
+
                 const buildBlock = (item: { id: number; html?: string; beschreibung?: string }, rolle: 'VOR' | 'NACH'): DocBlock => {
                     const rawHtml = item.html || item.beschreibung || '';
                     // Zahlungsziel-Platzhalter NICHT aufloesen: sie bleiben in

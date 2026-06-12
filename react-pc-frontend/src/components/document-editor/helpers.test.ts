@@ -26,7 +26,10 @@ import {
     ZAHLUNGSZIEL_TAGE_PLACEHOLDER,
     buildBezugsdokumentKontext,
     defaultsLabelKandidaten,
+    ersetzeBezugsdokumentDatumPlatzhalter,
+    mussAufBezugsdokumentWarten,
     mussAufKontextWarten,
+    repariereLeeresBezugsdatumInStandardtext,
 } from './helpers';
 
 describe('extractBoldFromHtml', () => {
@@ -159,6 +162,66 @@ describe('buildBezugsdokumentKontext', () => {
         expect(buildBezugsdokumentKontext({
             dokumentNummer: 'AG-2026/06/00007',
         }, 'Angebot').bezugsdokumentDatum).toBe('');
+    });
+});
+
+describe('mussAufBezugsdokumentWarten', () => {
+    it('wartet bei explizitem Vorgaenger bis Nummer, Typ und Datum vorhanden sind', () => {
+        expect(mussAufBezugsdokumentWarten(42, {
+            bezugsdokument: 'AG-2026/06/00008',
+            bezugsdokumentTyp: 'Angebot',
+            bezugsdokumentDatum: '',
+        })).toBe(true);
+    });
+
+    it('gibt die Standardtexte frei, sobald der Vorgaenger vollstaendig geladen ist', () => {
+        expect(mussAufBezugsdokumentWarten(42, {
+            bezugsdokument: 'AG-2026/06/00008',
+            bezugsdokumentTyp: 'Angebot',
+            bezugsdokumentDatum: '12.06.2026',
+        })).toBe(false);
+    });
+
+    it('wartet ohne expliziten Vorgaenger nicht auf Bezugsdaten', () => {
+        expect(mussAufBezugsdokumentWarten(undefined, {})).toBe(false);
+    });
+});
+
+describe('ersetzeBezugsdokumentDatumPlatzhalter', () => {
+    it('ersetzt Schreibvarianten des Bezugsdatum-Platzhalters', () => {
+        expect(ersetzeBezugsdokumentDatumPlatzhalter(
+            '<p>Angebot vom {{ bezugsdokumentdatum }}</p>',
+            '12.06.2026',
+        )).toBe('<p>Angebot vom 12.06.2026</p>');
+    });
+
+    it('kann den frueheren Fehlerzustand mit leerem Datum reproduzieren', () => {
+        expect(ersetzeBezugsdokumentDatumPlatzhalter(
+            '<p>Angebot vom {{BEZUGSDOKUMENTDATUM}}.</p>',
+            '',
+        )).toBe('<p>Angebot vom .</p>');
+    });
+});
+
+describe('repariereLeeresBezugsdatumInStandardtext', () => {
+    const identity = (html: string) => html;
+
+    it('repariert einen unveraenderten Standardtext aus dem frueheren Fehlerzustand', () => {
+        expect(repariereLeeresBezugsdatumInStandardtext(
+            '<p>Angebot vom .</p>',
+            '<p>Angebot vom {{BEZUGSDOKUMENTDATUM}}.</p>',
+            '12.06.2026',
+            identity,
+        )).toBe('<p>Angebot vom 12.06.2026.</p>');
+    });
+
+    it('laesst einen manuell bearbeiteten Standardtext unangetastet', () => {
+        expect(repariereLeeresBezugsdatumInStandardtext(
+            '<p>Individuell bearbeiteter Bezug.</p>',
+            '<p>Angebot vom {{BEZUGSDOKUMENTDATUM}}.</p>',
+            '12.06.2026',
+            identity,
+        )).toBe('<p>Individuell bearbeiteter Bezug.</p>');
     });
 });
 

@@ -157,6 +157,54 @@ export interface BezugsdokumentKontext {
     bezugsdokumentDatum: string;
 }
 
+const BEZUGSDOKUMENTDATUM_PLACEHOLDER_REGEX = /\{\{\s*BEZUGSDOKUMENTDATUM\s*\}\}/gi;
+
+export function ersetzeBezugsdokumentDatumPlatzhalter(html: string, datum: string): string {
+    if (!html) return html;
+    return html.replace(BEZUGSDOKUMENTDATUM_PLACEHOLDER_REGEX, datum);
+}
+
+export function repariereLeeresBezugsdatumInStandardtext(
+    gespeicherterInhalt: string,
+    templateHtml: string,
+    bezugsdatum: string,
+    weiterePlatzhalterAufloesen: (html: string) => string,
+): string {
+    if (!templateHtml || !BEZUGSDOKUMENTDATUM_PLACEHOLDER_REGEX.test(templateHtml)) {
+        BEZUGSDOKUMENTDATUM_PLACEHOLDER_REGEX.lastIndex = 0;
+        return gespeicherterInhalt;
+    }
+    BEZUGSDOKUMENTDATUM_PLACEHOLDER_REGEX.lastIndex = 0;
+
+    const damaligerFehlerzustand = weiterePlatzhalterAufloesen(
+        ersetzeBezugsdokumentDatumPlatzhalter(templateHtml, ''),
+    );
+    if (gespeicherterInhalt.trim() !== damaligerFehlerzustand.trim()) {
+        return gespeicherterInhalt;
+    }
+
+    return weiterePlatzhalterAufloesen(
+        ersetzeBezugsdokumentDatumPlatzhalter(templateHtml, bezugsdatum),
+    );
+}
+
+/**
+ * Standardtexte mit Bezugsplatzhaltern duerfen erst materialisiert werden,
+ * wenn der asynchron geladene Vorgaenger vollstaendig im React-State steht.
+ * Andernfalls wird z.B. {{BEZUGSDOKUMENTDATUM}} einmalig zu leerem Klartext
+ * aufgeloest und kann durch das spaetere Kontext-Update nicht mehr repariert
+ * werden.
+ */
+export function mussAufBezugsdokumentWarten(
+    vorgaengerId: number | undefined,
+    kontext: Partial<BezugsdokumentKontext>,
+): boolean {
+    if (!vorgaengerId) return false;
+    return !kontext.bezugsdokument
+        || !kontext.bezugsdokumentTyp
+        || !kontext.bezugsdokumentDatum;
+}
+
 /**
  * Baut die Platzhalterwerte aus dem expliziten Vorgängerdokument.
  * ISO-Datumswerte werden ohne Date-/Timezone-Konvertierung formatiert, damit
