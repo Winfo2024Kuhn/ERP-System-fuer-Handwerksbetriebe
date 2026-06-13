@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.AuditChainState;
@@ -37,6 +38,7 @@ public class AusgangsGeschaeftsDokumentAuditService {
 
     private final AusgangsGeschaeftsDokumentAuditRepository auditRepository;
     private final AuditChainStateRepository chainStateRepository;
+    private final EntityManager entityManager;
 
     @Transactional
     public void protokolliereErstellung(AusgangsGeschaeftsDokument dokument, FrontendUserProfile bearbeiter, String ipAdresse) {
@@ -123,12 +125,27 @@ public class AusgangsGeschaeftsDokumentAuditService {
      *   <li>Lockt die Singleton-Row in {@code audit_chain_state} (FOR UPDATE).</li>
      *   <li>Liest {@code lastChainIndex} und {@code lastEntryHash}.</li>
      *   <li>Setzt {@code chainIndex = last+1} und {@code previousHash = lastEntryHash}.</li>
-     *   <li>Berechnet {@code entryHash} aus der kanonischen Form + previousHash.</li>
-     *   <li>Persistiert den Eintrag und schreibt den neuen Kopf in den State.</li>
+     *   <li>Persistiert den Eintrag und lädt ihn per {@code refresh} aus der DB zurück.</li>
+     *   <li>Berechnet {@code entryHash} über die <strong>gespeicherte</strong> Form
+     *       und schreibt den neuen Kopf in den State.</li>
      * </ol>
      *
-     * <p>{@link Propagation#REQUIRED} stellt sicher, dass das Anhängen Teil der
-     * aufrufenden Transaktion ist — andernfalls wäre der Lock beim Commit nutzlos.</p>
+     * <p><strong>Maßgeblich ist der {@code refresh}:</strong> Der Hash wird über genau
+     * die Form berechnet, die nach dem INSERT in der DB steht — also über denselben
+     * Wert, den der {@link AuditChainVerifier} später beim Nachrechnen aus der DB liest.
+     * Damit ist der Hash unabhängig von jeder DB-seitigen Transformation reproduzierbar:
+     * Mikrosekunden-Trunkierung bei {@code DATETIME(6)}, BigDecimal-Scale-Anpassung,
+     * String-Längen-Kürzung. Würde stattdessen vor dem INSERT über den In-Memory-Zustand
+     * gehasht (z.B. mit den Nanosekunden von {@code LocalDateTime.now()}), meldete der
+     * Verifier später fälschlich EINTRAG_MANIPULIERT. Das zusätzliche
+     * {@code truncatedTo(MICROS)} in {@link AusgangsGeschaeftsDokumentAudit#fromDokument}
+     * ist eine zweite, von der DB unabhängige Absicherung des häufigsten Falls.</p>
+     *
+     * <p>{@link Propagation#REQUIRED}: Im aktuellen Aufrufpfad (intern aus {@link #save}
+     * derselben Bean) greift diese Annotation per Spring-Proxy NICHT — die Atomarität
+     * kommt von der bereits offenen Transaktion der aufrufenden {@code protokolliere*}-
+     * Methode, in der auch der Lock läuft. Die Annotation dokumentiert die Anforderung
+     * und schützt einen etwaigen künftigen Direktaufruf von außen.</p>
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public AusgangsGeschaeftsDokumentAudit appendToChain(AusgangsGeschaeftsDokumentAudit audit) {
@@ -146,9 +163,11 @@ public class AusgangsGeschaeftsDokumentAuditService {
         long nextIndex = state.getLastChainIndex() + 1;
         audit.setChainIndex(nextIndex);
         audit.setPreviousHash(state.getLastEntryHash());
-        audit.setEntryHash(audit.computeEntryHash());
 
         AusgangsGeschaeftsDokumentAudit saved = auditRepository.saveAndFlush(audit);
+        entityManager.refresh(saved);
+        saved.setEntryHash(saved.computeEntryHash());
+        auditRepository.saveAndFlush(saved);
 
         state.setLastChainIndex(nextIndex);
         state.setLastEntryHash(saved.getEntryHash());

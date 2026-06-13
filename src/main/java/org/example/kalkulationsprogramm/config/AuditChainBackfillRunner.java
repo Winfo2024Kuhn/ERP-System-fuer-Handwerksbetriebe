@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentAud
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -36,6 +37,7 @@ public class AuditChainBackfillRunner {
     private final TransactionTemplate transactionTemplate;
 
     @Bean
+    @Order(10) // Muss VOR dem AuditChainRebuildRunner (@Order(20)) laufen.
     public ApplicationRunner auditChainBackfill() {
         return args -> transactionTemplate.executeWithoutResult(status -> backfill());
     }
