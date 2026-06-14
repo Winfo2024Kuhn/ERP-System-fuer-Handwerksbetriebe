@@ -5,7 +5,7 @@ services:
   # ========== MariaDB Datenbank ==========
   mariadb:
     image: mariadb:11.4
-    container_name: kalkulationsprogramm-mariadb
+    container_name: erp-mariadb
     ports:
       - "3307:3306"
     environment:
@@ -15,6 +15,7 @@ services:
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:-CHANGE_ME_DB_PW}
     volumes:
       - mariadb_data:/var/lib/mysql
+      - ./docs/demo-seed.sql:/docker-entrypoint-initdb.d/demo-seed.sql:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_german2_ci
@@ -26,12 +27,12 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # ========== Spring Boot Anwendung ==========
+  # ========== Spring Boot Backend ==========
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: kalkulationsprogramm-app
+    container_name: erp-app
     ports:
       - "8080:8080"
     environment:
@@ -41,8 +42,8 @@ services:
       APP_DB_PASS: ${APP_DB_PASS:-CHANGE_ME_DB_PW}
       MARIADB_USER: ${MARIADB_USER:-erp_user}
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:-CHANGE_ME_DB_PW}
-      APP_ADMIN_USER: ${APP_ADMIN_USER:-Marvin}
-      APP_ADMIN_PASS: ${APP_ADMIN_PASS:-123456}
+      APP_ADMIN_USER: ${APP_ADMIN_USER:-admin}
+      APP_ADMIN_PASS: ${APP_ADMIN_PASS:-demo}
     volumes:
       - app_uploads:/app/uploads
       - app_logs:/app/logs
@@ -51,18 +52,48 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ========== React PC Frontend ==========
+  frontend-pc:
+    build:
+      context: ./react-pc-frontend
+      dockerfile: Dockerfile
+    container_name: erp-frontend-pc
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  # ========== React Zeiterfassung Frontend ==========
+  frontend-zeiterfassung:
+    build:
+      context: ./react-zeiterfassung
+      dockerfile: Dockerfile
+    container_name: erp-frontend-zeiterfassung
+    ports:
+      - "5174:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+    depends_on:
+      - app
+    restart: unless-stopped
+
   # ========== Qdrant (Vektordatenbank für KI/RAG) ==========
   qdrant:
     image: qdrant/qdrant:v1.12.1
-    container_name: kalkulationsprogramm-qdrant
+    container_name: erp-qdrant
     ports:
-      - "6333:6333"   # REST API
-      - "6334:6334"   # gRPC
+      - "6333:6333"
+      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
     restart: unless-stopped
+    profiles:
+      - optional
 
 volumes:
   mariadb_data:
