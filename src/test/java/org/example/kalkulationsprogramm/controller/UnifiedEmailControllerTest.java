@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -314,7 +315,7 @@ class UnifiedEmailControllerTest {
             // Bei nicht gefundener Email darf KEINE der Folge-Aktionen laufen
             // (kein Delete, kein Reply-Detach, kein Mailserver-Call).
             verify(emailRepository, never()).delete(any(Email.class));
-            verify(emailRepository, never()).detachRepliesFromParent(any());
+            verify(emailRepository, never()).detachRepliesFromParent(anyLong());
             verifyNoInteractions(emailImportService);
         }
     }

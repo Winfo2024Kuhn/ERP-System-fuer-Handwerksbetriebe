@@ -5,14 +5,14 @@ import java.math.BigDecimal
  */
 data class OfferItem(
     val code: String,
-    val unit: String,
+    val unit: String?,
     val price: BigDecimal,
-    val norm: String,
+    val norm: String?,
     val name: String
 ) {
     fun code(): String = code
-    fun unit(): String = unit
+    fun unit(): String? = unit
     fun price(): BigDecimal = price
-    fun norm(): String = norm
+    fun norm(): String? = norm
     fun name(): String = name
 }
