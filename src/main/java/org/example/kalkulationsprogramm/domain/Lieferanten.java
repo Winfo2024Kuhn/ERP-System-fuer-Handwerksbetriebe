@@ -6,7 +6,9 @@ import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Getter
 @Setter
@@ -30,7 +32,22 @@ public class Lieferanten {
     private String mobiltelefon;
     private String vertreter;
 
+    /**
+     * @deprecated Abgeloest durch {@link #rollen}. Bleibt vorerst bestehen, bis Frontend/DTOs
+     * vollstaendig auf Rollen umgestellt sind; die Spalte wird danach per Migration entfernt.
+     */
+    @Deprecated
     private String lieferantenTyp;
+
+    /**
+     * Rollen dieses Lieferanten (1:n) — steuert, bei welchen Artikel-Kategorien er
+     * beim Preis-Eintragen vorgeschlagen wird. Siehe {@link LieferantRolle}.
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "lieferanten_rollen", joinColumns = @JoinColumn(name = "lieferant_id"))
+    @Column(name = "rolle")
+    @Enumerated(EnumType.STRING)
+    private Set<LieferantRolle> rollen = new HashSet<>();
 
     @Column(columnDefinition = "integer default 0")
     private Integer bestellungen = 0;

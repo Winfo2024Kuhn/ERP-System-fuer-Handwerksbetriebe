@@ -80,3 +80,6 @@ react-pc-frontend/graphify-out/
 react-zeiterfassung/graphify-out/
 .claude/settings.local.json
 
+
+# Daten-/Ops-SQL mit echten Datensaetzen (personenbezogen) - NICHT committen
+db-ops/
