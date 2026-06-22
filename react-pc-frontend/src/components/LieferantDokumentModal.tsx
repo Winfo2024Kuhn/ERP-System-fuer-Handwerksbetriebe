@@ -23,8 +23,8 @@ const DOK_TYP_OPTIONS = [
     { value: "AUFTRAGSBESTAETIGUNG", label: "Auftragsbestätigung" },
     { value: "LIEFERSCHEIN", label: "Lieferschein" },
     { value: "RECHNUNG", label: "Rechnung" },
-    { value: "EINGANGSRECHNUNG", label: "Eingangsrechnung" },
     { value: "GUTSCHRIFT", label: "Gutschrift" },
+    { value: "SONSTIG", label: "Sonstiges" },
 ];
 
 export default function LieferantDokumentModal({
@@ -60,6 +60,12 @@ export default function LieferantDokumentModal({
         skontoTage: "",
         skontoProzent: "",
         nettoTage: "",
+        // Zahlungsstatus
+        bezahlt: false,
+        bezahltAm: "",
+        zahlungsart: "",
+        mitSkonto: false,
+        tatsaechlichGezahlt: "",
     });
 
     // Reset form when document changes
@@ -79,6 +85,11 @@ export default function LieferantDokumentModal({
                 skontoTage: dokument.geschaeftsdaten?.skontoTage?.toString() || "",
                 skontoProzent: dokument.geschaeftsdaten?.skontoProzent?.toString() || "",
                 nettoTage: dokument.geschaeftsdaten?.nettoTage?.toString() || "",
+                bezahlt: dokument.geschaeftsdaten?.bezahlt || false,
+                bezahltAm: dokument.geschaeftsdaten?.bezahltAm || "",
+                zahlungsart: dokument.geschaeftsdaten?.zahlungsart || "",
+                mitSkonto: dokument.geschaeftsdaten?.mitSkonto || false,
+                tatsaechlichGezahlt: dokument.geschaeftsdaten?.tatsaechlichGezahlt?.toString() || "",
             });
             setError(null);
             setShowPdf(true);
@@ -136,7 +147,7 @@ export default function LieferantDokumentModal({
     const confidence = dokument.geschaeftsdaten?.aiConfidence;
 
     // Typspezifische Feldanzeige
-    const isRechnung = formData.typ === "RECHNUNG" || formData.typ === "EINGANGSRECHNUNG" || formData.typ === "GUTSCHRIFT";
+    const isRechnung = formData.typ === "RECHNUNG" || formData.typ === "GUTSCHRIFT";
     const isAB = formData.typ === "AUFTRAGSBESTAETIGUNG";
     const isLieferschein = formData.typ === "LIEFERSCHEIN";
 
@@ -203,6 +214,12 @@ export default function LieferantDokumentModal({
                     skontoTage: formData.skontoTage ? parseInt(formData.skontoTage) : null,
                     skontoProzent: formData.skontoProzent ? parseFloat(formData.skontoProzent) : null,
                     nettoTage: formData.nettoTage ? parseInt(formData.nettoTage) : null,
+                    // Zahlungsstatus
+                    bezahlt: formData.bezahlt,
+                    bezahltAm: formData.bezahltAm || null,
+                    zahlungsart: formData.zahlungsart || null,
+                    mitSkonto: formData.mitSkonto,
+                    tatsaechlichGezahlt: formData.tatsaechlichGezahlt ? parseFloat(formData.tatsaechlichGezahlt) : null,
                 }
             };
 
@@ -507,6 +524,69 @@ export default function LieferantDokumentModal({
                                         <p className="text-xs text-slate-500">
                                             Beispiel: 2% Skonto bei Zahlung innerhalb 14 Tagen, netto 30 Tage
                                         </p>
+
+                                        {/* Zahlungsstatus */}
+                                        <div className="pt-3 border-t border-rose-100 space-y-3">
+                                            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.bezahlt}
+                                                    onChange={(e) => setFormData(prev => ({ ...prev, bezahlt: e.target.checked }))}
+                                                    className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                />
+                                                <span className={formData.bezahlt ? "text-rose-700" : "text-slate-700"}>
+                                                    Bereits bezahlt
+                                                </span>
+                                            </label>
+
+                                            {formData.bezahlt && (
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs text-slate-600">Bezahlt am</label>
+                                                        <DatePicker
+                                                            value={formData.bezahltAm}
+                                                            onChange={(value) => setFormData(prev => ({ ...prev, bezahltAm: value }))}
+                                                            placeholder="Zahlungsdatum"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs text-slate-600">Tatsächlich gezahlt</label>
+                                                        <div className="relative">
+                                                            <Euro className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                                            <Input
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={formData.tatsaechlichGezahlt}
+                                                                onChange={(e) => setFormData(prev => ({ ...prev, tatsaechlichGezahlt: e.target.value }))}
+                                                                className="pl-9"
+                                                                placeholder="0.00"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-slate-600">Zahlungsart</label>
+                                                <Input
+                                                    value={formData.zahlungsart}
+                                                    onChange={(e) => setFormData(prev => ({ ...prev, zahlungsart: e.target.value }))}
+                                                    placeholder="z.B. SEPA-Lastschrift, Überweisung"
+                                                />
+                                            </div>
+
+                                            {formData.bezahlt && (
+                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.mitSkonto}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, mitSkonto: e.target.checked }))}
+                                                        className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                    />
+                                                    <span className="text-slate-700">Mit Skonto bezahlt</span>
+                                                </label>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
 

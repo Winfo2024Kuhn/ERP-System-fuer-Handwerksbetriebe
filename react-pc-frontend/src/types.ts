@@ -79,7 +79,7 @@ export interface LieferantStatistik {
 }
 
 // ==================== Lieferant Dokumente ====================
-export type LieferantDokumentTyp = 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'EINGANGSRECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
+export type LieferantDokumentTyp = 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
 
 export interface LieferantGeschaeftsdaten {
   dokumentNummer?: string;

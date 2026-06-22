@@ -477,6 +477,24 @@ public class LieferantDokumentService {
                         emailAttachmentRepository.save(att);
                 });
 
+                // Physische Datei nur löschen, wenn sie exklusiv diesem Dokument gehört
+                // (manueller Upload). Bei Email-Attachment oder mobilem Beleg liegt die
+                // Datei im jeweils anderen Modul und wird dort weiter benötigt.
+                if (dokument.getAttachment() == null && dokument.getBeleg() == null
+                                && dokument.getGespeicherterDateiname() != null
+                                && dokument.getLieferant() != null) {
+                        Path lieferantDir = Path.of(uploadPath, "lieferanten", dokument.getLieferant().getId().toString())
+                                        .toAbsolutePath().normalize();
+                        Path filePath = lieferantDir.resolve(dokument.getGespeicherterDateiname()).normalize();
+                        if (filePath.startsWith(lieferantDir)) {
+                                try {
+                                        Files.deleteIfExists(filePath);
+                                } catch (IOException e) {
+                                        log.warn("Physische Datei konnte nicht gelöscht werden: {}", filePath, e);
+                                }
+                        }
+                }
+
                 // Kettenverknüpfungen lösen
                 dokument.getVerknuepfteDokumente().clear();
                 dokument.getVerknuepftVon().forEach(vd -> vd.getVerknuepfteDokumente().remove(dokument));

@@ -7,12 +7,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import jakarta.persistence.EntityNotFoundException;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -404,6 +409,98 @@ class LieferantDokumentServiceTest {
             assertThat(att.getAiProcessed()).isTrue();
             verify(emailAttachmentRepository, never()).save(
                     org.mockito.ArgumentMatchers.argThat(a -> Boolean.FALSE.equals(a.getAiProcessed())));
+            verify(dokumentRepository).delete(dokument);
+        }
+
+        @Test
+        @DisplayName("Loescht die physische Datei eines manuell hochgeladenen Dokuments (kein Attachment, kein Beleg)")
+        void loeschtPhysischeDatei_beiManuellemUpload(@TempDir Path tempDir) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(555L);
+
+            Path lieferantDir = tempDir.resolve("lieferanten").resolve("555");
+            Files.createDirectories(lieferantDir);
+            Path datei = lieferantDir.resolve("rechnung.pdf");
+            Files.writeString(datei, "dummy");
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(3L);
+            dokument.setTyp(LieferantDokumentTyp.SONSTIG);
+            dokument.setLieferant(lieferant);
+            dokument.setGespeicherterDateiname("rechnung.pdf");
+
+            given(dokumentRepository.findById(3L)).willReturn(Optional.of(dokument));
+            given(dokumentRepository.saveAndFlush(any())).willReturn(dokument);
+
+            service.loescheDokument(3L, "admin");
+
+            assertThat(Files.exists(datei)).isFalse();
+            verify(dokumentRepository).delete(dokument);
+        }
+
+        @Test
+        @DisplayName("Loescht die physische Datei NICHT, wenn das Dokument ueber ein EmailAttachment verknuepft ist")
+        void loeschtPhysischeDateiNicht_beiEmailAttachment(@TempDir Path tempDir) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(556L);
+
+            Path lieferantDir = tempDir.resolve("lieferanten").resolve("556");
+            Files.createDirectories(lieferantDir);
+            Path datei = lieferantDir.resolve("anhang.pdf");
+            Files.writeString(datei, "dummy");
+
+            EmailAttachment attachment = new EmailAttachment();
+            attachment.setStoredFilename("anhang.pdf");
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(4L);
+            dokument.setTyp(LieferantDokumentTyp.SONSTIG);
+            dokument.setLieferant(lieferant);
+            dokument.setGespeicherterDateiname("anhang.pdf");
+            dokument.setAttachment(attachment);
+
+            given(dokumentRepository.findById(4L)).willReturn(Optional.of(dokument));
+            given(dokumentRepository.saveAndFlush(any())).willReturn(dokument);
+
+            service.loescheDokument(4L, "admin");
+
+            assertThat(Files.exists(datei)).isTrue();
+            verify(dokumentRepository).delete(dokument);
+        }
+
+        @Test
+        @DisplayName("Loescht die physische Datei NICHT, wenn das Dokument aus einem mobilen Beleg-Scan promotet wurde")
+        void loeschtPhysischeDateiNicht_beiMobilemBeleg(@TempDir Path tempDir) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(557L);
+
+            Path lieferantDir = tempDir.resolve("lieferanten").resolve("557");
+            Files.createDirectories(lieferantDir);
+            Path datei = lieferantDir.resolve("beleg.pdf");
+            Files.writeString(datei, "dummy");
+
+            Beleg beleg = new Beleg();
+            beleg.setId(99L);
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(5L);
+            dokument.setTyp(LieferantDokumentTyp.SONSTIG);
+            dokument.setLieferant(lieferant);
+            dokument.setGespeicherterDateiname("beleg.pdf");
+            dokument.setBeleg(beleg);
+
+            given(dokumentRepository.findById(5L)).willReturn(Optional.of(dokument));
+            given(dokumentRepository.saveAndFlush(any())).willReturn(dokument);
+
+            service.loescheDokument(5L, "admin");
+
+            assertThat(Files.exists(datei)).isTrue();
             verify(dokumentRepository).delete(dokument);
         }
     }
