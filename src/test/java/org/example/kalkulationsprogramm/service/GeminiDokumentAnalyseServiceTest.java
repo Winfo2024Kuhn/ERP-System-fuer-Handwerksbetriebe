@@ -561,6 +561,108 @@ class GeminiDokumentAnalyseServiceTest {
     }
 
     @Nested
+    class ZusammenstellungKlassifizierung {
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("E-ZUSAMMENSTELLUNG: mapJsonToData gibt null zurück wenn KI SONSTIG zurückgibt")
+        void dkv_zusammenstellung_sonstig_ergibt_null() throws Exception {
+            // Simuliert, was das KI-Modell nach dem Prompt-Fix für eine
+            // DKV-E-ZUSAMMENSTELLUNG zurückgeben soll: SONSTIG + istGeschaeftsdokument=false.
+            String json = """
+                    {
+                      "dokumentTyp": "SONSTIG",
+                      "istGeschaeftsdokument": false,
+                      "dokumentNummer": null,
+                      "betragBrutto": 147.45,
+                      "zahlungsziel": "2026-06-25",
+                      "confidence": 0.0
+                    }
+                    """;
+
+            com.fasterxml.jackson.databind.ObjectMapper realMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            when(objectMapper.readTree(json)).thenReturn(realMapper.readTree(json));
+
+            LieferantGeschaeftsdokument result = invokeMapJsonToData(json);
+
+            assertThat(result).isNull();
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("E-ZUSAMMENSTELLUNG: mapJsonToData gibt null zurück wenn istGeschaeftsdokument=false")
+        void istGeschaeftsdokument_false_ergibt_null() throws Exception {
+            String json = """
+                    {
+                      "dokumentTyp": "RECHNUNG",
+                      "istGeschaeftsdokument": false,
+                      "dokumentNummer": "26/652639533/001",
+                      "betragBrutto": 147.45,
+                      "confidence": 0.9
+                    }
+                    """;
+
+            com.fasterxml.jackson.databind.ObjectMapper realMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            when(objectMapper.readTree(json)).thenReturn(realMapper.readTree(json));
+
+            LieferantGeschaeftsdokument result = invokeMapJsonToData(json);
+
+            assertThat(result).isNull();
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("SONSTIG-Typ (bei istGeschaeftsdokument=true) ergibt ebenfalls null")
+        void sonstig_typ_ohne_istGeschaeftsdokument_flag_ergibt_null() throws Exception {
+            // Testet den SONSTIG-Branch in mapJsonToData (Z. 2222–2226) separat:
+            // auch wenn istGeschaeftsdokument fehlt/true, muss SONSTIG → null liefern.
+            String json = """
+                    {
+                      "dokumentTyp": "SONSTIG",
+                      "istGeschaeftsdokument": true,
+                      "dokumentNummer": "SONSTIG-001",
+                      "betragBrutto": 50.00,
+                      "confidence": 0.3
+                    }
+                    """;
+
+            com.fasterxml.jackson.databind.ObjectMapper realMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            when(objectMapper.readTree(json)).thenReturn(realMapper.readTree(json));
+
+            LieferantGeschaeftsdokument result = invokeMapJsonToData(json);
+
+            assertThat(result).isNull();
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Echte DKV-E-RECHNUNG mit RECHNUNG-Typ wird korrekt gemappt")
+        void dkv_erechnung_rechnung_wird_akzeptiert() throws Exception {
+            String json = """
+                    {
+                      "dokumentTyp": "RECHNUNG",
+                      "istGeschaeftsdokument": true,
+                      "dokumentNummer": "26/652639533/001",
+                      "dokumentDatum": "2026-06-15",
+                      "betragBrutto": 147.45,
+                      "betragNetto": 123.91,
+                      "mwstSatz": 0.19,
+                      "zahlungsziel": "2026-06-25",
+                      "bereitsGezahlt": true,
+                      "zahlungsart": "SEPA_LASTSCHRIFT",
+                      "confidence": 0.95
+                    }
+                    """;
+
+            com.fasterxml.jackson.databind.ObjectMapper realMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            when(objectMapper.readTree(json)).thenReturn(realMapper.readTree(json));
+
+            LieferantGeschaeftsdokument result = invokeMapJsonToData(json);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getDetectedTyp()).isEqualTo(LieferantDokumentTyp.RECHNUNG);
+            assertThat(result.getDokumentNummer()).isEqualTo("26/652639533/001");
+            assertThat(result.getBetragBrutto()).isEqualByComparingTo(new java.math.BigDecimal("147.45"));
+        }
+    }
+
+    @Nested
     class JsonTruncationHandling {
 
         // Regression: Gemini kann bei maxOutputTokens-Erreichung eine schlie\u00dfende }
