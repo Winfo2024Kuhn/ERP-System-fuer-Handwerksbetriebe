@@ -171,6 +171,20 @@ class KundeControllerTest {
     }
 
     @Test
+    @DisplayName("Freitext-Suche nach Telefonnummer liefert 200 und ruft Repository auf")
+    void sucheKundenMitTelefonnummerLiefert200() throws Exception {
+        Page<Kunde> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 12), 0);
+        given(kundeRepository.findAll(any(Specification.class), any(Pageable.class))).willReturn(emptyPage);
+
+        mockMvc.perform(get("/api/kunden").param("q", "0931"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kunden").isArray())
+                .andExpect(jsonPath("$.gesamt").value(0));
+
+        verify(kundeRepository).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @Test
     @DisplayName("Header X-Duplikat-Bestaetigt umgeht den Duplikat-Check")
     void createKundeBypassesDuplikatCheckWithHeader() throws Exception {
         // Service würde Treffer melden – wird aber dank Header nicht aufgerufen.

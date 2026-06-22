@@ -81,7 +81,9 @@ public class KundeController {
                         cb.like(cb.lower(root.get("kundennummer")), term),
                         cb.like(cb.lower(root.get("ort")), term),
                         cb.like(cb.lower(root.get("strasse")), term),
-                        cb.like(cb.lower(root.get("ansprechspartner")), term)
+                        cb.like(cb.lower(root.get("ansprechspartner")), term),
+                        cb.like(cb.lower(cb.coalesce(root.get("telefon"), "")), term),
+                        cb.like(cb.lower(cb.coalesce(root.get("mobiltelefon"), "")), term)
                 );
             });
         }
