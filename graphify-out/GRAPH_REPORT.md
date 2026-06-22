@@ -1,16 +1,16 @@
-# Graph Report - ERP-System-fuer-Handwerksbetriebe  (2026-06-13)
+# Graph Report - ERP-System-fuer-Handwerksbetriebe  (2026-06-22)
 
 ## Corpus Check
-- 1216 files · ~1,111,766 words
+- 1216 files · ~1,073,475 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 10854 nodes · 21026 edges · 799 communities (384 shown, 415 thin omitted)
-- Extraction: 74% EXTRACTED · 26% INFERRED · 0% AMBIGUOUS · INFERRED: 5550 edges (avg confidence: 0.8)
+- 10861 nodes · 20802 edges · 816 communities (384 shown, 432 thin omitted)
+- Extraction: 74% EXTRACTED · 26% INFERRED · 0% AMBIGUOUS · INFERRED: 5315 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `5c50fe05`
+- Built from commit: `8b5d2747`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -223,7 +223,6 @@
 - [[_COMMUNITY_Community 205|Community 205]]
 - [[_COMMUNITY_Community 206|Community 206]]
 - [[_COMMUNITY_Community 207|Community 207]]
-- [[_COMMUNITY_Community 208|Community 208]]
 - [[_COMMUNITY_Community 209|Community 209]]
 - [[_COMMUNITY_Community 210|Community 210]]
 - [[_COMMUNITY_Community 211|Community 211]]
@@ -388,9 +387,12 @@
 - [[_COMMUNITY_Community 370|Community 370]]
 - [[_COMMUNITY_Community 371|Community 371]]
 - [[_COMMUNITY_Community 372|Community 372]]
+- [[_COMMUNITY_Community 373|Community 373]]
+- [[_COMMUNITY_Community 374|Community 374]]
 - [[_COMMUNITY_Community 375|Community 375]]
 - [[_COMMUNITY_Community 376|Community 376]]
 - [[_COMMUNITY_Community 377|Community 377]]
+- [[_COMMUNITY_Community 378|Community 378]]
 - [[_COMMUNITY_Community 379|Community 379]]
 - [[_COMMUNITY_Community 380|Community 380]]
 - [[_COMMUNITY_Community 381|Community 381]]
@@ -404,9 +406,9 @@
 - [[_COMMUNITY_Community 389|Community 389]]
 - [[_COMMUNITY_Community 390|Community 390]]
 - [[_COMMUNITY_Community 391|Community 391]]
-- [[_COMMUNITY_Community 392|Community 392]]
 - [[_COMMUNITY_Community 393|Community 393]]
 - [[_COMMUNITY_Community 394|Community 394]]
+- [[_COMMUNITY_Community 395|Community 395]]
 - [[_COMMUNITY_Community 396|Community 396]]
 - [[_COMMUNITY_Community 397|Community 397]]
 - [[_COMMUNITY_Community 398|Community 398]]
@@ -415,15 +417,19 @@
 - [[_COMMUNITY_Community 401|Community 401]]
 - [[_COMMUNITY_Community 402|Community 402]]
 - [[_COMMUNITY_Community 403|Community 403]]
+- [[_COMMUNITY_Community 404|Community 404]]
+- [[_COMMUNITY_Community 405|Community 405]]
 - [[_COMMUNITY_Community 406|Community 406]]
 - [[_COMMUNITY_Community 407|Community 407]]
 - [[_COMMUNITY_Community 408|Community 408]]
 - [[_COMMUNITY_Community 411|Community 411]]
+- [[_COMMUNITY_Community 412|Community 412]]
 - [[_COMMUNITY_Community 413|Community 413]]
 - [[_COMMUNITY_Community 414|Community 414]]
 - [[_COMMUNITY_Community 415|Community 415]]
 - [[_COMMUNITY_Community 416|Community 416]]
 - [[_COMMUNITY_Community 417|Community 417]]
+- [[_COMMUNITY_Community 418|Community 418]]
 - [[_COMMUNITY_Community 419|Community 419]]
 - [[_COMMUNITY_Community 420|Community 420]]
 - [[_COMMUNITY_Community 421|Community 421]]
@@ -433,6 +439,9 @@
 - [[_COMMUNITY_Community 425|Community 425]]
 - [[_COMMUNITY_Community 426|Community 426]]
 - [[_COMMUNITY_Community 427|Community 427]]
+- [[_COMMUNITY_Community 428|Community 428]]
+- [[_COMMUNITY_Community 429|Community 429]]
+- [[_COMMUNITY_Community 430|Community 430]]
 - [[_COMMUNITY_Community 431|Community 431]]
 - [[_COMMUNITY_Community 432|Community 432]]
 - [[_COMMUNITY_Community 434|Community 434]]
@@ -461,11 +470,14 @@
 - [[_COMMUNITY_Community 457|Community 457]]
 - [[_COMMUNITY_Community 458|Community 458]]
 - [[_COMMUNITY_Community 459|Community 459]]
+- [[_COMMUNITY_Community 460|Community 460]]
+- [[_COMMUNITY_Community 464|Community 464]]
 - [[_COMMUNITY_Community 465|Community 465]]
 - [[_COMMUNITY_Community 466|Community 466]]
 - [[_COMMUNITY_Community 467|Community 467]]
 - [[_COMMUNITY_Community 468|Community 468]]
 - [[_COMMUNITY_Community 469|Community 469]]
+- [[_COMMUNITY_Community 470|Community 470]]
 - [[_COMMUNITY_Community 471|Community 471]]
 - [[_COMMUNITY_Community 472|Community 472]]
 - [[_COMMUNITY_Community 473|Community 473]]
@@ -716,15 +728,19 @@
 - [[_COMMUNITY_Community 722|Community 722]]
 - [[_COMMUNITY_Community 723|Community 723]]
 - [[_COMMUNITY_Community 788|Community 788]]
+- [[_COMMUNITY_Community 789|Community 789]]
 - [[_COMMUNITY_Community 790|Community 790]]
+- [[_COMMUNITY_Community 791|Community 791]]
+- [[_COMMUNITY_Community 792|Community 792]]
+- [[_COMMUNITY_Community 793|Community 793]]
 - [[_COMMUNITY_Community 794|Community 794]]
-- [[_COMMUNITY_Community 795|Community 795]]
 - [[_COMMUNITY_Community 796|Community 796]]
 - [[_COMMUNITY_Community 797|Community 797]]
 - [[_COMMUNITY_Community 798|Community 798]]
+- [[_COMMUNITY_Community 799|Community 799]]
 - [[_COMMUNITY_Community 801|Community 801]]
 - [[_COMMUNITY_Community 802|Community 802]]
-- [[_COMMUNITY_Community 805|Community 805]]
+- [[_COMMUNITY_Community 803|Community 803]]
 - [[_COMMUNITY_Community 811|Community 811]]
 - [[_COMMUNITY_Community 812|Community 812]]
 - [[_COMMUNITY_Community 813|Community 813]]
@@ -732,98 +748,105 @@
 - [[_COMMUNITY_Community 818|Community 818]]
 - [[_COMMUNITY_Community 826|Community 826]]
 - [[_COMMUNITY_Community 828|Community 828]]
-- [[_COMMUNITY_Community 829|Community 829]]
 - [[_COMMUNITY_Community 831|Community 831]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `body` - 183 edges
-2. `empty()` - 155 edges
-3. `cn()` - 135 edges
-4. `Button()` - 102 edges
-5. `useToast()` - 101 edges
-6. `getBeschreibung()` - 94 edges
-7. `UnifiedEmailController` - 64 edges
-8. `AusgangsGeschaeftsDokumentService` - 62 edges
-9. `useConfirm()` - 60 edges
-10. `EmailRepository` - 59 edges
+1. `empty()` - 155 edges
+2. `cn()` - 134 edges
+3. `Button()` - 102 edges
+4. `useToast()` - 101 edges
+5. `getBeschreibung()` - 94 edges
+6. `UnifiedEmailController` - 64 edges
+7. `AusgangsGeschaeftsDokumentService` - 62 edges
+8. `useConfirm()` - 60 edges
+9. `EmailRepository` - 59 edges
+10. `ProjektController` - 58 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `SaldenPage()` --calls--> `formatHours()`  [INFERRED]
   react-zeiterfassung/src/pages/SaldenPage.tsx → react-pc-frontend/src/components/VerrechnungslohnRechnerDialog.tsx
 - `abort()` --calls--> `out`  [INFERRED]
-  react-zeiterfassung/public/scanner/opencv.js → react-pc-frontend/src/components/ui/image-viewer.test.tsx
-- `abort()` --calls--> `out`  [INFERRED]
   src/main/resources/static/zeiterfassung/scanner/opencv.js → react-pc-frontend/src/components/ui/image-viewer.test.tsx
-- `cn()` --calls--> `clsx`  [INFERRED]
-  react-pc-frontend/src/lib/utils.ts → react-pc-frontend/package.json
 - `MarkdownText()` --calls--> `fmt()`  [INFERRED]
   react-pc-frontend/src/components/KiHilfeChat.tsx → react-zeiterfassung/src/pages/BelegPositionenAuswahlPage.tsx
+- `abort()` --calls--> `out`  [INFERRED]
+  react-zeiterfassung/public/scanner/opencv.js → react-pc-frontend/src/components/ui/image-viewer.test.tsx
+- `LieferantDetailView()` --calls--> `cn()`  [EXTRACTED]
+  react-pc-frontend/src/pages/LieferantenEditor.tsx → react-pc-frontend/src/lib/utils.ts
 
-## Communities (799 total, 415 thin omitted)
+## Communities (816 total, 432 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.03
-Nodes (117): FONT_SIZES, FontSizeCommandChain, FontSizeEditorCommands, ResizableImage, TiptapEditor(), TiptapEditorProps, TiptapEditorRef, TiptapToolbar() (+109 more)
+Nodes (119): anredeEnumToText(), FONT_SIZES, FontSize, FontSizeCommandChain, FontSizeEditorCommands, ResizableImage, TiptapEditor(), TiptapEditorProps (+111 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.05
-Nodes (26): ImageViewerModalProps, FrontendUserSelection, MitarbeiterStunden, SteuerberaterAnsprechpartner, SteuerberaterEmailModal(), SteuerberaterEmailModalProps, SteuerberaterKontakt, EmailValidityDialog() (+18 more)
+Cohesion: 0.06
+Nodes (20): FrontendUserSelection, MitarbeiterStunden, SteuerberaterAnsprechpartner, SteuerberaterEmailModal(), SteuerberaterEmailModalProps, SteuerberaterKontakt, EditorToolbarProps, Feiertag (+12 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.05
 Nodes (13): LeistungMapperTest, ToEntity, UpdateEntity, KostenstelleMapping, MieteMapperTest, MietobjektMapping, MietparteiMapping, RaumMapping (+5 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.04
-Nodes (19): AusgangsGeschaeftsDokumentController, Abrechnungsverlauf, AusgangsGeschaeftsDokumentControllerTest, Buchen, Create, Delete, EmailVersendet, GetByAnfrage (+11 more)
+Cohesion: 0.05
+Nodes (13): AusgangsGeschaeftsDokumentController, Abrechnungsverlauf, AusgangsGeschaeftsDokumentControllerTest, Buchen, Create, Delete, EmailVersendet, GetByAnfrage (+5 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.14
-Nodes (3): RestExceptionHandler, Message, MietabrechnungValidationException
+Cohesion: 0.04
+Nodes (54): ArtikelImportModal(), ArtikelImportModalProps, autoMapHeaders(), createInitialMappings(), DEFAULT_HEADER_CANDIDATES, FIELD_DEFINITIONS, FieldDefinition, IMPORT_FEEDBACK_STEPS (+46 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.06
-Nodes (32): KostenstelleSelectModal(), ProjectSelectModal(), formatDate(), formatEuro(), GeschaeftsdatenDto, ProjektAnteil, ZuordnungModal(), ZuordnungModalProps (+24 more)
+Cohesion: 0.04
+Nodes (43): AttachmentProps, EmailAttachmentCard(), EmailAttachmentCardProps, getAttachmentIcon(), isImageAttachment(), Kostenstelle, KostenstelleSelectModal(), KostenstelleSelectModalProps (+35 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.02
-Nodes (103): EmailHistoryProps, KategorieAnalyseModal(), KategorieAnalyseModalProps, analyseResponse, angezeigteFixzeit, Chart, kategorie, kleinsteAuftragsdauer (+95 more)
+Cohesion: 0.03
+Nodes (89): DocumentEditorKopfdatenProps, KontextDaten, ADD_BLOCKS, BlocksSidebarProps, BLOCK_CATEGORIES, BLOCK_ICONS, BLOCK_LABELS, DEFAULT_ITEMS (+81 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.04
-Nodes (13): Projekt, EmailAddressChangedEvent, AnfrageMapper, AnfrageMapperTest, KundeMapper, ProjektMapper, ProjektSimple, AnfrageService (+5 more)
+Nodes (11): Projekt, EmailAddressChangedEvent, AnfrageMapper, AnfrageMapperTest, KundeMapper, ProjektSimple, AnfrageService, BestellungService (+3 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.03
-Nodes (24): addOnPostRun(), addOnPreRun(), addRunDependency(), callRuntimeCallbacks(), createWasm(), doCallback(), done(), _emscripten_get_environ() (+16 more)
+Nodes (26): addOnPostRun(), addOnPreRun(), addRunDependency(), alignUp(), callRuntimeCallbacks(), createWasm(), doCallback(), done() (+18 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.03
 Nodes (19): addOnPostRun(), addOnPreRun(), addRunDependency(), callRuntimeCallbacks(), createWasm(), doCallback(), done(), _emscripten_get_environ() (+11 more)
 
+### Community 10 - "Community 10"
+Cohesion: 0.10
+Nodes (6): VendorInvoiceController, VendorInvoiceIntegrationService, DoppelteRechnungen, FehlendeLieferantenZuordnung, IntegrationStatus, VendorInvoiceIntegrationServiceTest
+
 ### Community 11 - "Community 11"
-Cohesion: 0.03
-Nodes (69): CategoryTreeModal(), CategoryTreeModalProps, KategorieTreeProps, CreateArticleModal(), CreateArticleModalProps, VERRECHNUNGSEINHEITEN, DetailLayout(), DetailLayoutProps (+61 more)
+Cohesion: 0.10
+Nodes (19): CHART_COLORS, ConversionRateDto, ErfolgsanalyseEditor(), formatCurrency(), formatPercent(), KategorieUmsatzVergleich, KostenstelleVergleich, KundenSortField (+11 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.04
-Nodes (56): AnfrageSearchModal(), AnfrageSearchModalProps, filterBlocksBySelectedIds(), formatCurrencyValue(), getAllServiceBlocks(), stripHtml(), TeilrechnungPositionRow(), TeilrechnungPositionRowProps (+48 more)
+Nodes (74): AnfrageSearchModal(), AnfrageSearchModalProps, DocumentCard(), DocumentCardProps, DocumentGroup(), DocumentGroupProps, DocumentManager(), DocumentManagerProps (+66 more)
+
+### Community 13 - "Community 13"
+Cohesion: 0.06
+Nodes (8): AbteilungBerechtigungController, ArtikelController, KiHilfeController, NotificationController, NotificationControllerTest, Filter, LieferantReklamationRepository, ProjektNotizRepository
 
 ### Community 14 - "Community 14"
-Cohesion: 0.22
-Nodes (3): GeminiDokumentAnalyseServiceTest, JsonTruncationHandling, ZahlungsartParsing
+Cohesion: 0.17
+Nodes (4): GeminiDokumentAnalyseServiceTest, JsonTruncationHandling, ZahlungsartParsing, ZusammenstellungKlassifizierung
 
-### Community 15 - "Community 15"
-Cohesion: 0.15
-Nodes (5): AuditChainRepairAlgorithmTest, AuditChainRepairService, AuditChainVerifier, Bericht, AuditChainVerifierTest
+### Community 16 - "Community 16"
+Cohesion: 0.09
+Nodes (4): EmailController, Email, EmailSignatureImage, LieferantDokumentRepositoryTest
 
 ### Community 17 - "Community 17"
-Cohesion: 0.04
-Nodes (41): AusgangsrechnungUploadModal(), DocumentPreviewModal(), isPdfUrl(), PreviewDoc, KundeSearchItem, KundeSearchModal(), KundeSearchModalProps, isPdfUrl() (+33 more)
+Cohesion: 0.06
+Nodes (30): DocumentPreviewModal(), isPdfUrl(), PreviewDoc, KundeSearchItem, KundeSearchModal(), KundeSearchModalProps, isPdfUrl(), AUSGANGS_TYP_BADGE (+22 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.15
-Nodes (3): QrCodeUndToken, MitarbeiterNotizRepository, MitarbeiterService
+Cohesion: 0.12
+Nodes (4): QrCodeUndToken, MitarbeiterNotizRepository, MitarbeiterService, ZeitbuchungAutoStopService
 
 ### Community 19 - "Community 19"
 Cohesion: 0.16
@@ -831,7 +854,7 @@ Nodes (5): PushSubscriptionController, GetVapidKey, PushSubscriptionControllerTe
 
 ### Community 20 - "Community 20"
 Cohesion: 0.04
-Nodes (7): ProjektMapperTest, AnfrageNotizRepository, IdEmailOnly, ProjektRepository, ProjektManagementService, ProjektManagementServiceTest, ProjektPersistenceService
+Nodes (7): ProjektMapper, ProjektMapperTest, AktualisiereStundensaetze, ExternalSpamFilterChatBackendTest, ProjektManagementService, ProjektManagementServiceTest, ProjektPersistenceService
 
 ### Community 21 - "Community 21"
 Cohesion: 0.08
@@ -841,77 +864,61 @@ Nodes (13): AllCapsBetreff, DomainBlacklist, ErstkontaktHeuristik, GefaehrlicheD
 Cohesion: 0.08
 Nodes (6): EmailKiClassificationController, EmailKiClassificationControllerTest, EmailKiClassificationService, isAssigned(), none(), EmailKiClassificationServiceTest
 
-### Community 23 - "Community 23"
-Cohesion: 0.07
-Nodes (7): BelegController, BelegControllerTest, MobileBelegeListe, SteuerberaterExport, KasseShortcutController, ZahlungsartController, BelegKategorie
-
 ### Community 24 - "Community 24"
-Cohesion: 0.15
-Nodes (9): LieferantDokumentRepositoryTest, AtomaresDokumentErstellen, BackfillXmlAufPdf, BereitsVerarbeiteteAnhaenge, DateipfadAufloesung, DokumenttypErkennung, EmailAttachmentProcessingServiceTest, PdfAnhangVerarbeitung (+1 more)
-
-### Community 25 - "Community 25"
-Cohesion: 0.11
-Nodes (3): EmailSignature, EmailTextTemplateDto, EmailTextTemplateKategorien
+Cohesion: 0.13
+Nodes (9): EmailAttachmentRepository, AtomaresDokumentErstellen, BackfillXmlAufPdf, BereitsVerarbeiteteAnhaenge, DateipfadAufloesung, DokumenttypErkennung, EmailAttachmentProcessingServiceTest, PdfAnhangVerarbeitung (+1 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.08
-Nodes (4): GeerbteRechnungsadresse, AusgangsGeschaeftsDokumentRepository, Erstellen, RechnungsadresseVererbung
+Cohesion: 0.10
+Nodes (3): AusgangsGeschaeftsDokumentRepository, Erstellen, RechnungsadresseVererbung
 
 ### Community 28 - "Community 28"
 Cohesion: 0.12
 Nodes (3): ArtikelKategorieController, KategorieRepository, KategorieService
 
 ### Community 29 - "Community 29"
-Cohesion: 0.13
-Nodes (7): Artikel, LieferantenArtikelPreise, ArtikelCascadeDeletionTest, ArtikelRepositoryTest, LieferantenArtikelPreiseRepository, OfferPriceService, OfferPriceServiceTest
+Cohesion: 0.11
+Nodes (7): ArtikelControllerTest, Artikel, LieferantenArtikelPreise, ArtikelCascadeDeletionTest, ArtikelRepositoryTest, OfferPriceService, OfferPriceServiceTest
 
 ### Community 30 - "Community 30"
 Cohesion: 0.05
-Nodes (36): Kunde, KundenPageProps, Lieferant, LieferantenPageProps, LieferantRaw, Arbeitsgang, Produktkategorie, Projekt (+28 more)
+Nodes (38): Kunde, KundenPageProps, Lieferant, LieferantenPageProps, LieferantRaw, Arbeitsgang, Produktkategorie, Projekt (+30 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.07
-Nodes (8): Feiertag, STATUS_FILTER_OPTIONS, Urlaubsantrag, UrlaubsantragPage(), UrlaubsantragPageProps, AbwesenheitRepository, UrlaubsantragRepository, UrlaubsantragService
+Cohesion: 0.09
+Nodes (3): UrlaubsantragController, UrlaubsantragRepository, UrlaubsantragService
 
 ### Community 34 - "Community 34"
 Cohesion: 0.03
-Nodes (88): CreateReklamationModal(), DocumentCard(), DocumentCardProps, DocumentGroup(), DocumentGroupProps, DocumentManager(), DocumentManagerProps, DocumentPreviewModal() (+80 more)
+Nodes (96): CreateReklamationModal(), EmailSettings(), LieferantReklamationenTab(), LieferantReklamationenTabProps, OpenFileLauncherSetup(), Projekt, ProjektSearchModal(), ProjektSearchModalProps (+88 more)
 
 ### Community 35 - "Community 35"
 Cohesion: 0.09
-Nodes (7): GaebImportController, NotificationControllerTest, EntityLastAccessed, EntityLastAccessedId, LieferantenArtikelPreiseId, Serializable, GaebImportService
+Nodes (6): AusgangsDokumentUebersichtDto, DokumentUebersichtController, EingangsDokumentUebersichtDto, GaebImportController, GaebImportService, SummiereKorrekturen
 
 ### Community 36 - "Community 36"
 Cohesion: 0.06
-Nodes (9): ZeitverwaltungController, getBeschreibung(), Zeitbuchung, ArbeitsgangMapper, ArbeitsgangMapperTest, ArbeitsgangStundensatzRepository, ProjektAuswertungPdfService, BuildComparatorTests (+1 more)
-
-### Community 41 - "Community 41"
-Cohesion: 0.06
-Nodes (7): AbteilungBerechtigungController, NotificationController, identity(), Filter, LieferantReklamationRepository, ZeitbuchungRepository, ZeiterfassungApiService
+Nodes (8): ArbeitsgangController, ZeitverwaltungController, Zeitbuchung, ArbeitsgangMapper, ArbeitsgangMapperTest, ArbeitsgangStundensatzRepository, emptyToNull(), parse()
 
 ### Community 42 - "Community 42"
 Cohesion: 0.04
 Nodes (45): dependencies, html5-qrcode, idb, jscanify, jspdf, lucide-react, react, react-dom (+37 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.05
-Nodes (6): LieferantenController, LieferantReklamationController, LieferscheinSearchDto, LieferantDokument, LieferantNotizRepository, LieferantDokumentService
+Cohesion: 0.07
+Nodes (3): LieferantenController, LieferantDokument, LieferantNotizRepository
 
 ### Community 44 - "Community 44"
-Cohesion: 0.11
+Cohesion: 0.10
 Nodes (3): EmailSignatureController, SaveSignatureRequest, EmailSignatureService
-
-### Community 45 - "Community 45"
-Cohesion: 0.03
-Nodes (8): body, LohnStammdatenController, ProjektController, UrlaubsantragController, ProjektNotizRepository, ExternalSpamFilterChatBackendTest, OllamaServiceTest, method
 
 ### Community 46 - "Community 46"
 Cohesion: 0.06
-Nodes (31): AuthContext, AuthContextValue, AuthProvider(), AuthUser, LoginResult, RegisterResult, useAuth(), RequireAdmin() (+23 more)
+Nodes (33): AuthContext, AuthContextValue, AuthProvider(), AuthUser, LoginResult, RegisterResult, useAuth(), RequireAdmin() (+25 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.14
-Nodes (9): AnfrageSuche, ContactServiceTest, Deduplizierung, EingabeValidierung, ErgebnisLimit, KombiSuche, KundenSuche, LieferantenSuche (+1 more)
+Cohesion: 0.10
+Nodes (10): LieferantenRepository, AnfrageSuche, ContactServiceTest, Deduplizierung, EingabeValidierung, ErgebnisLimit, KombiSuche, KundenSuche (+2 more)
 
 ### Community 48 - "Community 48"
 Cohesion: 0.11
@@ -922,8 +929,8 @@ Cohesion: 0.21
 Nodes (6): C, ce(), fe, le(), U, X()
 
 ### Community 51 - "Community 51"
-Cohesion: 0.07
-Nodes (10): FontSize, Modus, isSectionHeader(), isSeparator(), isService(), isSubtotal(), isText(), RechnungPdfService (+2 more)
+Cohesion: 0.08
+Nodes (6): isSectionHeader(), isSeparator(), isService(), isSubtotal(), isText(), RechnungPdfService
 
 ### Community 52 - "Community 52"
 Cohesion: 0.18
@@ -937,9 +944,9 @@ Nodes (37): 🤖 AI 生成全流程, code:block1 (assets/sfx/), code:bash (# 单
 Cohesion: 0.05
 Nodes (38): 1. 浏览器渲染检查（必做）, 2. 控制台错误检查, 3. 多视口检查, 4. 交互检查, 5. 幻灯片逐页检查, code:bash (open -a "Google Chrome" "/path/to/your/design.html"), code:python (page = browser.new_page(device_scale_factor=2)  # retina), code:python (page.wait_for_timeout(2000)  # 等2秒让动画settle) (+30 more)
 
-### Community 55 - "Community 55"
-Cohesion: 0.10
-Nodes (3): TextbausteinController, MitarbeiterStundenlohnRepository, MitarbeiterStundenlohnServiceTest
+### Community 56 - "Community 56"
+Cohesion: 0.05
+Nodes (3): Inbox, EmailRepository, EmailCleanupService
 
 ### Community 57 - "Community 57"
 Cohesion: 0.10
@@ -949,6 +956,10 @@ Nodes (4): StubBackend, ExternalSpamFilterChatBackend, LocalSpamFilterChatBacken
 Cohesion: 0.14
 Nodes (3): EmailSignatureImageRepository, EmailSignatureRepository, EmailSignatureServiceTest
 
+### Community 60 - "Community 60"
+Cohesion: 0.07
+Nodes (6): BelegControllerTest, MobileBelegeListe, SteuerberaterExport, ZahlungsartController, AbteilungDokumentBerechtigungRepository, BelegServiceTest
+
 ### Community 61 - "Community 61"
 Cohesion: 0.05
 Nodes (36): BGM 选择决策树, code:bash ([bgm_raw]lowpass=f=4000[bgm]      # BGM 限制在 <4kHz 的中低频), code:block2 (动画性格是什么？), code:block3 (时长：25 秒), code:block4 (时长：30-45 秒), code:block5 (时长：15-20 秒), code:block6 (时长：10-15 秒), code:bash (ffmpeg -y -i video.mp4 -itsoffset 2.5 -i sfx.mp3 \) (+28 more)
@@ -957,9 +968,13 @@ Nodes (36): BGM 选择决策树, code:bash ([bgm_raw]lowpass=f=4000[bgm]      # 
 Cohesion: 0.05
 Nodes (18): AnfrageDokument, AnfrageNotizBildDto, AnfrageNotizDto, EingangsrechnungDto, AnteilDto, DokumentKetteRefDto, EingangsrechnungDto, ProjektNotizBildDto (+10 more)
 
+### Community 63 - "Community 63"
+Cohesion: 0.11
+Nodes (7): GetById, Abrechnungsverlauf, Aktualisieren, AusgangsGeschaeftsDokumentServiceTest, Buchen, Loeschen, Stornieren
+
 ### Community 65 - "Community 65"
-Cohesion: 0.10
-Nodes (24): ae, be, cacheWillUpdate(), de(), $e, f, ge, ie (+16 more)
+Cohesion: 0.09
+Nodes (23): ae, be, cacheWillUpdate(), $e, f, ge, ie, j() (+15 more)
 
 ### Community 66 - "Community 66"
 Cohesion: 0.06
@@ -968,10 +983,6 @@ Nodes (35): 1. SVG noise texture, 1. 悬浮卡片（整个风格的基本单元�
 ### Community 68 - "Community 68"
 Cohesion: 0.16
 Nodes (28): craftInvokerFunction(), createNamedFunction(), __embind_finalize_value_array(), __embind_finalize_value_object(), __embind_register_class(), __embind_register_class_class_function(), __embind_register_class_constructor(), __embind_register_class_function() (+20 more)
-
-### Community 69 - "Community 69"
-Cohesion: 0.18
-Nodes (3): AusgangsDokumentUebersichtDto, DokumentUebersichtController, EingangsDokumentUebersichtDto
 
 ### Community 70 - "Community 70"
 Cohesion: 0.06
@@ -982,40 +993,40 @@ Cohesion: 0.06
 Nodes (34): 10. 录屏开头几秒动画重复 —— Warmup 帧泄漏, 11. 画面内别画「伪 chrome」—— 装饰版 player UI 与真 chrome 撞车, 12. 录屏前置空白 + 录屏起点偏移 —— `__ready` × tick × lastTick 三联陷阱, 13. 录制时禁止 loop —— `window.__recording` 信号, 14. 60fps 视频默认用帧复制 —— minterpolate 兼容性差, 15. `file://` + 外部 `.jsx` 的 CORS 陷阱 —— 单文件交付必须内联引擎, 16. 跨 scene 反色上下文 —— 画面内元素不要硬编码颜色, 1. 叠层布局 —— `position: relative` 是默认义务 (+26 more)
 
 ### Community 72 - "Community 72"
-Cohesion: 0.14
-Nodes (4): KundeControllerTest, getScore(), KundeDuplikatService, KundeDuplikatServiceTest
+Cohesion: 0.15
+Nodes (3): getScore(), KundeDuplikatService, KundeDuplikatServiceTest
 
 ### Community 73 - "Community 73"
-Cohesion: 0.13
-Nodes (5): AlleEingangsrechnungen, Bezahlt, Genehmigen, OffeneEingangsrechnungen, OffenePostenControllerTest
+Cohesion: 0.07
+Nodes (5): AusgangsrechnungDto, EingangsrechnungDto, MergePdfRequest, RechnungsuebersichtController, ProjektDokumentRepository
 
 ### Community 76 - "Community 76"
 Cohesion: 0.06
 Nodes (33): 3 个候选尺寸对比, 4 条硬约束（违反会直接报错）, body 写法三选一（等价）, code:css (body { width: 960pt;  height: 540pt; }    /* 最清晰，推荐 */), code:block10 (原设计 → editable 版调整), code:js (const pptx = new pptxgen();), code:html (<!-- ❌ 错误：文字直接在 div 里 -->), code:css (/* ❌ 错误 */) (+25 more)
 
 ### Community 77 - "Community 77"
-Cohesion: 0.06
-Nodes (19): EmailAutoAssignmentService, EmailAutoAssignmentServiceTest, FindPossibleAssignments, KeineZuordnung, KeywordMatching, KeywordMinimumlaenge, KundeEmailZuordnung, LieferantZuordnung (+11 more)
+Cohesion: 0.07
+Nodes (18): EmailAutoAssignmentServiceTest, FindPossibleAssignments, KeineZuordnung, KeywordMatching, KeywordMinimumlaenge, KundeEmailZuordnung, LieferantZuordnung, MultiStepFallback (+10 more)
 
 ### Community 78 - "Community 78"
 Cohesion: 0.18
 Nodes (15): addDays(), ANREDE_LABELS, EMPTY_TEMPLATE, escapeHtml(), formatAdresse(), formatAnrede(), formatDate(), highlightPlaceholder() (+7 more)
 
 ### Community 79 - "Community 79"
-Cohesion: 0.11
-Nodes (4): BestellungController, BestellungPdfService, BestellungPdfServiceTest, LieferantArtikelpreisMapper
+Cohesion: 0.10
+Nodes (5): BestellungController, BestellungPdfService, BestellungPdfServiceTest, BestellungServiceMappingTest, BestellungServiceTest
 
 ### Community 80 - "Community 80"
-Cohesion: 0.05
-Nodes (9): ZeitkontoKorrektur, ZeitkontoKorrekturAudit, MonatsSaldoRepository, ZeitkontoKorrekturAuditRepository, MonatsSaldoService, Invalidierung, ZeitkontoKorrekturService, GetKorrekturen (+1 more)
+Cohesion: 0.07
+Nodes (6): ZeitkontoKorrektur, ZeitkontoKorrekturAudit, MonatsSaldoRepository, ZeitkontoKorrekturAuditRepository, Invalidierung, ZeitkontoKorrekturService
 
 ### Community 81 - "Community 81"
-Cohesion: 0.07
-Nodes (4): EmailSignatureImage, FormularTemplateTextbausteinDefaultRepository, FormularTextbausteinDefaultService, TextbausteinDto
+Cohesion: 0.10
+Nodes (3): FormularTemplateTextbausteinDefaultRepository, ProjektDokumentRepositoryTest, FormularTextbausteinDefaultService
 
 ### Community 82 - "Community 82"
-Cohesion: 0.06
-Nodes (12): BackfillParents, BackfillXmlToPdf, BlockSender, Delete, Inbox, KundeLookup, MarkNotSpam, MarkRead (+4 more)
+Cohesion: 0.07
+Nodes (10): BackfillXmlToPdf, BlockSender, Delete, KundeLookup, MarkNotSpam, MarkRead, MarkSpam, Search (+2 more)
 
 ### Community 83 - "Community 83"
 Cohesion: 0.06
@@ -1024,6 +1035,10 @@ Nodes (31): 5 维度专家评审, code:block1 (npx skills add alchaincyf/huashu-
 ### Community 84 - "Community 84"
 Cohesion: 0.07
 Nodes (6): SpamModelStatsRepository, SpamTokenCountRepository, SpamBayesService, Bootstrap, Tokenisierung, Training
+
+### Community 87 - "Community 87"
+Cohesion: 0.12
+Nodes (3): EmailTextTemplateController, EmailTextTemplateDto, EmailTextTemplateKategorien
 
 ### Community 88 - "Community 88"
 Cohesion: 0.06
@@ -1046,16 +1061,16 @@ Cohesion: 0.21
 Nodes (3): KundeMapperTest, ToListItem, ToResponseDto
 
 ### Community 93 - "Community 93"
-Cohesion: 0.10
-Nodes (6): ScanResult, SpamFilterService, BekannteKundenEmails, EnsembleIntegration, NewsletterErkennung, ZugeordneteEmails
+Cohesion: 0.14
+Nodes (4): BekannteKundenEmails, EnsembleIntegration, NewsletterErkennung, ZugeordneteEmails
 
 ### Community 95 - "Community 95"
-Cohesion: 0.08
-Nodes (4): ProjektControllerTest, LieferantDokumentProjektAnteilRepository, AktualisiereProjektPreisAusDokumenten, AusgangsGeschaeftsDokumentServiceBezahltTest
+Cohesion: 0.13
+Nodes (5): EmailTemplateController, EmailTemplateRequest, EmailTemplateResponse, EmailService, getDisplayName()
 
 ### Community 96 - "Community 96"
-Cohesion: 0.17
-Nodes (8): AbschlagsrechnungMitClosure, ContentBlockTests, EndToEndTests, FormBlockTypedTests, PlaceholderResolutionTests, RealTemplateTests, RechnungPdfServiceTest, WatermarkTests
+Cohesion: 0.14
+Nodes (9): AbschlagsrechnungMitClosure, ContentBlockTests, EndToEndTests, FormBlockTypedTests, LayoutTests, PlaceholderResolutionTests, RealTemplateTests, RechnungPdfServiceTest (+1 more)
 
 ### Community 97 - "Community 97"
 Cohesion: 0.06
@@ -1070,16 +1085,16 @@ Cohesion: 0.07
 Nodes (29): code:jsx (// ── Step 1: 定义 hero 在每个 scene 的目标状态（位置/大小/不透明度）──), code:block2 (┌──────────────────────────┐), code:markdown (---), code:ts ({), code:jsx (const { NarrationStage, Subtitles } = NarrationStageLib;), code:js (splitChunkToLines(text, maxLen = 13)), code:jsx (import 'assets/narration_stage.jsx';), code:block8 (DOUBAO_TTS_API_KEY=<your_key>) (+21 more)
 
 ### Community 100 - "Community 100"
-Cohesion: 0.07
-Nodes (4): ArtikelMatchingService, CodebaseIndexService, KiHilfeService, LocalRagService
+Cohesion: 0.09
+Nodes (5): EntityLastAccessed, EntityLastAccessedId, LieferantenArtikelPreiseId, Serializable, LocalRagService
 
-### Community 102 - "Community 102"
-Cohesion: 0.15
-Nodes (3): fromLabel(), DokumentnummerCounterRepository, FormularTemplateService
+### Community 101 - "Community 101"
+Cohesion: 0.18
+Nodes (3): LieferantDokumentServiceTest, LieferantenDetailServiceTest, LoadDetails
 
 ### Community 103 - "Community 103"
-Cohesion: 0.03
-Nodes (64): AttachmentProps, EmailAttachmentCard(), EmailAttachmentCardProps, getAttachmentIcon(), isImageAttachment(), anredeEnumToText(), deriveOrderRecipientName(), EmailComposeForm() (+56 more)
+Cohesion: 0.06
+Nodes (33): deriveOrderRecipientName(), EmailComposeForm(), AttachmentPreviewModal(), AttachmentPreviewModalProps, EmailComposeModal(), EmailComposeModalProps, getFileExtension(), getFileIconUrl() (+25 more)
 
 ### Community 104 - "Community 104"
 Cohesion: 0.07
@@ -1094,12 +1109,12 @@ Cohesion: 0.18
 Nodes (6): AddressValue, calledUrls, mockFetch, { onChange }, photonResponse, user
 
 ### Community 107 - "Community 107"
-Cohesion: 0.10
-Nodes (19): CHART_COLORS, ConversionRateDto, ErfolgsanalyseEditor(), formatCurrency(), formatPercent(), KategorieUmsatzVergleich, KostenstelleVergleich, KundenSortField (+11 more)
+Cohesion: 0.18
+Nodes (4): AlleEingangsrechnungen, Bezahlt, Genehmigen, OffenePostenControllerTest
 
 ### Community 108 - "Community 108"
-Cohesion: 0.24
-Nodes (3): AbwesenheitController, emptyToNull(), parse()
+Cohesion: 0.11
+Nodes (14): allButtons, anfrageResults, anfrageTab, deleteButtons, globeButton, headings, mockEmails, mockStats (+6 more)
 
 ### Community 109 - "Community 109"
 Cohesion: 0.07
@@ -1111,7 +1126,7 @@ Nodes (27): 1a. Secrets-Scan (KRITISCH – bei Fund sofort abbrechen), 1b. Backe
 
 ### Community 112 - "Community 112"
 Cohesion: 0.08
-Nodes (17): AufteilungsModus, Auswertung, AuswertungZeile, Beleg, BelegPosition, BelegStatus, KassenBewegung, Kassenbuch (+9 more)
+Nodes (18): AufteilungsModus, Auswertung, AuswertungZeile, Beleg, BelegKategorie, BelegPosition, BelegStatus, KassenBewegung (+10 more)
 
 ### Community 113 - "Community 113"
 Cohesion: 0.11
@@ -1122,20 +1137,20 @@ Cohesion: 0.07
 Nodes (27): code:html (<script src="https://unpkg.com/react@18.3.1/umd/react.develo), code:html (<input id="api-key" placeholder="粘贴你的Anthropic API key" />), code:html (<!DOCTYPE html>), code:block12 (项目/), code:html (<script type="text/babel" src="src/primitives.jsx"></script>), code:block2 (项目名/), code:html (<!-- 先React+Babel -->), code:jsx (// components.jsx) (+19 more)
 
 ### Community 115 - "Community 115"
-Cohesion: 0.07
+Cohesion: 0.08
 Nodes (8): Artikel, ArtikelHilfsstoffe, ArtikelWerkstoffe, ArtikelRepository, WerkstoffRepositoryTest, ArtikelService, ArtikelServiceContract, LieferantArtikelpreisService
 
 ### Community 116 - "Community 116"
 Cohesion: 0.06
-Nodes (4): DateiController, DateiControllerTest, DateiSpeicherService, DateiSpeicherServiceTest
+Nodes (5): ProjektControllerTest, AktualisiereProjektPreisAusDokumenten, AusgangsGeschaeftsDokumentServiceBezahltTest, DateiSpeicherService, DateiSpeicherServiceTest
 
 ### Community 117 - "Community 117"
-Cohesion: 0.18
+Cohesion: 0.17
 Nodes (3): AnfrageBestaetigungVersandService, AnfrageBestaetigungVersandServiceTest, EmailOutboundPersistenceService
 
 ### Community 118 - "Community 118"
-Cohesion: 0.09
-Nodes (27): abort(), addFunctionWasm(), allocate(), assert(), _clock_gettime(), convertJsFunctionToWasm(), _emscripten_get_now(), _emscripten_get_now_is_monotonic() (+19 more)
+Cohesion: 0.07
+Nodes (33): abort(), addFunctionWasm(), allocate(), assert(), _clock_gettime(), convertJsFunctionToWasm(), _emscripten_get_now(), _emscripten_get_now_is_monotonic() (+25 more)
 
 ### Community 119 - "Community 119"
 Cohesion: 0.07
@@ -1149,13 +1164,9 @@ Nodes (26): 1. 有意义的选项，不是折腾人的, 2. 少即是多, 3. 默�
 Cohesion: 0.15
 Nodes (3): FooterPageEvent, MietabrechnungPdfService, PdfPageEventHelper
 
-### Community 122 - "Community 122"
-Cohesion: 0.07
-Nodes (5): Zeitkonto, SvSatzRepository, SvKontext, VerrechnungslohnService, VerrechnungslohnServiceTest
-
 ### Community 123 - "Community 123"
-Cohesion: 0.16
-Nodes (5): AutoStoppeWennNoetig, MonatsSaldoInvalidierung, PruefUndStoppeOffeneBuchungen, ZeitbuchungAutoStopServiceTest, ZeiterfassungApiServiceConcurrencyTest
+Cohesion: 0.14
+Nodes (3): MitarbeiterRepository, ZeitbuchungRepository, ZeiterfassungApiServiceConcurrencyTest
 
 ### Community 125 - "Community 125"
 Cohesion: 0.07
@@ -1165,28 +1176,36 @@ Nodes (22): formatLocalDate(), MobileDatePickerProps, MONTHS, buttons, { contain
 Cohesion: 0.09
 Nodes (27): abort(), addFunctionWasm(), allocate(), assert(), _clock_gettime(), convertJsFunctionToWasm(), _emscripten_get_now(), _emscripten_get_now_is_monotonic() (+19 more)
 
+### Community 128 - "Community 128"
+Cohesion: 0.12
+Nodes (3): EmailAttachment, ScanResult, SpamFilterService
+
 ### Community 129 - "Community 129"
 Cohesion: 0.10
-Nodes (23): buildExclusiveItemTypesByCat(), buildItemKey(), CategoryDto, dismissCategory(), dismissItem(), filterDismissed(), gcOrphanedDismissals(), ITEM_TO_CAT_TYPES (+15 more)
+Nodes (22): buildExclusiveItemTypesByCat(), buildItemKey(), CategoryDto, dismissCategory(), dismissItem(), filterDismissed(), gcOrphanedDismissals(), ITEM_TO_CAT_TYPES (+14 more)
 
 ### Community 130 - "Community 130"
-Cohesion: 0.14
-Nodes (3): OutOfOfficeScheduleRepository, OutOfOfficeResponder, OutOfOfficeResponderTest
+Cohesion: 0.07
+Nodes (8): OutOfOfficeController, SaveOooRequest, HtmlMailSender, SmtpHtmlMailSender, OooReplyLogRepository, OutOfOfficeScheduleRepository, OutOfOfficeResponder, OutOfOfficeResponderTest
 
 ### Community 131 - "Community 131"
-Cohesion: 0.10
-Nodes (4): ZeitbuchungAudit, AenderungsgrundKatalogRepository, ZeitbuchungAuditRepository, ZeitbuchungAuditService
+Cohesion: 0.14
+Nodes (3): ZeitbuchungAudit, ZeitbuchungAuditRepository, ZeitbuchungAuditService
 
 ### Community 133 - "Community 133"
 Cohesion: 0.08
 Nodes (4): SeenSenderDomainRepository, EmailImportService, BlacklistSkip, FallbackMessageId
 
-### Community 136 - "Community 136"
+### Community 134 - "Community 134"
 Cohesion: 0.14
-Nodes (3): after, EmailHtmlSanitizer, EmailHtmlSanitizerTest
+Nodes (3): AbwesenheitController, AbwesenheitService, AbwesenheitServiceTest
+
+### Community 136 - "Community 136"
+Cohesion: 0.13
+Nodes (3): EmailHtmlBackfillRunner, EmailHtmlSanitizer, EmailHtmlSanitizerTest
 
 ### Community 137 - "Community 137"
-Cohesion: 0.15
+Cohesion: 0.14
 Nodes (3): ArtikelInProjektRepository, StuecklistePdfService, StuecklistePdfServiceTest
 
 ### Community 138 - "Community 138"
@@ -1202,8 +1221,8 @@ Cohesion: 0.08
 Nodes (23): 1. Design Context（最重要）, 2. Variations维度, 3. Fidelity和Scope, 4. Tweaks, 5. 问题专属（至少4个）, code:markdown (开始前想跟你对齐几个问题，一次列齐你批量回答就行：), code:html (<!--), code:markdown (✅ 幻灯片已完成（10张），带Tweaks可切换"夜/日模式"。) (+15 more)
 
 ### Community 141 - "Community 141"
-Cohesion: 0.23
-Nodes (3): Dokumenttyp(), BelegKiAnalyseServiceTest, IntegrationStatus
+Cohesion: 0.20
+Nodes (3): Dokumenttyp(), BelegKiAnalyseService, BelegKiAnalyseServiceTest
 
 ### Community 142 - "Community 142"
 Cohesion: 0.15
@@ -1221,17 +1240,13 @@ Nodes (23): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, for
 Cohesion: 0.08
 Nodes (23): 0 · 这份文档解决什么问题, 1 · 五个核心 pattern, 2 · 静态 Dashboard 设计要点, 3 · 调试与开发工具, 4 · iframe 嵌入坑（如果 cinematic 嵌在 deck 里）, 5 · 反 pattern 速查表, 6 · 时间预算, Cinematic Patterns · Workflow Demo 的 Best Practice (+15 more)
 
-### Community 147 - "Community 147"
-Cohesion: 0.09
-Nodes (4): KostenVerteilungController, CopyVorjahr, KostenVerteilungControllerTest, VerteilungsschluesselCrud
-
 ### Community 148 - "Community 148"
-Cohesion: 0.10
-Nodes (13): LieferantReklamationDetailPage(), Reklamation, LieferantReklamationenPage(), Reklamation, Ergebnis, EUR, SetupPageProps, clearAuth() (+5 more)
+Cohesion: 0.08
+Nodes (17): AbwesenheitenPageProps, Antrag, statusConfig, typConfig, LieferantReklamationDetailPage(), Reklamation, LieferantReklamationenPage(), Reklamation (+9 more)
 
 ### Community 150 - "Community 150"
-Cohesion: 0.11
-Nodes (8): Delete, DeletePartei, FindAll, GetById, GetParteien, MietobjektServiceTest, Save, SavePartei
+Cohesion: 0.16
+Nodes (6): FindAll, GetById, GetParteien, MietobjektServiceTest, Save, SavePartei
 
 ### Community 151 - "Community 151"
 Cohesion: 0.09
@@ -1242,16 +1257,16 @@ Cohesion: 0.09
 Nodes (22): 1. `render-video.js` — HTML → MP4, 2. `add-music.sh` — MP4 + BGM → MP4, 3. `convert-formats.sh` — MP4 → 60fps MP4 + GIF, code:bash (NODE_PATH=$(npm root -g) node /path/to/claude-design/scripts), code:bash (bash add-music.sh <input.mp4> [--mood=<name>] [--music=<path), code:bash (node render-video.js animation.html                        #), code:bash (bash /path/to/claude-design/scripts/convert-formats.sh <inpu), code:bash (cd <项目目录>) (+14 more)
 
 ### Community 153 - "Community 153"
-Cohesion: 0.25
-Nodes (6): installSessionInterceptor(), isAuthEndpoint(), originalFetch, rootElement, STATE_CHANGING_METHODS, token
+Cohesion: 0.22
+Nodes (7): installSessionInterceptor(), isAuthEndpoint(), method, originalFetch, rootElement, STATE_CHANGING_METHODS, token
 
 ### Community 154 - "Community 154"
 Cohesion: 0.11
 Nodes (3): EmailAbsenderRepository, EmailAbsenderService, EmailAbsenderServiceTest
 
 ### Community 155 - "Community 155"
-Cohesion: 0.12
-Nodes (4): AendereKorrektur, ErstelleKorrektur, StorniereKorrektur, ZeitkontoKorrekturServiceTest
+Cohesion: 0.08
+Nodes (9): AutoStoppeWennNoetig, MonatsSaldoInvalidierung, PruefUndStoppeOffeneBuchungen, ZeitbuchungAutoStopServiceTest, AendereKorrektur, ErstelleKorrektur, GetKorrekturen, StorniereKorrektur (+1 more)
 
 ### Community 156 - "Community 156"
 Cohesion: 0.26
@@ -1273,14 +1288,6 @@ Nodes (22): dependencies, chart.js, clsx, @dnd-kit/core, @dnd-kit/sortable, @dnd
 Cohesion: 0.09
 Nodes (22): devDependencies, autoprefixer, eslint, @eslint/js, eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, jsdom (+14 more)
 
-### Community 162 - "Community 162"
-Cohesion: 0.09
-Nodes (18): Eingangsrechnung, EingangsrechnungenTab(), EingangsrechnungenTabProps, formatEuro(), DEFAULT_CONFIG, DOK_TYP_CONFIG, DokumentCard(), DokumentCardProps (+10 more)
-
-### Community 163 - "Community 163"
-Cohesion: 0.07
-Nodes (5): ProduktkategorieController, ProduktkategorieMapper, ProduktkategorieMapperTest, ProduktkategorieRepository, ProduktkategorieService
-
 ### Community 164 - "Community 164"
 Cohesion: 0.08
 Nodes (24): BASENAME, { chromium }, DIR, DURATION, ffmpeg, FONT_WAIT, fs, HEIGHT (+16 more)
@@ -1291,7 +1298,7 @@ Nodes (4): FreigabeInternalController, DokumentFreigabe, DokumentFreigabeReposit
 
 ### Community 166 - "Community 166"
 Cohesion: 0.05
-Nodes (13): Download, LieferantenControllerTest, PushSubscriptionRepository, DoppelteRechnungen, FehlendeLieferantenZuordnung, VendorInvoiceIntegrationServiceTest, CheckAndSendNotifications, GetVapidPublicKey (+5 more)
+Nodes (10): Download, LieferantenControllerTest, PushSubscriptionRepository, CheckAndSendNotifications, GetVapidPublicKey, Init, IsEnabled, Subscribe (+2 more)
 
 ### Community 167 - "Community 167"
 Cohesion: 0.10
@@ -1310,12 +1317,16 @@ Cohesion: 0.12
 Nodes (4): ConstraintMessageResolver, ConstraintMetadataBuilder, DatabaseConstraintMetadataService, fromDatabase()
 
 ### Community 172 - "Community 172"
-Cohesion: 0.18
-Nodes (3): ZugferdExtractorService, FallbackBeiUngueltigemPdf, GeschaeftsdokumentartErkennung
+Cohesion: 0.16
+Nodes (4): ZugferdAmazonDiagnoseTest, ZugferdExtractorService, FallbackBeiUngueltigemPdf, GeschaeftsdokumentartErkennung
+
+### Community 173 - "Community 173"
+Cohesion: 0.11
+Nodes (6): Beautify, EmailControllerTest, Preview, PreviewAnfrage, Send, SendAnfrage
 
 ### Community 174 - "Community 174"
-Cohesion: 0.14
-Nodes (4): KasseEinstellungRepository, EhegattengehaltSchedulerService, EhegattengehaltSchedulerServiceTest, KasseShortcutServiceTest
+Cohesion: 0.11
+Nodes (5): KasseEinstellungRepository, SachkontoRepository, EhegattengehaltSchedulerService, EhegattengehaltSchedulerServiceTest, KasseShortcutServiceTest
 
 ### Community 175 - "Community 175"
 Cohesion: 0.09
@@ -1337,6 +1348,10 @@ Nodes (3): DokumentLockRepository, DokumentLockService, DokumentLockServiceTest
 Cohesion: 0.07
 Nodes (29): EmailContentFrame(), EmailContentFrameProps, escapeHtml(), isLikelyPlainText(), tonlineMail, BubbleProps, decodeMimeWord(), DraftBubbleProps (+21 more)
 
+### Community 180 - "Community 180"
+Cohesion: 0.17
+Nodes (3): KostenVerteilungService, CopyKostenpositionenVonVorjahr, MieteKostenstelleRepository
+
 ### Community 182 - "Community 182"
 Cohesion: 0.10
 Nodes (19): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, lib, module, moduleDetection, moduleResolution, noEmit (+11 more)
@@ -1346,23 +1361,19 @@ Cohesion: 0.10
 Nodes (19): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, lib, module, moduleDetection, moduleResolution, noEmit (+11 more)
 
 ### Community 187 - "Community 187"
-Cohesion: 0.15
+Cohesion: 0.16
 Nodes (3): istAusgang(), istKassenBewegung(), BelegeKasseExportPdfService
-
-### Community 188 - "Community 188"
-Cohesion: 0.07
-Nodes (4): LohnabrechnungController, LohnabrechnungRepository, LohnabrechnungService, LohnabrechnungServiceTest
 
 ### Community 190 - "Community 190"
 Cohesion: 0.15
 Nodes (4): EntityLastAccessedController, EntityLastAccessedRepository, EntityLastAccessedService, EntityLastAccessedServiceTest
 
 ### Community 191 - "Community 191"
-Cohesion: 0.06
-Nodes (11): BelegZuordnungDto, BelegZuordnungRequest, BestellungsUebersichtController, DokumentRef, GeschaeftsdatenDto, ProjektAnteil, ZuordnungDto, ZuordnungRequest (+3 more)
+Cohesion: 0.04
+Nodes (9): BestellungsUebersichtController, BestellungsUebersichtControllerBuildKettenTest, LieferantReklamationController, LieferscheinSearchDto, getBeschreibung(), LieferantDokumentProjektAnteilRepository, LieferantDokumentService, LieferantStandardKostenstelleAutoAssigner (+1 more)
 
 ### Community 192 - "Community 192"
-Cohesion: 0.10
+Cohesion: 0.11
 Nodes (3): FeiertagRepository, FeiertagService, FeiertagServiceTest
 
 ### Community 194 - "Community 194"
@@ -1386,7 +1397,7 @@ Cohesion: 0.17
 Nodes (17): Appointment, checkAndNotify(), CheckNotificationsMessage, cleanupOldSentEntries(), data, fetchAndCheckAppointments(), formatDate(), hasBeenSent() (+9 more)
 
 ### Community 199 - "Community 199"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (4): ModellStatus, Prediction, SpamBayesServiceTest, StatusGetter
 
 ### Community 203 - "Community 203"
@@ -1394,32 +1405,24 @@ Cohesion: 0.14
 Nodes (19): __addDays(), __arraySum(), ccall(), demangle(), demangleAll(), __embind_register_std_string(), getCFunc(), intArrayFromString() (+11 more)
 
 ### Community 204 - "Community 204"
-Cohesion: 0.04
-Nodes (42): allButtons, anfrageResults, anfrageTab, deleteButtons, globeButton, headings, mockEmails, mockStats (+34 more)
+Cohesion: 0.05
+Nodes (36): EmailHistoryProps, EmailSignature, fetchUserDefaultSignatureHtml(), FrontendUserSelection, getCurrentFrontendUser(), OutOfOfficeBackend, OutOfOfficeEntry, EmailValidityDialog() (+28 more)
 
 ### Community 205 - "Community 205"
-Cohesion: 0.08
-Nodes (4): AnfrageDokument, Dokument, MitarbeiterDokument, ProjektDokument
-
-### Community 206 - "Community 206"
-Cohesion: 0.10
-Nodes (5): SystemSettingsController, EmailClassificationGeminiClient, failure(), success(), SystemSettingsService
+Cohesion: 0.05
+Nodes (6): AnfrageController, AnfrageDokument, Dokument, MitarbeiterDokument, ProjektDokument, AnfrageNotizRepository
 
 ### Community 207 - "Community 207"
 Cohesion: 0.03
-Nodes (128): AnalyzeResponse, AusgangsrechnungUploadModalProps, GESCHAEFTSDOKUMENTART_OPTIONS, Projekt, Step, CreateReklamationModalProps, Lieferschein, DokumentHierarchie() (+120 more)
-
-### Community 208 - "Community 208"
-Cohesion: 0.12
-Nodes (5): EmailTemplateController, EmailTemplateRequest, EmailTemplateResponse, EmailService, getDisplayName()
+Nodes (104): AnalyzeResponse, AusgangsrechnungUploadModal(), AusgangsrechnungUploadModalProps, GESCHAEFTSDOKUMENTART_OPTIONS, Projekt, Step, CreateReklamationModalProps, Lieferschein (+96 more)
 
 ### Community 209 - "Community 209"
 Cohesion: 0.12
 Nodes (17): 4.1 FLIP / Shared Element Transition, 4.2「呼吸式」展开（width→height）, 4.3 Staggered Fade-up（30ms stagger）, 4.4 非线性呼吸 · 关键结果前悬停 0.5s, 4.5 Chunk Reveal · 模拟 token 流式, 4.6 Anticipation → Action → Follow-through, 4.7 3D Perspective + translateZ 分层, 4.8 斜向 Pan · 同时动 XY (+9 more)
 
 ### Community 211 - "Community 211"
-Cohesion: 0.10
-Nodes (4): AusgangsGeschaeftsDokument, MwstErgebnis, MwstRechnerService, MwstRechnerServiceTest
+Cohesion: 0.12
+Nodes (3): MwstErgebnis, MwstRechnerService, MwstRechnerServiceTest
 
 ### Community 214 - "Community 214"
 Cohesion: 0.13
@@ -1430,12 +1433,12 @@ Cohesion: 0.12
 Nodes (15): code:jsx (<div style={{), References路由表, Skill 推广水印（仅动画产出）, Starter Components（assets/下）, 产出要求, 使用前提, 反AI slop速查, 完整流程（8 个 Phase，顺序执行） (+7 more)
 
 ### Community 217 - "Community 217"
-Cohesion: 0.15
-Nodes (5): I(), k(), me, R, we()
+Cohesion: 0.14
+Nodes (6): I(), k(), me, R, re(), we()
 
 ### Community 218 - "Community 218"
 Cohesion: 0.03
-Nodes (58): AddressAutocomplete(), AddressAutocompleteProps, DEFAULT_COUNTRIES, NominatimItem, PhotonFeature, PhotonProperties, queryCache, searchNominatim() (+50 more)
+Nodes (60): AddressAutocomplete(), AddressAutocompleteProps, DEFAULT_COUNTRIES, NominatimItem, PhotonFeature, PhotonProperties, queryCache, searchNominatim() (+52 more)
 
 ### Community 220 - "Community 220"
 Cohesion: 0.16
@@ -1446,44 +1449,40 @@ Cohesion: 0.18
 Nodes (13): __embind_register_bool(), __embind_register_emval(), __embind_register_float(), __embind_register_integer(), __embind_register_memory_view(), __embind_register_std_wstring(), __embind_register_void(), __emval_decref() (+5 more)
 
 ### Community 222 - "Community 222"
-Cohesion: 0.20
+Cohesion: 0.22
 Nodes (3): InquiryDetectionService, ScanResult, InquiryDetectionServiceTest
 
 ### Community 223 - "Community 223"
 Cohesion: 0.07
-Nodes (9): ZeitverwaltungControllerTest, MonatsSaldo, Berechnung, CacheVerhalten, Fehlerfaelle, MonatsSaldoEntity, MonatsSaldoServiceTest, ZeitkontoService (+1 more)
+Nodes (6): ZeitverwaltungControllerTest, MonatsSaldo, Berechnung, MonatsSaldoEntity, ZeitkontoService, ZeitkontoServiceTest
 
 ### Community 224 - "Community 224"
 Cohesion: 0.13
 Nodes (13): BelegDto, KassenBewegung, KassenbuchResponse, KostenstellenSplitDto, MwstRechnerRequest, MwstRechnerResponse, PermissionResponse, PositionAuswahlRequest (+5 more)
 
 ### Community 226 - "Community 226"
-Cohesion: 0.14
+Cohesion: 0.18
 Nodes (4): LieferantMapper, LieferantMapperTest, ToDetailItem, ToListItem
 
 ### Community 227 - "Community 227"
-Cohesion: 0.14
-Nodes (5): Ee(), h, ne(), pe, v()
+Cohesion: 0.13
+Nodes (6): de(), Ee(), h, ne(), pe, v()
 
 ### Community 228 - "Community 228"
 Cohesion: 0.20
 Nodes (13): __dirname, main(), parseArgs(), addBackground(), addElements(), { chromium }, extractSlideData(), getBodyDimensions() (+5 more)
 
 ### Community 229 - "Community 229"
-Cohesion: 0.12
-Nodes (15): DokumentTypOption, EmailTemplate, EmailTextvorlagenEditor(), escapeHtml(), highlightPlaceholder(), Kategorie, KATEGORIE_BADGE, KATEGORIE_LABEL (+7 more)
+Cohesion: 0.03
+Nodes (71): KategorieAnalyseModal(), KategorieAnalyseModalProps, analyseResponse, angezeigteFixzeit, Chart, kategorie, kleinsteAuftragsdauer, mockFetch (+63 more)
 
 ### Community 230 - "Community 230"
-Cohesion: 0.12
+Cohesion: 0.13
 Nodes (14): Apache License 2.0, BSD 3-Clause License, Drittanbieter-Lizenzen / Third-Party Licenses, EPL 2.0 / GPL 2.0 mit Classpath Exception, GPL 2.0 mit FOSS Exception, Hinweis, ISC License, Java Backend (+6 more)
 
-### Community 232 - "Community 232"
-Cohesion: 0.20
-Nodes (10): ArtikelImportModal(), ArtikelImportModalProps, autoMapHeaders(), createInitialMappings(), DEFAULT_HEADER_CANDIDATES, FIELD_DEFINITIONS, FieldDefinition, IMPORT_FEEDBACK_STEPS (+2 more)
-
 ### Community 237 - "Community 237"
-Cohesion: 0.08
-Nodes (10): Beautify, EmailControllerTest, Preview, PreviewAnfrage, Send, SendAnfrage, VerteilungsschluesselTests, AktualisiereStundensaetze (+2 more)
+Cohesion: 0.10
+Nodes (7): KostenstelleTests, KostenVerteilungServiceTest, VerteilungsschluesselTests, Delete, DeletePartei, empty(), PdfAiExtractorService
 
 ### Community 239 - "Community 239"
 Cohesion: 0.14
@@ -1494,12 +1493,8 @@ Cohesion: 0.14
 Nodes (13): Allgemeine Regeln, Build, Test, and Run, code:tsx (<ImageViewer), Coding Style & Naming, Commit & Pull Requests, Frontend Implementation, Image Viewer Design Guidelines, ImageViewer-Komponenten-API (+5 more)
 
 ### Community 241 - "Community 241"
-Cohesion: 0.17
-Nodes (4): KundenZaehlerRepository, KundeRepository, KundennummerService, KundennummerServiceTest
-
-### Community 248 - "Community 248"
-Cohesion: 0.12
-Nodes (4): AnfrageRepository, AnfrageRepositoryTest, KundenDetailServiceTest, LoadDetails
+Cohesion: 0.21
+Nodes (3): KundenZaehlerRepository, KundennummerService, KundennummerServiceTest
 
 ### Community 249 - "Community 249"
 Cohesion: 0.11
@@ -1510,8 +1505,8 @@ Cohesion: 0.15
 Nodes (13): code:powershell (Test-NetConnection -ComputerName 192.168.x.x -Port 3307), code:powershell (Test-Path "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql), code:powershell (Get-ScheduledTask -TaskName "Kalkulationsprogramm - Auto Sta), code:powershell (java -version), code:powershell (Test-Path "C:\Kalkulationsprogramm\Kalkulationsprogramm.jar"), code:powershell (Test-NetConnection -ComputerName localhost -Port 8082), code:powershell (C:\Kalkulationsprogramm\scripts\restart-kalkulationsprogramm), Problem: Alte Backups werden nicht gelöscht (+5 more)
 
 ### Community 252 - "Community 252"
-Cohesion: 0.09
-Nodes (7): KundeDuplikatException, FalscheAuftragsnummerException, ForbiddenException, NotFoundException, RuntimeException, FunnelAnfrageAbgelehntException, KasseUnterdeckungException
+Cohesion: 0.06
+Nodes (9): RestExceptionHandler, KundeDuplikatException, FalscheAuftragsnummerException, ForbiddenException, MietabrechnungValidationException, NotFoundException, RuntimeException, FunnelAnfrageAbgelehntException (+1 more)
 
 ### Community 253 - "Community 253"
 Cohesion: 0.15
@@ -1534,7 +1529,7 @@ Cohesion: 0.14
 Nodes (3): MieteMapper, VerteilungsschluesselMapping, KostenpositionBerechner
 
 ### Community 260 - "Community 260"
-Cohesion: 0.21
+Cohesion: 0.19
 Nodes (4): ZugferdErstellService, ErstellungMitNullWerten, NormalizeDokumentenart, ZugferdErstellServiceTest
 
 ### Community 262 - "Community 262"
@@ -1542,8 +1537,8 @@ Cohesion: 0.15
 Nodes (12): AnalyzeResponse, BerechtigungenResponse, GeschaeftsdatenRef, ImportRequest, LieferantDokumentDto, MultiInvoiceAnalyzeResponse, ProjektAnteil, ProjektAnteilRef (+4 more)
 
 ### Community 263 - "Community 263"
-Cohesion: 0.05
-Nodes (4): AusgangsGeschaeftsDokumentCounterRepository, AusgangsGeschaeftsDokumentAuditService, AusgangsGeschaeftsDokumentService, EnsureAnfrageDokument
+Cohesion: 0.08
+Nodes (3): AusgangsGeschaeftsDokumentCounterRepository, AusgangsGeschaeftsDokumentService, EnsureAnfrageDokument
 
 ### Community 264 - "Community 264"
 Cohesion: 0.17
@@ -1566,8 +1561,8 @@ Cohesion: 0.26
 Nodes (7): Ensure-MappedDrive(), Get-MatchingRoot(), Get-NetUseMappedRoot(), L(), Normalize-UNC(), Try-NetUse(), TryOpen-Explorer()
 
 ### Community 270 - "Community 270"
-Cohesion: 0.19
-Nodes (13): __emval_as(), __emval_call_void_method(), __emval_get_property(), __emval_lookupTypes(), __emval_new_array(), __emval_new_cstring(), __emval_register(), __emval_set_property() (+5 more)
+Cohesion: 0.21
+Nodes (12): __emval_as(), __emval_call_void_method(), __emval_get_property(), __emval_new_array(), __emval_new_cstring(), __emval_register(), __emval_set_property(), __emval_take_value() (+4 more)
 
 ### Community 271 - "Community 271"
 Cohesion: 0.17
@@ -1601,14 +1596,6 @@ Nodes (11): code:bash (node scripts/export_deck_pdf.mjs --slides <slides-dir> --
 Cohesion: 0.18
 Nodes (11): code:block4 (我的Deck/), code:html (<!DOCTYPE html>), code:js (window.DECK_MANIFEST = [), code:bash (open slides/05-personas.html), `shared/tokens.css` 该放什么, 单页验证（这是多文件架构的杀手级优势）, 并行开发, 拼接器：`deck_index.html` (+3 more)
 
-### Community 285 - "Community 285"
-Cohesion: 0.17
-Nodes (4): AusgangsrechnungDto, EingangsrechnungDto, MergePdfRequest, RechnungsuebersichtController
-
-### Community 286 - "Community 286"
-Cohesion: 0.38
-Nodes (3): CloudflareAccessJwtFilter, OncePerRequestFilter, before
-
 ### Community 289 - "Community 289"
 Cohesion: 0.25
 Nodes (3): FrontendUserDetailsService, SecurityConfig, UserDetailsService
@@ -1617,13 +1604,9 @@ Nodes (3): FrontendUserDetailsService, SecurityConfig, UserDetailsService
 Cohesion: 0.06
 Nodes (6): KostenpositionRepository, MietabrechnungServiceTest, RaumVerbrauchController, RaumVerbrauchService, VerbrauchsgegenstandRepository, ZaehlerstandRepository
 
-### Community 292 - "Community 292"
-Cohesion: 0.13
-Nodes (3): KiHilfeController, text(), KundenDetailService
-
 ### Community 294 - "Community 294"
-Cohesion: 0.40
-Nodes (6): createNamedFunction(), __emval_addMethodCaller(), __emval_get_method_caller(), extendError(), makeLegalFunctionName(), new_()
+Cohesion: 0.33
+Nodes (7): createNamedFunction(), __emval_addMethodCaller(), __emval_get_method_caller(), __emval_lookupTypes(), extendError(), makeLegalFunctionName(), new_()
 
 ### Community 295 - "Community 295"
 Cohesion: 0.18
@@ -1642,7 +1625,7 @@ Cohesion: 0.20
 Nodes (9): code:batch (iexpress /N setup-config.sed), 📦 Das fertige Setup verteilen, Einmalige Vorbereitung:, ℹ️ Empfehlung, ⭐ Option 1: IExpress (bereits in Windows), 🏆 Option 2: Inno Setup (professioneller), 🔄 Setup aktualisieren, Setup erstellen: (+1 more)
 
 ### Community 302 - "Community 302"
-Cohesion: 0.06
+Cohesion: 0.07
 Nodes (8): BwaUploadRepository, BwaService, BwaServiceTest, Delete, FindAvailableYears, FindById, FindByJahr, FindStoredFilename
 
 ### Community 304 - "Community 304"
@@ -1650,16 +1633,12 @@ Cohesion: 0.29
 Nodes (7): downcastPointer(), getBasestPointer(), getInheritedInstance(), makeClassHandle(), RegisteredPointer_fromWireType(), replacePublicSymbol(), throwInternalError()
 
 ### Community 305 - "Community 305"
-Cohesion: 0.13
-Nodes (4): BuildKategoriePfadTests, GeneratePdfValidierungTests, GroupByLabelTests, ProjektAuswertungPdfServiceTest
-
-### Community 309 - "Community 309"
-Cohesion: 0.29
-Nodes (6): { container }, handleClose, images, img, out, user
+Cohesion: 0.18
+Nodes (3): BuildKategoriePfadTests, GeneratePdfValidierungTests, ProjektAuswertungPdfServiceTest
 
 ### Community 310 - "Community 310"
-Cohesion: 0.29
-Nodes (7): alignUp(), dynamicAlloc(), _emscripten_get_heap_size(), emscripten_realloc_buffer(), _emscripten_resize_heap(), getMemory(), updateGlobalBufferAndViews()
+Cohesion: 0.27
+Nodes (3): EmailAutoAssignmentService, EntityOption, PossibleAssignments
 
 ### Community 315 - "Community 315"
 Cohesion: 0.11
@@ -1686,8 +1665,12 @@ Cohesion: 0.22
 Nodes (9): 09. Experimental Jetset - 概念极简, 10. Müller-Brockmann传承 - 瑞士网格纯粹主义, 11. Build - 当代极简品牌, 12. Sagmeister & Walsh - 快乐极简, code:block10 (Josef Müller-Brockmann Swiss modernism:), code:block11 (Build studio luxury minimalism:), code:block12 (Sagmeister & Walsh joyful philosophy:), code:block9 (Experimental Jetset conceptual minimalism:) (+1 more)
 
 ### Community 324 - "Community 324"
-Cohesion: 0.33
-Nodes (3): LieferantBildDto, LieferantCreateRequestDto, LieferantUpdateRequestDto
+Cohesion: 0.25
+Nodes (7): mockFetch, mockHauptkategorien, mockSearchResults, onClose, onConfirm, searchInput, user
+
+### Community 326 - "Community 326"
+Cohesion: 0.13
+Nodes (5): MonatsSaldoService, CacheVerhalten, Fehlerfaelle, MonatsSaldoServiceTest, MonatsSaldoWarmupService
 
 ### Community 327 - "Community 327"
 Cohesion: 0.25
@@ -1710,8 +1693,8 @@ Cohesion: 0.25
 Nodes (7): computedHash, skillPath, source, sourceType, skills, huashu-design, version
 
 ### Community 334 - "Community 334"
-Cohesion: 0.47
-Nodes (3): PdfPCellEvent, CheckboxCellEvent, LeftCheckboxCellEvent
+Cohesion: 0.25
+Nodes (7): BelegZuordnungDto, BelegZuordnungRequest, DokumentRef, GeschaeftsdatenDto, ProjektAnteil, ZuordnungDto, ZuordnungRequest
 
 ### Community 336 - "Community 336"
 Cohesion: 0.25
@@ -1742,11 +1725,15 @@ Cohesion: 0.20
 Nodes (3): FrontendUserController, SaveProfileRequest, SetDefaultSignatureRequest
 
 ### Community 345 - "Community 345"
-Cohesion: 0.07
-Nodes (7): KostenpositionenCrud, KostenVerteilungService, CopyKostenpositionenVonVorjahr, KostenpositionTests, KostenstelleTests, KostenVerteilungServiceTest, MieteKostenstelleRepository
+Cohesion: 0.06
+Nodes (6): KostenVerteilungController, CopyVorjahr, KostenpositionenCrud, KostenVerteilungControllerTest, VerteilungsschluesselCrud, KostenpositionTests
+
+### Community 347 - "Community 347"
+Cohesion: 0.18
+Nodes (4): CloudflareAccessJwtFilter, CsrfCookieFilter, ZeiterfassungSecurityFilter, OncePerRequestFilter
 
 ### Community 349 - "Community 349"
-Cohesion: 0.10
+Cohesion: 0.09
 Nodes (4): GetThread, EmailDraftRepository, EmailThreadService, EmailThreadServiceTest
 
 ### Community 351 - "Community 351"
@@ -1777,13 +1764,9 @@ Nodes (7): Backup-Status prüfen, code:powershell (# Letzte Backups anzeigen), c
 Cohesion: 0.29
 Nodes (6): Hardware-Anforderungen, Kalkulationsprogramm - Deployment Guide, Software-Anforderungen, Support, Voraussetzungen, Übersicht
 
-### Community 361 - "Community 361"
-Cohesion: 0.50
-Nodes (3): LieferantSearchModal(), LieferantSearchModalProps, LieferantSuchErgebnis
-
 ### Community 362 - "Community 362"
-Cohesion: 0.08
-Nodes (21): DocumentLockedModal(), DocumentLockedModalProps, formatBearbeitetSeit(), KiHilfeChat(), lsKey(), MarkdownText(), SourceLink, VALID_ROUTES (+13 more)
+Cohesion: 0.05
+Nodes (34): DocumentLockedModal(), DocumentLockedModalProps, formatBearbeitetSeit(), Eingangsrechnung, EingangsrechnungenTab(), EingangsrechnungenTabProps, formatEuro(), KiHilfeChat() (+26 more)
 
 ### Community 365 - "Community 365"
 Cohesion: 0.29
@@ -1801,6 +1784,10 @@ Nodes (5): AuswertungResponse, AuswertungZeile, Response, SachkontoDto, UpsertRe
 Cohesion: 0.29
 Nodes (6): AbteilungVorschlag, DatenLuecke, KostenstelleAnteil, MitarbeiterLohnZeile, MitarbeiterStundenZeile, VerrechnungslohnErgebnisDto
 
+### Community 371 - "Community 371"
+Cohesion: 0.33
+Nodes (4): Feiertag, STATUS_FILTER_OPTIONS, Urlaubsantrag, UrlaubsantragPageProps
+
 ### Community 372 - "Community 372"
 Cohesion: 0.27
 Nodes (8): Camera, CameraHandle, CameraProps, acquireCameraStream(), getActiveCameraStream(), releaseCameraStream(), streamIsLive(), FakeTrack
@@ -1812,6 +1799,10 @@ Nodes (7): AufteilungsSektion(), AuswertungView(), BelegRow(), formatDate(), for
 ### Community 377 - "Community 377"
 Cohesion: 0.33
 Nodes (7): __dirname, getDuration(), main(), parseArgs(), SKILL_ROOT, tts(), usage()
+
+### Community 378 - "Community 378"
+Cohesion: 0.29
+Nodes (6): MarkdownText(), BelegPositionenAuswahlPage(), BelegResponse, EUR, fmt(), Position
 
 ### Community 379 - "Community 379"
 Cohesion: 0.47
@@ -1849,13 +1840,17 @@ Nodes (5): code:js (export default defineConfig([), code:js (// eslint.config.js
 Cohesion: 0.33
 Nodes (6): §0.1 身份锚点, §0.2 核心信念（3 条）, §0.3 品味标准 · 什么是美, §0.4 自检 · 观众第一反应法, §0.5 身份和规则的关系, §0 · 你是谁 · 身份与品味
 
+### Community 394 - "Community 394"
+Cohesion: 0.12
+Nodes (3): ArtikelMatchingService, ArtikelMatchingServiceTest, QdrantRagService
+
 ### Community 396 - "Community 396"
 Cohesion: 0.11
 Nodes (13): BILLING_UNITS, FolderDescriptionForm(), FolderDescriptionFormProps, FolderTreeNode(), FolderTreeNodeProps, FolderTreeProps, getFolderPath(), LeistungApiResponse (+5 more)
 
 ### Community 398 - "Community 398"
-Cohesion: 0.22
-Nodes (3): B(), he, O()
+Cohesion: 0.20
+Nodes (4): B(), he, O(), ye()
 
 ### Community 400 - "Community 400"
 Cohesion: 0.13
@@ -1901,8 +1896,12 @@ Nodes (5): 6.1 什么是 AI slop？为什么要反？, 6.2 核心要规避的（
 Cohesion: 0.40
 Nodes (4): name, private, type, version
 
+### Community 417 - "Community 417"
+Cohesion: 0.08
+Nodes (7): SystemSettingsController, ImapAppendService, SmtpHtmlMailSenderTest, EmailClassificationGeminiClient, failure(), success(), SystemSettingsService
+
 ### Community 419 - "Community 419"
-Cohesion: 0.20
+Cohesion: 0.22
 Nodes (7): request(), fetchAnfrageLastAccessed(), trackAnfrageAccess(), fetchProjektLastAccessed(), trackProjektAccess(), isServerReachable(), g
 
 ### Community 420 - "Community 420"
@@ -1922,12 +1921,20 @@ Cohesion: 0.40
 Nodes (5): code:block3 (│ 问：deck 预计有多少页？), 两种架构对比, 为什么这条规则这么硬？（真实事故记录）, 🛑 先定架构：单文件 还是 多文件？, 选哪个？（决策树）
 
 ### Community 426 - "Community 426"
-Cohesion: 0.17
+Cohesion: 0.15
 Nodes (3): KundeController, KundeCreateRequestDto, KundeUpdateRequestDto
 
-### Community 431 - "Community 431"
+### Community 428 - "Community 428"
 Cohesion: 0.33
-Nodes (4): AbwesenheitenPageProps, Antrag, statusConfig, typConfig
+Nodes (3): LieferantBildDto, LieferantCreateRequestDto, LieferantUpdateRequestDto
+
+### Community 430 - "Community 430"
+Cohesion: 0.33
+Nodes (5): Feiertag, Mitarbeiter, SaldenPage(), SaldenPageProps, SaldoData
+
+### Community 431 - "Community 431"
+Cohesion: 0.47
+Nodes (3): PdfPCellEvent, CheckboxCellEvent, LeftCheckboxCellEvent
 
 ### Community 432 - "Community 432"
 Cohesion: 0.40
@@ -1953,49 +1960,49 @@ Nodes (3): main(), parse_viewport(), verify_html()
 Cohesion: 0.67
 Nodes (3): 工作流程, 标准流程（用TaskCreate追踪）, 问问题的要点
 
-### Community 790 - "Community 790"
-Cohesion: 0.33
-Nodes (5): Feiertag, Mitarbeiter, SaldenPage(), SaldenPageProps, SaldoData
+### Community 789 - "Community 789"
+Cohesion: 0.40
+Nodes (5): getBinary(), getBinaryPromise(), intArrayFromBase64(), isDataURI(), tryParseAsDataURI()
+
+### Community 793 - "Community 793"
+Cohesion: 0.50
+Nodes (3): LieferantSearchModal(), LieferantSearchModalProps, LieferantSuchErgebnis
 
 ### Community 794 - "Community 794"
 Cohesion: 0.38
 Nodes (5): CITY_TO_AREA_CODE, lookupAreaCode(), normalizeOrt(), PLZ_PREFIX2_TO_AREA_CODE, PLZ_PREFIX3_TO_AREA_CODE
-
-### Community 796 - "Community 796"
-Cohesion: 0.16
-Nodes (5): ApplicationRunner, AuditChainBackfillRunner, AuditChainRebuildRunner, FrontendUserBootstrapInitializer, AuditChainStateRepository
 
 ### Community 798 - "Community 798"
 Cohesion: 0.50
 Nodes (5): BelegDetailModal(), buildSachkontoOptions(), buildZahlungsartOptions(), formatDateTime(), UmbuchungModal()
 
 ### Community 801 - "Community 801"
-Cohesion: 0.16
-Nodes (4): AusgangsGeschaeftsDokumentAudit, AusgangsGeschaeftsDokumentAuditCanonicalTest, AuditChainRepairIntegrationTest, AuditHashRoundtripDiagnoseTest
+Cohesion: 0.19
+Nodes (3): AusgangsGeschaeftsDokumentAudit, AusgangsGeschaeftsDokumentAuditCanonicalTest, AuditHashRoundtripDiagnoseTest
 
 ### Community 802 - "Community 802"
-Cohesion: 0.29
-Nodes (5): defaultProps, inputs, mockFetch, postCall, spinbuttons
+Cohesion: 0.25
+Nodes (6): body, defaultProps, inputs, mockFetch, postCall, spinbuttons
 
 ## Knowledge Gaps
-- **2135 isolated node(s):** `version`, `source`, `sourceType`, `skillPath`, `computedHash` (+2130 more)
+- **2146 isolated node(s):** `ANREDE_OPTIONS`, `EMPTY_KUNDE`, `KundenDetailViewProps`, `KundenFormularProps`, `KundenKarteProps` (+2141 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **415 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **432 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `body` connect `Community 45` to `Community 514`, `Community 3`, `Community 4`, `Community 7`, `Community 136`, `Community 394`, `Community 275`, `Community 788`, `Community 149`, `Community 278`, `Community 23`, `Community 22`, `Community 281`, `Community 26`, `Community 28`, `Community 285`, `Community 33`, `Community 802`, `Community 291`, `Community 292`, `Community 165`, `Community 36`, `Community 290`, `Community 297`, `Community 427`, `Community 44`, `Community 43`, `Community 175`, `Community 818`, `Community 180`, `Community 183`, `Community 57`, `Community 826`, `Community 188`, `Community 191`, `Community 63`, `Community 193`, `Community 322`, `Community 67`, `Community 199`, `Community 329`, `Community 201`, `Community 205`, `Community 206`, `Community 79`, `Community 82`, `Community 85`, `Community 343`, `Community 215`, `Community 94`, `Community 97`, `Community 100`, `Community 230`, `Community 231`, `Community 234`, `Community 108`, `Community 236`, `Community 110`, `Community 237`, `Community 116`, `Community 245`, `Community 250`, `Community 252`?**
-  _High betweenness centrality (0.114) - this node is a cross-community bridge._
-- **Why does `Select()` connect `Community 207` to `Community 1`, `Community 6`, `Community 136`, `Community 11`, `Community 12`, `Community 396`, `Community 13`, `Community 17`, `Community 162`, `Community 34`, `Community 299`, `Community 826`, `Community 196`, `Community 78`, `Community 218`, `Community 352`, `Community 229`, `Community 103`, `Community 232`, `Community 107`, `Community 112`, `Community 249`?**
-  _High betweenness centrality (0.104) - this node is a cross-community bridge._
-- **Why does `empty()` connect `Community 237` to `Community 2`, `Community 3`, `Community 130`, `Community 7`, `Community 135`, `Community 263`, `Community 141`, `Community 142`, `Community 16`, `Community 146`, `Community 275`, `Community 20`, `Community 19`, `Community 22`, `Community 21`, `Community 150`, `Community 154`, `Community 155`, `Community 29`, `Community 32`, `Community 33`, `Community 36`, `Community 165`, `Community 166`, `Community 39`, `Community 40`, `Community 169`, `Community 171`, `Community 44`, `Community 302`, `Community 174`, `Community 48`, `Community 178`, `Community 55`, `Community 58`, `Community 59`, `Community 188`, `Community 60`, `Community 446`, `Community 189`, `Community 64`, `Community 67`, `Community 199`, `Community 200`, `Community 73`, `Community 82`, `Community 345`, `Community 91`, `Community 349`, `Community 222`, `Community 95`, `Community 223`, `Community 97`, `Community 93`, `Community 101`, `Community 231`, `Community 105`, `Community 234`, `Community 241`, `Community 115`, `Community 116`, `Community 245`, `Community 246`, `Community 247`, `Community 248`, `Community 122`?**
-  _High betweenness centrality (0.053) - this node is a cross-community bridge._
-- **Are the 182 inferred relationships involving `body` (e.g. with `.bucheAbwesenheit()` and `.empfangeSnapshot()`) actually correct?**
-  _`body` has 182 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 167 inferred relationships involving `Filter` (e.g. with `.getAllBerechtigungen()` and `.getBerechtigungen()`) actually correct?**
+- **Why does `empty()` connect `Community 237` to `Community 2`, `Community 130`, `Community 133`, `Community 135`, `Community 7`, `Community 263`, `Community 394`, `Community 10`, `Community 141`, `Community 142`, `Community 16`, `Community 146`, `Community 275`, `Community 19`, `Community 277`, `Community 22`, `Community 20`, `Community 21`, `Community 150`, `Community 154`, `Community 155`, `Community 29`, `Community 32`, `Community 33`, `Community 418`, `Community 36`, `Community 165`, `Community 293`, `Community 39`, `Community 40`, `Community 41`, `Community 166`, `Community 171`, `Community 44`, `Community 173`, `Community 169`, `Community 302`, `Community 48`, `Community 174`, `Community 178`, `Community 55`, `Community 58`, `Community 59`, `Community 60`, `Community 189`, `Community 63`, `Community 64`, `Community 67`, `Community 326`, `Community 199`, `Community 200`, `Community 201`, `Community 82`, `Community 470`, `Community 345`, `Community 91`, `Community 349`, `Community 93`, `Community 223`, `Community 97`, `Community 101`, `Community 231`, `Community 105`, `Community 234`, `Community 107`, `Community 241`, `Community 116`, `Community 246`, `Community 247`, `Community 248`, `Community 374`?**
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+- **Why does `getBeschreibung()` connect `Community 191` to `Community 258`, `Community 259`, `Community 2`, `Community 7`, `Community 137`, `Community 13`, `Community 142`, `Community 273`, `Community 20`, `Community 149`, `Community 25`, `Community 281`, `Community 28`, `Community 29`, `Community 163`, `Community 36`, `Community 429`, `Community 174`, `Community 48`, `Community 435`, `Community 180`, `Community 309`, `Community 181`, `Community 185`, `Community 187`, `Community 64`, `Community 329`, `Community 202`, `Community 205`, `Community 344`, `Community 345`, `Community 346`, `Community 350`, `Community 225`, `Community 235`, `Community 121`?**
+  _High betweenness centrality (0.024) - this node is a cross-community bridge._
+- **Why does `AusgangsGeschaeftsDokumentService` connect `Community 263` to `Community 3`, `Community 67`, `Community 38`, `Community 7`, `Community 73`, `Community 236`, `Community 205`, `Community 20`, `Community 27`, `Community 124`, `Community 189`, `Community 63`?**
+  _High betweenness centrality (0.011) - this node is a cross-community bridge._
+- **Are the 167 inferred relationships involving `Filter` (e.g. with `.analysiereDokument()` and `.automatischeVerknuepfung()`) actually correct?**
   _`Filter` has 167 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 153 inferred relationships involving `empty()` (e.g. with `.getSignatureForFrontendUser()` and `.getSignatureForFrontendUser()`) actually correct?**
+- **Are the 153 inferred relationships involving `empty()` (e.g. with `.findeLieferantByEmailDomain()` and `.getSignatureForFrontendUser()`) actually correct?**
   _`empty()` has 153 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `version`, `source`, `sourceType` to the rest of the system?**
-  _2135 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `ANREDE_OPTIONS`, `EMPTY_KUNDE`, `KundenDetailViewProps` to the rest of the system?**
+  _2146 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Community 0` be split into smaller, more focused modules?**
+  _Cohesion score 0.026229790161678708 - nodes in this community are weakly interconnected._
