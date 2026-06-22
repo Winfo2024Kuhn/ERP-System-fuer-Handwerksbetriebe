@@ -6,9 +6,11 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
+import org.example.kalkulationsprogramm.domain.LieferantRolle;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 @Getter
 @Setter
@@ -23,6 +25,8 @@ public class LieferantCreateRequestDto {
 
     @Size(max = 100, message = "Lieferantentyp ist zu lang.")
     private String lieferantenTyp;
+
+    private Set<LieferantRolle> rollen;
 
     @Size(max = 255, message = "Vertreter ist zu lang.")
     private String vertreter;

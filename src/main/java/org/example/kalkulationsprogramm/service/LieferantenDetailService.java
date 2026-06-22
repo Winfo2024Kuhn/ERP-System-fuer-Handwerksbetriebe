@@ -53,6 +53,7 @@ public class LieferantenDetailService {
         dto.setLieferantenname(lieferant.getLieferantenname());
         dto.setEigeneKundennummer(lieferant.getEigeneKundennummer());
         dto.setLieferantenTyp(lieferant.getLieferantenTyp());
+        dto.setRollen(lieferant.getRollen());
         dto.setVertreter(lieferant.getVertreter());
         dto.setStrasse(lieferant.getStrasse());
         dto.setPlz(lieferant.getPlz());

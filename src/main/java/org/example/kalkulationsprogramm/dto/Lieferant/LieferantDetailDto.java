@@ -2,11 +2,13 @@ package org.example.kalkulationsprogramm.dto.Lieferant;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.example.kalkulationsprogramm.domain.LieferantRolle;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 @Getter
 @Setter
@@ -15,6 +17,7 @@ public class LieferantDetailDto {
     private String lieferantenname;
     private String eigeneKundennummer;
     private String lieferantenTyp;
+    private Set<LieferantRolle> rollen;
     private String vertreter;
     private String strasse;
     private String plz;

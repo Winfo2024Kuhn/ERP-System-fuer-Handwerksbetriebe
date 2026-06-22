@@ -23,6 +23,7 @@ public class LieferantMapper {
         dto.setId(lieferant.getId());
         dto.setLieferantenname(lieferant.getLieferantenname());
         dto.setLieferantenTyp(lieferant.getLieferantenTyp());
+        dto.setRollen(lieferant.getRollen());
         dto.setVertreter(lieferant.getVertreter());
         dto.setStrasse(lieferant.getStrasse());
         dto.setPlz(lieferant.getPlz());

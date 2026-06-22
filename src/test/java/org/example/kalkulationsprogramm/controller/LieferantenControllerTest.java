@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantRolle;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
 import org.example.kalkulationsprogramm.mapper.LieferantMapper;
@@ -18,6 +19,7 @@ import org.example.kalkulationsprogramm.service.LieferantenDetailService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -149,6 +151,65 @@ class LieferantenControllerTest {
         .content(payload))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.lieferantenname").value("Neu"));
+  }
+
+  @Test
+  @DisplayName("Update speichert die uebergebenen Rollen am Lieferanten")
+  void updatesLieferantSpeichertRollen() throws Exception {
+    Lieferanten entity = new Lieferanten();
+    entity.setId(5L);
+    entity.setLieferantenname("Stahlbau Mustermann");
+    when(lieferantenRepository.findById(5L)).thenReturn(Optional.of(entity));
+    when(lieferantenDetailService.loadDetails(5L)).thenReturn(new LieferantDetailDto());
+
+    String payload = """
+        {
+          "lieferantenname": "Stahlbau Mustermann",
+          "istAktiv": true,
+          "kundenEmails": [],
+          "rollen": ["STAHLHANDEL", "EDELSTAHL"]
+        }
+        """;
+
+    mockMvc.perform(put("/api/lieferanten/5")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(payload))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<Lieferanten> captor = ArgumentCaptor.forClass(Lieferanten.class);
+    org.mockito.Mockito.verify(lieferantenRepository).save(captor.capture());
+    org.junit.jupiter.api.Assertions.assertEquals(
+        java.util.Set.of(org.example.kalkulationsprogramm.domain.LieferantRolle.STAHLHANDEL,
+            org.example.kalkulationsprogramm.domain.LieferantRolle.EDELSTAHL),
+        captor.getValue().getRollen());
+  }
+
+  @Test
+  @DisplayName("Update ohne rollen-Feld leert die Rollen-Zuordnung statt sie unveraendert zu lassen")
+  void updatesLieferantOhneRollenLeertZuordnung() throws Exception {
+    Lieferanten entity = new Lieferanten();
+    entity.setId(6L);
+    entity.setLieferantenname("Alt");
+    entity.setRollen(new java.util.HashSet<>(java.util.Set.of(org.example.kalkulationsprogramm.domain.LieferantRolle.IT)));
+    when(lieferantenRepository.findById(6L)).thenReturn(Optional.of(entity));
+    when(lieferantenDetailService.loadDetails(6L)).thenReturn(new LieferantDetailDto());
+
+    String payload = """
+        {
+          "lieferantenname": "Alt",
+          "istAktiv": true,
+          "kundenEmails": []
+        }
+        """;
+
+    mockMvc.perform(put("/api/lieferanten/6")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(payload))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<Lieferanten> captor = ArgumentCaptor.forClass(Lieferanten.class);
+    org.mockito.Mockito.verify(lieferantenRepository).save(captor.capture());
+    org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getRollen().isEmpty());
   }
 
   /**

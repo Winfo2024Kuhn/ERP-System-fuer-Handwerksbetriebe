@@ -404,6 +404,8 @@ export default function ArtikelEditor() {
                 <SupplierSelectModal
                     onSelect={handleSupplierSelect}
                     onClose={() => setShowSupplierModal(false)}
+                    kategorieId={supplierSelectionMode === 'edit' ? editingArticle?.kategorieId : undefined}
+                    kategorieName={supplierSelectionMode === 'edit' ? editingArticle?.kategoriePfad : undefined}
                 />
             )}
             {showCategoryModal && (

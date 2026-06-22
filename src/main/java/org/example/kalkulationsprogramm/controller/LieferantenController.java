@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -178,6 +179,7 @@ public class LieferantenController {
         lieferant.setLieferantenname(name);
         lieferant.setEigeneKundennummer(trimToNull(request.getEigeneKundennummer()));
         lieferant.setLieferantenTyp(trimToNull(request.getLieferantenTyp()));
+        lieferant.setRollen(request.getRollen() != null ? new HashSet<>(request.getRollen()) : new HashSet<>());
         lieferant.setVertreter(trimToNull(request.getVertreter()));
         lieferant.setStrasse(trimToNull(request.getStrasse()));
         lieferant.setPlz(trimToNull(request.getPlz()));
@@ -221,6 +223,7 @@ public class LieferantenController {
         lieferant.setLieferantenname(name);
         lieferant.setEigeneKundennummer(trimToNull(request.getEigeneKundennummer()));
         lieferant.setLieferantenTyp(trimToNull(request.getLieferantenTyp()));
+        lieferant.setRollen(request.getRollen() != null ? new HashSet<>(request.getRollen()) : new HashSet<>());
         lieferant.setVertreter(trimToNull(request.getVertreter()));
         lieferant.setStrasse(trimToNull(request.getStrasse()));
         lieferant.setPlz(trimToNull(request.getPlz()));
