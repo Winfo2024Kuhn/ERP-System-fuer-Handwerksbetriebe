@@ -38,11 +38,16 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import jakarta.persistence.EntityNotFoundException;
+import org.springframework.dao.DataIntegrityViolationException;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -424,6 +429,41 @@ class LieferantDokumentControllerTest {
 
             mockMvc.perform(post("/api/lieferant-dokumente/process-email/999"))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("DELETE /api/lieferant-dokumente/{id}")
+    class LoescheDokument {
+
+        @Test
+        @DisplayName("Löscht Dokument erfolgreich → 204")
+        void loeschtErfolgreich_gibt204() throws Exception {
+            doNothing().when(dokumentService).loescheDokument(eq(1L), anyString());
+
+            mockMvc.perform(delete("/api/lieferant-dokumente/1").principal(testAuth()))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test
+        @DisplayName("Unbekannte ID → 404")
+        void unbekannteId_gibt404() throws Exception {
+            doThrow(new EntityNotFoundException("Dokument nicht gefunden: 99"))
+                    .when(dokumentService).loescheDokument(eq(99L), anyString());
+
+            mockMvc.perform(delete("/api/lieferant-dokumente/99").principal(testAuth()))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("GoBD-geschützter Typ (RECHNUNG) → 422 mit Fehlermeldung")
+        void goBDGeschuetzterTyp_gibt422() throws Exception {
+            doThrow(new IllegalArgumentException("GoBD-Aufbewahrungspflicht"))
+                    .when(dokumentService).loescheDokument(eq(2L), anyString());
+
+            mockMvc.perform(delete("/api/lieferant-dokumente/2").principal(testAuth()))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.message").value("GoBD-Aufbewahrungspflicht"));
         }
     }
 }

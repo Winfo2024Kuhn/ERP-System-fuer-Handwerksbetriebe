@@ -22,7 +22,9 @@ import org.example.kalkulationsprogramm.service.DokumentLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
+import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -677,6 +679,24 @@ public class LieferantDokumentController {
                 "geloescht", geloescht,
                 "fehler", fehler,
                 "gruppenBereinigt", gruppen.size()));
+    }
+
+    // ==================== ADMIN: EINZELDOKUMENT LÖSCHEN ====================
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> loescheDokument(@PathVariable Long id, Authentication auth) {
+        String adminUsername = auth != null ? auth.getName() : "unbekannt";
+        try {
+            dokumentService.loescheDokument(id, adminUsername);
+            return ResponseEntity.noContent().build();
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.unprocessableEntity().body(Map.of("message", e.getMessage()));
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.unprocessableEntity().body(Map.of("message",
+                "Dokument ist mit anderen Daten (z.B. Reklamationen) verknüpft und kann nicht gelöscht werden."));
+        }
     }
 
     // ==================== DOWNLOAD ENDPOINT ====================

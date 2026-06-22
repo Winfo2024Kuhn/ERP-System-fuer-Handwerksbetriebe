@@ -160,6 +160,8 @@ public class SecurityConfig {
                 // E-Mail-Admin-Backfills sind betriebsweite, schreibende Massenoperationen
                 // auf Belegen/Attachments - nur Admin (VPN ersetzt keine Authentifizierung).
                 .requestMatchers(HttpMethod.POST, "/api/emails/admin/**").hasRole("ADMIN")
+                // Lieferantendokumente löschen ist eine irreversible Admin-Aktion
+                .requestMatchers(HttpMethod.DELETE, "/api/lieferant-dokumente/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form

@@ -142,6 +142,9 @@ public class GeminiDokumentAnalyseService {
                - Newsletter, Rundschreiben, Infoschreiben
                - Allgemeine Korrespondenz ohne Geschäftsvorgang
                - Technische Datenblätter, Zertifikate
+               - Zusammenstellungen, Abrechnungsübersichten ("E-ZUSAMMENSTELLUNG",
+                 "Rechnungsübersicht", "Rechnungszusammenstellung") – auch wenn sie
+                 Beträge, Zahlungsziele oder Bankdaten enthalten!
                - ALLES was NICHT Angebot/AB/Lieferschein/Rechnung/Gutschrift ist
                - WICHTIG: Wenn du dir nicht sicher bist ob es ein Geschäftsdokument ist,
                  dann wähle SONSTIG und setze confidence auf 0.0!
@@ -267,6 +270,15 @@ public class GeminiDokumentAnalyseService {
                 - Bei RECHNUNG: Suche nach "Auftrags-Nr.", "AB-Nr." (PRIORITÄT!) oder "Lieferschein-Nr." → verweist auf AB oder Lieferschein
                 - Bei GUTSCHRIFT: Suche nach "Rechnungs-Nr.", "zu Rechnung" → verweist auf die Original-Rechnung
             16. DOKUMENT-GÜLTIGKEIT: Wenn "Abschrift", "Kopie", "Entwurf" oder "Duplikat" irgendwo im Dokument steht, MUSS " (Kopie)" an dokumentTyp angehängt werden.
+            17. ABRECHNUNGS-ZUSAMMENSTELLUNG: Wenn der Titel oder die Überschrift des
+                Dokuments "Zusammenstellung" enthält (z.B. "E-ZUSAMMENSTELLUNG",
+                "E-Zusammenstellung", "Rechnungszusammenstellung") → ZWINGEND SONSTIG,
+                istGeschaeftsdokument=false. Das gilt AUCH wenn das Dokument Beträge,
+                Rechnungsnummern, Zahlungsziele oder Bankverbindungen enthält.
+            18. KEIN STEUERBELEG: Wenn das Dokument den Satz "Gilt nicht als
+                Umsatzsteuererstattungsbeleg" ODER "berechtigt nicht zum Vorsteuerabzug"
+                enthält → ZWINGEND SONSTIG, istGeschaeftsdokument=false.
+                Solche Dokumente sind nie buchhalterisch verwertbare Belege.
             """;
 
     /**

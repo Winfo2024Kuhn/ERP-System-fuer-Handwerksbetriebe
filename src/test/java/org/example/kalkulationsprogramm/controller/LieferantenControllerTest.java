@@ -15,8 +15,14 @@ import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
 
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.service.LieferantenDetailService;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -88,6 +94,18 @@ class LieferantenControllerTest {
 
   @Autowired
   private LieferantenController controller;
+
+  @Test
+  @DisplayName("Freitext-Suche nach Telefonnummer liefert 200 und ruft Repository auf")
+  void sucheLieferantenMitTelefonnummerLiefert200() throws Exception {
+    Page<Lieferanten> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 12), 0);
+    when(lieferantenRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(emptyPage);
+
+    mockMvc.perform(get("/api/lieferanten").param("q", "0931"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.lieferanten").isArray())
+        .andExpect(jsonPath("$.gesamt").value(0));
+  }
 
   @Test
   void returnsAllEmails() throws Exception {

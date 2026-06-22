@@ -23,6 +23,7 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.repository.AbteilungDokumentBerechtigungRepository;
+import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -49,6 +50,7 @@ public class LieferantDokumentService {
         private final ProjektRepository projektRepository;
         private final MitarbeiterRepository mitarbeiterRepository;
         private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
+        private final EmailAttachmentRepository emailAttachmentRepository;
         @Lazy
         private final GeminiDokumentAnalyseService geminiService;
         private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
@@ -445,5 +447,61 @@ public class LieferantDokumentService {
                 }
 
                 return builder.build();
+        }
+
+        /**
+         * Löscht ein Lieferantendokument physisch. RECHNUNG und GUTSCHRIFT sind
+         * aus GoBD-Gründen gesperrt — zuerst Typ auf SONSTIG ändern.
+         *
+         * @throws jakarta.persistence.EntityNotFoundException wenn das Dokument nicht existiert
+         * @throws IllegalArgumentException wenn der Dokumenttyp GoBD-geschützt ist
+         */
+        @Transactional
+        public void loescheDokument(Long id, String adminUsername) {
+                LieferantDokument dokument = dokumentRepository.findById(id)
+                        .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Dokument nicht gefunden: " + id));
+
+                if (LieferantDokumentTyp.RECHNUNG == dokument.getTyp()
+                        || LieferantDokumentTyp.GUTSCHRIFT == dokument.getTyp()) {
+                        throw new IllegalArgumentException(
+                                "Dokument vom Typ " + dokument.getTyp() + " kann nicht gelöscht werden (GoBD-Aufbewahrungspflicht). "
+                                + "Falls es eine Fehlklassifikation ist, bitte zuerst den Typ auf 'Sonstiges' ändern.");
+                }
+
+                log.info("Admin '{}' löscht Lieferantendokument ID={}", adminUsername, id);
+
+                // EmailAttachment entkoppeln – aiProcessed NICHT auf false setzen,
+                // damit der nächste Verarbeitungslauf das Dokument nicht neu anlegt.
+                emailAttachmentRepository.findByLieferantDokumentId(id).forEach(att -> {
+                        att.setLieferantDokument(null);
+                        emailAttachmentRepository.save(att);
+                });
+
+                // Physische Datei nur löschen, wenn sie exklusiv diesem Dokument gehört
+                // (manueller Upload). Bei Email-Attachment oder mobilem Beleg liegt die
+                // Datei im jeweils anderen Modul und wird dort weiter benötigt.
+                if (dokument.getAttachment() == null && dokument.getBeleg() == null
+                                && dokument.getGespeicherterDateiname() != null
+                                && dokument.getLieferant() != null) {
+                        Path lieferantDir = Path.of(uploadPath, "lieferanten", dokument.getLieferant().getId().toString())
+                                        .toAbsolutePath().normalize();
+                        Path filePath = lieferantDir.resolve(dokument.getGespeicherterDateiname()).normalize();
+                        if (filePath.startsWith(lieferantDir)) {
+                                try {
+                                        Files.deleteIfExists(filePath);
+                                } catch (IOException e) {
+                                        log.warn("Physische Datei konnte nicht gelöscht werden: {}", filePath, e);
+                                }
+                        }
+                }
+
+                // Kettenverknüpfungen lösen
+                dokument.getVerknuepfteDokumente().clear();
+                dokument.getVerknuepftVon().forEach(vd -> vd.getVerknuepfteDokumente().remove(dokument));
+                dokument.getProjektAnteile().clear();
+                dokument.setAttachment(null);
+                dokumentRepository.saveAndFlush(dokument);
+
+                dokumentRepository.delete(dokument);
         }
 }

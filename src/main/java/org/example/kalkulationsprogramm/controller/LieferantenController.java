@@ -135,7 +135,9 @@ public class LieferantenController {
                         cb.like(cb.lower(root.get("lieferantenTyp")), likeValue),
                         cb.like(cb.lower(root.get("vertreter")), likeValue),
                         cb.like(cb.lower(root.get("ort")), likeValue),
-                        cb.like(cb.lower(root.get("strasse")), likeValue));
+                        cb.like(cb.lower(root.get("strasse")), likeValue),
+                        cb.like(cb.lower(cb.coalesce(root.get("telefon"), "")), likeValue),
+                        cb.like(cb.lower(cb.coalesce(root.get("mobiltelefon"), "")), likeValue));
             });
         }
         specs = specs.and(buildSpec("lieferantenname", name));
