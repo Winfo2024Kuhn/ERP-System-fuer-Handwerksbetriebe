@@ -81,6 +81,22 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
       """)
   boolean existsOffenePostenByProjektId(@Param("projektId") Long projektId);
 
+  /**
+   * Summe der Brutto-Beträge aller als bezahlt markierten Rechnungen eines Projekts
+   * (Mahnungen/Zahlungserinnerungen ausgenommen). Dient der Prüfung, ob die komplette
+   * Auftragssumme beglichen wurde, bevor ein Projekt als abgeschlossen gilt – ein
+   * bezahlter Abschlag allein reicht nicht.
+   */
+  @Query("""
+      SELECT COALESCE(SUM(g.bruttoBetrag), 0)
+      FROM ProjektGeschaeftsdokument g
+      WHERE g.projekt.id = :projektId
+        AND g.bezahlt = true
+        AND g.mahnstufe IS NULL
+        AND LOWER(g.geschaeftsdokumentart) LIKE '%rechnung%'
+      """)
+  java.math.BigDecimal sumBezahlteRechnungenByProjektId(@Param("projektId") Long projektId);
+
   Optional<ProjektDokument> findByGespeicherterDateiname(String gespeicherterDateiname);
 
   Optional<ProjektDokument> findByGespeicherterDateinameIgnoreCase(String gespeicherterDateiname);

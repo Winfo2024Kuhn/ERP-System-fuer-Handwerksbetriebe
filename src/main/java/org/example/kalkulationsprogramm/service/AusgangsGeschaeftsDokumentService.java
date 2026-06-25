@@ -1603,12 +1603,53 @@ public class AusgangsGeschaeftsDokumentService {
     // --- Projekt-Preis Berechnung aus Dokumenten ---
 
     /**
+     * Berechnet den aktuellen Brutto-Preis eines Projekts/Anfrages aus seinen
+     * aktiven (nicht stornierten) Dokumenten.
+     *
+     * <p>Maßgeblich ist immer das <strong>Childobjekt</strong> eines Vorgangs:
+     * Wird aus einem Angebot eine Auftragsbestätigung erstellt, ersetzt deren
+     * (ggf. nachträglich geänderter) Preis das Angebot. Pro Vorgang zählt also
+     * die AB, sofern vorhanden, sonst das Basisdokument (Angebot/Nachtragsangebot).</p>
+     *
+     * <p>Mehrere parallele Vorgänge – das ursprüngliche Angebot plus jedes
+     * Nachtragsangebot – werden <strong>aufsummiert</strong>. So bleibt der Preis
+     * aktuell, wenn sich AB-Preise ändern oder Nachtragsangebote hinzukommen.</p>
+     */
+    private BigDecimal berechneAktuellenBruttoPreis(List<AusgangsGeschaeftsDokument> aktive) {
+        // Basisdokumente, die bereits durch eine Auftragsbestätigung ersetzt wurden,
+        // dürfen nicht zusätzlich gezählt werden – das Childobjekt (die AB) ist maßgeblich.
+        java.util.Set<Long> ersetzteBasisIds = aktive.stream()
+                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG)
+                .map(AusgangsGeschaeftsDokument::getVorgaenger)
+                .filter(java.util.Objects::nonNull)
+                .map(AusgangsGeschaeftsDokument::getId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // Childobjekte: alle Auftragsbestätigungen (ihr Preis ist immer aktuell)
+        BigDecimal summeAB = aktive.stream()
+                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG)
+                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Noch nicht in eine AB überführte Basisdokumente (Angebot + Nachtragsangebote)
+        BigDecimal summeOffeneBasis = aktive.stream()
+                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.ANGEBOT
+                        || d.getTyp() == AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT)
+                .filter(d -> !ersetzteBasisIds.contains(d.getId()))
+                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return summeAB.add(summeOffeneBasis);
+    }
+
+    /**
      * Berechnet bruttoPreis und bezahlt-Status eines Projekts on-the-fly
      * aus den AusgangsGeschaeftsDokumenten.
      *
      * Logik:
-     * - Auftragsbestätigungen haben Priorität vor Anfragenn für den Brutto-Preis.
-     * - Falls keine ABs, wird die Anfragessumme verwendet.
+     * - Der Brutto-Preis ergibt sich aus {@link #berechneAktuellenBruttoPreis}
+     *   (Childobjekt zählt, Nachtragsangebote addieren sich).
      * - bezahlt = true wenn Summe der (nicht-stornierten) Rechnungen >= Projekt-Preis UND alle Offene-Posten-Rechnungen bezahlt.
      * - abgeschlossen = true wenn bezahlt = true.
      */
@@ -1627,16 +1668,9 @@ public class AusgangsGeschaeftsDokumentService {
                 .filter(d -> !d.isStorniert())
                 .toList();
 
-        // Kategorisieren
-        BigDecimal summeAB = aktive.stream()
-                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG)
-                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal summeAnfragen = aktive.stream()
-                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.ANGEBOT)
-                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Aktuellen Brutto-Preis aus den Vorgängen berechnen (Childobjekt zählt,
+        // Nachtragsangebote addieren sich).
+        BigDecimal neuerBruttoPreis = berechneAktuellenBruttoPreis(aktive);
 
         BigDecimal summeRechnungen = aktive.stream()
                 .filter(d -> RECHNUNGSTYPEN.contains(d.getTyp()))
@@ -1646,9 +1680,6 @@ public class AusgangsGeschaeftsDokumentService {
         // Stornierte Rechnungen sind bereits über !isStorniert() ausgeschlossen,
         // daher werden Storno-Dokumente (negative Beträge) NICHT mehr abgezogen,
         // um doppelte Berücksichtigung zu vermeiden.
-
-        // AB hat Priorität, dann Anfragen
-        BigDecimal neuerBruttoPreis = summeAB.compareTo(BigDecimal.ZERO) > 0 ? summeAB : summeAnfragen;
 
         // Wenn Dokumente (AB/Angebote) vorhanden sind, Preis immer aus Dokumenten übernehmen.
         // Ohne Dokumente bleibt der manuell gesetzte Preis erhalten.
@@ -1680,9 +1711,10 @@ public class AusgangsGeschaeftsDokumentService {
      * Berechnet den Betrag (Brutto) eines Anfrages on-the-fly
      * aus den AusgangsGeschaeftsDokumenten.
      *
-     * Logik analog zu Projekt:
-     * - Auftragsbestätigungen haben Priorität vor Anfragenn für den Brutto-Preis.
-     * - Falls keine ABs, wird die Anfragessumme verwendet.
+     * Logik analog zu Projekt: Der Betrag ergibt sich aus
+     * {@link #berechneAktuellenBruttoPreis} (Childobjekt zählt, Nachtragsangebote
+     * addieren sich) und wird immer aktuell gehalten, sobald Dokumente einen
+     * Preis liefern.
      */
     @Transactional
     public void aktualisiereAnfragePreisAusDokumenten(Long anfrageId) {
@@ -1699,23 +1731,12 @@ public class AusgangsGeschaeftsDokumentService {
                 .filter(d -> !d.isStorniert())
                 .toList();
 
-        // Kategorisieren
-        BigDecimal summeAB = aktive.stream()
-                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG)
-                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Aktuellen Betrag (Brutto) aus den Vorgängen berechnen.
+        BigDecimal neuerBetrag = berechneAktuellenBruttoPreis(aktive);
 
-        BigDecimal summeAnfragen = aktive.stream()
-                .filter(d -> d.getTyp() == AusgangsGeschaeftsDokumentTyp.ANGEBOT)
-                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // AB hat Priorität, dann Anfragen
-        BigDecimal neuerBetrag = summeAB.compareTo(BigDecimal.ZERO) > 0 ? summeAB : summeAnfragen;
-
-        // Nur überschreiben wenn aktueller Wert null oder 0 ist
-        BigDecimal aktuellerBetrag = anfrage.getBetrag();
-        if (aktuellerBetrag == null || aktuellerBetrag.compareTo(BigDecimal.ZERO) == 0) {
+        // Betrag immer aktuell halten, sobald Dokumente einen Preis liefern.
+        // Ohne Dokumente (neuerBetrag == 0) bleibt ein manuell erfasster Betrag erhalten.
+        if (neuerBetrag.compareTo(BigDecimal.ZERO) > 0) {
             anfrage.setBetrag(neuerBetrag);
         }
         anfrageRepository.save(anfrage);
