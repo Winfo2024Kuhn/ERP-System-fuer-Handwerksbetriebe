@@ -416,7 +416,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
                                             <Image className="w-4 h-4 text-rose-600" />
-                                            <span className="font-medium text-slate-700">Anfragesbilder</span>
+                                            <span className="font-medium text-slate-700">Anfrage-Bilder</span>
                                             <span className="text-xs text-slate-400">({bilder.length})</span>
                                         </div>
                                         {/* Upload Button */}
