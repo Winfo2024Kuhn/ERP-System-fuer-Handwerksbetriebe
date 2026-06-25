@@ -382,8 +382,8 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
                 <div className="p-6 space-y-6">
                     <div className="flex items-center justify-between gap-3">
                         <div>
