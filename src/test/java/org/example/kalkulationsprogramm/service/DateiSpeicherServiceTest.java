@@ -742,4 +742,69 @@ class DateiSpeicherServiceTest {
         assertThrows(RuntimeException.class,
                 () -> setup.service.setzeGeschaeftsdokumentBezahlt(999L, true));
     }
+
+    @Test
+    void setzeGeschaeftsdokumentBezahltSchliesstProjektNichtWennNurAbschlagBezahlt() throws IOException {
+        ServiceSetup setup = createMahnungService();
+
+        // Auftragssumme 10.000, aber nur ein Abschlag über 3.000 ist bezahlt.
+        Projekt projekt = new Projekt();
+        projekt.setId(20L);
+        projekt.setBruttoPreis(new BigDecimal("10000.00"));
+        projekt.setBezahlt(false);
+        projekt.setAbgeschlossen(false);
+
+        ProjektGeschaeftsdokument abschlag = new ProjektGeschaeftsdokument();
+        abschlag.setId(300L);
+        abschlag.setProjekt(projekt);
+        abschlag.setBezahlt(false);
+
+        when(setup.dokumentRepository.findById(300L)).thenReturn(Optional.of(abschlag));
+        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(setup.projektRepository.findById(20L)).thenReturn(Optional.of(projekt));
+        // Keine offenen Posten mehr (der Abschlag wurde bezahlt) ...
+        when(setup.dokumentRepository.existsOffenePostenByProjektId(20L)).thenReturn(false);
+        // ... aber die bezahlte Summe deckt die Auftragssumme noch nicht.
+        when(setup.dokumentRepository.sumBezahlteRechnungenByProjektId(20L))
+                .thenReturn(new BigDecimal("3000.00"));
+
+        setup.service.setzeGeschaeftsdokumentBezahlt(300L, true);
+
+        assertTrue(abschlag.isBezahlt());
+        assertFalse(projekt.isBezahlt());
+        assertFalse(projekt.isAbgeschlossen());
+        verify(setup.projektRepository).save(projekt);
+    }
+
+    @Test
+    void setzeGeschaeftsdokumentBezahltSchliesstProjektWennKompletteSummeBezahlt() throws IOException {
+        ServiceSetup setup = createMahnungService();
+
+        Projekt projekt = new Projekt();
+        projekt.setId(21L);
+        projekt.setBruttoPreis(new BigDecimal("10000.00"));
+        projekt.setBezahlt(false);
+        projekt.setAbgeschlossen(false);
+
+        ProjektGeschaeftsdokument schlussrechnung = new ProjektGeschaeftsdokument();
+        schlussrechnung.setId(301L);
+        schlussrechnung.setProjekt(projekt);
+        schlussrechnung.setBezahlt(false);
+
+        when(setup.dokumentRepository.findById(301L)).thenReturn(Optional.of(schlussrechnung));
+        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(setup.projektRepository.findById(21L)).thenReturn(Optional.of(projekt));
+        when(setup.dokumentRepository.existsOffenePostenByProjektId(21L)).thenReturn(false);
+        // Komplette Auftragssumme ist beglichen.
+        when(setup.dokumentRepository.sumBezahlteRechnungenByProjektId(21L))
+                .thenReturn(new BigDecimal("10000.00"));
+
+        setup.service.setzeGeschaeftsdokumentBezahlt(301L, true);
+
+        assertTrue(projekt.isBezahlt());
+        assertTrue(projekt.isAbgeschlossen());
+        verify(setup.projektRepository).save(projekt);
+    }
 }
