@@ -16,6 +16,7 @@ import org.example.kalkulationsprogramm.dto.Kunde.KundeDetailDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeKommunikationDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
+import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,13 +37,14 @@ class KundenDetailServiceTest {
     @Mock private EmailRepository emailRepository;
     @Mock private DateiSpeicherService dateiSpeicherService;
     @Mock private AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
+    @Mock private KundeNotizRepository kundeNotizRepository;
 
     private KundenDetailService service;
 
     @BeforeEach
     void setUp() {
         service = new KundenDetailService(kundeRepository, projektRepository, anfrageRepository,
-                emailRepository, dateiSpeicherService, ausgangsGeschaeftsDokumentService);
+                emailRepository, dateiSpeicherService, ausgangsGeschaeftsDokumentService, kundeNotizRepository);
     }
 
     private Kunde erstelleKunde(Long id) {
@@ -122,6 +124,37 @@ class KundenDetailServiceTest {
             assertThat(dto.getId()).isEqualTo(1L);
             assertThat(dto.getName()).isEqualTo("Max Mustermann");
             assertThat(dto.getKundennummer()).isEqualTo("K-001");
+        }
+
+        @Test
+        void mapptGeschaeftsdokumenteUndNotizen() {
+            Kunde kunde = erstelleKunde(1L);
+            Projekt projekt = erstelleProjekt(10L, kunde);
+
+            when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
+            when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of(projekt));
+            setupAnfrageMocks(kunde, List.of(projekt), List.of());
+
+            var dok = new org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto();
+            dok.setId(77L);
+            dok.setDokumentNummer("2026/06/00123");
+            dok.setDatum(java.time.LocalDate.of(2026, 6, 23));
+            when(ausgangsGeschaeftsDokumentService.findByProjekt(10L)).thenReturn(List.of(dok));
+
+            org.example.kalkulationsprogramm.domain.KundeNotiz notiz =
+                    new org.example.kalkulationsprogramm.domain.KundeNotiz();
+            notiz.setId(5L);
+            notiz.setText("Rückruf mit Max Mustermann");
+            notiz.setErstelltAm(LocalDateTime.now());
+            when(kundeNotizRepository.findByKundeIdOrderByErstelltAmDesc(1L)).thenReturn(List.of(notiz));
+
+            Optional<KundeDetailDto> result = service.loadDetails(1L);
+
+            assertThat(result).isPresent();
+            assertThat(result.get().getGeschaeftsdokumente()).hasSize(1);
+            assertThat(result.get().getGeschaeftsdokumente().get(0).getDokumentNummer()).isEqualTo("2026/06/00123");
+            assertThat(result.get().getNotizen()).hasSize(1);
+            assertThat(result.get().getNotizen().get(0).getText()).isEqualTo("Rückruf mit Max Mustermann");
         }
 
         @Test

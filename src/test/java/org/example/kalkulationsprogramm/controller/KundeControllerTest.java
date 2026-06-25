@@ -2,6 +2,8 @@ package org.example.kalkulationsprogramm.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.KundeNotiz;
+import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatGrund;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatResponseDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatTrefferDto;
@@ -32,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -64,6 +67,9 @@ class KundeControllerTest {
 
     @MockBean
     private org.example.kalkulationsprogramm.service.KundeDuplikatService kundeDuplikatService;
+
+    @MockBean
+    private KundeNotizRepository kundeNotizRepository;
 
     @BeforeEach
     void setupDuplikatService() {
@@ -217,5 +223,102 @@ class KundeControllerTest {
         // Service darf bei aktivem Header nicht angefragt worden sein.
         verify(kundeDuplikatService, org.mockito.Mockito.never())
                 .findeDuplikate(any(), any(), any(), any(), any(), any());
+    }
+
+    // ==================== NOTIZEN ENDPOINTS ====================
+
+    @Test
+    @DisplayName("Notiz anlegen liefert 201 mit Text")
+    void createNotizReturnsCreated() throws Exception {
+        Kunde kunde = new Kunde();
+        kunde.setId(7L);
+        given(kundeRepository.findById(eq(7L))).willReturn(Optional.of(kunde));
+        given(kundeNotizRepository.save(any(KundeNotiz.class))).willAnswer(inv -> {
+            KundeNotiz n = inv.getArgument(0);
+            n.setId(123L);
+            n.setErstelltAm(java.time.LocalDateTime.now());
+            return n;
+        });
+
+        mockMvc.perform(post("/api/kunden/7/notizen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("text", "  Kunde zurückrufen  "))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(123))
+                .andExpect(jsonPath("$.text").value("Kunde zurückrufen"));
+    }
+
+    @Test
+    @DisplayName("Notiz ohne Text liefert 400")
+    void createNotizRejectsEmptyText() throws Exception {
+        Kunde kunde = new Kunde();
+        kunde.setId(7L);
+        given(kundeRepository.findById(eq(7L))).willReturn(Optional.of(kunde));
+
+        mockMvc.perform(post("/api/kunden/7/notizen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("text", "   "))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Notiz für unbekannten Kunden liefert 404")
+    void createNotizUnknownKundeReturnsNotFound() throws Exception {
+        given(kundeRepository.findById(eq(999L))).willReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/kunden/999/notizen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("text", "Test"))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Notizen auflisten liefert 200 mit Array")
+    void listNotizenReturnsArray() throws Exception {
+        given(kundeRepository.existsById(eq(7L))).willReturn(true);
+        KundeNotiz notiz = new KundeNotiz();
+        notiz.setId(1L);
+        notiz.setText("Notiz für Max Mustermann");
+        notiz.setErstelltAm(java.time.LocalDateTime.now());
+        given(kundeNotizRepository.findByKundeIdOrderByErstelltAmDesc(eq(7L))).willReturn(List.of(notiz));
+
+        mockMvc.perform(get("/api/kunden/7/notizen"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(1))
+                .andExpect(jsonPath("$[0].text").value("Notiz für Max Mustermann"));
+    }
+
+    @Test
+    @DisplayName("Notiz eines fremden Kunden kann nicht gelöscht werden (404)")
+    void deleteNotizRejectsForeignNotiz() throws Exception {
+        given(kundeRepository.existsById(eq(7L))).willReturn(true);
+        Kunde andererKunde = new Kunde();
+        andererKunde.setId(8L);
+        KundeNotiz notiz = new KundeNotiz();
+        notiz.setId(50L);
+        notiz.setKunde(andererKunde);
+        given(kundeNotizRepository.findById(eq(50L))).willReturn(Optional.of(notiz));
+
+        mockMvc.perform(delete("/api/kunden/7/notizen/50"))
+                .andExpect(status().isNotFound());
+
+        verify(kundeNotizRepository, org.mockito.Mockito.never()).delete(any(KundeNotiz.class));
+    }
+
+    @Test
+    @DisplayName("Eigene Notiz wird gelöscht (204)")
+    void deleteNotizSucceeds() throws Exception {
+        given(kundeRepository.existsById(eq(7L))).willReturn(true);
+        Kunde kunde = new Kunde();
+        kunde.setId(7L);
+        KundeNotiz notiz = new KundeNotiz();
+        notiz.setId(50L);
+        notiz.setKunde(kunde);
+        given(kundeNotizRepository.findById(eq(50L))).willReturn(Optional.of(notiz));
+
+        mockMvc.perform(delete("/api/kunden/7/notizen/50"))
+                .andExpect(status().isNoContent());
+
+        verify(kundeNotizRepository).delete(notiz);
     }
 }
