@@ -52,6 +52,32 @@ export interface KundeStatistik {
   gesamtGewinn?: number;
 }
 
+/** Schlanke Projekt-Karte für die Kunden-Detailseite (Backend: KundeProjektKurzDto). */
+export interface KundeProjektKurz {
+  id: number;
+  bauvorhaben?: string;
+  auftragsnummer?: string;
+  anlegedatum?: string;
+  abschlussdatum?: string;
+  bezahlt: boolean;
+  bruttoPreis?: number;
+}
+
+/** Schlanke Anfrage-Karte für die Kunden-Detailseite (Backend: KundeAnfrageKurzDto). */
+export interface KundeAnfrageKurz {
+  id: number;
+  bauvorhaben?: string;
+  anfragesnummer?: string;
+  anlegedatum?: string;
+  betrag?: number;
+}
+
+export interface KundeNotiz {
+  id: number;
+  text: string;
+  erstelltAm: string;
+}
+
 export interface KundeDetail {
   id: number;
   kundennummer: string;
@@ -68,6 +94,10 @@ export interface KundeDetail {
   hatProjekte?: boolean;
   statistik?: KundeStatistik;
   kommunikation?: Kommunikation[];
+  projekte?: KundeProjektKurz[];
+  anfragen?: KundeAnfrageKurz[];
+  geschaeftsdokumente?: AusgangsGeschaeftsDokument[];
+  notizen?: KundeNotiz[];
 }
 
 export interface LieferantStatistik {

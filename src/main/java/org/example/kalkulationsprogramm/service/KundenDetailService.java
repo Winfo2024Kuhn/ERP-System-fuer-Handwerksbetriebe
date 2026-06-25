@@ -3,7 +3,9 @@ package org.example.kalkulationsprogramm.service;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Kunde.*;
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
+import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.jsoup.Jsoup;
@@ -36,6 +38,7 @@ public class KundenDetailService {
     private final org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
+    private final KundeNotizRepository kundeNotizRepository;
 
     @Transactional(readOnly = true)
     public Optional<KundeDetailDto> loadDetails(Long kundenId) {
@@ -68,6 +71,8 @@ public class KundenDetailService {
         dto.setKundenEmails(new ArrayList<>(Objects.requireNonNullElse(kunde.getKundenEmails(), List.of())));
         dto.setProjekte(mapProjekte(projekte));
         dto.setAnfragen(mapAnfragen(anfragen));
+        dto.setGeschaeftsdokumente(mapGeschaeftsdokumente(projekte, anfragen));
+        dto.setNotizen(mapNotizen(kunde.getId()));
         dto.setAggregierteEmails(aggregateEmails(kunde, projekte, anfragen));
         try {
             dto.setKommunikation(buildKommunikationsHistorie(projektEmails, anfrageEmails));
@@ -140,6 +145,42 @@ public class KundenDetailService {
                     dto.setAnfragesnummer(resolveAnfragesnummer(anfrage));
                     dto.setAnlegedatum(anfrage.getAnlegedatum());
                     dto.setBetrag(anfrage.getBetrag());
+                    return dto;
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Alle Geschäftsdokumente (Angebote, Rechnungen, Mahnungen ...) der Projekte
+     * UND Anfragen dieses Kunden – aggregiert über die bestehenden Projekt-/Anfrage-Abfragen.
+     * Neueste zuerst (nach Dokumentdatum).
+     */
+    private List<AusgangsGeschaeftsDokumentResponseDto> mapGeschaeftsdokumente(List<Projekt> projekte,
+            List<Anfrage> anfragen) {
+        List<AusgangsGeschaeftsDokumentResponseDto> result = new ArrayList<>();
+        for (Projekt projekt : Objects.requireNonNullElse(projekte, List.<Projekt>of())) {
+            if (projekt.getId() != null) {
+                result.addAll(ausgangsGeschaeftsDokumentService.findByProjekt(projekt.getId()));
+            }
+        }
+        for (Anfrage anfrage : Objects.requireNonNullElse(anfragen, List.<Anfrage>of())) {
+            if (anfrage.getId() != null) {
+                result.addAll(ausgangsGeschaeftsDokumentService.findByAnfrage(anfrage.getId()));
+            }
+        }
+        result.sort(Comparator.comparing(
+                (AusgangsGeschaeftsDokumentResponseDto d) -> Optional.ofNullable(d.getDatum()).orElse(LocalDate.MIN))
+                .reversed());
+        return result;
+    }
+
+    private List<KundeNotizDto> mapNotizen(Long kundenId) {
+        return kundeNotizRepository.findByKundeIdOrderByErstelltAmDesc(kundenId).stream()
+                .map(notiz -> {
+                    KundeNotizDto dto = new KundeNotizDto();
+                    dto.setId(notiz.getId());
+                    dto.setText(notiz.getText());
+                    dto.setErstelltAm(notiz.getErstelltAm());
                     return dto;
                 })
                 .collect(Collectors.toList());

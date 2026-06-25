@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.dto.Kunde;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 
 import java.util.List;
 
@@ -23,5 +24,7 @@ public class KundeDetailDto {
     private List<KundeAggregierteEmailDto> aggregierteEmails;
     private List<KundeProjektKurzDto> projekte;
     private List<KundeAnfrageKurzDto> anfragen;
+    private List<AusgangsGeschaeftsDokumentResponseDto> geschaeftsdokumente;
     private List<KundeKommunikationDto> kommunikation;
+    private List<KundeNotizDto> notizen;
 }

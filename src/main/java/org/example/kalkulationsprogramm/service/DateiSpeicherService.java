@@ -1306,9 +1306,16 @@ public class DateiSpeicherService {
 
     /**
      * Prüft ob ein Projekt als bezahlt gesetzt werden kann.
-     * Bedingung: Alle Rechnungen im Offene-Posten-Center sind als bezahlt markiert.
-     * Wenn erfüllt → projekt.bezahlt = true, projekt.abgeschlossen = true
-     * Wenn nicht → projekt.bezahlt = false (abgeschlossen bleibt unverändert)
+     * Bedingungen (beide müssen erfüllt sein):
+     * <ul>
+     *   <li>Keine offenen Posten mehr (alle Rechnungen sind als bezahlt markiert), und</li>
+     *   <li>die Summe der bezahlten Rechnungen erreicht den kompletten Brutto-Preis
+     *       des Projekts. Ein einzelner bezahlter Abschlag schließt das Projekt also
+     *       NICHT – erst wenn die komplette Auftragssumme beglichen ist.</li>
+     * </ul>
+     * Wenn erfüllt → projekt.bezahlt = true, projekt.abgeschlossen = true.
+     * Wenn nicht → projekt.bezahlt = false (abgeschlossen bleibt unverändert, solange
+     * keine offenen Posten existieren – damit ein manuell geschlossenes Projekt offen bleibt).
      */
     private void pruefeProjektAbschluss(Long projektId) {
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
@@ -1316,7 +1323,22 @@ public class DateiSpeicherService {
 
         boolean keineOffenenPosten = !dokumentRepository.existsOffenePostenByProjektId(projektId);
 
-        if (keineOffenenPosten) {
+        // Komplette Auftragssumme muss beglichen sein, nicht nur ein Abschlag.
+        BigDecimal projektPreis = projekt.getBruttoPreis();
+        boolean kompletteSummeBezahlt;
+        if (projektPreis == null || projektPreis.compareTo(BigDecimal.ZERO) <= 0) {
+            // Kein dokumentbasierter Auftragspreis bekannt (rein manuelles Projekt) →
+            // wie bisher: bezahlt, sobald keine offenen Rechnungen mehr existieren.
+            kompletteSummeBezahlt = true;
+        } else {
+            BigDecimal bezahlteSumme = dokumentRepository.sumBezahlteRechnungenByProjektId(projektId);
+            if (bezahlteSumme == null) bezahlteSumme = BigDecimal.ZERO;
+            // 1-Cent-Toleranz für Rundungsdifferenzen.
+            kompletteSummeBezahlt =
+                    bezahlteSumme.compareTo(projektPreis.subtract(new BigDecimal("0.01"))) >= 0;
+        }
+
+        if (keineOffenenPosten && kompletteSummeBezahlt) {
             projekt.setBezahlt(true);
             projekt.setAbgeschlossen(true);
         } else {
