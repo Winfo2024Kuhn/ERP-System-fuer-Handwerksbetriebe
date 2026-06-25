@@ -3,8 +3,10 @@ package org.example.kalkulationsprogramm.controller;
 import lombok.RequiredArgsConstructor;
 import jakarta.validation.Valid;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.KundeNotiz;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeCreateRequestDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDetailDto;
+import org.example.kalkulationsprogramm.dto.Kunde.KundeNotizDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatResponseDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeListItemDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeSearchResponseDto;
@@ -12,6 +14,7 @@ import org.example.kalkulationsprogramm.dto.Kunde.KundeUpdateRequestDto;
 import org.example.kalkulationsprogramm.domain.Anrede;
 import org.example.kalkulationsprogramm.event.EmailAddressChangedEvent;
 import org.example.kalkulationsprogramm.mapper.KundeMapper;
+import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.service.KundeDuplikatService;
 import org.example.kalkulationsprogramm.service.KundenDetailService;
@@ -26,6 +29,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,6 +50,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @RestController
@@ -58,6 +63,7 @@ public class KundeController {
     private final ApplicationEventPublisher eventPublisher;
     private final KundennummerService kundennummerService;
     private final KundeDuplikatService kundeDuplikatService;
+    private final KundeNotizRepository kundeNotizRepository;
 
     @GetMapping
     public KundeSearchResponseDto sucheKunden(@RequestParam(value = "q", required = false) String query,
@@ -333,5 +339,68 @@ public class KundeController {
             normalized.add(email.trim().toLowerCase(Locale.GERMAN));
         }
         return normalized;
+    }
+
+    // ==================== NOTIZEN ENDPOINTS ====================
+
+    @GetMapping("/{id}/notizen")
+    public ResponseEntity<List<KundeNotizDto>> listNotizen(
+            @PathVariable Long id,
+            @RequestParam(value = "q", required = false) String query) {
+        if (!kundeRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        List<KundeNotiz> notizen;
+        if (StringUtils.hasText(query)) {
+            notizen = kundeNotizRepository.findByKundeIdAndTextContainingIgnoreCaseOrderByErstelltAmDesc(id, query);
+        } else {
+            notizen = kundeNotizRepository.findByKundeIdOrderByErstelltAmDesc(id);
+        }
+        List<KundeNotizDto> dtos = notizen.stream().map(this::toNotizDto).toList();
+        return ResponseEntity.ok(dtos);
+    }
+
+    @PostMapping("/{id}/notizen")
+    @Transactional
+    public ResponseEntity<KundeNotizDto> createNotiz(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        Kunde kunde = kundeRepository.findById(id).orElse(null);
+        if (kunde == null) {
+            return ResponseEntity.notFound().build();
+        }
+        String text = body.get("text");
+        if (!StringUtils.hasText(text)) {
+            return ResponseEntity.badRequest().build();
+        }
+        KundeNotiz notiz = new KundeNotiz();
+        notiz.setKunde(kunde);
+        notiz.setText(text.trim());
+        notiz = kundeNotizRepository.save(notiz);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toNotizDto(notiz));
+    }
+
+    @DeleteMapping("/{id}/notizen/{notizId}")
+    @Transactional
+    public ResponseEntity<Void> deleteNotiz(
+            @PathVariable Long id,
+            @PathVariable Long notizId) {
+        if (!kundeRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        KundeNotiz notiz = kundeNotizRepository.findById(notizId).orElse(null);
+        if (notiz == null || !notiz.getKunde().getId().equals(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        kundeNotizRepository.delete(notiz);
+        return ResponseEntity.noContent().build();
+    }
+
+    private KundeNotizDto toNotizDto(KundeNotiz notiz) {
+        KundeNotizDto dto = new KundeNotizDto();
+        dto.setId(notiz.getId());
+        dto.setText(notiz.getText());
+        dto.setErstelltAm(notiz.getErstelltAm());
+        return dto;
     }
 }

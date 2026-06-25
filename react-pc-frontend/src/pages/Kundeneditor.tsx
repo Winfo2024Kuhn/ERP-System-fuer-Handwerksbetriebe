@@ -1,15 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     ArrowLeft,
+    Briefcase,
+    Calendar,
     ChevronLeft,
     ChevronRight,
+    Euro,
+    FileText,
     Mail,
     MapPin,
     Phone,
     Plus,
+    Receipt,
     RefreshCw,
     Save,
+    StickyNote,
     User,
     X,
     CreditCard,
@@ -20,11 +26,13 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { type KundeDetail } from '../types';
+import { cn } from '../lib/utils';
+import { type KundeDetail, type KundeProjektKurz, type KundeAnfrageKurz, type AusgangsGeschaeftsDokument } from '../types';
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
 import { AddressAutocomplete } from '../components/AddressAutocomplete';
 import { PhoneInput } from '../components/PhoneInput';
 import { EmailsTab } from '../components/EmailsTab';
+import { KundeNotizenTab } from '../components/KundeNotizenTab';
 import { DetailLayout } from '../components/DetailLayout';
 import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
@@ -60,6 +68,156 @@ const EMPTY_KUNDE: KundeDetail = {
 
 // GoogleMapsEmbed imported from components
 
+// ==================== SHARED HELPERS / KARTEN ====================
+
+const formatCurrencyEUR = (val?: number) =>
+    new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
+
+const formatDateDE = (dateStr?: string) =>
+    dateStr ? new Date(dateStr).toLocaleDateString('de-DE') : '-';
+
+type KundeDetailTab = 'emails' | 'projekte' | 'anfragen' | 'dokumente' | 'notizen';
+
+// Farben & Klartext-Labels für Geschäftsdokument-Typen (gleiche Logik wie im ProjektEditor).
+const DOK_TYP_COLORS: Record<string, string> = {
+    ANGEBOT: 'bg-blue-50 text-blue-700 border-blue-200',
+    NACHTRAGSANGEBOT: 'bg-slate-100 text-slate-700 border-slate-300',
+    AUFTRAGSBESTAETIGUNG: 'bg-purple-50 text-purple-700 border-purple-200',
+    RECHNUNG: 'bg-rose-50 text-rose-700 border-rose-200',
+    TEILRECHNUNG: 'bg-rose-50 text-rose-600 border-rose-200',
+    ABSCHLAGSRECHNUNG: 'bg-orange-50 text-orange-700 border-orange-200',
+    SCHLUSSRECHNUNG: 'bg-rose-100 text-rose-800 border-rose-300',
+    GUTSCHRIFT: 'bg-green-50 text-green-700 border-green-200',
+    STORNO: 'bg-red-50 text-red-700 border-red-200',
+    ZAHLUNGSERINNERUNG: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+    ERSTE_MAHNUNG: 'bg-amber-100 text-amber-800 border-amber-300',
+    ZWEITE_MAHNUNG: 'bg-red-100 text-red-800 border-red-300',
+};
+
+const DOK_TYP_LABELS: Record<string, string> = {
+    ANGEBOT: 'Angebot',
+    NACHTRAGSANGEBOT: 'Nachtragsangebot',
+    AUFTRAGSBESTAETIGUNG: 'Auftragsbestätigung',
+    RECHNUNG: 'Rechnung',
+    TEILRECHNUNG: 'Teilrechnung',
+    ABSCHLAGSRECHNUNG: 'Abschlagsrechnung',
+    SCHLUSSRECHNUNG: 'Schlussrechnung',
+    GUTSCHRIFT: 'Gutschrift',
+    STORNO: 'Storno',
+    ZAHLUNGSERINNERUNG: 'Zahlungserinnerung',
+    ERSTE_MAHNUNG: '1. Mahnung',
+    ZWEITE_MAHNUNG: '2. Mahnung',
+};
+
+const KartenLeerzustand: React.FC<{ icon: React.ReactNode; text: string }> = ({ icon, text }) => (
+    <div className="text-center py-12 text-slate-500">
+        <div className="w-12 h-12 mx-auto mb-3 text-slate-300 flex items-center justify-center">{icon}</div>
+        <p className="text-sm">{text}</p>
+    </div>
+);
+
+const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => void }> = ({ projekt, onOpen }) => (
+    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden" onClick={onOpen}>
+        <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+                <span className={cn(
+                    'text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full',
+                    projekt.bezahlt ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                )}>
+                    {projekt.bezahlt ? 'Bezahlt' : 'Offen'}
+                </span>
+                {projekt.abschlussdatum && (
+                    <span className="text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">
+                        Beendet
+                    </span>
+                )}
+            </div>
+            <h3 className="font-semibold text-slate-900 truncate text-base" title={projekt.bauvorhaben}>
+                {projekt.bauvorhaben || 'Unbenannt'}
+            </h3>
+            <div className="space-y-1 pt-2 border-t border-slate-50">
+                {projekt.auftragsnummer && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="truncate">{projekt.auftragsnummer}</span>
+                    </div>
+                )}
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span>{formatDateDE(projekt.anlegedatum)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-medium text-rose-600">
+                    <Euro className="w-4 h-4 shrink-0" />
+                    <span>{formatCurrencyEUR(projekt.bruttoPreis)}</span>
+                </div>
+            </div>
+        </div>
+    </Card>
+);
+
+const KundenAnfrageKarte: React.FC<{ anfrage: KundeAnfrageKurz; onOpen: () => void }> = ({ anfrage, onOpen }) => (
+    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden" onClick={onOpen}>
+        <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                    Anfrage
+                </span>
+            </div>
+            <h3 className="font-semibold text-slate-900 truncate text-base" title={anfrage.bauvorhaben}>
+                {anfrage.bauvorhaben || 'Unbenannt'}
+            </h3>
+            <div className="space-y-1 pt-2 border-t border-slate-50">
+                {anfrage.anfragesnummer && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="truncate">{anfrage.anfragesnummer}</span>
+                    </div>
+                )}
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span>{formatDateDE(anfrage.anlegedatum)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-medium text-rose-600">
+                    <Euro className="w-4 h-4 shrink-0" />
+                    <span>{formatCurrencyEUR(anfrage.betrag)}</span>
+                </div>
+            </div>
+        </div>
+    </Card>
+);
+
+const KundenDokumentKarte: React.FC<{ dok: AusgangsGeschaeftsDokument; onOpen: () => void }> = ({ dok, onOpen }) => {
+    const herkunft = dok.projektBauvorhaben
+        ? `Projekt: ${dok.projektBauvorhaben}`
+        : dok.anfrageId ? 'Aus Anfrage' : null;
+    return (
+        <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white" onClick={onOpen}>
+            <div className="p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className={cn(
+                            'text-xs font-semibold px-2 py-0.5 rounded-full border',
+                            DOK_TYP_COLORS[dok.typ] || 'bg-slate-50 text-slate-600 border-slate-200'
+                        )}>
+                            {DOK_TYP_LABELS[dok.typ] || dok.typ}
+                        </span>
+                        <span className="text-sm font-medium text-slate-900 truncate">{dok.dokumentNummer}</span>
+                        {dok.storniert && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-600">storniert</span>
+                        )}
+                    </div>
+                    {herkunft && <p className="text-xs text-slate-500 truncate">{herkunft}</p>}
+                    <div className="flex items-center gap-1 text-xs text-slate-500">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>{formatDateDE(dok.datum)}</span>
+                    </div>
+                </div>
+                <p className="text-sm font-semibold text-rose-600 shrink-0">{formatCurrencyEUR(dok.betragBrutto)}</p>
+            </div>
+        </Card>
+    );
+};
+
 // ==================== DETAIL VIEW ====================
 
 interface KundenDetailViewProps {
@@ -69,10 +227,25 @@ interface KundenDetailViewProps {
 }
 
 const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEdit }) => {
+    const navigate = useNavigate();
     const initials = kunde.name.slice(0, 2).toUpperCase();
+    const [activeTab, setActiveTab] = useState<KundeDetailTab>('emails');
+
+    const projekte = kunde.projekte || [];
+    const anfragen = kunde.anfragen || [];
+    const dokumente = kunde.geschaeftsdokumente || [];
+    const emailCount = kunde.kommunikation?.length || 0;
 
     // Formatter helpers
     const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
+
+    const tabs: { key: KundeDetailTab; label: string; icon: React.ReactNode; count: number }[] = [
+        { key: 'emails', label: 'E-Mails', icon: <Mail className="w-4 h-4" />, count: emailCount },
+        { key: 'projekte', label: 'Projekte', icon: <Briefcase className="w-4 h-4" />, count: projekte.length },
+        { key: 'anfragen', label: 'Anfragen', icon: <FileText className="w-4 h-4" />, count: anfragen.length },
+        { key: 'dokumente', label: 'Dokumente', icon: <Receipt className="w-4 h-4" />, count: dokumente.length },
+        { key: 'notizen', label: 'Notizen', icon: <StickyNote className="w-4 h-4" />, count: kunde.notizen?.length || 0 },
+    ];
 
     const header = (
         <Card className="p-6">
@@ -99,7 +272,7 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                 </div>
 
                 {/* Bento Stats Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1 max-w-4xl">
+                <div className="grid grid-cols-2 gap-4 flex-1 max-w-md">
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                         <p className="text-xs text-slate-500 uppercase tracking-wide">Gesamtumsatz</p>
                         <p className="text-lg font-semibold text-slate-900">{formatCurrency(kunde.statistik?.gesamtUmsatz)}</p>
@@ -107,14 +280,6 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
                         <p className="text-xs text-emerald-600 uppercase tracking-wide">Gewinn</p>
                         <p className="text-lg font-semibold text-emerald-900">{formatCurrency(kunde.statistik?.gesamtGewinn)}</p>
-                    </div>
-                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-                        <p className="text-xs text-blue-600 uppercase tracking-wide">Projekte</p>
-                        <p className="text-lg font-semibold text-blue-900">{kunde.statistik?.projektAnzahl || 0}</p>
-                    </div>
-                    <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
-                        <p className="text-xs text-purple-600 uppercase tracking-wide">Anfragen</p>
-                        <p className="text-lg font-semibold text-purple-900">{kunde.statistik?.anfrageAnzahl || 0}</p>
                     </div>
                 </div>
 
@@ -129,31 +294,101 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
 
     const mainContent = (
         <>
+            {/* Tab-Leiste */}
+            <div className="flex items-center gap-1 border-b border-slate-200 mb-4 shrink-0 overflow-x-auto">
+                {tabs.map(tab => (
+                    <button
+                        key={tab.key}
+                        onClick={() => setActiveTab(tab.key)}
+                        className={cn(
+                            'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px whitespace-nowrap',
+                            activeTab === tab.key
+                                ? 'text-rose-600 border-b-2 border-rose-500'
+                                : 'text-slate-500 hover:text-slate-700'
+                        )}
+                    >
+                        {tab.icon}
+                        {tab.label}
+                        <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{tab.count}</span>
+                    </button>
+                ))}
+            </div>
+
+            {/* Tab-Inhalt */}
             <div className="flex-1 min-h-0 relative">
                 <div className="absolute inset-0 overflow-y-auto pr-2">
-                    <EmailsTab
-                        emails={(kunde.kommunikation || []).map(k => ({
-                            id: k.id,
-                            subject: k.subject,
-                            fromAddress: k.absender,
-                            to: k.empfaenger,
-                            bodyPreview: k.snippet,
-                            bodyHtml: k.body,
-                            direction: k.direction,
-                            sentAt: k.zeitpunkt,
-                            attachments: (k.attachments || []).map(a => ({
-                                id: a.id,
-                                originalFilename: a.filename,
-                                filename: a.filename,
-                                url: a.url,
-                            })),
-                            parentEmailId: k.parentEmailId,
-                            replyCount: k.replyCount,
-                        }))}
-                        kundeId={kunde.id}
-                        showComposeButton={false}
-                        showReplyButton={false}
-                    />
+                    {activeTab === 'emails' && (
+                        <EmailsTab
+                            emails={(kunde.kommunikation || []).map(k => ({
+                                id: k.id,
+                                subject: k.subject,
+                                fromAddress: k.absender,
+                                to: k.empfaenger,
+                                bodyPreview: k.snippet,
+                                bodyHtml: k.body,
+                                direction: k.direction,
+                                sentAt: k.zeitpunkt,
+                                attachments: (k.attachments || []).map(a => ({
+                                    id: a.id,
+                                    originalFilename: a.filename,
+                                    filename: a.filename,
+                                    url: a.url,
+                                })),
+                                parentEmailId: k.parentEmailId,
+                                replyCount: k.replyCount,
+                            }))}
+                            kundeId={kunde.id}
+                            showComposeButton={false}
+                            showReplyButton={false}
+                        />
+                    )}
+
+                    {activeTab === 'projekte' && (
+                        projekte.length === 0 ? (
+                            <KartenLeerzustand icon={<Briefcase className="w-12 h-12" />} text="Keine Projekte vorhanden." />
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {projekte.map(p => (
+                                    <KundenProjektKarte key={p.id} projekt={p} onOpen={() => navigate(`/projekte?projektId=${p.id}`)} />
+                                ))}
+                            </div>
+                        )
+                    )}
+
+                    {activeTab === 'anfragen' && (
+                        anfragen.length === 0 ? (
+                            <KartenLeerzustand icon={<FileText className="w-12 h-12" />} text="Keine Anfragen vorhanden." />
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {anfragen.map(a => (
+                                    <KundenAnfrageKarte key={a.id} anfrage={a} onOpen={() => navigate(`/anfragen?anfrageId=${a.id}`)} />
+                                ))}
+                            </div>
+                        )
+                    )}
+
+                    {activeTab === 'dokumente' && (
+                        dokumente.length === 0 ? (
+                            <KartenLeerzustand icon={<Receipt className="w-12 h-12" />} text="Keine Geschäftsdokumente vorhanden." />
+                        ) : (
+                            <div className="space-y-3">
+                                {dokumente.map(d => (
+                                    <KundenDokumentKarte
+                                        key={d.id}
+                                        dok={d}
+                                        onOpen={() => {
+                                            if (d.projektId) navigate(`/projekte?projektId=${d.projektId}`);
+                                            else if (d.anfrageId) navigate(`/anfragen?anfrageId=${d.anfrageId}`);
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        )
+                    )}
+
+                    {activeTab === 'notizen' && (
+                        <KundeNotizenTab kundeId={kunde.id} notizen={kunde.notizen || []} />
+                    )}
                 </div>
             </div>
         </>
@@ -382,8 +617,8 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
                 <div className="p-6 space-y-6">
                     <div className="flex items-center justify-between gap-3">
                         <div>
