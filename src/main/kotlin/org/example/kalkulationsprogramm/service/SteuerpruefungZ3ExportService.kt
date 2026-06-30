@@ -124,14 +124,14 @@ class SteuerpruefungZ3ExportService(
         append("bricht ALLE nachfolgenden Hashes - eine nachtraegliche Aenderung der\n")
         append("Buchhaltung ist daher mathematisch nachweisbar.\n\n")
         append("Verifikation der Kette (Stand zum Export)\n-----------------------------------------\n")
-        append("Status: ").append(if (bericht.isIntakt) "INTAKT" else "GEBROCHEN").append('\n')
+        append("Status: ").append(if (bericht.isIntakt()) "INTAKT" else "GEBROCHEN").append('\n')
         append("Gepruefte Eintraege: ").append(field<Int>(bericht, "gesamtAnzahl") ?: 0).append('\n')
         val letzterChainIndex = field<Long>(bericht, "letzterChainIndex")
         if (letzterChainIndex != null) {
             append("Letzter chain_index: ").append(letzterChainIndex).append('\n')
             append("Letzter entry_hash : ").append(field<String>(bericht, "letzterEntryHash")).append('\n')
         }
-        if (!bericht.isIntakt) {
+        if (!bericht.isIntakt()) {
             append("\nFEHLER:\n")
             val fehler = field<List<AuditChainVerifier.Fehler>>(bericht, "fehler").orEmpty()
             for (f in fehler) {

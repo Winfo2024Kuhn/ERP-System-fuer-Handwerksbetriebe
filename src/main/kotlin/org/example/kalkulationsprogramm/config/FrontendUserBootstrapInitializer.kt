@@ -39,7 +39,7 @@ class FrontendUserBootstrapInitializer(
         admin.shortCode = "ADM"
         admin.username = normalizedUsername
         admin.passwordHash = passwordEncoder.encode(bootstrapPassword)
-        admin.isActive = true
+        admin.active = true
         admin.roleSet = LinkedHashSet(setOf(FrontendUserRole.ADMIN, FrontendUserRole.USER))
 
         repository.save(admin)

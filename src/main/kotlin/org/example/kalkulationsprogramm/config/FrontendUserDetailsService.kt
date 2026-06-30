@@ -30,7 +30,7 @@ class FrontendUserDetailsService(
             profile.username,
             profile.displayName,
             profile.passwordHash,
-            profile.isActive,
+            profile.active,
             roles
         )
     }

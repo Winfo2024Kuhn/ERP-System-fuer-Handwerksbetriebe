@@ -76,7 +76,7 @@ class AuthController(
                 profile.id,
                 profile.displayName,
                 profile.username,
-                profile.isActive,
+                profile.active,
                 profile.roles,
                 isAdmin,
                 requiresInitialSetup,
