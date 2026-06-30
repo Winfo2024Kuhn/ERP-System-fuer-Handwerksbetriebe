@@ -1,5 +1,4 @@
 package org.example.kalkulationsprogramm.service
-import java.util.List
 /**
  * Result object for price update operations.
  */
