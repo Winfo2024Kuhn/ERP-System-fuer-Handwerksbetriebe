@@ -107,7 +107,7 @@ class ZeitkontoKorrekturController(
     }
 
     @GetMapping("/{id}/historie")
-    fun getAuditHistorie(@PathVariable id: Long): ResponseEntity<List<Map<String, Any>>> =
+    fun getAuditHistorie(@PathVariable id: Long): ResponseEntity<List<Map<String, Any?>>> =
         ResponseEntity.ok(korrekturService.getAuditHistorie(id))
 
     @GetMapping("/mitarbeiter/{mitarbeiterId}/summe")

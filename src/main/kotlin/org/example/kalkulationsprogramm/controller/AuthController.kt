@@ -98,7 +98,7 @@ class AuthController(
         }
 
         return try {
-            val updated = profileService.updateCredentials(principal.id, request.username, request.password)
+            val updated = profileService.updateCredentials(principal.id!!, request.username, request.password)
             ResponseEntity.ok(
                 mapOf(
                     "id" to updated.id,

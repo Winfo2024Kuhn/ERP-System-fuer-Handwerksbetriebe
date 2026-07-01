@@ -64,7 +64,7 @@ class UrlaubsantragController(
             }
         }
 
-        return ResponseEntity.ok(service.offeneAntraege)
+        return ResponseEntity.ok(service.getOffeneAntraege())
     }
 
     @PutMapping("/antraege/{id}/approve")

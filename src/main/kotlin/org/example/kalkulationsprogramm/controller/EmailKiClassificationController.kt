@@ -88,7 +88,7 @@ class EmailKiClassificationController(
         val result = classificationService.classify(email, projekte, anfragen)
 
         var applied = false
-        if (result.isAssigned && result.confidence() >= 0.6) {
+        if (result.isAssigned() && result.confidence() >= 0.6) {
             if (result.zuordnungTyp() == EmailZuordnungTyp.PROJEKT) {
                 projekte.firstOrNull { readLong(it, "id") == result.entityId() }?.let {
                     email.assignToProjekt(it)
@@ -111,7 +111,7 @@ class EmailKiClassificationController(
                     "key" to result.key(),
                     "confidence" to result.confidence(),
                     "reason" to nullSafe(result.reason()),
-                    "assigned" to result.isAssigned,
+                    "assigned" to result.isAssigned(),
                 ),
                 "applied" to applied,
                 "minConfidence" to 0.6,
@@ -149,7 +149,7 @@ class EmailKiClassificationController(
             "entityId" to (result.entityId() ?: "null"),
             "confidence" to result.confidence(),
             "reason" to nullSafe(result.reason()),
-            "assigned" to result.isAssigned,
+            "assigned" to result.isAssigned(),
         )
 
     private fun buildCandidateList(projekte: List<Projekt>, anfragen: List<Anfrage>): List<Map<String, String>> {

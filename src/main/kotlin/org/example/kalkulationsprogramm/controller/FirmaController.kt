@@ -33,7 +33,7 @@ class FirmaController(
 ) {
     @GetMapping
     fun getFirmeninformation(): ResponseEntity<FirmeninformationDto> {
-        return ResponseEntity.ok(firmeninformationService.firmeninformation)
+        return ResponseEntity.ok(firmeninformationService.getFirmeninformation())
     }
 
     @PutMapping

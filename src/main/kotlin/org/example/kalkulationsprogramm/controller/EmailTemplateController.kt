@@ -141,7 +141,7 @@ class EmailTemplateController(
     }
 
     private fun buildReviewLink(): String {
-        val url = firmeninformationService.firmeninformation?.googleBewertungsLink
+        val url = firmeninformationService.getFirmeninformation().googleBewertungsLink
         if (url.isNullOrBlank()) {
             return ""
         }

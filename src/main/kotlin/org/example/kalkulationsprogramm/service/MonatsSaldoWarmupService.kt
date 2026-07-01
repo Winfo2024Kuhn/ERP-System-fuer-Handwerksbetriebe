@@ -74,17 +74,18 @@ class MonatsSaldoWarmupService(
             return intArrayOf(0, 0)
         }
 
+        val mitarbeiterId = mitarbeiter.id ?: return intArrayOf(0, 0)
         var ym = startYM
         while (!ym.isAfter(endeYM)) {
             val istGueltig = monatsSaldoRepository
-                .findByMitarbeiterIdAndJahrAndMonat(mitarbeiter.id, ym.year, ym.monthValue)
+                .findByMitarbeiterIdAndJahrAndMonat(mitarbeiterId, ym.year, ym.monthValue)
                 .map { java.lang.Boolean.TRUE == it.value<Boolean>("getGueltig") }
                 .orElse(false)
 
             if (istGueltig) {
                 uebersprungen++
             } else {
-                monatsSaldoService.getOrBerechne(mitarbeiter.id, ym.year, ym.monthValue)
+                monatsSaldoService.getOrBerechne(mitarbeiterId, ym.year, ym.monthValue)
                 berechnet++
             }
             ym = ym.plusMonths(1)
