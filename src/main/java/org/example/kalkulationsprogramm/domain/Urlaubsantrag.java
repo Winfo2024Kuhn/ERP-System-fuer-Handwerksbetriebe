@@ -15,8 +15,10 @@ public class Urlaubsantrag {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "mitarbeiter_id", nullable = false)
-    @com.fasterxml.jackson.annotation.JsonIgnoreProperties({ "abteilungen", "dokumente", "loginToken",
-            "hibernateLazyInitializer", "handler" })
+    // Whitelist statt Blacklist: Die Urlaubs-API liefert die Entity direkt aus.
+    // Nur die von den Frontends genutzten Felder serialisieren – alles andere
+    // (Krankenkasse als Lazy-Proxy, Lohn- und Personaldaten) bleibt draußen.
+    @com.fasterxml.jackson.annotation.JsonIncludeProperties({ "id", "vorname", "nachname", "jahresUrlaub" })
     private Mitarbeiter mitarbeiter;
 
     @Column(nullable = false)
