@@ -32,13 +32,14 @@ class EmailTemplateController(
             val content = renderFromDbTemplate(dokumentTyp, request) ?: renderFallback(dokumentTyp, request)
             var body = content.htmlBody()
 
-            if ((dokumentTyp == "ANGEBOT" || dokumentTyp == "NACHTRAGSANGEBOT") && request.dokumentId != null) {
+            val dokumentId = request.dokumentId
+            if ((dokumentTyp == "ANGEBOT" || dokumentTyp == "NACHTRAGSANGEBOT") && dokumentId != null) {
                 val isAnfrage = request.isAnfrage == true
                 val recipient = request.recipient ?: ""
                 val gueltigkeitTage = request.gueltigkeitTage ?: DokumentFreigabeService.DEFAULT_GUELTIGKEITS_TAGE
                 body += dokumentFreigabeService
                     .erstelleFreigabeBlockFuerDokument(
-                        request.dokumentId,
+                        dokumentId,
                         isAnfrage,
                         recipient,
                         request.pdfDateiname,

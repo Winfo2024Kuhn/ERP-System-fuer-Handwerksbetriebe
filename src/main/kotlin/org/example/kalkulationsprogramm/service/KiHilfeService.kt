@@ -73,7 +73,7 @@ class KiHilfeService(
 
         var ragContext: String? = null
         var ragUsed = false
-        if (localRagService.isAvailable) {
+        if (localRagService.isAvailable()) {
             log.info("  -> Lokales RAG ist verfuegbar, starte Vektor-Suche...")
             try {
                 val latestUserMessage = limitedMessages
@@ -103,8 +103,8 @@ class KiHilfeService(
         } else {
             log.info(
                 "  -> RAG nicht verfuegbar (enabled={}, ready={}), nutze Full-Codebase-Index",
-                localRagService.isEnabled,
-                localRagService.isReady,
+                localRagService.isEnabled(),
+                localRagService.isReady(),
             )
         }
 
