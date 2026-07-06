@@ -13,7 +13,7 @@ class ImageProcessingService {
             try {
                 OpenCV.loadLocally()
                 log.info("OpenCV loaded successfully")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 log.error("Failed to load OpenCV", e)
             }
         }

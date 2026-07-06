@@ -197,15 +197,17 @@ class DemoDataInitializer(
     }
 
     private fun abteilung(name: String, genehmigen: Boolean, sehen: Boolean, freigabe: Boolean, web: Boolean): Abteilung =
-        abteilungRepository.save(
-            Abteilung().apply {
-                this.name = name
-                darfRechnungenGenehmigen = genehmigen
-                darfRechnungenSehen = sehen
-                darfFreigabeAnnahmePushen = freigabe
-                darfWebseitenAnfragenPushen = web
-            },
-        )
+        abteilungRepository.findByName(name).orElseGet {
+            abteilungRepository.save(
+                Abteilung().apply {
+                    this.name = name
+                    darfRechnungenGenehmigen = genehmigen
+                    darfRechnungenSehen = sehen
+                    darfFreigabeAnnahmePushen = freigabe
+                    darfWebseitenAnfragenPushen = web
+                },
+            )
+        }
 
     private fun arbeitsgang(beschreibung: String, abteilung: Abteilung): Arbeitsgang =
         arbeitsgangRepository.save(Arbeitsgang().apply {

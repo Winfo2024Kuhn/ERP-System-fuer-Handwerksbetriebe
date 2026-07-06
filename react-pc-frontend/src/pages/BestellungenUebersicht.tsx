@@ -37,6 +37,16 @@ interface BestellungsUebersicht {
     ausgeblendet: DokumentenKette[];
 }
 
+interface BackendDokumentenKette {
+    bestellung?: DokumentRef | null;
+    wareneingaenge?: DokumentRef[] | null;
+    rechnungen?: DokumentRef[] | null;
+    dokumente?: DokumentRef[] | null;
+    id?: string;
+    lieferantId?: number | null;
+    lieferantName?: string | null;
+}
+
 interface GeschaeftsdatenDto {
     id: number;
     dokumentNummer: string | null;
@@ -96,6 +106,45 @@ const TYP_LABELS: Record<DokumentRef['typ'], string> = {
     RECHNUNG: 'Rechnung',
     GUTSCHRIFT: 'Gutschrift',
     SONSTIG: 'Sonstiges',
+};
+
+const asArray = <T,>(value: unknown): T[] => Array.isArray(value) ? value : [];
+
+const normalizeKette = (raw: BackendDokumentenKette): DokumentenKette => {
+    const dokumente = raw.dokumente && raw.dokumente.length > 0
+        ? raw.dokumente
+        : [
+            raw.bestellung,
+            ...asArray<DokumentRef>(raw.wareneingaenge),
+            ...asArray<DokumentRef>(raw.rechnungen),
+        ].filter((dok): dok is DokumentRef => Boolean(dok));
+
+    return {
+        id: raw.id || dokumente.map(dok => dok.id).join('-') || `kette-${Math.random().toString(36).slice(2)}`,
+        lieferantId: raw.lieferantId ?? null,
+        lieferantName: raw.lieferantName ?? null,
+        dokumente,
+    };
+};
+
+const normalizeUebersicht = (raw: any): BestellungsUebersicht => {
+    const offeneAnfragen = asArray<BackendDokumentenKette>(raw?.offeneAnfragen).map(normalizeKette);
+    const laufendeBestellungen = [
+        ...asArray<BackendDokumentenKette>(raw?.laufendeBestellungen),
+        ...asArray<BackendDokumentenKette>(raw?.offeneBestellungen),
+        ...asArray<BackendDokumentenKette>(raw?.offeneWareneingaenge),
+    ].map(normalizeKette);
+
+    return {
+        offeneAnfragen,
+        laufendeBestellungen,
+        abgeschlossen: [
+            ...asArray<BackendDokumentenKette>(raw?.abgeschlossen),
+            ...asArray<BackendDokumentenKette>(raw?.offeneRechnungen),
+        ].map(normalizeKette),
+        zugeordnet: asArray<BackendDokumentenKette>(raw?.zugeordnet).map(normalizeKette),
+        ausgeblendet: asArray<BackendDokumentenKette>(raw?.ausgeblendet).map(normalizeKette),
+    };
 };
 
 // ========== Ketten-Komponente ==========
@@ -780,7 +829,7 @@ export default function BestellungenUebersicht() {
             const res = await fetch('/api/bestellungen-uebersicht');
             if (!res.ok) throw new Error('Fehler beim Laden');
             const json = await res.json();
-            setData(json);
+            setData(normalizeUebersicht(json));
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unbekannter Fehler');
         } finally {
