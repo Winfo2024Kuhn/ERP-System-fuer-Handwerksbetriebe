@@ -92,16 +92,9 @@ public class LieferantenController {
     private final org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
     private final org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     private final org.example.kalkulationsprogramm.service.EmailSignatureService emailSignatureService;
+    private final org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
-    @org.springframework.beans.factory.annotation.Value("${smtp.host}")
-    private String smtpHost;
-    @org.springframework.beans.factory.annotation.Value("${smtp.port}")
-    private int smtpPort;
-    @org.springframework.beans.factory.annotation.Value("${smtp.username}")
-    private String smtpUsername;
-    @org.springframework.beans.factory.annotation.Value("${smtp.password}")
-    private String smtpPassword;
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
     @org.springframework.beans.factory.annotation.Value("${file.upload-dir}")
@@ -303,8 +296,11 @@ public class LieferantenController {
             return ResponseEntity.notFound().build();
         }
 
-        org.example.email.EmailService emailService = new org.example.email.EmailService(smtpHost, smtpPort,
-                smtpUsername, smtpPassword);
+        org.example.email.EmailService emailService = new org.example.email.EmailService(
+                systemSettingsService.getSmtpHost(),
+                systemSettingsService.getSmtpPort(),
+                systemSettingsService.getSmtpUsername(),
+                systemSettingsService.getSmtpPassword());
 
         String htmlBody = dto.getBody() != null ? dto.getBody() : "";
         String userName = resolveUserName(dto.getBenutzer(), dto.getFrontendUserId());

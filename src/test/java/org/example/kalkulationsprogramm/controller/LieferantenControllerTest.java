@@ -93,6 +93,8 @@ class LieferantenControllerTest {
   private org.example.kalkulationsprogramm.repository.KostenstelleRepository kostenstelleRepository;
   @MockBean
   private org.example.kalkulationsprogramm.service.LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
+  @MockBean
+  private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
 
   @Autowired
   private LieferantenController controller;
