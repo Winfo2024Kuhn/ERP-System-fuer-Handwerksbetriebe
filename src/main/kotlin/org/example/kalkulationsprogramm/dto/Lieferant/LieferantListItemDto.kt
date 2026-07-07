@@ -1,9 +1,12 @@
 package org.example.kalkulationsprogramm.dto.Lieferant
 
+import org.example.kalkulationsprogramm.domain.LieferantRolle
+
 data class LieferantListItemDto(
     var id: Long? = null,
     var lieferantenname: String? = null,
     var lieferantenTyp: String? = null,
+    var rollen: Set<LieferantRolle>? = null,
     var vertreter: String? = null,
     var strasse: String? = null,
     var plz: String? = null,

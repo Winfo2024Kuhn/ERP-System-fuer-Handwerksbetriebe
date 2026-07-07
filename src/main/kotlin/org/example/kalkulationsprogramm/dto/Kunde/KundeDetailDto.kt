@@ -17,4 +17,5 @@ data class KundeDetailDto(
     var projekte: List<KundeProjektKurzDto>? = null,
     var anfragen: List<KundeAnfrageKurzDto>? = null,
     var kommunikation: List<KundeKommunikationDto>? = null,
+    var notizen: List<KundeNotizDto>? = null,
 )

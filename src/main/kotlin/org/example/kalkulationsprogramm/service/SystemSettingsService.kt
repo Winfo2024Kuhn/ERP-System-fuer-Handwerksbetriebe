@@ -53,6 +53,12 @@ class SystemSettingsService(
     @Value("\${ai.gemini.api-key:}")
     private lateinit var defaultGeminiApiKey: String
 
+    @Value("\${hicad.ordner-pfad:}")
+    private lateinit var defaultDateiOrdnerPfad: String
+
+    @Value("\${hicad.network-url:}")
+    private lateinit var defaultDateiOrdnerNetworkUrl: String
+
     val smtpHost: String
         get() = sanitizeValue(get("smtp.host", defaultSmtpHost))
     val smtpPort: Int
@@ -88,6 +94,10 @@ class SystemSettingsService(
         }
     val geminiApiKey: String
         get() = sanitizeValue(get("ai.gemini.api-key", defaultGeminiApiKey))
+    val dateiOrdnerPfad: String
+        get() = sanitizeValue(get("datei.ordner-pfad", defaultDateiOrdnerPfad))
+    val dateiOrdnerNetworkUrl: String
+        get() = sanitizeValue(get("datei.ordner-network-url", defaultDateiOrdnerNetworkUrl))
     val allSettings: Map<String, String>
         get() = linkedMapOf(
             "smtp.host" to smtpHost,
@@ -100,6 +110,8 @@ class SystemSettingsService(
             "imap.password" to maskValue(imapPassword),
             "ai.gemini.api-key" to maskValue(geminiApiKey),
             "mail.from-address" to mailFromAddress,
+            "datei.ordner-pfad" to dateiOrdnerPfad,
+            "datei.ordner-network-url" to dateiOrdnerNetworkUrl,
         )
     val isImapConfigured: Boolean
         get() = hasConfiguredValue(imapHost) &&
@@ -108,6 +120,8 @@ class SystemSettingsService(
             hasConfiguredValue(imapPassword)
     val isInitialConfigurationRequired: Boolean
         get() = !isSmtpConfigured()
+    val isDateiOrdnerConfigured: Boolean
+        get() = hasConfiguredValue(dateiOrdnerPfad)
     val isAnfrageFunnelSpamFilterAktiv: Boolean
         get() {
             val value = get("anfrage.funnel.spamfilter.aktiv", "true")
@@ -143,6 +157,13 @@ class SystemSettingsService(
             smtpPort > 0 &&
             hasConfiguredValue(smtpUsername) &&
             hasConfiguredValue(smtpPassword)
+
+    @Transactional
+    fun saveDateiOrdner(pfad: String, networkUrl: String?) {
+        save("datei.ordner-pfad", pfad, "Gemeinsamer Datei-Ordner für HiCAD/Tenado/Excel")
+        save("datei.ordner-network-url", networkUrl ?: "", "Netzwerk-Adresse des gemeinsamen Datei-Ordners")
+        log.info("Datei-Ordner aktualisiert: {}", pfad)
+    }
 
     @Transactional
     fun saveMailFromAddress(address: String?) {

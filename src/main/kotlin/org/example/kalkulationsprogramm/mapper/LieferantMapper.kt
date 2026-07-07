@@ -15,6 +15,7 @@ class LieferantMapper(
         dto.id = lieferant.id
         dto.lieferantenname = lieferant.lieferantenname
         dto.lieferantenTyp = lieferant.lieferantenTyp
+        dto.rollen = lieferant.rollen
         dto.vertreter = lieferant.vertreter
         dto.strasse = lieferant.strasse
         dto.plz = lieferant.plz

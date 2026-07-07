@@ -52,6 +52,32 @@ export interface KundeStatistik {
   gesamtGewinn?: number;
 }
 
+/** Schlanke Projekt-Karte für die Kunden-Detailseite (Backend: KundeProjektKurzDto). */
+export interface KundeProjektKurz {
+  id: number;
+  bauvorhaben?: string;
+  auftragsnummer?: string;
+  anlegedatum?: string;
+  abschlussdatum?: string;
+  bezahlt: boolean;
+  bruttoPreis?: number;
+}
+
+/** Schlanke Anfrage-Karte für die Kunden-Detailseite (Backend: KundeAnfrageKurzDto). */
+export interface KundeAnfrageKurz {
+  id: number;
+  bauvorhaben?: string;
+  anfragesnummer?: string;
+  anlegedatum?: string;
+  betrag?: number;
+}
+
+export interface KundeNotiz {
+  id: number;
+  text: string;
+  erstelltAm: string;
+}
+
 export interface KundeDetail {
   id: number;
   kundennummer: string;
@@ -68,6 +94,10 @@ export interface KundeDetail {
   hatProjekte?: boolean;
   statistik?: KundeStatistik;
   kommunikation?: Kommunikation[];
+  projekte?: KundeProjektKurz[];
+  anfragen?: KundeAnfrageKurz[];
+  geschaeftsdokumente?: AusgangsGeschaeftsDokument[];
+  notizen?: KundeNotiz[];
 }
 
 export interface LieferantStatistik {
@@ -79,7 +109,7 @@ export interface LieferantStatistik {
 }
 
 // ==================== Lieferant Dokumente ====================
-export type LieferantDokumentTyp = 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'EINGANGSRECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
+export type LieferantDokumentTyp = 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
 
 export interface LieferantGeschaeftsdaten {
   dokumentNummer?: string;
@@ -157,6 +187,32 @@ export const LIEFERANT_DOKUMENT_TYPEN: { value: LieferantDokumentTyp; label: str
   { value: 'RECHNUNG', label: 'Rechnung', color: 'rose' },
 ];
 
+// ==================== Lieferant-Rollen ====================
+export type LieferantRolle =
+  | 'STAHLHANDEL'
+  | 'SCHRAUBEN_NORMTEILE'
+  | 'BESCHICHTUNG_VERZINKEN'
+  | 'LACKIERER'
+  | 'FERTIGTEILE_ZUKAUF'
+  | 'ALUMINIUM_NE'
+  | 'EDELSTAHL'
+  | 'WERKZEUG_VERBRAUCH'
+  | 'IT'
+  | 'SONSTIGER';
+
+export const LIEFERANT_ROLLEN: { value: LieferantRolle; label: string }[] = [
+  { value: 'STAHLHANDEL', label: 'Stahlhandel' },
+  { value: 'SCHRAUBEN_NORMTEILE', label: 'Schrauben & Normteile' },
+  { value: 'BESCHICHTUNG_VERZINKEN', label: 'Beschichtung / Verzinkerei' },
+  { value: 'LACKIERER', label: 'Lackierer' },
+  { value: 'FERTIGTEILE_ZUKAUF', label: 'Fertigteile & Zukauf' },
+  { value: 'ALUMINIUM_NE', label: 'Aluminium / NE-Metalle' },
+  { value: 'EDELSTAHL', label: 'Edelstahl' },
+  { value: 'WERKZEUG_VERBRAUCH', label: 'Werkzeug & Verbrauch' },
+  { value: 'IT', label: 'IT' },
+  { value: 'SONSTIGER', label: 'Sonstiger / Dienstleister' },
+];
+
 export interface LieferantNotiz {
   id: number;
   text: string;
@@ -217,11 +273,13 @@ export interface ProduktkategorieDto {
   leaf?: boolean;
   parentId?: number | null;
   verrechnungseinheit?: Verrechnungseinheit;
+  typischeRollen?: LieferantRolle[];
 }
 
 export interface Lieferant {
   id: number | string;
   lieferantenTyp?: string;
+  rollen?: LieferantRolle[];
   lieferantenname?: string;
   eigeneKundennummer?: string;
   strasse?: string;

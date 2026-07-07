@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { cn } from '../lib/utils';
-import { type ProduktkategorieDto } from '../types';
+import { LIEFERANT_ROLLEN, type LieferantRolle, type ProduktkategorieDto } from '../types';
 import { useToast } from './ui/toast';
 
 interface CategoryTreeModalProps {
@@ -126,11 +126,62 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
     const [childrenCache, setChildrenCache] = useState<Map<number, ProduktkategorieDto[]>>(new Map());
     const [formBezeichnung, setFormBezeichnung] = useState('');
     const [saving, setSaving] = useState(false);
+    const [selectedRollen, setSelectedRollen] = useState<LieferantRolle[]>([]);
+    const [savingRollen, setSavingRollen] = useState(false);
 
     const selectedParentLabel = useMemo(() => {
         if (!selectedNode) return 'Hauptkategorie';
         return `Unter „${selectedNode.bezeichnung}“`;
     }, [selectedNode]);
+
+    useEffect(() => {
+        setSelectedRollen(selectedNode?.typischeRollen || []);
+    }, [selectedNode]);
+
+    const updateNodeRollen = useCallback((nodeId: number, typischeRollen: LieferantRolle[]) => {
+        setRoots((prev) => prev.map((node) => (Number(node.id) === nodeId ? { ...node, typischeRollen } : node)));
+        setChildrenCache((prev) => {
+            const next = new Map<number, ProduktkategorieDto[]>();
+            for (const [parentId, nodes] of prev.entries()) {
+                next.set(
+                    parentId,
+                    nodes.map((node) => (Number(node.id) === nodeId ? { ...node, typischeRollen } : node))
+                );
+            }
+            return next;
+        });
+        setSelectedNode((prev) => {
+            if (!prev || Number(prev.id) !== nodeId) return prev;
+            return { ...prev, typischeRollen };
+        });
+    }, []);
+
+    const toggleRolle = useCallback((rolle: LieferantRolle) => {
+        setSelectedRollen((prev) => prev.includes(rolle) ? prev.filter(r => r !== rolle) : [...prev, rolle]);
+    }, []);
+
+    const handleSaveRollen = useCallback(async () => {
+        if (!selectedNode) return;
+        const nodeId = Number(selectedNode.id);
+        setSavingRollen(true);
+        try {
+            const res = await fetch(`/api/artikel/kategorien/${nodeId}/rollen`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(selectedRollen),
+            });
+            if (!res.ok) {
+                throw new Error('Rollen konnten nicht gespeichert werden.');
+            }
+            updateNodeRollen(nodeId, selectedRollen);
+            toast.success('Typische Rollen gespeichert.');
+        } catch (err) {
+            console.error(err);
+            toast.error('Rollen konnten nicht gespeichert werden.');
+        } finally {
+            setSavingRollen(false);
+        }
+    }, [selectedNode, selectedRollen, toast, updateNodeRollen]);
 
     const loadRoots = useCallback(async () => {
         setLoading(true);
@@ -379,6 +430,54 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
                                 </div>
                             </div>
                         </Card>
+
+                        {selectedNode && (
+                            <Card className="p-4 border-rose-100 shadow-sm h-fit xl:col-span-2">
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs uppercase tracking-wide text-slate-500">Lieferanten-Vorschlag</p>
+                                        <h4 className="text-lg font-semibold text-slate-900">
+                                            Typische Rollen für „{selectedNode.bezeichnung}“
+                                        </h4>
+                                        <p className="text-sm text-slate-500">
+                                            Steuert, welche Lieferanten beim Preis-Eintragen für Artikel dieser Kategorie vorgeschlagen werden.
+                                            Leer = erbt von der Oberkategorie.
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {LIEFERANT_ROLLEN.map(rolle => {
+                                            const active = selectedRollen.includes(rolle.value);
+                                            return (
+                                                <button
+                                                    key={rolle.value}
+                                                    type="button"
+                                                    onClick={() => toggleRolle(rolle.value)}
+                                                    className={cn(
+                                                        'px-3 py-1.5 rounded-full text-sm font-medium border transition-colors',
+                                                        active
+                                                            ? 'bg-rose-600 text-white border-rose-600'
+                                                            : 'border-rose-300 text-rose-700 hover:bg-rose-50'
+                                                    )}
+                                                >
+                                                    {rolle.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <Button
+                                            size="sm"
+                                            className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                                            onClick={handleSaveRollen}
+                                            disabled={savingRollen}
+                                        >
+                                            <Save className="w-4 h-4 mr-2" />
+                                            {savingRollen ? 'Speichert...' : 'Rollen speichern'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            </Card>
+                        )}
                     </div>
                 ) : (
                     <div className="flex-1 overflow-y-auto p-2">

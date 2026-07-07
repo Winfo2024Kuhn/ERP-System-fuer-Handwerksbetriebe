@@ -1,11 +1,14 @@
 package org.example.kalkulationsprogramm.service
 
 import org.example.kalkulationsprogramm.domain.Kategorie
+import org.example.kalkulationsprogramm.domain.LieferantRolle
 import org.example.kalkulationsprogramm.dto.Artikel.KategorieCreateDto
 import org.example.kalkulationsprogramm.dto.Artikel.KategorieResponseDto
 import org.example.kalkulationsprogramm.repository.KategorieRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 
 @Service
 class KategorieService(
@@ -35,6 +38,7 @@ class KategorieService(
 
         val neueKategorie = Kategorie().apply {
             beschreibung = bezeichnung
+            typischeRollen = dto.typischeRollen?.toMutableSet() ?: mutableSetOf()
         }
 
         if (dto.parentId != null) {
@@ -44,6 +48,27 @@ class KategorieService(
         }
 
         return toDto(kategorieRepository.save(neueKategorie))
+    }
+
+    @Transactional
+    fun aktualisiereTypischeRollen(kategorieId: Int, rollen: Set<LieferantRolle>?): KategorieResponseDto {
+        val kategorie = kategorieRepository.findById(kategorieId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Kategorie nicht gefunden.") }
+        kategorie.typischeRollen = rollen?.toMutableSet() ?: mutableSetOf()
+        return toDto(kategorieRepository.save(kategorie))
+    }
+
+    @Transactional(readOnly = true)
+    fun findeEffektiveRollen(kategorieId: Int): Set<LieferantRolle> {
+        var aktuelle = kategorieRepository.findById(kategorieId).orElse(null)
+        val besucht = HashSet<Int>()
+        while (aktuelle != null && aktuelle.id != null && besucht.add(aktuelle.id!!)) {
+            if (aktuelle.typischeRollen.isNotEmpty()) {
+                return aktuelle.typischeRollen
+            }
+            aktuelle = aktuelle.parentKategorie
+        }
+        return emptySet()
     }
 
     fun findeKategorieUndUnterkategorieIds(kategorieId: Int?): List<Int> {
@@ -69,5 +94,6 @@ class KategorieService(
             id = kategorie.id
             bezeichnung = kategorie.beschreibung
             leaf = !kategorieRepository.existsByParentKategorie_Id(kategorie.id)
+            typischeRollen = kategorie.typischeRollen
         }
 }

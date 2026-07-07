@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.dto.Lieferant
 
+import org.example.kalkulationsprogramm.domain.LieferantRolle
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto
 import java.time.LocalDate
@@ -9,6 +10,7 @@ data class LieferantDetailDto(
     var lieferantenname: String? = null,
     var eigeneKundennummer: String? = null,
     var lieferantenTyp: String? = null,
+    var rollen: Set<LieferantRolle>? = null,
     var vertreter: String? = null,
     var strasse: String? = null,
     var plz: String? = null,

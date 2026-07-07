@@ -5,14 +5,17 @@ import jakarta.persistence.criteria.ListJoin
 import jakarta.validation.Valid
 import org.example.kalkulationsprogramm.domain.Anrede
 import org.example.kalkulationsprogramm.domain.Kunde
+import org.example.kalkulationsprogramm.domain.KundeNotiz
 import org.example.kalkulationsprogramm.dto.Kunde.KundeCreateRequestDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDetailDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatResponseDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeListItemDto
+import org.example.kalkulationsprogramm.dto.Kunde.KundeNotizDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeSearchResponseDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeUpdateRequestDto
 import org.example.kalkulationsprogramm.event.EmailAddressChangedEvent
 import org.example.kalkulationsprogramm.mapper.KundeMapper
+import org.example.kalkulationsprogramm.repository.KundeNotizRepository
 import org.example.kalkulationsprogramm.repository.KundeRepository
 import org.example.kalkulationsprogramm.service.KundeDuplikatService
 import org.example.kalkulationsprogramm.service.KundenDetailService
@@ -26,6 +29,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.util.StringUtils
 import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -48,6 +52,7 @@ class KundeController(
     private val eventPublisher: ApplicationEventPublisher,
     private val kundennummerService: KundennummerService,
     private val kundeDuplikatService: KundeDuplikatService,
+    private val kundeNotizRepository: KundeNotizRepository,
 ) {
     @GetMapping
     fun sucheKunden(
@@ -290,6 +295,66 @@ class KundeController(
         )
         return ResponseEntity.ok(mapOf("message" to "E-Mail-Adresse gespeichert", "added" to true))
     }
+
+    @GetMapping("/{id}/notizen")
+    fun listNotizen(
+        @PathVariable id: Long,
+        @RequestParam(value = "q", required = false) query: String?,
+    ): ResponseEntity<List<KundeNotizDto>> {
+        if (!kundeRepository.existsById(id)) {
+            return ResponseEntity.notFound().build()
+        }
+        val notizen = if (StringUtils.hasText(query)) {
+            kundeNotizRepository.findByKundeIdAndTextContainingIgnoreCaseOrderByErstelltAmDesc(id, query)
+        } else {
+            kundeNotizRepository.findByKundeIdOrderByErstelltAmDesc(id)
+        }
+        return ResponseEntity.ok(notizen.map { toNotizDto(it) })
+    }
+
+    @PostMapping("/{id}/notizen")
+    @Transactional
+    fun createNotiz(
+        @PathVariable id: Long,
+        @RequestBody body: Map<String, String>,
+    ): ResponseEntity<KundeNotizDto> {
+        val kunde = kundeRepository.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
+        val text = body["text"]
+        if (!StringUtils.hasText(text)) {
+            return ResponseEntity.badRequest().build()
+        }
+        val notiz = kundeNotizRepository.save(
+            KundeNotiz().apply {
+                this.kunde = kunde
+                this.text = text!!.trim()
+            },
+        )
+        return ResponseEntity.status(HttpStatus.CREATED).body(toNotizDto(notiz))
+    }
+
+    @DeleteMapping("/{id}/notizen/{notizId}")
+    @Transactional
+    fun deleteNotiz(
+        @PathVariable id: Long,
+        @PathVariable notizId: Long,
+    ): ResponseEntity<Void> {
+        if (!kundeRepository.existsById(id)) {
+            return ResponseEntity.notFound().build()
+        }
+        val notiz = kundeNotizRepository.findById(notizId).orElse(null)
+        if (notiz?.kunde?.id != id) {
+            return ResponseEntity.notFound().build()
+        }
+        kundeNotizRepository.delete(notiz)
+        return ResponseEntity.noContent().build()
+    }
+
+    private fun toNotizDto(notiz: KundeNotiz): KundeNotizDto =
+        KundeNotizDto(
+            id = notiz.id,
+            text = notiz.text,
+            erstelltAm = notiz.erstelltAm,
+        )
 
     private fun normalizeEmails(emails: List<String>?): Set<String> {
         if (emails == null) {

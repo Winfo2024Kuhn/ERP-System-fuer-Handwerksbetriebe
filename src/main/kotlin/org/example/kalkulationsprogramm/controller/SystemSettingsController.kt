@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.controller
 
 import org.example.kalkulationsprogramm.service.SystemSettingsService
 import org.example.kalkulationsprogramm.service.SystemSettingsService.TestResult
+import org.example.kalkulationsprogramm.service.DateiOrdnerService
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -16,6 +17,7 @@ import java.util.regex.Pattern
 @RequestMapping("/api/settings")
 class SystemSettingsController(
     private val settingsService: SystemSettingsService,
+    private val dateiOrdnerService: DateiOrdnerService,
 ) {
     @GetMapping
     fun getAll(): ResponseEntity<Map<String, String>> {
@@ -161,6 +163,33 @@ class SystemSettingsController(
         )
     }
 
+    @GetMapping("/datei-ordner")
+    fun getDateiOrdner(): ResponseEntity<DateiOrdnerResponse> =
+        ResponseEntity.ok(
+            DateiOrdnerResponse(
+                settingsService.dateiOrdnerPfad,
+                settingsService.dateiOrdnerNetworkUrl,
+                settingsService.isDateiOrdnerConfigured,
+            ),
+        )
+
+    @PutMapping("/datei-ordner")
+    fun saveDateiOrdner(@RequestBody req: DateiOrdnerRequest): ResponseEntity<Map<String, String>> {
+        val result = dateiOrdnerService.speichereOrdner(req.pfad, req.networkUrl)
+        if (!result.success) {
+            return ResponseEntity.badRequest().body(mapOf("message" to result.message))
+        }
+        return ResponseEntity.ok(mapOf("message" to result.message))
+    }
+
+    @PostMapping("/datei-ordner/test")
+    fun testDateiOrdner(@RequestBody req: DateiOrdnerTestRequest): ResponseEntity<TestResult> =
+        ResponseEntity.ok(dateiOrdnerService.pruefeOrdner(req.pfad))
+
+    @PostMapping("/datei-ordner/freigeben")
+    fun gebeDateiOrdnerFrei(): ResponseEntity<TestResult> =
+        ResponseEntity.ok(dateiOrdnerService.gebeOrdnerFrei())
+
     private fun hasValue(value: String?): Boolean {
         if (value == null) return false
         val normalized = value.trim().lowercase(Locale.ROOT)
@@ -190,6 +219,9 @@ class SystemSettingsController(
     data class FunnelSpamFilterRequest(val aktiv: Boolean)
     data class MailFromResponse(val address: String?, val smtpUsername: String)
     data class MailFromRequest(val address: String?)
+    data class DateiOrdnerResponse(val pfad: String, val networkUrl: String, val konfiguriert: Boolean)
+    data class DateiOrdnerRequest(val pfad: String?, val networkUrl: String?)
+    data class DateiOrdnerTestRequest(val pfad: String?)
 
     companion object {
         private val EMAIL_PATTERN: Pattern = Pattern.compile("^[^@\\s]+@[^@\\s.]+(?:\\.[^@\\s.]+)+$")

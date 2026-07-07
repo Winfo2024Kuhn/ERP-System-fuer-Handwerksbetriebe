@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-    Loader2, Paperclip, X, Plus, Mail, Upload, Eye, Save, Send, FileText
+    Loader2, Paperclip, X, Plus, Mail, Upload, Eye, Save, Send, FolderOpen
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { PdfCanvasViewer } from './ui/PdfCanvasViewer';
@@ -11,12 +11,27 @@ import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import type { ProjektDetail, ProjektDokument } from '../types';
 import { EmailRecipientInput } from './EmailRecipientInput';
+import { EmailEntityDocumentPicker } from './EmailEntityDocumentPicker';
 
 // Interface für hochgeladene externe Dateien
 interface UploadedFile {
     file: File;
     previewUrl?: string;
+    sourceDokumentId?: number;
 }
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const isImageAttachment = (file: File): boolean =>
+    file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/i.test(file.name);
+
+const isPdfAttachment = (file: File): boolean =>
+    file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 
 export interface EmailComposeFormProps {
     onClose: () => void;
@@ -54,11 +69,6 @@ export interface EmailComposeFormProps {
 interface SignatureResponse {
     id?: number;
     html?: string;
-}
-
-interface EmailTemplateResponse {
-    subject: string;
-    body: string;
 }
 
 // Aktuelles Frontend-Profil aus localStorage holen
@@ -102,29 +112,6 @@ const prepareHtmlForSending = (rawHtml: string): string => {
     return wrapper.innerHTML.trim();
 };
 
-// Dokumenttyp aus geschaeftsdokumentart erkennen (matches backend Dokumenttyp enum)
-const detectDokumentTyp = (art: string | undefined): string | null => {
-    if (!art) return null;
-    const lower = art.toLowerCase();
-    if (lower.includes('stornorechnung') || lower.includes('storno')) return 'STORNORECHNUNG';
-    if (lower.includes('schlussrechnung')) return 'SCHLUSSRECHNUNG';
-    if (lower.includes('teilrechnung')) return 'TEILRECHNUNG';
-    if (lower.includes('abschlagsrechnung')) return 'ABSCHLAGSRECHNUNG';
-    if (lower.includes('zahlungserinnerung')) return 'ZAHLUNGSERINNERUNG';
-    if (lower.includes('2. mahnung')) return 'ZWEITE_MAHNUNG';
-    if (lower.includes('1. mahnung')) return 'ERSTE_MAHNUNG';
-    if (lower.includes('mahnung')) return 'ERSTE_MAHNUNG';
-    if (lower.includes('angebot')) return 'ANGEBOT';
-    if (lower.includes('auftragsbestätigung') || lower.includes('auftragsbestaetigung')) return 'AUFTRAGSBESTAETIGUNG';
-    return null;
-};
-
-// Betrag formatieren
-const formatBetrag = (betrag: number | undefined): string => {
-    if (betrag === undefined || betrag === null) return '';
-    return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(betrag);
-};
-
 const deriveOrderRecipientName = (subject: string): string => {
     const match = subject.match(/^Bestellanfrage:\s*(.+)$/i);
     return match?.[1]?.trim() || '';
@@ -157,7 +144,6 @@ export function EmailComposeForm({
     replyQuote,
     replyEmailId,
     initialAttachments,
-    gueltigkeitTage,
     onSuccess,
     draftId: initialDraftId,
 }: EmailComposeFormProps) {
@@ -256,10 +242,12 @@ export function EmailComposeForm({
     const [showCc, setShowCc] = useState(false);
 
     // Dokumente
-    const [emailDokumente, setEmailDokumente] = useState<ProjektDokument[]>([]);
-    const [selectedDokument, setSelectedDokument] = useState<ProjektDokument | null>(null);
-    const [loadingDokumente, setLoadingDokumente] = useState(false);
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+    const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null);
+    const [entityDokumente, setEntityDokumente] = useState<ProjektDokument[]>([]);
+    const [loadingEntityDokumente, setLoadingEntityDokumente] = useState(false);
+    const [showEntityDokumente, setShowEntityDokumente] = useState(false);
+    const [loadingEntityDokumentIds, setLoadingEntityDokumentIds] = useState<Set<number>>(new Set());
 
     // Externe hochgeladene Dateien
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>(() => {
@@ -270,6 +258,15 @@ export function EmailComposeForm({
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<HTMLDivElement>(null);
+    const attachmentBytes = useMemo(
+        () => uploadedFiles.reduce((sum, uploadedFile) => sum + uploadedFile.file.size, 0),
+        [uploadedFiles]
+    );
+    const attachmentLimitExceeded = attachmentBytes > MAX_ATTACHMENT_BYTES;
+    const selectedEntityDokumentIds = useMemo(
+        () => new Set(uploadedFiles.flatMap(file => file.sourceDokumentId ? [file.sourceDokumentId] : [])),
+        [uploadedFiles]
+    );
 
     // Save-Email Dialog State
     const [showSaveEmailDialog, setShowSaveEmailDialog] = useState(false);
@@ -306,14 +303,6 @@ export function EmailComposeForm({
         () => fromAddresses.map(address => ({ value: address, label: address })),
         [fromAddresses]
     );
-    const dokumentOptions = useMemo(
-        () => emailDokumente.map(dok => ({
-            value: String(dok.id),
-            label: `${dok.geschaeftsdokumentart ? `[${dok.geschaeftsdokumentart}] ` : ''}${dok.originalDateiname}${dok.rechnungsnummer ? ` (${dok.rechnungsnummer})` : ''}`,
-        })),
-        [emailDokumente]
-    );
-
     // Handle recipient change
     const handleRecipientChange = (val: string) => {
         markDirty();
@@ -442,98 +431,26 @@ export function EmailComposeForm({
         }
     }, []);
 
-    // E-Mail-Dokumente laden (für Projekte UND Anfragen)
-    const loadEmailDokumente = useCallback(async () => {
+    const loadEntityDokumente = useCallback(async () => {
         if (!entityId) {
-            setEmailDokumente([]);
+            setEntityDokumente([]);
             return;
         }
-        setLoadingDokumente(true);
+        setLoadingEntityDokumente(true);
         try {
-            // Unterschiedlicher Endpoint für Anfragen vs. Projekte
             const apiUrl = isAnfrageContext
-                ? `/api/anfragen/${entityId}/email-dokumente`
-                : `/api/projekte/${entityId}/email-dokumente`;
+                ? `/api/anfragen/${entityId}/dokumente`
+                : `/api/projekte/${entityId}/dokumente`;
             const res = await fetch(apiUrl);
-            if (res.ok) {
-                const data: ProjektDokument[] = await res.json();
-                setEmailDokumente(data);
-            }
+            if (!res.ok) throw new Error('Dateien konnten nicht geladen werden');
+            setEntityDokumente(await res.json());
         } catch (err) {
-            console.error('Dokumente konnten nicht geladen werden:', err);
+            console.error('Projekt-/Anfrage-Dateien konnten nicht geladen werden:', err);
+            setError('Projekt-/Anfrage-Dateien konnten nicht geladen werden.');
         } finally {
-            setLoadingDokumente(false);
+            setLoadingEntityDokumente(false);
         }
     }, [entityId, isAnfrageContext]);
-
-    // Template laden basierend auf Dokument (für Projekt UND Anfrage)
-    const loadTemplate = useCallback(async (dokument: ProjektDokument) => {
-        const dokumentTyp = detectDokumentTyp(dokument.geschaeftsdokumentart);
-        if (!dokumentTyp) return;
-
-        try {
-            const currentUser = getCurrentFrontendUser();
-
-            let requestBody;
-            if (isAnfrageContext && anfrage) {
-                // Anfrage-Kontext: Daten aus Anfrage + Dokument
-                // Anrede aus Kundendaten verwenden, nicht hardcoded
-                const kundeAnrede = anredeEnumToText(anfrage.kundenAnrede);
-                requestBody = {
-                    dokumentTyp,
-                    anrede: kundeAnrede,
-                    kundenName: anfrage.kundenName || '',
-                    ansprechpartner: anfrage.kundenAnsprechpartner || '',
-                    bauvorhaben: anfrage.bauvorhaben || '',
-                    projektnummer: '',
-                    dokumentnummer: dokument.rechnungsnummer || '',
-                    betrag: formatBetrag(dokument.rechnungsbetrag),
-                    benutzer: currentUser?.displayName || '',
-                    gueltigkeitTage: gueltigkeitTage ?? null,
-                };
-            } else if (effectiveProjekt) {
-                // Projekt-Kontext (Prop oder vom Backend geladenes Projekt)
-                const kundenName = effectiveProjekt.kundeDto?.name || effectiveProjekt.kunde || '';
-                const ansprechpartner = effectiveProjekt.kundeDto?.ansprechspartner || '';
-                const kundeAnrede = anredeEnumToText(effectiveProjekt.kundeDto?.anrede);
-                requestBody = {
-                    dokumentTyp,
-                    anrede: kundeAnrede,
-                    kundenName,
-                    ansprechpartner,
-                    bauvorhaben: effectiveProjekt.bauvorhaben || '',
-                    projektnummer: effectiveProjekt.auftragsnummer || '',
-                    dokumentnummer: dokument.rechnungsnummer || '',
-                    rechnungsdatum: dokument.rechnungsdatum || '',
-                    faelligkeitsdatum: dokument.faelligkeitsdatum || '',
-                    betrag: formatBetrag(dokument.rechnungsbetrag),
-                    benutzer: currentUser?.displayName || '',
-                    gueltigkeitTage: gueltigkeitTage ?? null,
-                };
-            } else {
-                return; // Kein Kontext verfügbar
-            }
-
-            const res = await fetch('/api/email/template', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody),
-            });
-
-            if (res.ok) {
-                const template: EmailTemplateResponse = await res.json();
-                setSubject(template.subject);
-                // Body setzen UND Editor aktualisieren
-                const bodyContent = `${template.body}${signature}`;
-                setBody(bodyContent);
-                if (editorRef.current) {
-                    editorRef.current.innerHTML = bodyContent;
-                }
-            }
-        } catch (err) {
-            console.error('Template konnte nicht geladen werden:', err);
-        }
-    }, [effectiveProjekt, anfrage, signature, isAnfrageContext, gueltigkeitTage]);
 
     // Initialisierung - nur einmal beim Mount
     useEffect(() => {
@@ -590,7 +507,7 @@ export function EmailComposeForm({
             }
         }
 
-        loadEmailDokumente();
+        loadEntityDokumente();
         loadFromAddresses();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -603,33 +520,68 @@ export function EmailComposeForm({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [availableEmails]);
 
-    // Dokument-Auswahl Handler
-    const handleDokumentSelect = (dokId: string) => {
-        if (!dokId) {
-            setSelectedDokument(null);
-            return;
-        }
-        const dok = emailDokumente.find(d => String(d.id) === dokId);
-        if (dok) {
-            markDirty();
-            setSelectedDokument(dok);
-            loadTemplate(dok);
-        }
-    };
-
     // Externe Dateien hochladen
     const handleFileUpload = (files: FileList | null) => {
         if (!files) return;
 
-        const newFiles: UploadedFile[] = Array.from(files).map(file => {
-            const isImage = file.type.startsWith('image/');
-            return {
-                file,
-                previewUrl: isImage ? URL.createObjectURL(file) : undefined,
-            };
+        setUploadedFiles(previous => {
+            const accepted: UploadedFile[] = [];
+            let nextSize = previous.reduce((sum, uploadedFile) => sum + uploadedFile.file.size, 0);
+            for (const file of Array.from(files)) {
+                if (nextSize + file.size > MAX_ATTACHMENT_BYTES) {
+                    setError(`Anhänge dürfen zusammen höchstens ${formatFileSize(MAX_ATTACHMENT_BYTES)} groß sein.`);
+                    continue;
+                }
+                accepted.push({ file });
+                nextSize += file.size;
+            }
+            if (accepted.length > 0) {
+                markDirty();
+                setError(null);
+            }
+            return [...previous, ...accepted];
         });
+    };
 
-        setUploadedFiles(prev => [...prev, ...newFiles]);
+    const handleEntityDokumentToggle = async (document: ProjektDokument) => {
+        if (selectedEntityDokumentIds.has(document.id)) {
+            setUploadedFiles(previous => previous.filter(file => file.sourceDokumentId !== document.id));
+            markDirty();
+            return;
+        }
+
+        setLoadingEntityDokumentIds(previous => new Set(previous).add(document.id));
+        setError(null);
+        try {
+            const downloadUrl = document.url + (document.url.includes('?') ? '&' : '?') + 'download=true';
+            const response = await fetch(downloadUrl);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            const file = new File(
+                [blob],
+                document.originalDateiname,
+                { type: blob.type || document.dateityp || 'application/octet-stream' }
+            );
+
+            setUploadedFiles(previous => {
+                const currentSize = previous.reduce((sum, uploadedFile) => sum + uploadedFile.file.size, 0);
+                if (currentSize + file.size > MAX_ATTACHMENT_BYTES) {
+                    setError(`"${document.originalDateiname}" passt nicht mehr in das Anhangslimit von ${formatFileSize(MAX_ATTACHMENT_BYTES)}.`);
+                    return previous;
+                }
+                markDirty();
+                return [...previous, { file, sourceDokumentId: document.id }];
+            });
+        } catch (err) {
+            console.error('Datei konnte nicht als E-Mail-Anhang geladen werden:', err);
+            setError(`"${document.originalDateiname}" konnte nicht angehängt werden.`);
+        } finally {
+            setLoadingEntityDokumentIds(previous => {
+                const next = new Set(previous);
+                next.delete(document.id);
+                return next;
+            });
+        }
     };
 
     const handleDrop = (e: React.DragEvent) => {
@@ -742,6 +694,10 @@ export function EmailComposeForm({
             setError('Bitte Betreff angeben.');
             return;
         }
+        if (attachmentLimitExceeded) {
+            setError(`Anhänge dürfen zusammen höchstens ${formatFileSize(MAX_ATTACHMENT_BYTES)} groß sein.`);
+            return;
+        }
 
         setSending(true);
         setError(null);
@@ -768,10 +724,6 @@ export function EmailComposeForm({
             };
 
             formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
-
-            if (selectedDokument) {
-                formData.append('dokumentId', String(selectedDokument.id));
-            }
 
             uploadedFiles.forEach((uf) => {
                 formData.append('attachments', uf.file);
@@ -1023,44 +975,6 @@ export function EmailComposeForm({
                                     </div>
                                 </div>
                             )}
-
-                            {/* Dokument Auswahl - für Projekt UND Anfrage Kontext (ausgeblendet wenn initialAttachments vorhanden) */}
-                            {entityId && !hasInitialAttachments && (
-                                <div className="space-y-2">
-                                    <Label className="flex items-center gap-2 text-slate-700">
-                                        <FileText className="w-4 h-4" />
-                                        Dokument aus {isAnfrageContext ? 'Anfrage' : 'Projekt'} anhängen
-                                    </Label>
-                                    <div className="flex flex-col gap-2 sm:flex-row">
-                                        <div className="flex-1">
-                                            <Select
-                                                options={[{ value: '', label: 'Kein Dokument' }, ...dokumentOptions]}
-                                                value={selectedDokument ? String(selectedDokument.id) : ''}
-                                                onChange={handleDokumentSelect}
-                                                placeholder={loadingDokumente ? 'Dokumente werden geladen...' : 'Dokument wählen'}
-                                                disabled={loadingDokumente}
-                                            />
-                                        </div>
-                                        {selectedDokument && (
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => {
-                                                    const filename = selectedDokument.gespeicherterDateiname || selectedDokument.originalDateiname;
-                                                    const previewUrl = `/api/dokumente/${encodeURIComponent(filename)}`;
-                                                    setPdfPreviewUrl(previewUrl);
-                                                }}
-                                                title="Dokument ansehen"
-                                                className="min-h-11 px-4"
-                                            >
-                                                <Eye className="w-4 h-4 mr-2" />
-                                                Vorschau
-                                            </Button>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     </div>
 
@@ -1089,6 +1003,35 @@ export function EmailComposeForm({
                         </div>
                     )}
 
+                    {imagePreview && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+                            <div className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+                                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                                    <h3 className="truncate pr-4 font-semibold text-slate-900">{imagePreview.name}</h3>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            URL.revokeObjectURL(imagePreview.url);
+                                            setImagePreview(null);
+                                        }}
+                                        aria-label="Bildvorschau schließen"
+                                    >
+                                        <X className="h-5 w-5" />
+                                    </Button>
+                                </div>
+                                <div className="flex flex-1 items-center justify-center overflow-hidden bg-slate-100 p-4">
+                                    <img
+                                        src={imagePreview.url}
+                                        alt={imagePreview.name}
+                                        className="max-h-full max-w-full rounded object-contain shadow"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                         <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3">
                             <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
@@ -1098,6 +1041,60 @@ export function EmailComposeForm({
                             <p className="text-xs text-slate-500 mt-1">Zusätzliche Dateien per Klick oder Drag & Drop anhängen.</p>
                         </div>
                         <div className="p-5 space-y-3">
+                            {entityId && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => setShowEntityDokumente(true)}
+                                    className="min-h-11 border-rose-200 text-rose-700 hover:bg-rose-50"
+                                >
+                                    <FolderOpen className="mr-2 h-4 w-4" />
+                                    Dateien aus {isAnfrageContext ? 'Anfrage' : 'Projekt'} hinzufügen
+                                </Button>
+                            )}
+
+                            {showEntityDokumente && (
+                                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+                                    <div className="flex h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                                        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                                            <div>
+                                                <h3 className="font-semibold text-slate-900">
+                                                    {isAnfrageContext ? 'Anfrage-Dateien' : 'Projekt-Dateien'}
+                                                </h3>
+                                                <p className="mt-1 text-xs text-slate-500">
+                                                    Dateien anklicken, um sie als E-Mail-Anhang auszuwählen.
+                                                </p>
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => setShowEntityDokumente(false)}
+                                                aria-label="Dateiauswahl schließen"
+                                            >
+                                                <X className="h-5 w-5" />
+                                            </Button>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-4">
+                                            <EmailEntityDocumentPicker
+                                                documents={entityDokumente}
+                                                loading={loadingEntityDokumente}
+                                                selectedIds={selectedEntityDokumentIds}
+                                                loadingIds={loadingEntityDokumentIds}
+                                                onToggle={handleEntityDokumentToggle}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-5 py-3">
+                                            <span className="text-xs text-slate-500">
+                                                {selectedEntityDokumentIds.size} Datei(en) ausgewählt
+                                            </span>
+                                            <Button type="button" onClick={() => setShowEntityDokumente(false)}>
+                                                Auswahl übernehmen
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <div
                                 onDrop={handleDrop}
                                 onDragOver={handleDragOver}
@@ -1116,23 +1113,42 @@ export function EmailComposeForm({
                                 onChange={(e) => handleFileUpload(e.target.files)}
                             />
 
+                            <div className="space-y-1">
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className={attachmentLimitExceeded ? 'font-medium text-red-600' : 'text-slate-500'}>
+                                        {formatFileSize(attachmentBytes)} von {formatFileSize(MAX_ATTACHMENT_BYTES)}
+                                    </span>
+                                    <span className="text-slate-400">T-Online-kompatibles Sicherheitslimit</span>
+                                </div>
+                                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                    <div
+                                        className={`h-full rounded-full ${attachmentLimitExceeded ? 'bg-red-500' : 'bg-rose-500'}`}
+                                        style={{ width: `${Math.min(100, (attachmentBytes / MAX_ATTACHMENT_BYTES) * 100)}%` }}
+                                    />
+                                </div>
+                            </div>
+
                             {uploadedFiles.length > 0 && (
                                 <div className="space-y-2 mt-2">
                                     {uploadedFiles.map((uf, idx) => (
                                         <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
                                             <div className="min-w-0">
                                                 <span className="text-sm font-medium text-slate-700 block truncate">{uf.file.name}</span>
-                                                <span className="text-xs text-slate-500">{Math.max(1, Math.round(uf.file.size / 1024))} KB</span>
+                                                <span className="text-xs text-slate-500">{formatFileSize(uf.file.size)}</span>
                                             </div>
                                             <div className="flex items-center gap-1">
-                                                {uf.file.type === 'application/pdf' && (
+                                                {(isPdfAttachment(uf.file) || isImageAttachment(uf.file)) && (
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => {
                                                             const url = URL.createObjectURL(uf.file);
-                                                            setPdfPreviewUrl(url);
+                                                            if (isImageAttachment(uf.file)) {
+                                                                setImagePreview({ url, name: uf.file.name });
+                                                            } else {
+                                                                setPdfPreviewUrl(url);
+                                                            }
                                                         }}
                                                         title="Vorschau"
                                                         aria-label={`Vorschau für ${uf.file.name}`}
@@ -1148,6 +1164,7 @@ export function EmailComposeForm({
                                                         const newFiles = [...uploadedFiles];
                                                         newFiles.splice(idx, 1);
                                                         setUploadedFiles(newFiles);
+                                                        markDirty();
                                                     }}
                                                     aria-label={`${uf.file.name} entfernen`}
                                                 >
@@ -1199,7 +1216,7 @@ export function EmailComposeForm({
                     </Button>
                     <Button
                         onClick={handleSend}
-                        disabled={sending || !recipient.trim() || !subject.trim()}
+                        disabled={sending || !recipient.trim() || !subject.trim() || attachmentLimitExceeded}
                         className="bg-rose-600 hover:bg-rose-700 text-white"
                     >
                         {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}

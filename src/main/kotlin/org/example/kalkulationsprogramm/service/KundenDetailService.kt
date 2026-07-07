@@ -4,6 +4,7 @@ import org.example.kalkulationsprogramm.domain.Anfrage
 import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument
 import org.example.kalkulationsprogramm.domain.Email
 import org.example.kalkulationsprogramm.domain.EmailAttachment
+import org.example.kalkulationsprogramm.domain.KundeNotiz
 import org.example.kalkulationsprogramm.domain.Projekt
 import org.example.kalkulationsprogramm.dto.Kunde.KundeAggregierteEmailDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeAnfrageKurzDto
@@ -11,10 +12,12 @@ import org.example.kalkulationsprogramm.dto.Kunde.KundeDetailDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeEmailAttachmentDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeEmailQuelleDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeKommunikationDto
+import org.example.kalkulationsprogramm.dto.Kunde.KundeNotizDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeProjektKurzDto
 import org.example.kalkulationsprogramm.dto.Kunde.KundeStatistikDto
 import org.example.kalkulationsprogramm.repository.AnfrageRepository
 import org.example.kalkulationsprogramm.repository.EmailRepository
+import org.example.kalkulationsprogramm.repository.KundeNotizRepository
 import org.example.kalkulationsprogramm.repository.KundeRepository
 import org.example.kalkulationsprogramm.repository.ProjektRepository
 import org.jsoup.Jsoup
@@ -36,6 +39,7 @@ class KundenDetailService(
     private val projektRepository: ProjektRepository,
     private val anfrageRepository: AnfrageRepository,
     private val emailRepository: EmailRepository,
+    private val kundeNotizRepository: KundeNotizRepository,
     private val dateiSpeicherService: DateiSpeicherService,
     private val ausgangsGeschaeftsDokumentService: AusgangsGeschaeftsDokumentService,
 ) {
@@ -71,6 +75,7 @@ class KundenDetailService(
         dto.projekte = mapProjekte(projekte)
         dto.anfragen = mapAnfragen(anfragen)
         dto.aggregierteEmails = aggregateEmails(kunde, projekte, anfragen)
+        dto.notizen = kundeNotizRepository.findByKundeIdOrderByErstelltAmDesc(kunde.id).map(::toNotizDto)
         try {
             dto.kommunikation = buildKommunikationsHistorie(projektEmails, anfrageEmails)
         } catch (ex: Exception) {
@@ -214,6 +219,13 @@ class KundenDetailService(
         if (StringUtils.hasText(anfrage.bauvorhaben)) return anfrage.bauvorhaben!!
         return "Anfrage #${anfrage.id}"
     }
+
+    private fun toNotizDto(notiz: KundeNotiz): KundeNotizDto =
+        KundeNotizDto(
+            id = notiz.id,
+            text = notiz.text,
+            erstelltAm = notiz.erstelltAm,
+        )
 
     private fun buildKommunikationsHistorie(projektEmails: List<Email>, anfrageEmails: List<Email>): List<KundeKommunikationDto> {
         val timeline = ArrayList<KundeKommunikationDto>()

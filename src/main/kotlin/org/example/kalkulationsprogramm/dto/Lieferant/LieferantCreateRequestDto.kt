@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonFormat
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
+import org.example.kalkulationsprogramm.domain.LieferantRolle
 import java.time.LocalDate
 
 open class LieferantCreateRequestDto(
@@ -14,6 +15,7 @@ open class LieferantCreateRequestDto(
     var eigeneKundennummer: String? = null,
     @field:Size(max = 100, message = "Lieferantentyp ist zu lang.")
     var lieferantenTyp: String? = null,
+    var rollen: Set<LieferantRolle>? = null,
     @field:Size(max = 255, message = "Vertreter ist zu lang.")
     var vertreter: String? = null,
     @field:Size(max = 255, message = "Straße ist zu lang.")

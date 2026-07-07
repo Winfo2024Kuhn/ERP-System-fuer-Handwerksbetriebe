@@ -30,6 +30,12 @@ open class Lieferanten {
 
     open var lieferantenTyp: String? = null
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "lieferanten_rollen", joinColumns = [JoinColumn(name = "lieferant_id")])
+    @Column(name = "rolle")
+    @Enumerated(EnumType.STRING)
+    open var rollen: MutableSet<LieferantRolle> = mutableSetOf()
+
     @Column(columnDefinition = "integer default 0")
     open var bestellungen: Int? = 0
 

@@ -31,7 +31,7 @@ build/
 !**/src/test/**/build/
 
 ### VS Code ###
-
+/docs/superpowers/
 ### Runtime Data ###
 /uploads
 /attachments
@@ -84,3 +84,7 @@ package-lock.json
 react-pc-frontend/graphify-out/
 react-zeiterfassung/graphify-out/
 .claude/settings.local.json
+
+
+# Daten-/Ops-SQL mit echten Datensaetzen (personenbezogen) - NICHT committen
+db-ops/

@@ -20,6 +20,7 @@ import { useToast } from '../components/ui/toast';
 import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { PhoneInput } from "../components/PhoneInput";
+import { LIEFERANT_ROLLEN, type LieferantRolle } from "../types";
 
 const LIEFERANT_TYPES = [
     { value: "STAHL", label: "Stahl" },
@@ -55,11 +56,19 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                         {initials}
                     </div>
                     <div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                             <h1 className="text-2xl font-bold text-slate-900">{lieferant.lieferantenname}</h1>
-                            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
-                                {lieferant.lieferantenTyp || "Lieferant"}
-                            </span>
+                            {lieferant.rollen && lieferant.rollen.length > 0 ? (
+                                lieferant.rollen.map(rolle => (
+                                    <span key={rolle} className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
+                                        {LIEFERANT_ROLLEN.find(r => r.value === rolle)?.label || rolle}
+                                    </span>
+                                ))
+                            ) : (
+                                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
+                                    {lieferant.lieferantenTyp || "Lieferant"}
+                                </span>
+                            )}
                         </div>
                         <div className="mt-1 text-slate-500 space-y-0.5">
                             {lieferant.vertreter && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {lieferant.vertreter}</p>}
@@ -533,7 +542,7 @@ export default function LieferantenEditor() {
                 <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Freitext</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, Ort..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
+                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, Telefon, Ort..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Name</label>
@@ -624,9 +633,19 @@ function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; o
         >
             <div className="p-4 space-y-3">
                 <div>
-                    <span className="text-xs font-semibold tracking-wider text-rose-600 uppercase bg-rose-50 px-2 py-0.5 rounded-full">
-                        {lieferant.lieferantenTyp || "Ohne Typ"}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                        {lieferant.rollen && lieferant.rollen.length > 0 ? (
+                            lieferant.rollen.map(rolle => (
+                                <span key={rolle} className="text-xs font-semibold tracking-wider text-rose-600 uppercase bg-rose-50 px-2 py-0.5 rounded-full">
+                                    {LIEFERANT_ROLLEN.find(r => r.value === rolle)?.label || rolle}
+                                </span>
+                            ))
+                        ) : (
+                            <span className="text-xs font-semibold tracking-wider text-rose-600 uppercase bg-rose-50 px-2 py-0.5 rounded-full">
+                                {lieferant.lieferantenTyp || "Ohne Rolle"}
+                            </span>
+                        )}
+                    </div>
                     <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={lieferant.lieferantenname}>
                         {lieferant.lieferantenname || "Unbenannt"}
                     </h3>
@@ -706,18 +725,6 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                 <div className="p-6 space-y-4 overflow-y-auto flex-1">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                            <Label>Typ *</Label>
-                            <Select
-                                value={formData.lieferantenTyp || ""}
-                                onChange={(value) => handleChange("lieferantenTyp", value)}
-                                options={[
-                                    { value: "", label: "Bitte wählen" },
-                                    ...LIEFERANT_TYPES
-                                ]}
-                                placeholder="Typ wählen"
-                            />
-                        </div>
-                        <div className="space-y-1.5">
                             <Label>Name *</Label>
                             <Input
                                 value={formData.lieferantenname || ""}
@@ -725,6 +732,42 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                                 required
                             />
                         </div>
+                    </div>
+
+                    <div className="space-y-1.5 border-t border-slate-100 pt-4">
+                        <Label>Rollen (was liefert dieser Lieferant?)</Label>
+                        <p className="text-xs text-slate-400 -mt-1">
+                            Steuert, bei welchen Artikel-Kategorien dieser Lieferant beim Preis-Eintragen vorgeschlagen wird.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {LIEFERANT_ROLLEN.map(rolle => {
+                                const active = (formData.rollen || []).includes(rolle.value);
+                                return (
+                                    <button
+                                        key={rolle.value}
+                                        type="button"
+                                        onClick={() => {
+                                            const current = formData.rollen || [];
+                                            const next: LieferantRolle[] = active
+                                                ? current.filter(r => r !== rolle.value)
+                                                : [...current, rolle.value];
+                                            handleChange("rollen", next);
+                                        }}
+                                        className={cn(
+                                            "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
+                                            active
+                                                ? "bg-rose-600 text-white border-rose-600"
+                                                : "border-rose-300 text-rose-700 hover:bg-rose-50"
+                                        )}
+                                    >
+                                        {rolle.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="md:col-span-2 space-y-1.5">
                             <Label>Eigene Kundennummer (beim Lieferanten)</Label>
                             <Input

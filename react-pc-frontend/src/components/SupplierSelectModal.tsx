@@ -1,22 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
+import type { LieferantRolle } from '../types';
 
 interface SupplierSelectModalProps {
     onSelect: (supplier: { id: number; name: string }) => void;
     onClose: () => void;
+    /** Wenn gesetzt: Lieferanten, deren Rollen zu dieser Artikel-Kategorie passen, werden vorgeschlagen. */
+    kategorieId?: number;
+    kategorieName?: string;
 }
 
 interface Supplier {
     id: number;
     lieferantenname: string;
+    rollen?: LieferantRolle[];
 }
 
-export const SupplierSelectModal: React.FC<SupplierSelectModalProps> = ({ onSelect, onClose }) => {
+export const SupplierSelectModal: React.FC<SupplierSelectModalProps> = ({ onSelect, onClose, kategorieId, kategorieName }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [loading, setLoading] = useState(false);
+    const [passendeRollen, setPassendeRollen] = useState<LieferantRolle[]>([]);
 
     useEffect(() => {
         const fetchSuppliers = async () => {
@@ -36,9 +42,28 @@ export const SupplierSelectModal: React.FC<SupplierSelectModalProps> = ({ onSele
         fetchSuppliers();
     }, []);
 
-    const filteredSuppliers = suppliers.filter(s =>
-        s.lieferantenname?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    useEffect(() => {
+        if (!kategorieId) {
+            setPassendeRollen([]);
+            return;
+        }
+        fetch(`/api/artikel/kategorien/${kategorieId}/effektive-rollen`)
+            .then(res => res.ok ? res.json() : [])
+            .then(data => setPassendeRollen(Array.isArray(data) ? data : []))
+            .catch(() => setPassendeRollen([]));
+    }, [kategorieId]);
+
+    const isPassend = (supplier: Supplier) =>
+        passendeRollen.length > 0 && (supplier.rollen || []).some(r => passendeRollen.includes(r));
+
+    const filteredSuppliers = useMemo(() => {
+        const filtered = suppliers.filter(s =>
+            s.lieferantenname?.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        if (passendeRollen.length === 0) return filtered;
+        const passt = (s: Supplier) => (s.rollen || []).some(r => passendeRollen.includes(r));
+        return [...filtered].sort((a, b) => Number(passt(b)) - Number(passt(a)));
+    }, [suppliers, searchTerm, passendeRollen]);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -71,10 +96,15 @@ export const SupplierSelectModal: React.FC<SupplierSelectModalProps> = ({ onSele
                             {filteredSuppliers.map((supplier) => (
                                 <button
                                     key={supplier.id}
-                                    className="w-full text-left px-3 py-2 rounded hover:bg-rose-50 text-sm text-slate-700 hover:text-rose-700 transition-colors"
+                                    className="w-full text-left px-3 py-2 rounded hover:bg-rose-50 text-sm text-slate-700 hover:text-rose-700 transition-colors flex items-center justify-between gap-2"
                                     onClick={() => onSelect({ id: supplier.id, name: supplier.lieferantenname })}
                                 >
-                                    {supplier.lieferantenname}
+                                    <span className="truncate">{supplier.lieferantenname}</span>
+                                    {isPassend(supplier) && (
+                                        <span className="shrink-0 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                                            passt zu {kategorieName || "Kategorie"}
+                                        </span>
+                                    )}
                                 </button>
                             ))}
                         </div>
