@@ -31,7 +31,7 @@ build/
 !**/src/test/**/build/
 
 ### VS Code ###
-
+/docs/superpowers/
 ### Runtime Data ###
 /uploads
 /attachments
