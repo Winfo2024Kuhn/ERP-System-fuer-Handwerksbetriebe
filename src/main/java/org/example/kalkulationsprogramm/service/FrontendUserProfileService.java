@@ -169,13 +169,20 @@ public class FrontendUserProfileService {
         validatePassword(rawPassword);
         ensureUsernameAvailable(normalizedUsername, null);
 
+        // Einrichtungsphase (Release-.exe): Der erste Nutzer, der sich
+        // registriert, wird automatisch Admin — es gibt keinen vorab
+        // angelegten Bootstrap-Admin mehr.
+        boolean ersterNutzer = repository.countByUsernameIsNotNull() == 0;
+
         FrontendUserProfile profile = new FrontendUserProfile();
         profile.setDisplayName(displayName.trim());
         profile.setShortCode(generateShortCode(displayName));
         profile.setUsername(normalizedUsername);
         profile.setPasswordHash(passwordEncoder.encode(rawPassword));
         profile.setActive(true);
-        profile.setRoleSet(new LinkedHashSet<>(Set.of(FrontendUserRole.USER)));
+        profile.setRoleSet(ersterNutzer
+                ? new LinkedHashSet<>(Set.of(FrontendUserRole.ADMIN, FrontendUserRole.USER))
+                : new LinkedHashSet<>(Set.of(FrontendUserRole.USER)));
         return repository.save(profile);
     }
 

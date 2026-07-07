@@ -1,7 +1,5 @@
 package org.example.kalkulationsprogramm.config;
 
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -34,48 +32,33 @@ public class FrontendUserBootstrapInitializer implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        // Ohne explizit konfigurierte Zugangsdaten (Produktiv-Server via
+        // application-local.properties) wird KEIN Admin vorab angelegt.
+        // Die Einrichtungsphase bleibt offen: Der erste Nutzer registriert
+        // sich selbst im Browser und wird automatisch Admin.
+        if (adminUsername == null || adminUsername.isBlank()
+                || adminPassword == null || adminPassword.isBlank()) {
+            log.info("Kein Bootstrap-Admin konfiguriert (app.admin.username/password) – "
+                    + "der erste Nutzer registriert sich selbst im Browser und wird Admin.");
+            return;
+        }
+
         if (repository.countByUsernameIsNotNull() > 0) {
             return;
         }
 
-        String normalizedUsername = (adminUsername == null || adminUsername.isBlank())
-                ? "admin"
-                : adminUsername.trim().toLowerCase(Locale.ROOT);
-
-        final String bootstrapPassword;
-        final boolean passwordGenerated;
-        if (adminPassword == null || adminPassword.isBlank()) {
-            bootstrapPassword = generateSecurePassword();
-            passwordGenerated = true;
-        } else {
-            bootstrapPassword = adminPassword;
-            passwordGenerated = false;
-        }
+        String normalizedUsername = adminUsername.trim().toLowerCase(Locale.ROOT);
 
         FrontendUserProfile admin = new FrontendUserProfile();
         admin.setDisplayName("Administrator");
         admin.setShortCode("ADM");
         admin.setUsername(normalizedUsername);
-        admin.setPasswordHash(passwordEncoder.encode(bootstrapPassword));
+        admin.setPasswordHash(passwordEncoder.encode(adminPassword));
         admin.setActive(true);
         admin.setRoleSet(new LinkedHashSet<>(Set.of(FrontendUserRole.ADMIN, FrontendUserRole.USER)));
 
         repository.save(admin);
 
-        if (passwordGenerated) {
-            log.warn("==========================================================");
-            log.warn("Bootstrap-Admin angelegt: username={}", normalizedUsername);
-            log.warn("Einmaliges Passwort (bitte sofort aendern): {}", bootstrapPassword);
-            log.warn("Setzen Sie APP_ADMIN_PASS, um ein eigenes Passwort zu verwenden.");
-            log.warn("==========================================================");
-        } else {
-            log.info("Bootstrap-Admin fuer Frontend-Login wurde angelegt: username={}", normalizedUsername);
-        }
-    }
-
-    private static String generateSecurePassword() {
-        byte[] bytes = new byte[18];
-        new SecureRandom().nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        log.info("Bootstrap-Admin fuer Frontend-Login wurde angelegt: username={}", normalizedUsername);
     }
 }
