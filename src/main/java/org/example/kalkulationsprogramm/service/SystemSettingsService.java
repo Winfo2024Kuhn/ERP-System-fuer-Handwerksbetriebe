@@ -39,6 +39,7 @@ import lombok.extern.slf4j.Slf4j;
 public class SystemSettingsService {
 
     private final SystemSettingRepository repository;
+    private final org.springframework.core.env.Environment environment;
 
     // Defaults aus application.properties
     @Value("${smtp.host:}")
@@ -59,6 +60,10 @@ public class SystemSettingsService {
     private String defaultImapPassword;
     @Value("${ai.gemini.api-key:}")
     private String defaultGeminiApiKey;
+    @Value("${hicad.local-path:}")
+    private String defaultDateiOrdnerPfad;
+    @Value("${hicad.network-url:}")
+    private String defaultDateiOrdnerNetworkUrl;
 
     // ==================== Lesen ====================
 
@@ -197,7 +202,7 @@ public class SystemSettingsService {
     }
 
     public boolean isInitialConfigurationRequired() {
-        return !hasConfiguredValue(getGeminiApiKey()) || !isSmtpConfigured();
+        return !hasConfiguredValue(getGeminiApiKey()) || !isSmtpConfigured() || !isDateiOrdnerConfigured();
     }
 
     public boolean isSmtpConfigured() {
@@ -205,6 +210,41 @@ public class SystemSettingsService {
                 && getSmtpPort() > 0
                 && hasConfiguredValue(getSmtpUsername())
                 && hasConfiguredValue(getSmtpPassword());
+    }
+
+    // ==================== Gemeinsamer Datei-Ordner (HiCAD/Tenado/Excel) ====================
+
+    /** Lokaler Pfad des gemeinsamen Datei-Ordners. DB-Wert schlägt Property-Fallback. */
+    public String getDateiOrdnerPfad() {
+        return sanitizeValue(get("datei.ordner-pfad", defaultDateiOrdnerPfad));
+    }
+
+    /** UNC-Adresse des Ordners für andere Rechner (leer = nicht gesetzt). */
+    public String getDateiOrdnerNetworkUrl() {
+        return sanitizeValue(get("datei.ordner-network-url", defaultDateiOrdnerNetworkUrl));
+    }
+
+    @Transactional
+    public void saveDateiOrdner(String pfad, String networkUrl) {
+        save("datei.ordner-pfad", pfad == null ? "" : pfad.trim(),
+                "Gemeinsamer Datei-Ordner (HiCAD/Tenado/Excel)");
+        save("datei.ordner-network-url", networkUrl == null ? "" : networkUrl.trim(),
+                "Netzwerk-Adresse (UNC) des gemeinsamen Datei-Ordners");
+        log.info("Datei-Ordner aktualisiert: {}", pfad);
+    }
+
+    /**
+     * Pflicht-Check für die Ersteinrichtung. Auf dem Produktiv-Server
+     * (Profil ≠ h2) zählt die Property-Konfiguration aus
+     * application-local.properties als bewusste Entscheidung; nur im
+     * Standalone-Modus (h2, Release-.exe) muss der Ordner einmal im
+     * Assistenten bestätigt werden (DB-Wert).
+     */
+    public boolean isDateiOrdnerConfigured() {
+        if (hasConfiguredValue(get("datei.ordner-pfad", ""))) {
+            return true;
+        }
+        return !environment.acceptsProfiles(org.springframework.core.env.Profiles.of("h2"));
     }
 
     /**
@@ -223,6 +263,8 @@ public class SystemSettingsService {
         settings.put("imap.password", maskValue(getImapPassword()));
         settings.put("ai.gemini.api-key", maskValue(getGeminiApiKey()));
         settings.put("mail.from-address", getMailFromAddress());
+        settings.put("datei.ordner-pfad", getDateiOrdnerPfad());
+        settings.put("datei.ordner-network-url", getDateiOrdnerNetworkUrl());
 
         return settings;
     }
