@@ -39,20 +39,30 @@ public class AuthController {
         ));
     }
 
+    /**
+     * Serialisiert Prüfung + Anlage der Erst-Registrierung: Ohne Lock könnten
+     * zwei parallele Requests beide "0 Nutzer" lesen und beide als Admin
+     * angelegt werden. Der Service committet seine Transaktion vor der
+     * Rückkehr, daher sieht der zweite Request im Lock den ersten Nutzer.
+     */
+    private static final Object REGISTRIERUNGS_LOCK = new Object();
+
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
-        if (profileRepository.countByUsernameIsNotNull() > 0) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Registrierung ist nur während der Einrichtungsphase möglich."));
-        }
-        try {
-            FrontendUserProfile created = profileService.register(request.displayName(), request.username(), request.password());
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                    "id", created.getId(),
-                    "username", created.getUsername(),
-                    "displayName", created.getDisplayName()
-            ));
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        synchronized (REGISTRIERUNGS_LOCK) {
+            if (profileRepository.countByUsernameIsNotNull() > 0) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Registrierung ist nur während der Einrichtungsphase möglich."));
+            }
+            try {
+                FrontendUserProfile created = profileService.register(request.displayName(), request.username(), request.password());
+                return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                        "id", created.getId(),
+                        "username", created.getUsername(),
+                        "displayName", created.getDisplayName()
+                ));
+            } catch (IllegalArgumentException ex) {
+                return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+            }
         }
     }
 

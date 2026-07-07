@@ -54,8 +54,13 @@ public class WindowsSmbShareRunner implements SmbShareRunner {
     }
 
     /**
-     * Baut das PowerShell-Skript. Pfad/Name landen in Single-Quotes; Werte mit
-     * Single-Quote werden abgelehnt (Ausbruch aus dem String wäre möglich).
+     * Baut das PowerShell-Skript. Pfad/Name gelangen ausschließlich
+     * Base64-kodiert ins Skript (nur [A-Za-z0-9+/=], keine PowerShell-
+     * Metazeichen wie $(), Backticks oder Quotes) und werden erst zur
+     * Laufzeit dekodiert — String-Interpolation von Nutzer-Werten in
+     * doppelt gequoteten PS-Strings wäre eine Injection-Fläche. Das innere
+     * New-SmbShare-Kommando wird als Single-Quote-String mit verdoppelten
+     * Quotes zusammengesetzt (offizielles PowerShell-Escaping).
      * "Authentifizierte Benutzer" wird sprachneutral über die SID S-1-5-11
      * aufgelöst (deutsches wie englisches Windows).
      */
@@ -64,11 +69,18 @@ public class WindowsSmbShareRunner implements SmbShareRunner {
         if (pfad.contains("'") || shareName.contains("'")) {
             throw new IllegalArgumentException("Der Pfad darf keine einfachen Anführungszeichen enthalten.");
         }
-        return "$acct=(New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-11')"
+        String pfadB64 = java.util.Base64.getEncoder()
+                .encodeToString(pfad.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String nameB64 = java.util.Base64.getEncoder()
+                .encodeToString(shareName.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return "$path=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + pfadB64 + "')); "
+                + "$name=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + nameB64 + "')); "
+                + "$acct=(New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-11')"
                 + ".Translate([System.Security.Principal.NTAccount]).Value; "
+                + "$inner = 'New-SmbShare -Name ''' + $name.Replace(\"'\",\"''\") + ''' -Path ''' "
+                + "+ $path.Replace(\"'\",\"''\") + ''' -FullAccess ''' + $acct.Replace(\"'\",\"''\") + ''''; "
                 + "$p=Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList "
-                + "'-NoProfile','-Command',"
-                + "(\"New-SmbShare -Name '" + shareName + "' -Path '" + pfad + "' -FullAccess '{0}'\" -f $acct); "
+                + "'-NoProfile','-Command',$inner; "
                 + "exit $p.ExitCode";
     }
 }
