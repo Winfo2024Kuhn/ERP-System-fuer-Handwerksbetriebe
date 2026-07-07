@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 public class SystemSettingsController {
 
     private final SystemSettingsService settingsService;
+    private final org.example.kalkulationsprogramm.service.DateiOrdnerService dateiOrdnerService;
 
     // Pragmatischer E-Mail-Regex – bewusst keine RFC-5322-Voll-Compliance, sondern
     // genau das was Anwender erwarten: nicht-leerer Local-Part, "@",
@@ -204,6 +205,35 @@ public class SystemSettingsController {
                         : "Spam-Filter für Webseiten-Anfragen deaktiviert."));
     }
 
+    // ==================== Gemeinsamer Datei-Ordner (HiCAD/Tenado/Excel) ====================
+
+    @GetMapping("/datei-ordner")
+    public ResponseEntity<DateiOrdnerResponse> getDateiOrdner() {
+        return ResponseEntity.ok(new DateiOrdnerResponse(
+                settingsService.getDateiOrdnerPfad(),
+                settingsService.getDateiOrdnerNetworkUrl(),
+                settingsService.isDateiOrdnerConfigured()));
+    }
+
+    @PutMapping("/datei-ordner")
+    public ResponseEntity<Map<String, String>> saveDateiOrdner(@RequestBody DateiOrdnerRequest req) {
+        TestResult result = dateiOrdnerService.speichereOrdner(req.pfad(), req.networkUrl());
+        if (!result.success()) {
+            return ResponseEntity.badRequest().body(Map.of("message", result.message()));
+        }
+        return ResponseEntity.ok(Map.of("message", result.message()));
+    }
+
+    @PostMapping("/datei-ordner/test")
+    public ResponseEntity<TestResult> testDateiOrdner(@RequestBody DateiOrdnerTestRequest req) {
+        return ResponseEntity.ok(dateiOrdnerService.pruefeOrdner(req.pfad()));
+    }
+
+    @PostMapping("/datei-ordner/freigeben")
+    public ResponseEntity<TestResult> gebeDateiOrdnerFrei() {
+        return ResponseEntity.ok(dateiOrdnerService.gebeOrdnerFrei());
+    }
+
     // ==================== DTOs ====================
 
     private boolean hasValue(String val) {
@@ -232,4 +262,7 @@ public class SystemSettingsController {
     record FunnelSpamFilterRequest(boolean aktiv) {}
     record MailFromResponse(String address, String smtpUsername) {}
     record MailFromRequest(String address) {}
+    record DateiOrdnerResponse(String pfad, String networkUrl, boolean konfiguriert) {}
+    record DateiOrdnerRequest(String pfad, String networkUrl) {}
+    record DateiOrdnerTestRequest(String pfad) {}
 }
