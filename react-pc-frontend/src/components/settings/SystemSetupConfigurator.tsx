@@ -6,12 +6,14 @@ import {
     ChevronUp,
     Eye,
     EyeOff,
+    FolderOpen,
     Inbox,
     Loader2,
     Mail,
     Save,
     Send,
     Settings2,
+    Share2,
     TestTube,
     XCircle
 } from 'lucide-react';
@@ -115,15 +117,25 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     const [mailFromSmtpUser, setMailFromSmtpUser] = useState('');
     const [mailFromSaving, setMailFromSaving] = useState(false);
 
+    // Gemeinsamer Datei-Ordner (HiCAD/Tenado/Excel/Filesharing)
+    const [dateiOrdnerPfad, setDateiOrdnerPfad] = useState('');
+    const [dateiOrdnerNetworkUrl, setDateiOrdnerNetworkUrl] = useState('');
+    const [dateiOrdnerSaving, setDateiOrdnerSaving] = useState(false);
+    const [dateiOrdnerTesting, setDateiOrdnerTesting] = useState(false);
+    const [dateiOrdnerFreigeben, setDateiOrdnerFreigeben] = useState(false);
+    const [dateiOrdnerTestResult, setDateiOrdnerTestResult] = useState<TestResult | null>(null);
+    const [freigabeAnleitungOffen, setFreigabeAnleitungOffen] = useState(false);
+
     const loadSettings = useCallback(async () => {
         setLoading(true);
         try {
-            const [smtpRes, imapRes, geminiRes, funnelSpamRes, mailFromRes] = await Promise.all([
+            const [smtpRes, imapRes, geminiRes, funnelSpamRes, mailFromRes, dateiOrdnerRes] = await Promise.all([
                 fetch('/api/settings/smtp'),
                 fetch('/api/settings/imap'),
                 fetch('/api/settings/gemini'),
                 fetch('/api/settings/anfrage-funnel-spamfilter'),
                 fetch('/api/settings/mail-from'),
+                fetch('/api/settings/datei-ordner'),
             ]);
 
             if (smtpRes.ok) {
@@ -169,6 +181,12 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 setMailFromSmtpUser(smtpUser);
                 setMailFromAddress(stored && stored !== smtpUser ? stored : '');
             }
+
+            if (dateiOrdnerRes.ok) {
+                const data = await dateiOrdnerRes.json();
+                setDateiOrdnerPfad(data?.pfad || '');
+                setDateiOrdnerNetworkUrl(data?.networkUrl || '');
+            }
         } catch {
             toast.error('Einstellungen konnten nicht geladen werden.');
         } finally {
@@ -180,6 +198,57 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     useEffect(() => {
         loadSettings();
     }, [loadSettings]);
+
+    const handleTestDateiOrdner = async () => {
+        setDateiOrdnerTesting(true);
+        setDateiOrdnerTestResult(null);
+        try {
+            const res = await fetch('/api/settings/datei-ordner/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pfad: dateiOrdnerPfad }),
+            });
+            setDateiOrdnerTestResult(await res.json());
+        } catch {
+            setDateiOrdnerTestResult({ success: false, message: 'Prüfung fehlgeschlagen – Server nicht erreichbar.' });
+        } finally {
+            setDateiOrdnerTesting(false);
+        }
+    };
+
+    const handleSaveDateiOrdner = async () => {
+        setDateiOrdnerSaving(true);
+        try {
+            const res = await fetch('/api/settings/datei-ordner', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pfad: dateiOrdnerPfad, networkUrl: dateiOrdnerNetworkUrl }),
+            });
+            if (!res.ok) {
+                toast.error(await parseErrorMessage(res, 'Datei-Ordner konnte nicht gespeichert werden.'));
+                return;
+            }
+            toast.success('Datei-Ordner gespeichert.');
+            onSaved?.();
+        } catch {
+            toast.error('Datei-Ordner konnte nicht gespeichert werden.');
+        } finally {
+            setDateiOrdnerSaving(false);
+        }
+    };
+
+    const handleDateiOrdnerFreigeben = async () => {
+        setDateiOrdnerFreigeben(true);
+        setDateiOrdnerTestResult(null);
+        try {
+            const res = await fetch('/api/settings/datei-ordner/freigeben', { method: 'POST' });
+            setDateiOrdnerTestResult(await res.json());
+        } catch {
+            setDateiOrdnerTestResult({ success: false, message: 'Freigabe fehlgeschlagen – Server nicht erreichbar.' });
+        } finally {
+            setDateiOrdnerFreigeben(false);
+        }
+    };
 
     const handleSaveAccount = async () => {
         if (!accountEmail.trim()) {
@@ -834,6 +903,102 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                         </section>
                     </div>
                 )}
+            </Card>
+
+            <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
+                    <FolderOpen className="w-5 h-5 text-rose-600" />
+                    Wo sollen Zeichnungen und Dateien liegen?
+                </h3>
+                <p className="text-sm text-slate-500 mb-5">
+                    Dieser Ordner ist der gemeinsame Ablageort für HiCAD- und Tenado-Zeichnungen,
+                    Excel-Dateien und alles, was das Team teilt. Ein lokaler Ordner
+                    (C:\Zeichnungen), ein Netzlaufwerk (Z:\Zeichnungen) oder eine
+                    Netzwerk-Adresse (\\server\zeichnungen) funktionieren.
+                </p>
+
+                <div className="space-y-4">
+                    <div>
+                        <Label>Ordner auf diesem Rechner</Label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <Input
+                                className="flex-1 sm:max-w-lg"
+                                value={dateiOrdnerPfad}
+                                onChange={(e) => setDateiOrdnerPfad(e.target.value)}
+                                placeholder="C:\Zeichnungen"
+                            />
+                            <Button variant="outline" onClick={handleTestDateiOrdner} disabled={dateiOrdnerTesting || !dateiOrdnerPfad.trim()}>
+                                {dateiOrdnerTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
+                                {dateiOrdnerTesting ? 'Prüfe...' : 'Ordner prüfen'}
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <Label>Netzwerk-Adresse für Kollegen (optional)</Label>
+                        <Input
+                            className="sm:max-w-lg"
+                            value={dateiOrdnerNetworkUrl}
+                            onChange={(e) => setDateiOrdnerNetworkUrl(e.target.value)}
+                            placeholder="\\server\zeichnungen"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                            So erreichen andere Rechner den Ordner. Leer lassen, wenn nur dieser Rechner ihn nutzt.
+                        </p>
+                    </div>
+                </div>
+
+                {dateiOrdnerTestResult && (
+                    <div
+                        className={cn(
+                            'mt-3 p-3 rounded-lg flex items-start gap-2 text-sm',
+                            dateiOrdnerTestResult.success ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'
+                        )}
+                    >
+                        {dateiOrdnerTestResult.success ? (
+                            <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        ) : (
+                            <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        )}
+                        {dateiOrdnerTestResult.message}
+                    </div>
+                )}
+
+                <button
+                    type="button"
+                    className="mt-4 flex items-center gap-1 text-sm text-rose-700 hover:text-rose-800"
+                    onClick={() => setFreigabeAnleitungOffen((prev) => !prev)}
+                >
+                    {freigabeAnleitungOffen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    So gibst du den Ordner im Netzwerk frei
+                </button>
+                {freigabeAnleitungOffen && (
+                    <div className="mt-2 p-4 rounded-lg bg-slate-50 text-sm text-slate-700 space-y-2">
+                        <p>1. Im Windows-Explorer mit der rechten Maustaste auf den Ordner klicken → <strong>Eigenschaften</strong>.</p>
+                        <p>2. Reiter <strong>Freigabe</strong> → <strong>Freigeben...</strong> → Kollegen oder „Jeder" hinzufügen → <strong>Freigeben</strong>.</p>
+                        <p>3. Die angezeigte Adresse (z. B. \\DEIN-PC\Zeichnungen) oben als Netzwerk-Adresse eintragen.</p>
+                        <div className="pt-2">
+                            <Button variant="outline" onClick={handleDateiOrdnerFreigeben} disabled={dateiOrdnerFreigeben || !dateiOrdnerPfad.trim()}>
+                                {dateiOrdnerFreigeben ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                                {dateiOrdnerFreigeben ? 'Gebe frei...' : 'Oder: Ordner automatisch freigeben'}
+                            </Button>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Windows fragt dabei einmal nach Administrator-Rechten. Der Ordner muss vorher gespeichert sein.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex justify-end mt-6">
+                    <Button
+                        onClick={handleSaveDateiOrdner}
+                        disabled={dateiOrdnerSaving || !dateiOrdnerPfad.trim()}
+                        className="bg-rose-600 text-white hover:bg-rose-700"
+                    >
+                        {dateiOrdnerSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        Datei-Ordner speichern
+                    </Button>
+                </div>
             </Card>
 
             <Card className="p-6">

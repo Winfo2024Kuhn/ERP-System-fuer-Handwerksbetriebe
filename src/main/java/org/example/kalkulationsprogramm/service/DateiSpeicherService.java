@@ -66,7 +66,6 @@ public class DateiSpeicherService {
     private final AnfrageDokumentRepository anfrageDokumentRepository;
     private final AnfrageRepository anfrageRepository;
     private final Path dokumentenSpeicherplatz;
-    private final Path hicadSpeicherplatz;
     private final Path anfragenSpeicherplatz;
     private final Path bilderSpeicherplatz;
     private final Path schnittbilderSpeicherplatz;
@@ -74,8 +73,11 @@ public class DateiSpeicherService {
     private final KundeRepository kundeRepository;
     private final ZugferdExtractorService zugferdExtractorService;
     private final ProduktkategorieMapper produktkategorieMapper;
-    private final String hicadNetworkUrl;
     private final String networkDriveLetter;
+    private final SystemSettingsService systemSettingsService;
+    /** Cache der Datei-Ordner-Auflösung; invalidiert sich, wenn der Einstellungs-String wechselt. */
+    private volatile String zuletztAufgeloesterDateiOrdner;
+    private volatile Path dateiOrdnerCache;
     private static final List<String> ERLAUBTE_BILD_TYPEN = List.of("image/jpeg", "image/png", "image/gif",
             "image/webp");
     private static final Pattern AUSGANGSRECHNUNG_INVOICE_PATTERN = Pattern.compile("\\d{4}/\\d{2}/\\d{5}");
@@ -96,10 +98,8 @@ public class DateiSpeicherService {
     @Autowired
     public DateiSpeicherService(@Value("${file.upload-dir}") String uploadDir,
             @Value("${file.offer-upload-dir:${file.upload-dir}}") String offerUploadDir,
-            @Value("${hicad.local-path}") String hicadLocalPath,
             @Value("${file.image-upload-dir}") String iconUploadDir,
             @Value("${file.cutaway_images-dir:${file.image-upload-dir}}") String cutawayImagesDir,
-            @Value("${hicad.network-url}") String hicadNetworkUrl,
             @Value("${hicad.network-drive-letter:}") String networkDriveLetter,
             ProjektDokumentRepository projektDokumentRepository,
             ProjektRepository projektRepository,
@@ -108,13 +108,13 @@ public class DateiSpeicherService {
             ProduktkategorieRepository produktkategorieRepository,
             KundeRepository kundeRepository,
             ZugferdExtractorService zugferdExtractorService,
-            ProduktkategorieMapper produktkategorieMapper) {
+            ProduktkategorieMapper produktkategorieMapper,
+            SystemSettingsService systemSettingsService) {
         this.dokumentRepository = projektDokumentRepository;
         this.projektRepository = projektRepository;
         this.anfrageDokumentRepository = anfrageDokumentRepository;
         this.anfrageRepository = anfrageRepository;
         this.dokumentenSpeicherplatz = Path.of(uploadDir).toAbsolutePath().normalize();
-        this.hicadSpeicherplatz = Path.of(hicadLocalPath).toAbsolutePath().normalize();
         this.anfragenSpeicherplatz = Path.of(offerUploadDir).toAbsolutePath().normalize();
         this.bilderSpeicherplatz = Path.of(iconUploadDir).toAbsolutePath().normalize();
         this.schnittbilderSpeicherplatz = Path.of(cutawayImagesDir).toAbsolutePath().normalize();
@@ -122,18 +122,44 @@ public class DateiSpeicherService {
         this.kundeRepository = kundeRepository;
         this.zugferdExtractorService = zugferdExtractorService;
         this.produktkategorieMapper = produktkategorieMapper;
-        this.hicadNetworkUrl = hicadNetworkUrl;
         this.networkDriveLetter = networkDriveLetter != null ? networkDriveLetter.trim() : "";
+        this.systemSettingsService = systemSettingsService;
 
         try {
             Files.createDirectories(this.bilderSpeicherplatz);
             Files.createDirectories(this.dokumentenSpeicherplatz);
-            Files.createDirectories(this.hicadSpeicherplatz);
             Files.createDirectories(this.anfragenSpeicherplatz);
             Files.createDirectories(this.schnittbilderSpeicherplatz);
         } catch (Exception exception) {
             throw new RuntimeException("Konnte das Upload-Verzeichnis nicht erstellen.", exception);
         }
+    }
+
+    /**
+     * Löst den gemeinsamen Datei-Ordner (HiCAD/Tenado/Excel) bei jedem Zugriff
+     * über die System-Einstellungen auf, damit Änderungen aus dem
+     * Ersteinrichtungs-Assistenten ohne Neustart wirken. Das Ergebnis wird
+     * gecacht, bis sich der Einstellungs-String ändert.
+     */
+    private Path hicadSpeicherplatz() {
+        String konfiguriert = systemSettingsService.getDateiOrdnerPfad();
+        Path cache = this.dateiOrdnerCache;
+        if (cache == null || !konfiguriert.equals(this.zuletztAufgeloesterDateiOrdner)) {
+            Path neu = Path.of(konfiguriert).toAbsolutePath().normalize();
+            try {
+                Files.createDirectories(neu);
+            } catch (Exception exception) {
+                throw new RuntimeException("Konnte den Datei-Ordner nicht erstellen: " + neu, exception);
+            }
+            this.dateiOrdnerCache = neu;
+            this.zuletztAufgeloesterDateiOrdner = konfiguriert;
+            cache = neu;
+        }
+        return cache;
+    }
+
+    private String hicadNetworkUrl() {
+        return systemSettingsService.getDateiOrdnerNetworkUrl();
     }
 
     private static Path resolveAndValidate(Path baseDir, String filename) {
@@ -177,7 +203,7 @@ public class DateiSpeicherService {
         boolean useHicadStorage = lowerName.endsWith(".sza") || lowerName.endsWith(".tcd")
                 || lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")
                 || lowerName.endsWith(".csv") || lowerName.endsWith(".ods") || lowerName.endsWith(".xlsb");
-        Path basisPfad = useHicadStorage ? this.hicadSpeicherplatz : this.dokumentenSpeicherplatz;
+        Path basisPfad = useHicadStorage ? hicadSpeicherplatz() : this.dokumentenSpeicherplatz;
         Path zielPfad = resolveAndValidate(basisPfad, gespeicherterDateiname);
 
         try {
@@ -277,7 +303,7 @@ public class DateiSpeicherService {
         boolean useHicadStorage = lowerName.endsWith(".sza") || lowerName.endsWith(".tcd")
                 || lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")
                 || lowerName.endsWith(".csv") || lowerName.endsWith(".ods") || lowerName.endsWith(".xlsb");
-        Path basisPfad = useHicadStorage ? this.hicadSpeicherplatz : this.anfragenSpeicherplatz;
+        Path basisPfad = useHicadStorage ? hicadSpeicherplatz() : this.anfragenSpeicherplatz;
         Path zielPfad = resolveAndValidate(basisPfad, gespeicherterDateiname);
         try {
             Files.copy(datei.getInputStream(), zielPfad, StandardCopyOption.REPLACE_EXISTING);
@@ -1375,7 +1401,7 @@ public class DateiSpeicherService {
         try {
             Path dateipfad = this.anfragenSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
             if (!Files.deleteIfExists(dateipfad)) {
-                Path hicadPfad = this.hicadSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
+                Path hicadPfad = hicadSpeicherplatz().resolve(dokument.getGespeicherterDateiname());
                 if (!Files.deleteIfExists(hicadPfad)) {
                     Path fallbackPfad = this.dokumentenSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
                     Files.deleteIfExists(fallbackPfad);
@@ -1490,7 +1516,7 @@ public class DateiSpeicherService {
             Path[] searchPaths = {
                     resolveAndValidate(dokumentenSpeicherplatz, dateiname),
                     resolveAndValidate(anfragenSpeicherplatz, dateiname),
-                    resolveAndValidate(hicadSpeicherplatz, dateiname)
+                    resolveAndValidate(hicadSpeicherplatz(), dateiname)
             };
 
             for (Path pfad : searchPaths) {
@@ -1503,7 +1529,7 @@ public class DateiSpeicherService {
             }
 
             // If not found with exact name, try case-insensitive search in each directory
-            for (Path basePath : new Path[] { dokumentenSpeicherplatz, anfragenSpeicherplatz, hicadSpeicherplatz }) {
+            for (Path basePath : new Path[] { dokumentenSpeicherplatz, anfragenSpeicherplatz, hicadSpeicherplatz() }) {
                 try {
                     if (Files.exists(basePath) && Files.isDirectory(basePath)) {
                         java.util.Optional<Path> found = Files.list(basePath)
@@ -1523,7 +1549,7 @@ public class DateiSpeicherService {
 
             throw new RuntimeException("Datei nicht gefunden oder nicht lesbar: " + dateiname +
                     " (gesucht in: " + dokumentenSpeicherplatz + ", " + anfragenSpeicherplatz + ", "
-                    + hicadSpeicherplatz + ")");
+                    + hicadSpeicherplatz() + ")");
         } catch (MalformedURLException e) {
             throw new RuntimeException("Fehler beim Lesen der Datei: " + dateiname, e);
         }
@@ -1537,7 +1563,7 @@ public class DateiSpeicherService {
      */
     public boolean liegtInHicadSpeicher(String dateiname) {
         try {
-            Path p = hicadSpeicherplatz.resolve(dateiname).normalize();
+            Path p = hicadSpeicherplatz().resolve(dateiname).normalize();
             return Files.exists(p);
         } catch (Exception ignored) {
             return false;
@@ -1548,11 +1574,12 @@ public class DateiSpeicherService {
         if (relativerPfad.contains("..")) {
             throw new ForbiddenException("Pfad außerhalb des freigegebenen Verzeichnisses");
         }
-        if (hicadNetworkUrl == null || !hicadNetworkUrl.startsWith("\\\\")) {
+        String netzwerkUrl = hicadNetworkUrl();
+        if (netzwerkUrl == null || !netzwerkUrl.startsWith("\\\\")) {
             throw new IllegalStateException("network-url muss UNC sein");
         }
         String cleaned = relativerPfad.replace("/", "\\");
-        return hicadNetworkUrl.endsWith("\\") ? hicadNetworkUrl + cleaned : hicadNetworkUrl + "\\" + cleaned;
+        return netzwerkUrl.endsWith("\\") ? netzwerkUrl + cleaned : netzwerkUrl + "\\" + cleaned;
     }
 
     public String holeWindowsLaufwerkPfad(String relativerPfad) {
@@ -1618,10 +1645,11 @@ public class DateiSpeicherService {
     private void kopiereNachNetzwerkFreigabeFallsAbweichend(String gespeicherterDateiname,
             Path bereitsGespeichertPfad) {
         try {
-            if (hicadNetworkUrl == null || !hicadNetworkUrl.startsWith("\\\\")) {
+            String netzwerkUrl = hicadNetworkUrl();
+            if (netzwerkUrl == null || !netzwerkUrl.startsWith("\\\\")) {
                 return; // keine UNC-Freigabe konfiguriert
             }
-            Path netzBasis = Path.of(hicadNetworkUrl).toAbsolutePath().normalize();
+            Path netzBasis = Path.of(netzwerkUrl).toAbsolutePath().normalize();
             Path netzZiel = resolveAndValidate(netzBasis, gespeicherterDateiname);
             if (!bereitsGespeichertPfad.normalize().equals(netzZiel)) {
                 // Erzeuge Zielordner und kopiere falls nicht identisch
