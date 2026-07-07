@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
     FileText, Gem, Home, Layers, List, Mail, MailPlus, Package, Settings,
-    ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
+    ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut, Warehouse,
     Calendar, CalendarDays, Plane, Shield, Receipt, Wallet
 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -53,6 +53,7 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Katalog',
                 items: [
                     { name: 'Artikel', href: '/artikel', icon: Package },
+                    { name: 'Lager', href: '/lager', icon: Warehouse },
                     { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
                     { name: 'Kategorien', href: '/produktkategorien', icon: Layers },
                 ]
