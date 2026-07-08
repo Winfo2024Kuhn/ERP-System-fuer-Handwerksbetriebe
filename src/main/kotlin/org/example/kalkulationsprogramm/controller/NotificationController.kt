@@ -25,6 +25,7 @@ import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository
 import org.example.kalkulationsprogramm.repository.UrlaubsantragRepository
 import org.example.kalkulationsprogramm.service.AnfrageFunnelService
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -54,6 +55,8 @@ class NotificationController(
     private val ausgangsGeschaeftsDokumentRepository: AusgangsGeschaeftsDokumentRepository,
     private val anfrageDokumentRepository: AnfrageDokumentRepository,
     private val anfrageRepository: AnfrageRepository,
+    @Value("\${email.features.enabled:true}")
+    private val emailFeaturesEnabled: Boolean,
 ) {
 
     @GetMapping("/summary")
@@ -77,33 +80,35 @@ class NotificationController(
         } catch (_: Exception) {
         }
 
-        try {
-            val unassignedIds = emailRepository.findUnassigned().mapNotNull { it.id }.toSet()
-            val inboxUnread = emailRepository.findInboxFiltered()
-                .asSequence()
-                .filter { it.id !in unassignedIds }
-                .filter { !it.isRead }
-                .toList()
-            if (inboxUnread.isNotEmpty()) {
-                categories += CategoryDto("EMAILS", "Ungelesene E-Mails", inboxUnread.size, "Mail", "/emails")
-                inboxUnread.sortedWith(compareByDescending<Email> { it.sentAt }).take(3).forEach { e ->
-                    recentItems += RecentItemDto(
-                        "EMAIL",
-                        e.subject ?: "Kein Betreff",
-                        "Von: ${e.fromAddress ?: "Unbekannt"}",
-                        e.sentAt?.toString().orEmpty(),
-                        "/emails/inbox/${e.id}",
-                    )
+        if (emailFeaturesEnabled) {
+            try {
+                val unassignedIds = emailRepository.findUnassigned().mapNotNull { it.id }.toSet()
+                val inboxUnread = emailRepository.findInboxFiltered()
+                    .asSequence()
+                    .filter { it.id !in unassignedIds }
+                    .filter { !it.isRead }
+                    .toList()
+                if (inboxUnread.isNotEmpty()) {
+                    categories += CategoryDto("EMAILS", "Ungelesene E-Mails", inboxUnread.size, "Mail", "/emails")
+                    inboxUnread.sortedWith(compareByDescending<Email> { it.sentAt }).take(3).forEach { e ->
+                        recentItems += RecentItemDto(
+                            "EMAIL",
+                            e.subject ?: "Kein Betreff",
+                            "Von: ${e.fromAddress ?: "Unbekannt"}",
+                            e.sentAt?.toString().orEmpty(),
+                            "/emails/inbox/${e.id}",
+                        )
+                    }
                 }
+            } catch (_: Exception) {
             }
-        } catch (_: Exception) {
-        }
 
-        addEmailCategory(categories, recentItems, emailRepository.findProjectEmails(), "EMAILS_PROJECTS", "Ungelesene Projekt-E-Mails", "projects")
-        addEmailCategory(categories, recentItems, emailRepository.findAnfrageEmails(), "EMAILS_OFFERS", "Ungelesene Angebots-E-Mails", "offers")
-        addEmailCategory(categories, recentItems, emailRepository.findLieferantEmails(), "EMAILS_SUPPLIERS", "Ungelesene Lieferanten-E-Mails", "suppliers")
-        addEmailCategory(categories, recentItems, emailRepository.findSpam().filter { it.deletedAt == null }, "EMAILS_SPAM", "Ungelesene Spam-E-Mails", "spam")
-        addEmailCategory(categories, recentItems, emailRepository.findNewsletter().filter { it.deletedAt == null }, "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter")
+            addEmailCategory(categories, recentItems, emailRepository.findProjectEmails(), "EMAILS_PROJECTS", "Ungelesene Projekt-E-Mails", "projects")
+            addEmailCategory(categories, recentItems, emailRepository.findAnfrageEmails(), "EMAILS_OFFERS", "Ungelesene Angebots-E-Mails", "offers")
+            addEmailCategory(categories, recentItems, emailRepository.findLieferantEmails(), "EMAILS_SUPPLIERS", "Ungelesene Lieferanten-E-Mails", "suppliers")
+            addEmailCategory(categories, recentItems, emailRepository.findSpam().filter { it.deletedAt == null }, "EMAILS_SPAM", "Ungelesene Spam-E-Mails", "spam")
+            addEmailCategory(categories, recentItems, emailRepository.findNewsletter().filter { it.deletedAt == null }, "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter")
+        }
 
         addUrlaubsantraege(categories, recentItems)
         addBautagebuch(categories, recentItems)

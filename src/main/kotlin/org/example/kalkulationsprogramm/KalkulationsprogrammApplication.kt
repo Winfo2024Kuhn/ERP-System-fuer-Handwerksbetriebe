@@ -30,6 +30,9 @@ class KalkulationsprogrammApplication {
             try {
                 app.run(*args)
             } catch (t: Throwable) {
+                if (t.javaClass.name.contains("SilentExitException")) {
+                    throw t
+                }
                 val log = System.getProperty("user.home") +
                     File.separator + "ERP-Handwerk" +
                     File.separator + "erp-handwerk.log"

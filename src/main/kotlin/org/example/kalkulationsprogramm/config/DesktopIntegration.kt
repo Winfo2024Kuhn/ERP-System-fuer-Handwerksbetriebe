@@ -29,8 +29,14 @@ class DesktopIntegration(
                 Desktop.getDesktop().browse(URI(url))
                 log.info("Browser geoeffnet: {}", url)
             } else {
-                ProcessBuilder("cmd", "/c", "start", url).start()
-                log.info("Browser geoeffnet (cmd): {}", url)
+                val osName = System.getProperty("os.name", "").lowercase()
+                val command = when {
+                    osName.contains("win") -> listOf("cmd", "/c", "start", url)
+                    osName.contains("mac") -> listOf("open", url)
+                    else -> listOf("xdg-open", url)
+                }
+                ProcessBuilder(command).start()
+                log.info("Browser geoeffnet: {}", url)
             }
         } catch (e: Exception) {
             log.warn("Browser konnte nicht geoeffnet werden: {}", e.message)
