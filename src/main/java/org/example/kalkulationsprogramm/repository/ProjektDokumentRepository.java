@@ -28,6 +28,28 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
       """)
   List<ProjektGeschaeftsdokument> findOffeneGeschaeftsdokumente();
 
+  /**
+   * Wie {@link #findOffeneGeschaeftsdokumente()}, aber mit JOIN FETCH auf
+   * alle Beziehungen, die der taegliche Auto-Mahn-Lauf braucht (mahnungen,
+   * projekt, kunde). Der Scheduler-Thread arbeitet ohne Transaktion und ohne
+   * Open-Session-in-View auf detached Entities — ohne die Fetches fliegt beim
+   * ersten Zugriff auf {@code g.mahnungen} eine LazyInitializationException
+   * und es wird nie eine Mahnung erzeugt.
+   */
+  @Query("""
+      SELECT DISTINCT g FROM ProjektGeschaeftsdokument g
+      LEFT JOIN FETCH g.mahnungen
+      LEFT JOIN FETCH g.projekt p
+      LEFT JOIN FETCH p.kundenId
+      WHERE g.bezahlt = false
+        AND (
+              LOWER(g.geschaeftsdokumentart) LIKE '%rechnung%'
+           OR LOWER(g.geschaeftsdokumentart) LIKE '%mahn%'
+           OR LOWER(g.geschaeftsdokumentart) LIKE '%erinnerung%'
+        )
+      """)
+  List<ProjektGeschaeftsdokument> findOffeneGeschaeftsdokumenteFuerMahnlauf();
+
   @Query("SELECT g FROM ProjektGeschaeftsdokument g WHERE LOWER(g.geschaeftsdokumentart) LIKE '%rechnung%' AND g.rechnungsdatum BETWEEN :start AND :end")
   List<ProjektGeschaeftsdokument> findGeschaeftsdokumenteByRechnungsdatumBetween(java.time.LocalDate start,
       java.time.LocalDate end);

@@ -100,7 +100,12 @@ public class AutoMahnVersandService
             return;
         }
 
-        List<ProjektGeschaeftsdokument> offene = projektDokumentRepository.findOffeneGeschaeftsdokumente();
+        // Fetch-Variante der Offene-Posten-Query: der Scheduler-Thread hat
+        // keine offene Hibernate-Session, die Entities sind detached — alle
+        // lazy Beziehungen (mahnungen, projekt, kunde) muessen daher schon
+        // beim Laden aufgeloest sein.
+        List<ProjektGeschaeftsdokument> offene =
+                projektDokumentRepository.findOffeneGeschaeftsdokumenteFuerMahnlauf();
         LocalDate heute = LocalDate.now();
         int versendet = 0;
         for (ProjektGeschaeftsdokument dok : offene)
