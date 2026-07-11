@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react
 import { createPortal } from 'react-dom';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
-import { X, Search, Building2, User, Briefcase, FileText, Mail, Loader2 } from 'lucide-react';
+import { X, Search, Building2, User, Briefcase, FileText, Mail, Loader2, Calculator } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface ContactDto {
@@ -30,6 +30,7 @@ const TYPE_CONFIG: Record<string, { label: string; icon: typeof User; color: str
     LIEFERANT: { label: 'Lieferant', icon: Building2, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
     PROJEKT: { label: 'Projekt', icon: Briefcase, color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
     ANFRAGE: { label: 'Anfrage', icon: FileText, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+    STEUERBERATER: { label: 'Steuerberater', icon: Calculator, color: 'text-violet-700', bg: 'bg-violet-50 border-violet-200' },
 };
 
 export function EmailRecipientInput({

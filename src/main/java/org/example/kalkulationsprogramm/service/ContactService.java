@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,7 @@ public class ContactService {
     private final LieferantenRepository lieferantenRepository;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
+    private final SteuerberaterKontaktRepository steuerberaterKontaktRepository;
 
     @Transactional(readOnly = true)
     public List<ContactDto> searchContacts(String query) {
@@ -111,6 +113,51 @@ public class ContactService {
             }
         });
 
+        // 5. Steuerberater: Kanzlei, allgemeiner Ansprechpartner sowie alle
+        // Haupt-, Zusatz- und Ansprechpartner-Adressen.
+        String normalizedQuery = query.toLowerCase(java.util.Locale.ROOT);
+        steuerberaterKontaktRepository.findByAktivTrue().forEach(contact -> {
+            boolean contactMatches = contains(contact.getName(), normalizedQuery)
+                    || contains(contact.getAnsprechpartner(), normalizedQuery)
+                    || contains(contact.getEmail(), normalizedQuery)
+                    || (contact.getWeitereEmails() != null && contact.getWeitereEmails().stream()
+                            .anyMatch(email -> contains(email, normalizedQuery)));
+
+            java.util.LinkedHashSet<String> generalAddresses = new java.util.LinkedHashSet<>();
+            if (contact.getEmail() != null) generalAddresses.add(contact.getEmail());
+            if (contact.getWeitereEmails() != null) generalAddresses.addAll(contact.getWeitereEmails());
+            generalAddresses.stream()
+                    .filter(email -> email != null && !email.isBlank())
+                    .filter(email -> contactMatches || contains(email, normalizedQuery))
+                    .forEach(email -> results.add(ContactDto.builder()
+                            .id("STEUERBERATER_" + contact.getId())
+                            .name(contact.getName())
+                            .email(email)
+                            .type("STEUERBERATER")
+                            .context(contact.getAnsprechpartner())
+                            .build()));
+
+            if (contact.getAnsprechpartnerListe() != null) {
+                contact.getAnsprechpartnerListe().forEach(person -> {
+                    String personName = java.util.stream.Stream.of(person.getVorname(), person.getNachname())
+                            .filter(value -> value != null && !value.isBlank())
+                            .collect(Collectors.joining(" "));
+                    boolean personMatches = contactMatches
+                            || contains(personName, normalizedQuery)
+                            || contains(person.getEmail(), normalizedQuery);
+                    if (personMatches && person.getEmail() != null && !person.getEmail().isBlank()) {
+                        results.add(ContactDto.builder()
+                                .id("STEUERBERATER_PERSON_" + person.getId())
+                                .name(contact.getName())
+                                .email(person.getEmail())
+                                .type("STEUERBERATER")
+                                .context(personName)
+                                .build());
+                    }
+                });
+            }
+        });
+
         // Distinct by email, max 30 Ergebnisse
         return results.stream()
                 .filter(distinctByKey(ContactDto::getEmail))
@@ -121,5 +168,9 @@ public class ContactService {
     private static <T> Predicate<T> distinctByKey(Function<? super T, ?> keyExtractor) {
         Set<Object> seen = ConcurrentHashMap.newKeySet();
         return t -> seen.add(keyExtractor.apply(t));
+    }
+
+    private static boolean contains(String value, String normalizedQuery) {
+        return value != null && value.toLowerCase(java.util.Locale.ROOT).contains(normalizedQuery);
     }
 }

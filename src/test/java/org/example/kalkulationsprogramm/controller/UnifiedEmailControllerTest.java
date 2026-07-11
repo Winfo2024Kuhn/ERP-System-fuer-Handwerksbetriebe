@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.domain.EmailBlacklistEntry;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.dto.ContactDto;
+import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
@@ -28,6 +29,7 @@ import org.example.kalkulationsprogramm.service.EmailThreadService;
 import org.example.kalkulationsprogramm.service.InquiryDetectionService;
 import org.example.kalkulationsprogramm.service.SpamBayesService;
 import org.example.kalkulationsprogramm.service.SpamFilterService;
+import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -81,6 +83,7 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
     @MockBean private org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
     @MockBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
+    @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
 
     private Email createTestEmail(Long id, String subject, String from) {
         Email email = new Email();
@@ -129,6 +132,33 @@ class UnifiedEmailControllerTest {
         void searchMissingParam() throws Exception {
             mockMvc.perform(get("/api/emails/search"))
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/emails/tax-advisors")
+    class TaxAdvisorFolder {
+
+        @Test
+        @DisplayName("zeigt ein- und ausgehende E-Mails derselben Steuerberater-Domain")
+        void findsIncomingAndOutgoingEmailsByDomain() throws Exception {
+            SteuerberaterKontaktDto contact = new SteuerberaterKontaktDto();
+            contact.setEmail("kanzlei@steuerprofi.de");
+            given(steuerberaterKontaktService.findAll()).willReturn(List.of(contact));
+
+            Email incoming = createTestEmail(10L, "BWA", "service@steuerprofi.de");
+            Email outgoing = createTestEmail(11L, "Re: BWA", "firma@example.com");
+            outgoing.setDirection(EmailDirection.OUT);
+            outgoing.setRecipient("Sachbearbeitung <team@steuerprofi.de>");
+            Email falsePositive = createTestEmail(12L, "Fremd", "info@steuerprofi.de.example.org");
+
+            given(emailRepository.findTaxAdvisorCandidates("@steuerprofi.de"))
+                    .willReturn(List.of(incoming, outgoing, falsePositive));
+
+            mockMvc.perform(get("/api/emails/tax-advisors"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].id").value(org.hamcrest.Matchers.containsInAnyOrder(10, 11)))
+                    .andExpect(jsonPath("$[?(@.id == 12)]").isEmpty());
         }
     }
 

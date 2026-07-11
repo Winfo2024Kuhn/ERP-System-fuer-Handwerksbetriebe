@@ -38,7 +38,8 @@ import {
     FolderInput,
     ArrowDownAZ,
     ArrowUpAZ,
-    CheckCircle2
+    CheckCircle2,
+    Calculator
 } from 'lucide-react';
 import {
     DndContext,
@@ -120,7 +121,7 @@ interface EmailItem {
 }
 
 // Folder Types
-type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'unassigned';
+type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'tax-advisors' | 'unassigned';
 
 
 
@@ -354,7 +355,7 @@ function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: Assig
 }
 
 // Main EmailCenter Component
-const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'unassigned'];
+const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'tax-advisors', 'unassigned'];
 
 // ─────────────────────────────────────────────────────────────
 // DnD helper components (Drag & Drop für Ordner-Verschieben)
@@ -399,7 +400,7 @@ function DroppableFolderButton({
             onClick={onClick}
             title={readOnlyDuringDrag ? 'Automatisch zugeordnet – Drag & Drop nicht möglich' : undefined}
             className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
+                "w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                 isActive
                     ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
                     : "text-slate-700 hover:bg-slate-50",
@@ -515,7 +516,7 @@ export default function EmailCenter() {
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [folderCounts, setFolderCounts] = useState({
         inbox: 0, sent: 0, drafts: 0, trash: 0, spam: 0, newsletter: 0,
-        starred: 0, projects: 0, offers: 0, suppliers: 0, unassigned: 0
+        starred: 0, projects: 0, offers: 0, suppliers: 0, taxAdvisors: 0, unassigned: 0
     });
     // Gesamt-Counts pro Ordner (fuer Footer "X von Y")
     const [folderTotals, setFolderTotals] = useState<Record<string, number>>({});
@@ -704,6 +705,7 @@ export default function EmailCenter() {
             'projects': '/api/emails/projects',
             'offers': '/api/emails/offers',
             'suppliers': '/api/emails/suppliers',
+            'tax-advisors': '/api/emails/tax-advisors',
             'unassigned': '/api/emails/unassigned',
         };
         const base = endpointMap[activeFolder] || '/api/emails/inbox';
@@ -779,6 +781,7 @@ export default function EmailCenter() {
             'projects': '/api/emails/projects',
             'offers': '/api/emails/offers',
             'suppliers': '/api/emails/suppliers',
+            'tax-advisors': '/api/emails/tax-advisors',
             'unassigned': '/api/emails/unassigned',
         };
         const base = endpointMap[activeFolder] || '/api/emails/inbox';
@@ -846,7 +849,8 @@ export default function EmailCenter() {
                     unassigned: stats.unassignedCount || 0,
                     projects: stats.projectCount || 0,
                     offers: stats.offerCount || 0,
-                    suppliers: stats.supplierCount || 0
+                    suppliers: stats.supplierCount || 0,
+                    taxAdvisors: stats.taxAdvisorCount || 0
                 });
                 setFolderTotals({
                     inbox: stats.inboxTotal || 0,
@@ -859,7 +863,8 @@ export default function EmailCenter() {
                     unassigned: stats.unassignedTotal || 0,
                     projects: stats.projectTotal || 0,
                     offers: stats.offerTotal || 0,
-                    suppliers: stats.supplierTotal || 0
+                    suppliers: stats.supplierTotal || 0,
+                    'tax-advisors': stats.taxAdvisorTotal || 0
                 });
             }
         } catch (err) {
@@ -885,6 +890,7 @@ export default function EmailCenter() {
                 'projects': '/api/emails/projects',
                 'offers': '/api/emails/offers',
                 'suppliers': '/api/emails/suppliers',
+                'tax-advisors': '/api/emails/tax-advisors',
                 'unassigned': '/api/emails/unassigned',
             };
             const base = endpointMap[activeFolder] || '/api/emails/inbox';
@@ -976,7 +982,7 @@ export default function EmailCenter() {
         const found = emails.find(e => e.id === emailId);
         if (found) {
             // Switch folder if the email belongs to a different one
-            if (found.folder && found.folder !== activeFolder) {
+            if (activeFolder !== 'tax-advisors' && found.folder && found.folder !== activeFolder) {
                 deepLinkFolderSwitchRef.current = true;
                 setActiveFolder(found.folder);
             }
@@ -999,7 +1005,7 @@ export default function EmailCenter() {
                 .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
                 .then((email: EmailItem) => {
                     // Switch folder if the email belongs to a different one
-                    if (email.folder && email.folder !== activeFolder) {
+                    if (activeFolder !== 'tax-advisors' && email.folder && email.folder !== activeFolder) {
                         deepLinkFolderSwitchRef.current = true;
                         setActiveFolder(email.folder);
                     }
@@ -2271,19 +2277,14 @@ export default function EmailCenter() {
             {/* Left Sidebar - Folders */}
             <div className="w-64 bg-slate-50/80 border-r border-slate-200/80 flex flex-col flex-shrink-0">
                 {/* Header */}
-                <div className="p-4 border-b border-slate-200/80 bg-white space-y-3">
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 flex items-center justify-center shadow-sm shadow-rose-200">
-                            <Mail className="w-4.5 h-4.5 text-white" />
-                        </div>
-                        <div>
-                            <h2 className="font-bold text-slate-900 text-sm leading-tight">E-Mail Center</h2>
-                            <p className="text-[10px] text-slate-400 leading-tight">Postfach verwalten</p>
-                        </div>
+                <div className="p-2 border-b border-slate-200/80 bg-white space-y-1">
+                    <div>
+                        <h2 className="font-bold text-slate-900 text-sm leading-tight">E-Mail Center</h2>
+                        <p className="text-[10px] text-slate-400 leading-tight">Postfach verwalten</p>
                     </div>
                     <Button
                         onClick={handleComposeNew}
-                        className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-200/50 gap-2 h-10 font-semibold"
+                        className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-200/50 gap-2 h-8 font-semibold"
                     >
                         <PenSquare className="w-4 h-4" />
                         Neue E-Mail
@@ -2291,9 +2292,9 @@ export default function EmailCenter() {
                 </div>
 
                 {/* Folders */}
-                <div className="flex-1 overflow-y-auto p-2.5 space-y-0.5">
+                <div className="flex-1 overflow-hidden p-2 space-y-0.5">
                     {/* ═══ ORDNER (Drag & Drop Drop-Ziele) ═══ */}
-                    <div className="px-3 py-1.5 flex items-center gap-1.5">
+                    <div className="px-3 py-1 flex items-center gap-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ordner</span>
                         <span className="text-[9px] text-slate-300 font-medium">· Drag &amp; Drop</span>
                     </div>
@@ -2340,7 +2341,7 @@ export default function EmailCenter() {
                         dragActive={dragActiveEmail !== null}
                     />
 
-                    <div className="h-px bg-slate-200 my-2.5" />
+                    <div className="h-px bg-slate-200 my-1.5" />
 
                     <DroppableFolderButton
                         folderId="sent"
@@ -2373,10 +2374,10 @@ export default function EmailCenter() {
                         countVariant="amber"
                     />
 
-                    <div className="h-px bg-slate-200 my-2.5" />
+                    <div className="h-px bg-slate-200 my-1.5" />
 
                     {/* ═══ ZUGEORDNET (read-only, auto-assigned) ═══ */}
-                    <div className="px-3 py-1.5 flex items-center justify-between" title="Werden automatisch zugeordnet – kein Drag & Drop möglich">
+                    <div className="px-3 py-1 flex items-center justify-between" title="Werden automatisch zugeordnet – kein Drag & Drop möglich">
                         <div className="flex items-center gap-1.5">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Zugeordnet</span>
                             <span className="text-[9px] text-slate-300 font-medium">· automatisch</span>
@@ -2429,16 +2430,26 @@ export default function EmailCenter() {
                                 droppable={false}
                                 dragActive={dragActiveEmail !== null}
                             />
+                            <DroppableFolderButton
+                                folderId="tax-advisors"
+                                icon={Calculator}
+                                label="Steuerberater"
+                                count={folderCounts.taxAdvisors}
+                                isActive={activeFolder === 'tax-advisors'}
+                                onClick={() => setActiveFolder('tax-advisors')}
+                                droppable={false}
+                                dragActive={dragActiveEmail !== null}
+                            />
                         </>
                     )}
 
-                    <div className="h-px bg-slate-200 my-2.5" />
+                    <div className="h-px bg-slate-200 my-1.5" />
 
                     {/* Settings Button */}
                     <button
                         onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
                         className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
+                            "w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                             showSettings
                                 ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
                                 : "text-slate-700 hover:bg-slate-50"

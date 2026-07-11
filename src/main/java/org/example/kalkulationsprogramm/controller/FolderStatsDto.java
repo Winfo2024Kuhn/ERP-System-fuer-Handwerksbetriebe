@@ -15,6 +15,7 @@ public class FolderStatsDto {
     private long projectCount;
     private long offerCount;
     private long supplierCount;
+    private long taxAdvisorCount;
     private long starredCount;
 
     // Gesamt-Counts pro Ordner – fuer Pagination/Footer im EmailCenter
@@ -27,5 +28,6 @@ public class FolderStatsDto {
     private long projectTotal;
     private long offerTotal;
     private long supplierTotal;
+    private long taxAdvisorTotal;
     private long starredTotal;
 }

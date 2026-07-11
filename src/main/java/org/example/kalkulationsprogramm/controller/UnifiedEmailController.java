@@ -19,6 +19,7 @@ import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.dto.ContactDto;
+import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
 import org.example.kalkulationsprogramm.dto.Email.UnifiedEmailDto;
 import org.example.kalkulationsprogramm.dto.EmailThreadDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
@@ -38,6 +39,7 @@ import org.example.kalkulationsprogramm.service.EmailThreadService;
 import org.example.kalkulationsprogramm.service.InquiryDetectionService;
 import org.example.kalkulationsprogramm.service.SpamBayesService;
 import org.example.kalkulationsprogramm.service.SpamFilterService;
+import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -90,6 +92,7 @@ public class UnifiedEmailController {
     private final org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
     private final org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
     private final org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
+    private final SteuerberaterKontaktService steuerberaterKontaktService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -641,6 +644,18 @@ public class UnifiedEmailController {
                 .collect(Collectors.toList());
     }
 
+    @GetMapping("/tax-advisors")
+    @Transactional(readOnly = true)
+    public List<UnifiedEmailDto> getTaxAdvisorFolderEmails(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return findTaxAdvisorEmails().stream()
+                .skip(Math.max(0, offset))
+                .limit(limit)
+                .map(this::toListDto)
+                .collect(Collectors.toList());
+    }
+
     @GetMapping("/sent")
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getSentEmails(
@@ -971,6 +986,7 @@ public class UnifiedEmailController {
             case "projects"   -> emailRepository.findProjectEmails();
             case "offers"     -> emailRepository.findAnfrageEmails();
             case "suppliers"  -> emailRepository.findLieferantEmails();
+            case "tax-advisors" -> findTaxAdvisorEmails();
             case "trash"      -> emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc();
             case "sent"       -> java.util.Collections.emptyList();
             default           -> java.util.Collections.emptyList();
@@ -1110,6 +1126,9 @@ public class UnifiedEmailController {
         stats.setOfferCount(emailRepository.countAnfrageEmailsUnread());
         stats.setSupplierCount(emailRepository.countLieferantEmailsUnread());
 
+        List<Email> taxAdvisorEmails = findTaxAdvisorEmails();
+        stats.setTaxAdvisorCount(taxAdvisorEmails.stream().filter(e -> !e.isRead()).count());
+
         stats.setNewsletterCount(emailRepository.countNewsletterUnread());
         stats.setSpamCount(emailRepository.countSpamUnread());
 
@@ -1136,8 +1155,74 @@ public class UnifiedEmailController {
         stats.setProjectTotal(emailRepository.findProjectEmails().size());
         stats.setOfferTotal(emailRepository.findAnfrageEmails().size());
         stats.setSupplierTotal(emailRepository.findLieferantEmails().size());
+        stats.setTaxAdvisorTotal(taxAdvisorEmails.size());
 
         return stats;
+    }
+
+    /**
+     * Liefert ein- und ausgehende Kommunikation mit allen aktiven
+     * Steuerberatern. Massgeblich ist die Domain aller gepflegten Haupt-,
+     * Zusatz- und Ansprechpartner-Adressen.
+     */
+    private List<Email> findTaxAdvisorEmails() {
+        Set<String> domains = steuerberaterKontaktService.findAll().stream()
+                .flatMap(contact -> taxAdvisorAddresses(contact).stream())
+                .map(UnifiedEmailController::emailDomain)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        if (domains.isEmpty()) return java.util.Collections.emptyList();
+
+        Map<Long, Email> matching = new java.util.LinkedHashMap<>();
+        for (String domain : domains) {
+            for (Email email : emailRepository.findTaxAdvisorCandidates("@" + domain)) {
+                if (hasAddressFromDomain(email.getFromAddress(), domain)
+                        || hasAddressFromDomain(email.getRecipient(), domain)
+                        || hasAddressFromDomain(email.getCc(), domain)) {
+                    matching.putIfAbsent(email.getId(), email);
+                }
+            }
+        }
+
+        return matching.values().stream()
+                .sorted(java.util.Comparator.comparing(
+                        Email::getSentAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .collect(Collectors.toList());
+    }
+
+    private static List<String> taxAdvisorAddresses(SteuerberaterKontaktDto contact) {
+        List<String> addresses = new ArrayList<>();
+        if (contact.getEmail() != null) addresses.add(contact.getEmail());
+        if (contact.getWeitereEmails() != null) addresses.addAll(contact.getWeitereEmails());
+        if (contact.getAnsprechpartnerListe() != null) {
+            contact.getAnsprechpartnerListe().forEach(person -> {
+                if (person.getEmail() != null) addresses.add(person.getEmail());
+            });
+        }
+        return addresses;
+    }
+
+    private static String emailDomain(String rawAddress) {
+        String address = extractFirstEmailAddress(rawAddress);
+        if (address == null) return null;
+        int at = address.lastIndexOf('@');
+        return at >= 0 && at + 1 < address.length()
+                ? address.substring(at + 1).toLowerCase(java.util.Locale.ROOT)
+                : null;
+    }
+
+    private static boolean hasAddressFromDomain(String rawAddresses, String domain) {
+        if (rawAddresses == null || rawAddresses.isBlank()) return false;
+        java.util.regex.Matcher matcher = EMAIL_PATTERN.matcher(
+                rawAddresses.substring(0, Math.min(rawAddresses.length(), EMAIL_HEADER_MAX_LEN)));
+        while (matcher.find()) {
+            String address = matcher.group();
+            int at = address.lastIndexOf('@');
+            if (at >= 0 && address.substring(at + 1).equalsIgnoreCase(domain)) return true;
+        }
+        return false;
     }
 
     /**

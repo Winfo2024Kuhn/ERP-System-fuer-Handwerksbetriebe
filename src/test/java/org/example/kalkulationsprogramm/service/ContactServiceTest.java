@@ -9,11 +9,14 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
+import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.dto.ContactDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -39,6 +42,9 @@ class ContactServiceTest {
     @Mock
     private AnfrageRepository anfrageRepository;
 
+    @Mock
+    private SteuerberaterKontaktRepository steuerberaterKontaktRepository;
+
     private ContactService contactService;
 
     @BeforeEach
@@ -47,7 +53,8 @@ class ContactServiceTest {
                 kundeRepository,
                 lieferantenRepository,
                 projektRepository,
-                anfrageRepository);
+                anfrageRepository,
+                steuerberaterKontaktRepository);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -101,6 +108,40 @@ class ContactServiceTest {
                 .thenReturn(Collections.emptyList());
         when(anfrageRepository.searchByBauvorhabenOrKundeOrEmail(anyString()))
                 .thenReturn(Collections.emptyList());
+    }
+
+    @Nested
+    @DisplayName("Steuerberater")
+    class SteuerberaterSuche {
+
+        @Test
+        @DisplayName("findet Haupt-, Zusatz- und Ansprechpartner-Adresse")
+        void findetAlleSteuerberaterAdressen() {
+            stubEmptyRepositories();
+            SteuerberaterKontakt kontakt = new SteuerberaterKontakt();
+            kontakt.setId(9L);
+            kontakt.setName("Muster Steuerkanzlei");
+            kontakt.setEmail("zentrale@steuerkanzlei.de");
+            kontakt.setWeitereEmails(new java.util.HashSet<>(List.of("lohn@steuerkanzlei.de")));
+
+            SteuerberaterAnsprechpartner person = new SteuerberaterAnsprechpartner();
+            person.setId(10L);
+            person.setVorname("Erika");
+            person.setNachname("Muster");
+            person.setEmail("erika@steuerkanzlei.de");
+            kontakt.setAnsprechpartnerListe(new ArrayList<>(List.of(person)));
+            when(steuerberaterKontaktRepository.findByAktivTrue()).thenReturn(List.of(kontakt));
+
+            List<ContactDto> result = contactService.searchContacts("Muster");
+
+            assertThat(result).extracting(ContactDto::getEmail)
+                    .containsExactlyInAnyOrder(
+                            "zentrale@steuerkanzlei.de",
+                            "lohn@steuerkanzlei.de",
+                            "erika@steuerkanzlei.de");
+            assertThat(result).extracting(ContactDto::getType)
+                    .containsOnly("STEUERBERATER");
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

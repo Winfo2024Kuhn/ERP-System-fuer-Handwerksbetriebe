@@ -487,6 +487,18 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.direction = 'IN' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findLieferantEmails();
 
+  /**
+   * Grobe Vorauswahl fuer den Steuerberater-Ordner. Die exakte Domain-Pruefung
+   * erfolgt im Controller, damit z.B. {@code kanzlei.de.example.org} nicht als
+   * Treffer fuer {@code kanzlei.de} gilt.
+   */
+  @Query("SELECT e FROM Email e WHERE e.deletedAt IS NULL AND (" +
+      "LOWER(COALESCE(e.fromAddress, '')) LIKE LOWER(CONCAT('%', :domainFragment, '%')) OR " +
+      "LOWER(COALESCE(e.recipient, '')) LIKE LOWER(CONCAT('%', :domainFragment, '%')) OR " +
+      "LOWER(COALESCE(e.cc, '')) LIKE LOWER(CONCAT('%', :domainFragment, '%'))) " +
+      "ORDER BY e.sentAt DESC")
+  List<Email> findTaxAdvisorCandidates(@Param("domainFragment") String domainFragment);
+
   @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.direction = 'IN' AND e.deletedAt IS NULL AND e.isRead = false")
   long countLieferantEmailsUnread();
 
