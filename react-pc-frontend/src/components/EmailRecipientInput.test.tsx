@@ -20,6 +20,7 @@ const sampleContacts = [
     { id: 'KUNDE_1', name: 'Max Mustermann', email: 'max@example.com', type: 'KUNDE', context: 'K-001' },
     { id: 'LIEFERANT_2', name: 'Muster GmbH', email: 'info@muster-gmbh.example.com', type: 'LIEFERANT', context: 'Stahl' },
     { id: 'PROJEKT_3', name: 'Test Firma', email: 'projekt@example.com', type: 'PROJEKT', context: 'Testprojekt' },
+    { id: 'STEUERBERATER_4', name: 'Müller Steuerkanzlei', email: 'info@steuerkanzlei.example.com', type: 'STEUERBERATER', context: 'Erika Musterfrau' },
 ];
 
 function renderInput(props: Partial<Parameters<typeof EmailRecipientInput>[0]> = {}) {
@@ -128,6 +129,7 @@ describe('EmailRecipientInput', () => {
         expect(screen.getByText('Kunde')).toBeInTheDocument();
         expect(screen.getByText('Muster GmbH')).toBeInTheDocument();
         expect(screen.getByText('Lieferant')).toBeInTheDocument();
+        expect(screen.getByText('Steuerberater')).toBeInTheDocument();
     });
 
     it('wählt einen Kontakt aus der Dropdown-Liste aus', async () => {
@@ -346,7 +348,7 @@ describe('EmailRecipientInput', () => {
         await act(async () => { vi.advanceTimersByTime(300); });
 
         await waitFor(() => {
-            expect(screen.getByText(/3 Treffer/)).toBeInTheDocument();
+            expect(screen.getByText(/4 Treffer/)).toBeInTheDocument();
         });
     });
 

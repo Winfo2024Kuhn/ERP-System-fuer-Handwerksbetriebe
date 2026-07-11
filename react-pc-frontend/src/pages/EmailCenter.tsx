@@ -400,7 +400,7 @@ function DroppableFolderButton({
             onClick={onClick}
             title={readOnlyDuringDrag ? 'Automatisch zugeordnet – Drag & Drop nicht möglich' : undefined}
             className={cn(
-                "w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
+                "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                 isActive
                     ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
                     : "text-slate-700 hover:bg-slate-50",
@@ -2449,7 +2449,7 @@ export default function EmailCenter() {
                     <button
                         onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
                         className={cn(
-                            "w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
                             showSettings
                                 ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
                                 : "text-slate-700 hover:bg-slate-50"

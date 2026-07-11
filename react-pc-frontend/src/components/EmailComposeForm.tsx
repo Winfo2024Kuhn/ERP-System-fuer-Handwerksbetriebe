@@ -71,12 +71,6 @@ interface SignatureResponse {
     html?: string;
 }
 
-interface SteuerberaterKontaktResponse {
-    email?: string;
-    weitereEmails?: string[];
-    ansprechpartnerListe?: Array<{ email?: string }>;
-}
-
 // Aktuelles Frontend-Profil aus localStorage holen
 const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
 
@@ -159,7 +153,6 @@ export function EmailComposeForm({
 
     // State für vom Backend geladene Daten (Emails + Projektdaten für Template)
     const [fetchedEmails, setFetchedEmails] = useState<string[]>([]);
-    const [steuerberaterEmails, setSteuerberaterEmails] = useState<string[]>([]);
     const [fetchedProjekt, setFetchedProjekt] = useState<ProjektDetail | null>(null);
     const [fromAddresses, setFromAddresses] = useState<string[]>([]);
     const [fromAddress, setFromAddress] = useState('');
@@ -195,32 +188,6 @@ export function EmailComposeForm({
         };
         loadLinkedData();
     }, [projektId, anfrageId]);
-
-    // Steuerberater stehen auch beim Verfassen einer freien, neuen E-Mail zur Auswahl.
-    useEffect(() => {
-        let active = true;
-        const loadSteuerberaterEmails = async () => {
-            try {
-                const res = await fetch('/api/firma/steuerberater');
-                if (!res.ok) return;
-                const contacts: SteuerberaterKontaktResponse[] = await res.json();
-                const addresses = contacts.flatMap(contact => [
-                    contact.email,
-                    ...(contact.weitereEmails || []),
-                    ...(contact.ansprechpartnerListe || []).map(person => person.email)
-                ]).filter((email): email is string => !!email?.trim());
-                if (active) {
-                    setSteuerberaterEmails(Array.from(new Map(
-                        addresses.map(email => [email.trim().toLowerCase(), email.trim()])
-                    ).values()));
-                }
-            } catch {
-                // Das Verfassen bleibt auch ohne geladene Steuerberater-Adressen nutzbar.
-            }
-        };
-        loadSteuerberaterEmails();
-        return () => { active = false; };
-    }, []);
 
     // Merge: Props + Backend (dedupliziert)
     const entityKundenEmails = useMemo(() => {
@@ -309,11 +276,11 @@ export function EmailComposeForm({
     // Verfügbare E-Mail-Adressen sammeln (memoized um Re-Render-Loops zu vermeiden)
     const availableEmails = useMemo(() => {
         const emails: string[] = [];
-        [...entityKundenEmails, ...steuerberaterEmails].forEach(e => {
+        entityKundenEmails.forEach(e => {
             if (e && !emails.some(existing => existing.toLowerCase() === e.toLowerCase())) emails.push(e);
         });
         return emails;
-    }, [entityKundenEmails, steuerberaterEmails]);
+    }, [entityKundenEmails]);
 
     const isBestellungContext = (initialSubject || subject).trim().toLowerCase().startsWith('bestellanfrage:');
     const orderRecipientName = deriveOrderRecipientName(initialSubject || subject);

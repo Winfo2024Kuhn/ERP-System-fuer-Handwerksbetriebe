@@ -385,7 +385,7 @@ export function EmailRecipientInput({
                     {value && value.length >= 2 && (
                         <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/50">
                             <p className="text-[11px] text-slate-400">
-                                {displayItems.length} Treffer · Suche in Kunden, Lieferanten, Projekten & Anfragenn
+                                {displayItems.length} Treffer · Suche in Kunden, Lieferanten, Projekten, Anfragen & Steuerberatern
                             </p>
                         </div>
                     )}
