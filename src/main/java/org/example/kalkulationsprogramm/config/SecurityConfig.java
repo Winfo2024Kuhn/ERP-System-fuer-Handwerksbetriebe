@@ -157,6 +157,8 @@ public class SecurityConfig {
                 // Verrechnungslohn-Uebernahme schreibt Stundensaetze fuer alle Arbeitsgaenge
                 // eines Jahres - kalkulatorische Massenmutation, nur Admin.
                 .requestMatchers(HttpMethod.POST, "/api/verrechnungslohn/uebernehmen").hasRole("ADMIN")
+                // Manueller Mahn-Lauf verschickt echte E-Mails an Kunden - nur Admin.
+                .requestMatchers(HttpMethod.POST, "/api/mahnwesen/lauf").hasRole("ADMIN")
                 // E-Mail-Admin-Backfills sind betriebsweite, schreibende Massenoperationen
                 // auf Belegen/Attachments - nur Admin (VPN ersetzt keine Authentifizierung).
                 .requestMatchers(HttpMethod.POST, "/api/emails/admin/**").hasRole("ADMIN")

@@ -85,6 +85,132 @@ class AutoMahnVersandServiceTest
         assertThat(neuService().ladeTemplateName("2. Mahnung")).isEmpty();
     }
 
+    // ===== Lauf-Sperre + Fehler-Zaehlung (fuehreMahnlaufAus) =====
+
+    @Test
+    void fuehreMahnlaufAus_gibtSperreNachNormalemLaufWiederFrei()
+    {
+        when(firmaRepository.findById(1L)).thenReturn(Optional.empty());
+        AutoMahnVersandService service = neuService();
+
+        // Zwei sequenzielle Laeufe: der zweite darf NICHT an der Sperre
+        // haengen bleiben (finally-Freigabe), sonst mahnt ab dem zweiten
+        // Cron-Tag nie wieder irgendetwas.
+        assertThat(service.fuehreMahnlaufAus().status())
+                .isEqualTo(AutoMahnVersandService.MahnlaufStatus.VERFAHREN_INAKTIV);
+        assertThat(service.fuehreMahnlaufAus().status())
+                .isEqualTo(AutoMahnVersandService.MahnlaufStatus.VERFAHREN_INAKTIV);
+    }
+
+    @Test
+    void fuehreMahnlaufAus_gibtSperreAuchNachExceptionFrei()
+    {
+        when(firmaRepository.findById(1L))
+                .thenThrow(new IllegalStateException("DB weg"))
+                .thenReturn(Optional.empty());
+        AutoMahnVersandService service = neuService();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(service::fuehreMahnlaufAus)
+                .isInstanceOf(IllegalStateException.class);
+
+        // Nach dem Crash muss die Sperre frei sein, sonst ist der Mahn-Lauf
+        // bis zum Neustart dauerhaft blockiert.
+        assertThat(service.fuehreMahnlaufAus().status())
+                .isEqualTo(AutoMahnVersandService.MahnlaufStatus.VERFAHREN_INAKTIV);
+    }
+
+    @Test
+    void fuehreMahnlaufAus_parallelerZweiterAufrufLiefertLaeuftBereits() throws Exception
+    {
+        java.util.concurrent.CountDownLatch ersterLaufGestartet = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch ersterLaufDarfWeiter = new java.util.concurrent.CountDownLatch(1);
+        when(firmaRepository.findById(1L)).thenAnswer(inv -> {
+            ersterLaufGestartet.countDown();
+            ersterLaufDarfWeiter.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            return Optional.empty();
+        });
+        AutoMahnVersandService service = neuService();
+
+        Thread ersterLauf = new Thread(service::fuehreMahnlaufAus);
+        ersterLauf.start();
+        try
+        {
+            assertThat(ersterLaufGestartet.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+            // Waehrend Lauf 1 noch arbeitet: Lauf 2 startet NICHT doppelt,
+            // sonst bekommen Kunden dieselbe Mahnstufe zweimal per E-Mail.
+            assertThat(service.fuehreMahnlaufAus().status())
+                    .isEqualTo(AutoMahnVersandService.MahnlaufStatus.LAEUFT_BEREITS);
+        }
+        finally
+        {
+            ersterLaufDarfWeiter.countDown();
+            ersterLauf.join(5000);
+        }
+    }
+
+    @Test
+    void fuehreMahnlaufAus_zaehltFehlgeschlageneRechnungenStattSieZuVerschlucken()
+    {
+        Firmeninformation firma = firmaMitAbstaenden(3, 7, 7);
+        when(firmaRepository.findById(1L)).thenReturn(Optional.of(firma));
+
+        // Dokument, dessen Verarbeitung sofort crasht (Mock wirft beim
+        // ersten Zugriff) — der Lauf darf das nicht als "nichts faellig"
+        // melden, sondern muss es als fehlgeschlagen ausweisen.
+        ProjektGeschaeftsdokument kaputt = org.mockito.Mockito.mock(ProjektGeschaeftsdokument.class);
+        when(kaputt.getMahnstufe()).thenThrow(new IllegalStateException("kaputtes Dokument"));
+        when(projektDokumentRepository.findOffeneGeschaeftsdokumenteFuerMahnlauf())
+                .thenReturn(java.util.List.of(kaputt));
+
+        AutoMahnVersandService.MahnlaufErgebnis ergebnis = neuService().fuehreMahnlaufAus();
+
+        assertThat(ergebnis.status()).isEqualTo(AutoMahnVersandService.MahnlaufStatus.AUSGEFUEHRT);
+        assertThat(ergebnis.versendet()).isZero();
+        assertThat(ergebnis.fehlgeschlagen()).isEqualTo(1);
+    }
+
+    @Test
+    void fuehreMahnlaufAus_versandFehlerZaehltAlsFehlgeschlagenNichtAlsNichtFaellig()
+    {
+        Firmeninformation firma = firmaMitAbstaenden(3, 7, 7);
+        when(firmaRepository.findById(1L)).thenReturn(Optional.of(firma));
+
+        // Faellige Rechnung mit allem, was der Versand braucht (Dummy-Daten)
+        org.example.kalkulationsprogramm.domain.Kunde kunde =
+                new org.example.kalkulationsprogramm.domain.Kunde();
+        kunde.setName("Max Mustermann");
+        kunde.setKundenEmails(java.util.List.of("max.mustermann@example.org"));
+        org.example.kalkulationsprogramm.domain.Projekt projekt =
+                new org.example.kalkulationsprogramm.domain.Projekt();
+        projekt.setKundenId(kunde);
+        ProjektGeschaeftsdokument rechnung = offeneRechnung();
+        rechnung.setSystemGeneriert(true);
+        rechnung.setFaelligkeitsdatum(LocalDate.now().minusDays(10));
+        rechnung.setProjekt(projekt);
+        when(projektDokumentRepository.findOffeneGeschaeftsdokumenteFuerMahnlauf())
+                .thenReturn(java.util.List.of(rechnung));
+        when(emailTextTemplateService.render(org.mockito.ArgumentMatchers.eq("ZAHLUNGSERINNERUNG"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new org.example.email.EmailService.EmailContent("Betreff", "<p>x</p>"));
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.empty());
+        when(rechnungPdfService.generatePdfBytes(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new byte[] { 1 });
+        // Persistenz crasht (steht stellvertretend fuer PDF-/SMTP-Fehler im Versandpfad)
+        when(dateiSpeicherService.speichereZugferdDatei(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new IllegalStateException("Platte voll"));
+
+        AutoMahnVersandService.MahnlaufErgebnis ergebnis = neuService().fuehreMahnlaufAus();
+
+        // Der Versand-Fehler darf NICHT wie "keine Rechnung faellig" aussehen
+        assertThat(ergebnis.versendet()).isZero();
+        assertThat(ergebnis.fehlgeschlagen()).isEqualTo(1);
+    }
+
     // ===== systemGeneriert-Filter =====
 
     @Test

@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
@@ -85,6 +86,33 @@ public class AutoMahnVersandService
     private final FormularTextbausteinDefaultService formularTextbausteinDefaultService;
     private final EmailSignatureService emailSignatureService;
 
+    /** Warum ein Mahn-Lauf wie ausgegangen ist — fuer den manuellen Trigger. */
+    public enum MahnlaufStatus
+    {
+        /** Lauf wurde ausgefuehrt; {@code versendet} zaehlt die Mahnungen. */
+        AUSGEFUEHRT,
+        /** Mahnverfahren ist in den Einstellungen ausgeschaltet. */
+        VERFAHREN_INAKTIV,
+        /** Es lief bereits ein Lauf (Cron oder anderer Admin) — nichts gestartet. */
+        LAEUFT_BEREITS
+    }
+
+    /**
+     * Ergebnis eines Mahn-Laufs — fuer den manuellen Trigger im Frontend.
+     * {@code fehlgeschlagen} zaehlt Rechnungen, deren Verarbeitung mit einer
+     * Exception abgebrochen ist (Details im Server-Log) — sonst wuerde
+     * "0 versendet" faelschlich wie "nichts war faellig" aussehen.
+     */
+    public record MahnlaufErgebnis(MahnlaufStatus status, int versendet, int fehlgeschlagen) {}
+
+    /**
+     * Serialisiert Mahn-Laeufe: Cron und manueller Admin-Trigger duerfen nie
+     * gleichzeitig laufen, sonst verarbeiten beide dieselbe offene Rechnung
+     * aus dem noch mahnungsfreien Zustand und der Kunde bekommt die gleiche
+     * Mahnstufe doppelt per E-Mail.
+     */
+    private final AtomicBoolean laufAktiv = new AtomicBoolean(false);
+
     /**
      * Taeglich um 09:00 — durchlaeuft offene Rechnungen, erzeugt fehlende
      * Mahnstufen gemaess Firmen-Konfiguration. Jede Rechnung wird in einer
@@ -94,10 +122,39 @@ public class AutoMahnVersandService
     @Scheduled(cron = "0 0 9 * * *")
     public void verarbeiteFaelligeMahnungen()
     {
+        fuehreMahnlaufAus();
+    }
+
+    /**
+     * Gemeinsamer Einstieg fuer den Cron und den manuellen Admin-Trigger
+     * ({@code POST /api/mahnwesen/lauf}). Liefert, ob das Verfahren aktiv ist
+     * und wie viele Mahnungen versendet wurden. Laeuft bereits ein Lauf,
+     * wird sofort {@link MahnlaufStatus#LAEUFT_BEREITS} zurueckgegeben statt
+     * einen zweiten (Doppel-Mahnungen!) zu starten.
+     */
+    public MahnlaufErgebnis fuehreMahnlaufAus()
+    {
+        if (!laufAktiv.compareAndSet(false, true))
+        {
+            log.info("Mahn-Lauf uebersprungen: es laeuft bereits einer");
+            return new MahnlaufErgebnis(MahnlaufStatus.LAEUFT_BEREITS, 0, 0);
+        }
+        try
+        {
+            return fuehreMahnlaufAusIntern();
+        }
+        finally
+        {
+            laufAktiv.set(false);
+        }
+    }
+
+    private MahnlaufErgebnis fuehreMahnlaufAusIntern()
+    {
         Firmeninformation firma = firmaRepository.findById(1L).orElse(null);
         if (firma == null || !firma.isMahnverfahrenAktiv())
         {
-            return;
+            return new MahnlaufErgebnis(MahnlaufStatus.VERFAHREN_INAKTIV, 0, 0);
         }
 
         // Fetch-Variante der Offene-Posten-Query: der Scheduler-Thread hat
@@ -108,6 +165,7 @@ public class AutoMahnVersandService
                 projektDokumentRepository.findOffeneGeschaeftsdokumenteFuerMahnlauf();
         LocalDate heute = LocalDate.now();
         int versendet = 0;
+        int fehlgeschlagen = 0;
         for (ProjektGeschaeftsdokument dok : offene)
         {
             try
@@ -116,14 +174,17 @@ public class AutoMahnVersandService
             }
             catch (Exception e)
             {
+                fehlgeschlagen++;
                 log.error("Auto-Mahn-Lauf fuer Dokument {} fehlgeschlagen: {}",
                         dok.getId(), e.getMessage(), e);
             }
         }
-        if (versendet > 0)
+        if (versendet > 0 || fehlgeschlagen > 0)
         {
-            log.info("Auto-Mahn-Lauf abgeschlossen: {} Mahnung(en) versendet", versendet);
+            log.info("Auto-Mahn-Lauf abgeschlossen: {} Mahnung(en) versendet, {} fehlgeschlagen",
+                    versendet, fehlgeschlagen);
         }
+        return new MahnlaufErgebnis(MahnlaufStatus.AUSGEFUEHRT, versendet, fehlgeschlagen);
     }
 
     /**
@@ -351,9 +412,13 @@ public class AutoMahnVersandService
         }
         catch (Exception e)
         {
-            log.error("Auto-Mahnung Versand fuer Rechnung {} fehlgeschlagen: {}",
-                    rechnung.getDokumentid(), e.getMessage(), e);
-            return false;
+            // Nicht schlucken: PDF-/Persistenz-/SMTP-Fehler muessen im Lauf
+            // als "fehlgeschlagen" gezaehlt werden (Zaehlung + Logging im
+            // aeusseren catch) — sonst meldet der manuelle Trigger dem Admin
+            // faelschlich "keine Rechnung faellig".
+            throw new IllegalStateException("Versand der Stufe " + typLabel
+                    + " fuer Rechnung " + rechnung.getDokumentid() + " fehlgeschlagen: "
+                    + e.getMessage(), e);
         }
         finally
         {
