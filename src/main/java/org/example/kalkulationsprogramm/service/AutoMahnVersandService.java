@@ -85,6 +85,7 @@ public class AutoMahnVersandService
     private final FormularTemplateService formularTemplateService;
     private final FormularTextbausteinDefaultService formularTextbausteinDefaultService;
     private final EmailSignatureService emailSignatureService;
+    private final ProjektEmailArchivService projektEmailArchivService;
 
     /** Warum ein Mahn-Lauf wie ausgegangen ist — fuer den manuellen Trigger. */
     public enum MahnlaufStatus
@@ -354,7 +355,7 @@ public class AutoMahnVersandService
      * Erzeugt PDF, persistiert das Mahn-Dokument via {@link DateiSpeicherService}
      * und versendet die E-Mail. Tempfile wird immer aufgeraeumt.
      */
-    private boolean erzeugeUndVersende(ProjektGeschaeftsdokument rechnung,
+    boolean erzeugeUndVersende(ProjektGeschaeftsdokument rechnung,
                                        Mahnstufe stufe,
                                        Firmeninformation firma,
                                        String empfaenger,
@@ -381,6 +382,8 @@ public class AutoMahnVersandService
                 neuesFaelligkeitsdatum, tageUeberfaellig, ctx);
 
         Path tempPdf = null;
+        boolean smtpVersendet = false;
+        boolean versandMarkiert = false;
         try
         {
             tempPdf = Files.createTempFile("auto-mahnung-", ".pdf");
@@ -391,20 +394,19 @@ public class AutoMahnVersandService
             ProjektGeschaeftsdokument gespeichert = persistiereMahnung(
                     rechnung, stufe, mahnNummer, heute, neuesFaelligkeitsdatum, tempPdf, dateiname);
 
-            EmailService emailService = new EmailService(
-                    systemSettingsService.getSmtpHost(),
-                    systemSettingsService.getSmtpPort(),
-                    systemSettingsService.getSmtpUsername(),
-                    systemSettingsService.getSmtpPassword());
-
             String absender = ermittleAbsenderAdresse();
             String htmlMitSignatur = emailSignatureService
                     .appendSystemSignatureIfConfigured(mailInhalt.htmlBody());
-            emailService.sendEmail(empfaenger, null, absender,
+            String messageId = sendeEmail(empfaenger, absender,
                     mailInhalt.subject(), htmlMitSignatur,
-                    tempPdf.toString(), dateiname);
+                    tempPdf, dateiname);
+            smtpVersendet = true;
 
             markiereVersendet(gespeichert.getId(), heute);
+            versandMarkiert = true;
+            projektEmailArchivService.archiviereVersandteEmail(
+                    rechnung.getProjekt(), empfaenger, absender,
+                    mailInhalt.subject(), htmlMitSignatur, messageId, tempPdf, dateiname);
 
             log.info("Auto-Mahnung [{}] {} fuer Rechnung {} an {} versendet",
                     typLabel, mahnNummer, rechnung.getDokumentid(), empfaenger);
@@ -412,6 +414,16 @@ public class AutoMahnVersandService
         }
         catch (Exception e)
         {
+            if (smtpVersendet)
+            {
+                String status = versandMarkiert
+                        ? "Die Mahnstufe bleibt als versendet markiert und wird nicht erneut gesendet."
+                        : "Die Versandmarkierung konnte nicht bestaetigt werden; manueller Eingriff ist erforderlich.";
+                throw new IllegalStateException("E-Mail der Stufe " + typLabel
+                        + " fuer Rechnung " + rechnung.getDokumentid()
+                        + " wurde per SMTP versendet, aber nicht vollstaendig im ERP archiviert. "
+                        + status, e);
+            }
             // Nicht schlucken: PDF-/Persistenz-/SMTP-Fehler muessen im Lauf
             // als "fehlgeschlagen" gezaehlt werden (Zaehlung + Logging im
             // aeusseren catch) — sonst meldet der manuelle Trigger dem Admin
@@ -427,6 +439,23 @@ public class AutoMahnVersandService
                 try { Files.deleteIfExists(tempPdf); } catch (IOException ignored) {}
             }
         }
+    }
+
+    /** Separater SMTP-Abstraktionspunkt, damit die Nachversand-Schritte testbar sind. */
+    protected String sendeEmail(String empfaenger,
+            String absender,
+            String subject,
+            String htmlBody,
+            Path pdf,
+            String dateiname) throws Exception
+    {
+        EmailService emailService = new EmailService(
+                systemSettingsService.getSmtpHost(),
+                systemSettingsService.getSmtpPort(),
+                systemSettingsService.getSmtpUsername(),
+                systemSettingsService.getSmtpPassword());
+        return emailService.sendEmailAndReturnMessageId(empfaenger, null, absender,
+                subject, htmlBody, pdf.toString(), dateiname);
     }
 
     @Transactional
@@ -454,10 +483,11 @@ public class AutoMahnVersandService
     @Transactional
     protected void markiereVersendet(Long dokumentId, LocalDate datum)
     {
-        projektDokumentRepository.findById(dokumentId).ifPresent(d -> {
-            d.setEmailVersandDatum(datum);
-            projektDokumentRepository.save(d);
-        });
+        var dokument = projektDokumentRepository.findById(dokumentId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Versandtes Mahndokument nicht mehr vorhanden: " + dokumentId));
+        dokument.setEmailVersandDatum(datum);
+        projektDokumentRepository.save(dokument);
     }
 
     // ======================= Vorschau =======================

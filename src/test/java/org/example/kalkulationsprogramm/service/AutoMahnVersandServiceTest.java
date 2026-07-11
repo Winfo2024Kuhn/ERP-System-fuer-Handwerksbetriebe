@@ -38,6 +38,7 @@ class AutoMahnVersandServiceTest
     @Mock FormularTemplateService formularTemplateService;
     @Mock FormularTextbausteinDefaultService formularTextbausteinDefaultService;
     @Mock EmailSignatureService emailSignatureService;
+    @Mock ProjektEmailArchivService projektEmailArchivService;
 
     private AutoMahnVersandService neuService()
     {
@@ -51,7 +52,8 @@ class AutoMahnVersandServiceTest
                 systemSettingsService,
                 formularTemplateService,
                 formularTextbausteinDefaultService,
-                emailSignatureService);
+                emailSignatureService,
+                projektEmailArchivService);
     }
 
     @Test
@@ -209,6 +211,137 @@ class AutoMahnVersandServiceTest
         // Der Versand-Fehler darf NICHT wie "keine Rechnung faellig" aussehen
         assertThat(ergebnis.versendet()).isZero();
         assertThat(ergebnis.fehlgeschlagen()).isEqualTo(1);
+    }
+
+    // ===== Reihenfolge nach erfolgreichem SMTP-Versand =====
+
+    @Test
+    void erzeugeUndVersende_markiertVorProjektEmailArchivierung() throws Exception
+    {
+        AutoMahnVersandService service = vorbereiteterVersandService();
+        ProjektGeschaeftsdokument rechnung = versandbereiteRechnung();
+        ProjektGeschaeftsdokument mahnung = gespeicherteMahnung();
+        when(projektDokumentRepository.findById(4711L)).thenReturn(Optional.of(mahnung));
+
+        assertThat(service.erzeugeUndVersende(rechnung, Mahnstufe.ZAHLUNGSERINNERUNG,
+                firmaMitAbstaenden(3, 7, 7), "max.mustermann@example.org",
+                LocalDate.of(2026, 7, 11), 10)).isTrue();
+
+        var reihenfolge = org.mockito.Mockito.inOrder(
+                service, projektDokumentRepository, projektEmailArchivService);
+        reihenfolge.verify(service).sendeEmail(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(java.nio.file.Path.class),
+                org.mockito.ArgumentMatchers.anyString());
+        reihenfolge.verify(projektDokumentRepository).save(mahnung);
+        reihenfolge.verify(projektEmailArchivService).archiviereVersandteEmail(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(java.nio.file.Path.class),
+                org.mockito.ArgumentMatchers.anyString());
+        assertThat(mahnung.getEmailVersandDatum()).isEqualTo(LocalDate.of(2026, 7, 11));
+    }
+
+    @Test
+    void erzeugeUndVersende_archivFehlerLaesstVersandmarkierungBestehen() throws Exception
+    {
+        AutoMahnVersandService service = vorbereiteterVersandService();
+        ProjektGeschaeftsdokument rechnung = versandbereiteRechnung();
+        ProjektGeschaeftsdokument mahnung = gespeicherteMahnung();
+        when(projektDokumentRepository.findById(4711L)).thenReturn(Optional.of(mahnung));
+        org.mockito.Mockito.doThrow(new IllegalStateException("Archiv nicht erreichbar"))
+                .when(projektEmailArchivService).archiviereVersandteEmail(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(java.nio.file.Path.class),
+                        org.mockito.ArgumentMatchers.anyString());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.erzeugeUndVersende(
+                rechnung, Mahnstufe.ZAHLUNGSERINNERUNG, firmaMitAbstaenden(3, 7, 7),
+                "max.mustermann@example.org", LocalDate.of(2026, 7, 11), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("per SMTP versendet")
+                .hasMessageContaining("nicht erneut gesendet");
+
+        org.mockito.Mockito.verify(projektDokumentRepository).save(mahnung);
+        assertThat(mahnung.getEmailVersandDatum()).isEqualTo(LocalDate.of(2026, 7, 11));
+    }
+
+    @Test
+    void erzeugeUndVersende_fehlendesMahndokumentBestaetigtMarkierungNicht() throws Exception
+    {
+        AutoMahnVersandService service = vorbereiteterVersandService();
+        when(projektDokumentRepository.findById(4711L)).thenReturn(Optional.empty());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.erzeugeUndVersende(
+                versandbereiteRechnung(), Mahnstufe.ZAHLUNGSERINNERUNG,
+                firmaMitAbstaenden(3, 7, 7), "max.mustermann@example.org",
+                LocalDate.of(2026, 7, 11), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("manueller Eingriff");
+
+        org.mockito.Mockito.verifyNoInteractions(projektEmailArchivService);
+    }
+
+    private AutoMahnVersandService vorbereiteterVersandService() throws Exception
+    {
+        AutoMahnVersandService service = org.mockito.Mockito.spy(neuService());
+        org.mockito.Mockito.doReturn("<msg-auto-mahnung>").when(service).sendeEmail(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(java.nio.file.Path.class),
+                org.mockito.ArgumentMatchers.anyString());
+        when(emailTextTemplateService.render(
+                org.mockito.ArgumentMatchers.eq("ZAHLUNGSERINNERUNG"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new org.example.email.EmailService.EmailContent("Betreff", "<p>Text</p>"));
+        when(rechnungPdfService.generatePdfBytes(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new byte[] { 1, 2, 3 });
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.empty());
+        when(emailSignatureService.appendSystemSignatureIfConfigured(
+                org.mockito.ArgumentMatchers.anyString())).thenAnswer(inv -> inv.getArgument(0));
+        when(systemSettingsService.getMailFromAddress()).thenReturn("firma@example.org");
+        when(dateiSpeicherService.speichereZugferdDatei(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(gespeicherteMahnung());
+        return service;
+    }
+
+    private static ProjektGeschaeftsdokument versandbereiteRechnung()
+    {
+        ProjektGeschaeftsdokument rechnung = offeneRechnung();
+        rechnung.setId(23L);
+        rechnung.setBruttoBetrag(java.math.BigDecimal.TEN);
+        rechnung.setFaelligkeitsdatum(LocalDate.of(2026, 7, 1));
+        org.example.kalkulationsprogramm.domain.Projekt projekt =
+                new org.example.kalkulationsprogramm.domain.Projekt();
+        projekt.setId(42L);
+        projekt.setBauvorhaben("Musterbau");
+        rechnung.setProjekt(projekt);
+        return rechnung;
+    }
+
+    private static ProjektGeschaeftsdokument gespeicherteMahnung()
+    {
+        ProjektGeschaeftsdokument mahnung = new ProjektGeschaeftsdokument();
+        mahnung.setId(4711L);
+        return mahnung;
     }
 
     // ===== systemGeneriert-Filter =====

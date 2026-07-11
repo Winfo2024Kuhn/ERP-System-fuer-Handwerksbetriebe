@@ -94,6 +94,8 @@ class AutoMahnVersandServiceSchedulerLaufTest
     private final FormularTemplateService formularTemplateService = mock(FormularTemplateService.class);
     private final FormularTextbausteinDefaultService formularTextbausteinDefaultService = mock(FormularTextbausteinDefaultService.class);
     private final EmailSignatureService emailSignatureService = mock(EmailSignatureService.class);
+    private final ProjektEmailArchivService projektEmailArchivService =
+            mock(ProjektEmailArchivService.class);
 
     @Test
     @DisplayName("Scheduler-Lauf ohne Transaktion erzeugt Zahlungserinnerung fuer ueberfaellige systemgenerierte Rechnung")
@@ -123,7 +125,8 @@ class AutoMahnVersandServiceSchedulerLaufTest
                 systemSettingsService,
                 formularTemplateService,
                 formularTextbausteinDefaultService,
-                emailSignatureService);
+                emailSignatureService,
+                projektEmailArchivService);
 
         service.verarbeiteFaelligeMahnungen();
 
