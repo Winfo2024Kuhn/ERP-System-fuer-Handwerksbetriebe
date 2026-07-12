@@ -3,12 +3,15 @@ package org.example.kalkulationsprogramm.mapper
 import org.example.kalkulationsprogramm.domain.Lieferanten
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantListItemDto
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 @Component
 class LieferantMapper(
     private val geschaeftsdokumentRepository: LieferantGeschaeftsdokumentRepository
 ) {
+    private val log = LoggerFactory.getLogger(LieferantMapper::class.java)
+
     fun toListItem(lieferant: Lieferanten?): LieferantListItemDto? {
         if (lieferant == null) return null
         val dto = LieferantListItemDto()
@@ -41,7 +44,7 @@ class LieferantMapper(
                 dto.lieferzeit = avgLieferzeit.toInt()
             }
         } catch (ex: Exception) {
-            System.err.println("[LieferantMapper] Fehler bei Lieferzeit-Berechnung: ${ex.message}")
+            log.warn("Fehler bei Lieferzeit-Berechnung fuer Lieferant {}", lieferant.id, ex)
         }
         try {
             val bestellungen = geschaeftsdokumentRepository.countBestellungenByLieferantId(lieferant.id)
@@ -49,7 +52,7 @@ class LieferantMapper(
                 dto.bestellungen = bestellungen.toInt()
             }
         } catch (ex: Exception) {
-            System.err.println("[LieferantMapper] Fehler bei Bestellungen-Zaehlung: ${ex.message}")
+            log.warn("Fehler bei Bestellungen-Zaehlung fuer Lieferant {}", lieferant.id, ex)
         }
         return dto
     }

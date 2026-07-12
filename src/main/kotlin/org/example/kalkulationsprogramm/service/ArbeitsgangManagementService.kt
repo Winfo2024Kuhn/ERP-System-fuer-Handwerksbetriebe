@@ -22,8 +22,9 @@ class ArbeitsgangManagementService(
 ) {
     @Transactional
     fun erstelleArbeitsgang(dto: ArbeitsgangErstellenDto): Arbeitsgang {
-        val abteilung = abteilungRepository.findById(dto.abteilungId)
-            .orElseThrow { RuntimeException("Abteilung nicht gefunden: ${dto.abteilungId}") }
+        val abteilungId = dto.abteilungId ?: throw IllegalArgumentException("Abteilung muss angegeben werden.")
+        val abteilung = abteilungRepository.findById(abteilungId)
+            .orElseThrow { RuntimeException("Abteilung nicht gefunden: $abteilungId") }
 
         val neuerArbeitsgang = Arbeitsgang()
         neuerArbeitsgang.beschreibung = dto.beschreibung

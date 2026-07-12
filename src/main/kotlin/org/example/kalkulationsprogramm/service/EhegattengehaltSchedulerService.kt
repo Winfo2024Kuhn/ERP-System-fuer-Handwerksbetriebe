@@ -86,11 +86,8 @@ class EhegattengehaltSchedulerService(
     }
 
     internal fun markiereJahrmonatGebucht(einstellungsId: Long?, jahrmonat: String) {
-        val k = if (einstellungsId == null) {
-            kasseEinstellungRepository.findById(null).orElseThrow()
-        } else {
-            kasseEinstellungRepository.findById(einstellungsId).orElseThrow()
-        }
+        val id = einstellungsId ?: throw IllegalArgumentException("Kasse-Einstellung hat keine ID.")
+        val k = kasseEinstellungRepository.findById(id).orElseThrow()
         k.setValue("setLetzteBuchungJahrmonat", String::class.java, jahrmonat)
         kasseEinstellungRepository.save(k)
     }

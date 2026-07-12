@@ -87,8 +87,9 @@ class ProduktkategorieService(
             beschreibung = dto.beschreibung
         }
 
-        if (dto.parentId != null) {
-            val parent = produktkategorieRepository.findById(dto.parentId)
+        val parentId = dto.parentId
+        if (parentId != null) {
+            val parent = produktkategorieRepository.findById(parentId)
                 .orElseThrow { RuntimeException("Eltern-Kategorie nicht gefunden") }
             neueKategorie.uebergeordneteKategorie = parent
         }
@@ -164,7 +165,8 @@ class ProduktkategorieService(
             )
         }
         gesammelteKategorien.add(kategorie)
-        produktkategorieRepository.findById(kategorie.id).ifPresent { loaded ->
+        val kategorieId = kategorie.id ?: return
+        produktkategorieRepository.findById(kategorieId).ifPresent { loaded ->
             loaded.unterkategorien.forEach { unterkategorie ->
                 sammleUnterkategorien(unterkategorie, gesammelteKategorien, vergleichsEinheit)
             }

@@ -44,8 +44,9 @@ class LeistungMapper(
         leistung.beschreibung = dto.description
         leistung.preis = dto.price
 
-        if (dto.folderId != null) {
-            val kat = produktkategorieRepository.findById(dto.folderId).orElse(null)
+        val folderId = dto.folderId
+        if (folderId != null) {
+            val kat = produktkategorieRepository.findById(folderId).orElse(null)
             leistung.kategorie = kat
             leistung.einheit = dto.unit ?: kat?.verrechnungseinheit
         } else {

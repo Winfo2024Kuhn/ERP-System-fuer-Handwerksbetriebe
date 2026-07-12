@@ -51,8 +51,8 @@ class WerkstoffRepositoryTest {
         artikelRepository.save(artikel)
 
         val reloaded = artikelRepository.findById(artikel.id).orElseThrow()
-        assertThat(reloaded.werkstoff).isNotNull()
-        assertThat(reloaded.werkstoff.id).isEqualTo(werkstoff.id)
-        assertThat(reloaded.externeArtikelnummer).isEqualTo("A-1")
+        val reloadedWerkstoff = requireNotNull(reloaded.werkstoff)
+        assertThat(reloadedWerkstoff.id).isEqualTo(werkstoff.id)
+        assertThat(reloaded.getExterneArtikelnummer()).isEqualTo("A-1")
     }
 }

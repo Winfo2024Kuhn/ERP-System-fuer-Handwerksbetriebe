@@ -328,7 +328,7 @@ class RechnungsuebersichtController(
                 Files.deleteIfExists(tempPath)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            log.error("Lieferantendokumente konnten nicht analysiert werden", e)
             return ResponseEntity.internalServerError().build()
         }
     }
@@ -401,7 +401,7 @@ class RechnungsuebersichtController(
 
             return ResponseEntity.ok(mapOf("id" to dokument.id, "message" to "Import erfolgreich"))
         } catch (e: Exception) {
-            e.printStackTrace()
+            log.error("Lieferantendokument konnte nicht importiert werden", e)
             return ResponseEntity.internalServerError().body(mapOf("message" to "Fehler beim Import: ${e.message}"))
         }
     }

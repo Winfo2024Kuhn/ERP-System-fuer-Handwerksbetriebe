@@ -98,9 +98,10 @@ class EmailSignatureService(
 
     @Transactional
     fun saveOrUpdate(sig: EmailSignature): EmailSignature {
+        val signatureId = sig.id
         val target =
-            if (sig.id != null) {
-                signatureRepository.findById(sig.id).orElseThrow().apply {
+            if (signatureId != null) {
+                signatureRepository.findById(signatureId).orElseThrow().apply {
                     name = sig.name
                     html = sig.html
                 }

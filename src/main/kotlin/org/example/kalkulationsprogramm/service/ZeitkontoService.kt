@@ -17,13 +17,15 @@ class ZeitkontoService(
     private val feiertagService: FeiertagService,
 ) {
     @Transactional
-    fun getOrCreateZeitkonto(mitarbeiterId: Long?): Zeitkonto =
-        zeitkontoRepository.findByMitarbeiterId(mitarbeiterId)
+    fun getOrCreateZeitkonto(mitarbeiterId: Long?): Zeitkonto {
+        val id = mitarbeiterId ?: throw IllegalArgumentException("Mitarbeiter-ID muss angegeben werden.")
+        return zeitkontoRepository.findByMitarbeiterId(id)
             .orElseGet {
-                val mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
-                    .orElseThrow { IllegalArgumentException("Mitarbeiter nicht gefunden: $mitarbeiterId") }
+                val mitarbeiter = mitarbeiterRepository.findById(id)
+                    .orElseThrow { IllegalArgumentException("Mitarbeiter nicht gefunden: $id") }
                 zeitkontoRepository.save(Zeitkonto(mitarbeiter))
             }
+    }
 
     fun getAlleZeitkonten(): List<Zeitkonto> =
         zeitkontoRepository.findAll()

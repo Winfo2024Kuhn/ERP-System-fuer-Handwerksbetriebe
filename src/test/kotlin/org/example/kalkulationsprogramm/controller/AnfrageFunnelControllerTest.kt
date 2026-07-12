@@ -5,8 +5,8 @@ import org.example.kalkulationsprogramm.domain.Anfrage
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageFunnelRequestDto
 import org.example.kalkulationsprogramm.service.AnfrageFunnelService
 import org.junit.jupiter.api.Test
-import org.mockito.ArgumentMatchers.any
 import org.mockito.BDDMockito.given
+import org.mockito.kotlin.any
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -37,7 +37,7 @@ class AnfrageFunnelControllerTest {
         val gespeichert = Anfrage().apply {
             id = 7L
         }
-        given(anfrageFunnelService.verarbeiteFunnelAnfrage(any(AnfrageFunnelRequestDto::class.java), any()))
+        given(anfrageFunnelService.verarbeiteFunnelAnfrage(any<AnfrageFunnelRequestDto>(), any()))
             .willReturn(gespeichert)
 
         val json = objectMapper.writeValueAsString(validDto())

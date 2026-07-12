@@ -16,6 +16,7 @@ import org.example.kalkulationsprogramm.repository.EmailRepository
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository
 import org.example.kalkulationsprogramm.repository.LieferantNotizRepository
 import org.example.kalkulationsprogramm.repository.LieferantenRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -32,6 +33,8 @@ class LieferantenDetailService(
     private val geschaeftsdokumentRepository: LieferantGeschaeftsdokumentRepository,
     private val notizRepository: LieferantNotizRepository,
 ) {
+    private val log = LoggerFactory.getLogger(LieferantenDetailService::class.java)
+
     @Transactional(readOnly = true)
     fun loadDetails(id: Long): LieferantDetailDto? {
         val lieferant = lieferantenRepository.findById(id).orElse(null) ?: return null
@@ -192,7 +195,7 @@ class LieferantenDetailService(
                 statistik.gesamtKosten = gesamtKosten
             }
         } catch (e: Exception) {
-            System.err.println("[LieferantenDetailService] Fehler bei Statistik-Berechnung: ${e.message}")
+            log.warn("Fehler bei Statistik-Berechnung fuer Lieferant {}", lieferantId, e)
         }
 
         return statistik

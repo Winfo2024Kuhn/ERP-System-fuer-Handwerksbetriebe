@@ -107,11 +107,12 @@ class EmailController(
 
     @PostMapping("/preview")
     fun previewInvoiceEmail(@RequestBody request: EmailPreviewRequest): ResponseEntity<EmailService.EmailContent> {
-        val doc = dokumentRepository.findById(request.dokumentId).orElse(null)
+        val dokumentId = request.dokumentId ?: return ResponseEntity.notFound().build()
+        val doc = dokumentRepository.findById(dokumentId).orElse(null)
         val userName = resolveUserName(request.benutzer, request.frontendUserId)
 
         if (doc == null) {
-            val anfrageDocOpt = anfrageDokumentRepository.findById(request.dokumentId)
+            val anfrageDocOpt = anfrageDokumentRepository.findById(dokumentId)
             if (anfrageDocOpt.isEmpty) return ResponseEntity.notFound().build()
             val anfrageDoc = anfrageDocOpt.get()
             val name = anfrageDoc.originalDateiname
@@ -190,7 +191,8 @@ class EmailController(
 
     @PostMapping("/preview/anfrage")
     fun previewOfferEmail(@RequestBody request: EmailPreviewRequest): ResponseEntity<EmailService.EmailContent> {
-        val doc = anfrageDokumentRepository.findById(request.dokumentId).orElse(null)
+        val dokumentId = request.dokumentId ?: return ResponseEntity.notFound().build()
+        val doc = anfrageDokumentRepository.findById(dokumentId).orElse(null)
         if (doc !is AnfrageGeschaeftsdokument) return ResponseEntity.notFound().build()
         val anfrage = doc.anfrage
         val userName = resolveUserName(request.benutzer, request.frontendUserId)
@@ -221,7 +223,8 @@ class EmailController(
 
     @PostMapping("/send")
     fun sendInvoiceEmail(@RequestBody request: EmailSendRequest): ResponseEntity<Void> {
-        val doc = dokumentRepository.findById(request.dokumentId).orElse(null) ?: return ResponseEntity.notFound().build()
+        val dokumentId = request.dokumentId ?: return ResponseEntity.notFound().build()
+        val doc = dokumentRepository.findById(dokumentId).orElse(null) ?: return ResponseEntity.notFound().build()
         val storedPath = resolveStoredPath(doc.gespeicherterDateiname)
             ?: return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build()
         val path = storedPath.toString()
@@ -267,7 +270,8 @@ class EmailController(
 
     @PostMapping("/send/anfrage")
     fun sendOfferEmail(@RequestBody request: EmailSendRequest): ResponseEntity<Void> {
-        val doc = anfrageDokumentRepository.findById(request.dokumentId).orElse(null)
+        val dokumentId = request.dokumentId ?: return ResponseEntity.notFound().build()
+        val doc = anfrageDokumentRepository.findById(dokumentId).orElse(null)
         if (doc !is AnfrageGeschaeftsdokument) return ResponseEntity.notFound().build()
         val anfrage = doc.anfrage ?: return ResponseEntity.notFound().build()
         val storedPath = resolveStoredPath(doc.gespeicherterDateiname)
@@ -307,10 +311,9 @@ class EmailController(
         val recipient = request.recipient
         if (!recipient.isNullOrBlank()) {
             val inKunde = anfrage.kunde?.kundenEmails?.contains(recipient) == true
-            val inAnfrage = anfrage.kundenEmails?.contains(recipient) == true
+            val inAnfrage = anfrage.kundenEmails.contains(recipient)
             if (!inKunde && !inAnfrage) {
-                if (anfrage.kundenEmails == null) anfrage.kundenEmails = ArrayList()
-                anfrage.kundenEmails!!.add(recipient)
+                anfrage.kundenEmails.add(recipient)
             }
         }
         if (request.bauvorhaben != null) anfrage.bauvorhaben = request.bauvorhaben
@@ -452,7 +455,8 @@ class EmailController(
 
     private fun resolveUserName(providedName: String?, frontendUserId: Long?): String? {
         if (!providedName.isNullOrBlank()) return providedName
-        return frontendUserProfileService.findById(frontendUserId)
+        val userById = frontendUserId?.let { frontendUserProfileService.findById(it) } ?: Optional.empty()
+        return userById
             .or { frontendUserProfileService.findByDisplayName(providedName) }
             .map { it.displayName }
             .filter { !it.isNullOrBlank() }

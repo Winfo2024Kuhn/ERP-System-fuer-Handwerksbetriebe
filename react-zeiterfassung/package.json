@@ -17,7 +17,7 @@
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.3",
     "jscanify": "1.4.2",
-    "jspdf": "^3.0.4",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.556.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

@@ -176,7 +176,10 @@ class SecurityConfig(
                     .csrfTokenRequestHandler(requestHandler)
             }
             .userDetailsService(frontendUserDetailsService)
-            .authorizeHttpRequests { it.anyRequest().authenticated() }
+            .authorizeHttpRequests {
+                it.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                    .anyRequest().authenticated()
+            }
             .headers { headers -> headers.frameOptions { frame -> frame.sameOrigin() } }
             .exceptionHandling { ex ->
                 ex.authenticationEntryPoint { _, response, _ ->

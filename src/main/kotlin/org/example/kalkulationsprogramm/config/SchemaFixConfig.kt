@@ -4,10 +4,13 @@ import org.springframework.boot.CommandLineRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.JdbcTemplate
+import org.slf4j.LoggerFactory
 import javax.sql.DataSource
 
 @Configuration
 class SchemaFixConfig {
+    private val log = LoggerFactory.getLogger(SchemaFixConfig::class.java)
+
     @Bean
     fun schemaFixer(jdbcTemplate: JdbcTemplate, dataSource: DataSource): CommandLineRunner = CommandLineRunner {
         val databaseProductName = dataSource.connection.use { it.metaData.databaseProductName.lowercase() }
@@ -17,9 +20,9 @@ class SchemaFixConfig {
 
         try {
             jdbcTemplate.execute("ALTER TABLE bestellung_projekt_zuordnung MODIFY COLUMN projekt_id BIGINT NULL")
-            println("Schema Fix: bestellung_projekt_zuordnung.projekt_id is now NULLABLE")
+            log.info("Schema fix applied: bestellung_projekt_zuordnung.projekt_id is now nullable")
         } catch (e: Exception) {
-            println("Schema Fix Header: ${e.message}")
+            log.debug("Schema fix skipped or already applied", e)
         }
     }
 }

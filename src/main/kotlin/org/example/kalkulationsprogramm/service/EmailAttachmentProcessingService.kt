@@ -41,7 +41,8 @@ class EmailAttachmentProcessingService(
 
     @Transactional
     fun processLieferantAttachments(email: Email): Int {
-        val freshEmail = emailRepository.findById(email.id).orElse(null)
+        val emailId = email.id ?: return 0
+        val freshEmail = emailRepository.findById(emailId).orElse(null)
         if (freshEmail == null || freshEmail.lieferant == null) {
             log.warn("Email {} hat keine Lieferant-Zuordnung", email.id)
             return 0

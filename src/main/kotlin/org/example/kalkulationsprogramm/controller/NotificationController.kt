@@ -293,7 +293,8 @@ class NotificationController(
         return try {
             when (f.quellTyp) {
                 FreigabeQuellTyp.AUSGANGS_DOKUMENT -> {
-                    val dok: AusgangsGeschaeftsDokument = ausgangsGeschaeftsDokumentRepository.findById(f.quellDokumentId).orElse(null) ?: return "/anfragen"
+                    val quellDokumentId = f.quellDokumentId ?: return "/anfragen"
+                    val dok: AusgangsGeschaeftsDokument = ausgangsGeschaeftsDokumentRepository.findById(quellDokumentId).orElse(null) ?: return "/anfragen"
                     dok.projekt?.let { return "/projekte?projektId=${it.id}" }
                     dok.anfrage?.let { anfrage ->
                         val projektId = projektIdAusAnfrage(anfrage.id)
@@ -301,16 +302,19 @@ class NotificationController(
                     }
                     "/anfragen"
                 }
-                FreigabeQuellTyp.ANFRAGE -> anfrageDokumentRepository.findById(f.quellDokumentId)
-                    .filter { it is AnfrageGeschaeftsdokument }
-                    .map { it as AnfrageGeschaeftsdokument }
-                    .filter { it.anfrage != null }
-                    .map {
-                        val anfrage = it.anfrage
-                        val projektId = projektIdAusAnfrage(anfrage?.id)
-                        projektId?.let { id -> "/projekte?projektId=$id" } ?: "/anfragen?anfrageId=${anfrage?.id}"
-                    }
-                    .orElse("/anfragen")
+                FreigabeQuellTyp.ANFRAGE -> {
+                    val quellDokumentId = f.quellDokumentId ?: return "/anfragen"
+                    anfrageDokumentRepository.findById(quellDokumentId)
+                        .filter { it is AnfrageGeschaeftsdokument }
+                        .map { it as AnfrageGeschaeftsdokument }
+                        .filter { it.anfrage != null }
+                        .map {
+                            val anfrage = it.anfrage
+                            val projektId = projektIdAusAnfrage(anfrage?.id)
+                            projektId?.let { id -> "/projekte?projektId=$id" } ?: "/anfragen?anfrageId=${anfrage?.id}"
+                        }
+                        .orElse("/anfragen")
+                }
                 FreigabeQuellTyp.PROJEKT -> "/projekte"
                 else -> "/anfragen"
             }

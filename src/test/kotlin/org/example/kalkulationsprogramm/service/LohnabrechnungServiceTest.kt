@@ -57,7 +57,7 @@ class LohnabrechnungServiceTest {
         Files.write(lohnabrechnungDir.resolve("abc-123-uuid.pdf"), byteArrayOf(1, 2, 3))
         `when`(lohnabrechnungRepository.findById(2L)).thenReturn(Optional.of(lohnabrechnung))
 
-        val pdf = findPdf(2L)
+        val pdf = service.findPdf(2L)
 
         assertThat(pdf).isPresent()
         val pdfDatei = pdf.get()
@@ -70,7 +70,7 @@ class LohnabrechnungServiceTest {
         Files.write(mailAttachmentDir.resolve("abc-123-uuid.pdf"), byteArrayOf(1, 2, 3))
         `when`(lohnabrechnungRepository.findById(2L)).thenReturn(Optional.of(lohnabrechnung))
 
-        val pdf = findPdf(2L)
+        val pdf = service.findPdf(2L)
 
         assertThat(pdf).isPresent()
         assertThat(invokePath(pdf.get(), "pfad"))
@@ -81,14 +81,14 @@ class LohnabrechnungServiceTest {
     fun findPdfGibtLeerWennDateiNichtExistiert() {
         `when`(lohnabrechnungRepository.findById(2L)).thenReturn(Optional.of(lohnabrechnung))
 
-        assertThat(findPdf(2L)).isEmpty()
+        assertThat(service.findPdf(2L)).isEmpty()
     }
 
     @Test
     fun findPdfGibtLeerWennLohnabrechnungUnbekannt() {
         `when`(lohnabrechnungRepository.findById(999L)).thenReturn(Optional.empty())
 
-        assertThat(findPdf(999L)).isEmpty()
+        assertThat(service.findPdf(999L)).isEmpty()
     }
 
     @Test
@@ -96,11 +96,8 @@ class LohnabrechnungServiceTest {
         lohnabrechnung.gespeicherterDateiname = "../../etc/passwd"
         `when`(lohnabrechnungRepository.findById(2L)).thenReturn(Optional.of(lohnabrechnung))
 
-        assertThat(findPdf(2L)).isEmpty()
+        assertThat(service.findPdf(2L)).isEmpty()
     }
-
-    private fun findPdf(id: Long): Optional<*> =
-        service.javaClass.getMethod("findPdf", java.lang.Long.TYPE).invoke(service, id) as Optional<*>
 
     private fun invoke(target: Any, method: String): Any? =
         target.javaClass.getMethod(method).invoke(target)

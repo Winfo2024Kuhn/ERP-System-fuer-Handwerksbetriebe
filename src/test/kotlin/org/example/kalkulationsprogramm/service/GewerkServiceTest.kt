@@ -7,9 +7,9 @@ import org.example.kalkulationsprogramm.dto.GewerkDto
 import org.example.kalkulationsprogramm.repository.GewerkRepository
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import org.mockito.kotlin.any
 import java.math.BigDecimal
 
 class GewerkServiceTest {
@@ -21,7 +21,7 @@ class GewerkServiceTest {
     fun setUp() {
         repository = mock(GewerkRepository::class.java)
         service = GewerkService(repository)
-        `when`(repository.save(any(Gewerk::class.java))).thenAnswer { invocation ->
+        `when`(repository.save(any())).thenAnswer { invocation ->
             val gewerk = invocation.getArgument<Gewerk>(0)
             if (gewerk.id == null) {
                 gewerk.id = 33L

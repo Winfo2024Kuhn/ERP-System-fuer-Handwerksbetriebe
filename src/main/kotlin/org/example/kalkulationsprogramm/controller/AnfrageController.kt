@@ -30,6 +30,7 @@ import org.example.kalkulationsprogramm.service.FrontendUserProfileService
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService
 import org.example.kalkulationsprogramm.service.ZugferdErstellService
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -69,6 +70,8 @@ class AnfrageController(
     private val frontendUserProfileService: FrontendUserProfileService,
     private val dokumentFreigabeService: DokumentFreigabeService,
 ) {
+    private val log = LoggerFactory.getLogger(AnfrageController::class.java)
+
     @GetMapping("/funnel-ids")
     fun funnelAnfrageIds(): ResponseEntity<List<Long>> =
         ResponseEntity.ok(
@@ -165,7 +168,8 @@ class AnfrageController(
         try {
             val verwendeteGruppe = gruppe ?: DokumentGruppe.DIVERSE_DOKUMENTE
             ResponseEntity.ok(dateien.map { mappeDokumentZuDto(dateiSpeicherService.speichereAnfragesDatei(it, anfrageID, verwendeteGruppe)) })
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.error("Fehler beim Hochladen von Anfrage-Dokumenten fuer Anfrage {}", anfrageID, e)
             ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null)
         }
 
@@ -185,7 +189,7 @@ class AnfrageController(
             Files.deleteIfExists(zugferdPfad)
             ResponseEntity.status(HttpStatus.CREATED).body(dto)
         } catch (e: Exception) {
-            e.printStackTrace()
+            log.warn("ZUGFeRD-Erzeugung fuer Anfrage {} fehlgeschlagen", anfrageID, e)
             ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("message" to (e.message ?: "Unbekannter Fehler")))
         }
 
@@ -534,7 +538,7 @@ class AnfrageController(
         try {
             dateiSpeicherService.loescheBild("/api/images/${bild.gespeicherterDateiname}")
         } catch (e: Exception) {
-            e.printStackTrace()
+            log.warn("Notizbild {} konnte nicht vom Dateispeicher geloescht werden", bildId, e)
         }
         anfrageNotizBildRepository.delete(bild)
         return ResponseEntity.ok().build()

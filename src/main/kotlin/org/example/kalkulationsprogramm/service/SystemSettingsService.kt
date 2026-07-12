@@ -27,37 +27,37 @@ class SystemSettingsService(
     private val repository: SystemSettingRepository,
 ) {
     @Value("\${smtp.host:}")
-    private lateinit var defaultSmtpHost: String
+    private var defaultSmtpHost: String = ""
 
     @Value("\${smtp.port:465}")
     private var defaultSmtpPort: Int = 465
 
     @Value("\${smtp.username:}")
-    private lateinit var defaultSmtpUsername: String
+    private var defaultSmtpUsername: String = ""
 
     @Value("\${smtp.password:}")
-    private lateinit var defaultSmtpPassword: String
+    private var defaultSmtpPassword: String = ""
 
     @Value("\${imap.host:secureimap.t-online.de}")
-    private lateinit var defaultImapHost: String
+    private var defaultImapHost: String = "secureimap.t-online.de"
 
     @Value("\${imap.port:993}")
     private var defaultImapPort: Int = 993
 
     @Value("\${imap.username:}")
-    private lateinit var defaultImapUsername: String
+    private var defaultImapUsername: String = ""
 
     @Value("\${imap.password:}")
-    private lateinit var defaultImapPassword: String
+    private var defaultImapPassword: String = ""
 
     @Value("\${ai.gemini.api-key:}")
-    private lateinit var defaultGeminiApiKey: String
+    private var defaultGeminiApiKey: String = ""
 
     @Value("\${hicad.ordner-pfad:}")
-    private lateinit var defaultDateiOrdnerPfad: String
+    private var defaultDateiOrdnerPfad: String = ""
 
     @Value("\${hicad.network-url:}")
-    private lateinit var defaultDateiOrdnerNetworkUrl: String
+    private var defaultDateiOrdnerNetworkUrl: String = ""
 
     val smtpHost: String
         get() = sanitizeValue(get("smtp.host", defaultSmtpHost))

@@ -48,8 +48,9 @@ class ArtikelService(
             preis.artikel = saved
             preis.preis = dto.preis
             preis.externeArtikelnummer = dto.externeArtikelnummer
-            if (dto.lieferantId != null) {
-                lieferantenRepository.findById(dto.lieferantId).ifPresent { preis.lieferant = it }
+            val lieferantId = dto.lieferantId
+            if (lieferantId != null) {
+                lieferantenRepository.findById(lieferantId).ifPresent { preis.lieferant = it }
             }
             saved.artikelpreis.add(preis)
             artikelRepository.save(saved)

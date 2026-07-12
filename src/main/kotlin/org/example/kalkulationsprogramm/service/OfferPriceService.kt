@@ -97,11 +97,11 @@ class OfferPriceService(
                     }
                     ?: run {
                         unmatched.add(finalItem)
-                        println("[OfferPriceService] Kein DB-Match für Artikel $code bei Lieferant ${lieferant.lieferantenname}")
+                        log.debug("Kein DB-Match fuer Artikel {} bei Lieferant {}", code, lieferant.lieferantenname)
                     }
             }, {
                 unmatched.add(finalItem)
-                println("[OfferPriceService] Kein DB-Match für Artikel $code bei Lieferant ${lieferant.lieferantenname}")
+                log.debug("Kein DB-Match fuer Artikel {} bei Lieferant {}", code, lieferant.lieferantenname)
             })
 
             if (savedFlag.get()) {

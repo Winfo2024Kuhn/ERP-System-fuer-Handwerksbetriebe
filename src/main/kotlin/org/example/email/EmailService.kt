@@ -13,6 +13,7 @@ import jakarta.mail.internet.MimeBodyPart
 import jakarta.mail.internet.MimeMessage
 import jakarta.mail.internet.MimeMultipart
 import jakarta.mail.util.ByteArrayDataSource
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -30,6 +31,8 @@ class EmailService(
     private val username: String,
     private val password: String,
 ) {
+    private val log = LoggerFactory.getLogger(EmailService::class.java)
+
     fun sendEmail(
         recipient: String?,
         cc: String?,
@@ -44,13 +47,11 @@ class EmailService(
             val message = buildMessage(session, recipient, cc, fromAddress, subject, htmlBody, attachmentFilePath, attachmentFileName)
             Transport.send(message)
             appendArchiveCopy(session, message, attachmentFileName)
-            println("Email sent to $recipient")
+            log.info("Email sent to {}", recipient)
         } catch (e: MessagingException) {
-            System.err.println("Failed to send email: ${e.message}")
-            e.printStackTrace()
+            log.error("Failed to send email to {}", recipient, e)
         } catch (e: IOException) {
-            System.err.println("Failed to send email: ${e.message}")
-            e.printStackTrace()
+            log.error("Failed to send email to {}", recipient, e)
         }
     }
 
@@ -245,11 +246,11 @@ class EmailService(
                 folder.open(Folder.READ_WRITE)
                 folder.appendMessages(arrayOf(message))
                 folder.close(false)
-                println("Email-Kopie im '$folderName' Ordner gespeichert.")
+                log.info("Email copy stored in archive folder {}", folderName)
             }
             store.close()
         } catch (me: MessagingException) {
-            System.err.println("Konnte E-Mail nicht im Archive-Ordner speichern: ${me.message}")
+            log.warn("Could not store email copy in archive folder", me)
         }
     }
 

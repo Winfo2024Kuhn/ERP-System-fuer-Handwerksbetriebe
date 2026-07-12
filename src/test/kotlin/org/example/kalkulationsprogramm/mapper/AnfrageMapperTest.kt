@@ -31,9 +31,8 @@ class AnfrageMapperTest {
             this.kunde = kunde
         }
 
-        val dto = mapper.toAnfrageResponseDto(anfrage)
+        val dto = requireNotNull(mapper.toAnfrageResponseDto(anfrage))
 
-        assertThat(dto).isNotNull()
         assertThat(dto.id).isEqualTo(42L)
         assertThat(dto.kundenId).isEqualTo(1L)
         assertThat(dto.kundenName).isEqualTo("Bauhaus GmbH")
@@ -61,9 +60,8 @@ class AnfrageMapperTest {
             kunde = null
         }
 
-        val dto = mapper.toAnfrageResponseDto(anfrage)
+        val dto = requireNotNull(mapper.toAnfrageResponseDto(anfrage))
 
-        assertThat(dto).isNotNull()
         assertThat(dto.id).isEqualTo(10L)
         assertThat(dto.kundenId).isNull()
         assertThat(dto.kundenName).isNull()
@@ -83,7 +81,7 @@ class AnfrageMapperTest {
             kundenEmails = mutableListOf("doppelt@test.de", "extra@test.de")
         }
 
-        val dto = mapper.toAnfrageResponseDto(anfrage)
+        val dto = requireNotNull(mapper.toAnfrageResponseDto(anfrage))
 
         assertThat(dto.kundenEmails)
             .containsExactlyInAnyOrder("info@test.de", "doppelt@test.de", "extra@test.de")
@@ -102,7 +100,7 @@ class AnfrageMapperTest {
             this.kunde = kunde
         }
 
-        val dto = mapper.toAnfrageResponseDto(anfrage)
+        val dto = requireNotNull(mapper.toAnfrageResponseDto(anfrage))
 
         assertThat(dto.kundenAnrede).isNull()
     }

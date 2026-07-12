@@ -32,11 +32,12 @@ class AnfrageRepositoryTest {
         anfrageRepository.save(Anfrage().apply { projekt = projekt3 })
         anfrageRepository.flush()
 
-        val result = anfrageRepository.findByProjektIdIn(listOf(projekt1.id, projekt2.id))
+        val projektIds = listOf(requireNotNull(projekt1.id), requireNotNull(projekt2.id))
+        val result = anfrageRepository.findByProjektIdIn(projektIds)
 
         assertThat(result)
-            .extracting<Long> { it.projekt!!.id }
-            .containsExactlyInAnyOrder(projekt1.id, projekt2.id)
+            .extracting<Long> { requireNotNull(it.projekt?.id) }
+            .containsExactlyInAnyOrderElementsOf(projektIds)
     }
 
     private fun createProjekt(auftragsnummer: String): Projekt =
@@ -45,6 +46,6 @@ class AnfrageRepositoryTest {
             this.auftragsnummer = auftragsnummer
             anlegedatum = LocalDate.now()
             bruttoPreis = BigDecimal.ZERO
-            setBezahlt(false)
+            bezahlt = false
         }
 }

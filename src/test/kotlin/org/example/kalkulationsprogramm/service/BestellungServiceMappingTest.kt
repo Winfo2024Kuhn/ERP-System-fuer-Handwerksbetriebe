@@ -24,7 +24,7 @@ class BestellungServiceMappingTest {
         }
         val artikel = Artikel().apply {
             id = 10L
-            externeArtikelnummer = "X-123"
+            setExterneArtikelnummer("X-123")
             produktname = "Profil"
             produkttext = "Fixzuschnitt"
             kategorie = kat

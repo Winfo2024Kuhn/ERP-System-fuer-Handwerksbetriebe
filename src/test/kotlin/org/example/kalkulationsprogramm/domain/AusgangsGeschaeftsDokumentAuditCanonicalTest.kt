@@ -66,11 +66,11 @@ class AusgangsGeschaeftsDokumentAuditCanonicalTest {
             kundeId = 99L
             vorgaengerId = 3L
             versandDatum = LocalDate.of(2026, 1, 16)
-            setGebucht(true)
+            gebucht = true
             gebuchtAm = LocalDate.of(2026, 1, 16)
-            setStorniert(false)
+            storniert = false
             storniertAm = null
-            setDigitalAngenommen(false)
+            digitalAngenommen = false
             inhaltHash = "b".repeat(64)
             geaendertAm = LocalDateTime.of(2026, 1, 15, 10, 30, 30, 123_456_000)
             aenderungsgrund = "Festschreibung/Buchung"

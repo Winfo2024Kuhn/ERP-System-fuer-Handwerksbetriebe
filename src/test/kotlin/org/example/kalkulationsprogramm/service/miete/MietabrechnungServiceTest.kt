@@ -14,13 +14,13 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyInt
-import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.anyLong
-import org.mockito.ArgumentMatchers.eq
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
+import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Optional
@@ -82,17 +82,18 @@ class MietabrechnungServiceTest {
         val z2022 = createZaehlerstand(2022, BigDecimal("200"))
         val z2021 = createZaehlerstand(2021, BigDecimal("100"))
 
-        `when`(zaehlerstandRepository.findByVerbrauchsgegenstandInAndAbrechnungsJahr(anyList(), eq(2023)))
+        `when`(zaehlerstandRepository.findByVerbrauchsgegenstandInAndAbrechnungsJahr(any(), eq(2023)))
             .thenReturn(listOf(z2023))
-        `when`(zaehlerstandRepository.findByVerbrauchsgegenstandInAndAbrechnungsJahr(anyList(), eq(2022)))
+        `when`(zaehlerstandRepository.findByVerbrauchsgegenstandInAndAbrechnungsJahr(any(), eq(2022)))
             .thenReturn(listOf(z2022))
         `when`(zaehlerstandRepository.findByVerbrauchsgegenstandAndAbrechnungsJahr(eq(gegenstand), eq(2021)))
             .thenReturn(Optional.of(z2021))
 
         val result = service.berechneJahresabrechnung(1L, year)
 
-        assertThat(result.verbrauchsvergleiche).hasSize(1)
-        val vv = result.verbrauchsvergleiche.first()
+        val verbrauchsvergleiche = requireNotNull(result.verbrauchsvergleiche)
+        assertThat(verbrauchsvergleiche).hasSize(1)
+        val vv = verbrauchsvergleiche.first()
         assertThat(vv.verbrauchJahr).isEqualByComparingTo(BigDecimal("150"))
         assertThat(vv.verbrauchVorjahr).isEqualByComparingTo(BigDecimal("100"))
         assertThat(vv.differenz).isEqualByComparingTo(BigDecimal("50"))

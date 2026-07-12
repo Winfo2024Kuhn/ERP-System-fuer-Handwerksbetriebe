@@ -26,7 +26,7 @@ class ProjektMapperTest {
         }
         projekt.artikelInProjekt.add(aip)
 
-        val dto = mapper.toProjektResponseDto(projekt)
+        val dto = requireNotNull(mapper.toProjektResponseDto(projekt))
         assertEquals(1, dto.artikel!!.size)
         assertEquals(0, dto.artikel!!.first().kilogramm!!.compareTo(BigDecimal("5.5")))
     }
@@ -52,20 +52,20 @@ class ProjektMapperTest {
 
         projekt.artikelInProjekt.add(aip)
 
-        val dto = mapper.toProjektResponseDto(projekt)
+        val dto = requireNotNull(mapper.toProjektResponseDto(projekt))
         assertEquals(0, dto.artikel!!.first().preisProStueck!!.compareTo(BigDecimal("14")))
     }
 
     @Test
     fun mapsAbgeschlossenField() {
         val projekt = Projekt()
-        projekt.setAbgeschlossen(false)
+        projekt.abgeschlossen = false
 
-        val dto1 = mapper.toProjektResponseDto(projekt)
+        val dto1 = requireNotNull(mapper.toProjektResponseDto(projekt))
         assertEquals(false, dto1.isAbgeschlossen, "Projekt should not be closed initially")
 
-        projekt.setAbgeschlossen(true)
-        val dto2 = mapper.toProjektResponseDto(projekt)
+        projekt.abgeschlossen = true
+        val dto2 = requireNotNull(mapper.toProjektResponseDto(projekt))
         assertEquals(true, dto2.isAbgeschlossen, "Projekt should be closed after setting abgeschlossen=true")
     }
 }

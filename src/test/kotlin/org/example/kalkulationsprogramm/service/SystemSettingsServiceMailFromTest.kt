@@ -6,12 +6,12 @@ import org.example.kalkulationsprogramm.repository.SystemSettingRepository
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
-import org.mockito.ArgumentMatchers.any
-import org.mockito.ArgumentMatchers.anyString
-import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.eq
 import java.util.Optional
 
 class SystemSettingsServiceMailFromTest {
@@ -71,12 +71,12 @@ class SystemSettingsServiceMailFromTest {
         } else {
             `when`(repository.findById(eq(key))).thenReturn(Optional.of(SystemSetting(key, value, null)))
         }
-        `when`(repository.save(any(SystemSetting::class.java))).thenAnswer { it.getArgument(0) }
+        `when`(repository.save(any())).thenAnswer { it.getArgument(0) }
     }
 
     @Test
     fun saveMailFromAddress_trimmt_undSpeichertGetrimmtenWert() {
-        `when`(repository.findById(anyString())).thenReturn(Optional.empty())
+        `when`(repository.findById(any())).thenReturn(Optional.empty())
 
         service.saveMailFromAddress("  kontakt@firma.de  ")
 
@@ -88,7 +88,7 @@ class SystemSettingsServiceMailFromTest {
 
     @Test
     fun saveMailFromAddress_leer_speichertLeerstring() {
-        `when`(repository.findById(anyString())).thenReturn(Optional.empty())
+        `when`(repository.findById(any())).thenReturn(Optional.empty())
 
         service.saveMailFromAddress("")
 

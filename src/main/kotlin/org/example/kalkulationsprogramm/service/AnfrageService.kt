@@ -174,18 +174,20 @@ class AnfrageService(
 
     private fun trimToNull(s: String?): String? = s?.trim()?.takeIf { it.isNotEmpty() }
 
-    fun finde(id: Long?): Anfrage? = anfrageRepository.findById(id).orElse(null)
+    fun finde(id: Long?): Anfrage? =
+        id?.let { anfrageRepository.findById(it).orElse(null) }
 
     fun findeDto(id: Long?): AnfrageResponseDto? {
+        if (id == null) return null
         ausgangsGeschaeftsDokumentService.aktualisiereAnfragePreisAusDokumenten(id)
         return anfrageRepository.findById(id).map { mapToDto(it) }.orElse(null)
     }
 
     fun aktualisiereAnfrage(id: Long?, dto: AnfrageErstellenDto): AnfrageResponseDto? =
-        anfrageRepository.findById(id).map { updateExisting(it, dto, null) }.orElse(null)
+        id?.let { anfrageRepository.findById(it).map { anfrage -> updateExisting(anfrage, dto, null) }.orElse(null) }
 
     fun aktualisiereAnfrage(id: Long?, dto: AnfrageErstellenDto, imageFile: MultipartFile?): AnfrageResponseDto? =
-        anfrageRepository.findById(id).map { updateExisting(it, dto, imageFile) }.orElse(null)
+        id?.let { anfrageRepository.findById(it).map { anfrage -> updateExisting(anfrage, dto, imageFile) }.orElse(null) }
 
     private fun updateExisting(a: Anfrage, dto: AnfrageErstellenDto, imageFile: MultipartFile?): AnfrageResponseDto {
         hydrateDtoFromKunde(dto, a)
@@ -257,14 +259,14 @@ class AnfrageService(
     fun speichere(anfrage: Anfrage): Anfrage = anfrageRepository.save(anfrage)
 
     fun updateAnfrageKurzbeschreibung(id: Long?, kurzbeschreibung: String?): AnfrageResponseDto? =
-        anfrageRepository.findById(id).map {
+        id?.let { anfrageId -> anfrageRepository.findById(anfrageId).map {
             it.kurzbeschreibung = kurzbeschreibung
             anfrageRepository.save(it)
             mapToDto(it)
-        }.orElse(null)
+        }.orElse(null) }
 
     fun loesche(id: Long?): Boolean =
-        anfrageRepository.findById(id).map { a ->
+        id?.let { anfrageId -> anfrageRepository.findById(anfrageId).map { a ->
             val docs = anfrageDokumentRepository.findByAnfrageId(a.id)
             for (d in docs) {
                 try {
@@ -277,7 +279,7 @@ class AnfrageService(
             anfrageRepository.delete(a)
             if (projektId != null) dateiSpeicherService.aktualisiereProjektFinanzstatus(projektId)
             true
-        }.orElse(false)
+        }.orElse(false) } ?: false
 
     enum class LoeschGrund {
         OK,
@@ -299,7 +301,8 @@ class AnfrageService(
 
     @Transactional
     fun loescheMitPruefung(id: Long?, cascadeKunde: Boolean): LoeschResult {
-        val anfrage = anfrageRepository.findById(id).orElse(null)
+        val anfrageId = id ?: return LoeschResult(LoeschGrund.NICHT_GEFUNDEN, false, "Anfrage existiert nicht (mehr).")
+        val anfrage = anfrageRepository.findById(anfrageId).orElse(null)
             ?: return LoeschResult(LoeschGrund.NICHT_GEFUNDEN, false, "Anfrage existiert nicht (mehr).")
         if (anfrage.projekt != null) {
             return LoeschResult(LoeschGrund.IN_PROJEKT_UMGEWANDELT, false, "Anfrage ist bereits in ein Projekt umgewandelt – Löschen nicht möglich.")
