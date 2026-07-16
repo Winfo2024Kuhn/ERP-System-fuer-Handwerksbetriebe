@@ -31,6 +31,8 @@ class AutoAuftragsbestaetigungVersandServiceTest {
     @Mock FormularTemplateService formularTemplateService;
     @Mock FormularTextbausteinDefaultService formularTextbausteinDefaultService;
     @Mock EmailSignatureService emailSignatureService;
+    @Mock ProjektEmailArchivService projektEmailArchivService;
+    @Mock org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository dokumentFreigabeRepository;
 
     private AutoAuftragsbestaetigungVersandService neuService() {
         return new AutoAuftragsbestaetigungVersandService(
@@ -40,7 +42,9 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 ausgangsGeschaeftsDokumentRepository,
                 formularTemplateService,
                 formularTextbausteinDefaultService,
-                emailSignatureService);
+                emailSignatureService,
+                projektEmailArchivService,
+                dokumentFreigabeRepository);
     }
 
     @Test
@@ -155,6 +159,92 @@ class AutoAuftragsbestaetigungVersandServiceTest {
         ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
 
         assertThat(neuService().ladeTemplateName(ab)).isEmpty();
+    }
+
+    // ------------- versendeNachAnnahme + Archiv-Retry -------------
+
+    @Test
+    void versendeNachAnnahme_abNichtVorhanden_liefertFalseOhneVersand() {
+        when(ausgangsGeschaeftsDokumentRepository.findById(99L))
+                .thenReturn(Optional.empty());
+
+        boolean ok = neuService().versendeNachAnnahme(99L, "max@example.de", "uuid-1");
+
+        assertThat(ok).isFalse();
+        org.mockito.Mockito.verifyNoInteractions(projektEmailArchivService);
+    }
+
+    @Test
+    void archivierung_wirdBeiLockTimeoutWiederholt() {
+        // Produktions-Muster (siehe Funnel-Bestaetigung, anfrageId=146): der
+        // IMAP-Import haelt Locks auf der email-Tabelle. Der zweite Versuch
+        // nach der Pause muss die Mail archivieren — der IMAP-Sent-Poll ist
+        // KEIN Sicherheitsnetz.
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        service.archivRetryPauseMillis = 0L;
+        AusgangsGeschaeftsDokument ab = baueAbMitProjekt();
+        when(projektEmailArchivService.archiviereVersandteEmail(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new org.springframework.dao.PessimisticLockingFailureException("Lock wait timeout"))
+                .thenReturn(null);
+
+        service.archiviereAlsProjektEmail(ab, "max@example.de", "kontakt@example.de",
+                "Subject", "<p>Body</p>", "<msgid@example.de>", java.nio.file.Path.of("egal.pdf"), "AB.pdf");
+
+        org.mockito.Mockito.verify(projektEmailArchivService, org.mockito.Mockito.times(2))
+                .archiviereVersandteEmail(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void archivierung_gibtNachDreiVersuchenAufOhneZuWerfen() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        service.archivRetryPauseMillis = 0L;
+        AusgangsGeschaeftsDokument ab = baueAbMitProjekt();
+        when(projektEmailArchivService.archiviereVersandteEmail(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new org.springframework.dao.PessimisticLockingFailureException("Lock wait timeout"));
+
+        // Darf nicht werfen — die SMTP-Mail ist bereits beim Kunden.
+        service.archiviereAlsProjektEmail(ab, "max@example.de", "kontakt@example.de",
+                "Subject", "<p>Body</p>", "<msgid@example.de>", java.nio.file.Path.of("egal.pdf"), "AB.pdf");
+
+        org.mockito.Mockito.verify(projektEmailArchivService, org.mockito.Mockito.times(3))
+                .archiviereVersandteEmail(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void archivierung_ohneProjektWirdUebersprungen() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setDokumentNummer("AB-2026/07/0001");
+
+        service.archiviereAlsProjektEmail(ab, "max@example.de", "kontakt@example.de",
+                "Subject", "<p>Body</p>", "<msgid@example.de>", java.nio.file.Path.of("egal.pdf"), "AB.pdf");
+
+        org.mockito.Mockito.verifyNoInteractions(projektEmailArchivService);
+    }
+
+    private static AusgangsGeschaeftsDokument baueAbMitProjekt() {
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setDokumentNummer("AB-2026/07/0001");
+        ab.setProjekt(new org.example.kalkulationsprogramm.domain.Projekt());
+        return ab;
     }
 
     private static AusgangsGeschaeftsDokument baueAbMitVorgaengerAngebot() {

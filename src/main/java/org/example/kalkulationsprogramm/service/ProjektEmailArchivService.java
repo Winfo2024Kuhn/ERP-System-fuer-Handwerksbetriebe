@@ -16,6 +16,7 @@ import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -42,8 +43,15 @@ public class ProjektEmailArchivService
      * Kopiert zuerst den Anhang und persistiert danach E-Mail und Metadaten in
      * einer Transaktion. Bei DB-/Commit-Fehlern wird die kopierte Datei wieder
      * entfernt, damit keine halbfertige Archivierung zurueckbleibt.
+     *
+     * <p>{@code REQUIRES_NEW}, damit ein Fehler hier (z.B. Lock-Timeout auf der
+     * email-Tabelle durch den parallelen IMAP-Import) niemals die umgebende
+     * Transaktion des Aufrufers rollback-only markiert — die SMTP-Mail ist zu
+     * diesem Zeitpunkt bereits versendet, und z.B. das Versand-Datum der
+     * Auto-AB muss den Archivierungsfehler ueberleben. Fuer den Mahnlauf
+     * (kein umgebender TX-Kontext) aendert sich nichts.</p>
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Email archiviereVersandteEmail(Projekt projekt,
             String empfaenger,
             String absender,

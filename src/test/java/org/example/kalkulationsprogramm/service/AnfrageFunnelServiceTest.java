@@ -45,6 +45,7 @@ class AnfrageFunnelServiceTest {
     private AnfrageFunnelService service;
 
     private Mitarbeiter systemMitarbeiter;
+    private Anfrage gespeicherteAnfrage;
 
     @BeforeEach
     void setUp() {
@@ -77,8 +78,13 @@ class AnfrageFunnelServiceTest {
                 .willAnswer(inv -> {
                     Anfrage a = inv.getArgument(0);
                     a.setId(1L);
+                    gespeicherteAnfrage = a;
                     return a;
                 });
+        // Der afterCommit-Task laedt die Anfrage frisch per ID nach —
+        // wir liefern die zuletzt gespeicherte Instanz zurueck.
+        given(anfrageRepository.findById(1L))
+                .willAnswer(inv -> Optional.ofNullable(gespeicherteAnfrage));
         given(kundeRepository.save(any(Kunde.class))).willAnswer(inv -> inv.getArgument(0));
     }
 
@@ -186,13 +192,18 @@ class AnfrageFunnelServiceTest {
     }
 
     @Test
-    void triggertBestaetigungsmailMitFunnelDaten() {
+    void triggertBestaetigungsmailAsynchronNachCommitMitFunnelDaten() {
+        // Bestaetigungsmail laeuft wie der Spam-Check erst nach dem
+        // Transaktions-Commit im Hintergrund-Thread — sonst blockiert
+        // SMTP-/DB-Lock-Latenz die Antwort an den Webseiten-Funnel.
         given(kundeRepository.findByKundenEmailIgnoreCase(any())).willReturn(List.of());
         given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
 
         AnfrageFunnelRequestDto dto = baseDto();
 
-        service.verarbeiteFunnelAnfrage(dto, List.of());
+        mitAktiverTransaktionUndAfterCommit(() -> service.verarbeiteFunnelAnfrage(dto, List.of()));
 
         ArgumentCaptor<Anfrage> anfrageCaptor = ArgumentCaptor.forClass(Anfrage.class);
         verify(bestaetigungVersandService).versendeBestaetigung(
@@ -201,6 +212,23 @@ class AnfrageFunnelServiceTest {
                 org.mockito.ArgumentMatchers.eq("Mustermann"),
                 org.mockito.ArgumentMatchers.eq("asfdds"));
         assertThat(anfrageCaptor.getValue().getId()).isEqualTo(1L);
+    }
+
+    @Test
+    void versendetKeineBestaetigungVorDemCommit() {
+        // Vor afterCommit darf nichts rausgehen — wird die Funnel-Tx
+        // zurueckgerollt, bekommt der Lead sonst eine Mail zu einer
+        // Anfrage, die es nie in die DB geschafft hat.
+        given(kundeRepository.findByKundenEmailIgnoreCase(any())).willReturn(List.of());
+        given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.verarbeiteFunnelAnfrage(baseDto(), List.of());
+            verify(bestaetigungVersandService, never()).versendeBestaetigung(any(), any(), any(), any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -220,12 +248,16 @@ class AnfrageFunnelServiceTest {
     void pushFehlerBlockiertFunnelNicht() {
         given(kundeRepository.findByKundenEmailIgnoreCase(any())).willReturn(List.of());
         given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
         org.mockito.Mockito.doThrow(new RuntimeException("Push down"))
                 .when(webPushService).notifyWebseitenAnfrage(any(), any(), any());
 
-        Anfrage anfrage = service.verarbeiteFunnelAnfrage(baseDto(), List.of());
+        final Anfrage[] ergebnis = new Anfrage[1];
+        mitAktiverTransaktionUndAfterCommit(() ->
+                ergebnis[0] = service.verarbeiteFunnelAnfrage(baseDto(), List.of()));
 
-        assertThat(anfrage.getId()).isEqualTo(1L);
+        assertThat(ergebnis[0].getId()).isEqualTo(1L);
         verify(bestaetigungVersandService).versendeBestaetigung(any(), any(), any(), any());
     }
 
@@ -237,8 +269,10 @@ class AnfrageFunnelServiceTest {
                 .willReturn(AnfrageFunnelSpamFilterService.Result.spam("Spam"));
         given(kundeRepository.findByKundenEmailIgnoreCase(any())).willReturn(List.of());
         given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
 
-        service.verarbeiteFunnelAnfrage(baseDto(), List.of());
+        mitAktiverTransaktionUndAfterCommit(() -> service.verarbeiteFunnelAnfrage(baseDto(), List.of()));
 
         verify(bestaetigungVersandService).versendeBestaetigung(any(), any(), any(), any());
     }
@@ -290,6 +324,23 @@ class AnfrageFunnelServiceTest {
         assertThatThrownBy(() -> service.verarbeiteFunnelAnfrage(baseDto(), List.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("System-Mitarbeiter");
+    }
+
+    /**
+     * Simuliert eine aktive Spring-Transaktion: registrierte
+     * TransactionSynchronizations (Spam-Check, Bestaetigungsmail) werden nach
+     * dem Runnable wie beim echten Commit via afterCommit() ausgeloest.
+     */
+    private void mitAktiverTransaktionUndAfterCommit(Runnable aktion) {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            aktion.run();
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     private AnfrageFunnelRequestDto baseDto() {

@@ -49,6 +49,8 @@ class AnfrageBestaetigungVersandServiceTest {
                 return emailService;
             }
         };
+        // Tests sollen bei Retry-Szenarien nicht echt schlafen.
+        service.retryPauseMillis = 0L;
 
         given(systemSettingsService.isSmtpConfigured()).willReturn(true);
         given(systemSettingsService.getMailFromAddress()).willReturn("kontakt@example.de");
@@ -117,15 +119,13 @@ class AnfrageBestaetigungVersandServiceTest {
         assertThat(gespeichert.getFromAddress()).isEqualTo("kontakt@example.de");
         assertThat(gespeichert.isRead()).isTrue();
         assertThat(gespeichert.getSentAt()).isNotNull();
+        assertThat(gespeichert.getImapFolder()).isNull();
     }
 
     @Test
     void persistenzFehlerWirdGeschlucktUndMailGiltTrotzdemAlsErfolgreich() throws Exception {
-        // Wenn die Sub-Transaktion (REQUIRES_NEW) wirft — z.B. weil der
-        // IMAP-Sent-Scheduler die Mail Millisekunden vorher importiert hat
-        // (Unique-Constraint auf messageId) — darf das nicht propagieren.
-        // Die SMTP-Mail ist beim Kunden bereits angekommen, der IMAP-Poll
-        // legt den DB-Eintrag spaeter sicher an.
+        // Wenn alle Speicherversuche scheitern (z.B. DB down), darf das nicht
+        // propagieren — die SMTP-Mail ist beim Kunden bereits angekommen.
         Anfrage anfrage = baseAnfrage();
         given(emailTextTemplateService.render(anyString(), any()))
                 .willReturn(new EmailService.EmailContent("Subject", "Body"));
@@ -135,12 +135,50 @@ class AnfrageBestaetigungVersandServiceTest {
         boolean ok = service.versendeBestaetigung(anfrage, "Max", "Mustermann", "Hi");
 
         assertThat(ok).isTrue();
+        // Alle drei Versuche wurden ausgeschoepft, bevor aufgegeben wurde.
+        verify(outboundPersistenceService, Mockito.times(3)).speichereOutEmail(any());
+    }
+
+    @Test
+    void persistenzWirdBeiLockTimeoutWiederholt() throws Exception {
+        // Produktions-Szenario (anfrageId=146): der IMAP-Import-Job haelt Locks
+        // auf der email-Tabelle, der erste Insert laeuft in "Lock wait timeout".
+        // Der zweite Versuch nach kurzer Pause muss die Mail dann speichern —
+        // der IMAP-Sent-Poll ist KEIN Sicherheitsnetz (T-Online legt SMTP-Mails
+        // nicht zuverlaessig in INBOX.Sent ab).
+        Anfrage anfrage = baseAnfrage();
+        given(emailTextTemplateService.render(anyString(), any()))
+                .willReturn(new EmailService.EmailContent("Subject", "Body"));
+        Mockito.doThrow(new org.springframework.dao.PessimisticLockingFailureException("Lock wait timeout"))
+                .doNothing()
+                .when(outboundPersistenceService).speichereOutEmail(any());
+
+        boolean ok = service.versendeBestaetigung(anfrage, "Max", "Mustermann", "Hi");
+
+        assertThat(ok).isTrue();
+        verify(outboundPersistenceService, Mockito.times(2)).speichereOutEmail(any());
+    }
+
+    @Test
+    void duplikatWaehrendRetryBeendetDieVersuche() throws Exception {
+        // DataIntegrityViolation = eine parallele Quelle hat die Message-ID
+        // bereits angelegt — kein weiterer Versuch noetig.
+        Anfrage anfrage = baseAnfrage();
+        given(emailTextTemplateService.render(anyString(), any()))
+                .willReturn(new EmailService.EmailContent("Subject", "Body"));
+        Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate message_id"))
+                .when(outboundPersistenceService).speichereOutEmail(any());
+
+        boolean ok = service.versendeBestaetigung(anfrage, "Max", "Mustermann", "Hi");
+
+        assertThat(ok).isTrue();
+        verify(outboundPersistenceService, Mockito.times(1)).speichereOutEmail(any());
     }
 
     @Test
     void leereMessageIdLoestKeinenDbEintragAus() throws Exception {
         // Falls JavaMail keine Message-ID liefert (theoretischer Edge-Case),
-        // ueberspringen wir den DB-Eintrag und ueberlassen das dem IMAP-Sent-Poll.
+        // ueberspringen wir den DB-Eintrag — ohne Message-ID keine Dedup-Basis.
         Anfrage anfrage = baseAnfrage();
         given(emailTextTemplateService.render(anyString(), any()))
                 .willReturn(new EmailService.EmailContent("Subject", "Body"));

@@ -187,7 +187,8 @@ public class EmailService {
         }
     }
 
-    // Sends email and returns Message-ID. Also appends to INBOX.Sent (best effort).
+    // Sendet eine E-Mail und liefert exakt die vom SMTP-Versand verwendete
+    // Message-ID. Es wird keine zusaetzliche IMAP-Sent-Kopie angelegt.
     public String sendEmailAndReturnMessageId(String recipient,
             String cc,
             String fromAddress,
@@ -251,15 +252,15 @@ public class EmailService {
         }
 
         message.setContent(mixed);
-        message.saveChanges();
-        String messageId = message.getMessageID();
         Transport.send(message);
 
-        // HINWEIS: Kein manuelles appendToSentFolder() mehr!
-        // T-Online SMTP kopiert gesendete E-Mails automatisch in INBOX.Sent.
-        // Das manuelle Anhängen führte zu Duplikaten im EmailCenter.
+        // Kein IMAP-Append: Die aufrufenden Automatik-Services speichern die
+        // Ausgangsmail lokal im ERP. Eine zweite Sent-Kopie erzeugte Duplikate.
 
-        return messageId;
+        // Transport.send() ruft saveChanges() auf und kann dabei die Message-ID
+        // final erzeugen/aktualisieren. Deshalb erst danach auslesen; sonst
+        // speichert das ERP unter Umstaenden eine andere ID als die versendete Mail.
+        return message.getMessageID();
     }
 
     // Sends email and returns Message-ID, allowing inline attachments referenced
@@ -342,15 +343,12 @@ public class EmailService {
         }
 
         message.setContent(mixed);
-        message.saveChanges();
-        String messageId = message.getMessageID();
         Transport.send(message);
 
-        // HINWEIS: Kein manuelles appendToSentFolder() mehr!
-        // T-Online SMTP kopiert gesendete E-Mails automatisch in INBOX.Sent.
-        // Das manuelle Anhängen führte zu Duplikaten im EmailCenter.
-
-        return messageId;
+        // Transport.send() ruft saveChanges() auf und kann dabei die Message-ID
+        // final erzeugen/aktualisieren. Deshalb erst danach auslesen; sonst
+        // speichert das ERP unter Umstaenden eine andere ID als die versendete Mail.
+        return message.getMessageID();
     }
 
     /**
@@ -438,15 +436,12 @@ public class EmailService {
         }
 
         message.setContent(mixed);
-        message.saveChanges();
-        String messageId = message.getMessageID();
         Transport.send(message);
 
-        // HINWEIS: Kein manuelles appendToSentFolder() mehr!
-        // T-Online SMTP kopiert gesendete E-Mails automatisch in INBOX.Sent.
-        // Das manuelle Anhängen führte zu Duplikaten im EmailCenter.
-
-        return messageId;
+        // Transport.send() ruft saveChanges() auf und kann dabei die Message-ID
+        // final erzeugen/aktualisieren. Deshalb erst danach auslesen; sonst
+        // speichert das ERP unter Umstaenden eine andere ID als die versendete Mail.
+        return message.getMessageID();
     }
 
     /**

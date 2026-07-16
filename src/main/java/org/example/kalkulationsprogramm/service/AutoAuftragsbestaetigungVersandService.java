@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Textbaustein;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
+import org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.ContentBlockDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.FormBlockDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.KopfdatenDto;
@@ -66,6 +67,30 @@ public class AutoAuftragsbestaetigungVersandService
     private final FormularTemplateService formularTemplateService;
     private final FormularTextbausteinDefaultService formularTextbausteinDefaultService;
     private final EmailSignatureService emailSignatureService;
+    private final ProjektEmailArchivService projektEmailArchivService;
+    private final DokumentFreigabeRepository dokumentFreigabeRepository;
+
+    /**
+     * Einstieg fuer den asynchronen Versand NACH dem Commit der
+     * Annahme-Transaktion (siehe {@link DokumentFreigabeService}). Laedt AB und
+     * Freigabe frisch aus der DB, weil die Entities des Annahme-Requests nach
+     * dem Commit detached sind und Lazy-Zugriffe (Projekt, Kunde) sonst
+     * scheitern wuerden. Die eigene Transaktion haelt die Session fuer die
+     * PDF-Generierung offen.
+     */
+    @Transactional
+    public boolean versendeNachAnnahme(Long abId, String empfaenger, String freigabeUuid)
+    {
+        AusgangsGeschaeftsDokument ab = ausgangsGeschaeftsDokumentRepository.findById(abId).orElse(null);
+        if (ab == null)
+        {
+            log.warn("Auto-AB-Versand uebersprungen: Dokument {} nicht mehr vorhanden", abId);
+            return false;
+        }
+        DokumentFreigabe freigabe = freigabeUuid == null ? null
+                : dokumentFreigabeRepository.findByUuid(freigabeUuid).orElse(null);
+        return versende(ab, empfaenger, freigabe);
+    }
 
     /**
      * Versendet die Auftragsbestätigung als PDF-Mail. Fehler werden geloggt
@@ -121,7 +146,7 @@ public class AutoAuftragsbestaetigungVersandService
             String absender = ermittleAbsenderAdresse();
             String htmlMitSignatur = emailSignatureService
                     .appendSystemSignatureIfConfigured(content.htmlBody());
-            emailService.sendEmail(
+            String messageId = emailService.sendEmailAndReturnMessageId(
                     empfaenger,
                     null,
                     absender,
@@ -130,8 +155,18 @@ public class AutoAuftragsbestaetigungVersandService
                     tempPdf.toString(),
                     filename);
 
+            // Erst archivieren, dann Versanddatum setzen: die Archivierung kann
+            // bei Lock-Kontention bis zu ~6s Retry-Pausen schlafen — waere das
+            // Versanddatum schon geschrieben, hielte die umgebende
+            // versendeNachAnnahme-Tx waehrenddessen einen Write-Lock auf der
+            // AB-Zeile. So schlaeft der Retry, ohne Row-Locks zu halten (die
+            // Tx-Connection bleibt belegt — bewusster, seltener Trade-off).
+            archiviereAlsProjektEmail(ab, empfaenger, absender,
+                    content.subject(), htmlMitSignatur, messageId, tempPdf, filename);
             markiereAlsVersendet(ab);
-            log.info("Auto-AB {} per Mail an {} versendet", ab.getDokumentNummer(), empfaenger);
+            // Bewusst ohne Empfaenger-Adresse geloggt (DSGVO) — die
+            // Dokumentnummer reicht zum Wiederfinden im E-Mail-Center.
+            log.info("Auto-AB {} per Mail versendet", ab.getDokumentNummer());
             return true;
         }
         catch (Exception e)
@@ -144,6 +179,74 @@ public class AutoAuftragsbestaetigungVersandService
             if (tempPdf != null)
             {
                 try { Files.deleteIfExists(tempPdf); } catch (IOException ignored) { /* temp-Datei ggf. schon weg */ }
+            }
+        }
+    }
+
+    /**
+     * Anzahl Archivierungsversuche + Basis-Pause (waechst linear pro Versuch).
+     * Der IMAP-Import-Job kann Locks auf der email-Tabelle halten (in Produktion
+     * beobachteter "Lock wait timeout" beim Funnel-Pendant) — ohne Retry ginge
+     * der E-Mail-Center-Eintrag samt PDF dauerhaft verloren, obwohl die
+     * SMTP-Mail beim Kunden ist. Pause paketsichtbar fuer Tests.
+     */
+    private static final int MAX_ARCHIV_VERSUCHE = 3;
+    long archivRetryPauseMillis = 2_000L;
+
+    /**
+     * Archiviert die versendete AB-Mail samt PDF im E-Mail-Center des Projekts
+     * — gleicher Weg wie die automatischen Mahnungen. Ohne diesen Eintrag
+     * waere die Mail im ERP unsichtbar: der IMAP-Sent-Poll ist kein
+     * Sicherheitsnetz, T-Online legt SMTP-versendete Mails nicht zuverlaessig
+     * in INBOX.Sent ab (in Produktion nachgewiesen, siehe
+     * {@link AnfrageBestaetigungVersandService}).
+     *
+     * <p>Bei Lock-/Commit-Konflikten wird bis zu {@value #MAX_ARCHIV_VERSUCHE}-mal
+     * wiederholt (die Archivierung laeuft in REQUIRES_NEW, ein gescheiterter
+     * Versuch hinterlaesst keine halbe Zeile). Nach dem letzten Versuch wird
+     * geschluckt und geloggt: die SMTP-Mail ist bereits beim Kunden, ein
+     * Archivierungsfehler darf den Annahme-Flow nicht kippen.</p>
+     *
+     * <p>Paketsichtbar, damit der Unit-Test die Retry-Logik direkt pruefen
+     * kann, ohne den vollen Versand-Pfad (PDF + echter SMTP) aufzubauen.</p>
+     */
+    void archiviereAlsProjektEmail(AusgangsGeschaeftsDokument ab, String empfaenger, String absender,
+            String subject, String htmlBody, String messageId, Path pdf, String dateiname)
+    {
+        if (ab.getProjekt() == null)
+        {
+            log.warn("Auto-AB {} versendet, aber ohne Projekt — Mail kann nicht im E-Mail-Center archiviert werden",
+                    ab.getDokumentNummer());
+            return;
+        }
+        for (int versuch = 1; versuch <= MAX_ARCHIV_VERSUCHE; versuch++)
+        {
+            try
+            {
+                projektEmailArchivService.archiviereVersandteEmail(
+                        ab.getProjekt(), empfaenger, absender, subject, htmlBody, messageId, pdf, dateiname);
+                return;
+            }
+            catch (Exception e)
+            {
+                if (versuch == MAX_ARCHIV_VERSUCHE)
+                {
+                    log.error("Auto-AB {} versendet, aber Archivierung im E-Mail-Center nach {} Versuchen fehlgeschlagen: {}",
+                            ab.getDokumentNummer(), versuch, e.getMessage(), e);
+                    return;
+                }
+                log.warn("Auto-AB {} Archivierung fehlgeschlagen (Versuch {}/{}): {} — neuer Versuch in {}ms",
+                        ab.getDokumentNummer(), versuch, MAX_ARCHIV_VERSUCHE, e.getMessage(),
+                        archivRetryPauseMillis * versuch);
+                try
+                {
+                    Thread.sleep(archivRetryPauseMillis * versuch);
+                }
+                catch (InterruptedException ie)
+                {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
         }
     }

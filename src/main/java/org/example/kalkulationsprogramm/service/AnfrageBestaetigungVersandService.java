@@ -27,8 +27,9 @@ import org.springframework.web.util.HtmlUtils;
  * <p><b>Fehlerverhalten:</b> Alle Exceptions werden geschluckt und geloggt. Die
  * Bestätigungsmail ist Komfort, kein harter Bestandteil der Funnel-Verarbeitung
  * — ein SMTP-Ausfall darf nicht dazu führen, dass der Lead-Datensatz im ERP
- * verloren geht. Der Aufruf erfolgt deshalb innerhalb der bestehenden
- * Transaktion, ohne sie scheitern zu lassen.</p>
+ * verloren geht. Der Aufruf erfolgt asynchron nach dem Commit der
+ * Funnel-Transaktion (afterCommit + TaskExecutor), damit weder SMTP-Latenz
+ * noch DB-Lock-Kontention die Antwort an die Webseite blockieren.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -100,7 +101,9 @@ public class AnfrageBestaetigungVersandService {
             persistiereAusgangsEmail(anfrage, empfaenger, absender,
                     content.subject(), htmlMitSignatur, messageId);
 
-            log.info("Anfrage-Bestaetigung an {} versendet (anfrageId={})", empfaenger, anfrage.getId());
+            // Bewusst ohne Empfaenger-Adresse geloggt (DSGVO) — die anfrageId
+            // reicht, um die Mail im E-Mail-Center wiederzufinden.
+            log.info("Anfrage-Bestaetigung versendet (anfrageId={})", anfrage.getId());
             return true;
         } catch (Exception e) {
             // Bewusst Exception-fangen: die Funnel-Persistenz darf nicht
@@ -112,57 +115,94 @@ public class AnfrageBestaetigungVersandService {
     }
 
     /**
+     * Anzahl der Speicherversuche fuer die OUT-Email. Der IMAP-Import-Job
+     * schreibt alle 60s in dieselbe email-Tabelle — kollidiert unser Insert
+     * mit dessen Locks (in Produktion beobachtet: Lock wait timeout nach 50s,
+     * anfrageId=146), probieren wir es nach kurzer Pause erneut, statt den
+     * Eintrag zu verlieren.
+     */
+    private static final int MAX_SPEICHER_VERSUCHE = 3;
+
+    /**
+     * Basis-Pause zwischen den Speicherversuchen (waechst linear pro Versuch).
+     * Paketsichtbar, damit Unit-Tests sie auf 0 setzen koennen und nicht echt
+     * schlafen muessen.
+     */
+    long retryPauseMillis = 2_000L;
+
+    /**
      * Persistiert die gerade per SMTP versandte Bestaetigung als OUT-Email und
      * ordnet sie direkt der Anfrage zu — so taucht sie sofort im E-Mail-Center
-     * der Anfrage auf (ohne auf den naechsten IMAP-Sent-Poll zu warten).
+     * der Anfrage auf.
      *
-     * <p>Die Dedup ueber {@code messageId} im {@code EmailImportService} sorgt
-     * dafuer, dass der spaetere IMAP-Scan des Sent-Ordners keinen Duplikat-Eintrag
-     * anlegt: gleiche Message-ID -> {@code existsByMessageId == true}.</p>
+     * <p><b>Wichtig:</b> Dieser DB-Eintrag ist die einzige verlaessliche
+     * Persistenz. Der IMAP-Sent-Poll ist KEIN Sicherheitsnetz — T-Online legt
+     * per SMTP versendete Mails nicht zuverlaessig in INBOX.Sent ab (in
+     * Produktion nachgewiesen: Bestaetigungen der Anfragen 139 und 146 wurden
+     * nie nachimportiert). Deshalb wird der Insert bei Lock-/Commit-Konflikten
+     * bis zu {@value #MAX_SPEICHER_VERSUCHE}-mal wiederholt. Die Dedup ueber
+     * den Unique-Index auf {@code messageId} verhindert Duplikate, falls der
+     * Sent-Poll die Mail doch importiert.</p>
      *
-     * <p>Fehler werden geschluckt — die SMTP-Mail ist an dieser Stelle bereits
-     * raus; ein DB-Problem darf den Funnel-Flow nicht kippen.</p>
+     * <p>Fehler werden nach dem letzten Versuch geschluckt — die SMTP-Mail ist
+     * an dieser Stelle bereits raus; ein DB-Problem darf den Funnel-Flow nicht
+     * kippen.</p>
      */
     private void persistiereAusgangsEmail(Anfrage anfrage, String empfaenger, String absender,
                                           String subject, String htmlBody, String messageId) {
         if (messageId == null || messageId.isBlank()) {
-            log.warn("Anfrage-Bestaetigung ohne Message-ID — kein DB-Eintrag, IMAP-Poll uebernimmt (anfrageId={})",
+            log.error("Anfrage-Bestaetigung ohne Message-ID — kein DB-Eintrag moeglich (anfrageId={})",
                     anfrage.getId());
             return;
         }
-        try {
-            if (outboundPersistenceService.existsByMessageId(messageId)) {
+        for (int versuch = 1; versuch <= MAX_SPEICHER_VERSUCHE; versuch++) {
+            try {
+                if (outboundPersistenceService.existsByMessageId(messageId)) {
+                    return;
+                }
+                Email email = new Email();
+                email.assignToAnfrage(anfrage);
+                email.setMessageId(messageId);
+                email.setDirection(EmailDirection.OUT);
+                email.setFromAddress(absender);
+                email.setRecipient(empfaenger);
+                email.setSubject(subject);
+                email.setHtmlBody(htmlBody);
+                email.setBody(EmailHtmlSanitizer.htmlToPlainText(htmlBody));
+                email.setSentAt(LocalDateTime.now());
+                email.setRead(true);
+                // Rein lokaler Ausgangsdatensatz: kein IMAP-Ordner und keine
+                // serverseitige Sent-Kopie. Der Gesendet-Filter nutzt direction=OUT.
+                outboundPersistenceService.speichereOutEmail(email);
                 return;
+            } catch (org.springframework.dao.DataIntegrityViolationException race) {
+                // Race-Ausgang: eine parallele Quelle (z.B. Sent-Poll) hat die
+                // Mail zwischen existsByMessageId-Check und save persistiert.
+                // Der Unique-Constraint auf messageId hat den Doppel-Insert
+                // verhindert — kein Fehler im fachlichen Sinn.
+                log.info("Anfrage-Bestaetigung bereits anderweitig persistiert (race) — anfrageId={}, messageId={}",
+                        anfrage.getId(), messageId);
+                return;
+            } catch (Exception e) {
+                // Lock-Timeout, Deadlock, UnexpectedRollback der REQUIRES_NEW-Tx …
+                // — alles Kandidaten fuer einen Retry. Wir laufen hier in einem
+                // Hintergrund-Thread (afterCommit + TaskExecutor), die Pause
+                // blockiert also keinen Web-Request.
+                if (versuch == MAX_SPEICHER_VERSUCHE) {
+                    log.error("Konnte Anfrage-Bestaetigung nach {} Versuchen nicht in email-Tabelle persistieren "
+                                    + "(anfrageId={}, messageId={}): {}",
+                            versuch, anfrage.getId(), messageId, e.getMessage(), e);
+                    return;
+                }
+                log.warn("Anfrage-Bestaetigung speichern fehlgeschlagen (Versuch {}/{}, anfrageId={}): {} — neuer Versuch in {}ms",
+                        versuch, MAX_SPEICHER_VERSUCHE, anfrage.getId(), e.getMessage(), retryPauseMillis * versuch);
+                try {
+                    Thread.sleep(retryPauseMillis * versuch);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
-            Email email = new Email();
-            email.assignToAnfrage(anfrage);
-            email.setMessageId(messageId);
-            email.setDirection(EmailDirection.OUT);
-            email.setFromAddress(absender);
-            email.setRecipient(empfaenger);
-            email.setSubject(subject);
-            email.setHtmlBody(htmlBody);
-            email.setBody(EmailHtmlSanitizer.htmlToPlainText(htmlBody));
-            email.setSentAt(LocalDateTime.now());
-            email.setRead(true);
-            // imapFolder konsistent mit IMAP-importierten Sent-Mails, damit
-            // E-Mail-Center-Filter "Gesendet" gleich matcht. rawBody bleibt null —
-            // wir haben hier keinen ungeparsten MIME-Roh-Body, nur HTML.
-            email.setImapFolder("INBOX.Sent");
-            outboundPersistenceService.speichereOutEmail(email);
-        } catch (org.springframework.dao.DataIntegrityViolationException race) {
-            // Race-Ausgang: der IMAP-Sent-Poll hat die Mail zwischen unserem
-            // existsByMessageId-Check und dem save bereits persistiert. Der
-            // Unique-Constraint auf messageId hat den Doppel-Insert verhindert
-            // — kein Fehler im fachlichen Sinn.
-            log.info("Anfrage-Bestaetigung bereits vom IMAP-Sent-Poll persistiert (race) — anfrageId={}, messageId={}",
-                    anfrage.getId(), messageId);
-        } catch (Exception e) {
-            // Failsafe: alles andere (DB down, JPA-Validation, …) wird hier
-            // geschluckt. Die SMTP-Mail ist beim Kunden, und der IMAP-Sent-Poll
-            // legt den DB-Eintrag spaeter via Message-ID-Dedupe ohnehin an.
-            log.error("Konnte Anfrage-Bestaetigung nicht in email-Tabelle persistieren (anfrageId={}, messageId={}): {}",
-                    anfrage.getId(), messageId, e.getMessage(), e);
         }
     }
 

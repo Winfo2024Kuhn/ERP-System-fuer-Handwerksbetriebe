@@ -22,8 +22,11 @@ import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRep
 import org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Locale;
 
@@ -91,6 +94,7 @@ public class DokumentFreigabeService
     private final AutoAuftragsbestaetigungVersandService autoAuftragsbestaetigungVersandService;
     private final ProjektManagementService projektManagementService;
     private final AnfrageRepository anfrageRepository;
+    private final TaskExecutor taskExecutor;
 
     @Value("${freigabe.hash.salt:CHANGE_ME_LOCAL_ONLY}")
     private String hashSalt;
@@ -744,14 +748,64 @@ public class DokumentFreigabeService
             ausgangsGeschaeftsDokumentAuditService.protokolliereDigitaleAnnahme(ab, freigabe.getAkzeptiertIp());
         }
 
-        // Auto-Versand der AB als PDF-Mail an den Kunden (Issue #55).
-        // Empfänger ist die Adresse aus der Freigabe — das ist die Adresse, an die
-        // das Angebot ging. Versandfehler dürfen die Annahme nie blockieren.
+        // Auto-Versand der AB als PDF-Mail an den Kunden (Issue #55) — asynchron
+        // NACH dem Commit der Annahme-Transaktion. Gruende: (a) SMTP-Latenz darf
+        // die Antwort an den annehmenden Kunden nicht blockieren, (b) die
+        // Archivierung der Mail im E-Mail-Center schreibt in die email-Tabelle,
+        // auf der der parallel laufende IMAP-Import-Job Locks halten kann
+        // (Lock wait timeout, gleiches Muster wie beim Webseiten-Funnel in
+        // AnfrageFunnelService) — das darf die bereits gespeicherte Annahme nie
+        // kippen. versendeNachAnnahme laedt AB + Freigabe frisch, weil die
+        // Entities dieses Requests nach dem Commit detached sind. Empfaenger
+        // ist die Adresse aus der Freigabe — an die ging auch das Angebot.
         if (ab != null)
         {
             String empfaenger = freigabe.getKundeEmail();
-            if (empfaenger != null && !empfaenger.isBlank())
+            if (empfaenger != null && !empfaenger.isBlank()
+                    && TransactionSynchronizationManager.isSynchronizationActive())
             {
+                final Long abId = ab.getId();
+                final String freigabeUuid = freigabe.getUuid();
+                final String empfaengerFinal = empfaenger;
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization()
+                {
+                    @Override
+                    public void afterCommit()
+                    {
+                        try
+                        {
+                            taskExecutor.execute(() ->
+                            {
+                                try
+                                {
+                                    autoAuftragsbestaetigungVersandService
+                                            .versendeNachAnnahme(abId, empfaengerFinal, freigabeUuid);
+                                }
+                                catch (Exception e)
+                                {
+                                    // Letzte Verteidigungslinie im Hintergrund-Thread — sonst
+                                    // verschwindet der Fehler im Default-Handler des Executors.
+                                    log.error("Auto-AB-Versand nach Annahme fehlgeschlagen (abId={}): {}",
+                                            abId, e.getMessage(), e);
+                                }
+                            });
+                        }
+                        catch (Exception e)
+                        {
+                            // z.B. RejectedExecutionException bei voller Executor-Queue:
+                            // darf nicht aus afterCommit propagieren, sonst sieht der
+                            // Kunde einen Fehler, obwohl seine Annahme laengst committed ist.
+                            log.error("Auto-AB-Versand-Task konnte nicht gestartet werden (abId={}): {}",
+                                    abId, e.getMessage(), e);
+                        }
+                    }
+                });
+            }
+            else if (empfaenger != null && !empfaenger.isBlank())
+            {
+                // Kein TX-Kontext (im Annahme-Flow eigentlich unmoeglich) —
+                // synchron versenden, damit die Mail nicht stillschweigend entfaellt.
+                log.warn("Auto-AB-Versand ohne aktive TX-Synchronisation — versende synchron (abId={})", ab.getId());
                 try
                 {
                     autoAuftragsbestaetigungVersandService.versende(ab, empfaenger, freigabe);

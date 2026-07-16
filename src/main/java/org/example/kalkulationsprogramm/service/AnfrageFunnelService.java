@@ -90,7 +90,16 @@ public class AnfrageFunnelService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    taskExecutor.execute(() -> pruefSpamAsync(anfrageId, dto));
+                    try {
+                        taskExecutor.execute(() -> pruefSpamAsync(anfrageId, dto));
+                    } catch (Exception e) {
+                        // RejectedExecutionException bei voller Executor-Queue darf
+                        // weder den Request crashen noch Springs afterCommit-Schleife
+                        // abbrechen — sonst liefe die danach registrierte
+                        // Bestaetigungsmail-Synchronization nie.
+                        log.error("Spam-Check-Task konnte nicht gestartet werden (anfrageId={}): {}",
+                                anfrageId, e.getMessage(), e);
+                    }
                 }
             });
         } else {
@@ -98,13 +107,45 @@ public class AnfrageFunnelService {
                     anfrage.getId());
         }
 
-        // Bestaetigungsmail an den Lead — fire & forget. Der Service schluckt
-        // alle Exceptions, sodass ein SMTP-Ausfall die Funnel-Persistenz nicht
-        // rollbacked. Tonalitaet/Inhalt sind ueber die DB-Vorlage
-        // "WEBSITE_ANFRAGE_BESTAETIGUNG" im UI Kommunikation → E-Mail-Textvorlagen
-        // editierbar.
-        anfrageBestaetigungVersandService.versendeBestaetigung(
-                anfrage, dto.getVorname(), dto.getNachname(), dto.getNachricht());
+        // Bestaetigungsmail an den Lead — asynchron nach Commit, aus demselben
+        // Grund wie der Spam-Check oben: SMTP-Versand + DB-Persistenz der
+        // OUT-Mail kann durch Lock-Kontention mit dem alle 60s laufenden
+        // IMAP-Import-Job (EmailImportService schreibt in dieselbe email-
+        // Tabelle) bis zu 50s dauern (innodb_lock_wait_timeout). Synchron im
+        // Request-Thread hätte das die Antwort an den Webseiten-Funnel um
+        // ebenso lange blockiert. Der Service schluckt weiterhin alle
+        // Exceptions, ein SMTP-Ausfall wirkt sich nicht auf die bereits
+        // committete Funnel-Persistenz aus. Tonalitaet/Inhalt sind ueber die
+        // DB-Vorlage "WEBSITE_ANFRAGE_BESTAETIGUNG" im UI Kommunikation →
+        // E-Mail-Textvorlagen editierbar.
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            // Nur die ID ueber die Thread-Grenze geben, nicht die detached
+            // Entity — der Task laedt die Anfrage frisch. So kann ein spaeterer
+            // Lazy-Zugriff in versendeBestaetigung nie im Hintergrund-Thread
+            // mit LazyInitializationException krachen.
+            final long anfrageId = anfrage.getId();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        taskExecutor.execute(() -> anfrageRepository.findById(anfrageId).ifPresentOrElse(
+                                frisch -> anfrageBestaetigungVersandService.versendeBestaetigung(
+                                        frisch, dto.getVorname(), dto.getNachname(), dto.getNachricht()),
+                                () -> log.warn("Bestaetigungsmail uebersprungen: Anfrage {} nicht mehr vorhanden",
+                                        anfrageId)));
+                    } catch (Exception e) {
+                        // z.B. RejectedExecutionException bei voller Executor-Queue:
+                        // darf nicht aus afterCommit propagieren, sonst sieht der
+                        // Webseiten-Request einen Fehler trotz committeter Anfrage.
+                        log.error("Bestaetigungsmail-Task konnte nicht gestartet werden (anfrageId={}): {}",
+                                anfrageId, e.getMessage(), e);
+                    }
+                }
+            });
+        } else {
+            log.warn("Bestaetigungsmail uebersprungen — keine aktive TX-Synchronisation fuer anfrageId={}",
+                    anfrage.getId());
+        }
 
         // Sperrbildschirm-Push aufs Handy fuer alle Mitarbeiter, deren Abteilung
         // darfWebseitenAnfragenPushen=true hat. Fire & forget: Push-Probleme

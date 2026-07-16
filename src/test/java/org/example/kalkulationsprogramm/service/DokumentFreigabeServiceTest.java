@@ -59,6 +59,8 @@ class DokumentFreigabeServiceTest {
     private ProjektManagementService projektManagementService;
     @Mock
     private AnfrageRepository anfrageRepository;
+    @Mock
+    private org.springframework.core.task.TaskExecutor taskExecutor;
 
     @InjectMocks
     private DokumentFreigabeService service;
@@ -325,6 +327,54 @@ class DokumentFreigabeServiceTest {
 
         assertThat(block).isPresent();
         assertThat(block.get()).contains("Nachtragsangebot");
+    }
+
+    /**
+     * Regression fuer den async AB-Versand: Die Auto-AB-Mail darf erst NACH dem
+     * Commit der Annahme-Transaktion (via afterCommit + TaskExecutor) rausgehen
+     * — sonst blockiert SMTP-Latenz die Kundenantwort und ein Lock-Timeout der
+     * Mail-Archivierung koennte die bereits gespeicherte Annahme kippen.
+     */
+    @Test
+    void akzeptiere_verschicktAutoAbErstNachCommitUeberTaskExecutor() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-async-ab");
+        pending.setKundeEmail("max@example.de");
+        when(repository.findByUuid("uuid-async-ab")).thenReturn(Optional.of(pending));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+        when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setId(777L);
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(ab);
+
+        org.mockito.Mockito.doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.akzeptiere("uuid-async-ab", "1.2.3.4", "UA", "max@example.de",
+                    "Max", "Mustermann", "Max Mustermann", null);
+
+            // Vor dem Commit darf nichts rausgehen.
+            verify(autoAuftragsbestaetigungVersandService, org.mockito.Mockito.never())
+                    .versendeNachAnnahme(any(), any(), any());
+
+            for (org.springframework.transaction.support.TransactionSynchronization sync
+                    : org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(autoAuftragsbestaetigungVersandService).versendeNachAnnahme(
+                eq(777L), eq("max@example.de"), eq("uuid-async-ab"));
     }
 
     /**
