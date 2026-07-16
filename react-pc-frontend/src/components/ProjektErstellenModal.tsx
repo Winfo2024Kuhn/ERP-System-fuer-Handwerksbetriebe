@@ -544,7 +544,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     const handleUseKundeAdresseChange = (checked: boolean) => {
         setUseKundeAdresse(checked);
         if (checked) {
-            // Priorisiere Anfrages-Objektadresse wenn Anfrage ausgewählt
+            // Priorisiere Anfrage-Objektadresse wenn Anfrage ausgewählt
             if (selectedAnfrage && (selectedAnfrage.projektStrasse || selectedAnfrage.projektPlz || selectedAnfrage.projektOrt)) {
                 setFormData(prev => ({
                     ...prev,
@@ -1154,7 +1154,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                         />
                                         <span className={`text-sm ${(selectedKunde || selectedAnfrage) ? 'text-slate-700 group-hover:text-rose-600' : 'text-slate-400'}`}>
                                             {selectedAnfrage && (selectedAnfrage.projektStrasse || selectedAnfrage.projektPlz || selectedAnfrage.projektOrt)
-                                                ? 'Anfrages-Objektadresse übernehmen'
+                                                ? 'Anfrage-Objektadresse übernehmen'
                                                 : 'Kundenadresse übernehmen'}
                                         </span>
                                     </label>

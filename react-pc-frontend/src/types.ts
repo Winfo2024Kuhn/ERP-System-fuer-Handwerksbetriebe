@@ -530,7 +530,7 @@ export interface ProjektDokument {
 // Geschäftsdokument (Rechnungen, Anfragen, Auftragsbestätigungen, etc.)
 export interface ProjektGeschaeftsdokument {
   id: number;
-  dokumentid: string;              // Dokumentnummer (Rechnungsnummer, Anfragesnummer, etc.)
+  dokumentid: string;              // Dokumentnummer (Rechnungsnummer, Anfragenummer, etc.)
   geschaeftsdokumentart: string;   // Rechnung, Anfrage, Auftragsbestätigung, Zeichnung, Mahnung
   originalDateiname: string;
   url: string;
