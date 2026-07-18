@@ -119,7 +119,7 @@ class WebPushService(
             val alle = pushSubscriptionRepository.findAll()
             for (sub in alle) {
                 val ma = sub.mitarbeiter ?: continue
-                val erlaubt = ma.abteilungen?.any { it.darfFreigabeAnnahmePushen == true } == true
+                val erlaubt = ma.abteilungen.any { it.darfFreigabeAnnahmePushen == true }
                 if (!erlaubt) continue
                 sendPush(sub, title, body, url, null, "freigabe")
             }
@@ -137,7 +137,7 @@ class WebPushService(
             val alle = pushSubscriptionRepository.findAll()
             for (sub in alle) {
                 val ma = sub.mitarbeiter ?: continue
-                val erlaubt = ma.abteilungen?.any { it.darfWebseitenAnfragenPushen == true } == true
+                val erlaubt = ma.abteilungen.any { it.darfWebseitenAnfragenPushen == true }
                 if (!erlaubt) continue
                 sendPush(sub, title, body, url, null, "anfrage")
             }
@@ -219,7 +219,7 @@ class WebPushService(
 
         val mitarbeiterIds = HashSet<Long>()
         apt.ersteller?.id?.let { mitarbeiterIds.add(it) }
-        apt.teilnehmer?.forEach { teilnehmer -> teilnehmer.id?.let { mitarbeiterIds.add(it) } }
+        apt.teilnehmer.forEach { teilnehmer -> teilnehmer.id?.let { mitarbeiterIds.add(it) } }
 
         if (mitarbeiterIds.isEmpty()) {
             mitarbeiterRepository.findAll()

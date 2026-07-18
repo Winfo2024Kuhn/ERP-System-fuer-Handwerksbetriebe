@@ -1370,7 +1370,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
         <>
             <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-rose-500" />
-                Anfragesdaten
+                Anfragedaten
             </h2>
             <div className="space-y-4">
                 <div className="p-3 bg-slate-50 rounded-lg">
@@ -1390,7 +1390,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     </div>
                 )}
                 <div className="p-3 bg-slate-50 rounded-lg">
-                    <p className="text-xs text-slate-500">Anfragesnummer</p>
+                    <p className="text-xs text-slate-500">Anfragenummer</p>
                     <p className="font-medium text-slate-900">{anfrage.anfragesnummer || '-'}</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
@@ -1797,8 +1797,8 @@ export default function AnfrageEditor() {
     // ==================== LIST VIEW ====================
     return (
         <PageLayout
-            ribbonCategory="Anfragesmanagement"
-            title="ANFRAGESÜBERSICHT"
+            ribbonCategory="Anfragemanagement"
+            title="ANFRAGENÜBERSICHT"
             subtitle="Übersicht und Verwaltung Ihrer Anfragen."
             actions={
                 <>

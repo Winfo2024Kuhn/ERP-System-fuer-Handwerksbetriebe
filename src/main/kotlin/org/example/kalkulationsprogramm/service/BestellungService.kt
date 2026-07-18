@@ -62,7 +62,6 @@ class BestellungService(
         val dto = BestellungResponseDto()
         dto.id = aip.id
 
-        var kat: Kategorie? = null
         aip.artikel?.let { artikel ->
             dto.artikelId = artikel.id
             dto.externeArtikelnummer = artikel.getExterneArtikelnummer()
@@ -70,15 +69,16 @@ class BestellungService(
             dto.produkttext = artikel.produkttext
             dto.kommentar = aip.kommentar
             dto.werkstoffName = artikel.werkstoff?.name
-            kat = artikel.kategorie
-            if (kat != null) {
-                dto.kategorieName = kat?.beschreibung
-                var root = kat
-                while (root?.parentKategorie != null) {
-                    root = root?.parentKategorie
+            val artikelKategorie = artikel.kategorie
+            if (artikelKategorie != null) {
+                dto.kategorieName = artikelKategorie.beschreibung
+                var root = requireNotNull(artikelKategorie)
+                while (true) {
+                    val parent = root.parentKategorie ?: break
+                    root = parent
                 }
-                dto.rootKategorieId = root?.id
-                dto.rootKategorieName = root?.beschreibung
+                dto.rootKategorieId = root.id
+                dto.rootKategorieName = root.beschreibung
             }
         }
 

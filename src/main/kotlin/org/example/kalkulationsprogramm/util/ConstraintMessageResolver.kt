@@ -32,7 +32,7 @@ class ConstraintMessageResolver(
             )
         }
 
-        val message = root?.message ?: exception.message.orEmpty()
+        val message = root.message ?: exception.message.orEmpty()
         val duplicateMatcher = DUPLICATE_ENTRY.matcher(message)
         if (duplicateMatcher.find()) {
             return handleDuplicate(duplicateMatcher.group(1), duplicateMatcher.group(2), message)

@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageRepository
 import org.example.kalkulationsprogramm.repository.KundeRepository
 import org.example.kalkulationsprogramm.repository.LieferantenRepository
 import org.example.kalkulationsprogramm.repository.ProjektRepository
+import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.Collections
@@ -16,6 +17,7 @@ class ContactService(
     private val lieferantenRepository: LieferantenRepository,
     private val projektRepository: ProjektRepository,
     private val anfrageRepository: AnfrageRepository,
+    private val steuerberaterKontaktRepository: SteuerberaterKontaktRepository? = null,
 ) {
     @Transactional(readOnly = true)
     fun searchContacts(query: String?): List<ContactDto> {
@@ -99,6 +101,52 @@ class ContactService(
             }
         }
 
+        val normalizedQuery = query.lowercase()
+        steuerberaterKontaktRepository?.findByAktivTrue()?.forEach { contact ->
+            val weitereEmails = contact.weitereEmails.orEmpty()
+            val contactMatches = contains(contact.name, normalizedQuery) ||
+                contains(contact.ansprechpartner, normalizedQuery) ||
+                contains(contact.email, normalizedQuery) ||
+                weitereEmails.any { contains(it, normalizedQuery) }
+            val generalAddresses = LinkedHashSet<String>()
+            contact.email?.let(generalAddresses::add)
+            generalAddresses.addAll(weitereEmails)
+            generalAddresses
+                .filter { it.isNotBlank() }
+                .filter { contactMatches || contains(it, normalizedQuery) }
+                .forEach { email ->
+                    results.add(
+                        ContactDto.builder()
+                            .id("STEUERBERATER_${contact.id}")
+                            .name(contact.name)
+                            .email(email)
+                            .type("STEUERBERATER")
+                            .context(contact.ansprechpartner)
+                            .build(),
+                    )
+                }
+            contact.ansprechpartnerListe.forEach { person ->
+                val personName = listOfNotNull(person.vorname, person.nachname)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+                val personMatches = contactMatches ||
+                    contains(personName, normalizedQuery) ||
+                    contains(person.email, normalizedQuery)
+                val email = person.email
+                if (personMatches && !email.isNullOrBlank()) {
+                    results.add(
+                        ContactDto.builder()
+                            .id("STEUERBERATER_PERSON_${person.id}")
+                            .name(contact.name)
+                            .email(email)
+                            .type("STEUERBERATER")
+                            .context(personName)
+                            .build(),
+                    )
+                }
+            }
+        }
+
         val seen = ConcurrentHashMap.newKeySet<String>()
         return results
             .asSequence()
@@ -115,4 +163,7 @@ class ContactService(
 
     private fun Any.stringValue(getter: String): String? =
         javaClass.getMethod(getter).invoke(this) as? String
+
+    private fun contains(value: String?, normalizedQuery: String): Boolean =
+        value != null && value.lowercase().contains(normalizedQuery)
 }

@@ -69,7 +69,7 @@ class SmtpHtmlMailSender(
         htmlPart.setContent(htmlBody ?: "", "text/html; charset=utf-8")
         related.addBodyPart(htmlPart)
 
-        inlineAttachments?.forEach { (contentId, file) ->
+        inlineAttachments.forEach { (contentId, file) ->
             val attachment = MimeBodyPart()
             attachment.dataHandler = DataHandler(FileDataSource(file))
             attachment.setHeader("Content-ID", "<$contentId>")

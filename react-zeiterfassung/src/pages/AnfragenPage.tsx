@@ -37,13 +37,13 @@ interface PendingPhoto {
     url: string
 }
 
-interface AnfragesPageProps {
+interface AnfragenPageProps {
     mitarbeiter?: { id: number; name: string } | null
     syncStatus?: 'syncing' | 'done' | 'error'
     onSync?: () => void
 }
 
-export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: AnfragesPageProps) {
+export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: AnfragenPageProps) {
     const navigate = useNavigate()
     const [searchParams, setSearchParams] = useSearchParams()
     const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -796,7 +796,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
             {viewerIndex !== null && (
                 <ImageViewer
                     src={bilder[viewerIndex]?.url ?? null}
-                    alt="Anfragesbild Vollansicht"
+                    alt="Anfragebild Vollansicht"
                     onClose={closeViewer}
                     images={bilder.map(b => ({ url: b.url, name: b.name }))}
                     startIndex={viewerIndex}

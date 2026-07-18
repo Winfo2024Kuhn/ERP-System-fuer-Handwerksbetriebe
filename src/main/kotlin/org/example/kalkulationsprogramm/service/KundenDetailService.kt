@@ -71,7 +71,7 @@ class KundenDetailService(
         dto.ort = kunde.ort
         dto.telefon = kunde.telefon
         dto.mobiltelefon = kunde.mobiltelefon
-        dto.kundenEmails = ArrayList(kunde.kundenEmails ?: emptyList())
+        dto.kundenEmails = ArrayList(kunde.kundenEmails)
         dto.projekte = mapProjekte(projekte)
         dto.anfragen = mapAnfragen(anfragen)
         dto.aggregierteEmails = aggregateEmails(kunde, projekte, anfragen)
@@ -148,13 +148,13 @@ class KundenDetailService(
             return nummerNeu
         }
         return anfrage.dokumente
-            ?.filterIsInstance<AnfrageGeschaeftsdokument>()
-            ?.filter { doc ->
+            .filterIsInstance<AnfrageGeschaeftsdokument>()
+            .filter { doc ->
                 val art = doc.geschaeftsdokumentart
                 art != null && art.lowercase(Locale.GERMAN).contains("angebot")
             }
-            ?.mapNotNull { it.dokumentid }
-            ?.firstOrNull { StringUtils.hasText(it) }
+            .mapNotNull { it.dokumentid }
+            .firstOrNull { StringUtils.hasText(it) }
     }
 
     private fun aggregateEmails(
@@ -163,14 +163,14 @@ class KundenDetailService(
         anfragen: List<Anfrage>,
     ): List<KundeAggregierteEmailDto> {
         val map = LinkedHashMap<String, KundeAggregierteEmailDto>()
-        addEmails(map, kunde.kundenEmails ?: emptyList(), QUELLE_STAMMDATEN, kunde.id, "Stammdaten", true)
+        addEmails(map, kunde.kundenEmails, QUELLE_STAMMDATEN, kunde.id, "Stammdaten", true)
         projekte.forEach { projekt ->
-            addEmails(map, projekt.kundenEmails ?: emptyList(), QUELLE_PROJEKT, projekt.id, buildProjektBeschreibung(projekt), false)
+            addEmails(map, projekt.kundenEmails, QUELLE_PROJEKT, projekt.id, buildProjektBeschreibung(projekt), false)
         }
         anfragen.forEach { anfrage ->
             val emails = ArrayList<String>()
             anfrage.kunde?.kundenEmails?.let { emails.addAll(it) }
-            anfrage.kundenEmails?.let { emails.addAll(it) }
+            emails.addAll(anfrage.kundenEmails)
             addEmails(map, emails, QUELLE_ANFRAGE, anfrage.id, buildAnfrageBeschreibung(anfrage), false)
         }
         return ArrayList(map.values)
@@ -261,7 +261,7 @@ class KundenDetailService(
 
     private fun countAllReplies(email: Email): Int {
         val replies = email.replies
-        if (replies == null || replies.isEmpty()) return 0
+        if (replies.isEmpty()) return 0
         var count = replies.size
         for (reply in replies) {
             count += countAllReplies(reply)

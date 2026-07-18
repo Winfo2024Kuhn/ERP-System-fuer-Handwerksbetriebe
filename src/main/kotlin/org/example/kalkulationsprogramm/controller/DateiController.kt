@@ -234,7 +234,6 @@ class DateiController(
 
     private fun liefereDokumentOhneMetadaten(dateiname: String): ResponseEntity<Resource> {
         val resource = dateiSpeicherService.ladeDokumentAlsResource(dateiname)
-            ?: throw NotFoundException("Dokument nicht gefunden: $dateiname")
         val contentType = bestimmeContentType(resource, dateiname)
         val inline = MediaType.APPLICATION_PDF_VALUE.equals(contentType, ignoreCase = true) ||
             contentType.lowercase(Locale.ROOT).startsWith("image/")

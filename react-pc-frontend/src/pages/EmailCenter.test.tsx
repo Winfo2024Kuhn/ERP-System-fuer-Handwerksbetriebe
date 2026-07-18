@@ -34,7 +34,7 @@ const mockEmails = [
 const mockStats = {
     inboxCount: 2, sentCount: 1, trashCount: 0, spamCount: 0,
     newsletterCount: 0, unassignedCount: 1, inquiriesCount: 0,
-    projectCount: 0, offerCount: 0, supplierCount: 0
+    projectCount: 0, offerCount: 0, supplierCount: 0, taxAdvisorCount: 0
 };
 
 // ---- Test helpers ----
@@ -53,6 +53,7 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
         '/api/emails/trash': [],
         '/api/emails/spam': [],
         '/api/emails/newsletter': [],
+        '/api/emails/tax-advisors': [],
         ...overrides
     };
 
@@ -145,6 +146,21 @@ describe('EmailCenter', () => {
 
             await waitFor(() => {
                 expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/emails\/sent(\?|$)/));
+            });
+        });
+
+        it('zeigt Steuerberater unter Lieferanten und lädt den neuen Ordner', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            renderEmailCenter();
+            await waitFor(() => expect(screen.getByText('Lieferanten')).toBeInTheDocument());
+
+            const lieferanten = screen.getByText('Lieferanten');
+            const steuerberater = screen.getByText('Steuerberater');
+            expect(lieferanten.compareDocumentPosition(steuerberater) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+            await user.click(steuerberater);
+            await waitFor(() => {
+                expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/emails\/tax-advisors(\?|$)/));
             });
         });
     });

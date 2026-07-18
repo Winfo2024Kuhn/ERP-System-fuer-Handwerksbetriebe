@@ -29,6 +29,22 @@ interface ProjektDokumentRepository : JpaRepository<ProjektDokument, Long> {
     )
     fun findOffeneGeschaeftsdokumente(): List<ProjektGeschaeftsdokument>
 
+    @Query(
+        """
+      SELECT DISTINCT g FROM ProjektGeschaeftsdokument g
+      LEFT JOIN FETCH g.mahnungen
+      LEFT JOIN FETCH g.projekt p
+      LEFT JOIN FETCH p.kundenId
+      WHERE g.bezahlt = false
+        AND (
+              LOWER(g.geschaeftsdokumentart) LIKE '%rechnung%'
+           OR LOWER(g.geschaeftsdokumentart) LIKE '%mahn%'
+           OR LOWER(g.geschaeftsdokumentart) LIKE '%erinnerung%'
+        )
+      """,
+    )
+    fun findOffeneGeschaeftsdokumenteFuerMahnlauf(): List<ProjektGeschaeftsdokument>
+
     @Query("SELECT g FROM ProjektGeschaeftsdokument g WHERE LOWER(g.geschaeftsdokumentart) LIKE '%rechnung%' AND g.rechnungsdatum BETWEEN :start AND :end")
     fun findGeschaeftsdokumenteByRechnungsdatumBetween(
         start: LocalDate,

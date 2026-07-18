@@ -185,22 +185,20 @@ class MieteMapper(
             beschreibung = dto.beschreibung
             typ = dto.typ
         }
-        if (dto.eintraege != null) {
-            entity.eintraege = dto.eintraege.map { eintragDto ->
-                VerteilungsschluesselEintrag().apply {
-                    id = eintragDto.id
-                    anteil = eintragDto.anteil
-                    kommentar = eintragDto.kommentar
-                    eintragDto.mietparteiId?.let {
-                        mietpartei = Mietpartei().apply { id = it }
-                    }
-                    eintragDto.verbrauchsgegenstandId?.let {
-                        verbrauchsgegenstand = Verbrauchsgegenstand().apply { id = it }
-                    }
-                    verteilungsschluessel = entity
+        entity.eintraege = dto.eintraege.map { eintragDto ->
+            VerteilungsschluesselEintrag().apply {
+                id = eintragDto.id
+                anteil = eintragDto.anteil
+                kommentar = eintragDto.kommentar
+                eintragDto.mietparteiId?.let {
+                    mietpartei = Mietpartei().apply { id = it }
                 }
-            }.toMutableList()
-        }
+                eintragDto.verbrauchsgegenstandId?.let {
+                    verbrauchsgegenstand = Verbrauchsgegenstand().apply { id = it }
+                }
+                verteilungsschluessel = entity
+            }
+        }.toMutableList()
         return entity
     }
 
@@ -261,18 +259,20 @@ class MieteMapper(
             gesamtkostenDifferenz = result.gesamtkostenDifferenz
 
             result.kostenstellen?.forEach { ks ->
+                val kostenstelle = requireNotNull(ks.kostenstelle)
                 val cDto = AnnualAccountingCostCenterDto().apply {
-                    kostenstelleId = ks.kostenstelle!!.id
-                    kostenstelleName = ks.kostenstelle!!.name
+                    kostenstelleId = kostenstelle.id
+                    kostenstelleName = kostenstelle.name
                     summe = ks.gesamtkosten
                     vorjahr = ks.gesamtkostenVorjahr
                     differenz = safe(ks.gesamtkosten).subtract(safe(ks.gesamtkostenVorjahr), MC)
                     if (ks.parteianteile != null) {
                         parteianteile = ks.parteianteile.map { e ->
+                            val mietpartei = requireNotNull(e.mietpartei)
                             AnnualAccountingShareDto().apply {
-                                mietparteiId = e.mietpartei!!.id
-                                mietparteiName = e.mietpartei!!.name
-                                rolle = e.mietpartei!!.rolle
+                                mietparteiId = mietpartei.id
+                                mietparteiName = mietpartei.name
+                                rolle = mietpartei.rolle
                                 betrag = e.betrag
                             }
                         }.toMutableList()
@@ -282,11 +282,12 @@ class MieteMapper(
             }
 
             result.parteien?.forEach { p ->
+                val mietpartei = requireNotNull(p.mietpartei)
                 parteien.add(
                     AnnualAccountingPartyDto().apply {
-                        mietparteiId = p.mietpartei!!.id
-                        mietparteiName = p.mietpartei!!.name
-                        rolle = p.mietpartei!!.rolle
+                        mietparteiId = mietpartei.id
+                        mietparteiName = mietpartei.name
+                        rolle = mietpartei.rolle
                         summe = p.betrag
                         vorjahr = p.betragVorjahr
                         differenz = p.differenz

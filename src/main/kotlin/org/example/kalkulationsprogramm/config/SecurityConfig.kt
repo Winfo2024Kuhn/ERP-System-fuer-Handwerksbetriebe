@@ -124,6 +124,7 @@ class SecurityConfig(
                     .requestMatchers("/api/firma/**", "/api/settings/**", "/api/frontend-users/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.PUT, "/api/email/signatures/*/system-default").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/api/verrechnungslohn/uebernehmen").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.POST, "/api/mahnwesen/lauf").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/api/emails/admin/**").hasRole("ADMIN")
                     .anyRequest().authenticated()
             }

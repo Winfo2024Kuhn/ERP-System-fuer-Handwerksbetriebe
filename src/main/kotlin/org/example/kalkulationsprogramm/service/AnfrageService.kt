@@ -170,7 +170,7 @@ class AnfrageService(
         return alle
     }
 
-    fun verfuegbareAnlegeJahre(): List<Int> = anfrageRepository.findDistinctAnlegedatumJahre() ?: emptyList()
+    fun verfuegbareAnlegeJahre(): List<Int> = anfrageRepository.findDistinctAnlegedatumJahre()
 
     private fun trimToNull(s: String?): String? = s?.trim()?.takeIf { it.isNotEmpty() }
 
@@ -224,7 +224,7 @@ class AnfrageService(
         anfrage.kunde = kunde
         if (!StringUtils.hasText(dto.kunde)) dto.kunde = kunde.name
         if (!StringUtils.hasText(dto.kundennummer)) dto.kundennummer = kunde.kundennummer
-        if (dto.kundenEmails.isNullOrEmpty() && kunde.kundenEmails != null) {
+        if (dto.kundenEmails.isNullOrEmpty()) {
             dto.kundenEmails = ArrayList(kunde.kundenEmails)
         }
     }
@@ -325,7 +325,7 @@ class AnfrageService(
             return LoeschResult(LoeschGrund.GESCHAEFTSDOKUMENT_VORHANDEN, false, "An dieser Anfrage hängen ausgehende Geschäftsdokumente.")
         }
 
-        val nurFunnelNotizen = anfrage.notizen == null || anfrage.notizen.all {
+        val nurFunnelNotizen = anfrage.notizen.all {
             it.mitarbeiter != null && AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN == it.mitarbeiter!!.loginToken
         }
         if (!nurFunnelNotizen) {
@@ -339,7 +339,7 @@ class AnfrageService(
             } catch (_: Exception) {
             }
         }
-        anfrage.notizen?.filter { it.bilder != null }?.flatMap { it.bilder }?.forEach {
+        anfrage.notizen.flatMap { it.bilder }.forEach {
             try {
                 dateiSpeicherService.loescheBild("/api/images/${it.gespeicherterDateiname}")
             } catch (_: Exception) {

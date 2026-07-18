@@ -40,6 +40,11 @@ class UnifiedEmailController {
     fun getProjectFolderEmails(limit: Int): List<UnifiedEmailDto> = emptyList()
     fun getOfferFolderEmails(limit: Int): List<UnifiedEmailDto> = emptyList()
     fun getSupplierFolderEmails(limit: Int): List<UnifiedEmailDto> = emptyList()
+    fun getTaxAdvisorFolderEmails(
+        @RequestParam(value = "offset", defaultValue = "0") offset: Int,
+        @RequestParam(value = "limit", defaultValue = "100") limit: Int,
+    ): List<UnifiedEmailDto> = emptyList()
+
     fun getSentEmails(limit: Int): List<UnifiedEmailDto> = emptyList()
     fun getTrashEmails(limit: Int): List<UnifiedEmailDto> = emptyList()
     fun getSpamEmails(limit: Int): List<UnifiedEmailDto> = emptyList()

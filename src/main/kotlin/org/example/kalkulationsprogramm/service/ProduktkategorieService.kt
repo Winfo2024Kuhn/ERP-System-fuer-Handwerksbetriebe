@@ -203,7 +203,7 @@ class ProduktkategorieService(
         for (projekt in projekte) {
             val einheiten = projekt.projektProduktkategorien
                 .filter { ppk -> kategorieIds.contains(ppk.produktkategorie?.id) }
-                .sumOf { ppk -> ppk.menge?.toDouble() ?: 0.0 }
+                .sumOf { ppk -> ppk.menge.toDouble() }
 
             val projektAgMap = HashMap<Long, ProjektArbeitsgangAnalyseDto>()
             var projektStunden = 0.0

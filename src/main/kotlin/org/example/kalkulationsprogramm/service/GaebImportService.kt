@@ -91,7 +91,7 @@ class GaebImportService {
     ) {
         for (child in getDirectChildElements(itemlist)) {
             when (child.tagName) {
-                "Item" -> parseItem(child, posCounter[0], categoryLabel)?.let {
+                "Item" -> parseItem(child, posCounter[0], categoryLabel).let {
                     blocks.add(it)
                     posCounter[0]++
                 }
@@ -108,7 +108,7 @@ class GaebImportService {
     ) {
         for (child in getDirectChildElements(itemlist)) {
             when (child.tagName) {
-                "Item" -> parseItem(child, posCounter[0], categoryLabel)?.let {
+                "Item" -> parseItem(child, posCounter[0], categoryLabel).let {
                     children.add(it)
                     posCounter[0]++
                 }

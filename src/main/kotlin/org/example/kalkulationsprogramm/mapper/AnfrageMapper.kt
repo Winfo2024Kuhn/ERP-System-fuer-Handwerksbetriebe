@@ -19,8 +19,8 @@ class AnfrageMapper {
                 kundennummer = kunde.kundennummer
 
                 val allEmails = mutableListOf<String>()
-                kunde.kundenEmails?.let { allEmails.addAll(it) }
-                a.kundenEmails?.let { allEmails.addAll(it) }
+                allEmails.addAll(kunde.kundenEmails)
+                allEmails.addAll(a.kundenEmails)
                 kundenEmails = allEmails.distinct()
 
                 kundenStrasse = kunde.strasse

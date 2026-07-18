@@ -585,7 +585,7 @@ export function LieferantDokumentImportModal({
                                             <Input
                                                 value={metadata.referenzNummer}
                                                 onChange={(e) => setMetadata(prev => ({ ...prev, referenzNummer: e.target.value }))}
-                                                placeholder="Anfrages-/AB-Nummer"
+                                                placeholder="Anfrage-/AB-Nummer"
                                             />
                                         </div>
                                     </div>

@@ -51,7 +51,7 @@ class LieferantenDetailService(
         dto.mobiltelefon = lieferant.mobiltelefon
         dto.istAktiv = lieferant.istAktiv
         dto.startZusammenarbeit = toLocalDate(lieferant.startZusammenarbeit)
-        dto.kundenEmails = ArrayList(lieferant.kundenEmails ?: emptyList())
+        dto.kundenEmails = ArrayList(lieferant.kundenEmails)
         lieferant.standardKostenstelle?.let {
             dto.standardKostenstelleId = it.id
             dto.standardKostenstelleName = it.bezeichnung
@@ -163,7 +163,7 @@ class LieferantenDetailService(
 
     private fun buildStatistik(lieferant: Lieferanten): LieferantStatistikDto {
         val statistik = LieferantStatistikDto()
-        statistik.artikelAnzahl = (lieferant.artikelpreise ?: emptyList())
+        statistik.artikelAnzahl = lieferant.artikelpreise
             .asSequence()
             .mapNotNull { it.artikel?.id }
             .distinct()
@@ -175,7 +175,7 @@ class LieferantenDetailService(
         emailRepository.findFirstByLieferantIdOrderBySentAtDesc(lieferantId)
             .ifPresent { statistik.letzteEmail = it.sentAt }
 
-        statistik.emailDomains = (lieferant.kundenEmails ?: emptyList())
+        statistik.emailDomains = lieferant.kundenEmails
             .mapNotNull(::extractDomain)
             .distinct()
 

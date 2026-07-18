@@ -4,6 +4,7 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository
+import org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository
 import org.example.kalkulationsprogramm.service.RechnungPdfService.FormBlockDto
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
@@ -15,7 +16,17 @@ import java.time.LocalDate
 @Service
 open class AutoAuftragsbestaetigungVersandService(
     private val ausgangsGeschaeftsDokumentRepository: AusgangsGeschaeftsDokumentRepository? = null,
+    private val dokumentFreigabeRepository: DokumentFreigabeRepository? = null,
+    private val projektEmailArchivService: ProjektEmailArchivService? = null,
 ) {
+    @Transactional
+    open fun versendeNachAnnahme(abId: Long?, empfaenger: String?, freigabeUuid: String?): Boolean {
+        val id = abId ?: return false
+        val ab = ausgangsGeschaeftsDokumentRepository?.findById(id)?.orElse(null) ?: return false
+        val freigabe = freigabeUuid?.let { dokumentFreigabeRepository?.findByUuid(it)?.orElse(null) }
+        return versende(ab, empfaenger, freigabe)
+    }
+
     open fun versende(ab: AusgangsGeschaeftsDokument?, empfaenger: String?): Boolean =
         versende(ab, empfaenger, null)
 

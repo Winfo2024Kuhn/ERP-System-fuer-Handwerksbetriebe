@@ -392,7 +392,7 @@ class AnfrageController(
             mobileSichtbar = notiz.isMobileSichtbar(),
             nurFuerErsteller = notiz.isNurFuerErsteller(),
             canEdit = hasEditPermission(notiz, currentMitarbeiter, isMobile),
-            bilder = notiz.bilder?.map(::mapBildToDto) ?: emptyList(),
+            bilder = notiz.bilder.map(::mapBildToDto),
         )
 
     private fun mapBildToDto(bild: AnfrageNotizBild): AnfrageNotizBildDto =

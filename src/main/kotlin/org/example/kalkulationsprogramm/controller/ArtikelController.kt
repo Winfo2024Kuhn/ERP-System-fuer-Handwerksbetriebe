@@ -98,7 +98,7 @@ class ArtikelController(
     fun alleProduktlinien(): List<String> =
         artikelService.findeProduktlinienOhneLieferant(1L)
             .asSequence()
-            .mapNotNull { it?.trim() }
+            .map { it.trim() }
             .toCollection(TreeSet(String.CASE_INSENSITIVE_ORDER))
             .toList()
 

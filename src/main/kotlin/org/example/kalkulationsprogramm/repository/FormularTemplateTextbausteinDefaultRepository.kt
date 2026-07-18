@@ -4,6 +4,8 @@ import org.example.kalkulationsprogramm.domain.Dokumenttyp
 import org.example.kalkulationsprogramm.domain.FormularTemplateTextbausteinDefault
 import org.example.kalkulationsprogramm.domain.TextbausteinPosition
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.springframework.transaction.annotation.Transactional
 
 interface FormularTemplateTextbausteinDefaultRepository : JpaRepository<FormularTemplateTextbausteinDefault, Long> {
@@ -11,10 +13,20 @@ interface FormularTemplateTextbausteinDefaultRepository : JpaRepository<Formular
         templateName: String,
     ): List<FormularTemplateTextbausteinDefault>
 
+    @Query(
+        """
+            SELECT f FROM FormularTemplateTextbausteinDefault f
+            JOIN FETCH f.textbaustein
+            WHERE LOWER(f.templateName) = LOWER(:templateName)
+              AND f.dokumenttyp = :dokumenttyp
+              AND f.position = :position
+            ORDER BY f.sortOrder ASC
+            """,
+    )
     fun findByTemplateNameIgnoreCaseAndDokumenttypAndPositionOrderBySortOrderAsc(
-        templateName: String,
-        dokumenttyp: Dokumenttyp,
-        position: TextbausteinPosition,
+        @Param("templateName") templateName: String,
+        @Param("dokumenttyp") dokumenttyp: Dokumenttyp,
+        @Param("position") position: TextbausteinPosition,
     ): List<FormularTemplateTextbausteinDefault>
 
     fun findByTemplateNameIgnoreCaseAndDokumenttypOrderByPositionAscSortOrderAsc(

@@ -67,10 +67,8 @@ class EmailService(
     ): String {
         val session = createSession()
         val message = buildMessage(session, recipient, cc, fromAddress, subject, htmlBody, attachmentFilePath, attachmentFileName)
-        message.saveChanges()
-        val messageId = message.messageID
         Transport.send(message)
-        return messageId
+        return message.messageID
     }
 
     @Throws(MessagingException::class, IOException::class)
@@ -86,10 +84,8 @@ class EmailService(
     ): String {
         val session = createSession()
         val message = buildMessage(session, recipient, cc, fromAddress, subject, htmlBody, attachmentFilePath, attachmentFileName, inlineCidToFile)
-        message.saveChanges()
-        val messageId = message.messageID
         Transport.send(message)
-        return messageId
+        return message.messageID
     }
 
     @Throws(MessagingException::class, IOException::class)
@@ -118,10 +114,8 @@ class EmailService(
                 }
             }
         }
-        message.saveChanges()
-        val messageId = message.messageID
         Transport.send(message)
-        return messageId
+        return message.messageID
     }
 
     private fun createSession(): Session {

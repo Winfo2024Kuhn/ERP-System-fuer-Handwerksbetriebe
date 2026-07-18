@@ -34,7 +34,7 @@ class EmailSignatureService(
     @Transactional(readOnly = true)
     fun list(): List<EmailSignature> {
         val signatures = signatureRepository.findAllByOrderByUpdatedAtDesc()
-        signatures.forEach { it.images?.size }
+        signatures.forEach { it.images.size }
         return signatures
     }
 
@@ -47,7 +47,7 @@ class EmailSignatureService(
         signatureRepository.findFirstByIsSystemDefaultTrue()
             .filter { !isPlatzhalter(it) }
             .map {
-                it.images?.size
+                it.images.size
                 it
             }
 
@@ -137,7 +137,7 @@ class EmailSignatureService(
             storedFilename = stored
             contentType = file.contentType ?: Files.probeContentType(dst)
             sizeBytes = Files.size(dst)
-            sortOrder = sig.images?.size ?: 0
+            sortOrder = sig.images.size
         }
         img = imageRepository.save(img)
         sig.images.add(img)

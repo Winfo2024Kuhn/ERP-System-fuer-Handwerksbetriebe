@@ -10,7 +10,7 @@ class ProduktkategorieMapper {
         if (produktkategorie == null) {
             return null
         }
-        val isLeaf = produktkategorie.unterkategorien == null || produktkategorie.unterkategorien.isEmpty()
+        val isLeaf = produktkategorie.unterkategorien.isEmpty()
         return toProduktkategorieResponseDtoWithLeaf(produktkategorie, isLeaf)
     }
 

@@ -134,10 +134,10 @@ class AnfrageBestaetigungVersandService(
 
         private fun ersterEmpfaenger(anfrage: Anfrage): String? =
             anfrage.kundenEmails
-                ?.asSequence()
-                ?.filterNotNull()
-                ?.map(String::trim)
-                ?.firstOrNull { it.isNotBlank() }
+                .asSequence()
+                .filterNotNull()
+                .map(String::trim)
+                .firstOrNull { it.isNotBlank() }
 
         private fun baueKontext(anfrage: Anfrage, vorname: String?, nachname: String?, nachricht: String?): Map<String, String> {
             val ctx = HashMap<String, String>()

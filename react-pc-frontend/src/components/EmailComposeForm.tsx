@@ -277,7 +277,7 @@ export function EmailComposeForm({
     const availableEmails = useMemo(() => {
         const emails: string[] = [];
         entityKundenEmails.forEach(e => {
-            if (e && !emails.includes(e)) emails.push(e);
+            if (e && !emails.some(existing => existing.toLowerCase() === e.toLowerCase())) emails.push(e);
         });
         return emails;
     }, [entityKundenEmails]);
@@ -514,11 +514,11 @@ export function EmailComposeForm({
 
     // Initiale Empfänger setzen - wenn keine initiale E-Mail vorgegeben und E-Mails verfügbar
     useEffect(() => {
-        if (!initialRecipient && !recipient && availableEmails.length > 0) {
-            setRecipient(availableEmails[0]);
+        if (!initialRecipient && !recipient && entityKundenEmails.length > 0) {
+            setRecipient(entityKundenEmails[0]);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [availableEmails]);
+    }, [entityKundenEmails]);
 
     // Externe Dateien hochladen
     const handleFileUpload = (files: FileList | null) => {

@@ -56,7 +56,7 @@ class KalenderController(
     ) {
         companion object {
             fun fromEntity(e: KalenderEintrag): KalenderEintragDto {
-                val teilnehmerDtos = e.teilnehmer?.map(TeilnehmerDto::fromEntity).orEmpty()
+                val teilnehmerDtos = e.teilnehmer.map(TeilnehmerDto::fromEntity)
                 val projekt = e.projekt
                 val kunde = e.kunde
                 val lieferant = e.lieferant
@@ -135,7 +135,7 @@ class KalenderController(
 
     @GetMapping("/{id}")
     fun getEintrag(@PathVariable id: Long): ResponseEntity<KalenderEintragDto> {
-        val eintrag = kalenderService.getEintragWithTeilnehmer(id) ?: return ResponseEntity.notFound().build()
+        val eintrag = kalenderService.getEintragWithTeilnehmer(id)
         return ResponseEntity.ok(KalenderEintragDto.fromEntity(eintrag))
     }
 

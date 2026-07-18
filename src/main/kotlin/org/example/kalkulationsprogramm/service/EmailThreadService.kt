@@ -53,7 +53,7 @@ class EmailThreadService(
     fun computeThreadLastActivityAt(email: Email?): LocalDateTime? {
         if (email == null) return null
         val noParent = email.parentEmail == null
-        val noReplies = email.replies == null || email.replies.isEmpty()
+        val noReplies = email.replies.isEmpty()
         if (noParent && noReplies) {
             return email.sentAt
         }
@@ -78,7 +78,7 @@ class EmailThreadService(
             if (ts != null && (max == null || ts.isAfter(max))) {
                 max = ts
             }
-            current.replies?.forEach { stack.push(it) }
+            current.replies.forEach { stack.push(it) }
         }
         return max
     }
@@ -110,7 +110,7 @@ class EmailThreadService(
             }
             visited.add(current.id)
             result.add(current)
-            current.replies?.let(queue::addAll)
+            queue.addAll(current.replies)
         }
 
         result.sortWith(compareBy(nullsFirst()) { it.sentAt })
@@ -130,7 +130,7 @@ class EmailThreadService(
         dto.snippet = buildSnippet(email, forwarded)
 
         val attachmentDtos = ArrayList<EmailThreadEntryDto.AttachmentDto>()
-        email.attachments?.forEach { att ->
+        email.attachments.forEach { att ->
             val attDto = EmailThreadEntryDto.AttachmentDto()
             attDto.id = att.id
             attDto.originalFilename = att.originalFilename

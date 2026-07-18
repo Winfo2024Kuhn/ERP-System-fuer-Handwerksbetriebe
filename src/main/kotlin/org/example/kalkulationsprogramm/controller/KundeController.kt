@@ -184,7 +184,7 @@ class KundeController(
         val existing = kundeRepository.findById(id)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Kunde wurde nicht gefunden.") }
 
-        val oldEmails = existing.kundenEmails?.toHashSet() ?: HashSet()
+        val oldEmails = existing.kundenEmails.toHashSet()
 
         if (StringUtils.hasText(request.kundennummer)) {
             val neueNummer = request.kundennummer!!.trim()
@@ -199,7 +199,7 @@ class KundeController(
         val updated = kundeRepository.save(existing)
 
         val newEmails = ArrayList<String>()
-        updated.kundenEmails?.forEach { email ->
+        updated.kundenEmails.forEach { email ->
             if (!oldEmails.contains(email)) {
                 newEmails.add(email)
             }
