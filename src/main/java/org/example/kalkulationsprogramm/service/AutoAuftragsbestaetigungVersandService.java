@@ -2,6 +2,8 @@ package org.example.kalkulationsprogramm.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.email.EmailService;
@@ -38,6 +40,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Versendet eine Auftragsbestätigung automatisch per E-Mail an den Kunden,
@@ -251,6 +254,200 @@ public class AutoAuftragsbestaetigungVersandService
         }
     }
 
+    // ======================= Standard-Vor-/Nachtexte =======================
+
+    /**
+     * Tauscht die Standard-Textbausteine des Angebots gegen die der
+     * Auftragsbestätigung aus und schreibt sie fest in das
+     * {@code positionenJson} der automatisch erzeugten AB.
+     *
+     * <p>Hintergrund: Beim Typwechsel Angebot → AB entfernt
+     * {@code AusgangsGeschaeftsDokumentService.erstellen} die Vor-/Nachtexte des
+     * Angebots und setzt nur das Flag {@code standardTextbausteineErneuern}.
+     * Nachgeladen hat die Texte des neuen Typs bisher ausschließlich der
+     * DocumentEditor beim Öffnen — und der bricht bei gebuchten oder digital
+     * angenommenen Dokumenten bewusst ab (siehe
+     * {@code react-pc-frontend/src/components/document-editor/index.tsx}).
+     * Die Auto-AB ist ab Sekunde eins {@code digitalAngenommen}, hat den Editor
+     * also nie durchlaufen: Anrede, Lieferzeit und Schlussformel fehlten
+     * dauerhaft, im Dokument wie im PDF. Deshalb erledigt das Backend den
+     * Austausch hier selbst.</p>
+     *
+     * <p>Wird synchron in der Annahme-Transaktion aufgerufen (vor dem Versand),
+     * damit das Dokument auch dann vollständig ist, wenn die Mail scheitert.
+     * Fehler werden geschluckt und geloggt — eine AB ohne Standardtexte ist
+     * ärgerlich, darf die Annahme des Kunden aber nicht kippen.</p>
+     */
+    @Transactional
+    public void materialisiereStandardtexte(Long abId)
+    {
+        if (abId == null) return;
+        try
+        {
+            AusgangsGeschaeftsDokument ab = ausgangsGeschaeftsDokumentRepository.findById(abId).orElse(null);
+            if (ab == null || ab.getTyp() != AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG) return;
+
+            String templateName = ladeTemplateName(ab).orElse(null);
+            if (templateName == null)
+            {
+                log.warn("Auto-AB {}: keine Formular-Vorlage zugeordnet — Standardtexte bleiben leer",
+                        ab.getDokumentNummer());
+                return;
+            }
+
+            FormularTextbausteinDefaultService.DefaultsForDokumenttyp defaults =
+                    formularTextbausteinDefaultService.loadForDokumenttyp(templateName, "Auftragsbestätigung");
+            if (defaults.vortexte().isEmpty() && defaults.nachtexte().isEmpty())
+            {
+                log.info("Auto-AB {}: Vorlage '{}' hat keine Standardtexte für Auftragsbestätigung",
+                        ab.getDokumentNummer(), templateName);
+                return;
+            }
+
+            String neuesJson = baueJsonMitStandardtexten(
+                    ab.getPositionenJson(), defaults, bauePlatzhalterKontext(ab));
+            if (neuesJson == null) return;
+
+            ab.setPositionenJson(neuesJson);
+            ausgangsGeschaeftsDokumentRepository.save(ab);
+            log.info("Auto-AB {}: {} Vortexte und {} Nachtexte aus Vorlage '{}' übernommen",
+                    ab.getDokumentNummer(), defaults.vortexte().size(), defaults.nachtexte().size(), templateName);
+        }
+        catch (Exception e)
+        {
+            log.error("Standardtexte für Auto-AB {} konnten nicht gesetzt werden: {}", abId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Baut das {@code positionenJson} neu auf: Vortexte vor die erste Leistung,
+     * Nachtexte ans Ende — exakt die Reihenfolge, die auch der DocumentEditor
+     * beim manuellen Umwandeln erzeugt. Bereits vorhandene Standard-Textbausteine
+     * werden vorher entfernt (defensiv), manuell eingefügte Texte ohne
+     * {@code textbausteinRolle} bleiben unangetastet.
+     *
+     * @return das neue JSON, oder {@code null} wenn das Ausgangs-JSON nicht
+     *         verarbeitbar war (dann bleibt das Dokument unverändert).
+     */
+    static String baueJsonMitStandardtexten(String positionenJson,
+            FormularTextbausteinDefaultService.DefaultsForDokumenttyp defaults, Map<String, String> ctx)
+    {
+        try
+        {
+            ObjectNode root;
+            ArrayNode blocks;
+            JsonNode parsed = (positionenJson == null || positionenJson.isBlank())
+                    ? null : OBJECT_MAPPER.readTree(positionenJson);
+            if (parsed == null)
+            {
+                root = OBJECT_MAPPER.createObjectNode();
+                blocks = OBJECT_MAPPER.createArrayNode();
+            }
+            else if (parsed.isArray())
+            {
+                // Legacy-Format (nacktes Array) wird dabei ins Objekt-Format gehoben.
+                root = OBJECT_MAPPER.createObjectNode();
+                blocks = (ArrayNode) parsed;
+            }
+            else if (parsed.isObject() && parsed.has("blocks") && parsed.get("blocks").isArray())
+            {
+                root = (ObjectNode) parsed;
+                blocks = (ArrayNode) parsed.get("blocks");
+            }
+            else
+            {
+                return null;
+            }
+
+            ArrayNode kern = OBJECT_MAPPER.createArrayNode();
+            for (JsonNode b : blocks)
+            {
+                if (!istStandardTextbaustein(b)) kern.add(b);
+            }
+
+            int ersteLeistung = indexErsterLeistung(kern);
+            ArrayNode ergebnis = OBJECT_MAPPER.createArrayNode();
+            for (int i = 0; i < ersteLeistung; i++) ergebnis.add(kern.get(i));
+            for (Textbaustein tb : defaults.vortexte()) ergebnis.add(baueTextBlockNode(tb, "VOR", ctx));
+            for (int i = ersteLeistung; i < kern.size(); i++) ergebnis.add(kern.get(i));
+            for (Textbaustein tb : defaults.nachtexte()) ergebnis.add(baueTextBlockNode(tb, "NACH", ctx));
+
+            root.set("blocks", ergebnis);
+            // Das Frontend-Flag hat seinen Zweck erfüllt — die Texte stehen jetzt
+            // im Dokument, der Editor soll beim Öffnen nichts mehr nachladen.
+            root.remove("standardTextbausteineErneuern");
+            return OBJECT_MAPPER.writeValueAsString(root);
+        }
+        catch (Exception e)
+        {
+            log.warn("Standardtexte konnten nicht in positionenJson eingefügt werden: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** Index der ersten Leistung (SERVICE/SECTION_HEADER), sonst Listenende. */
+    private static int indexErsterLeistung(ArrayNode blocks)
+    {
+        for (int i = 0; i < blocks.size(); i++)
+        {
+            String type = optString(blocks.get(i), "type", "");
+            if ("SERVICE".equals(type) || "SECTION_HEADER".equals(type)) return i;
+        }
+        return blocks.size();
+    }
+
+    /**
+     * Erzeugt einen TEXT-Block in genau dem Format, das der DocumentEditor
+     * schreibt (siehe {@code buildBlock} in {@code document-editor/index.tsx}) —
+     * inklusive {@code textbausteinRolle}, damit ein späterer Typwechsel den
+     * Block wieder als Standardtext erkennt und austauscht.
+     */
+    private static ObjectNode baueTextBlockNode(Textbaustein tb, String rolle, Map<String, String> ctx)
+    {
+        String html = tb.getHtml() != null && !tb.getHtml().isBlank()
+                ? tb.getHtml() : nullSafe(tb.getBeschreibung());
+        ObjectNode node = OBJECT_MAPPER.createObjectNode();
+        node.put("id", UUID.randomUUID().toString());
+        node.put("type", "TEXT");
+        node.put("content", aufloesePlatzhalter(html, ctx));
+        node.put("fontSize", 10);
+        node.put("fett", false);
+        node.put("textbausteinRolle", rolle);
+        if (tb.getId() != null) node.put("textbausteinId", tb.getId());
+        node.put("textbausteinDokumenttyp", AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG.name());
+        return node;
+    }
+
+    /** Ein Block ist ein Standard-Textbaustein, wenn er eine VOR/NACH-Rolle trägt. */
+    static boolean istStandardTextbaustein(JsonNode block)
+    {
+        if (block == null || !block.isObject()) return false;
+        JsonNode rolle = block.get("textbausteinRolle");
+        return rolle != null && !rolle.isNull() && !rolle.asText().isBlank();
+    }
+
+    /** {@code true}, wenn im JSON bereits Standard-Textbausteine stecken. */
+    static boolean enthaeltStandardTextbausteine(String positionenJson)
+    {
+        if (positionenJson == null || positionenJson.isBlank()) return false;
+        try
+        {
+            JsonNode root = OBJECT_MAPPER.readTree(positionenJson);
+            JsonNode blocks = root.isArray() ? root
+                    : (root.has("blocks") && root.get("blocks").isArray() ? root.get("blocks") : null);
+            if (blocks == null) return false;
+            for (JsonNode b : blocks)
+            {
+                if (istStandardTextbaustein(b)) return true;
+            }
+            return false;
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
+    }
+
     @Transactional
     protected void markiereAlsVersendet(AusgangsGeschaeftsDokument ab)
     {
@@ -276,11 +473,23 @@ public class AutoAuftragsbestaetigungVersandService
      * Defaults → Inhalte/Positionen aus {@code positionenJson} → Nachtexte aus
      * den Defaults. Damit landen Anrede, Liefer- und Zahlungsbedingungen, Schluss-
      * formel automatisch in der Auto-AB — analog zum DocumentEditor.
+     *
+     * <p>Stehen die Standardtexte bereits im Dokument (Regelfall seit
+     * {@link #materialisiereStandardtexte(Long)}), werden sie NICHT erneut
+     * ergänzt — sonst stünden Anrede und Schlussformel doppelt im PDF. Der
+     * Defaults-Pfad bleibt als Fallback für Alt-ABs erhalten, die noch ohne
+     * Standardtexte gespeichert wurden.</p>
      */
     private List<ContentBlockDto> baueContentBlocks(AusgangsGeschaeftsDokument ab, String templateName)
     {
         List<ContentBlockDto> kern = parsePositionenJsonZuContentBlocks(ab.getPositionenJson());
         if (templateName == null) return kern;
+
+        if (enthaeltStandardTextbausteine(ab.getPositionenJson()))
+        {
+            Map<String, String> vorhandenerKontext = bauePlatzhalterKontext(ab);
+            return kern.stream().map(b -> loeseBlockAuf(b, vorhandenerKontext)).toList();
+        }
 
         FormularTextbausteinDefaultService.DefaultsForDokumenttyp defaults;
         try

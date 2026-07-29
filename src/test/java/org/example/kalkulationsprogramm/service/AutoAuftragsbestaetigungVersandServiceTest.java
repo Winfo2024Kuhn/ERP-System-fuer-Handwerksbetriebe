@@ -239,6 +239,141 @@ class AutoAuftragsbestaetigungVersandServiceTest {
         org.mockito.Mockito.verifyNoInteractions(projektEmailArchivService);
     }
 
+    // ------------- Standard-Vor-/Nachtexte (Bug: AB enthielt nur Leistungen) -------------
+    // Beim Typwechsel Angebot -> AB entfernt der DokumentService die Angebots-
+    // Textbausteine und setzt nur ein Flag fuer den DocumentEditor. Die Auto-AB
+    // ist aber sofort digital angenommen und laeuft nie durch den Editor —
+    // die AB-Texte muessen deshalb im Backend eingesetzt werden.
+
+    @Test
+    void standardtexte_werdenVorDieErsteLeistungUndAnsEndeGesetzt() throws Exception {
+        String json = "{\"blocks\":["
+                + "{\"type\":\"SERVICE\",\"title\":\"Gitterrost\",\"quantity\":1,\"price\":100},"
+                + "{\"type\":\"SUBTOTAL\"}"
+                + "],\"standardTextbausteineErneuern\":true}";
+
+        String neu = AutoAuftragsbestaetigungVersandService.baueJsonMitStandardtexten(
+                json,
+                defaults(textbaustein(1L, "<p>Guten Tag {{KUNDENNAME}},</p>"),
+                        textbaustein(2L, "<p>Mit freundlichen Gruessen</p>")),
+                java.util.Map.of("KUNDENNAME", "Max Mustermann"));
+
+        com.fasterxml.jackson.databind.JsonNode blocks =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(neu).get("blocks");
+
+        assertThat(blocks).hasSize(4);
+        assertThat(blocks.get(0).get("type").asText()).isEqualTo("TEXT");
+        assertThat(blocks.get(0).get("textbausteinRolle").asText()).isEqualTo("VOR");
+        assertThat(blocks.get(0).get("content").asText()).isEqualTo("<p>Guten Tag Max Mustermann,</p>");
+        assertThat(blocks.get(1).get("type").asText()).isEqualTo("SERVICE");
+        assertThat(blocks.get(2).get("type").asText()).isEqualTo("SUBTOTAL");
+        assertThat(blocks.get(3).get("textbausteinRolle").asText()).isEqualTo("NACH");
+    }
+
+    @Test
+    void standardtexte_verbrauchenDasErneuernFlagUndErsetzenAlteBausteine() throws Exception {
+        // Ein alter Angebots-Vortext darf nicht stehen bleiben, sondern wird ausgetauscht.
+        String json = "{\"blocks\":["
+                + "{\"type\":\"TEXT\",\"content\":\"Angebot Vortext\",\"textbausteinRolle\":\"VOR\"},"
+                + "{\"type\":\"SERVICE\",\"title\":\"Gitterrost\",\"quantity\":1,\"price\":100}"
+                + "],\"standardTextbausteineErneuern\":true}";
+
+        String neu = AutoAuftragsbestaetigungVersandService.baueJsonMitStandardtexten(
+                json, defaults(textbaustein(1L, "<p>AB Vortext</p>"), null), java.util.Map.of());
+
+        com.fasterxml.jackson.databind.JsonNode root =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(neu);
+
+        assertThat(root.has("standardTextbausteineErneuern")).isFalse();
+        assertThat(root.get("blocks")).hasSize(2);
+        assertThat(root.get("blocks").get(0).get("content").asText()).isEqualTo("<p>AB Vortext</p>");
+        assertThat(root.get("blocks").get(1).get("type").asText()).isEqualTo("SERVICE");
+    }
+
+    @Test
+    void standardtexte_ohneLeistungenWerdenAngehaengt() throws Exception {
+        String neu = AutoAuftragsbestaetigungVersandService.baueJsonMitStandardtexten(
+                "[]", defaults(textbaustein(1L, "<p>Vor</p>"), textbaustein(2L, "<p>Nach</p>")),
+                java.util.Map.of());
+
+        com.fasterxml.jackson.databind.JsonNode blocks =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(neu).get("blocks");
+
+        assertThat(blocks).hasSize(2);
+        assertThat(blocks.get(0).get("textbausteinRolle").asText()).isEqualTo("VOR");
+        assertThat(blocks.get(1).get("textbausteinRolle").asText()).isEqualTo("NACH");
+    }
+
+    @Test
+    void standardtexte_kaputtesJsonLaesstDokumentUnveraendert() {
+        assertThat(AutoAuftragsbestaetigungVersandService.baueJsonMitStandardtexten(
+                "nicht-json", defaults(textbaustein(1L, "<p>Vor</p>"), null), java.util.Map.of()))
+                .isNull();
+    }
+
+    @Test
+    void enthaeltStandardTextbausteine_erkenntBereitsGesetzteTexte() {
+        assertThat(AutoAuftragsbestaetigungVersandService.enthaeltStandardTextbausteine(
+                "{\"blocks\":[{\"type\":\"TEXT\",\"textbausteinRolle\":\"VOR\"}]}")).isTrue();
+        assertThat(AutoAuftragsbestaetigungVersandService.enthaeltStandardTextbausteine(
+                "{\"blocks\":[{\"type\":\"SERVICE\"}]}")).isFalse();
+        assertThat(AutoAuftragsbestaetigungVersandService.enthaeltStandardTextbausteine(null)).isFalse();
+        assertThat(AutoAuftragsbestaetigungVersandService.enthaeltStandardTextbausteine("nicht-json")).isFalse();
+    }
+
+    @Test
+    void materialisiereStandardtexte_ohneVorlageBleibtPositionenJsonUnveraendert() {
+        String json = "{\"blocks\":[{\"type\":\"SERVICE\",\"title\":\"Gitterrost\"}]}";
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setDokumentNummer("AB-2026/07/0016");
+        ab.setPositionenJson(json);
+        when(ausgangsGeschaeftsDokumentRepository.findById(7L)).thenReturn(Optional.of(ab));
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp("Auftragsbestätigung", null))
+                .thenReturn(Optional.empty());
+
+        neuService().materialisiereStandardtexte(7L);
+
+        assertThat(ab.getPositionenJson()).isEqualTo(json);
+        org.mockito.Mockito.verifyNoInteractions(formularTextbausteinDefaultService);
+    }
+
+    @Test
+    void materialisiereStandardtexte_schreibtVorUndNachtexteInDasDokument() {
+        AusgangsGeschaeftsDokument ab = baueAbMitVorgaengerAngebot();
+        ab.setPositionenJson("{\"blocks\":[{\"type\":\"SERVICE\",\"title\":\"Gitterrost\"}],"
+                + "\"standardTextbausteineErneuern\":true}");
+        when(ausgangsGeschaeftsDokumentRepository.findById(7L)).thenReturn(Optional.of(ab));
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp("Auftragsbestätigung", null))
+                .thenReturn(Optional.of("standard-briefpapier"));
+        when(formularTextbausteinDefaultService.loadForDokumenttyp("standard-briefpapier", "Auftragsbestätigung"))
+                .thenReturn(defaults(textbaustein(1L, "<p>Auftragsbestaetigung Vortext</p>"),
+                        textbaustein(2L, "<p>Unterschrift</p>")));
+
+        neuService().materialisiereStandardtexte(7L);
+
+        assertThat(ab.getPositionenJson()).contains("Auftragsbestaetigung Vortext", "Unterschrift", "\"VOR\"", "\"NACH\"");
+        assertThat(ab.getPositionenJson()).doesNotContain("standardTextbausteineErneuern");
+        org.mockito.Mockito.verify(ausgangsGeschaeftsDokumentRepository).save(ab);
+    }
+
+    private static org.example.kalkulationsprogramm.domain.Textbaustein textbaustein(Long id, String html) {
+        org.example.kalkulationsprogramm.domain.Textbaustein tb =
+                new org.example.kalkulationsprogramm.domain.Textbaustein();
+        tb.setId(id);
+        tb.setName("Dummy-Baustein " + id);
+        tb.setHtml(html);
+        return tb;
+    }
+
+    private static FormularTextbausteinDefaultService.DefaultsForDokumenttyp defaults(
+            org.example.kalkulationsprogramm.domain.Textbaustein vor,
+            org.example.kalkulationsprogramm.domain.Textbaustein nach) {
+        return new FormularTextbausteinDefaultService.DefaultsForDokumenttyp(
+                vor == null ? List.of() : List.of(vor),
+                nach == null ? List.of() : List.of(nach));
+    }
+
     private static AusgangsGeschaeftsDokument baueAbMitProjekt() {
         AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
         ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);

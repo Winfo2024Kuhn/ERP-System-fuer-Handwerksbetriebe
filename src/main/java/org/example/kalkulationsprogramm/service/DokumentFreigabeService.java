@@ -738,6 +738,19 @@ public class DokumentFreigabeService
 
         AusgangsGeschaeftsDokument ab = ausgangsGeschaeftsDokumentService.erstellen(dto);
 
+        // Standard-Vor-/Nachtexte des Angebots gegen die der Auftragsbestätigung
+        // tauschen. Der Typwechsel in erstellen() hat die Angebots-Texte nur
+        // entfernt; das Nachladen übernimmt sonst der DocumentEditor beim Öffnen —
+        // was hier nie passiert, weil die AB gleich darunter digital angenommen
+        // und damit gesperrt wird. Ohne diesen Schritt bestünde die AB dauerhaft
+        // nur aus Leistungen (kein Anschreiben, keine Schlussformel).
+        // Muss VOR dem Sperren laufen und ist bewusst synchron: das Dokument soll
+        // auch dann vollständig sein, wenn der Mailversand später scheitert.
+        if (ab != null)
+        {
+            autoAuftragsbestaetigungVersandService.materialisiereStandardtexte(ab.getId());
+        }
+
         // Auftragsbestätigung ist das verbindliche Folgedokument der Annahme — direkt sperren.
         if (ab != null && !ab.isDigitalAngenommen())
         {
