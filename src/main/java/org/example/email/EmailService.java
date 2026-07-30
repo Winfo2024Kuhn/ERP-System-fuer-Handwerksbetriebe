@@ -34,6 +34,14 @@ import jakarta.mail.util.ByteArrayDataSource;
 public class EmailService {
 
     /**
+     * A mail attachment with its display name kept separate from its temporary
+     * file on disk.  Temporary file names are implementation details and must
+     * never be exposed in MIME headers.
+     */
+    public record Attachment(File file, String filename, String mimeType) {
+    }
+
+    /**
      * Marker-Header, den jede vom ERP versendete Mail traegt.
      *
      * <p><strong>Er filtert nichts.</strong> Dass die eigene Sent-Kopie nicht
@@ -440,7 +448,7 @@ public class EmailService {
             String subject,
             String htmlBody,
             java.util.Map<String, java.io.File> inlineCidToFile,
-            java.util.List<String> attachmentFilePaths) throws MessagingException, IOException {
+            java.util.List<Attachment> attachments) throws MessagingException, IOException {
         Properties props = new Properties();
         props.put("mail.smtp.host", host);
         props.put("mail.smtp.port", String.valueOf(port));
@@ -501,16 +509,20 @@ public class EmailService {
         }
 
         // Add multiple attachments
-        if (attachmentFilePaths != null) {
-            for (String attachmentFilePath : attachmentFilePaths) {
-                if (attachmentFilePath != null && !attachmentFilePath.isBlank()) {
-                    File attachFile = new File(attachmentFilePath);
-                    if (attachFile.exists()) {
-                        MimeBodyPart attachmentPart = new MimeBodyPart();
-                        attachmentPart.attachFile(attachFile);
-                        attachmentPart.setFileName(attachFile.getName());
-                        mixed.addBodyPart(attachmentPart);
+        if (attachments != null) {
+            for (Attachment attachment : attachments) {
+                if (attachment != null && attachment.file() != null && attachment.file().exists()) {
+                    File attachFile = attachment.file();
+                    MimeBodyPart attachmentPart = new MimeBodyPart();
+                    attachmentPart.attachFile(attachFile);
+                    attachmentPart.setDisposition(MimeBodyPart.ATTACHMENT);
+                    attachmentPart.setFileName(attachment.filename() != null && !attachment.filename().isBlank()
+                            ? attachment.filename()
+                            : attachFile.getName());
+                    if (attachment.mimeType() != null && !attachment.mimeType().isBlank()) {
+                        attachmentPart.setHeader("Content-Type", attachment.mimeType());
                     }
+                    mixed.addBodyPart(attachmentPart);
                 }
             }
         }
