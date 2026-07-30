@@ -322,6 +322,7 @@ public class LieferantenController {
 
         // Handle Attachments (Send & Save)
         List<java.io.File> tempFiles = new ArrayList<>();
+        List<org.example.email.EmailService.Attachment> attachmentsForEmail = new ArrayList<>();
         try {
             // 1. Send Email
             // Note: Our EmailService might need adaptation for attachments.
@@ -370,14 +371,14 @@ public class LieferantenController {
 
                     // Add to send list
                     tempFiles.add(dst.toFile());
+                    attachmentsForEmail.add(new org.example.email.EmailService.Attachment(
+                            dst.toFile(), original, mpf.getContentType()));
                 }
                 emailContext = emailRepository.save(emailContext);
             }
 
             // Actually Send
             String recipients = String.join(",", dto.getRecipients());
-            List<String> attachmentPaths = tempFiles.stream().map(java.io.File::getAbsolutePath).toList();
-
             String msgId = emailService.sendEmailWithMultipleAttachments(
                     recipients,
                     null,
@@ -385,7 +386,7 @@ public class LieferantenController {
                     dto.getSubject(),
                     htmlBody,
                     inline,
-                    attachmentPaths);
+                    attachmentsForEmail);
 
             emailContext.setMessageId(msgId);
             emailRepository.save(emailContext);

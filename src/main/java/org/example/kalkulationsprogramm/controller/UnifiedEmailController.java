@@ -1378,7 +1378,7 @@ public class UnifiedEmailController {
                     .mitSentKopie(sentMailArchiver);
 
             // Attachments vorbereiten
-            List<String> attachmentPaths = new ArrayList<>();
+            List<org.example.email.EmailService.Attachment> attachmentsForEmail = new ArrayList<>();
             List<java.io.File> tempFiles = new ArrayList<>();
 
             // 1. Dokument anhängen (wenn dokumentId angegeben)
@@ -1437,7 +1437,8 @@ public class UnifiedEmailController {
                                 java.nio.file.Files.copy(resource.getFile().toPath(), renamedFile.toPath(),
                                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                 tempFile.delete(); // Original temp file löschen
-                                attachmentPaths.add(renamedFile.getAbsolutePath());
+                                attachmentsForEmail.add(new org.example.email.EmailService.Attachment(
+                                        renamedFile, attachedOriginalFilename, null));
                                 tempFiles.add(renamedFile); // Für spätere Aufräumung
                                 log.info("Dokument '{}' als Anhang hinzugefügt", attachedOriginalFilename);
                             }
@@ -1459,7 +1460,8 @@ public class UnifiedEmailController {
                                 : "attachment";
                         java.io.File tempFile = java.io.File.createTempFile("email_", "_" + safeFilename);
                         file.transferTo(tempFile);
-                        attachmentPaths.add(tempFile.getAbsolutePath());
+                        attachmentsForEmail.add(new org.example.email.EmailService.Attachment(
+                                tempFile, safeFilename, file.getContentType()));
                         tempFiles.add(tempFile);
                     }
                 }
@@ -1501,7 +1503,7 @@ public class UnifiedEmailController {
                     dto.getSubject(),
                     htmlBody,
                     Map.of(),
-                    attachmentPaths);
+                    attachmentsForEmail);
 
             // Email-Entität speichern
             Email email = new Email();
@@ -1634,7 +1636,7 @@ public class UnifiedEmailController {
                     .mitSentKopie(sentMailArchiver);
 
             // Attachments vorbereiten
-            List<String> attachmentPaths = new ArrayList<>();
+            List<org.example.email.EmailService.Attachment> attachmentsForEmail = new ArrayList<>();
             List<java.io.File> tempFiles = new ArrayList<>();
 
             if (attachments != null) {
@@ -1645,7 +1647,8 @@ public class UnifiedEmailController {
                                 : "attachment";
                         java.io.File tempFile = java.io.File.createTempFile("email_", "_" + safeFilename);
                         file.transferTo(tempFile);
-                        attachmentPaths.add(tempFile.getAbsolutePath());
+                        attachmentsForEmail.add(new org.example.email.EmailService.Attachment(
+                                tempFile, safeFilename, file.getContentType()));
                         tempFiles.add(tempFile);
                     }
                 }
@@ -1675,7 +1678,7 @@ public class UnifiedEmailController {
                     dto.getSubject(),
                     htmlBody,
                     Map.of(), // keine Inline-CID-Bilder
-                    attachmentPaths);
+                    attachmentsForEmail);
 
             // Email-Entität speichern
             Email email = new Email();
