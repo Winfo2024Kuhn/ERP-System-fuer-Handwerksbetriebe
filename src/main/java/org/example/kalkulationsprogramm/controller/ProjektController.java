@@ -56,12 +56,15 @@ import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
+import org.example.kalkulationsprogramm.service.ProjektListenPdfService;
+import org.example.kalkulationsprogramm.service.ProjektListenPdfService.ProjektListenTyp;
 import org.example.kalkulationsprogramm.service.StuecklistePdfService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,6 +92,7 @@ public class ProjektController {
 
     private final DateiSpeicherService dateiSpeicherService;
     private final ProjektManagementService projektManagementService;
+    private final ProjektListenPdfService projektListenPdfService;
     private final ZugferdExtractorService zugferdExtractorService;
     private final ZugferdErstellService zugferdErstellService;
     private final ProduktkategorieMapper produktkategorieMapper;
@@ -1050,6 +1054,7 @@ public class ProjektController {
             @RequestParam(required = false) String auftragsnummer,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate datum,
             @RequestParam(required = false) Boolean bezahlt,
+            @RequestParam(required = false) Boolean abgeschlossen,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "50") int size) {
 
@@ -1063,6 +1068,7 @@ public class ProjektController {
                 auftragsnummer,
                 datum,
                 bezahlt,
+                abgeschlossen,
                 pageIndex,
                 pageSize);
         ProjektSearchResponseDto response = new ProjektSearchResponseDto();
@@ -1071,6 +1077,18 @@ public class ProjektController {
         response.setSeite(projekte.getNumber());
         response.setSeitenGroesse(projekte.getSize());
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/export-pdf")
+    public ResponseEntity<byte[]> exportiereProjektliste(@RequestParam ProjektListenTyp typ) {
+        byte[] pdf = projektListenPdfService.generatePdf(typ);
+        String dateiname = typ == ProjektListenTyp.IN_ARBEIT
+                ? "projekte-in-arbeit.pdf"
+                : "nicht-abgerechnete-projekte.pdf";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + dateiname + "\"")
+                .body(pdf);
     }
 
     /**
@@ -1107,7 +1125,7 @@ public class ProjektController {
             return ResponseEntity.ok(List.of());
         }
         Page<ProjektResponseDto> projekte = projektManagementService.findeProjekteMitFilter(
-                q.trim(), null, null, null, null, null, null, 0, 10);
+                q.trim(), null, null, null, null, null, null, null, 0, 10);
         List<ProjektSucheDto> results = projekte.getContent().stream()
                 .map(p -> new ProjektSucheDto(p.getId(), p.getBauvorhaben(), p.getAuftragsnummer(), p.getKunde(), p.isAbgeschlossen()))
                 .toList();

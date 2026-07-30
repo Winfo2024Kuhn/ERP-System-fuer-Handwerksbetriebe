@@ -335,7 +335,10 @@ public class OffenePostenController {
             // Metadaten setzen
             geschaeftsdokument.setDokumentid(rechnungsnummer);
             geschaeftsdokument.setGeschaeftsdokumentart(geschaeftsdokumentart);
-            geschaeftsdokument.setBezahlt(false);
+            // Extern erstellte und hier nur nacherfasste Ausgangsrechnungen
+            // gelten für die Projektübersicht als bereits abgerechnet. Der
+            // Arbeitsstatus des Projekts bleibt davon unberührt.
+            geschaeftsdokument.setBezahlt(true);
 
             if (StringUtils.hasText(rechnungsdatumStr)) {
                 geschaeftsdokument.setRechnungsdatum(LocalDate.parse(rechnungsdatumStr));
@@ -348,6 +351,8 @@ public class OffenePostenController {
             }
 
             ProjektGeschaeftsdokument result = projektDokumentRepository.save(geschaeftsdokument);
+            projekt.setBezahlt(true);
+            projektRepository.save(projekt);
             log.info("Manuelle Ausgangsrechnung importiert: {} für Projekt {} (ID: {})",
                     rechnungsnummer, projekt.getBauvorhaben(), result.getId());
 

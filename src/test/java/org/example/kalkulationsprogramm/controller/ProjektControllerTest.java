@@ -17,6 +17,7 @@ import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
+import org.example.kalkulationsprogramm.service.ProjektListenPdfService;
 import org.example.kalkulationsprogramm.service.StuecklistePdfService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
@@ -53,6 +54,9 @@ class ProjektControllerTest {
 
         @MockBean
         private ProjektManagementService projektManagementService;
+
+        @MockBean
+        private ProjektListenPdfService projektListenPdfService;
 
         @MockBean
         private ZugferdExtractorService zugferdExtractorService;
@@ -112,6 +116,7 @@ class ProjektControllerTest {
                                 isNull(),
                                 isNull(),
                                 isNull(),
+                                isNull(),
                                 eq(0),
                                 eq(50))).thenReturn(page);
 
@@ -132,8 +137,39 @@ class ProjektControllerTest {
                                 isNull(),
                                 isNull(),
                                 isNull(),
+                                isNull(),
                                 eq(0),
                                 eq(50));
+        }
+
+        @Test
+        void getAlleProjekte_filtersInArbeitByAbgeschlossenStatus() throws Exception {
+                Page<ProjektResponseDto> page = new PageImpl<>(List.of(), PageRequest.of(0, 50), 0);
+                when(projektManagementService.findeProjekteMitFilter(
+                                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(false), eq(0), eq(50)))
+                                .thenReturn(page);
+
+                mockMvc.perform(get("/api/projekte").param("abgeschlossen", "false"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.gesamt").value(0));
+
+                verify(projektManagementService).findeProjekteMitFilter(
+                                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(false), eq(0), eq(50));
+        }
+
+        @Test
+        void exportiereProjektliste_liefertPdfZumDownload() throws Exception {
+                byte[] pdf = "%PDF-Test".getBytes();
+                when(projektListenPdfService.generatePdf(org.example.kalkulationsprogramm.service.ProjektListenPdfService.ProjektListenTyp.IN_ARBEIT))
+                                .thenReturn(pdf);
+
+                mockMvc.perform(get("/api/projekte/export-pdf").param("typ", "IN_ARBEIT"))
+                                .andExpect(status().isOk())
+                                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType("application/pdf"))
+                                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().bytes(pdf));
+
+                verify(projektListenPdfService).generatePdf(
+                                org.example.kalkulationsprogramm.service.ProjektListenPdfService.ProjektListenTyp.IN_ARBEIT);
         }
 
         @Test
