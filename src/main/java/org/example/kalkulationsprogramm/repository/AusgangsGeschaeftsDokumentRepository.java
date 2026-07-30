@@ -112,6 +112,10 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
     @Query("SELECT d.id, d.projekt.id FROM AusgangsGeschaeftsDokument d WHERE d.projekt.id IN :projektIds")
     List<Object[]> findIdProjektIdMappingByProjektIds(@org.springframework.data.repository.query.Param("projektIds") List<Long> projektIds);
 
+    /** Projekte, die bereits mindestens ein Dokument im neuen Ausgangsdokument-System haben. */
+    @Query("SELECT DISTINCT d.projekt.id FROM AusgangsGeschaeftsDokument d WHERE d.projekt IS NOT NULL")
+    List<Long> findDistinctProjektIds();
+
     /**
      * Liefert die vom User bearbeiteten Rechnungsanschriften aller Dokumente
      * eines Projekts (direkt oder über die Anfrage verknüpft), zuletzt

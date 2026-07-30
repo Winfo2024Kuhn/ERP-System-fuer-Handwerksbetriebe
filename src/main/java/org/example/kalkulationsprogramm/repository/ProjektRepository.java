@@ -71,6 +71,21 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
 
         List<Projekt> findByKundenId_Id(Long kundenId);
 
+        @Query("""
+                SELECT CASE WHEN COUNT(vorherigesProjekt) > 0 THEN true ELSE false END
+                FROM Projekt vorherigesProjekt
+                WHERE vorherigesProjekt.kundenId.id = :kundenId
+                  AND (vorherigesProjekt.anlegedatum < :anlegedatum
+                    OR (vorherigesProjekt.anlegedatum = :anlegedatum AND vorherigesProjekt.id < :projektId))
+                """)
+        boolean existsVorherigesProjektFuerKunde(@Param("kundenId") Long kundenId,
+                                                 @Param("anlegedatum") LocalDate anlegedatum,
+                                                 @Param("projektId") Long projektId);
+
+        List<Projekt> findByAbgeschlossenFalseOrderByAnlegedatumDesc();
+
+        List<Projekt> findByBezahltFalseOrderByAnlegedatumDesc();
+
         List<Projekt> findByAnlegedatumBetween(LocalDate start, LocalDate ende);
 
         interface IdEmailOnly {

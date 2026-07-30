@@ -1278,6 +1278,7 @@ ProjektManagementService {
             String auftragsnummer,
             LocalDate datum,
             Boolean bezahlt,
+            Boolean abgeschlossen,
             int page,
             int size) {
         Specification<Projekt> spec = (root, query, criteriaBuilder) -> {
@@ -1323,6 +1324,9 @@ ProjektManagementService {
             }
             if (bezahlt != null) {
                 predicates.add(criteriaBuilder.equal(root.get("bezahlt"), bezahlt));
+            }
+            if (abgeschlossen != null) {
+                predicates.add(criteriaBuilder.equal(root.get("abgeschlossen"), abgeschlossen));
             }
 
             return criteriaBuilder.and(predicates.toArray(new Predicate[0]));

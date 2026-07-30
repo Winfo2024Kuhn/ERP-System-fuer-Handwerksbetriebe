@@ -29,6 +29,7 @@ import {
     Ban,
     Building2,
     ExternalLink,
+    Download,
     Trash2,
     Upload,
     User,
@@ -3553,12 +3554,13 @@ export default function ProjektEditor() {
     const [page, setPage] = useState(0);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
+    const [exportingTyp, setExportingTyp] = useState<"NICHT_ABGERECHNET" | "IN_ARBEIT" | null>(null);
 
     // Filters
     const [filters, setFilters] = useState({
         q: "",
         kunde: "",
-        status: "", // "bezahlt", "offen", ""
+        status: "", // "in-arbeit", "nicht-bezahlt", "bezahlt", ""
     });
 
     // Fetch List
@@ -3570,8 +3572,9 @@ export default function ProjektEditor() {
             params.set("size", String(PAGE_SIZE));
             if (filters.q) params.set("q", filters.q);
             if (filters.kunde) params.set("kunde", filters.kunde);
+            if (filters.status === 'in-arbeit') params.set("abgeschlossen", "false");
             if (filters.status === 'bezahlt') params.set("bezahlt", "true");
-            if (filters.status === 'offen') params.set("bezahlt", "false");
+            if (filters.status === 'nicht-bezahlt') params.set("bezahlt", "false");
 
             const [res, lastAccessed] = await Promise.all([
                 fetch(`/api/projekte?${params.toString()}`),
@@ -3675,6 +3678,27 @@ export default function ProjektEditor() {
     const handleResetFilters = () => {
         setFilters({ q: "", kunde: "", status: "" });
         setPage(0);
+    };
+
+    const handlePdfExport = async (typ: "NICHT_ABGERECHNET" | "IN_ARBEIT") => {
+        setExportingTyp(typ);
+        try {
+            const response = await fetch(`/api/projekte/export-pdf?typ=${typ}`);
+            if (!response.ok) throw new Error("PDF-Export fehlgeschlagen");
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = typ === "IN_ARBEIT" ? "projekte-in-arbeit.pdf" : "nicht-abgerechnete-projekte.pdf";
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Projektlisten-Export fehlgeschlagen:", error);
+        } finally {
+            setExportingTyp(null);
+        }
     };
 
     const handleDetail = async (projekt: Projekt) => {
@@ -3822,6 +3846,14 @@ export default function ProjektEditor() {
             subtitle="Übersicht und Verwaltung Ihrer Projekte."
             actions={
                 <>
+                    <Button variant="outline" size="sm" onClick={() => handlePdfExport("NICHT_ABGERECHNET")} disabled={exportingTyp !== null}>
+                        <Download className="w-4 h-4 mr-2" />
+                        {exportingTyp === "NICHT_ABGERECHNET" ? "Export läuft..." : "PDF: Nicht abgerechnet"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handlePdfExport("IN_ARBEIT")} disabled={exportingTyp !== null}>
+                        <Download className="w-4 h-4 mr-2" />
+                        {exportingTyp === "IN_ARBEIT" ? "Export läuft..." : "PDF: In Arbeit"}
+                    </Button>
                     <Button size="sm" onClick={() => setShowCreateModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
                         <Plus className="w-4 h-4 mr-2" />
                         Neues Projekt
@@ -3862,8 +3894,9 @@ export default function ProjektEditor() {
                             className="mt-1"
                             options={[
                                 { value: "", label: "Alle" },
-                                { value: "offen", label: "Offen" },
-                                { value: "bezahlt", label: "Bezahlt" }
+                                { value: "in-arbeit", label: "In Arbeit" },
+                                { value: "nicht-bezahlt", label: "Nicht abgerechnet" },
+                                { value: "bezahlt", label: "Abgerechnet" }
                             ]}
                             value={filters.status}
                             onChange={(val) => handleFilterChange("status", val)}
