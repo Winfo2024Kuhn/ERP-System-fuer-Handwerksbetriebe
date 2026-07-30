@@ -43,9 +43,11 @@ Diese gelten als „deine eigenen Änderungen", solange sie aus deinem Build ent
 
 ---
 
-## Phase 0: Zwei parallele Review-Läufe starten (NICHT WARTEN)
+## Phase 0: Review-Lauf starten (NICHT WARTEN)
 
-**ZUERST** (bevor du irgendetwas anderes tust), startest du **zwei unabhängige Reviewer parallel im Hintergrund** – einen Claude-basierten Subagenten und einen Codex-CLI-Run als Zweitmeinung. Codex läuft über den lokalen ChatGPT-Account-Login (`codex login status` → "Logged in using ChatGPT"), wird also über das ChatGPT-Abo abgerechnet, **nicht** über die OpenAI-API. Kein API-Key nötig – und es darf auch keiner gesetzt sein.
+**ZUERST** (bevor du irgendetwas anderes tust), startest du den **Claude-Reviewer im Hintergrund**.
+
+> **Kein Codex.** Der Codex-Zweitreview wurde auf Wunsch des Users entfernt. Rufe `codex` in diesem Workflow **nicht** auf – weder als Zweitmeinung noch als Fallback. Der `erp-code-reviewer`-Subagent ist die alleinige Review-Instanz.
 
 ### 0a. Claude-Reviewer (erp-code-reviewer Subagent)
 
@@ -59,54 +61,9 @@ Rufe das `Agent`-Tool auf mit `run_in_background: true`:
   - Anweisung: „Prüfe den aktuellen Diff (`git diff main...HEAD` + ungestaged) gemäß `docs/agent instructions/docs/BACKEND_ARCH.md`, `docs/agent instructions/docs/FRONTEND_UI.md` und `docs/agent instructions/docs/TESTING_SECURITY.md`. Gib einen strukturierten Report zurück mit: Ampel (🟢/🟡/🔴), kritische Findings (Datei:Zeile + Begründung), nicht-kritische Hinweise. Sei streng aber konkret."
   - Bitte um Ampel-Bewertung am Ende: 🟢 GRÜN / 🟡 GELB / 🔴 ROT.
 
-### 0b. Codex-Reviewer (ChatGPT-Account, parallel)
+### 0b. Sofort weiter zu Phase 1
 
-Starte den Codex-Review **im Hintergrund** via `PowerShell` mit `run_in_background: true`. Output-Verzeichnis sicherstellen, **sauberen** Diff in Datei schreiben (nur echte Quelldateien!), dann an `codex exec review` pipen:
-
-```powershell
-if (Test-Path Env:OPENAI_API_KEY) { Remove-Item Env:OPENAI_API_KEY }
-New-Item -ItemType Directory -Force -Path .claude\reviews | Out-Null
-
-# WICHTIG: Generierte/aufgeblaehte Artefakte AUSSCHLIESSEN, sonst ersaeuft der Review
-# in JSON-Rauschen (graphify-out kann >1 MB sein) und liefert keine saubere AMPEL.
-# Pathspec-Excludes via ':(exclude)...'. Untracked Tests via intent-to-add sichtbar machen.
-$excludes = @(
-  ':(exclude)graphify-out/**',
-  ':(exclude)**/graph.json',
-  ':(exclude)**/GRAPH_REPORT.md',
-  ':(exclude)src/main/resources/static/**',
-  ':(exclude)**/dist/**',
-  ':(exclude)**/*.lock',
-  ':(exclude)**/package-lock.json'
-)
-git add -N . 2>$null   # neue, noch untracked Dateien (z.B. neue Tests) im Diff sichtbar machen
-git diff --stat HEAD -- . $excludes
-git diff HEAD -- . $excludes | Out-File -Encoding utf8 .claude\reviews\diff.patch
-git reset -q             # intent-to-add wieder zuruecknehmen (nichts bleibt gestaged)
-
-# Groessen-Guard: ueber ~400 KB wird der Review unzuverlaessig -> Hinweis ins Log
-$sizeKB = [math]::Round((Get-Item .claude\reviews\diff.patch).Length / 1KB)
-"Diff-Groesse: ${sizeKB} KB" | Out-File -Encoding utf8 .claude\reviews\diff-size.txt
-
-Get-Content .claude\reviews\diff.patch | codex exec review `
-  -m gpt-5.5 `
-  "Du bist Senior-Reviewer fuer ein Spring-Boot + React ERP (Handwerker-Software). Pruefe den angehaengten Diff streng gegen die Projekt-Regeln: Constructor Injection (kein @Autowired auf Feldern; @Autowired MockMvc in Tests ist projektweit ueblich und KEIN Fehler), Flyway-Versionen, Named-Params in JPA-Queries, rose-/slate-Farben + Pflicht-Komponenten im Frontend, DSGVO-Dummy-Daten 'Max Mustermann' in Tests, keine Secrets in Code, keine SQL-Injection, keine XSS, Handwerker-Sprache statt Buchhalter-Begriffen. Liefere zuerst kritische Findings (Datei:Zeile + Begruendung), dann nicht-kritische Hinweise, am Ende GENAU EINE Zeile: 'AMPEL: GRUEN' ODER 'AMPEL: GELB' ODER 'AMPEL: ROT'. Antworte auf Deutsch." `
-  *> .claude\reviews\codex-review.md
-```
-
-Wichtig:
-
-- `codex exec review` (nicht `codex exec`) → spezialisierter Review-Modus mit Diff-Verstaendnis.
-- **KEIN `--sandbox`-Flag!** `codex exec review` kennt es nicht und bricht mit Exit 2 ab (`error: unexpected argument '--sandbox'`). Der Review-Modus ist ohnehin read-only.
-- **Sauberer Diff ist Pflicht:** `graphify-out/`, `graph.json`, `GRAPH_REPORT.md`, `static/**`-Build-Artefakte und Lockfiles via `:(exclude)` rausfiltern. Sonst echot das Modell MB-weise JSON statt zu reviewen und gibt keine AMPEL-Zeile aus. (Tipp: `graphify update` erst NACH dem Commit laufen lassen, nicht davor.)
-- `git diff HEAD` (statt `main...HEAD` + separatem `git diff`) erfasst getrackte **und** – dank `git add -N` – neue Dateien in EINEM Aufruf. `git reset` macht das intent-to-add sofort rueckgaengig (kein Stagen).
-- `-m gpt-5.5` → Modell-Override; falls Codex 5.5 nicht kennt, fällt es auf den Default zurück. Liste der verfügbaren Modelle: `codex features` bzw. `~/.codex/config.toml`.
-- `*> ...` leitet stdout+stderr in die Report-Datei. Codex gibt seine finale Bewertung **am Dateiende** aus – mit `Select-String -Pattern "AMPEL"` bzw. `Get-Content -Tail 40` auslesen, nicht die ganze (ggf. grosse) Datei lesen.
-- **NIEMALS `OPENAI_API_KEY` env setzen** vor diesem Aufruf, sonst wechselt Codex auf API-Abrechnung statt ChatGPT-Abo. Die `Remove-Item Env:OPENAI_API_KEY`-Zeile oben raeumt eine evtl. gesetzte Variable praeventiv ab.
-
-### 0c. Sofort weiter zu Phase 1
-
-**Du wartest auf KEINEN der zwei Reviewer.** Beide laufen im Hintergrund. Du gehst sofort zu Phase 1 und kompilierst/testest parallel.
+**Du wartest NICHT auf den Reviewer.** Er läuft im Hintergrund. Du gehst sofort zu Phase 1 und kompilierst/testest parallel.
 
 ---
 
@@ -157,21 +114,19 @@ Nach jedem hinzugefügten Test: 1b/1c/1d für den betroffenen Bereich erneut lau
 
 ---
 
-## Phase 2: BEIDE Review-Ergebnisse abholen & einarbeiten
+## Phase 2: Review-Ergebnis abholen & einarbeiten
 
-Sobald **beide** Hintergrund-Reviewer (Claude-Subagent UND Codex) fertig sind:
+Sobald der Hintergrund-Reviewer fertig ist (du bekommst eine Completion-Notification):
 
-1. **Beide Reports einlesen:**
-   - Claude-Subagent: Output aus dem `Agent`-Tool-Result.
-   - Codex: Die Datei `.claude\reviews\codex-review.md` kann gross sein (sie enthaelt das gesamte Streaming-Log). **NICHT komplett mit `Read` laden.** Stattdessen die Bewertung gezielt am Ende ziehen, z.B. `Get-Content .claude\reviews\codex-review.md -Tail 40` oder `Select-String -Path .claude\reviews\codex-review.md -Pattern "AMPEL"`. Die Bewertung steht am Dateiende. Wenn Codex statt `AMPEL: …` nur einen Fliesstext-Befund liefert (kommt vor), die Ampel sinngemaess ableiten: „keine blockierenden Findings" → GRUEN, „sollte behoben werden" → GELB, „kritisch/blockiert" → ROT. **[P3]/Fliesstext-Hinweise ohne funktionalen Fehler sind GRUEN**, kein GELB.
-2. **Effektive Ampel = strengste der zwei** (ROT schlägt GELB schlägt GRÜN). Beispiel: Claude 🟢, Codex 🔴 → effektiv 🔴.
-3. **🔴 ROT** (mind. einer rot) → ALLE kritischen Findings BEIDER Reports fixen. Danach Phase 1b–1d für die betroffenen Bereiche erneut. Danach **erneut Phase 0** (beide Reviewer neu starten).
-4. **🟡 GELB** (kein rot, mind. einer gelb) → Findings beider Reports zusammengefasst dem User zeigen + fragen ob er trotzdem freigeben will. Ohne Freigabe wie 🔴 behandeln.
-5. **🟢 GRÜN** (beide grün) → weiter zu Phase 3.
+1. **Report einlesen:** Output aus dem `Agent`-Tool-Result.
+2. **Ampel auswerten:**
+   - **🔴 ROT** → ALLE kritischen Findings fixen. Danach Phase 1b–1d für die betroffenen Bereiche erneut. Danach **erneut Phase 0** (Reviewer neu starten).
+   - **🟡 GELB** → Findings dem User zeigen + fragen ob er trotzdem freigeben will. Ohne Freigabe wie 🔴 behandeln.
+   - **🟢 GRÜN** → weiter zu Phase 3.
 
-**Loop-Regel:** Nach jeder Fix-Runde MÜSSEN BEIDE Reviewer neu laufen (Phase 0a + 0b erneut, im Hintergrund), während du parallel Phase 1b–1d wiederholst. Niemals nur einen der zwei neu starten.
+**Loop-Regel:** Nach jeder Fix-Runde MUSS der Reviewer neu laufen (Phase 0a erneut, im Hintergrund), während du parallel Phase 1b–1d wiederholst.
 
-**Konflikt-Regel:** Wenn Claude und Codex sich bei einem konkreten Finding widersprechen (z.B. einer markiert einen Spot als kritisch, der andere nicht), gewinnt **nicht** automatisch die strengere Stimme – dann **kurz dem User vorlegen**, weil das oft auf eine echte Architektur-Entscheidung hinweist.
+**Einspruchs-Regel:** Wenn du ein Finding für sachlich falsch hältst (der Reviewer sieht den Kontext nicht immer vollständig), fixe es **nicht** stillschweigend weg und ignoriere es auch nicht – **leg es dem User kurz vor** mit deiner Begründung. Das deutet oft auf eine echte Architektur-Entscheidung hin.
 
 ---
 
@@ -180,7 +135,6 @@ Sobald **beide** Hintergrund-Reviewer (Claude-Subagent UND Codex) fertig sind:
 Nur wenn:
 
 - ✅ Claude-Reviewer-Ampel 🟢 (oder 🟡 mit User-Freigabe) – deckt Security/DSGVO/Secrets ab
-- ✅ Codex-Reviewer-Ampel 🟢 (oder 🟡 mit User-Freigabe) – Zweitmeinung über ChatGPT-Abo
 - ✅ Backend Build + Tests grün
 - ✅ Frontend Lint + Build + Tests grün (Desktop + Mobile falls betroffen)
 
@@ -239,7 +193,6 @@ Branch: <branch>
 Review-Runden: <Anzahl Phase-0-Aufrufe>
 Geprüfte Checks:
   - erp-code-reviewer Subagent (Claude, inkl. Security/DSGVO/Secrets): 🟢
-  - codex exec review (ChatGPT-Abo, Zweitmeinung): 🟢
   - Backend Build + Tests: ✅
   - Frontend Lint + Build + Tests: ✅
 Push: origin/<branch>
@@ -249,6 +202,7 @@ Push: origin/<branch>
 
 ## Merksätze
 
+- **Kein Codex.** Einzige Review-Instanz ist der `erp-code-reviewer`-Subagent. Kein `codex exec`, keine Zweitmeinung über ein Fremdmodell.
 - **Phase 0 IMMER mit `run_in_background: true`.** Sonst blockiert der Review die Tests.
 - **Du wartest nicht** – während der Reviewer arbeitet, kompilierst und testest du.
 - **Jede Fix-Runde startet einen neuen Review-Lauf** – nicht nur einmal reviewen.
