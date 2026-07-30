@@ -82,9 +82,28 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
                                                  @Param("anlegedatum") LocalDate anlegedatum,
                                                  @Param("projektId") Long projektId);
 
-        List<Projekt> findByAbgeschlossenFalseOrderByAnlegedatumDesc();
+        /**
+         * Wie {@link #existsVorherigesProjektFuerKunde}, aber für eine ganze Liste auf
+         * einmal: liefert die IDs der übergebenen Projekte, für deren Kunden es ein
+         * früheres Projekt gibt (= Folgeauftrag). Spart eine Abfrage pro Zeile in der
+         * Projektliste.
+         */
+        @Query("""
+                SELECT p.id
+                FROM Projekt p
+                WHERE p.id IN :projektIds
+                  AND EXISTS (
+                        SELECT 1 FROM Projekt vorherigesProjekt
+                        WHERE vorherigesProjekt.kundenId.id = p.kundenId.id
+                          AND (vorherigesProjekt.anlegedatum < p.anlegedatum
+                            OR (vorherigesProjekt.anlegedatum = p.anlegedatum
+                                AND vorherigesProjekt.id < p.id))
+                  )
+                """)
+        List<Long> findIdsMitVorherigemProjektFuerKunde(@Param("projektIds") List<Long> projektIds);
 
-        List<Projekt> findByBezahltFalseOrderByAnlegedatumDesc();
+        @Query("SELECT p FROM Projekt p LEFT JOIN FETCH p.kundenId WHERE p.abgeschlossen = false ORDER BY p.anlegedatum DESC")
+        List<Projekt> findByAbgeschlossenFalseOrderByAnlegedatumDesc();
 
         List<Projekt> findByAnlegedatumBetween(LocalDate start, LocalDate ende);
 

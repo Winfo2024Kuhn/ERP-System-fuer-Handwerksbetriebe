@@ -61,6 +61,14 @@ public class Projekt {
     private boolean abgeschlossen = false;
 
     /**
+     * True, sobald der Benutzer den Haken "Beendet" selbst gesetzt oder entfernt hat.
+     * Dann hat seine Entscheidung Vorrang: Die Automatik (komplette Auftragssumme
+     * bezahlt → Projekt beenden) fasst {@link #abgeschlossen} nicht mehr an.
+     */
+    @Column(name = "abgeschlossen_manuell", nullable = false)
+    private boolean abgeschlossenManuell = false;
+
+    /**
      * Art des Projekts - bestimmt ob produktive oder unproduktive Stunden.
      * PAUSCHAL/REGIE = produktiv (für Gemeinkostensatz-Berechnung)
      * INTERN/GARANTIE = unproduktiv

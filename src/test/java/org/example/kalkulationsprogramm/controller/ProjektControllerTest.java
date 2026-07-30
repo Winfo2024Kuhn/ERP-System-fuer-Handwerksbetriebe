@@ -158,18 +158,43 @@ class ProjektControllerTest {
         }
 
         @Test
-        void exportiereProjektliste_liefertPdfZumDownload() throws Exception {
-                byte[] pdf = "%PDF-Test".getBytes();
-                when(projektListenPdfService.generatePdf(org.example.kalkulationsprogramm.service.ProjektListenPdfService.ProjektListenTyp.IN_ARBEIT))
-                                .thenReturn(pdf);
+        void setzeAbgeschlossen_entferntDenHakenUndLiefertDasProjekt() throws Exception {
+                ProjektResponseDto dto = new ProjektResponseDto();
+                dto.setId(42L);
+                dto.setAbgeschlossen(false);
+                when(projektManagementService.setzeAbgeschlossen(42L, false)).thenReturn(dto);
 
-                mockMvc.perform(get("/api/projekte/export-pdf").param("typ", "IN_ARBEIT"))
+                mockMvc.perform(patch("/api/projekte/42/abgeschlossen").param("abgeschlossen", "false"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value(42))
+                                .andExpect(jsonPath("$.abgeschlossen").value(false));
+
+                verify(projektManagementService).setzeAbgeschlossen(42L, false);
+        }
+
+        @Test
+        void setzeAbgeschlossen_liefert404FuerUnbekanntesProjekt() throws Exception {
+                when(projektManagementService.setzeAbgeschlossen(999L, true))
+                                .thenThrow(new RuntimeException("Projekt konnte nicht gefunden werden."));
+
+                mockMvc.perform(patch("/api/projekte/999/abgeschlossen").param("abgeschlossen", "true"))
+                                .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void exportiereProjektliste_liefertPdfZurVorschau() throws Exception {
+                byte[] pdf = "%PDF-Test".getBytes();
+                when(projektListenPdfService.generatePdf()).thenReturn(pdf);
+
+                mockMvc.perform(get("/api/projekte/export-pdf"))
                                 .andExpect(status().isOk())
                                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType("application/pdf"))
+                                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                                .header().string("Content-Disposition",
+                                                                "inline; filename=\"projekte-in-arbeit.pdf\""))
                                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().bytes(pdf));
 
-                verify(projektListenPdfService).generatePdf(
-                                org.example.kalkulationsprogramm.service.ProjektListenPdfService.ProjektListenTyp.IN_ARBEIT);
+                verify(projektListenPdfService).generatePdf();
         }
 
         @Test

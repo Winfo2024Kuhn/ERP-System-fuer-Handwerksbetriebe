@@ -29,7 +29,6 @@ import {
     Ban,
     Building2,
     ExternalLink,
-    Download,
     Trash2,
     Upload,
     User,
@@ -3554,13 +3553,13 @@ export default function ProjektEditor() {
     const [page, setPage] = useState(0);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
-    const [exportingTyp, setExportingTyp] = useState<"NICHT_ABGERECHNET" | "IN_ARBEIT" | null>(null);
+    const [showProjektlistePdf, setShowProjektlistePdf] = useState(false);
 
     // Filters
     const [filters, setFilters] = useState({
         q: "",
         kunde: "",
-        status: "", // "in-arbeit", "nicht-bezahlt", "bezahlt", ""
+        status: "", // "in-arbeit", "abgeschlossen", ""
     });
 
     // Fetch List
@@ -3573,8 +3572,7 @@ export default function ProjektEditor() {
             if (filters.q) params.set("q", filters.q);
             if (filters.kunde) params.set("kunde", filters.kunde);
             if (filters.status === 'in-arbeit') params.set("abgeschlossen", "false");
-            if (filters.status === 'bezahlt') params.set("bezahlt", "true");
-            if (filters.status === 'nicht-bezahlt') params.set("bezahlt", "false");
+            if (filters.status === 'abgeschlossen') params.set("abgeschlossen", "true");
 
             const [res, lastAccessed] = await Promise.all([
                 fetch(`/api/projekte?${params.toString()}`),
@@ -3680,27 +3678,6 @@ export default function ProjektEditor() {
         setPage(0);
     };
 
-    const handlePdfExport = async (typ: "NICHT_ABGERECHNET" | "IN_ARBEIT") => {
-        setExportingTyp(typ);
-        try {
-            const response = await fetch(`/api/projekte/export-pdf?typ=${typ}`);
-            if (!response.ok) throw new Error("PDF-Export fehlgeschlagen");
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = typ === "IN_ARBEIT" ? "projekte-in-arbeit.pdf" : "nicht-abgerechnete-projekte.pdf";
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error("Projektlisten-Export fehlgeschlagen:", error);
-        } finally {
-            setExportingTyp(null);
-        }
-    };
-
     const handleDetail = async (projekt: Projekt) => {
         trackProjektAccess(projekt.id);
         try {
@@ -3728,28 +3705,13 @@ export default function ProjektEditor() {
         }
     };
 
-    // Toggle abgeschlossen status directly from card
+    // Haken "Beendet" direkt auf der Karte setzen/entfernen.
+    // Eigener Endpunkt: Nur so merkt sich das System, dass der Benutzer selbst
+    // entschieden hat – die Bezahlt-Automatik überschreibt den Haken danach nicht mehr.
     const handleToggleAbgeschlossen = async (projektId: number, abgeschlossen: boolean) => {
         try {
-            // Find projekt to get required data
-            const projekt = projekte.find(p => p.id === projektId);
-            if (!projekt) return;
-
-            const res = await fetch(`/api/projekte/${projektId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    bauvorhaben: projekt.bauvorhaben,
-                    kunde: projekt.kunde,
-                    kundennummer: projekt.kundennummer,
-                    kundenId: projekt.kundenId,
-                    auftragsnummer: projekt.auftragsnummer,
-                    bruttoPreis: projekt.bruttoPreis,
-                    strasse: projekt.strasse,
-                    plz: projekt.plz,
-                    ort: projekt.ort,
-                    abgeschlossen: abgeschlossen
-                })
+            const res = await fetch(`/api/projekte/${projektId}/abgeschlossen?abgeschlossen=${abgeschlossen}`, {
+                method: 'PATCH',
             });
 
             if (res.ok) {
@@ -3846,13 +3808,9 @@ export default function ProjektEditor() {
             subtitle="Übersicht und Verwaltung Ihrer Projekte."
             actions={
                 <>
-                    <Button variant="outline" size="sm" onClick={() => handlePdfExport("NICHT_ABGERECHNET")} disabled={exportingTyp !== null}>
-                        <Download className="w-4 h-4 mr-2" />
-                        {exportingTyp === "NICHT_ABGERECHNET" ? "Export läuft..." : "PDF: Nicht abgerechnet"}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handlePdfExport("IN_ARBEIT")} disabled={exportingTyp !== null}>
-                        <Download className="w-4 h-4 mr-2" />
-                        {exportingTyp === "IN_ARBEIT" ? "Export läuft..." : "PDF: In Arbeit"}
+                    <Button variant="outline" size="sm" onClick={() => setShowProjektlistePdf(true)}>
+                        <FileText className="w-4 h-4 mr-2" />
+                        Liste: Projekte in Arbeit
                     </Button>
                     <Button size="sm" onClick={() => setShowCreateModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
                         <Plus className="w-4 h-4 mr-2" />
@@ -3895,8 +3853,7 @@ export default function ProjektEditor() {
                             options={[
                                 { value: "", label: "Alle" },
                                 { value: "in-arbeit", label: "In Arbeit" },
-                                { value: "nicht-bezahlt", label: "Nicht abgerechnet" },
-                                { value: "bezahlt", label: "Abgerechnet" }
+                                { value: "abgeschlossen", label: "Beendet" }
                             ]}
                             value={filters.status}
                             onChange={(val) => handleFilterChange("status", val)}
@@ -3945,6 +3902,15 @@ export default function ProjektEditor() {
                     </Button>
                 </div>
             </div>
+
+            {/* Liste aller Projekte, bei denen der Haken "Beendet" nicht gesetzt ist */}
+            {showProjektlistePdf && (
+                <DocumentPreviewModal
+                    doc={{ url: '/api/projekte/export-pdf', title: 'Projekte in Arbeit' }}
+                    isPdf
+                    onClose={() => setShowProjektlistePdf(false)}
+                />
+            )}
 
             {/* Create Project Modal */}
             <ProjektErstellenModal

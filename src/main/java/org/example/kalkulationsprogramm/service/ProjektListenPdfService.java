@@ -12,7 +12,6 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Projekt;
-import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,7 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Erzeugt übersichtliche Projektlisten für Nachkalkulation und Abrechnung. */
+/** Erzeugt eine übersichtliche Liste aller Projekte, die noch nicht auf "Beendet" gesetzt wurden. */
 @Service
 @RequiredArgsConstructor
 public class ProjektListenPdfService {
@@ -39,20 +38,19 @@ public class ProjektListenPdfService {
     private static final NumberFormat CURRENCY_FORMAT = NumberFormat.getCurrencyInstance(Locale.GERMANY);
 
     private final ProjektRepository projektRepository;
-    private final AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
 
+    /**
+     * Listet genau die Projekte auf, bei denen der Haken "Beendet" nicht gesetzt ist –
+     * ohne weitere Filter, damit die Liste immer 1:1 zur Projektübersicht passt.
+     */
     @Transactional(readOnly = true)
-    public byte[] generatePdf(ProjektListenTyp typ) {
-        List<Projekt> kandidaten = typ == ProjektListenTyp.IN_ARBEIT
-                ? projektRepository.findByAbgeschlossenFalseOrderByAnlegedatumDesc()
-                : projektRepository.findByBezahltFalseOrderByAnlegedatumDesc();
-        // Altprojekte besitzen nur ProjektGeschaeftsdokumente. Für die Liste sollen
-        // ausschließlich Projekte berücksichtigt werden, die im neuen
-        // AusgangsGeschaeftsDokument-System geführt werden.
-        Set<Long> projektIdsMitNeuemDokument = Set.copyOf(ausgangsGeschaeftsDokumentRepository.findDistinctProjektIds());
-        List<Projekt> projekte = kandidaten.stream()
-                .filter(projekt -> projektIdsMitNeuemDokument.contains(projekt.getId()))
-                .toList();
+    public byte[] generatePdf() {
+        List<Projekt> projekte = projektRepository.findByAbgeschlossenFalseOrderByAnlegedatumDesc();
+        // Erst-/Folgeauftrag für alle Zeilen in einer Abfrage klären statt pro Zeile.
+        Set<Long> folgeauftraege = projekte.isEmpty()
+                ? Set.of()
+                : Set.copyOf(projektRepository.findIdsMitVorherigemProjektFuerKunde(
+                        projekte.stream().map(Projekt::getId).toList()));
 
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4.rotate(), 36, 36, 42, 36);
@@ -61,7 +59,7 @@ public class ProjektListenPdfService {
 
             Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(30, 41, 59));
             Font subtitleFont = FontFactory.getFont(FontFactory.HELVETICA, 10, new Color(100, 116, 139));
-            document.add(new Paragraph(typ.titel(), titleFont));
+            document.add(new Paragraph("Projekte in Arbeit", titleFont));
             document.add(new Paragraph("Erstellt am " + LocalDate.now().format(DATE_FORMAT)
                     + " · " + projekte.size() + " Projekte", subtitleFont));
             document.add(new Paragraph(" "));
@@ -83,7 +81,7 @@ public class ProjektListenPdfService {
             for (int i = 0; i < projekte.size(); i++) {
                 Projekt projekt = projekte.get(i);
                 Color background = i % 2 == 0 ? Color.WHITE : ROW_ALT;
-                addCell(table, ermittleAuftragsart(projekt), cellFont, background, Element.ALIGN_CENTER);
+                addCell(table, ermittleAuftragsart(projekt, folgeauftraege), cellFont, background, Element.ALIGN_CENTER);
                 addCell(table, projekt.getAuftragsnummer(), cellFont, background, Element.ALIGN_LEFT);
                 addCell(table, projekt.getBauvorhaben(), cellFont, background, Element.ALIGN_LEFT);
                 addCell(table, projekt.getKunde(), cellFont, background, Element.ALIGN_LEFT);
@@ -123,26 +121,11 @@ public class ProjektListenPdfService {
         table.addCell(cell);
     }
 
-    private String ermittleAuftragsart(Projekt projekt) {
+    /** "F" = Folgeauftrag (Kunde hatte schon ein Projekt), "E" = Erstauftrag. */
+    private String ermittleAuftragsart(Projekt projekt, Set<Long> folgeauftraege) {
         if (projekt.getKundenId() == null || projekt.getAnlegedatum() == null || projekt.getId() == null) {
             return "–";
         }
-        return projektRepository.existsVorherigesProjektFuerKunde(
-                projekt.getKundenId().getId(), projekt.getAnlegedatum(), projekt.getId()) ? "F" : "E";
-    }
-
-    public enum ProjektListenTyp {
-        NICHT_ABGERECHNET("Nicht abgerechnete Projekte"),
-        IN_ARBEIT("Projekte in Arbeit");
-
-        private final String titel;
-
-        ProjektListenTyp(String titel) {
-            this.titel = titel;
-        }
-
-        public String titel() {
-            return titel;
-        }
+        return folgeauftraege.contains(projekt.getId()) ? "F" : "E";
     }
 }

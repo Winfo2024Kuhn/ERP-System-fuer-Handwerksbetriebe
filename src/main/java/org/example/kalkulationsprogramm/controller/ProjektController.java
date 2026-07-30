@@ -57,7 +57,6 @@ import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
 import org.example.kalkulationsprogramm.service.ProjektListenPdfService;
-import org.example.kalkulationsprogramm.service.ProjektListenPdfService.ProjektListenTyp;
 import org.example.kalkulationsprogramm.service.StuecklistePdfService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
@@ -239,6 +238,20 @@ public class ProjektController {
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        }
+    }
+
+    /**
+     * Haken "Beendet" setzen oder entfernen. Nur über diesen Weg gilt die Entscheidung
+     * als manuell – die Bezahlt-Automatik fasst das Projekt danach nicht mehr an.
+     */
+    @PatchMapping(value = "/{projektID}/abgeschlossen")
+    public ResponseEntity<ProjektResponseDto> setzeAbgeschlossen(@PathVariable Long projektID,
+            @RequestParam boolean abgeschlossen) {
+        try {
+            return ResponseEntity.ok(projektManagementService.setzeAbgeschlossen(projektID, abgeschlossen));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -1079,15 +1092,13 @@ public class ProjektController {
         return ResponseEntity.ok(response);
     }
 
+    /** Liste aller Projekte, die noch nicht auf "Beendet" gesetzt sind – wird im Browser als Vorschau angezeigt. */
     @GetMapping("/export-pdf")
-    public ResponseEntity<byte[]> exportiereProjektliste(@RequestParam ProjektListenTyp typ) {
-        byte[] pdf = projektListenPdfService.generatePdf(typ);
-        String dateiname = typ == ProjektListenTyp.IN_ARBEIT
-                ? "projekte-in-arbeit.pdf"
-                : "nicht-abgerechnete-projekte.pdf";
+    public ResponseEntity<byte[]> exportiereProjektliste() {
+        byte[] pdf = projektListenPdfService.generatePdf();
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + dateiname + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"projekte-in-arbeit.pdf\"")
                 .body(pdf);
     }
 

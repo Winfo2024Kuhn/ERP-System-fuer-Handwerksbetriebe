@@ -31,7 +31,12 @@ public class ProjektErstellenDto {
     private BigDecimal bruttoPreis;
     private List<MaterialkostenErfassenDto> materialkosten;
     private boolean bezahlt;
-    private boolean abgeschlossen;
+    /**
+     * Haken "Beendet". Bewusst {@code Boolean}: Fehlt das Feld im Request, bleibt der
+     * gespeicherte Stand unverändert – ein Teil-Update darf ein beendetes Projekt nicht
+     * versehentlich wieder aufreißen.
+     */
+    private Boolean abgeschlossen;
     private String projektArt;
 
     // Fremdschlüssel

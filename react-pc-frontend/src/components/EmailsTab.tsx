@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Mail, Search, Paperclip, Plus, Reply, MessagesSquare, X, ArrowLeft } from 'lucide-react';
 import { klartextGrund } from '../lib/zustellGrund';
+import { extractDisplayName, formatRecipient } from '../lib/emailAddress';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { EmailComposeModal } from './EmailComposeModal';
@@ -97,21 +98,6 @@ function countReplies(email: GenericEmail): number {
         count += countReplies(r);
     }
     return count;
-}
-
-// ─── Helper: extract display name ────────────────────────────
-function extractDisplayName(address?: string): string {
-    if (!address) return 'Unbekannt';
-    const match = address.match(/^"?(.*?)"?\s*<.*>$/);
-    if (match && match[1]) return match[1].trim();
-    return address;
-}
-
-function extractEmail(address?: string): string {
-    if (!address) return '';
-    const match = address.match(/<(.+)>/);
-    if (match) return match[1];
-    return address;
 }
 
 export const EmailsTab: React.FC<EmailsTabProps> = ({
@@ -375,10 +361,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
     const replyInitialRecipient = useMemo(() => {
         if (!replyToEmail) return '';
-        const addr = replyToEmail.fromAddress || replyToEmail.from || replyToEmail.sender || '';
-        const name = extractDisplayName(addr);
-        const em = extractEmail(addr);
-        return em ? `"${name}" <${em}>` : name;
+        return formatRecipient(replyToEmail.fromAddress || replyToEmail.from || replyToEmail.sender || '');
     }, [replyToEmail]);
 
     const replyInitialSubject = useMemo(() => {

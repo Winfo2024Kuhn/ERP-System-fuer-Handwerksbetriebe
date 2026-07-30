@@ -10,6 +10,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import type { ProjektDetail, ProjektDokument } from '../types';
+import { extractEmailAddress, isSingleEmailAddress } from '../lib/emailAddress';
 import { EmailRecipientInput } from './EmailRecipientInput';
 import { EmailEntityDocumentPicker } from './EmailEntityDocumentPicker';
 
@@ -746,13 +747,19 @@ export function EmailComposeForm({
             // Draft nach erfolgreichem Senden löschen
             await deleteDraft();
 
-            // Check if the recipient email is new (not in known emails)
-            const isNewEmail = finalRecipient && !availableEmails.some(
-                e => e.toLowerCase() === finalRecipient.toLowerCase()
+            // Check if the recipient email is new (not in known emails).
+            // Beim Antworten steht im Feld `"Name" <adresse>` – verglichen und
+            // gespeichert wird ausschliesslich die reine Adresse. Sammel-Eingaben
+            // ("a@x.de, b@y.de") werden gar nicht erst zum Speichern angeboten.
+            const plainRecipient = isSingleEmailAddress(finalRecipient)
+                ? extractEmailAddress(finalRecipient)
+                : '';
+            const isNewEmail = plainRecipient && !availableEmails.some(
+                e => extractEmailAddress(e).toLowerCase() === plainRecipient.toLowerCase()
             );
 
             if (isNewEmail && (kundeId || projektId || anfrageId)) {
-                setNewEmailToSave(finalRecipient);
+                setNewEmailToSave(plainRecipient);
                 setShowSaveEmailDialog(true);
                 // Don't close yet — wait for save dialog decision
             } else {

@@ -305,6 +305,79 @@ class ProjektManagementServiceTest {
     }
 
     @Test
+    void setzeAbgeschlossenMerktSichDieEntscheidungDesBenutzers() {
+        Projekt projekt = new Projekt();
+        projekt.setId(5L);
+        // Das System hatte das Projekt automatisch beendet.
+        projekt.setAbgeschlossen(true);
+
+        when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+        when(projektRepository.save(any(Projekt.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
+
+        service.setzeAbgeschlossen(5L, false);
+
+        ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
+        verify(projektRepository).save(captor.capture());
+        Projekt gespeichertesProjekt = captor.getValue();
+        assertFalse(gespeichertesProjekt.isAbgeschlossen());
+        assertTrue(gespeichertesProjekt.isAbgeschlossenManuell());
+    }
+
+    @Test
+    void aktualisiereProjektLaesstDenHakenBeendetUnangetastetWennDasFeldFehlt() throws Exception {
+        Projekt projekt = new Projekt();
+        projekt.setId(6L);
+        projekt.setAnlegedatum(LocalDate.of(2024, 1, 1));
+        projekt.setKundenId(new Kunde());
+        // Automatisch beendet – ein Teil-Update darf das nicht aufreißen.
+        projekt.setAbgeschlossen(true);
+
+        when(projektRepository.findById(6L)).thenReturn(Optional.of(projekt));
+        when(projektPersistenceService.saveProjektWithRetry(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
+
+        ProjektErstellenDto dto = new ProjektErstellenDto();
+        dto.setBauvorhaben("Dachsanierung Musterweg");
+        // abgeschlossen bewusst nicht gesetzt → bleibt null
+
+        service.aktualisiereProjekt(6L, dto, null, null, null, null, null);
+
+        ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
+        verify(projektPersistenceService).saveProjektWithRetry(captor.capture());
+        Projekt gespeichertesProjekt = captor.getValue();
+        assertTrue(gespeichertesProjekt.isAbgeschlossen());
+        assertFalse(gespeichertesProjekt.isAbgeschlossenManuell());
+    }
+
+    @Test
+    void aktualisiereProjektSetztDasManuellFlagNichtWennDerHakenMitgeschicktWird() throws Exception {
+        Projekt projekt = new Projekt();
+        projekt.setId(7L);
+        projekt.setAnlegedatum(LocalDate.of(2024, 1, 1));
+        projekt.setKundenId(new Kunde());
+        projekt.setAbgeschlossen(true);
+
+        when(projektRepository.findById(7L)).thenReturn(Optional.of(projekt));
+        when(projektPersistenceService.saveProjektWithRetry(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
+
+        ProjektErstellenDto dto = new ProjektErstellenDto();
+        // Veralteter Formularstand: Das Projekt wurde zwischenzeitlich automatisch beendet.
+        dto.setAbgeschlossen(false);
+
+        service.aktualisiereProjekt(7L, dto, null, null, null, null, null);
+
+        ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
+        verify(projektPersistenceService).saveProjektWithRetry(captor.capture());
+        // Wert wird übernommen, gilt aber NICHT als bewusste Entscheidung –
+        // die Automatik bleibt für dieses Projekt zuständig.
+        assertFalse(captor.getValue().isAbgeschlossenManuell());
+    }
+
+    @Test
     void reusesPersistedZeitEntryIfNotLoadedInProjekt() throws Exception {
         Projekt projekt = new Projekt();
         projekt.setId(3L);

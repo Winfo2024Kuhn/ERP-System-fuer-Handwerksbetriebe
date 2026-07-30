@@ -1692,12 +1692,17 @@ public class AusgangsGeschaeftsDokumentService {
                 && summeRechnungen.compareTo(neuerBruttoPreis.subtract(new BigDecimal("0.01"))) >= 0;
         boolean keineOffenenPosten = !projektDokumentRepository.existsOffenePostenByProjektId(projektId);
 
+        // Haken "Beendet" von Hand gesetzt/entfernt? Dann hat der Benutzer Vorrang
+        // und die Automatik fasst "abgeschlossen" nicht mehr an.
+        boolean automatikDarfBeenden = !projekt.isAbgeschlossenManuell();
         if (rechnungssummeAusreichend && keineOffenenPosten) {
             projekt.setBezahlt(true);
-            projekt.setAbgeschlossen(true);
+            if (automatikDarfBeenden) {
+                projekt.setAbgeschlossen(true);
+            }
         } else {
             projekt.setBezahlt(false);
-            if (!keineOffenenPosten) {
+            if (!keineOffenenPosten && automatikDarfBeenden) {
                 projekt.setAbgeschlossen(false);
             }
         }

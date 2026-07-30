@@ -1342,6 +1342,10 @@ public class DateiSpeicherService {
      * Wenn erfüllt → projekt.bezahlt = true, projekt.abgeschlossen = true.
      * Wenn nicht → projekt.bezahlt = false (abgeschlossen bleibt unverändert, solange
      * keine offenen Posten existieren – damit ein manuell geschlossenes Projekt offen bleibt).
+     * <p>
+     * Hat der Benutzer den Haken "Beendet" selbst angefasst
+     * ({@code projekt.abgeschlossenManuell}), bleibt {@code abgeschlossen} komplett
+     * unangetastet – seine Entscheidung hat Vorrang.
      */
     private void pruefeProjektAbschluss(Long projektId) {
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
@@ -1364,12 +1368,15 @@ public class DateiSpeicherService {
                     bezahlteSumme.compareTo(projektPreis.subtract(new BigDecimal("0.01"))) >= 0;
         }
 
+        boolean automatikDarfBeenden = !projekt.isAbgeschlossenManuell();
         if (keineOffenenPosten && kompletteSummeBezahlt) {
             projekt.setBezahlt(true);
-            projekt.setAbgeschlossen(true);
+            if (automatikDarfBeenden) {
+                projekt.setAbgeschlossen(true);
+            }
         } else {
             projekt.setBezahlt(false);
-            if (!keineOffenenPosten) {
+            if (!keineOffenenPosten && automatikDarfBeenden) {
                 projekt.setAbgeschlossen(false);
             }
         }

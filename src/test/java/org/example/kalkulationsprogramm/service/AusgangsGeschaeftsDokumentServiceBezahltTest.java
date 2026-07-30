@@ -126,6 +126,65 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
         }
 
         @Test
+        void beendetProjektNichtErneutWennBenutzerDenHakenSelbstEntferntHat() {
+            Projekt projekt = new Projekt();
+            projekt.setId(10L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+            projekt.setAbgeschlossen(false);
+            // Benutzer hat den Haken "Beendet" von Hand entfernt.
+            projekt.setAbgeschlossenManuell(true);
+
+            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            angebot.setBetragBrutto(new BigDecimal("1000.00"));
+            angebot.setStorniert(false);
+
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            rechnung.setBetragBrutto(new BigDecimal("1000.00"));
+            rechnung.setStorniert(false);
+
+            when(projektRepository.findById(10L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(10L))
+                    .thenReturn(List.of(angebot, rechnung));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(10L)).thenReturn(false);
+
+            service.aktualisiereProjektPreisAusDokumenten(10L);
+
+            // Bezahlt-Status läuft weiter automatisch, der Haken bleibt aber offen.
+            assertThat(projekt.isBezahlt()).isTrue();
+            assertThat(projekt.isAbgeschlossen()).isFalse();
+            verify(projektRepository).save(projekt);
+        }
+
+        @Test
+        void oeffnetManuellBeendetesProjektNichtWiederWennOffenePostenAuftauchen() {
+            Projekt projekt = new Projekt();
+            projekt.setId(11L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+            // Benutzer hat den Haken "Beendet" von Hand gesetzt.
+            projekt.setAbgeschlossen(true);
+            projekt.setAbgeschlossenManuell(true);
+
+            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            angebot.setBetragBrutto(new BigDecimal("5000.00"));
+            angebot.setStorniert(false);
+
+            when(projektRepository.findById(11L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(11L)).thenReturn(List.of(angebot));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(11L)).thenReturn(true);
+
+            service.aktualisiereProjektPreisAusDokumenten(11L);
+
+            assertThat(projekt.isBezahlt()).isFalse();
+            assertThat(projekt.isAbgeschlossen()).isTrue();
+            verify(projektRepository).save(projekt);
+        }
+
+        @Test
         void setztNichtBezahltWennRechnungssummeAusreichtAberNochOffenePostenExistieren() {
             Projekt projekt = new Projekt();
             projekt.setId(2L);

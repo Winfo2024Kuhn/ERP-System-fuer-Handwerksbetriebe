@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Paperclip, File, ChevronDown, ChevronUp, Reply, FileEdit, Trash2 } from 'lucide-react';
 import { klartextGrund } from '../lib/zustellGrund';
+import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
 import { cn } from '../lib/utils';
 import { EmailContentFrame } from './EmailContentFrame';
 
@@ -46,20 +47,22 @@ export interface EmailThread {
 // HILFSFUNKTIONEN
 // ─────────────────────────────────────────────────────────────────
 
-function extractDisplayName(address?: string): string {
-    if (!address) return 'Unbekannt';
-    const match = address.match(/^"?(.*?)"?\s*<.*>$/);
-    if (match && match[1]) return match[1].trim();
-    return address;
-}
+/**
+ * Bis zu dieser Größe gilt ein Bild als Signatur-Logo und nicht als echter Anhang.
+ * Bekannte Grenze: Ein bewusst erneut gesendetes kleines Bild (< 100 KB) bleibt in
+ * Folgenachrichten unsichtbar. Trennschärfer wäre die contentId des Anhangs.
+ */
+const SIGNATUR_LOGO_MAX_BYTES = 100 * 1024;
 
-function extractEmail(address?: string): string {
-    if (!address) return '';
-    const match = address.match(/<(.+)>/);
-    if (match) return match[1];
-    return address;
+/**
+ * Signatur-Logos hängen an jeder Nachricht eines Verlaufs erneut dran.
+ * Nur solche Bilder werden thread-weit einmalig angezeigt.
+ */
+function isWiederholtesSignaturLogo(attachment: ThreadAttachment): boolean {
+    if (!attachment.mimeType?.toLowerCase().startsWith('image/')) return false;
+    const size = attachment.sizeBytes ?? 0;
+    return size > 0 && size <= SIGNATUR_LOGO_MAX_BYTES;
 }
-
 
 function formatSize(bytes?: number): string {
     if (!bytes) return '';
@@ -243,9 +246,9 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
 
     const visibleAttachments = entry.attachments.filter(a => !a.inline);
     const fromName = extractDisplayName(entry.fromAddress);
-    const fromEmail = extractEmail(entry.fromAddress);
+    const fromEmail = extractEmailAddress(entry.fromAddress);
     const toName = extractDisplayName(entry.recipient);
-    const toEmail = extractEmail(entry.recipient);
+    const toEmail = extractEmailAddress(entry.recipient);
     const avatarName = fromName; // immer der Absender
     const initial = (avatarName.charAt(0) || '?').toUpperCase();
     const avatarBg = isOut ? 'bg-emerald-500' : 'bg-rose-500';
@@ -531,11 +534,20 @@ interface EmailThreadViewProps {
 }
 
 export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDraft, onDeleteDraft }: EmailThreadViewProps) {
-    // Thread-übergreifende Anhang-Dedup über originalFilename:sizeBytes
+    // Thread-übergreifende Anhang-Dedup über originalFilename:sizeBytes.
+    // Greift NUR bei kleinen Bildern (Signatur-Logos, die in jeder Nachricht
+    // erneut mitkommen). Dokumente und große Bilder bleiben in jeder Nachricht
+    // sichtbar – sonst verschwindet eine bewusst erneut gesendete Datei aus dem
+    // Verlauf und der Nutzer hält den Versand für fehlgeschlagen.
     const seenAttachments = new Set<string>();
     const emails = thread.emails.map(entry => ({
         ...entry,
         attachments: entry.attachments.filter(a => {
+            // Inline-Bilder stecken im Text und werden ohnehin nicht als Chip
+            // gezeigt – sie dürfen einem späteren echten Anhang nicht den Platz
+            // wegnehmen.
+            if (a.inline) return true;
+            if (!isWiederholtesSignaturLogo(a)) return true;
             const key = `${a.originalFilename}:${a.sizeBytes ?? ''}`;
             if (seenAttachments.has(key)) return false;
             seenAttachments.add(key);

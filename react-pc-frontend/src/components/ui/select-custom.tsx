@@ -65,6 +65,7 @@ export function Select({ options, value, onChange, placeholder = "Bitte wählen.
     const dropdownContent = (
         <div
             ref={dropdownRef}
+            role="listbox"
             className="max-h-60 overflow-auto rounded-md border border-slate-200 bg-white p-1 text-slate-950 shadow-2xl"
             style={{
                 position: 'fixed',
@@ -80,6 +81,8 @@ export function Select({ options, value, onChange, placeholder = "Bitte wählen.
                 options.map((option) => (
                     <div
                         key={option.value}
+                        role="option"
+                        aria-selected={value === option.value}
                         className={cn(
                             "relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none hover:bg-rose-50 hover:text-rose-900",
                             value === option.value && "bg-rose-50 text-rose-900 font-medium"

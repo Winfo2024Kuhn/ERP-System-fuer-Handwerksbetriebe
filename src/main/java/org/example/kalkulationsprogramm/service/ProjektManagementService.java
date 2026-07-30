@@ -555,6 +555,22 @@ ProjektManagementService {
         return findeProjektById(gespeichertesProjekt.getId());
     }
 
+    /**
+     * Setzt oder entfernt den Haken "Beendet" auf ausdrücklichen Wunsch des Benutzers.
+     * <p>
+     * Nur dieser Weg vermerkt die Entscheidung als manuell. Ab dann hat der Benutzer die
+     * Oberhand: Die Automatik (komplette Auftragssumme bezahlt → Projekt beenden) fasst
+     * den Haken nicht mehr an.
+     */
+    @Transactional
+    public ProjektResponseDto setzeAbgeschlossen(Long id, boolean abgeschlossen) {
+        Projekt projekt = projektRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        projekt.setAbgeschlossen(abgeschlossen);
+        projekt.setAbgeschlossenManuell(true);
+        return projektMapper.toProjektResponseDto(projektRepository.save(projekt));
+    }
+
     @Transactional
     public ProjektResponseDto aktualisiereProjekt(Long id, ProjektErstellenDto dto, String strasse, String plz,
             String ort, MultipartFile bild, Mitarbeiter uploadedBy)
@@ -598,8 +614,12 @@ ProjektManagementService {
             projekt.setBildUrl(bildWebPfad);
         }
 
-        // Manuelles Beenden/Schließen des Projekts
-        projekt.setAbgeschlossen(dto.isAbgeschlossen());
+        // Haken "Beendet" nur übernehmen, wenn er mitgeschickt wurde – ein Teil-Update
+        // darf ein beendetes Projekt nicht versehentlich wieder aufreißen. Als bewusste
+        // Entscheidung des Benutzers zählt ausschließlich {@link #setzeAbgeschlossen}.
+        if (dto.getAbgeschlossen() != null) {
+            projekt.setAbgeschlossen(dto.getAbgeschlossen());
+        }
         
         // Projektart aktualisieren
         if (dto.getProjektArt() != null && !dto.getProjektArt().isBlank()) {

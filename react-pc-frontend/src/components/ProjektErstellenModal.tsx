@@ -616,7 +616,9 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 })),
                 // Alle E-Mails kombinieren: Kunden-E-Mails + zusätzliche E-Mails
                 kundenEmails: [...(selectedKunde?.kundenEmails || []), ...zusaetzlicheEmails],
-                abgeschlossen: isEditMode ? abgeschlossen : false,
+                // "Beendet" bewusst NICHT mitschicken: Der Haken läuft über seinen eigenen
+                // Endpunkt (siehe unten). So kann ein Speichern mit veraltetem Formularstand
+                // ein zwischenzeitlich beendetes Projekt nicht wieder aufreißen.
                 ...(isEditMode ? {} : {
                     anlegedatum: new Date().toISOString().split('T')[0],
                     zeitPositionen: [],
@@ -640,6 +642,14 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             }
 
             const result = await res.json();
+
+            // Haken "Beendet" nur anfassen, wenn der Benutzer ihn hier wirklich umgestellt hat.
+            if (isEditMode && abgeschlossen !== (editProjekt!.abgeschlossen || false)) {
+                await fetch(`/api/projekte/${editProjekt!.id}/abgeschlossen?abgeschlossen=${abgeschlossen}`, {
+                    method: 'PATCH',
+                });
+            }
+
             onSuccess(isEditMode ? editProjekt!.id : result.id);
             onClose();
         } catch (err) {

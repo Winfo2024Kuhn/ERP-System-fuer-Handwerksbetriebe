@@ -38,7 +38,9 @@ export default function DocumentPreviewModal({ doc, onClose, isPdf: isPdfOverrid
     const handleDownload = () => {
         const link = document.createElement('a');
         link.href = doc.url;
-        link.download = doc.title;
+        // Titel sind für Menschen gedacht ("Projekte in Arbeit") – für die Datei brauchen
+        // wir eine Endung, sonst landet sie ohne Dateityp im Download-Ordner.
+        link.download = isPdf && !/\.pdf$/i.test(doc.title) ? `${doc.title}.pdf` : doc.title;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

@@ -55,6 +55,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
+import { extractDisplayName, formatRecipient } from '../lib/emailAddress';
 import { refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { EmailComposeForm } from '../components/EmailComposeForm';
@@ -133,22 +134,11 @@ const getSenderName = (email: EmailItem) => {
     if (email.lieferantName) return email.lieferantName;
     if (email.projektName) return email.projektName;
     if (email.anfrageName) return email.anfrageName;
-    if (email.fromAddress) {
-        const match = email.fromAddress.match(/^"?(.*?)"? <.*>$/);
-        if (match && match[1]) return match[1];
-        return email.fromAddress;
-    }
+    if (email.fromAddress) return extractDisplayName(email.fromAddress);
     return email.sender || 'Unbekannt';
 };
 
-const getRecipientName = (email: EmailItem) => {
-    if (email.recipient) {
-        const match = email.recipient.match(/^"?(.*?)"? <.*>$/);
-        if (match && match[1]) return match[1];
-        return email.recipient;
-    }
-    return 'Unbekannt';
-};
+const getRecipientName = (email: EmailItem) => extractDisplayName(email.recipient);
 
 const getDisplayName = (email: EmailItem) => {
     if (email.direction === 'OUT') {
@@ -1766,10 +1756,9 @@ export default function EmailCenter() {
                 </div>`;
             } else if (replyToEmail) {
                 const senderName = getSenderName(replyToEmail);
-                const match = replyToEmail.fromAddress?.match(/<(.+)>/);
-                const senderEmail = match ? match[1] : (replyToEmail.fromAddress || '');
-
-                initialRecipient = senderEmail ? `"${senderName}" <${senderEmail}>` : senderName;
+                // formatRecipient lässt den Namen weg, wenn er nur die Adresse
+                // wiederholt – sonst stünde `"a@b.de" <a@b.de>` im Empfängerfeld.
+                initialRecipient = formatRecipient(replyToEmail.fromAddress, senderName) || senderName;
                 initialSubject = replyToEmail.subject?.startsWith('Re:') ? replyToEmail.subject : `Re: ${replyToEmail.subject || ''}`;
 
                 // Zitat aufbauen – Quote separat, Signatur wird in EmailComposeForm dazwischen gesetzt

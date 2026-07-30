@@ -785,6 +785,62 @@ class DateiSpeicherServiceTest {
     }
 
     @Test
+    void setzeGeschaeftsdokumentBezahltBeendetProjektNichtWennBenutzerHakenSelbstEntferntHat() throws IOException {
+        ServiceSetup setup = createMahnungService();
+
+        Projekt projekt = new Projekt();
+        projekt.setId(13L);
+        projekt.setBezahlt(false);
+        projekt.setAbgeschlossen(false);
+        // Benutzer hat den Haken "Beendet" von Hand entfernt → er behält die Oberhand.
+        projekt.setAbgeschlossenManuell(true);
+
+        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
+        rechnung.setId(103L);
+        rechnung.setProjekt(projekt);
+        rechnung.setBezahlt(false);
+
+        when(setup.dokumentRepository.findById(103L)).thenReturn(Optional.of(rechnung));
+        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(setup.projektRepository.findById(13L)).thenReturn(Optional.of(projekt));
+        when(setup.dokumentRepository.existsOffenePostenByProjektId(13L)).thenReturn(false);
+
+        setup.service.setzeGeschaeftsdokumentBezahlt(103L, true);
+
+        assertTrue(projekt.isBezahlt());
+        assertFalse(projekt.isAbgeschlossen());
+    }
+
+    @Test
+    void setzeGeschaeftsdokumentBezahltOeffnetManuellBeendetesProjektNichtWieder() throws IOException {
+        ServiceSetup setup = createMahnungService();
+
+        Projekt projekt = new Projekt();
+        projekt.setId(14L);
+        projekt.setBezahlt(true);
+        // Benutzer hat den Haken "Beendet" von Hand gesetzt.
+        projekt.setAbgeschlossen(true);
+        projekt.setAbgeschlossenManuell(true);
+
+        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
+        rechnung.setId(104L);
+        rechnung.setProjekt(projekt);
+        rechnung.setBezahlt(true);
+
+        when(setup.dokumentRepository.findById(104L)).thenReturn(Optional.of(rechnung));
+        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(setup.projektRepository.findById(14L)).thenReturn(Optional.of(projekt));
+        when(setup.dokumentRepository.existsOffenePostenByProjektId(14L)).thenReturn(true);
+
+        setup.service.setzeGeschaeftsdokumentBezahlt(104L, false);
+
+        assertFalse(projekt.isBezahlt());
+        assertTrue(projekt.isAbgeschlossen());
+    }
+
+    @Test
     void setzeGeschaeftsdokumentBezahltWirftExceptionFuerNichtGeschaeftsdokument() throws IOException {
         ServiceSetup setup = createMahnungService();
 
