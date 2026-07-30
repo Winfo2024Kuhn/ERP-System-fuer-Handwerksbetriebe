@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -19,10 +20,12 @@ import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.LieferantReklamation;
+import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ReklamationStatus;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
+import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -36,6 +39,7 @@ import org.example.kalkulationsprogramm.repository.LieferantReklamationRepositor
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.UrlaubsantragRepository;
+import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -52,6 +56,11 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class NotificationController {
 
+        /** Datum in Handwerker-Schreibweise: "29.07.2026". */
+        private static final DateTimeFormatter TAG_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        /** Uhrzeit ohne Sekunden: "20:00". */
+        private static final DateTimeFormatter UHRZEIT_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+
         private final EmailRepository emailRepository;
         private final UrlaubsantragRepository urlaubsantragRepository;
         private final ProjektNotizRepository projektNotizRepository;
@@ -64,6 +73,7 @@ public class NotificationController {
         private final AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
         private final AnfrageDokumentRepository anfrageDokumentRepository;
         private final AnfrageRepository anfrageRepository;
+        private final ZeitbuchungRepository zeitbuchungRepository;
 
         @GetMapping("/summary")
         public NotificationSummaryDto getSummary(@RequestParam(required = false) Long mitarbeiterId) {
@@ -583,6 +593,47 @@ public class NotificationController {
                                                                                         ? f.getAkzeptiertAm().toString()
                                                                                         : "",
                                                                         link));
+                                                });
+                        }
+                } catch (Exception ignored) {
+                }
+
+                // 11. Automatisch beendete Zeitbuchungen (letzte 30 Tage)
+                // Der Auto-Stop hat hier eine geschätzte Endezeit eingetragen, weil der
+                // Mitarbeiter nicht abgestochen hat. Diese Stunden sind erfunden und
+                // fließen ungeprüft in den Monatssaldo - sie müssen sichtbar sein, statt
+                // dass sie zufällig irgendwann auffallen. 30 Tage, weil der Monatslauf
+                // der Bezugsrahmen ist.
+                try {
+                        LocalDateTime dreissigTage = LocalDateTime.now().minusDays(30);
+                        List<Zeitbuchung> autoBeendet = zeitbuchungRepository
+                                        .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(
+                                                        dreissigTage);
+                        if (!autoBeendet.isEmpty()) {
+                                categories.add(new CategoryDto("ZEITEN_AUTO_BEENDET",
+                                                "Zeiten ohne Feierabend", autoBeendet.size(), "Clock",
+                                                "/zeitbuchungen"));
+
+                                autoBeendet.stream()
+                                                .limit(5)
+                                                .forEach(z -> {
+                                                        Mitarbeiter ma = z.getMitarbeiter();
+                                                        String name = ma != null
+                                                                        ? ma.getVorname() + " " + ma.getNachname()
+                                                                        : "Mitarbeiter";
+                                                        String tag = z.getStartZeit()
+                                                                        .format(TAG_FORMAT);
+                                                        String bis = z.getEndeZeit() != null
+                                                                        ? z.getEndeZeit().format(UHRZEIT_FORMAT)
+                                                                        : "?";
+                                                        recentItems.add(new RecentItemDto(
+                                                                        "ZEIT_AUTO_BEENDET",
+                                                                        name + " am " + tag,
+                                                                        "Kein Feierabend gestempelt – automatisch auf "
+                                                                                        + bis + " Uhr gesetzt",
+                                                                        z.getStartZeit().toString(),
+                                                                        "/zeitbuchungen?mitarbeiterId="
+                                                                                        + (ma != null ? ma.getId() : "")));
                                                 });
                         }
                 } catch (Exception ignored) {

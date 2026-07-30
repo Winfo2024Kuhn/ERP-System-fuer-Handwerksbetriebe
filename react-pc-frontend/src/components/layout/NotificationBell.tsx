@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     Bell, Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, X, Package, CheckCircle2,
-    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck
+    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck, Clock
 } from 'lucide-react';
 
 // ── Types & Pure-Logic Helpers ───────────────────────────────────────────
@@ -28,6 +28,7 @@ const RECENT_TYPE_COLORS: Record<string, string> = {
     REKLAMATION: 'text-pink-500',
     FREIGABE_ANGENOMMEN: 'text-emerald-500',
     ANFRAGE_WEBSEITE: 'text-rose-600',
+    ZEIT_AUTO_BEENDET: 'text-amber-600',
 };
 
 const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -42,6 +43,7 @@ const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string
     REKLAMATION: AlertTriangle,
     FREIGABE_ANGENOMMEN: CheckCircle2,
     ANFRAGE_WEBSEITE: Globe,
+    ZEIT_AUTO_BEENDET: Clock,
 };
 
 // ── Gruppen-Definition ─────────────────────────────────────────────────
@@ -69,6 +71,18 @@ const GROUPS: NotificationGroup[] = [
         accentBg: 'bg-rose-100',
         types: ['ANFRAGEN_WEBSEITE'],
         recentTypes: ['ANFRAGE_WEBSEITE'],
+    },
+    {
+        // Direkt hinter den Webseiten-Anfragen: Hier steht geschätzte statt
+        // gestempelter Arbeitszeit in den Zeitkonten. Das muss auffallen,
+        // bevor der Monat abgerechnet wird.
+        id: 'zeiterfassung',
+        label: 'Zeiten prüfen',
+        icon: Clock,
+        accentText: 'text-amber-700',
+        accentBg: 'bg-amber-100',
+        types: ['ZEITEN_AUTO_BEENDET'],
+        recentTypes: ['ZEIT_AUTO_BEENDET'],
     },
     {
         id: 'posteingaenge',

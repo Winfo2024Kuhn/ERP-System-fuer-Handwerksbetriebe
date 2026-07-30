@@ -42,8 +42,15 @@ public class ZeitbuchungAutoStopService {
 
     /**
      * Prüft alle 5 Minuten auf offene Buchungen, die automatisch beendet werden müssen.
+     *
+     * Die Transaktionsgrenze sitzt bewusst HIER und nicht auf {@link #autoStoppeWennNoetig}:
+     * Diese Methode wird vom Scheduler über den Spring-Proxy aufgerufen, {@code autoStoppeWennNoetig}
+     * dagegen nur intern per {@code this}-Aufruf – ein {@code @Transactional} dort würde vom
+     * Proxy nicht gesehen und liefe wirkungslos ins Leere (Save, Audit-Eintrag und
+     * Saldo-Invalidierung wären dann nicht atomar).
      */
     @Scheduled(fixedDelay = 300_000, initialDelay = 60_000)
+    @Transactional
     public void pruefUndStoppeOffeneBuchungen() {
         List<Zeitkonto> zeitkonten = zeitkontoRepository.findAll();
 
@@ -59,7 +66,7 @@ public class ZeitbuchungAutoStopService {
         }
     }
 
-    @Transactional
+    // Kein @Transactional: siehe Hinweis an pruefUndStoppeOffeneBuchungen().
     void autoStoppeWennNoetig(Zeitbuchung buchung, Zeitkonto konto) {
         LocalDateTime jetzt = LocalDateTime.now();
         LocalDate startDatum = buchung.getStartZeit().toLocalDate();
@@ -89,6 +96,10 @@ public class ZeitbuchungAutoStopService {
 
     private void stopBuchung(Zeitbuchung buchung, LocalDateTime endeZeit, String grund) {
         buchung.setEndeZeit(endeZeit);
+        // Die Endezeit ist geschätzt, nicht gestempelt. Markieren, damit sie in der
+        // Benachrichtigungs-Glocke als Prüffall auftaucht und ein verspätet
+        // eintreffender Feierabend-Stop vom Handy sie noch korrigieren darf.
+        buchung.setAutomatischBeendet(true);
 
         Duration dauer = Duration.between(buchung.getStartZeit(), endeZeit);
         BigDecimal stunden = BigDecimal.valueOf(dauer.toMinutes())

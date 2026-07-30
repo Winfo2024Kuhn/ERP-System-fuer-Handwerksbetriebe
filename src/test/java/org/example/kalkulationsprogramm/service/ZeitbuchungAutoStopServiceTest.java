@@ -120,6 +120,26 @@ class ZeitbuchungAutoStopServiceTest {
             assertThat(quelleCaptor.getValue()).isEqualTo(ErfassungsQuelle.SYSTEM);
         }
 
+        // Regression 30.07.2026: Der Auto-Stop hat drei Mitarbeitern eine geschätzte
+        // Endezeit von 20:00 in die Zeitkonten geschrieben, ohne dass das irgendwo
+        // erkennbar war. Die erfundenen Stunden liefen ungeprüft in den Monatssaldo.
+        @Test
+        void markiertAutomatischBeendeteBuchungAlsPruefFall() {
+            Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);
+            Zeitkonto konto = erstelleZeitkonto(1L, mitarbeiter, null);
+
+            Zeitbuchung buchung = new Zeitbuchung();
+            buchung.setId(100L);
+            buchung.setMitarbeiter(mitarbeiter);
+            buchung.setStartZeit(LocalDate.now().minusDays(1).atTime(20, 0));
+            buchung.setVersion(1);
+            assertThat(buchung.isAutomatischBeendet()).isFalse();
+
+            service.autoStoppeWennNoetig(buchung, konto);
+
+            assertThat(buchung.isAutomatischBeendet()).isTrue();
+        }
+
         @Test
         void stopptNichtWennBuchungHeute() {
             Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);

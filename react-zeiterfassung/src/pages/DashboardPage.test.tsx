@@ -337,3 +337,96 @@ describe('DashboardPage – loadActiveSession Frisch-Guard', () => {
         expect(screen.queryByText('Bauvorhaben Mustermann')).not.toBeInTheDocument()
     })
 })
+
+describe('DashboardPage – Feierabend-Rückmeldung', () => {
+    beforeEach(() => {
+        vi.stubGlobal('localStorage', createMemoryStorage())
+        localStorage.setItem('zeiterfassung_token', 'tok-test')
+        localStorage.setItem(
+            'zeiterfassung_active_session',
+            JSON.stringify(buildActiveWorkSession()),
+        )
+
+        mockedOfflineService.getFailedEntries.mockResolvedValue([])
+        mockedOfflineService.getHeuteGearbeitet.mockResolvedValue({
+            stunden: 0,
+            minuten: 0,
+            fromCache: false,
+        })
+        // pendingCount=1: loadActiveSession überspringt den Server-Abgleich und
+        // behält die lokale Session – sonst räumt die {}-Antwort des Fallback-
+        // Mocks die Buchung weg, bevor der Feierabend-Button überhaupt da ist.
+        mockedOfflineService.getPendingCount.mockResolvedValue(1)
+        mockedOfflineService.getUnsyncedStopMinutes.mockResolvedValue(0)
+        mockedOfflineService.addPendingEntryWithOperationId.mockResolvedValue(undefined)
+    })
+
+    afterEach(() => {
+        vi.clearAllMocks()
+        localStorage.clear()
+        vi.unstubAllGlobals()
+    })
+
+    it('sagt dem Handwerker, wenn der Feierabend gespeichert, aber noch nicht übertragen ist', async () => {
+        // REGRESSION 29.07.2026: Zwei Mitarbeiter haben Feierabend gestempelt,
+        // hatten aber kein Netz. Der Stop landete stumm in der Offline-Queue, die
+        // Karte verschwand – für beide sah es aus wie erledigt. Am Server lief die
+        // Buchung weiter, bis der Auto-Stop sie um 20:00 schloss und mehrere
+        // Stunden Arbeitszeit erfand. Ohne Rückmeldung merkt das niemand.
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (url.includes('/api/zeiterfassung/stop')) {
+                throw new TypeError('Failed to fetch') // kein Empfang
+            }
+            return new Response('{}', { status: 200 })
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        const user = userEvent.setup()
+        renderDashboard()
+
+        const gehenButton = await screen.findByRole('button', { name: /feierabend/i })
+        await user.click(gehenButton)
+
+        // Stop liegt lokal in der Queue …
+        await waitFor(() => {
+            expect(mockedOfflineService.addPendingEntryWithOperationId).toHaveBeenCalledWith(
+                'stop',
+                expect.objectContaining({ token: 'tok-test' }),
+                expect.any(String),
+                expect.any(String),
+                expect.any(Number),
+            )
+        })
+
+        // … und der Handwerker erfährt davon, statt es nur in der Konsole zu sehen.
+        expect(await screen.findByText(/noch kein Empfang/i)).toBeInTheDocument()
+        expect(screen.getByText(/automatisch nachgetragen/i)).toBeInTheDocument()
+    })
+
+    it('zeigt keinen Hinweis, wenn der Feierabend sauber beim Server ankommt', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (url.includes('/api/zeiterfassung/stop')) {
+                return new Response(
+                    JSON.stringify({ id: 1, stunden: 7.5, status: 'gestoppt' }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } },
+                )
+            }
+            return new Response('{}', { status: 200 })
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        const user = userEvent.setup()
+        renderDashboard()
+
+        const gehenButton = await screen.findByRole('button', { name: /feierabend/i })
+        await user.click(gehenButton)
+
+        await waitFor(() => {
+            expect(localStorage.getItem('zeiterfassung_active_session')).toBeNull()
+        })
+        expect(screen.queryByText(/noch kein Empfang/i)).not.toBeInTheDocument()
+        expect(mockedOfflineService.addPendingEntryWithOperationId).not.toHaveBeenCalled()
+    })
+})

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench } from 'lucide-react'
+import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench, X } from 'lucide-react'
 import { buildBookingRequestPayload, createOperationId, OfflineService, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import FailedEntriesModal from '../components/FailedEntriesModal'
@@ -85,6 +85,12 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
     // Kategorie switch modal
     const [showKategorieSwitch, setShowKategorieSwitch] = useState(false)
     const [kategorien, setKategorien] = useState<Array<{ id: number; name: string }>>([])
+
+    // Hinweis nach einer Aktion, die NICHT wie erwartet durchlief. Bisher landete
+    // ein nicht übertragener Feierabend nur in der Konsole: Die Karte verschwand,
+    // der Handwerker war überzeugt gestempelt zu haben – und am Server lief die
+    // Buchung weiter, bis der Auto-Stop sie auf die Endezeit setzte.
+    const [aktionsHinweis, setAktionsHinweis] = useState<string | null>(null)
 
     // Urlaubsverfall-Warnung
     interface UrlaubsVerfallWarnung {
@@ -405,8 +411,17 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
 
     // Stop current session (Pause/Buchung beenden)
     const handleStopSession = async () => {
-        if (!activeSession) return
-        if (!beginAction()) return
+        // Beide Guards haben früher stumm abgebrochen. Bei einer Aktion, die für
+        // den Handwerker "Feierabend" bedeutet, darf nie einfach nichts passieren.
+        if (!activeSession) {
+            setAktionsHinweis('Es läuft gerade keine Buchung, die beendet werden könnte.')
+            return
+        }
+        if (!beginAction()) {
+            setAktionsHinweis('Einen Moment – die letzte Aktion läuft noch.')
+            return
+        }
+        setAktionsHinweis(null)
 
         const token = localStorage.getItem('zeiterfassung_token')
         const stopTime = new Date().toISOString()
@@ -444,6 +459,14 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                 // wenn der Server diesen Eintrag später ablehnt (Reparatur-Liste).
                 const stopDuration = isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined
                 await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId, stopDuration)
+                // Ehrlich bleiben: Der Feierabend ist gespeichert, aber noch nicht
+                // beim Chef angekommen. Ohne diesen Hinweis sieht der Handwerker
+                // nur die verschwundene Karte und geht heim - während die Buchung
+                // am Server weiterläuft.
+                setAktionsHinweis(
+                    `Feierabend um ${new Date(stopTime).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} gespeichert, `
+                    + 'aber noch kein Empfang. Er wird automatisch nachgetragen, sobald du wieder online bist.'
+                )
             }
 
             // Stop-Cooldown setzen, damit ein nachfolgendes loadActiveSession()
@@ -920,6 +943,24 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         </div>
                         <ChevronRight className="w-5 h-5 text-amber-700 flex-shrink-0" />
                     </button>
+                )}
+
+                {/* Hinweis zur letzten Aktion (z.B. Feierabend ohne Empfang) */}
+                {aktionsHinweis && (
+                    <div className="w-full bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl p-4 shadow-sm flex items-start gap-3">
+                        <div className="w-10 h-10 bg-amber-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <AlertTriangle className="w-5 h-5 text-amber-700" />
+                        </div>
+                        <p className="flex-1 text-sm font-medium leading-snug">{aktionsHinweis}</p>
+                        <button
+                            onClick={() => setAktionsHinweis(null)}
+                            aria-label="Hinweis schließen"
+                            title="Hinweis schließen"
+                            className="p-1 rounded-lg text-amber-700 hover:bg-amber-200 transition-colors flex-shrink-0"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
                 )}
 
                 {/* Aktive Buchung oder Start Button */}

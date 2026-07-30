@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -336,9 +337,18 @@ public class ZeiterfassungApiService {
             }
         }
 
-        Zeitbuchung buchung = zeitbuchungRepository
-                .findFirstByMitarbeiterIdAndEndeZeitIsNullOrderByStartZeitDesc(mitarbeiter.getId())
-                .orElseThrow(() -> new RuntimeException("Keine aktive Buchung gefunden"));
+        Optional<Zeitbuchung> aktive = zeitbuchungRepository
+                .findFirstByMitarbeiterIdAndEndeZeitIsNullOrderByStartZeitDesc(mitarbeiter.getId());
+
+        if (aktive.isEmpty()) {
+            // Kein offener Eintrag mehr - aber vielleicht hat der Auto-Stop die
+            // Buchung inzwischen mit einer geschätzten Endezeit geschlossen und
+            // dieser Stop ist der echte, nur verspätet angekommene Feierabend.
+            return nachtragenAufAutomatischBeendeteBuchung(mitarbeiter, originalEndeZeit, idempotencyKey)
+                    .orElseThrow(() -> new RuntimeException("Keine aktive Buchung gefunden"));
+        }
+
+        Zeitbuchung buchung = aktive.get();
 
         // Endezeit setzen
         LocalDateTime endeZeit = originalEndeZeit != null ? originalEndeZeit : LocalDateTime.now();
@@ -390,6 +400,101 @@ public class ZeiterfassungApiService {
         result.put("status", "gestoppt");
 
         return result;
+    }
+
+    /**
+     * Trägt einen verspätet eintreffenden Feierabend-Stop auf einer bereits vom
+     * Auto-Stop geschlossenen Buchung nach.
+     *
+     * Ausgangslage: Der Mitarbeiter hat am Handy abgestochen, hatte aber kein Netz.
+     * Die App puffert den Stop lokal. Bevor er den Server erreicht, schließt der
+     * {@code ZeitbuchungAutoStopService} die Buchung mit der geschätzten
+     * buchungEndeZeit (Default 20:00). Ohne diesen Nachtrag würde der echte Stop
+     * mit "Keine aktive Buchung gefunden" abgelehnt – die tatsächlich gestempelte
+     * Zeit landete in der Reparatur-Liste am Handy, während die erfundene 20:00 im
+     * Zeitkonto stehen bliebe.
+     *
+     * Sicherheitsgrenzen (GoBD: die Korrektur darf nie Zeit hinzuerfinden):
+     * <ul>
+     * <li>Nur Buchungen mit {@code automatischBeendet = true} – eine vom Menschen
+     * erfasste Endezeit wird niemals überschrieben.</li>
+     * <li>Die echte Endezeit muss VOR der geschätzten liegen. Der Nachtrag kann
+     * eine Buchung also nur verkürzen, nie verlängern.</li>
+     * <li>Nur am selben Kalendertag – ein uralter Stop aus der Offline-Queue darf
+     * keine Buchung von vorgestern anfassen.</li>
+     * </ul>
+     *
+     * @return die Stop-Antwort, oder {@code Optional.empty()} wenn keine passende
+     *         Buchung existiert (dann bleibt es beim regulären Fehler).
+     */
+    private Optional<Map<String, Object>> nachtragenAufAutomatischBeendeteBuchung(
+            Mitarbeiter mitarbeiter, LocalDateTime originalEndeZeit, String idempotencyKey) {
+
+        // Ohne Original-Zeitstempel vom Handy wissen wir es nicht besser als der
+        // Auto-Stop - dann gibt es nichts zu korrigieren.
+        if (originalEndeZeit == null) {
+            return Optional.empty();
+        }
+
+        LocalDate tag = originalEndeZeit.toLocalDate();
+        Optional<Zeitbuchung> kandidat = zeitbuchungRepository
+                .findFirstByMitarbeiterIdAndAutomatischBeendetTrueAndStartZeitBetweenOrderByStartZeitDesc(
+                        mitarbeiter.getId(), tag.atStartOfDay(), tag.atTime(LocalTime.MAX));
+
+        if (kandidat.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Zeitbuchung buchung = kandidat.get();
+        // Defensiv: Eine markierte Buchung hat immer eine (geschätzte) Endezeit -
+        // der Auto-Stop setzt beides zusammen. Sollte das durch einen Altbestand
+        // doch einmal nicht so sein, fassen wir sie nicht an, statt zu raten.
+        if (buchung.getEndeZeit() == null) {
+            return Optional.empty();
+        }
+        if (!originalEndeZeit.isAfter(buchung.getStartZeit())
+                || !originalEndeZeit.isBefore(buchung.getEndeZeit())) {
+            log.warn("Verspäteter Stop ({}) passt nicht in Buchung {} ({} - {}) von Mitarbeiter {} - kein Nachtrag",
+                    originalEndeZeit, buchung.getId(), buchung.getStartZeit(), buchung.getEndeZeit(),
+                    mitarbeiter.getId());
+            return Optional.empty();
+        }
+
+        LocalDateTime geschaetzt = buchung.getEndeZeit();
+        buchung.setEndeZeit(originalEndeZeit);
+        buchung.setAutomatischBeendet(false);
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            buchung.setStopIdempotencyKey(idempotencyKey);
+        }
+
+        Duration dauer = Duration.between(buchung.getStartZeit(), buchung.getEndeZeit());
+        BigDecimal stunden = BigDecimal.valueOf(dauer.toMinutes())
+                .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+        buchung.setAnzahlInStunden(stunden);
+
+        // Erst Version erhöhen, dann Audit protokollieren (sonst Unique-Constraint).
+        buchung.markiereAlsGeaendert(mitarbeiter);
+        auditService.protokolliereAenderung(buchung, mitarbeiter, ErfassungsQuelle.MOBILE_APP,
+                "Nachgetragener Feierabend vom Handy - ersetzt automatische Endezeit " + geschaetzt);
+
+        zeitbuchungRepository.save(buchung);
+        monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), buchung.getStartZeit());
+
+        log.info("Verspäteter Stop nachgetragen: Buchung {} von Mitarbeiter {} von {} auf {} korrigiert",
+                buchung.getId(), mitarbeiter.getId(), geschaetzt, originalEndeZeit);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", buchung.getId());
+        result.put("projektName", buchung.getProjekt() != null ? buchung.getProjekt().getBauvorhaben() : null);
+        result.put("arbeitsgangName",
+                buchung.getArbeitsgang() != null ? buchung.getArbeitsgang().getBeschreibung() : null);
+        result.put("startZeit", buchung.getStartZeit().toString());
+        result.put("endeZeit", buchung.getEndeZeit().toString());
+        result.put("stunden", stunden);
+        result.put("typ", buchung.getTyp() != null ? buchung.getTyp().name() : "ARBEIT");
+        result.put("status", "nachgetragen");
+
+        return Optional.of(result);
     }
 
     /**

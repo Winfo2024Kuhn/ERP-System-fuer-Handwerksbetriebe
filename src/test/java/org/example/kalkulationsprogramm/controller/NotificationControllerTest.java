@@ -9,6 +9,8 @@ import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.FreigabeStatus;
+import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -21,6 +23,7 @@ import org.example.kalkulationsprogramm.repository.LieferantReklamationRepositor
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.UrlaubsantragRepository;
+import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -63,6 +66,7 @@ class NotificationControllerTest {
     @Mock private AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
     @Mock private AnfrageDokumentRepository anfrageDokumentRepository;
     @Mock private AnfrageRepository anfrageRepository;
+    @Mock private ZeitbuchungRepository zeitbuchungRepository;
 
     @InjectMocks
     private NotificationController controller;
@@ -141,6 +145,64 @@ class NotificationControllerTest {
                     assertThat(i.title()).contains("AB-2026-0042");
                     assertThat(i.subtitle()).contains("Max Mustermann");
                 });
+    }
+
+    @Test
+    @DisplayName("Automatisch beendete Zeitbuchung erscheint als Prüffall in der Glocke")
+    void automatischBeendeteZeitbuchungErscheintInDerGlocke() {
+        // REGRESSION 29.07.2026: Der Auto-Stop schrieb geschätzte 20:00-Endezeiten in
+        // die Zeitkonten, ohne dass das irgendwo sichtbar war. Die erfundenen Stunden
+        // fielen erst am nächsten Morgen zufällig auf.
+        Mitarbeiter mitarbeiter = new Mitarbeiter();
+        mitarbeiter.setId(4711L);
+        mitarbeiter.setVorname("Max");
+        mitarbeiter.setNachname("Mustermann");
+
+        Zeitbuchung buchung = new Zeitbuchung();
+        buchung.setId(1903L);
+        buchung.setMitarbeiter(mitarbeiter);
+        buchung.setStartZeit(LocalDateTime.now().minusDays(1).withHour(16).withMinute(48));
+        buchung.setEndeZeit(LocalDateTime.now().minusDays(1).withHour(20).withMinute(0));
+        buchung.setAutomatischBeendet(true);
+
+        given(zeitbuchungRepository
+                .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(any(LocalDateTime.class)))
+                .willReturn(List.of(buchung));
+
+        NotificationSummaryDto summary = controller.getSummary(null);
+
+        assertThat(summary.categories())
+                .filteredOn(c -> "ZEITEN_AUTO_BEENDET".equals(c.type()))
+                .singleElement()
+                .satisfies(c -> {
+                    assertThat(c.count()).isEqualTo(1);
+                    // Handwerker-Sprache: kein "Auto-Stop", kein "Buchungszeitfenster"
+                    assertThat(c.label()).isEqualTo("Zeiten ohne Feierabend");
+                    assertThat(c.link()).isEqualTo("/zeitbuchungen");
+                });
+
+        assertThat(summary.recentItems())
+                .filteredOn(i -> "ZEIT_AUTO_BEENDET".equals(i.type()))
+                .singleElement()
+                .satisfies(i -> {
+                    assertThat(i.title()).contains("Max Mustermann");
+                    assertThat(i.subtitle()).contains("Kein Feierabend gestempelt");
+                    assertThat(i.subtitle()).contains("20:00");
+                    assertThat(i.link()).isEqualTo("/zeitbuchungen?mitarbeiterId=4711");
+                });
+    }
+
+    @Test
+    @DisplayName("Ohne offene Prüffälle taucht die Zeiterfassungs-Kategorie gar nicht auf")
+    void keineKategorieOhneAutomatischBeendeteBuchungen() {
+        given(zeitbuchungRepository
+                .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(any(LocalDateTime.class)))
+                .willReturn(List.of());
+
+        NotificationSummaryDto summary = controller.getSummary(null);
+
+        assertThat(summary.categories())
+                .noneMatch(c -> "ZEITEN_AUTO_BEENDET".equals(c.type()));
     }
 
     // ── Helper ────────────────────────────────────────────────────────────

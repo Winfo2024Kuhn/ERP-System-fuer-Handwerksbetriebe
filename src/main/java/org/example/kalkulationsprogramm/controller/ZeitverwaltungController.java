@@ -210,6 +210,11 @@ public class ZeitverwaltungController {
             }
         }
 
+        // Der Prüffall ist erledigt: Ein Mensch hat die Buchung angefasst, die
+        // geschätzte Endezeit des Auto-Stops ist damit abgenickt oder korrigiert.
+        // Sie soll nicht weiter in der Benachrichtigungs-Glocke hängen.
+        buchung.setAutomatischBeendet(false);
+
         // WICHTIG: Erst Version erhöhen, dann Audit protokollieren!
         // Sonst Unique-Constraint-Fehler (Version 1 existiert bereits)
         buchung.markiereAlsGeaendert(bearbeiter);

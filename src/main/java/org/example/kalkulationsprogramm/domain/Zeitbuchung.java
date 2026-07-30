@@ -114,6 +114,18 @@ public class Zeitbuchung {
     private String stopIdempotencyKey;
 
     /**
+     * True, wenn der {@code ZeitbuchungAutoStopService} diese Buchung beendet hat,
+     * weil der Mitarbeiter nicht abgestochen hat. Die Endezeit ist dann geschätzt
+     * (konfigurierte buchungEndeZeit bzw. 23:59) und muss geprüft werden.
+     *
+     * Wird zurückgesetzt, sobald die echte Endezeit nachgetragen wurde – entweder
+     * per Korrektur am PC oder durch einen verspätet eintreffenden Feierabend-Stop
+     * vom Handy.
+     */
+    @Column(nullable = false)
+    private boolean automatischBeendet = false;
+
+    /**
      * Erhöht die Version und setzt Änderungs-Metadaten.
      */
     public void markiereAlsGeaendert(Mitarbeiter bearbeiter) {

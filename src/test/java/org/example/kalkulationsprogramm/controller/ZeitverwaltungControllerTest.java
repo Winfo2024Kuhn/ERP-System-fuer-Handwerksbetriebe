@@ -2,24 +2,30 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Abwesenheit;
 import org.example.kalkulationsprogramm.domain.AbwesenheitsTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.domain.Zeitkonto;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -105,5 +111,43 @@ class ZeitverwaltungControllerTest {
                 .andExpect(jsonPath("$..abwesenheitId", hasItem(42)))
                 // Anzeige-ID bleibt negativ, um Abwesenheiten von echten Buchungen zu trennen
                 .andExpect(jsonPath("$..buchungen[?(@.typ=='KRANKHEIT')].id", hasItem(-42)));
+    }
+
+    @Test
+    void updateBuchung_RaeumtPruefKennzeichenDesAutoStopsAb() throws Exception {
+        // Sobald ein Mensch die vom Auto-Stop geschätzte Endezeit im Kalender
+        // korrigiert (oder bestätigt), ist der Prüffall erledigt - die Buchung
+        // darf nicht weiter in der Benachrichtigungs-Glocke hängen.
+        Mitarbeiter bearbeiter = new Mitarbeiter();
+        bearbeiter.setId(1L);
+        bearbeiter.setVorname("Max");
+        bearbeiter.setNachname("Mustermann");
+
+        Zeitbuchung buchung = new Zeitbuchung();
+        buchung.setId(1903L);
+        buchung.setMitarbeiter(bearbeiter);
+        buchung.setStartZeit(LocalDateTime.of(2026, 7, 29, 16, 48));
+        buchung.setEndeZeit(LocalDateTime.of(2026, 7, 29, 20, 0));
+        buchung.setAutomatischBeendet(true);
+        buchung.setVersion(2);
+
+        given(mitarbeiterRepository.findById(1L)).willReturn(Optional.of(bearbeiter));
+        given(zeitbuchungRepository.findById(1903L)).willReturn(Optional.of(buchung));
+        given(zeitbuchungRepository.save(any(Zeitbuchung.class)))
+                .willAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(put("/api/zeitverwaltung/buchungen/1903")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "bearbeiterId": 1,
+                                  "aenderungsgrund": "Korrektur im Zeiterfassungskalender",
+                                  "endeZeit": "2026-07-29T17:00:00"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        assertThat(buchung.isAutomatischBeendet()).isFalse();
+        assertThat(buchung.getEndeZeit()).isEqualTo(LocalDateTime.of(2026, 7, 29, 17, 0));
     }
 }

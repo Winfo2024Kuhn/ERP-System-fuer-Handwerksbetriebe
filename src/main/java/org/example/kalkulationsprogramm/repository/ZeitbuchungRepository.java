@@ -104,6 +104,25 @@ public interface ZeitbuchungRepository extends JpaRepository<Zeitbuchung, Long> 
         boolean existsByProjektProduktkategorieId(Long projektProduktkategorieId);
 
         /**
+         * Findet die zuletzt begonnene Buchung eines Mitarbeiters, die der Auto-Stop
+         * beendet hat und deren Startzeit im angegebenen Zeitraum liegt.
+         *
+         * Wird für den Nachtrag eines verspätet eintreffenden Feierabend-Stops genutzt:
+         * Das Handy hat offline gestempelt, der Auto-Stop war schneller, und die echte
+         * Zeit soll die geschätzte ersetzen.
+         */
+        Optional<Zeitbuchung> findFirstByMitarbeiterIdAndAutomatischBeendetTrueAndStartZeitBetweenOrderByStartZeitDesc(
+                        Long mitarbeiterId,
+                        LocalDateTime von,
+                        LocalDateTime bis);
+
+        /**
+         * Alle automatisch beendeten Buchungen ab einem Stichtag – die offenen
+         * Prüffälle für die Benachrichtigungs-Glocke.
+         */
+        List<Zeitbuchung> findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(LocalDateTime ab);
+
+        /**
          * Summiert geleistete Stunden eines Mitarbeiters im Zeitraum, gefiltert nach
          * Projekt-Art (z.B. INTERN/GARANTIE fuer unproduktive, PAUSCHAL/REGIE fuer
          * produktive Stunden). Pausen werden ignoriert.
