@@ -28,6 +28,15 @@ public class ProjektErstellenDto {
     private String auftragsnummer;
     private LocalDate anlegedatum;
     private LocalDate abschlussdatum;
+    /**
+     * Auftragspreis – nur lesend. Er ergibt sich ausschließlich aus den Dokumenten
+     * (Angebot/Auftragsbestätigung/Nachtragsangebot, ersatzweise die Rechnungssumme),
+     * siehe {@code AusgangsGeschaeftsDokumentService#aktualisiereProjektPreisAusDokumenten}.
+     * {@code READ_ONLY} sorgt dafür, dass ein mitgeschickter Wert nicht stillschweigend
+     * verschluckt wird, sondern gar nicht erst ankommt – die Projektvorlage aus einer
+     * Anfrage kann ihn aber weiterhin ausliefern.
+     */
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
     private BigDecimal bruttoPreis;
     private List<MaterialkostenErfassenDto> materialkosten;
     private boolean bezahlt;

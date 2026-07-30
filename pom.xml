@@ -166,6 +166,13 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- @WithMockUser + csrf()-PostProcessor, um Rollen-/CSRF-Regeln der
+             SecurityConfig in MockMvc-Tests festzuhalten -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>

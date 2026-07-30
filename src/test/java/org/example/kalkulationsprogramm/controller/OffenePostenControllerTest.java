@@ -62,6 +62,9 @@ class OffenePostenControllerTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.DateiSpeicherService dateiSpeicherService;
 
+    @MockBean
+    private org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
+
     private Mitarbeiter buildMitarbeiter(boolean darfGenehmigen, boolean darfSehen) {
         Mitarbeiter m = new Mitarbeiter();
         m.setId(1L);
@@ -281,6 +284,124 @@ class OffenePostenControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"genehmigt\": true}"))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Ausgangsrechnung manuell erfassen")
+    class ImportAusgangsrechnung {
+
+        private org.springframework.mock.web.MockMultipartFile pdf() {
+            return new org.springframework.mock.web.MockMultipartFile(
+                    "datei", "rechnung.pdf", MediaType.APPLICATION_PDF_VALUE, "inhalt".getBytes());
+        }
+
+        @Test
+        @DisplayName("Übernimmt Betrag und stößt die Preisberechnung an")
+        void importiertRechnungUndBerechnetProjektpreisNeu() throws Exception {
+            org.example.kalkulationsprogramm.domain.Projekt projekt =
+                    new org.example.kalkulationsprogramm.domain.Projekt();
+            projekt.setId(5L);
+            projekt.setBauvorhaben("Carport Musterstraße");
+
+            org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument gespeichert =
+                    new org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument();
+            gespeichert.setId(77L);
+
+            given(projektRepository.findById(5L)).willReturn(Optional.of(projekt));
+            given(projektDokumentRepository.existsByDokumentid("RE-2026-100")).willReturn(false);
+            given(dateiSpeicherService.speichereDatei(any(), any(), any())).willReturn(gespeichert);
+            given(projektDokumentRepository.save(any())).willReturn(gespeichert);
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .multipart("/api/offene-posten/ausgang/import")
+                            .file(pdf())
+                            .param("projektId", "5")
+                            .param("rechnungsnummer", "RE-2026-100")
+                            .param("betragBrutto", "1190.00"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.rechnungsnummer").value("RE-2026-100"));
+
+            org.mockito.Mockito.verify(ausgangsGeschaeftsDokumentService)
+                    .aktualisiereProjektPreisAusDokumenten(5L);
+        }
+
+        @Test
+        @DisplayName("Ohne Betrag: 400, damit der Auftragspreis nicht verloren geht")
+        void lehntRechnungOhneBetragAb() throws Exception {
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .multipart("/api/offene-posten/ausgang/import")
+                            .file(pdf())
+                            .param("projektId", "5")
+                            .param("rechnungsnummer", "RE-2026-101"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value("Rechnungsbetrag ist erforderlich"));
+
+            org.mockito.Mockito.verifyNoInteractions(ausgangsGeschaeftsDokumentService);
+        }
+
+        @Test
+        @DisplayName("Betrag 0 oder negativ wird abgelehnt")
+        void lehntNichtPositivenBetragAb() throws Exception {
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .multipart("/api/offene-posten/ausgang/import")
+                            .file(pdf())
+                            .param("projektId", "5")
+                            .param("rechnungsnummer", "RE-2026-102")
+                            .param("betragBrutto", "0"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value("Rechnungsbetrag muss größer als 0 sein"));
+        }
+
+        @Test
+        @DisplayName("Betrag ohne Zahlenformat wird abgefangen statt zu crashen")
+        void lehntUngueltigenBetragAb() throws Exception {
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .multipart("/api/offene-posten/ausgang/import")
+                            .file(pdf())
+                            .param("projektId", "5")
+                            .param("rechnungsnummer", "RE-2026-103")
+                            .param("betragBrutto", "<script>alert(1)</script>"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value("Rechnungsbetrag ist keine gültige Zahl"));
+        }
+
+        @Test
+        @DisplayName("Unbekanntes Projekt wird abgelehnt")
+        void lehntUnbekanntesProjektAb() throws Exception {
+            given(projektRepository.findById(Long.MAX_VALUE)).willReturn(Optional.empty());
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .multipart("/api/offene-posten/ausgang/import")
+                            .file(pdf())
+                            .param("projektId", String.valueOf(Long.MAX_VALUE))
+                            .param("rechnungsnummer", "RE-2026-104")
+                            .param("betragBrutto", "500.00"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value("Projekt nicht gefunden"));
+
+            org.mockito.Mockito.verifyNoInteractions(ausgangsGeschaeftsDokumentService);
+        }
+
+        @Test
+        @DisplayName("Doppelte Rechnungsnummer wird abgelehnt")
+        void lehntDoppelteRechnungsnummerAb() throws Exception {
+            org.example.kalkulationsprogramm.domain.Projekt projekt =
+                    new org.example.kalkulationsprogramm.domain.Projekt();
+            projekt.setId(5L);
+
+            given(projektRepository.findById(5L)).willReturn(Optional.of(projekt));
+            given(projektDokumentRepository.existsByDokumentid("RE-2026-100")).willReturn(true);
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .multipart("/api/offene-posten/ausgang/import")
+                            .file(pdf())
+                            .param("projektId", "5")
+                            .param("rechnungsnummer", "RE-2026-100")
+                            .param("betragBrutto", "500.00"))
+                    .andExpect(status().isConflict());
+
+            org.mockito.Mockito.verifyNoInteractions(ausgangsGeschaeftsDokumentService);
         }
     }
 }

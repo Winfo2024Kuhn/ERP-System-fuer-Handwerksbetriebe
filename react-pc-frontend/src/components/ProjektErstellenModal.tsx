@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from './ui/button';
-import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder, Euro, Trash2, RefreshCw } from 'lucide-react';
+import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder, Trash2, RefreshCw, Info } from 'lucide-react';
 import { CategoryMultiSelectModal } from './CategoryMultiSelectModal';
 import { EmailListInput } from './EmailListInput';
 import { AddressAutocomplete } from './AddressAutocomplete';
 import { KundeAnlegenForm } from './KundeAnlegenForm';
 import type { Kunde, Anfrage } from '../types';
+import { baueAuftragsnummerHinweis, type NaechsteAuftragsnummerResponse } from './auftragsnummerHinweis';
 
 interface SelectedCategory {
     id: number;
@@ -22,7 +23,6 @@ interface ProjektErstellenPayload {
 
     kundenId?: number;
     auftragsnummer: string;
-    bruttoPreis?: number;
     strasse?: string;
     plz?: string;
     ort?: string;
@@ -222,6 +222,12 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     const [auftragsnummerZaehler, setAuftragsnummerZaehler] = useState('');
     const [auftragsnummerError, setAuftragsnummerError] = useState<string | null>(null);
     const [validatingAuftragsnummer, setValidatingAuftragsnummer] = useState(false);
+    // Erklärung zur vorgeschlagenen Nummer (nur bei Kundenbezug befüllt)
+    const [auftragsnummerHinweis, setAuftragsnummerHinweis] = useState<string | null>(null);
+    // Laufende Nummer des jüngsten Vorschlag-Requests — ältere Antworten werden verworfen.
+    const letzteNummernAnfrage = useRef(0);
+    // Zuletzt vorgeschlagener Zähler: weicht das Feld davon ab, passt der Hinweis nicht mehr.
+    const vorgeschlagenerZaehler = useRef<string | null>(null);
 
     // Manuelle Auftragsnummervergabe: Prefix editierbar
     const [manuelleAuftragsnummer, setManuelleAuftragsnummer] = useState(false);
@@ -237,25 +243,42 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         kunde: '',
         kundennummer: '',
         auftragsnummer: '',
-        bruttoPreis: undefined,
         strasse: '',
         plz: '',
         ort: '',
         projektArt: 'PAUSCHAL', // Default: Pauschalpreis
     });
 
-    // Nächste Auftragsnummer laden
-    const loadNaechsteAuftragsnummer = useCallback(async () => {
+    // Nächste Auftragsnummer laden. Mit kundeId folgt der Vorschlag der Kunden-Syntax
+    // (YYYY/MM/NNNCC) und wir erklären dem Benutzer darunter, wie sie zustande kommt.
+    // Bewusst ohne Dependencies: die Funktion hängt am Reset-Effect, der bei einer
+    // instabilen Referenz das halb ausgefüllte Formular leeren würde. Kunde und Name
+    // kommen deshalb als Argumente herein statt aus dem State.
+    const loadNaechsteAuftragsnummer = useCallback(async (kundeId?: number | string | null, kundeName?: string) => {
+        // Beim Öffnen aus einer Anfrage laufen zwei Ladevorgänge fast gleichzeitig los (einmal
+        // ohne, einmal mit Kunde). Ohne Reihenfolge-Schutz könnte die kundenlose Antwort zuletzt
+        // eintreffen und die Kunden-Nummer samt Hinweis wieder überschreiben.
+        const meineAnfrage = ++letzteNummernAnfrage.current;
         try {
             const today = new Date().toISOString().split('T')[0];
-            const res = await fetch(`/api/projekte/naechste-auftragsnummer?datum=${today}`);
+            const params = new URLSearchParams({ datum: today });
+            if (kundeId) params.append('kundeId', String(kundeId));
+            const res = await fetch(`/api/projekte/naechste-auftragsnummer?${params.toString()}`);
+            if (meineAnfrage !== letzteNummernAnfrage.current) return;
             if (res.ok) {
-                const data = await res.json();
+                const data: NaechsteAuftragsnummerResponse = await res.json();
+                if (meineAnfrage !== letzteNummernAnfrage.current) return;
+                const zaehler = String(data.zaehler).padStart(5, '0');
                 setAuftragsnummerPrefix(data.prefix);
-                setAuftragsnummerZaehler(String(data.zaehler).padStart(5, '0'));
+                setAuftragsnummerZaehler(zaehler);
+                vorgeschlagenerZaehler.current = zaehler;
+                setAuftragsnummerHinweis(baueAuftragsnummerHinweis(data, kundeName));
             }
         } catch (err) {
             console.error('Fehler beim Laden der Auftragsnummer:', err);
+            if (meineAnfrage === letzteNummernAnfrage.current) {
+                setAuftragsnummerHinweis(null);
+            }
         }
     }, []);
 
@@ -343,6 +366,8 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             setAuftragsnummerPrefix('');
             setAuftragsnummerZaehler('');
             setAuftragsnummerError(null);
+            setAuftragsnummerHinweis(null);
+            vorgeschlagenerZaehler.current = null;
             setManuelleAuftragsnummer(false);
             setPrefixJahr('');
             setPrefixMonat('');
@@ -353,7 +378,6 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 kunde: '',
                 kundennummer: '',
                 auftragsnummer: '',
-                bruttoPreis: undefined,
                 strasse: '',
                 plz: '',
                 ort: '',
@@ -402,7 +426,6 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 kundennummer: editProjekt.kundennummer || '',
                 kundenId: editProjekt.kundenId,
                 auftragsnummer: editProjekt.auftragsnummer || '',
-                bruttoPreis: editProjekt.bruttoPreis,
                 strasse: editProjekt.strasse || '',
                 plz: editProjekt.plz || '',
                 ort: editProjekt.ort || '',
@@ -437,6 +460,18 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             loadNaechsteAuftragsnummer();
         }
     }, [isOpen, editProjekt, loadNaechsteAuftragsnummer]);
+
+    // Sobald der Kunde feststeht (direkt gewählt oder über eine Anfrage), die Nummer nach der
+    // Kunden-Syntax neu vorschlagen: gleicher Kunde im selben Jahr behält seine Kundennummer und
+    // zählt hinten hoch, ein neuer Kunde bekommt die nächste freie Kundennummer.
+    // Im Edit-Modus bleibt die vergebene Nummer unangetastet (GoBD), bei manueller Vergabe
+    // ebenso — dort hat der Benutzer die Nummer bewusst selbst in der Hand.
+    useEffect(() => {
+        if (!isOpen || isEditMode || manuelleAuftragsnummer) return;
+        if (!selectedKunde?.id) return;
+        loadNaechsteAuftragsnummer(selectedKunde.id, selectedKunde.name);
+        setAuftragsnummerError(null);
+    }, [isOpen, isEditMode, manuelleAuftragsnummer, selectedKunde?.id, selectedKunde?.name, loadNaechsteAuftragsnummer]);
 
     // Beim Auswählen einer Anfrage: Produktkategorien aus AB/Angebot vorschlagen
     // (immer Leaf-Kategorien, AB hat Vorrang vor Angebot). Im Edit-Modus nicht überschreiben.
@@ -927,6 +962,15 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                     {auftragsnummerError && (
                                         <p className="text-xs text-red-600 mt-1">{auftragsnummerError}</p>
                                     )}
+                                    {/* Erklärt die vorgeschlagene Nummer, solange sie nicht von Hand
+                                        vergeben wird und keine Fehlermeldung im Weg steht. */}
+                                    {auftragsnummerHinweis && !auftragsnummerError && !manuelleAuftragsnummer
+                                        && auftragsnummerZaehler === vorgeschlagenerZaehler.current && (
+                                            <p className="flex items-start gap-1.5 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-2.5 py-2 mt-1.5">
+                                                <Info className="w-4 h-4 mt-px shrink-0" />
+                                                <span>{auftragsnummerHinweis}</span>
+                                            </p>
+                                        )}
                                     {/* Checkbox für manuelle Vergabe */}
                                     <label className="flex items-center gap-2 mt-2 cursor-pointer">
                                         <input
@@ -941,8 +985,10 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                                     setPrefixJahr(auftragsnummerPrefix ? auftragsnummerPrefix.split('/')[0] : String(now.getFullYear()));
                                                     setPrefixMonat(auftragsnummerPrefix ? auftragsnummerPrefix.split('/')[1] : String(now.getMonth() + 1).padStart(2, '0'));
                                                 } else {
-                                                    // Bei Deaktivierung: Prefix auf aktuelles Datum zurücksetzen
-                                                    loadNaechsteAuftragsnummer();
+                                                    // Bei Deaktivierung: zurück auf den automatischen
+                                                    // Vorschlag — mit Kunde, damit wieder die
+                                                    // Kunden-Syntax greift statt der reinen Fortlaufnummer.
+                                                    loadNaechsteAuftragsnummer(selectedKunde?.id, selectedKunde?.name);
                                                     setPrefixJahr('');
                                                     setPrefixMonat('');
                                                 }
@@ -955,23 +1001,9 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* Projekt beendet - nur im Edit-Modus */}
-                            {isEditMode && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        <Euro className="w-4 h-4 inline-block mr-1" />
-                                        Bruttopreis (€)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        value={formData.bruttoPreis ?? ''}
-                                        onChange={e => handleInputChange('bruttoPreis', e.target.value ? parseFloat(e.target.value) : undefined)}
-                                        placeholder="0,00"
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                    />
-                                </div>
-                            )}
+                            {/* Der Auftragspreis wird nicht von Hand gepflegt: Er ergibt sich
+                                automatisch aus Angebot/Auftragsbestätigung/Nachtragsangebot –
+                                und wenn es die nicht gibt, aus der Summe der Rechnungen. */}
 
                             {/* Projekt beendet - nur im Edit-Modus */}
                             {isEditMode && (

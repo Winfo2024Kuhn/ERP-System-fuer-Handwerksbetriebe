@@ -13,6 +13,7 @@ import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -1644,21 +1645,73 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
+     * Summiert die Rechnungen eines Projekts, die <strong>nicht</strong> aus einem
+     * AusgangsGeschaeftsDokument stammen – also die im Offene-Posten-Bereich von Hand
+     * nacherfassten Rechnungen (z.B. wenn die Rechnung außerhalb des Programms
+     * geschrieben wurde).
+     *
+     * <p>Jede Rechnungsnummer zählt genau einmal: Nummern, die bereits als internes
+     * Dokument erfasst sind, werden übersprungen (sonst würde derselbe Betrag doppelt
+     * gezählt, weil intern gebuchte Rechnungen zusätzlich einen Offene-Posten-Eintrag
+     * bekommen), und Dubletten innerhalb der nacherfassten Rechnungen ebenso.</p>
+     *
+     * <p>Einträge ohne Dokumentnummer werden übersprungen: Sie lassen sich weder gegen
+     * die internen Dokumente abgleichen noch untereinander unterscheiden – mitzuzählen
+     * hieße, eine Doppelzählung in Kauf zu nehmen.</p>
+     *
+     * @param bekannteRechnungsnummern Dokumentnummern der internen Rechnungen des Projekts,
+     *                                 <strong>einschließlich stornierter</strong> – deren
+     *                                 Offene-Posten-Eintrag bleibt beim Stornieren bestehen
+     *                                 und darf den Auftragspreis nicht wiederbeleben
+     */
+    private BigDecimal summiereNacherfassteRechnungen(Long projektId, Set<String> bekannteRechnungsnummern) {
+        Set<String> bereitsGezaehlt = new HashSet<>();
+        BigDecimal summe = BigDecimal.ZERO;
+
+        for (ProjektGeschaeftsdokument rechnung : projektDokumentRepository.findRechnungenFuerPreisberechnung(projektId)) {
+            String nummer = rechnung.getDokumentid();
+            if (nummer == null) continue;
+            if (bekannteRechnungsnummern.contains(nummer)) continue;
+            if (!bereitsGezaehlt.add(nummer)) continue;
+            if (rechnung.getBruttoBetrag() != null) {
+                summe = summe.add(rechnung.getBruttoBetrag());
+            }
+        }
+        return summe;
+    }
+
+    /**
      * Berechnet bruttoPreis und bezahlt-Status eines Projekts on-the-fly
-     * aus den AusgangsGeschaeftsDokumenten.
+     * aus den Dokumenten. Der Preis wird nie von Hand gepflegt.
      *
      * Logik:
-     * - Der Brutto-Preis ergibt sich aus {@link #berechneAktuellenBruttoPreis}
-     *   (Childobjekt zählt, Nachtragsangebote addieren sich).
+     * - Gibt es Angebot/Auftragsbestätigung/Nachtragsangebot, ist deren aktueller Stand
+     *   maßgeblich ({@link #berechneAktuellenBruttoPreis}: Childobjekt zählt,
+     *   Nachtragsangebote addieren sich).
+     * - Gibt es keines davon (z.B. Reparatur, die direkt berechnet wird, oder eine
+     *   extern geschriebene und hier nur nacherfasste Rechnung), ist die Summe aller
+     *   eindeutigen Rechnungen der Auftragspreis.
      * - bezahlt = true wenn Summe der (nicht-stornierten) Rechnungen >= Projekt-Preis UND alle Offene-Posten-Rechnungen bezahlt.
      * - abgeschlossen = true wenn bezahlt = true.
      */
     @Transactional
     public void aktualisiereProjektPreisAusDokumenten(Long projektId) {
-        if (projektId == null) return;
+        berechneProjektPreisUndStatus(projektId);
+    }
+
+    /**
+     * Kern von {@link #aktualisiereProjektPreisAusDokumenten(Long)}. Bewusst ohne
+     * {@code @Transactional} und privat, damit der interne Aufruf aus
+     * {@link #trageFehlendePreiseNach()} nicht am Proxy vorbeiläuft.
+     *
+     * @return der Auftragspreis, der danach am Projekt steht, oder {@code null},
+     *         wenn es das Projekt nicht gibt
+     */
+    private BigDecimal berechneProjektPreisUndStatus(Long projektId) {
+        if (projektId == null) return null;
 
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
-        if (projekt == null) return;
+        if (projekt == null) return null;
 
         List<AusgangsGeschaeftsDokument> alleDokumente =
                 dokumentRepository.findByProjektIdOrderByDatumDesc(projektId);
@@ -1670,26 +1723,52 @@ public class AusgangsGeschaeftsDokumentService {
 
         // Aktuellen Brutto-Preis aus den Vorgängen berechnen (Childobjekt zählt,
         // Nachtragsangebote addieren sich).
-        BigDecimal neuerBruttoPreis = berechneAktuellenBruttoPreis(aktive);
-
-        BigDecimal summeRechnungen = aktive.stream()
-                .filter(d -> RECHNUNGSTYPEN.contains(d.getTyp()))
-                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal vorgangsPreis = berechneAktuellenBruttoPreis(aktive);
 
         // Stornierte Rechnungen sind bereits über !isStorniert() ausgeschlossen,
         // daher werden Storno-Dokumente (negative Beträge) NICHT mehr abgezogen,
         // um doppelte Berücksichtigung zu vermeiden.
+        BigDecimal summeInterneRechnungen = aktive.stream()
+                .filter(d -> RECHNUNGSTYPEN.contains(d.getTyp()))
+                .map(d -> d.getBetragBrutto() != null ? d.getBetragBrutto() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Wenn Dokumente (AB/Angebote) vorhanden sind, Preis immer aus Dokumenten übernehmen.
-        // Ohne Dokumente bleibt der manuell gesetzte Preis erhalten.
+        // Bewusst aus ALLEN Dokumenten (auch stornierten): Beim Stornieren bleibt der
+        // Offene-Posten-Eintrag mit derselben Nummer bestehen. Stünde die Nummer hier
+        // nicht drin, käme der stornierte Betrag über den Umweg der "nacherfassten"
+        // Rechnungen wieder in den Auftragspreis zurück.
+        Set<String> bekannteRechnungsnummern = alleDokumente.stream()
+                .filter(d -> RECHNUNGSTYPEN.contains(d.getTyp()))
+                .map(AusgangsGeschaeftsDokument::getDokumentNummer)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        BigDecimal summeRechnungen = summeInterneRechnungen
+                .add(summiereNacherfassteRechnungen(projektId, bekannteRechnungsnummern));
+
+        // Angebot/AB/Nachtragsangebot sind maßgeblich, sobald es sie gibt. Sonst zählt
+        // die Summe der Rechnungen – so bekommen auch Projekte ohne Angebot (Reparatur,
+        // extern geschriebene Rechnung) ihren Preis automatisch.
+        BigDecimal neuerBruttoPreis = vorgangsPreis.compareTo(BigDecimal.ZERO) > 0
+                ? vorgangsPreis
+                : summeRechnungen;
+
+        // Ohne jedes preisrelevante Dokument bleibt der bisherige Wert stehen –
+        // sonst würden Altprojekte ohne Dokumente auf 0 zurückfallen.
         if (neuerBruttoPreis.compareTo(BigDecimal.ZERO) > 0) {
             projekt.setBruttoPreis(neuerBruttoPreis);
         }
 
+        // Maßgeblich ist der Preis, der tatsächlich am Projekt steht. Sonst würde ein
+        // Projekt mit hinterlegtem Preis, aber ohne preisrelevante Dokumente, bei jedem
+        // beliebigen Datei-Upload auf "nicht bezahlt" zurückfallen.
+        BigDecimal massgeblicherPreis = projekt.getBruttoPreis() != null
+                ? projekt.getBruttoPreis()
+                : BigDecimal.ZERO;
+
         // bezahlt = Rechnungssumme >= Projektpreis UND alle Offene-Posten-Rechnungen bezahlt
-        boolean rechnungssummeAusreichend = neuerBruttoPreis.compareTo(BigDecimal.ZERO) > 0
-                && summeRechnungen.compareTo(neuerBruttoPreis.subtract(new BigDecimal("0.01"))) >= 0;
+        boolean rechnungssummeAusreichend = massgeblicherPreis.compareTo(BigDecimal.ZERO) > 0
+                && summeRechnungen.compareTo(massgeblicherPreis.subtract(new BigDecimal("0.01"))) >= 0;
         boolean keineOffenenPosten = !projektDokumentRepository.existsOffenePostenByProjektId(projektId);
 
         // Haken "Beendet" von Hand gesetzt/entfernt? Dann hat der Benutzer Vorrang
@@ -1708,6 +1787,49 @@ public class AusgangsGeschaeftsDokumentService {
         }
 
         projektRepository.save(projekt);
+        return massgeblicherPreis;
+    }
+
+    /**
+     * Trägt den Auftragspreis bei allen Projekten nach, bei denen noch keiner
+     * hinterlegt ist (Preis 0 oder leer). Projekte mit vorhandenem Preis werden
+     * nicht angefasst.
+     *
+     * <p>Gedacht als einmaliger Nachlauf für Altbestände, die vor der automatischen
+     * Preisableitung angelegt wurden – etwa Reparaturen, die direkt berechnet wurden
+     * und deshalb nie einen Preis bekommen haben.</p>
+     *
+     * <p>Die Menge ist durch die Bedingung "Preis 0 oder leer" begrenzt und schrumpft mit
+     * jedem Lauf, weil befüllte Projekte beim nächsten Mal nicht mehr in die Auswahl
+     * fallen. Der Lauf läuft in einer Transaktion – bei einem Fehler bleibt der Bestand
+     * unverändert, was für eine Korrekturaktion an Auftragspreisen gewollt ist.</p>
+     *
+     * @return wie viele Projekte geprüft wurden und bei wie vielen ein Preis gesetzt wurde
+     */
+    @Transactional
+    public PreisNachtragErgebnis trageFehlendePreiseNach() {
+        List<Long> projektIds = projektRepository.findIdsOhneBruttoPreis();
+        int nachgetragen = 0;
+
+        for (Long projektId : projektIds) {
+            BigDecimal preis = berechneProjektPreisUndStatus(projektId);
+            if (preis != null && preis.compareTo(BigDecimal.ZERO) > 0) {
+                nachgetragen++;
+            }
+        }
+
+        log.info("Preis-Nachlauf abgeschlossen: {} von {} Projekten ohne Preis konnten aus Dokumenten befüllt werden.",
+                nachgetragen, projektIds.size());
+        return new PreisNachtragErgebnis(projektIds.size(), nachgetragen);
+    }
+
+    /**
+     * Ergebnis von {@link #trageFehlendePreiseNach()}.
+     *
+     * @param geprueft    Projekte ohne Auftragspreis, die durchgerechnet wurden
+     * @param nachgetragen Projekte, die daraufhin einen Preis bekommen haben
+     */
+    public record PreisNachtragErgebnis(int geprueft, int nachgetragen) {
     }
 
     // --- Anfrage-Preis Berechnung aus Dokumenten ---

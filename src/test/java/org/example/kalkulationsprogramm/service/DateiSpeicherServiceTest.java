@@ -69,7 +69,41 @@ class DateiSpeicherServiceTest {
         String path = localRoot.toString();
         return new DateiSpeicherService(path, path, path, path, "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(path, networkUrl));
+                settingsMock(path, networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
+    }
+
+    /** Wie {@link #createService(Path, String, ProjektDokumentRepository)}, aber mit greifbarer Preis-Automatik. */
+    private DateiSpeicherService createServiceMitPreisAutomatik(Path localRoot,
+            AusgangsGeschaeftsDokumentService preisAutomatik) throws IOException {
+        String path = localRoot.toString();
+        return new DateiSpeicherService(path, path, path, path, "",
+                mock(ProjektDokumentRepository.class), mock(ProjektRepository.class),
+                mock(AnfrageDokumentRepository.class), mock(AnfrageRepository.class),
+                mock(ProduktkategorieRepository.class), mock(KundeRepository.class),
+                mock(ZugferdExtractorService.class), mock(ProduktkategorieMapper.class),
+                settingsMock(path, ""), preisAutomatik);
+    }
+
+    @Test
+    void aktualisiereProjektFinanzstatusLaesstDenAuftragspreisNeuBerechnen() throws IOException {
+        AusgangsGeschaeftsDokumentService preisAutomatik = mock(AusgangsGeschaeftsDokumentService.class);
+        DateiSpeicherService service = createServiceMitPreisAutomatik(
+                Files.createTempDirectory("finanzstatus"), preisAutomatik);
+
+        service.aktualisiereProjektFinanzstatus(7L);
+
+        verify(preisAutomatik).aktualisiereProjektPreisAusDokumenten(7L);
+    }
+
+    @Test
+    void aktualisiereProjektFinanzstatusIgnoriertFehlendeProjektId() throws IOException {
+        AusgangsGeschaeftsDokumentService preisAutomatik = mock(AusgangsGeschaeftsDokumentService.class);
+        DateiSpeicherService service = createServiceMitPreisAutomatik(
+                Files.createTempDirectory("finanzstatus-null"), preisAutomatik);
+
+        service.aktualisiereProjektFinanzstatus(null);
+
+        org.mockito.Mockito.verifyNoInteractions(preisAutomatik);
     }
 
     private static class ServiceSetup {
@@ -106,7 +140,7 @@ class DateiSpeicherServiceTest {
                 docRoot.toString(), offerRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(hicadRoot.toString(), networkUrl));
+                settingsMock(hicadRoot.toString(), networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
         return new ServiceSetup(service, dokRepo, projRepo);
     }
 
@@ -167,7 +201,7 @@ class DateiSpeicherServiceTest {
         String path = temp.toString();
         DateiSpeicherService service = new DateiSpeicherService(path, path, path, path, "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(path, networkUrl));
+                settingsMock(path, networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
 
         Projekt projekt = new Projekt();
         projekt.setId(1L);
@@ -221,7 +255,7 @@ class DateiSpeicherServiceTest {
                 docRoot.toString(), offerRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(hicadRoot.toString(), networkUrl));
+                settingsMock(hicadRoot.toString(), networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "zeichnung.sza", "application/octet-stream", "data".getBytes());
@@ -264,7 +298,7 @@ class DateiSpeicherServiceTest {
                 docRoot.toString(), offerRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(hicadRoot.toString(), networkUrl));
+                settingsMock(hicadRoot.toString(), networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "anfrage.pdf", "application/pdf", "data".getBytes());
@@ -307,7 +341,7 @@ class DateiSpeicherServiceTest {
                 docRoot.toString(), offerRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(hicadRoot.toString(), networkUrl));
+                settingsMock(hicadRoot.toString(), networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "tabelle.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -359,7 +393,7 @@ class DateiSpeicherServiceTest {
                 docRoot.toString(), offerRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(hicadRoot.toString(), networkUrl));
+                settingsMock(hicadRoot.toString(), networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "rechnung.pdf", "application/pdf", "data".getBytes());
@@ -411,7 +445,7 @@ class DateiSpeicherServiceTest {
                 docRoot.toString(), offerRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(hicadRoot.toString(), networkUrl));
+                settingsMock(hicadRoot.toString(), networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "eingang.pdf", "application/pdf", "data".getBytes());
@@ -454,7 +488,7 @@ class DateiSpeicherServiceTest {
                 docRoot.toString(), offerRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(hicadRoot.toString(), networkUrl));
+                settingsMock(hicadRoot.toString(), networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
 
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "mappe.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -496,7 +530,7 @@ class DateiSpeicherServiceTest {
         DateiSpeicherService service = new DateiSpeicherService(
                 docRoot.toString(), docRoot.toString(), iconRoot.toString(), iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settings);
+                settings, mock(AusgangsGeschaeftsDokumentService.class));
 
         MockMultipartFile datei1 = new MockMultipartFile(
                 "datei", "zeichnung.sza", "application/octet-stream", "inhalt".getBytes());

@@ -105,6 +105,14 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
         @Query("SELECT p FROM Projekt p LEFT JOIN FETCH p.kundenId WHERE p.abgeschlossen = false ORDER BY p.anlegedatum DESC")
         List<Projekt> findByAbgeschlossenFalseOrderByAnlegedatumDesc();
 
+        /**
+         * IDs aller Projekte, bei denen noch kein Auftragspreis hinterlegt ist.
+         * Dient dem einmaligen Nachtragen der Preise aus den Dokumenten – Projekte
+         * mit vorhandenem Preis bleiben unangetastet.
+         */
+        @Query("SELECT p.id FROM Projekt p WHERE p.bruttoPreis IS NULL OR p.bruttoPreis = 0")
+        List<Long> findIdsOhneBruttoPreis();
+
         List<Projekt> findByAnlegedatumBetween(LocalDate start, LocalDate ende);
 
         interface IdEmailOnly {
@@ -127,8 +135,17 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
          * Liefert alle Auftragsnummern eines bestimmten Kunden, deren Präfix dem Jahres-Präfix
          * entspricht (z.B. "2026/"). Wird für die kundenspezifische Auftragsnummern-Vergabe
          * bei Anfrage→Projekt-Konvertierung verwendet.
+         *
+         * <p>Absteigend sortiert, damit die Slot-Ermittlung deterministisch ist: hat ein Kunde
+         * im selben Jahr mehrere Nummern (z.B. durch eine manuell abweichend vergebene Nummer),
+         * gewinnt immer die höchste — ohne {@code ORDER BY} wäre die Reihenfolge DB-abhängig
+         * und der Kunden-Slot damit zufällig.
+         *
+         * <p>Die Sortierung ist lexikografisch. Das liefert nur deshalb dieselbe Reihenfolge wie
+         * eine numerische Sortierung, weil alle Auftragsnummern gleich lang und mit Nullen
+         * aufgefüllt sind ({@code YYYY/MM/NNNCC}).
          */
-        @Query("SELECT p.auftragsnummer FROM Projekt p WHERE p.kundenId.id = :kundeId AND p.auftragsnummer LIKE CONCAT(:jahrPrefix, '%')")
+        @Query("SELECT p.auftragsnummer FROM Projekt p WHERE p.kundenId.id = :kundeId AND p.auftragsnummer LIKE CONCAT(:jahrPrefix, '%') ORDER BY p.auftragsnummer DESC")
         List<String> findAuftragsnummernByKundeAndYearPrefix(@Param("kundeId") Long kundeId,
                         @Param("jahrPrefix") String jahrPrefix);
 
