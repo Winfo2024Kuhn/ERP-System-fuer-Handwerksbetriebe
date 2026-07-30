@@ -126,7 +126,8 @@ class AutoMahnVersandServiceSchedulerLaufTest
                 formularTemplateService,
                 formularTextbausteinDefaultService,
                 emailSignatureService,
-                projektEmailArchivService);
+                projektEmailArchivService,
+                mock(org.example.kalkulationsprogramm.service.mail.SentMailArchiver.class));
 
         service.verarbeiteFaelligeMahnungen();
 

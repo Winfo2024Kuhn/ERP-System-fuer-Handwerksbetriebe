@@ -35,6 +35,10 @@ export interface Kommunikation {
   attachments?: EmailAttachment[];
   parentEmailId?: number;
   replyCount?: number;
+  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+  zustellFehler?: string;
 }
 
 export interface EmailAttachment {
@@ -580,6 +584,10 @@ export interface ProjektEmailAttachment {
 
 export interface ProjektEmail {
   id: number;
+  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+  zustellFehler?: string;
   subject?: string;
   from?: string;           // Backend liefert "from"
   sender?: string;         // Alias für Kompatibilität
@@ -687,6 +695,10 @@ export interface AnfrageEmailAttachment {
 
 export interface AnfrageEmail {
   id: number;
+  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+  zustellFehler?: string;
   sender?: string;
   fromAddress?: string;
   recipient?: string;

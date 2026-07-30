@@ -32,6 +32,7 @@ import org.example.kalkulationsprogramm.service.EmailAiService;
 import org.example.kalkulationsprogramm.service.EmailSignatureService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
+import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
@@ -59,6 +60,7 @@ public class EmailController {
     private final FrontendUserProfileService frontendUserProfileService;
     private final DateiSpeicherService dateiSpeicherService;
     private final SystemSettingsService systemSettingsService;
+    private final SentMailArchiver sentMailArchiver;
     private final DokumentFreigabeService dokumentFreigabeService;
     private final EmailAbsenderService emailAbsenderService;
 
@@ -350,7 +352,8 @@ public class EmailController {
                 systemSettingsService.getSmtpHost(),
                 systemSettingsService.getSmtpPort(),
                 systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword());
+                systemSettingsService.getSmtpPassword())
+                .mitSentKopie(sentMailArchiver);
         String messageId;
         try {
             String finalHtml = Optional.ofNullable(request.getHtmlBody()).orElse("");
@@ -458,7 +461,8 @@ public class EmailController {
                 systemSettingsService.getSmtpHost(),
                 systemSettingsService.getSmtpPort(),
                 systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword());
+                systemSettingsService.getSmtpPassword())
+                .mitSentKopie(sentMailArchiver);
         String messageId;
         try {
             String finalHtml = Optional.ofNullable(request.getHtmlBody()).orElse("");

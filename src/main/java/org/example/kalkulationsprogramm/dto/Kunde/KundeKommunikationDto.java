@@ -26,4 +26,15 @@ public class KundeKommunikationDto {
     // Thread-Unterstützung
     private Long parentEmailId;
     private int replyCount;
+
+    /**
+     * Zustell-Ergebnis der Ausgangsmail ("OFFEN" / "UNZUSTELLBAR"). Nur bei
+     * {@code direction == OUT} aussagekraeftig. Das Frontend blendet bei
+     * "UNZUSTELLBAR" eine Warnung ein — sonst haette der Nutzer keinen
+     * Hinweis darauf, dass die Mail nie ankam.
+     */
+    private String zustellStatus;
+
+    /** Klartext-Grund der Ablehnung, z.B. "unknown user". */
+    private String zustellFehler;
 }

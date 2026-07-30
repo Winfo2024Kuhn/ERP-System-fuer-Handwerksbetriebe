@@ -36,6 +36,7 @@ import org.example.kalkulationsprogramm.service.RechnungPdfService.ContentBlockD
 import org.example.kalkulationsprogramm.service.RechnungPdfService.KopfdatenDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.LayoutDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.RechnungDto;
+import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,6 +87,7 @@ public class AutoMahnVersandService
     private final FormularTextbausteinDefaultService formularTextbausteinDefaultService;
     private final EmailSignatureService emailSignatureService;
     private final ProjektEmailArchivService projektEmailArchivService;
+    private final SentMailArchiver sentMailArchiver;
 
     /** Warum ein Mahn-Lauf wie ausgegangen ist — fuer den manuellen Trigger. */
     public enum MahnlaufStatus
@@ -453,7 +455,8 @@ public class AutoMahnVersandService
                 systemSettingsService.getSmtpHost(),
                 systemSettingsService.getSmtpPort(),
                 systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword());
+                systemSettingsService.getSmtpPassword())
+                .mitSentKopie(sentMailArchiver);
         return emailService.sendEmailAndReturnMessageId(empfaenger, null, absender,
                 subject, htmlBody, pdf.toString(), dateiname);
     }

@@ -186,6 +186,10 @@ public class LieferantenDetailService {
         dto.setParentEmailId(email.getParentEmail() != null ? email.getParentEmail().getId() : null);
         dto.setReplyCount(countAncestors(email) + countAllReplies(email));
 
+        // Zustellstatus: Anfragen an Lieferanten bouncen genauso wie Kundenmails.
+        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
+        dto.setZustellFehler(email.getZustellFehler());
+
         if (email.getAttachments() != null) {
             final Long emailId = email.getId();
             dto.setAttachments(email.getAttachments().stream()

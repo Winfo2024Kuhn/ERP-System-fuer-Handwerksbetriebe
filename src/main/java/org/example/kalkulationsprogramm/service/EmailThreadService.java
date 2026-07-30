@@ -226,6 +226,11 @@ public class EmailThreadService {
         boolean fwd = isForwardedEmail(email);
         dto.setForwarded(fwd);
         dto.setSnippet(buildSnippet(email, fwd));
+        // Zustellstatus: eine unzustellbare Antwort haengt mitten im Thread und
+        // taucht in der Uebersichtsliste (nur Thread-Wurzeln) gar nicht auf —
+        // ohne diesen Wert bliebe sie voellig unsichtbar.
+        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
+        dto.setZustellFehler(email.getZustellFehler());
 
         List<EmailThreadEntryDto.AttachmentDto> attachmentDtos = new ArrayList<>();
         if (email.getAttachments() != null) {

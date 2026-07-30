@@ -328,6 +328,8 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                                 bodyHtml: k.body,
                                 direction: k.direction,
                                 sentAt: k.zeitpunkt,
+                                zustellStatus: k.zustellStatus,
+                                zustellFehler: k.zustellFehler,
                                 attachments: (k.attachments || []).map(a => ({
                                     id: a.id,
                                     originalFilename: a.filename,

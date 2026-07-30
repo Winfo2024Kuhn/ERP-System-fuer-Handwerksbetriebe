@@ -10,6 +10,7 @@ import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.HtmlUtils;
@@ -48,6 +49,7 @@ public class AnfrageBestaetigungVersandService {
     private final EmailTextTemplateService emailTextTemplateService;
     private final EmailSignatureService emailSignatureService;
     private final SystemSettingsService systemSettingsService;
+    private final SentMailArchiver sentMailArchiver;
     private final EmailOutboundPersistenceService outboundPersistenceService;
 
     /**
@@ -215,7 +217,8 @@ public class AnfrageBestaetigungVersandService {
                 systemSettingsService.getSmtpHost(),
                 systemSettingsService.getSmtpPort(),
                 systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword());
+                systemSettingsService.getSmtpPassword())
+                .mitSentKopie(sentMailArchiver);
     }
 
     private static String ersterEmpfaenger(Anfrage anfrage) {

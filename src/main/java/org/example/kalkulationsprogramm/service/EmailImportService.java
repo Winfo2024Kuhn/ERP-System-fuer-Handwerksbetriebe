@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 
+import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
@@ -81,6 +82,7 @@ public class EmailImportService {
     private final SystemSettingsService systemSettingsService;
     private final OutOfOfficeResponder outOfOfficeResponder;
     private final EmailBlacklistRepository emailBlacklistRepository;
+    private final BounceErkennungService bounceErkennungService;
     private final org.example.kalkulationsprogramm.repository.SeenSenderDomainRepository seenSenderDomainRepository;
 
     // Self-Injection für transactional proxy: importMessage muss durch den
@@ -277,6 +279,22 @@ public class EmailImportService {
         // Bereits importiert?
         if (emailRepository.existsByMessageId(messageId)) {
             return false;
+        }
+
+        // Eigene Sent-Kopie? Das ERP legt jede versendete Mail zusaetzlich im
+        // IMAP-Sent-Ordner ab (unabhaengiger Nachweis auf dem Provider-Server,
+        // siehe SentMailArchiver). Der Regelfall ist bereits oben erledigt: die
+        // Ausgangsmail steht mit derselben Message-ID lokal in der DB, die
+        // Deduplizierung greift, und das originale HTML bleibt unangetastet.
+        //
+        // Kommen wir hier trotzdem an, ist die Mail NICHT lokal gespeichert
+        // worden — die Archivierung ist also fehlgeschlagen. Dann wird sie
+        // bewusst importiert: eine Mail mit vom Server veraendertem Layout ist
+        // deutlich besser als eine, die im ERP gar nicht auftaucht. Der Marker
+        // dient hier als Diagnose, nicht als Filter.
+        if (EmailService.ERP_ORIGIN_WERT.equals(firstHeader(msg, EmailService.ERP_ORIGIN_HEADER))) {
+            log.warn("[EmailImport] Eigene Ausgangsmail {} war nicht lokal archiviert "
+                    + "und wird aus dem Sent-Ordner nachgeholt — Archivierung pruefen", messageId);
         }
 
         // Nur beim ersten Import warnen (nach Deduplizierungsprüfung)
@@ -483,6 +501,16 @@ public class EmailImportService {
                 log.warn("[EmailImport] OOO-Auto-Reply für Email {} fehlgeschlagen: {}",
                         email.getId(), ex.getMessage());
             }
+        }
+
+        // Unzustellbarkeits-Meldung? Dann die betroffene Ausgangsmail als
+        // unzustellbar markieren. Ohne diesen Schritt bliebe im ERP "versendet"
+        // stehen, obwohl beim Empfaenger nie etwas ankam — der Rueckläufer
+        // selbst landet nur als weitere Mail im Posteingang und faellt im
+        // Alltag durch. Der Service schluckt eigene Fehler, damit ein
+        // unlesbarer Rueckläufer den Import nicht abbricht.
+        if (direction == EmailDirection.IN) {
+            bounceErkennungService.verarbeiteRuecklaeufer(msg);
         }
 
         return true;

@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -31,11 +30,46 @@ import jakarta.mail.util.ByteArrayDataSource;
  * (e.g. ZUGFeRD PDF). The service is intentionally self-contained so that it
  * can be reused outside of a Spring context.
  */
+@lombok.extern.slf4j.Slf4j
 public class EmailService {
+
+    /**
+     * Marker-Header, den jede vom ERP versendete Mail traegt.
+     *
+     * <p><strong>Er filtert nichts.</strong> Dass die eigene Sent-Kopie nicht
+     * ein zweites Mal in der Datenbank landet, verhindert allein die
+     * Deduplizierung ueber die Message-ID. Der Header ist reine Diagnose:
+     * Taucht eine Mail damit im Import auf, war sie <em>nicht</em> lokal
+     * archiviert — dann wird sie bewusst nachgeholt und eine Warnung geloggt
+     * (siehe {@code EmailImportService#importMessage}).</p>
+     */
+    public static final String ERP_ORIGIN_HEADER = "X-ERP-Origin";
+
+    /** Wert des {@link #ERP_ORIGIN_HEADER}. */
+    public static final String ERP_ORIGIN_WERT = "kalkulationsprogramm";
+
+    /**
+     * Wird nach erfolgreichem SMTP-Versand mit der tatsaechlich versendeten
+     * Nachricht aufgerufen. Dient dazu, eine Kopie im IMAP-"Gesendet"-Ordner
+     * abzulegen — ein vom ERP unabhaengiger Nachweis beim Provider, der fuer
+     * rechtliche Zwecke mehr wiegt als die selbst gepflegte Datenbank.
+     *
+     * <p>Absichtlich als Hook statt fest verdrahtet: {@code EmailService} wird
+     * bewusst ohne Spring-Kontext konstruiert (siehe Klassen-Javadoc), die
+     * IMAP-Zugangsdaten liegen aber im {@code SystemSettingsService}.</p>
+     */
+    @FunctionalInterface
+    public interface SentCopyHandler {
+        void archiviereKopie(MimeMessage versendeteNachricht);
+    }
+
     private final String host;
     private final int port;
     private final String username;
     private final String password;
+
+    /** Optionaler Hook fuer die Sent-Kopie; {@code null} = keine Kopie. */
+    private SentCopyHandler sentCopyHandler;
 
     /**
      * Creates a new {@code EmailService} configured for the given SMTP server.
@@ -50,6 +84,42 @@ public class EmailService {
         this.port = port;
         this.username = username;
         this.password = password;
+    }
+
+    /**
+     * Aktiviert die Ablage einer Kopie im IMAP-"Gesendet"-Ordner. Ohne diesen
+     * Aufruf verhaelt sich der Versand wie bisher (nur SMTP).
+     */
+    public EmailService mitSentKopie(SentCopyHandler handler) {
+        this.sentCopyHandler = handler;
+        return this;
+    }
+
+    /**
+     * Setzt den Marker-Header. Muss VOR {@code Transport.send()} passieren:
+     * danach ist die Nachricht bereits serialisiert, und ein erneutes
+     * {@code saveChanges()} wuerde eine neue Message-ID erzeugen — womit der
+     * Bounce-Abgleich und die Deduplizierung ins Leere liefen.
+     */
+    private static void markiereAlsErpMail(MimeMessage message) throws MessagingException {
+        message.setHeader(ERP_ORIGIN_HEADER, ERP_ORIGIN_WERT);
+    }
+
+    /**
+     * Uebergibt die versendete Nachricht an den Sent-Kopie-Hook, falls gesetzt.
+     * Fehler werden bewusst verschluckt: die Mail ist zu diesem Zeitpunkt beim
+     * Empfaenger, eine fehlgeschlagene Archivkopie darf den Versand nicht
+     * nachtraeglich als Fehler dastehen lassen.
+     */
+    private void archiviereKopieStill(MimeMessage message) {
+        if (sentCopyHandler == null) {
+            return;
+        }
+        try {
+            sentCopyHandler.archiviereKopie(message);
+        } catch (Exception e) {
+            log.warn("[EmailService] Sent-Kopie konnte nicht abgelegt werden: {}", e.getMessage());
+        }
     }
 
     /**
@@ -138,12 +208,14 @@ public class EmailService {
             }
 
             message.setContent(mixed);
+            markiereAlsErpMail(message);
             Transport.send(message);
 
-            // HINWEIS: Kein manuelles Kopieren nach INBOX.Sent mehr!
-            // T-Online SMTP kopiert gesendete E-Mails automatisch in INBOX.Sent.
-            // Das manuelle Anhängen führte zu Duplikaten im EmailCenter.
-            // Wir kopieren nur noch in die speziellen Archive-Ordner.
+            // Kopie in den IMAP-"Gesendet"-Ordner, sofern ein Handler gesetzt ist.
+            // Frueher erzeugte das Duplikate im EmailCenter — dagegen schuetzt
+            // heute die Deduplizierung ueber die Message-ID beim Import, nicht
+            // der ERP_ORIGIN_HEADER (der ist nur Diagnose).
+            archiviereKopieStill(message);
 
             try {
                 Store store = session.getStore("imaps");
@@ -188,7 +260,8 @@ public class EmailService {
     }
 
     // Sendet eine E-Mail und liefert exakt die vom SMTP-Versand verwendete
-    // Message-ID. Es wird keine zusaetzliche IMAP-Sent-Kopie angelegt.
+    // Message-ID. Eine IMAP-Sent-Kopie wird nur angelegt, wenn per
+    // mitSentKopie(...) ein Handler gesetzt wurde.
     public String sendEmailAndReturnMessageId(String recipient,
             String cc,
             String fromAddress,
@@ -252,10 +325,13 @@ public class EmailService {
         }
 
         message.setContent(mixed);
+        markiereAlsErpMail(message);
         Transport.send(message);
 
-        // Kein IMAP-Append: Die aufrufenden Automatik-Services speichern die
-        // Ausgangsmail lokal im ERP. Eine zweite Sent-Kopie erzeugte Duplikate.
+        // Sent-Kopie auf dem Provider-Server: unabhaengiger Nachweis, dass die
+        // Mail so rausging. Der ERP_ORIGIN_HEADER verhindert, dass der IMAP-Poll
+        // sie als vermeintlich neue Mail zurueckholt.
+        archiviereKopieStill(message);
 
         // Transport.send() ruft saveChanges() auf und kann dabei die Message-ID
         // final erzeugen/aktualisieren. Deshalb erst danach auslesen; sonst
@@ -343,7 +419,11 @@ public class EmailService {
         }
 
         message.setContent(mixed);
+        markiereAlsErpMail(message);
         Transport.send(message);
+
+        // Sent-Kopie auf dem Provider-Server (siehe ERP_ORIGIN_HEADER).
+        archiviereKopieStill(message);
 
         // Transport.send() ruft saveChanges() auf und kann dabei die Message-ID
         // final erzeugen/aktualisieren. Deshalb erst danach auslesen; sonst
@@ -436,7 +516,11 @@ public class EmailService {
         }
 
         message.setContent(mixed);
+        markiereAlsErpMail(message);
         Transport.send(message);
+
+        // Sent-Kopie auf dem Provider-Server (siehe ERP_ORIGIN_HEADER).
+        archiviereKopieStill(message);
 
         // Transport.send() ruft saveChanges() auf und kann dabei die Message-ID
         // final erzeugen/aktualisieren. Deshalb erst danach auslesen; sonst
@@ -714,48 +798,4 @@ public class EmailService {
                 .toString();
     }
 
-    /**
-     * Demonstrates usage of the EmailService.
-     */
-    // ...
-
-    // --- Ende der wichtigen SSL-Einstellungen ---
-
-    // Erstellen Sie die Session mit diesen Properties
-    // Session session = Session.getInstance(props, ...);
-    public static void main(String[] args) {
-        // SMTP configuration (replace with real credentials)
-        EmailService service = new EmailService(
-                "securesmtp.t-online.de", // host
-                465, // port
-                "info-bauschlosserei-kuhn@t-online.de", // username
-                "Lini+marviTkom" // password
-        );
-
-        String attachmentPath = "C:/Users/bausc/Downloads/Rechnung2025_05_00004(1.AbschlagsrechnungzuAnfrage2025_05_00001).Pdf"; // path
-                                                                                                                                 // to
-                                                                                                                                 // PDF
-
-        EmailContent content = EmailService.buildInvoiceEmail(
-                attachmentPath,
-                "Sehr geehrte Damen und Herren", // Anrede
-                "Musterkunde", // Kundenname
-                "Musterbauvorhaben", // Bauvorhaben
-                "2025-01", // Projektnummer
-                "Rechnung2025_06_00007", // Rechnungsnummer
-                LocalDate.now(), // Rechnungsdatum
-                LocalDate.now().plusDays(14), // Fälligkeitsdatum
-                "1.234,56 €", // Betrag
-                "Max Mustermann" // Benutzer
-        );
-
-        service.sendEmail(
-                "mkuhn864@gmail.com", // Empfänger
-                null, // CC
-                "bauschlosserei-kuhn@t-online.de", // Absender
-                content.subject(), // Betreff
-                content.htmlBody(), // HTML-Inhalt
-                attachmentPath, // Anhang
-                Path.of(attachmentPath).getFileName().toString());
-    }
 }

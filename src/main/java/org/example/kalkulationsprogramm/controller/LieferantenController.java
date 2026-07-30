@@ -40,6 +40,7 @@ import org.example.kalkulationsprogramm.service.LieferantArtikelpreisService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantEmailResolver;
 import org.example.kalkulationsprogramm.service.LieferantenDetailService;
+import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -74,6 +75,7 @@ import lombok.RequiredArgsConstructor;
 public class LieferantenController {
 
     private final LieferantenRepository lieferantenRepository;
+    private final SentMailArchiver sentMailArchiver;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final org.example.kalkulationsprogramm.repository.KostenstelleRepository kostenstelleRepository;
     private final org.example.kalkulationsprogramm.service.LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
@@ -300,7 +302,8 @@ public class LieferantenController {
                 systemSettingsService.getSmtpHost(),
                 systemSettingsService.getSmtpPort(),
                 systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword());
+                systemSettingsService.getSmtpPassword())
+                .mitSentKopie(sentMailArchiver);
 
         String htmlBody = dto.getBody() != null ? dto.getBody() : "";
         String userName = resolveUserName(dto.getBenutzer(), dto.getFrontendUserId());

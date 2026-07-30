@@ -39,6 +39,7 @@ class AutoMahnVersandServiceTest
     @Mock FormularTextbausteinDefaultService formularTextbausteinDefaultService;
     @Mock EmailSignatureService emailSignatureService;
     @Mock ProjektEmailArchivService projektEmailArchivService;
+    @Mock org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
 
     private AutoMahnVersandService neuService()
     {
@@ -53,7 +54,8 @@ class AutoMahnVersandServiceTest
                 formularTemplateService,
                 formularTextbausteinDefaultService,
                 emailSignatureService,
-                projektEmailArchivService);
+                projektEmailArchivService,
+                sentMailArchiver);
     }
 
     @Test

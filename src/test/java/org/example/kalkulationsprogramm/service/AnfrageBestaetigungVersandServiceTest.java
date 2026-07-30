@@ -43,6 +43,7 @@ class AnfrageBestaetigungVersandServiceTest {
         // EmailService-Factory, damit der Test keinen echten SMTP-Connect macht.
         service = new AnfrageBestaetigungVersandService(
                 emailTextTemplateService, emailSignatureService, systemSettingsService,
+                Mockito.mock(org.example.kalkulationsprogramm.service.mail.SentMailArchiver.class),
                 outboundPersistenceService) {
             @Override
             EmailService baueEmailService() {

@@ -1120,6 +1120,8 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         bodyPreview: e.body,
                         direction: e.direction as 'IN' | 'OUT',
                         sentAt: e.sentAt,
+                        zustellStatus: e.zustellStatus,
+                        zustellFehler: e.zustellFehler,
                         parentEmailId: e.parentEmailId ?? e.parentId,
                         replyCount: e.replyCount,
                         attachments: e.attachments?.map((att) => ({

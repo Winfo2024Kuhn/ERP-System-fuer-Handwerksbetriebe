@@ -19,6 +19,7 @@ import org.example.kalkulationsprogramm.service.RechnungPdfService.FormBlockDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.KopfdatenDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.LayoutDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.RechnungDto;
+import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Service;
@@ -72,6 +73,7 @@ public class AutoAuftragsbestaetigungVersandService
     private final EmailSignatureService emailSignatureService;
     private final ProjektEmailArchivService projektEmailArchivService;
     private final DokumentFreigabeRepository dokumentFreigabeRepository;
+    private final SentMailArchiver sentMailArchiver;
 
     /**
      * Einstieg fuer den asynchronen Versand NACH dem Commit der
@@ -144,7 +146,8 @@ public class AutoAuftragsbestaetigungVersandService
                     systemSettingsService.getSmtpHost(),
                     systemSettingsService.getSmtpPort(),
                     systemSettingsService.getSmtpUsername(),
-                    systemSettingsService.getSmtpPassword());
+                    systemSettingsService.getSmtpPassword())
+                    .mitSentKopie(sentMailArchiver);
 
             String absender = ermittleAbsenderAdresse();
             String htmlMitSignatur = emailSignatureService

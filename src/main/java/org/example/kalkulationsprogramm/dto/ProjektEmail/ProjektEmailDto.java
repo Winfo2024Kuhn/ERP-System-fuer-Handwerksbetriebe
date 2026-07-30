@@ -36,4 +36,15 @@ public class ProjektEmailDto {
     // Thread-Unterstützung
     private Long parentEmailId;
     private int replyCount;
+
+    /**
+     * Zustell-Ergebnis der Ausgangsmail ("OFFEN" / "UNZUSTELLBAR"). Nur bei
+     * {@code direction == OUT} aussagekraeftig. Der EmailsTab blendet bei
+     * "UNZUSTELLBAR" eine Warnung ein — sonst sieht eine nie angekommene Mail
+     * genauso aus wie eine erfolgreich versendete.
+     */
+    private String zustellStatus;
+
+    /** Klartext-Grund der Ablehnung, z.B. "unknown user". */
+    private String zustellFehler;
 }

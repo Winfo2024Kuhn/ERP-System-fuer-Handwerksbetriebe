@@ -20,9 +20,17 @@ public class EmailThreadEntryDto {
     private String snippet;         // erste ~120 Zeichen des body für kollabierte Ansicht
     private String htmlBody;        // vollständiger HTML-Body (mit rewritten CID-URLs) für expandierte Ansicht
     private boolean forwarded;      // true wenn die E-Mail eine Weiterleitung ist (Fwd:/WG:)
+    // ACHTUNG: @JsonProperty gehoert unmittelbar ueber isDraft. Kommentare oder
+    // andere Felder dazwischen verschieben die Annotation stillschweigend auf
+    // das falsche Feld — Jackson meldet das nicht, und der Thread-View bricht.
     @JsonProperty("isDraft")
     private boolean isDraft;        // true wenn dies ein gespeicherter Entwurf ist
     private Long draftId;           // ID des EmailDraft (nur wenn isDraft=true)
+
+    /** "OFFEN" / "UNZUSTELLBAR" — nur bei direction "OUT" aussagekraeftig. */
+    private String zustellStatus;
+    /** Klartext-Grund der Ablehnung, z.B. "unknown user". */
+    private String zustellFehler;
     private List<AttachmentDto> attachments;
 
     @Data

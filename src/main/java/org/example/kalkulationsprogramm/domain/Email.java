@@ -158,6 +158,43 @@ public class Email {
     private boolean isStarred = false;
 
     // ═══════════════════════════════════════════════════════════════
+    // ZUSTELLUNG (nur fuer direction == OUT relevant)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Ergebnis der Zustellung, gesetzt aus eingehenden Unzustellbarkeits-
+     * Meldungen. Siehe {@link ZustellStatus} — {@code OFFEN} heisst "kein
+     * Fehler bekannt", nicht "angekommen".
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ZustellStatus zustellStatus = ZustellStatus.OFFEN;
+
+    /**
+     * Klartext-Grund der Ablehnung, z.B. "550 5.1.1 unknown user".
+     * Wird im E-Mail-Center und in der Kundenakte angezeigt.
+     */
+    @Column(length = 500)
+    private String zustellFehler;
+
+    /** Zeitpunkt, zu dem der Rueckläufer ausgewertet wurde. */
+    private LocalDateTime zustellGeprueftAm;
+
+    /**
+     * Markiert diese Ausgangsmail als unzustellbar. Der Grund wird auf die
+     * Spaltenlaenge gekuerzt, damit ein ungewoehnlich langer DSN-Text den
+     * Speichervorgang nicht scheitern laesst.
+     */
+    public void markiereUnzustellbar(String grund)
+    {
+        this.zustellStatus = ZustellStatus.UNZUSTELLBAR;
+        this.zustellFehler = grund == null || grund.length() <= 500
+                ? grund
+                : grund.substring(0, 500);
+        this.zustellGeprueftAm = LocalDateTime.now();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // ZUORDNUNG (exklusiv: nur 1 darf gesetzt sein!)
     // ═══════════════════════════════════════════════════════════════
 

@@ -40,6 +40,7 @@ import org.example.kalkulationsprogramm.service.InquiryDetectionService;
 import org.example.kalkulationsprogramm.service.SpamBayesService;
 import org.example.kalkulationsprogramm.service.SpamFilterService;
 import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
+import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -73,6 +74,7 @@ import lombok.extern.slf4j.Slf4j;
 public class UnifiedEmailController {
 
     private final EmailRepository emailRepository;
+    private final SentMailArchiver sentMailArchiver;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
     private final LieferantenRepository lieferantenRepository;
@@ -1372,7 +1374,8 @@ public class UnifiedEmailController {
                     systemSettingsService.getSmtpHost(),
                     systemSettingsService.getSmtpPort(),
                     systemSettingsService.getSmtpUsername(),
-                    systemSettingsService.getSmtpPassword());
+                    systemSettingsService.getSmtpPassword())
+                    .mitSentKopie(sentMailArchiver);
 
             // Attachments vorbereiten
             List<String> attachmentPaths = new ArrayList<>();
@@ -1627,7 +1630,8 @@ public class UnifiedEmailController {
                     systemSettingsService.getSmtpHost(),
                     systemSettingsService.getSmtpPort(),
                     systemSettingsService.getSmtpUsername(),
-                    systemSettingsService.getSmtpPassword());
+                    systemSettingsService.getSmtpPassword())
+                    .mitSentKopie(sentMailArchiver);
 
             // Attachments vorbereiten
             List<String> attachmentPaths = new ArrayList<>();
@@ -1809,6 +1813,11 @@ public class UnifiedEmailController {
         dto.setReplyCount(countAncestors(email) + countAllReplies(email));
         dto.setThreadLastActivityAt(emailThreadService.computeThreadLastActivityAt(email));
 
+        // Zustellstatus: betrifft besonders den Funnel-Pfad — dort tippen Kunden
+        // ihre Adresse selbst, entsprechend haeufig sind Vertipper.
+        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
+        dto.setZustellFehler(email.getZustellFehler());
+
         // Attachments – metadata only, no CID rewriting
         dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
         if (email.getAttachments() != null && !email.getAttachments().isEmpty()) {
@@ -1870,6 +1879,11 @@ public class UnifiedEmailController {
         }
         dto.setReplyCount(countAncestors(email) + countAllReplies(email));
         dto.setThreadLastActivityAt(emailThreadService.computeThreadLastActivityAt(email));
+
+        // Zustellstatus: betrifft besonders den Funnel-Pfad — dort tippen Kunden
+        // ihre Adresse selbst, entsprechend haeufig sind Vertipper.
+        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
+        dto.setZustellFehler(email.getZustellFehler());
 
         // Attachments
         dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());

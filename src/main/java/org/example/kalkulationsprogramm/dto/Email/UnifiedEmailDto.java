@@ -74,6 +74,16 @@ public class UnifiedEmailDto {
     private List<AttachmentDto> attachments;
     private boolean hasAttachments;
 
+    /**
+     * Zustell-Ergebnis der Ausgangsmail ("OFFEN" / "UNZUSTELLBAR"). Nur bei
+     * {@code direction == OUT} aussagekraeftig; bei "UNZUSTELLBAR" blendet das
+     * Frontend eine Warnung ein.
+     */
+    private String zustellStatus;
+
+    /** Klartext-Grund der Ablehnung, z.B. "unknown user". */
+    private String zustellFehler;
+
     @Data
     public static class AttachmentDto {
         private Long id;

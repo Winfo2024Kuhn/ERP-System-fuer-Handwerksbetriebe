@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Paperclip, File, ChevronDown, ChevronUp, Reply, FileEdit, Trash2 } from 'lucide-react';
+import { AlertTriangle, Paperclip, File, ChevronDown, ChevronUp, Reply, FileEdit, Trash2 } from 'lucide-react';
+import { klartextGrund } from '../lib/zustellGrund';
 import { cn } from '../lib/utils';
 import { EmailContentFrame } from './EmailContentFrame';
 
@@ -28,6 +29,10 @@ export interface EmailThreadEntry {
     draftId?: number;
     snippet?: string;
     htmlBody?: string;
+    /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+    zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+    /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+    zustellFehler?: string;
     attachments: ThreadAttachment[];
 }
 
@@ -296,6 +301,21 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
 
                     <ChevronUp className="w-4 h-4 text-slate-400 shrink-0 mt-1" />
                 </div>
+
+                {/* Rueckläufer-Warnung: Eine unzustellbare Antwort haengt mitten im
+                    Thread und taucht in der Uebersichtsliste (nur Wurzeln) nicht auf —
+                    hier ist die einzige Stelle, an der der Nutzer sie sieht. */}
+                {entry.zustellStatus === 'UNZUSTELLBAR' && (
+                    <div className="mx-5 mb-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-rose-700">Nicht angekommen</p>
+                            <p className="text-xs text-rose-600 break-words" title={entry.zustellFehler}>
+                                {klartextGrund(entry.zustellFehler)}
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Trennlinie */}
                 <div className="h-px bg-slate-100 mx-5" />

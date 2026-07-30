@@ -38,6 +38,7 @@ class EmailImportServiceTest {
     @Mock private SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private EmailBlacklistRepository emailBlacklistRepository;
+    @Mock private BounceErkennungService bounceErkennungService;
 
     @InjectMocks
     private EmailImportService service;
@@ -449,6 +450,58 @@ class EmailImportServiceTest {
             // (getUID wird aber trotzdem für imapUid-Speicherung aufgerufen – das ist korrekt)
             verify(emailRepository, never()).existsByMessageId(
                     argThat(id -> id != null && id.startsWith("<no-msgid-uid-")));
+        }
+
+        /**
+         * Regelfall: Die eigene Sent-Kopie traegt dieselbe Message-ID wie die
+         * lokal archivierte Ausgangsmail — die Deduplizierung greift, die Mail
+         * steht kein zweites Mal (und nicht mit vom Server umgebautem Layout)
+         * in der DB.
+         */
+        @Test
+        void ueberspringtEigeneSentKopieUeberMessageIdDedup() throws Exception {
+            when(mockMessage.getHeader("Message-ID"))
+                    .thenReturn(new String[]{"<eigene-mail@example.com>"});
+            when(emailRepository.existsByMessageId("<eigene-mail@example.com>")).thenReturn(true);
+
+            boolean importiert = service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+
+            assertThat(importiert).as("Bereits archivierte Ausgangsmail nicht doppelt importieren").isFalse();
+            verify(emailRepository, never()).save(any(Email.class));
+        }
+
+        /**
+         * Sicherheitsnetz: Traegt die Mail zwar unseren Marker, steht aber NICHT
+         * in der DB, ist die lokale Archivierung fehlgeschlagen. Dann muss sie
+         * importiert werden — eine Mail mit veraendertem Layout ist besser als
+         * eine, die im ERP komplett fehlt.
+         */
+        @Test
+        void holtEigeneMailNachWennLokaleArchivierungFehlschlug() throws Exception {
+            when(mockMessage.getHeader("Message-ID"))
+                    .thenReturn(new String[]{"<nicht-archiviert@example.com>"});
+            when(mockMessage.getHeader(org.example.email.EmailService.ERP_ORIGIN_HEADER))
+                    .thenReturn(new String[]{org.example.email.EmailService.ERP_ORIGIN_WERT});
+
+            boolean importiert = service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+
+            assertThat(importiert).as("Nicht archivierte Ausgangsmail muss nachgeholt werden").isTrue();
+        }
+
+        /**
+         * Gegenprobe: Fremde Mails (z.B. vom Handy verschickt) haben keinen
+         * Marker und laufen ganz normal durch.
+         */
+        @Test
+        void importiertFremdeMailsOhneMarkerHeaderWeiterhin() throws Exception {
+            when(mockMessage.getHeader("Message-ID"))
+                    .thenReturn(new String[]{"<vom-handy@example.com>"});
+            when(mockMessage.getHeader(org.example.email.EmailService.ERP_ORIGIN_HEADER))
+                    .thenReturn(null);
+
+            boolean importiert = service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+
+            assertThat(importiert).as("Mails ohne Marker muessen weiterhin importiert werden").isTrue();
         }
 
         @Test

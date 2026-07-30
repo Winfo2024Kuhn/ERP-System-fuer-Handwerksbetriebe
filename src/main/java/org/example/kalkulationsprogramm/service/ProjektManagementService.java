@@ -1391,6 +1391,11 @@ ProjektManagementService {
             ed.setParentEmailId(e.getParentEmail() != null ? e.getParentEmail().getId() : null);
             ed.setReplyCount(countAncestors(e) + countAllReplies(e));
 
+            // Zustellstatus: Angebote und Rechnungen haengen am Projekt — hier
+            // muss eine nicht angekommene Mail sichtbar sein.
+            ed.setZustellStatus(e.getZustellStatus() != null ? e.getZustellStatus().name() : null);
+            ed.setZustellFehler(e.getZustellFehler());
+
             if (e.getAttachments() != null) {
                 final Long emailId = e.getId();
                 ed.setAttachments(e.getAttachments().stream().map(att -> {

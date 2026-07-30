@@ -63,6 +63,7 @@ class UnifiedEmailControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private EmailRepository emailRepository;
     @MockBean private ProjektRepository projektRepository;
     @MockBean private AnfrageRepository anfrageRepository;

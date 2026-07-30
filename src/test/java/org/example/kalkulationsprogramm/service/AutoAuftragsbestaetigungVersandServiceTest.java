@@ -33,6 +33,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
     @Mock EmailSignatureService emailSignatureService;
     @Mock ProjektEmailArchivService projektEmailArchivService;
     @Mock org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository dokumentFreigabeRepository;
+    @Mock org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
 
     private AutoAuftragsbestaetigungVersandService neuService() {
         return new AutoAuftragsbestaetigungVersandService(
@@ -44,7 +45,8 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 formularTextbausteinDefaultService,
                 emailSignatureService,
                 projektEmailArchivService,
-                dokumentFreigabeRepository);
+                dokumentFreigabeRepository,
+                sentMailArchiver);
     }
 
     @Test

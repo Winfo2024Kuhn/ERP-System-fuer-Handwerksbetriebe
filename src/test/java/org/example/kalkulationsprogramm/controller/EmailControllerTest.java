@@ -42,6 +42,9 @@ class EmailControllerTest {
     private ObjectMapper objectMapper;
 
     @MockBean
+    private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
+
+    @MockBean
     private ProjektDokumentRepository dokumentRepository;
 
     @MockBean

@@ -324,6 +324,10 @@ public class KundenDetailService {
         dto.setAttachments(mapAttachments(email.getAttachments(), referenzTyp, referenzId, email.getId()));
         dto.setParentEmailId(email.getParentEmail() != null ? email.getParentEmail().getId() : null);
         dto.setReplyCount(countAncestors(email) + countAllReplies(email));
+        // Zustellstatus mitgeben, damit die Kundenakte eine nicht angekommene
+        // Ausgangsmail sichtbar macht statt sie wie erfolgreich versendet zu zeigen.
+        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
+        dto.setZustellFehler(email.getZustellFehler());
         return dto;
     }
 

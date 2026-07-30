@@ -56,6 +56,8 @@ class LieferantenControllerTest {
   private MockMvc mockMvc;
 
   @MockBean
+  private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
+  @MockBean
   private LieferantenRepository lieferantenRepository;
   @MockBean
   private LieferantMapper lieferantMapper;
