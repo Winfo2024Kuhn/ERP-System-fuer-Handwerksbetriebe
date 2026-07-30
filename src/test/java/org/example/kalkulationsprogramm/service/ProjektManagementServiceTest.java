@@ -980,6 +980,88 @@ class ProjektManagementServiceTest {
 
         assertEquals("2026/05/00300", nummer);
     }
+
+    @Test
+    void generiereKundenAuftragsnummer_kundeMitAbweichendenSlots_nimmtSlotDerHoechstenNummer() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        // Repository liefert absteigend sortiert. Weichen die Slots eines Kunden voneinander ab
+        // (z.B. weil eine Nummer von Hand vergeben wurde), muss die höchste gewinnen — sonst
+        // springt der Vorschlag je nach DB-Reihenfolge zwischen den Slots.
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(42L, "2026/"))
+                .thenReturn(List.of("2026/03/01201", "2026/01/00700"));
+        when(projektRepository.existsByAuftragsnummer("2026/05/01202")).thenReturn(false);
+
+        String nummer = service.generiereKundenAuftragsnummer(datum, 42L);
+
+        assertEquals("2026/05/01202", nummer);
+    }
+
+    @Test
+    void ermittleKundenAuftragsnummer_neuerKunde_liefertHerleitungFuerHinweistext() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(42L, "2026/"))
+                .thenReturn(List.of());
+        when(projektRepository.findAuftragsnummernByYearPrefix("2026/"))
+                .thenReturn(List.of("2026/01/00100"));
+        when(projektRepository.existsByAuftragsnummer("2026/05/00200")).thenReturn(false);
+
+        var vorschlag = service.ermittleKundenAuftragsnummer(datum, 42L);
+
+        assertEquals("2026/05/00200", vorschlag.auftragsnummer());
+        assertTrue(vorschlag.kundenLogik());
+        assertTrue(vorschlag.neuerKundeImJahr());
+        assertEquals(2, vorschlag.kundenSlot());
+        assertEquals(1, vorschlag.auftragImJahr());
+    }
+
+    @Test
+    void ermittleKundenAuftragsnummer_bestandskunde_zaehltAuftragImJahrHoch() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByKundeAndYearPrefix(42L, "2026/"))
+                .thenReturn(List.of("2026/03/00701", "2026/01/00700"));
+        when(projektRepository.existsByAuftragsnummer("2026/05/00702")).thenReturn(false);
+
+        var vorschlag = service.ermittleKundenAuftragsnummer(datum, 42L);
+
+        assertEquals("2026/05/00702", vorschlag.auftragsnummer());
+        assertTrue(vorschlag.kundenLogik());
+        assertFalse(vorschlag.neuerKundeImJahr());
+        assertEquals(7, vorschlag.kundenSlot());
+        // Zwei Aufträge vorhanden → das hier ist der dritte.
+        assertEquals(3, vorschlag.auftragImJahr());
+    }
+
+    @Test
+    void existiertKunde_lehntUngueltigeIdsOhneDatenbankzugriffAb() {
+        // Negative Werte und 0 dürfen gar nicht erst zur Datenbank durchgereicht werden.
+        assertFalse(service.existiertKunde(null));
+        assertFalse(service.existiertKunde(0L));
+        assertFalse(service.existiertKunde(-1L));
+        verify(kundeRepository, never()).existsById(any());
+    }
+
+    @Test
+    void existiertKunde_pruefteUnbekannteUndBekannteIdsInDerDatenbank() {
+        when(kundeRepository.existsById(Long.MAX_VALUE)).thenReturn(false);
+        when(kundeRepository.existsById(42L)).thenReturn(true);
+
+        assertFalse(service.existiertKunde(Long.MAX_VALUE));
+        assertTrue(service.existiertKunde(42L));
+    }
+
+    @Test
+    void ermittleKundenAuftragsnummer_ohneKunde_meldetKeineKundenlogik() {
+        LocalDate datum = LocalDate.of(2026, 5, 20);
+        when(projektRepository.findAuftragsnummernByPrefix("2026/05/"))
+                .thenReturn(List.of());
+
+        var vorschlag = service.ermittleKundenAuftragsnummer(datum, null);
+
+        assertEquals("2026/05/00001", vorschlag.auftragsnummer());
+        assertFalse(vorschlag.kundenLogik());
+        assertEquals(0, vorschlag.kundenSlot());
+        assertEquals(0, vorschlag.auftragImJahr());
+    }
 }
 
 @SpringBootTest(properties = { "spring.jpa.hibernate.ddl-auto=create-drop", "file.mail-attachment-dir=attachments" })

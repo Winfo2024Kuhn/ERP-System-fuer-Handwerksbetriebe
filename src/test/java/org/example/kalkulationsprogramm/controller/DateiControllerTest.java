@@ -189,5 +189,123 @@ class DateiControllerTest {
 
         verify(dateiSpeicherService, never()).holeNetzwerkPfad(anyString());
     }
+
+    // ============== THUMBNAILS ==============
+    // Hinweis: Der Thumbnail-Cache lebt auf Controller-Instanz-Ebene und wird von allen
+    // Tests dieser Klasse geteilt. Jeder Test nutzt daher einen eigenen Dateinamen.
+
+    /** Erzeugt ein echtes JPEG der gewünschten Größe (einfarbig, keine Personendaten). */
+    private static byte[] erzeugeJpeg(int breite, int hoehe) throws Exception {
+        java.awt.image.BufferedImage bild =
+                new java.awt.image.BufferedImage(breite, hoehe, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = bild.createGraphics();
+        g.setColor(java.awt.Color.GRAY);
+        g.fillRect(0, 0, breite, hoehe);
+        g.dispose();
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(bild, "jpg", out);
+        return out.toByteArray();
+    }
+
+    private static ByteArrayResource resourceMitNamen(byte[] daten, String name) {
+        return new ByteArrayResource(daten) {
+            @Override
+            public String getFilename() {
+                return name;
+            }
+        };
+    }
+
+    @org.junit.jupiter.api.Test
+    void thumbnailVerkleinertGrossesBild() throws Exception {
+        String filename = "gross-foto.jpg";
+        byte[] original = erzeugeJpeg(2000, 1500);
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(original, filename));
+
+        byte[] thumbnail = mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_JPEG))
+                // "private": Bilder sind personenbezogen, kein geteilter Proxy-Cache
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "max-age=86400, private"))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        java.awt.image.BufferedImage verkleinert =
+                javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(thumbnail));
+        org.assertj.core.api.Assertions.assertThat(verkleinert.getWidth()).isEqualTo(300);
+        org.assertj.core.api.Assertions.assertThat(verkleinert.getHeight()).isEqualTo(225);
+        org.assertj.core.api.Assertions.assertThat(thumbnail.length).isLessThan(original.length);
+    }
+
+    @org.junit.jupiter.api.Test
+    void thumbnailWirdBeimZweitenAufrufAusDemCacheGeliefert() throws Exception {
+        String filename = "gecacht-foto.jpg";
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(1200, 1200), filename));
+
+        mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail")).andExpect(status().isOk());
+
+        // Nur der erste Aufruf liest die Datei von der Platte
+        verify(dateiSpeicherService, org.mockito.Mockito.times(1)).ladeDokumentAlsResource(filename);
+    }
+
+    @org.junit.jupiter.api.Test
+    void thumbnailFaelltAufBilderSpeicherZurueck() throws Exception {
+        String filename = "notiz-bild.jpg";
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenThrow(new RuntimeException("nicht im Dokumentenspeicher"));
+        when(dateiSpeicherService.ladeBildAlsResource(filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(800, 600), filename));
+
+        mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_JPEG));
+
+        verify(dateiSpeicherService).ladeBildAlsResource(filename);
+    }
+
+    @org.junit.jupiter.api.Test
+    void thumbnailLiefertNichtBilderUnveraendertZurueck() throws Exception {
+        String filename = "vertrag.pdf";
+        byte[] pdfDaten = "%PDF-1.4 Dummy".getBytes(StandardCharsets.UTF_8);
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(pdfDaten, filename));
+
+        byte[] antwort = mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+
+        org.assertj.core.api.Assertions.assertThat(antwort).isEqualTo(pdfDaten);
+    }
+
+    @org.junit.jupiter.api.Test
+    void thumbnailGibtKleinesBildOhneVergroesserungZurueck() throws Exception {
+        String filename = "klein-icon.jpg";
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(120, 90), filename));
+
+        byte[] thumbnail = mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_JPEG))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        java.awt.image.BufferedImage ergebnis =
+                javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(thumbnail));
+        org.assertj.core.api.Assertions.assertThat(ergebnis.getWidth()).isEqualTo(120);
+        org.assertj.core.api.Assertions.assertThat(ergebnis.getHeight()).isEqualTo(90);
+    }
+
+    @org.junit.jupiter.api.Test
+    void thumbnailMeldet404WennDateiNirgendsExistiert() throws Exception {
+        String filename = "gibt-es-nicht.jpg";
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenThrow(new RuntimeException("weg"));
+        when(dateiSpeicherService.ladeBildAlsResource(filename))
+                .thenThrow(new RuntimeException("auch weg"));
+
+        mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail"))
+                .andExpect(status().isNotFound());
+    }
 }
 

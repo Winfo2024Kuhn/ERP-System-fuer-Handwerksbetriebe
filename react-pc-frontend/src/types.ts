@@ -506,6 +506,8 @@ export interface ProjektDokument {
   gespeicherterDateiname?: string;  // UUID-prefixed filename for download URL
   dateityp?: string;
   url: string;
+  /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+  thumbnailUrl?: string;
   netzwerkPfad?: string;
   dokumentGruppe: DokumentGruppe;
   uploadDatum?: string;

@@ -1,8 +1,28 @@
 # 🎨 Frontend & UI-Guidelines
 
-## 🧠 KI-Skill-Pflicht (UI/UX)
-**WICHTIG:** Bevor du neue UI-Komponenten erstellst, Layouts entwirfst oder tiefgreifende UX-Entscheidungen triffst, mache dich zwingend mit diesem Skill vertraut und wende ihn an:
-👉 `.claude\skills\ui-ux-pro-max\SKILL.md`
+## 🧠 KI-Skill-Pflicht (UI/UX) — HOOK-ERZWUNGEN
+
+**Vor JEDER Frontend-Änderung** musst du einen der folgenden Skills per `Skill`-Tool aufrufen. Das ist keine Empfehlung: Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange in dieser Session keiner davon lief.
+
+| Skill | Wofür |
+| --- | --- |
+| `ui-ux-pro-max:ui-ux-pro-max` | **Standard.** Styles, Farbpaletten, Typografie, 99 UX-Regeln (Accessibility, Touch, Performance, Animation) |
+| `frontend-design:frontend-design` | Visuelle Ausrichtung neuer UI, wenn es nicht nach Template aussehen soll |
+| `ui-ux-pro-max:design-system` | Design-Tokens, Komponenten-Specs, systematische Skalen |
+| `ui-ux-pro-max:design` | Logos, Banner, Icons, Präsentationen, Corporate Identity |
+
+Das Flag gilt pro Session — ein Aufruf reicht für alle folgenden Frontend-Edits.
+
+## 🔌 MCP-Pflicht für Komponenten
+
+Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. Beide sind in `.mcp.json` eingetragen:
+
+| MCP | Wofür |
+| --- | --- |
+| `shadcn` | Der Standard. Greift direkt auf shadcn-Bausteine und -Blöcke zu, zieht sie passend ins Projekt und installiert sie automatisch. Kein manuelles Kopieren aus dem Netz. |
+| `magic` (21st.dev) | Moderne Layouts mit Animationen auf Tailwind-Basis. Braucht die Umgebungsvariable `TWENTYFIRST_API_KEY` (**niemals** den Key in `.mcp.json` schreiben — die Datei ist eingecheckt). |
+
+**Wichtig:** Gezogene Komponenten immer auf unser Design-System umstellen (rose/slate statt der shadcn-Default-Farben) und die Pflicht-Komponenten unten haben Vorrang vor neu gezogenen.
 
 ## Build & Coding-Regeln
 - Nach JEDER Änderung: `npm run build` im jeweiligen Ordner ausführen (Fail Fast!).

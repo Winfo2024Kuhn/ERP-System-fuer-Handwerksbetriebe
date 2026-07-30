@@ -52,6 +52,7 @@ import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import { PageLayout } from "../components/layout/PageLayout";
 
 import { ImageViewer } from "../components/ui/image-viewer";
+import { ThumbnailImage } from "../components/ui/ThumbnailImage";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import type { DocBlock } from '../components/document-editor/types';
@@ -389,6 +390,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         id: number;
         originalDateiname: string;
         url: string;
+        /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+        thumbnailUrl?: string;
         erstelltAm: string;
     }
     interface ProjektNotiz {
@@ -1348,10 +1351,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         onClick={() => setNotizBildViewer({ images: n.bilder!.map(b => ({ url: b.url, name: b.originalDateiname })), startIndex: n.bilder!.indexOf(bild) })}
                                                         className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
                                                     >
-                                                        <img
-                                                            src={bild.url}
+                                                        <ThumbnailImage
+                                                            src={bild.thumbnailUrl || bild.url}
+                                                            fallbackSrc={bild.url}
                                                             alt={bild.originalDateiname}
-                                                            className="w-full h-full object-cover"
+                                                            className="object-cover"
                                                         />
                                                     </button>
                                                     <button

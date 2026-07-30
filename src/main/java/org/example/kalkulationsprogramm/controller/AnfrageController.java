@@ -417,6 +417,21 @@ public class AnfrageController {
         return ResponseEntity.ok(ausgangsGeschaeftsDokumentService.berechneKategorieVorschlagFuerAnfrage(id));
     }
 
+    /**
+     * Prüft, ob es sich um eine Bilddatei handelt – nur dafür lohnt sich ein Vorschaubild.
+     * Der Dateityp wird bevorzugt, weil er beim Upload vom Browser gemeldet wird; fehlt er,
+     * entscheidet die Dateiendung.
+     */
+    private static boolean istBilddatei(String originalDateiname, String dateityp) {
+        if (dateityp != null && dateityp.toLowerCase().startsWith("image/")) {
+            return true;
+        }
+        if (originalDateiname == null) {
+            return false;
+        }
+        return originalDateiname.toLowerCase().matches(".*\\.(jpg|jpeg|png|gif|webp|bmp)$");
+    }
+
     private AnfrageDokumentResponseDto mappeDokumentZuDto(AnfrageDokument dokument) {
         AnfrageDokumentResponseDto dto = new AnfrageDokumentResponseDto();
         dto.setId(dokument.getId());
@@ -424,7 +439,11 @@ public class AnfrageController {
         dto.setGespeicherterDateiname(dokument.getGespeicherterDateiname());
         dto.setDateityp(dokument.getDateityp());
         dto.setUrl("/api/dokumente/" + dokument.getGespeicherterDateiname());
-        dto.setThumbnailUrl("/api/dokumente/" + dokument.getGespeicherterDateiname() + "/thumbnail");
+        // Vorschaubild nur für Bilder: Bei PDFs oder CAD-Dateien liefert der Endpoint das
+        // vollständige Original zurück – das wäre das Gegenteil des gewünschten Effekts.
+        if (istBilddatei(dokument.getOriginalDateiname(), dokument.getDateityp())) {
+            dto.setThumbnailUrl("/api/dokumente/" + dokument.getGespeicherterDateiname() + "/thumbnail");
+        }
         String nameForType = dokument.getOriginalDateiname() != null ? dokument.getOriginalDateiname().toLowerCase()
                 : (dokument.getGespeicherterDateiname() != null ? dokument.getGespeicherterDateiname().toLowerCase()
                         : "");
@@ -471,6 +490,8 @@ public class AnfrageController {
     public static class AnfrageNotizBildDto {
         private Long id;
         private String url;
+        /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+        private String thumbnailUrl;
         private String originalDateiname;
         private String erstelltAm;
     }
@@ -541,6 +562,9 @@ public class AnfrageController {
         dto.setErstelltAm(
                 bild.getErstelltAm().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         dto.setUrl("/api/images/" + bild.getGespeicherterDateiname()); // Korrekte URL für DateiController
+        // Der Thumbnail-Endpoint hängt unter /api/dokumente und fällt intern auf den
+        // Bilder-Speicher zurück, deckt also auch Notiz-Bilder aus /api/images ab.
+        dto.setThumbnailUrl("/api/dokumente/" + bild.getGespeicherterDateiname() + "/thumbnail");
         return dto;
     }
 

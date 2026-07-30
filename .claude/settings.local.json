@@ -37,6 +37,15 @@
         ]
       },
       {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\mark-design-skill-used.ps1\""
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {

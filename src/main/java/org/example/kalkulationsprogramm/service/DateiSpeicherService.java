@@ -1548,9 +1548,14 @@ public class DateiSpeicherService {
             for (Path basePath : new Path[] { dokumentenSpeicherplatz, anfragenSpeicherplatz, hicadSpeicherplatz() }) {
                 try {
                     if (Files.exists(basePath) && Files.isDirectory(basePath)) {
-                        java.util.Optional<Path> found = Files.list(basePath)
-                                .filter(p -> p.getFileName().toString().equalsIgnoreCase(dateiname))
-                                .findFirst();
+                        // try-with-resources: Files.list haelt ein Verzeichnis-Handle offen,
+                        // das unter Windows sonst bis zur GC belegt bleibt.
+                        java.util.Optional<Path> found;
+                        try (java.util.stream.Stream<Path> eintraege = Files.list(basePath)) {
+                            found = eintraege
+                                    .filter(p -> p.getFileName().toString().equalsIgnoreCase(dateiname))
+                                    .findFirst();
+                        }
                         if (found.isPresent()) {
                             Resource resource = new UrlResource(found.get().toUri());
                             if (resource.exists() && resource.isReadable()) {

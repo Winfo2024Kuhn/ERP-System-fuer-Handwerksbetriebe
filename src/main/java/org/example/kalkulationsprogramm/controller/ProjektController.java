@@ -900,6 +900,21 @@ public class ProjektController {
         }
     }
 
+    /**
+     * Prüft, ob es sich um eine Bilddatei handelt – nur dafür lohnt sich ein Vorschaubild.
+     * Der Dateityp wird bevorzugt, weil er beim Upload vom Browser gemeldet wird; fehlt er,
+     * entscheidet die Dateiendung.
+     */
+    private static boolean istBilddatei(String originalDateiname, String dateityp) {
+        if (dateityp != null && dateityp.toLowerCase().startsWith("image/")) {
+            return true;
+        }
+        if (originalDateiname == null) {
+            return false;
+        }
+        return originalDateiname.toLowerCase().matches(".*\\.(jpg|jpeg|png|gif|webp|bmp)$");
+    }
+
     private ProjektDokumentResponseDto mappeDokumentZuDto(ProjektDokument dokument) {
         ProjektDokumentResponseDto dto = new ProjektDokumentResponseDto();
         dto.setId(dokument.getId());
@@ -912,6 +927,12 @@ public class ProjektController {
             dto.setUrl("/api/ausgangs-dokumente/" + ausgangsId + "/pdf");
         } else {
             dto.setUrl("/api/dokumente/" + gespeichert);
+            // Kachelansicht lädt das verkleinerte Vorschaubild statt des Originals.
+            // Nur für Bilder setzen: Bei PDFs oder CAD-Dateien liefert der Endpoint das
+            // vollständige Original zurück – das wäre das Gegenteil des gewünschten Effekts.
+            if (istBilddatei(dokument.getOriginalDateiname(), dokument.getDateityp())) {
+                dto.setThumbnailUrl("/api/dokumente/" + gespeichert + "/thumbnail");
+            }
         }
         String nameForType = dokument.getOriginalDateiname() != null ? dokument.getOriginalDateiname().toLowerCase()
                 : (dokument.getGespeicherterDateiname() != null ? dokument.getGespeicherterDateiname().toLowerCase()
@@ -1150,20 +1171,68 @@ public class ProjektController {
     /**
      * Generiert die nächste verfügbare Auftragsnummer für ein bestimmtes Datum.
      * Format: YYYY/MM/XXXXX
-     * WICHTIG: Diese Route muss VOR /{id} definiert werden!
+     *
+     * <p>Wird zusätzlich ein {@code kundeId} übergeben, folgt der Vorschlag der
+     * kundenspezifischen Syntax {@code YYYY/MM/NNNCC} (NNN = Kundennummer im Jahr,
+     * CC = laufender Auftrag dieses Kunden im Jahr) — dieselbe Logik wie bei der
+     * automatischen Projektanlage nach digitaler Angebots-Annahme. Die Antwort enthält
+     * die Herleitung, damit der Anlege-Dialog dem Benutzer erklären kann, wie die Nummer
+     * zustande kommt.
+     *
+     * <p>WICHTIG: Diese Route muss VOR /{id} definiert werden!
      */
     @GetMapping("/naechste-auftragsnummer")
     public ResponseEntity<NaechsteAuftragsnummerResponse> getNaechsteAuftragsnummer(
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate datum) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate datum,
+            @RequestParam(required = false) Long kundeId) {
         if (datum == null) {
             datum = LocalDate.now();
         }
-
-        String auftragsnummer = projektManagementService.generiereNaechsteAuftragsnummer(datum);
-        long zaehler = projektManagementService.getNaechsterAuftragsnummerZaehler(datum);
         String prefix = "%d/%02d/".formatted(datum.getYear(), datum.getMonthValue());
 
-        return ResponseEntity.ok(new NaechsteAuftragsnummerResponse(auftragsnummer, prefix, zaehler));
+        if (kundeId == null) {
+            String auftragsnummer = projektManagementService.generiereNaechsteAuftragsnummer(datum);
+            long zaehler = projektManagementService.getNaechsterAuftragsnummerZaehler(datum);
+            return ResponseEntity.ok(
+                    new NaechsteAuftragsnummerResponse(auftragsnummer, prefix, zaehler, false, false, 0, 0));
+        }
+
+        // Unbekannte, negative oder 0-IDs würden sonst einen Kunden-Slot für einen Kunden
+        // verbrennen, den es gar nicht gibt — und im Dialog einen Hinweistext über ihn erzeugen.
+        if (!projektManagementService.existiertKunde(kundeId)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        ProjektManagementService.AuftragsnummerVorschlag vorschlag =
+                projektManagementService.ermittleKundenAuftragsnummer(datum, kundeId);
+        return ResponseEntity.ok(new NaechsteAuftragsnummerResponse(
+                vorschlag.auftragsnummer(),
+                prefix,
+                zaehlerAusAuftragsnummer(vorschlag.auftragsnummer()),
+                vorschlag.kundenLogik(),
+                vorschlag.neuerKundeImJahr(),
+                vorschlag.kundenSlot(),
+                vorschlag.auftragImJahr()));
+    }
+
+    /**
+     * Schneidet den Zähler-Teil (hinter dem letzten {@code /}) aus einer Auftragsnummer.
+     * Das Frontend führt Präfix und Zähler getrennt, damit der Benutzer nur den Zähler tippt.
+     * Liefert {@code 0}, wenn die Nummer kein auswertbares Zähler-Ende hat.
+     */
+    static long zaehlerAusAuftragsnummer(String auftragsnummer) {
+        if (auftragsnummer == null) {
+            return 0;
+        }
+        int letzterSlash = auftragsnummer.lastIndexOf('/');
+        if (letzterSlash < 0 || letzterSlash == auftragsnummer.length() - 1) {
+            return 0;
+        }
+        try {
+            return Long.parseLong(auftragsnummer.substring(letzterSlash + 1));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     /**
@@ -1192,7 +1261,15 @@ public class ProjektController {
     }
 
     // Response DTOs für Auftragsnummer
-    public record NaechsteAuftragsnummerResponse(String auftragsnummer, String prefix, long zaehler) {
+    /**
+     * @param kundenLogik      {@code true}, wenn der Vorschlag nach der Kunden-Syntax
+     *                         {@code YYYY/MM/NNNCC} gebildet wurde
+     * @param neuerKundeImJahr {@code true}, wenn der Kunde in diesem Jahr noch keinen Auftrag hatte
+     * @param kundenSlot       Kundennummer im Jahr (NNN)
+     * @param auftragImJahr    der wievielte Auftrag dieses Kunden im Jahr (1-basiert)
+     */
+    public record NaechsteAuftragsnummerResponse(String auftragsnummer, String prefix, long zaehler,
+            boolean kundenLogik, boolean neuerKundeImJahr, int kundenSlot, int auftragImJahr) {
     }
 
     public record AuftragsnummerValidierungResponse(boolean verfuegbar, String message) {
@@ -1446,6 +1523,7 @@ public class ProjektController {
         dto.id = bild.getId();
         dto.originalDateiname = bild.getOriginalDateiname();
         dto.url = "/api/dokumente/" + bild.getGespeicherterDateiname();
+        dto.thumbnailUrl = "/api/dokumente/" + bild.getGespeicherterDateiname() + "/thumbnail";
         dto.erstelltAm = bild.getErstelltAm();
         return dto;
     }
@@ -1562,6 +1640,8 @@ public class ProjektController {
         public Long id;
         public String originalDateiname;
         public String url;
+        /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+        public String thumbnailUrl;
         public LocalDateTime erstelltAm;
     }
 

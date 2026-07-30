@@ -45,6 +45,7 @@ import type {
 import { DokumentHierarchie } from "../components/DokumentHierarchie";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { ImageViewer } from "../components/ui/image-viewer";
+import { ThumbnailImage } from "../components/ui/ThumbnailImage";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { onDokumentChanged } from '../lib/dokumentChannel';
@@ -64,6 +65,8 @@ interface AnfrageNotizBild {
     id: number;
     originalDateiname: string;
     url: string;
+    /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+    thumbnailUrl?: string;
     erstelltAm: string;
 }
 interface AnfrageNotiz {
@@ -1238,10 +1241,11 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                                                             onClick={() => setNotizBildViewer({ images: n.bilder!.map(b => ({ url: b.url, name: b.originalDateiname })), startIndex: n.bilder!.indexOf(bild) })}
                                                             className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
                                                         >
-                                                            <img
-                                                                src={bild.url}
+                                                            <ThumbnailImage
+                                                                src={bild.thumbnailUrl || bild.url}
+                                                                fallbackSrc={bild.url}
                                                                 alt={bild.originalDateiname}
-                                                                className="w-full h-full object-cover"
+                                                                className="object-cover"
                                                             />
                                                         </button>
                                                         <button
