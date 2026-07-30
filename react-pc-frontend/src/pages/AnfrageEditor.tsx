@@ -1566,8 +1566,15 @@ export default function AnfrageEditor() {
             .catch(console.error);
     }, []);
 
+    // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen im Freitextfeld
+    // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte
+    // Antwort auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
+    const ladeVorgangRef = useRef(0);
+
     // Fetch List
     const loadAnfragen = useCallback(async () => {
+        const ladeVorgang = ++ladeVorgangRef.current;
+        const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -1577,6 +1584,9 @@ export default function AnfrageEditor() {
                 params.set("q", filters.q);
             }
             if (filters.jahr) params.set("jahr", filters.jahr);
+            // Angebots-Status filtert das Backend – nur so landen alle Treffer auf den
+            // vorderen Seiten, statt nur die aktuell geladene Seite auszudünnen.
+            if (filters.freigabe !== 'all') params.set("freigabe", filters.freigabe);
 
             const [res, lastAccessed, funnelRes] = await Promise.all([
                 fetch(`/api/anfragen?${params.toString()}`),
@@ -1585,6 +1595,7 @@ export default function AnfrageEditor() {
             ]);
             if (!res.ok) throw new Error("Fehler beim Laden");
             const data = await res.json();
+            if (!istAktuell()) return;
 
             // Webseiten-Anfragen (Funnel) ganz oben halten — frische Leads sollen
             // sofort sichtbar sein. Innerhalb der Funnel-Gruppe wieder nach
@@ -1622,6 +1633,7 @@ export default function AnfrageEditor() {
                 try {
                     const idsParam = ids.join(',');
                     const statusRes = await fetch(`/api/anfragen/freigabe-status?ids=${encodeURIComponent(idsParam)}`);
+                    if (!istAktuell()) return;
                     if (statusRes.ok) {
                         const statusJson = await statusRes.json();
                         setFreigabeStatusByAnfrageId(statusJson || {});
@@ -1636,12 +1648,13 @@ export default function AnfrageEditor() {
             }
         } catch (err) {
             console.error(err);
+            if (!istAktuell()) return;
             setAnfragen([]);
             setTotal(0);
             setFreigabeStatusByAnfrageId({});
             setFunnelAnfrageIds(new Set());
         } finally {
-            setLoading(false);
+            if (istAktuell()) setLoading(false);
         }
     }, [page, filters]);
 
@@ -1683,33 +1696,25 @@ export default function AnfrageEditor() {
     };
 
     // Handlers
+    // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
+    // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
+    // Treffer wären da, aber unsichtbar.
     const handleFilterChange = (key: string, value: string) => {
         setFilters((prev) => ({ ...prev, [key]: value } as typeof prev));
+        setPage(0);
     };
 
+    // Gefiltert wird bereits live beim Tippen/Auswählen. Der Button ist nur noch
+    // die vertraute Bestätigung – er darf keinen zweiten, konkurrierenden Request starten.
     const handleFilterSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPage(0);
-        loadAnfragen();
     };
 
     const handleResetFilters = () => {
         setFilters({ q: "", jahr: "", freigabe: 'all' });
         setPage(0);
     };
-
-    // Frontend-Filter über Freigabe-Status (Backend filtert nur q/jahr).
-    // Wirkt zusätzlich auf die geladenen Anfragen der aktuellen Seite.
-    const sichtbareAnfragen = useMemo(() => {
-        if (filters.freigabe === 'all') return anfragen;
-        return anfragen.filter(a => {
-            const fs = freigabeStatusByAnfrageId[a.id]?.status;
-            if (filters.freigabe === 'accepted') return fs === 'ACCEPTED';
-            if (filters.freigabe === 'pending') return fs === 'PENDING';
-            if (filters.freigabe === 'expired') return fs === 'EXPIRED' || fs === 'REVOKED';
-            return true;
-        });
-    }, [anfragen, freigabeStatusByAnfrageId, filters.freigabe]);
 
     // Handlers (Refactored to loadDetails below)
 
@@ -1865,22 +1870,20 @@ export default function AnfrageEditor() {
                         <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Reset</Button>
                     </div>
                 </form>
-                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Status-Filter wirkt auf die geladene Seite.</p>
+                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Alle Filter gelten für die gesamte Liste, nicht nur für die angezeigte Seite.</p>
             </div>
 
             {/* Grid Content */}
             {loading ? (
                 <div className="text-center py-8 text-slate-500">Anfragen werden geladen...</div>
-            ) : sichtbareAnfragen.length === 0 ? (
+            ) : anfragen.length === 0 ? (
                 <div className="bg-white p-8 rounded-2xl text-center text-slate-500 border-dashed border-2">
                     <FileText className="w-10 h-10 mx-auto mb-2 text-rose-200" />
-                    {filters.freigabe !== 'all' && anfragen.length > 0
-                        ? 'Keine Anfragen mit diesem Status auf der aktuellen Seite.'
-                        : 'Keine Anfragen gefunden.'}
+                    Keine Anfragen gefunden.
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {sichtbareAnfragen.map((anfrage) => (
+                    {anfragen.map((anfrage) => (
                         <AnfrageCard
                             key={anfrage.id}
                             anfrage={anfrage}

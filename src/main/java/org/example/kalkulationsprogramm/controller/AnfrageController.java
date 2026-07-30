@@ -295,6 +295,10 @@ public class AnfrageController {
      * Paginierte Variante: Wird aufgerufen, sobald der Aufrufer einen {@code page}-Param
      * setzt (AnfrageEditor-Liste). Reduziert das DTO-Mapping von N auf {@code size}
      * Anfragen pro Aufruf und entlastet damit den N+1-Pfad in {@code mapToDto}.
+     * <p>
+     * {@code freigabe} filtert über den Angebots-Status (all/accepted/pending/expired)
+     * und greift bereits vor der Paginierung – dadurch stehen alle Treffer auf den
+     * vorderen Seiten.
      */
     @GetMapping(params = "page")
     public AnfrageSeiteResponseDto listeSeite(@RequestParam(required = false) Integer jahr,
@@ -304,11 +308,12 @@ public class AnfrageController {
             @RequestParam(required = false) String anfragesnummer,
             @RequestParam(required = false) String q,
             @RequestParam(required = false, defaultValue = "false") boolean nurOhneProjekt,
+            @RequestParam(required = false) String freigabe,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "12") int size) {
         String effektiverKundenname = kundenname != null ? kundenname : kunde;
         return anfrageService.sucheSeite(
-                jahr, effektiverKundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt, page, size);
+                jahr, effektiverKundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt, freigabe, page, size);
     }
 
     @GetMapping("/jahre")
