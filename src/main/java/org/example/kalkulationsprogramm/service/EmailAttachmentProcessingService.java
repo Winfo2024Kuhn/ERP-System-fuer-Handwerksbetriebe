@@ -59,7 +59,7 @@ public class EmailAttachmentProcessingService {
      * Erstellt LieferantDokumente und analysiert sie.
      * Jedes Attachment wird in eigener Transaktion verarbeitet.
      * 
-     * @param email Die Email (muss Lieferant-Zuordnung haben)
+     * @param email Die Email (muss eingehend sein und Lieferant-Zuordnung haben)
      * @return Anzahl erstellter Geschäftsdokumente
      */
     @org.springframework.transaction.annotation.Transactional
@@ -68,6 +68,15 @@ public class EmailAttachmentProcessingService {
         Email freshEmail = emailRepository.findById(email.getId()).orElse(null);
         if (freshEmail == null || freshEmail.getLieferant() == null) {
             log.warn("Email {} hat keine Lieferant-Zuordnung", email.getId());
+            return 0;
+        }
+        // Nur eingehende Post ist ein Beleg. Ausgehende Mails an einen Lieferanten
+        // (z.B. unsere eigenen Angebote oder Rechnungen aus einem Projekt heraus)
+        // dürfen NIE als Eingangsrechnung angelegt werden – das wäre falsche
+        // Buchhaltung und kostet unnötig KI-Analysen.
+        if (freshEmail.getDirection() != EmailDirection.IN) {
+            log.info("Email {} ist ausgehend – keine Beleg-Verarbeitung (nur eingehende Post ist ein Beleg)",
+                    email.getId());
             return 0;
         }
 

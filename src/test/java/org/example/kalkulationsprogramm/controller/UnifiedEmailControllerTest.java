@@ -68,6 +68,7 @@ class UnifiedEmailControllerTest {
     @MockBean private ProjektRepository projektRepository;
     @MockBean private AnfrageRepository anfrageRepository;
     @MockBean private LieferantenRepository lieferantenRepository;
+    @MockBean private org.example.kalkulationsprogramm.service.EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
     @MockBean private KundeRepository kundeRepository;
     @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
     @MockBean private EmailImportService emailImportService;

@@ -17,6 +17,32 @@ public class LieferantEmailResolver {
     private final LieferantenRepository lieferantenRepository;
     private final AtomicReference<Cache> cache = new AtomicReference<>(Cache.empty());
 
+    /**
+     * Freemail-Anbieter. Bei einer eigenen Firmen-Domain gehört jede Adresse dahinter
+     * zum selben Partner – bei gmx.de oder t-online.de sagt die Domain gar nichts aus.
+     * Hat ein Lieferant so eine Adresse, würde sonst jede Kundenmail derselben Domain
+     * auf seiner Karte landen. Solche Domains werden deshalb nie zugeordnet; die
+     * hinterlegte Adresse selbst trifft weiterhin exakt.
+     */
+    private static final Set<String> FREEMAIL_DOMAINS = Set.of(
+            "gmail.com", "googlemail.com",
+            "gmx.de", "gmx.net", "gmx.at", "gmx.ch",
+            "web.de", "t-online.de", "freenet.de", "arcor.de", "1und1.de",
+            "outlook.com", "outlook.de", "hotmail.com", "hotmail.de",
+            "live.com", "live.de", "msn.com",
+            "yahoo.com", "yahoo.de", "yahoo.co.uk", "ymail.com", "aol.com", "aol.de",
+            "icloud.com", "me.com", "mac.com",
+            "mail.de", "posteo.de", "mailbox.org", "protonmail.com", "proton.me",
+            "gmx.com", "gmx.li", "googlemail.de", "hotmail.fr",
+            "email.de", "online.de", "kabelmail.de", "vodafone.de",
+            "netcologne.de", "ewetel.net", "unitybox.de", "unitymedia.de", "firemail.de",
+            "t-online.com", "telekom.de", "arcor.net");
+
+    /** Prüft, ob eine Domain zu einem Freemail-Anbieter gehört. */
+    public static boolean istFreemailDomain(String domain) {
+        return domain != null && FREEMAIL_DOMAINS.contains(domain.trim().toLowerCase(Locale.ROOT));
+    }
+
     private record Cache(Map<String, Long> addresses,
                          Map<String, Long> domains,
                          List<String> searchTerms) {
@@ -57,6 +83,10 @@ public class LieferantEmailResolver {
                 }
                 addressTokens.add(normalized);
                 String domain = domain(normalized);
+                if (domain != null && istFreemailDomain(domain)) {
+                    // Freemail-Domain: nur die exakte Adresse zählt, nie die Domain
+                    continue;
+                }
                 if (domain != null && !ambiguousDomains.contains(domain)) {
                     Long existingDomain = domainAssignments.putIfAbsent(domain, safeId(lieferant));
                     if (existingDomain != null && !existingDomain.equals(safeId(lieferant))) {
@@ -78,6 +108,11 @@ public class LieferantEmailResolver {
         return cache.get().searchTerms();
     }
 
+    /**
+     * Sucht den Lieferanten hinter einer der Adressen: erst über die exakt hinterlegte
+     * Adresse, sonst über die Firmen-Domain. Freemail-Domains werden dabei nie
+     * ausgewertet – siehe {@link #FREEMAIL_DOMAINS}.
+     */
     public Optional<Long> resolve(Collection<String> addresses) {
         if (addresses == null || addresses.isEmpty()) {
             return Optional.empty();

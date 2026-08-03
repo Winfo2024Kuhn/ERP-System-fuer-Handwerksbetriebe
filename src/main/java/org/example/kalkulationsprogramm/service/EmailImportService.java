@@ -427,6 +427,10 @@ public class EmailImportService {
                 } else if (parentEmail.getLieferant() != null) {
                     email.assignToLieferant(parentEmail.getLieferant());
                 }
+                // Bewusst KEINE Vererbung des Lieferanten vom Parent: Wer geschrieben hat,
+                // sagt allein die Absender-Adresse (oben geprüft). Antwortet der Kunde in
+                // einem Thread, in dem wir vorher einen Lieferanten angeschrieben haben,
+                // wäre sein Anhang sonst eine Eingangsrechnung dieses Lieferanten.
             }
         }
 

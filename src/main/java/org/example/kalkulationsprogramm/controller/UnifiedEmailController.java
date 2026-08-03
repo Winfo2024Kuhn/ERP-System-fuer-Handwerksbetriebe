@@ -35,6 +35,7 @@ import org.example.kalkulationsprogramm.service.ContactService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.EmailAutoAssignmentService;
 import org.example.kalkulationsprogramm.service.EmailImportService;
+import org.example.kalkulationsprogramm.service.EmailLieferantVerknuepfungService;
 import org.example.kalkulationsprogramm.service.EmailThreadService;
 import org.example.kalkulationsprogramm.service.InquiryDetectionService;
 import org.example.kalkulationsprogramm.service.SpamBayesService;
@@ -95,6 +96,7 @@ public class UnifiedEmailController {
     private final org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
     private final org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     private final SteuerberaterKontaktService steuerberaterKontaktService;
+    private final EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -1527,6 +1529,9 @@ public class UnifiedEmailController {
                 lieferantenRepository.findById(dto.getLieferantId()).ifPresent(email::assignToLieferant);
             }
 
+            // Empfänger ist ein Lieferant? Dann zusätzlich dort einhängen.
+            emailLieferantVerknuepfungService.verknuepfeAusEmpfaenger(email, recipient, cc);
+
             // WICHTIG: saveAndFlush statt save, damit messageId sofort committed ist
             // und der IMAP-Import die E-Mail als Duplikat erkennt
             emailRepository.saveAndFlush(email);
@@ -1711,6 +1716,13 @@ public class UnifiedEmailController {
                     email.assignToLieferant(parentEmail.getLieferant());
                 }
             }
+
+            // Der Lieferant kommt bewusst NICHT vom Parent, sondern aus dem Empfänger:
+            // Antworten wir in einem Thread dem Kunden, gehört die Mail nicht auf die
+            // Karte des Lieferanten, den wir vorher im selben Thread angeschrieben haben.
+            // Empfänger ist ein Lieferant? Dann zusätzlich dort einhängen.
+            // Antworten versenden kein CC, deshalb hier nur das To-Feld.
+            emailLieferantVerknuepfungService.verknuepfeAusEmpfaenger(email, recipient);
 
             emailRepository.save(email);
 

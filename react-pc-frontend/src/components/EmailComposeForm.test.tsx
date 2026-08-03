@@ -33,6 +33,18 @@ function mockFetch() {
             gesendeteRequests.push({ url, body });
         }
 
+        if (url.startsWith('/api/projekte/simple')) {
+            return jsonResponse([{ id: PROJEKT_ID, bauvorhaben: 'Musterbau', auftragsnummer: 'A-1', kunde: 'Max Mustermann' }]);
+        }
+        // Der paginierte Endpunkt (page-Param) liefert die Liste im Feld "anfragen"
+        if (url.startsWith('/api/anfragen?') || url === '/api/anfragen') {
+            return jsonResponse({
+                anfragen: [{ id: 7, bauvorhaben: 'Musteranfrage', anfragesnummer: 'AN-1', kundenName: 'Max Mustermann' }],
+                gesamt: 1,
+                seite: 0,
+                seitenGroesse: 50,
+            });
+        }
         if (url === `/api/projekte/${PROJEKT_ID}`) {
             return jsonResponse({ id: PROJEKT_ID, bauvorhaben: 'Musterbau', kundenEmails: [BEKANNTE_ADRESSE] });
         }
@@ -144,5 +156,204 @@ describe('EmailComposeForm – Rueckfrage "E-Mail-Adresse speichern?"', () => {
             expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
         );
         expect(screen.queryByText('E-Mail-Adresse speichern?')).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * Zuordnung zu Projekt/Anfrage beim freien Schreiben (E-Mail-Center).
+ * Alle Daten sind Dummy-Daten (DSGVO).
+ */
+describe('EmailComposeForm – Projekt/Anfrage verknüpfen', () => {
+    beforeEach(() => {
+        gesendeteRequests = [];
+        vi.stubGlobal('fetch', mockFetch());
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('warnt vor dem Senden, wenn weder Projekt noch Anfrage verknüpft ist', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Materialbestellung"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Materialbestellung')).toBeInTheDocument());
+        await sendeAb();
+
+        expect(await screen.findByText('Kein Projekt und keine Anfrage verknüpft')).toBeInTheDocument();
+        expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(false);
+    });
+
+    it('sendet nach "Trotzdem senden" ohne Verknüpfung', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Materialbestellung"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Materialbestellung')).toBeInTheDocument());
+        await sendeAb();
+        await screen.findByText('Kein Projekt und keine Anfrage verknüpft');
+        await userEvent.click(screen.getByRole('button', { name: /Trotzdem senden/i }));
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
+    });
+
+    it('sendet ohne Rueckfrage, sobald ein Projekt ausgewaehlt wurde', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Materialbestellung"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Materialbestellung')).toBeInTheDocument());
+        await userEvent.click(screen.getByRole('button', { name: /Projekt oder Anfrage suchen/i }));
+        await userEvent.click(await screen.findByText('Musterbau'));
+
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
+        expect(screen.queryByText('Kein Projekt und keine Anfrage verknüpft')).not.toBeInTheDocument();
+    });
+
+    it('laesst die Zuordnung eines wieder geoeffneten Entwurfs weiter aendern', async () => {
+        // E-Mail-Center reicht die im Entwurf gespeicherte projektId durch –
+        // das Feld muss trotzdem sichtbar und aenderbar bleiben.
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialSubject="Entwurf"
+                draftId={1}
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Entwurf')).toBeInTheDocument());
+        expect(await screen.findByText('Musterbau')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Ändern/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Verknüpfung entfernen/i })).toBeInTheDocument();
+    });
+
+    it('uebernimmt den Kunden-Empfaenger des neu gewaehlten Projekts', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialSubject="Anfrage Material"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Anfrage Material')).toBeInTheDocument());
+        await userEvent.click(screen.getByRole('button', { name: /Projekt oder Anfrage suchen/i }));
+        await userEvent.click(await screen.findByText('Musterbau'));
+
+        await waitFor(() => expect(screen.getByDisplayValue(BEKANNTE_ADRESSE)).toBeInTheDocument());
+    });
+
+    it('laesst einen selbst getippten Empfaenger beim Wechsel der Zuordnung stehen', async () => {
+        // Sonst ginge die Mail still an den Kunden des neu gewaehlten Projekts.
+        const eigeneAdresse = 'erika.musterfrau@example.com';
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialSubject="Anfrage Material"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Anfrage Material')).toBeInTheDocument());
+        await userEvent.type(
+            screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben'),
+            eigeneAdresse
+        );
+
+        await userEvent.click(screen.getByRole('button', { name: /Projekt oder Anfrage suchen/i }));
+        await userEvent.click(await screen.findByText('Musterbau'));
+
+        // Zuordnung ist da, der getippte Empfaenger bleibt aber unveraendert
+        expect(await screen.findByText('Musterbau')).toBeInTheDocument();
+        expect(screen.getByDisplayValue(eigeneAdresse)).toBeInTheDocument();
+        expect(screen.queryByDisplayValue(BEKANNTE_ADRESSE)).not.toBeInTheDocument();
+    });
+
+    it('zeigt beim Antworten kein Entfernen der Verknuepfung an', async () => {
+        // Der Reply-Endpunkt erbt den Vorgang der Ursprungsmail – ein Entfernen
+        // im Formular haette keine Wirkung.
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialRecipient={BEKANNTE_ADRESSE}
+                initialSubject="AW: Zwischenstand"
+                replyEmailId={7}
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('AW: Zwischenstand')).toBeInTheDocument());
+        expect(await screen.findByText('Musterbau')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Verknüpfung entfernen/i })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Ändern/i })).toBeInTheDocument();
+    });
+
+    it('fragt beim Antworten nicht nach, auch ohne eigene Verknuepfung', async () => {
+        // Eine Antwort erbt die Zuordnung der Ursprungsmail – die Rueckfrage
+        // waere dort fachlich falsch.
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialRecipient="lieferant@example.com"
+                initialSubject="AW: Materialbestellung"
+                replyEmailId={7}
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('AW: Materialbestellung')).toBeInTheDocument());
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/7/reply')).toBe(true)
+        );
+        expect(screen.queryByText('Kein Projekt und keine Anfrage verknüpft')).not.toBeInTheDocument();
+    });
+
+    it('blendet die Suche aus, wenn direkt aus einem Projekt geschrieben wird', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialRecipient={BEKANNTE_ADRESSE}
+                initialSubject="Zwischenstand"
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Zwischenstand')).toBeInTheDocument());
+        expect(screen.queryByRole('button', { name: /Projekt oder Anfrage suchen/i })).not.toBeInTheDocument();
+
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
+        expect(screen.queryByText('Kein Projekt und keine Anfrage verknüpft')).not.toBeInTheDocument();
     });
 });

@@ -338,7 +338,9 @@ public class Email {
         this.zuordnungTyp = EmailZuordnungTyp.PROJEKT;
         this.projekt = projekt;
         this.anfrage = null;
-        this.lieferant = null;
+        // Ein vorhandener Lieferanten-Verweis bleibt bestehen: Wer der Schriftpartner
+        // ist, ändert sich durch das Umhängen auf einen anderen Vorgang nicht.
+        // Siehe verknuepfeLieferantZusaetzlich(...).
     }
 
     /**
@@ -348,7 +350,7 @@ public class Email {
         this.zuordnungTyp = EmailZuordnungTyp.ANFRAGE;
         this.anfrage = anfrage;
         this.projekt = null;
-        this.lieferant = null;
+        // Lieferanten-Verweis bleibt bestehen – siehe assignToProjekt(...).
     }
 
     /**
@@ -360,6 +362,34 @@ public class Email {
         this.projekt = null;
         this.anfrage = null;
         this.steuerberater = null;
+    }
+
+    /**
+     * Hängt die Email zusätzlich an einen Lieferanten.
+     *
+     * <p>Hintergrund: Schreiben wir aus einem Projekt oder einer Anfrage heraus an
+     * einen Lieferanten, gehört die Mail fachlich weiter zum Vorgang – sie soll aber
+     * auch auf der Lieferanten-Karte auftauchen. In diesem Fall bleibt
+     * {@link #zuordnungTyp} auf PROJEKT bzw. ANFRAGE und nur der Lieferanten-Verweis
+     * kommt dazu. Gibt es keinen Vorgang, wird der Lieferant zur regulären Zuordnung.
+     *
+     * <p>Der Verweis überlebt ein späteres {@link #assignToProjekt(Projekt)} /
+     * {@link #assignToAnfrage(Anfrage)}: Wer der Schriftpartner ist, ändert sich durch
+     * das Umhängen auf einen anderen Vorgang nicht – die Mail bleibt deshalb auf der
+     * Lieferanten-Karte sichtbar. Erst {@link #clearAssignment()},
+     * {@link #assignToLieferant(Lieferanten)} oder
+     * {@link #assignToSteuerberater(SteuerberaterKontakt)} setzen ihn zurück.
+     */
+    public void verknuepfeLieferantZusaetzlich(Lieferanten lieferant) {
+        if (zuordnungTyp == EmailZuordnungTyp.STEUERBERATER) {
+            // Steuerberater-Post gehört nicht zu einem Lieferanten – nicht überschreiben.
+            return;
+        }
+        if (zuordnungTyp == EmailZuordnungTyp.PROJEKT || zuordnungTyp == EmailZuordnungTyp.ANFRAGE) {
+            this.lieferant = lieferant;
+        } else {
+            assignToLieferant(lieferant);
+        }
     }
 
     /**

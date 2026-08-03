@@ -130,6 +130,64 @@ class EmailAttachmentProcessingServiceTest {
 
             assertThat(result).isEqualTo(0);
         }
+
+        @Test
+        void ignoriertAusgehendeMailsAnLieferanten() throws IOException {
+            // Eigene Post an einen Lieferanten (z.B. ein Angebot aus einem Projekt)
+            // darf nie als Eingangsbeleg angelegt werden – sonst landen unsere
+            // eigenen PDFs in der Eingangsrechnungs-Verarbeitung.
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            email.setDirection(EmailDirection.OUT);
+            EmailAttachment pdfAtt = erstellePdfAttachment("Angebot_2025.pdf");
+            pdfAtt.setEmail(email);
+            email.getAttachments().add(pdfAtt);
+            Files.write(tempDir.resolve(pdfAtt.getStoredFilename()), new byte[]{0x25, 0x50, 0x44, 0x46});
+
+            when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
+
+            int result = service.processLieferantAttachments(email);
+
+            assertThat(result).isEqualTo(0);
+            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), any());
+            verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+        }
+
+        @Test
+        void verarbeitetEingehendeLieferantenmailAuchMitProjektZuordnung() throws IOException {
+            // Bewusst festgeschrieben: Wird eine eingegangene Lieferantenmail im
+            // E-Mail-Center auf ein Projekt umgehaengt, bleibt der Lieferanten-Verweis
+            // erhalten – eine Eingangsrechnung bleibt eine Eingangsrechnung und wird
+            // weiterhin als Beleg verarbeitet.
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            Projekt projekt = new Projekt();
+            projekt.setId(77L);
+            email.assignToProjekt(projekt);
+            // Genau der Weg, den die Produktion nimmt
+            email.verknuepfeLieferantZusaetzlich(lieferant);
+            email.setDirection(EmailDirection.IN);
+            EmailAttachment pdfAtt = erstellePdfAttachment("Rechnung_2025.pdf");
+            pdfAtt.setEmail(email);
+            email.getAttachments().add(pdfAtt);
+            Files.write(tempDir.resolve(pdfAtt.getStoredFilename()), new byte[]{0x25, 0x50, 0x44, 0x46});
+
+            LieferantGeschaeftsdokument geschaeftsdaten = new LieferantGeschaeftsdokument();
+            geschaeftsdaten.setDokumentNummer("RE-2025-002");
+            geschaeftsdaten.setDetectedTyp(LieferantDokumentTyp.RECHNUNG);
+
+            when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
+            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung_2025.pdf")))
+                    .thenReturn(geschaeftsdaten);
+            when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
+            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            int result = service.processLieferantAttachments(email);
+
+            assertThat(result).isEqualTo(1);
+            assertThat(email.getZuordnungTyp()).isEqualTo(EmailZuordnungTyp.PROJEKT);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

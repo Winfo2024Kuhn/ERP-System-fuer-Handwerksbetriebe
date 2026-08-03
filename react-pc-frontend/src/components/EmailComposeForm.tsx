@@ -1,7 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-    Loader2, Paperclip, X, Plus, Mail, Upload, Eye, Save, Send, FolderOpen
+    Loader2, Paperclip, X, Plus, Mail, Upload, Eye, Save, Send, FolderOpen,
+    Link2, Briefcase, FileText, AlertTriangle
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { PdfCanvasViewer } from './ui/PdfCanvasViewer';
@@ -13,6 +14,7 @@ import type { ProjektDetail, ProjektDokument } from '../types';
 import { extractEmailAddress, isSingleEmailAddress } from '../lib/emailAddress';
 import { EmailRecipientInput } from './EmailRecipientInput';
 import { EmailEntityDocumentPicker } from './EmailEntityDocumentPicker';
+import { EmailZuordnungSearchModal, type EmailZuordnung } from './EmailZuordnungSearchModal';
 
 // Interface für hochgeladene externe Dateien
 interface UploadedFile {
@@ -65,6 +67,12 @@ export interface EmailComposeFormProps {
     variant?: 'default' | 'modal';
     /** Existing draft ID to resume editing */
     draftId?: number;
+    /**
+     * Erlaubt es, die Zuordnung zu Projekt/Anfrage im Formular zu wählen und zu ändern
+     * (E-Mail-Center). Aus einer Projekt- oder Anfrage-Seite heraus steht der Vorgang
+     * bereits fest – dort bleibt das Feld aus.
+     */
+    zuordnungWaehlbar?: boolean;
 }
 
 interface SignatureResponse {
@@ -147,48 +155,76 @@ export function EmailComposeForm({
     initialAttachments,
     onSuccess,
     draftId: initialDraftId,
+    zuordnungWaehlbar = false,
 }: EmailComposeFormProps) {
-    // Determine context: projekt or anfrage
-    const isAnfrageContext = !!anfrageId;
-    const entityId = projektId || anfrageId;
+    // Zuordnung: zu welchem Projekt / welcher Anfrage gehört die E-Mail?
+    // Startwert kommt aus dem Kontext (Projekt-/Anfrage-Seite), kann im
+    // Formular aber jederzeit über die Suche geändert werden.
+    const [zuordnung, setZuordnung] = useState<EmailZuordnung | null>(() => {
+        if (projektId) return { typ: 'PROJEKT', id: projektId, titel: projekt?.bauvorhaben || '' };
+        if (anfrageId) return { typ: 'ANFRAGE', id: anfrageId, titel: anfrage?.bauvorhaben || '' };
+        return null;
+    });
+    const [showZuordnungSuche, setShowZuordnungSuche] = useState(false);
+    const [showZuordnungWarnung, setShowZuordnungWarnung] = useState(false);
+
+    const isAnfrageContext = zuordnung?.typ === 'ANFRAGE';
+    const entityId = zuordnung?.id;
 
     // State für vom Backend geladene Daten (Emails + Projektdaten für Template)
     const [fetchedEmails, setFetchedEmails] = useState<string[]>([]);
     const [fetchedProjekt, setFetchedProjekt] = useState<ProjektDetail | null>(null);
+    /** Bauvorhaben des verknüpften Vorgangs, sobald es vom Backend da ist. */
+    const [fetchedVorgangName, setFetchedVorgangName] = useState('');
     const [fromAddresses, setFromAddresses] = useState<string[]>([]);
     const [fromAddress, setFromAddress] = useState('');
 
-    // Effektives Projekt: Prop oder vom Backend geladenes Projekt
-    const effectiveProjekt = projekt || fetchedProjekt;
-    const entityName = effectiveProjekt?.bauvorhaben || anfrage?.bauvorhaben || '';
+    // Props gelten nur, solange die ursprüngliche Zuordnung nicht geändert wurde
+    const propProjekt = zuordnung?.typ === 'PROJEKT' && zuordnung.id === projektId ? projekt : undefined;
+    const propAnfrage = zuordnung?.typ === 'ANFRAGE' && zuordnung.id === anfrageId ? anfrage : undefined;
 
-    // Beim Öffnen: Verknüpfte E-Mails + Projektdaten direkt vom Backend laden
+    // Effektives Projekt: Prop oder vom Backend geladenes Projekt
+    const effectiveProjekt = propProjekt || fetchedProjekt;
+    const entityName = effectiveProjekt?.bauvorhaben || propAnfrage?.bauvorhaben
+        || zuordnung?.titel || fetchedVorgangName || '';
+
+    // Beim Öffnen bzw. nach dem Ändern der Zuordnung:
+    // Verknüpfte E-Mails + Projektdaten direkt vom Backend laden
     useEffect(() => {
+        let abgebrochen = false;
         const loadLinkedData = async () => {
             const emails: string[] = [];
+            let geladenesProjekt: ProjektDetail | null = null;
+            let vorgangName = '';
             try {
-                if (projektId) {
-                    const res = await fetch(`/api/projekte/${projektId}`);
+                if (entityId && !isAnfrageContext) {
+                    const res = await fetch(`/api/projekte/${entityId}`);
                     if (res.ok) {
                         const data = await res.json();
                         if (data.kundenEmails) data.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
                         if (data.kundeDto?.kundenEmails) data.kundeDto.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
-                        setFetchedProjekt(data);
+                        geladenesProjekt = data;
+                        vorgangName = data.bauvorhaben || '';
                     }
-                } else if (anfrageId) {
-                    const res = await fetch(`/api/anfragen/${anfrageId}`);
+                } else if (entityId && isAnfrageContext) {
+                    const res = await fetch(`/api/anfragen/${entityId}`);
                     if (res.ok) {
                         const data = await res.json();
                         if (data.kundenEmails) data.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
+                        vorgangName = data.bauvorhaben || '';
                     }
                 }
             } catch {
                 // Fallback auf Props
             }
-            if (emails.length > 0) setFetchedEmails(emails);
+            if (abgebrochen) return;
+            setFetchedProjekt(geladenesProjekt);
+            setFetchedVorgangName(vorgangName);
+            setFetchedEmails(emails);
         };
         loadLinkedData();
-    }, [projektId, anfrageId]);
+        return () => { abgebrochen = true; };
+    }, [entityId, isAnfrageContext]);
 
     // Merge: Props + Backend (dedupliziert)
     const entityKundenEmails = useMemo(() => {
@@ -206,8 +242,8 @@ export function EmailComposeForm({
             });
         }
         // Anfrage-E-Mails als Fallback
-        if (anfrage?.kundenEmails) {
-            anfrage.kundenEmails.forEach(e => {
+        if (propAnfrage?.kundenEmails) {
+            propAnfrage.kundenEmails.forEach(e => {
                 if (e && !emails.includes(e)) emails.push(e);
             });
         }
@@ -216,7 +252,7 @@ export function EmailComposeForm({
             if (e && !emails.includes(e)) emails.push(e);
         });
         return emails;
-    }, [effectiveProjekt?.kundenEmails, effectiveProjekt?.kundeDto?.kundenEmails, anfrage?.kundenEmails, fetchedEmails]);
+    }, [effectiveProjekt?.kundenEmails, effectiveProjekt?.kundeDto?.kundenEmails, propAnfrage?.kundenEmails, fetchedEmails]);
 
     const [recipient, setRecipient] = useState<string>(initialRecipient || '');
     const [subject, setSubject] = useState<string>(initialSubject || '');
@@ -304,9 +340,14 @@ export function EmailComposeForm({
         () => fromAddresses.map(address => ({ value: address, label: address })),
         [fromAddresses]
     );
+    // Solange der Empfänger nur automatisch vorgeschlagen wurde, darf ein Wechsel der
+    // Zuordnung ihn mitziehen. Sobald der User selbst tippt, bleibt seine Eingabe stehen.
+    const empfaengerAutomatisch = useRef<boolean>(!initialRecipient && !replyEmailId);
+
     // Handle recipient change
     const handleRecipientChange = (val: string) => {
         markDirty();
+        empfaengerAutomatisch.current = false;
         setRecipient(val);
     };
 
@@ -508,17 +549,31 @@ export function EmailComposeForm({
             }
         }
 
-        loadEntityDokumente();
         loadFromAddresses();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Initiale Empfänger setzen - wenn keine initiale E-Mail vorgegeben und E-Mails verfügbar
+    // Dateien des verknüpften Vorgangs laden – auch nach Wechsel der Zuordnung
     useEffect(() => {
-        if (!initialRecipient && !recipient && entityKundenEmails.length > 0) {
-            setRecipient(entityKundenEmails[0]);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        loadEntityDokumente();
+    }, [loadEntityDokumente]);
+
+    // Escape schließt die Rückfrage vor dem Senden
+    useEffect(() => {
+        if (!showZuordnungWarnung) return;
+        const beiTaste = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setShowZuordnungWarnung(false);
+        };
+        document.addEventListener('keydown', beiTaste);
+        return () => document.removeEventListener('keydown', beiTaste);
+    }, [showZuordnungWarnung]);
+
+    // Empfänger aus dem verknüpften Vorgang vorschlagen – auch nach einem Wechsel der
+    // Zuordnung, damit die Mail nicht an den Kunden des vorherigen Projekts geht.
+    useEffect(() => {
+        if (!empfaengerAutomatisch.current) return;
+        if (entityKundenEmails.length === 0) return;
+        setRecipient(prev => (prev === entityKundenEmails[0] ? prev : entityKundenEmails[0]));
     }, [entityKundenEmails]);
 
     // Externe Dateien hochladen
@@ -683,11 +738,9 @@ export function EmailComposeForm({
         }
     };
 
-    // E-Mail senden
+    // E-Mail senden – prüft vorher, ob eine Zuordnung fehlt
     const handleSend = async () => {
-        const finalRecipient = recipient.trim();
-
-        if (!finalRecipient) {
+        if (!recipient.trim()) {
             setError('Bitte Empfänger angeben.');
             return;
         }
@@ -699,6 +752,18 @@ export function EmailComposeForm({
             setError(`Anhänge dürfen zusammen höchstens ${formatFileSize(MAX_ATTACHMENT_BYTES)} groß sein.`);
             return;
         }
+        // Ohne Projekt/Anfrage landet die E-Mail nirgendwo – einmal nachfragen.
+        // Nur dort, wo der Vorgang im Formular überhaupt wählbar ist, und nicht beim
+        // Antworten: eine Antwort erbt die Zuordnung der Ursprungsmail.
+        if (zuordnungWaehlbar && !zuordnung && !replyEmailId) {
+            setShowZuordnungWarnung(true);
+            return;
+        }
+        await sendeEmail();
+    };
+
+    const sendeEmail = async () => {
+        const finalRecipient = recipient.trim();
 
         setSending(true);
         setError(null);
@@ -758,7 +823,7 @@ export function EmailComposeForm({
                 e => extractEmailAddress(e).toLowerCase() === plainRecipient.toLowerCase()
             );
 
-            if (isNewEmail && (kundeId || projektId || anfrageId)) {
+            if (isNewEmail && (kundeId || zuordnung)) {
                 setNewEmailToSave(plainRecipient);
                 setShowSaveEmailDialog(true);
                 // Don't close yet — wait for save dialog decision
@@ -782,10 +847,10 @@ export function EmailComposeForm({
             let url = '';
             if (target === 'kunde' && kundeId) {
                 url = `/api/kunden/${kundeId}/emails`;
-            } else if (target === 'projekt' && projektId) {
-                url = `/api/projekte/${projektId}/emails`;
-            } else if (target === 'anfrage' && anfrageId) {
-                url = `/api/anfragen/${anfrageId}/emails`;
+            } else if (target === 'projekt' && zuordnung?.typ === 'PROJEKT') {
+                url = `/api/projekte/${zuordnung.id}/emails`;
+            } else if (target === 'anfrage' && zuordnung?.typ === 'ANFRAGE') {
+                url = `/api/anfragen/${zuordnung.id}/emails`;
             }
             if (url) {
                 await fetch(url, {
@@ -928,6 +993,69 @@ export function EmailComposeForm({
                                     className="font-medium"
                                 />
                             </div>
+
+                            {/* Zuordnung: Projekt oder Anfrage verknüpfen.
+                                Entfällt, wenn direkt aus einem Projekt/einer Anfrage geschrieben wird. */}
+                            {zuordnungWaehlbar && (
+                            <div className="space-y-2">
+                                <Label>Gehört zu</Label>
+                                {zuordnung ? (
+                                    <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white">
+                                            {zuordnung.typ === 'PROJEKT'
+                                                ? <Briefcase className="h-4 w-4 text-rose-600" />
+                                                : <FileText className="h-4 w-4 text-rose-600" />}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-medium text-slate-900">
+                                                {entityName || (zuordnung.typ === 'PROJEKT' ? 'Projekt' : 'Anfrage')}
+                                            </p>
+                                            <p className="text-xs text-slate-500">
+                                                {zuordnung.typ === 'PROJEKT' ? 'Projekt' : 'Anfrage'}
+                                                {zuordnung.nummer ? ` · ${zuordnung.nummer}` : ''}
+                                            </p>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="min-h-11 text-xs text-rose-700 hover:bg-rose-100"
+                                            onClick={() => { markDirty(); setShowZuordnungSuche(true); }}
+                                        >
+                                            Ändern
+                                        </Button>
+                                        {/* Beim Antworten erbt die Mail den Vorgang der Ursprungsmail –
+                                            "Entfernen" hätte serverseitig keine Wirkung, also gibt es
+                                            den Knopf dort auch nicht. */}
+                                        {!replyEmailId && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="min-h-11 text-slate-500 hover:text-slate-700"
+                                                onClick={() => { markDirty(); setZuordnung(null); }}
+                                                aria-label="Verknüpfung entfernen"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => setShowZuordnungSuche(true)}
+                                        className="min-h-11 w-full justify-start border-rose-200 text-rose-700 hover:bg-rose-50"
+                                    >
+                                        <Link2 className="mr-2 h-4 w-4" />
+                                        Projekt oder Anfrage suchen
+                                    </Button>
+                                )}
+                                <p className="text-xs text-slate-500">
+                                    Damit die E-Mail später beim richtigen Vorgang auftaucht.
+                                </p>
+                            </div>
+                            )}
 
                             {/* CC Section */}
                             {showCc && (
@@ -1232,6 +1360,71 @@ export function EmailComposeForm({
                 </div>
             </div>
 
+            {/* Suche: Projekt oder Anfrage verknüpfen */}
+            <EmailZuordnungSearchModal
+                isOpen={showZuordnungSuche}
+                onClose={() => setShowZuordnungSuche(false)}
+                onSelect={(auswahl) => { markDirty(); setZuordnung(auswahl); }}
+                current={zuordnung}
+            />
+
+            {/* Rückfrage: E-Mail ohne Projekt/Anfrage senden? */}
+            {showZuordnungWarnung && (
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                    onClick={() => setShowZuordnungWarnung(false)}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="zuordnung-warnung-titel"
+                        className="mx-4 w-full max-w-md rounded-xl bg-white p-6 shadow-2xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="mb-4 flex items-center gap-3">
+                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
+                                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                            </div>
+                            <h3 id="zuordnung-warnung-titel" className="text-lg font-semibold text-slate-900">
+                                Kein Projekt und keine Anfrage verknüpft
+                            </h3>
+                        </div>
+                        <p className="mb-4 text-sm text-slate-600">
+                            Diese E-Mail gehört bisher zu keinem Vorgang. Ohne Verknüpfung taucht sie später
+                            weder beim Projekt noch bei der Anfrage auf. Soll sie trotzdem raus?
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            <Button
+                                onClick={() => { setShowZuordnungWarnung(false); setShowZuordnungSuche(true); }}
+                                className="w-full justify-start bg-rose-600 text-white hover:bg-rose-700"
+                                size="sm"
+                            >
+                                <Link2 className="mr-2 h-4 w-4" />
+                                Projekt oder Anfrage auswählen
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => { setShowZuordnungWarnung(false); sendeEmail(); }}
+                                className="w-full justify-start border-slate-300 text-slate-700"
+                                size="sm"
+                            >
+                                <Send className="mr-2 h-4 w-4" />
+                                Trotzdem senden
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                onClick={() => setShowZuordnungWarnung(false)}
+                                className="w-full justify-start text-slate-500"
+                                size="sm"
+                            >
+                                <X className="mr-2 h-4 w-4" />
+                                Abbrechen
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Save Email Dialog */}
             {showSaveEmailDialog && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -1262,7 +1455,7 @@ export function EmailComposeForm({
                                     Beim Kunden speichern
                                 </Button>
                             )}
-                            {projektId && (
+                            {zuordnung?.typ === 'PROJEKT' && (
                                 <Button
                                     onClick={() => handleSaveEmail('projekt')}
                                     disabled={savingEmail}
@@ -1273,7 +1466,7 @@ export function EmailComposeForm({
                                     Als Projekt-E-Mail speichern
                                 </Button>
                             )}
-                            {anfrageId && (
+                            {zuordnung?.typ === 'ANFRAGE' && (
                                 <Button
                                     onClick={() => handleSaveEmail('anfrage')}
                                     disabled={savingEmail}

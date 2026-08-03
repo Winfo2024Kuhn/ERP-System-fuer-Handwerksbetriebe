@@ -1784,6 +1784,9 @@ export default function EmailCenter() {
 
             return (
                 <EmailComposeForm
+                    // Neu mounten, wenn ein anderer Entwurf/eine andere Antwort geöffnet wird –
+                    // sonst bleiben Empfänger, Betreff und Zuordnung des vorherigen stehen.
+                    key={activeDraftId ?? replyToEmailId ?? 'neu'}
                     onClose={handleComposeClose}
                     onSuccess={handleComposeSuccess}
                     initialRecipient={initialRecipient}
@@ -1794,6 +1797,9 @@ export default function EmailCenter() {
                     replyEmailId={replyToEmailId}
                     projektId={activeDraft?.projektId ?? (replyToEmail ?? forwardEmail)?.projektId}
                     anfrageId={activeDraft?.anfrageId ?? (replyToEmail ?? forwardEmail)?.anfrageId}
+                    // Im E-Mail-Center ist der Vorgang nicht durch die Seite vorgegeben –
+                    // hier darf (und soll) der User Projekt/Anfrage selbst verknüpfen.
+                    zuordnungWaehlbar
                 />
             );
         }
