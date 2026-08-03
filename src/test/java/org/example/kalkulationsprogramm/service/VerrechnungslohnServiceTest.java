@@ -3,7 +3,9 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.Arbeitsgang;
 import org.example.kalkulationsprogramm.domain.ArbeitsgangStundensatz;
+import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.Beschaeftigungsart;
+import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.domain.Gewerk;
 import org.example.kalkulationsprogramm.domain.Krankenkasse;
@@ -47,6 +49,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -210,10 +213,12 @@ class VerrechnungslohnServiceTest {
 
         VerrechnungslohnErgebnisDto dto = service.berechne(2024);
 
-        // Eine Luecke fuer fehlende Lohnabrechnungen, eine fuer fehlende Zeitbuchungen.
-        assertThat(dto.getDatenLuecken()).hasSize(2);
+        // Je eine Luecke fuer fehlende Lohnabrechnungen, fehlende Zeitbuchungen
+        // und das nicht hinterlegte Arbeitszeitmodell (kein Zeitkonto gemockt).
+        assertThat(dto.getDatenLuecken()).hasSize(3);
         assertThat(dto.getDatenLuecken()).anyMatch(l -> l.getProblem().contains("Keine Lohnabrechnungen"));
         assertThat(dto.getDatenLuecken()).anyMatch(l -> l.getProblem().contains("Keine Zeitbuchungen"));
+        assertThat(dto.getDatenLuecken()).anyMatch(l -> l.getProblem().contains("Keine Arbeitszeiten hinterlegt"));
         // 25 EUR × 2080h = 52000
         assertThat(dto.getLohnzeilen().get(0).getBruttoJahr()).isEqualByComparingTo("52000.00");
         assertThat(dto.getLohnzeilen().get(0).getQuelle())
@@ -401,6 +406,293 @@ class VerrechnungslohnServiceTest {
         // gleicher Eintrag (gleiche ID), neuer Wert
         assertThat(saved.getId()).isEqualTo(999L);
         assertThat(saved.getSatz()).isEqualByComparingTo("80.00");
+    }
+
+    // ==================== Regressionen: Stunden-Block ====================
+
+    @Test
+    void mitarbeiterOhneZeitkontoBekommtWerktagsSollStattNullStunden() {
+        // Bug: ohne Zeitkonto lieferte der Stunden-Block 0 verkaeufliche Stunden,
+        // waehrend der Lohn-Block denselben Mitarbeiter mit 2080 h ansetzte.
+        // Der Stundensatz schoss dadurch nach oben.
+        Mitarbeiter ma = mitarbeiter(7L, "Max", "Mustermann");
+        ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
+        ma.setStundenlohn(new BigDecimal("25.00"));
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
+        when(zeitkontoRepository.findByMitarbeiterId(7L)).thenReturn(Optional.empty());
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(Year.now().getValue());
+
+        VerrechnungslohnErgebnisDto.MitarbeiterStundenZeile zeile = dto.getStundenzeilen().get(0);
+        assertThat(zeile.isSollIstDefault()).isTrue();
+        // ca. 250-262 Werktage x 8 h
+        assertThat(zeile.getSollstunden()).isGreaterThan(new BigDecimal("1900"));
+        assertThat(zeile.getVerkaeuflicheStunden()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(dto.getVerkaeuflicheStundenGesamt()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(dto.getDatenLuecken())
+                .anyMatch(l -> l.getProblem().contains("Keine Arbeitszeiten hinterlegt"));
+    }
+
+    @Test
+    void vierTageWocheBewertetUrlaubstagMitVollenAchtStunden() {
+        // Bug: stundenProTag teilte fix durch 5. Bei 4x8h kamen 6,4 h je
+        // Urlaubstag heraus statt 8 h -- der Urlaub wurde zu niedrig bewertet.
+        Mitarbeiter ma = mitarbeiter(8L, "Erika", "Musterfrau");
+        ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
+        ma.setJahresUrlaub(25);
+        Zeitkonto zk = zeitkontoFuer(ma);
+        zk.setFreitagStunden(new BigDecimal("0.00"));
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
+        when(zeitkontoRepository.findByMitarbeiterId(8L)).thenReturn(Optional.of(zk));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(Year.now().getValue());
+
+        // 25 Urlaubstage x 8 h (32 h / 4 Arbeitstage), nicht 25 x 6,4 h = 160
+        VerrechnungslohnErgebnisDto.MitarbeiterStundenZeile zeile = dto.getStundenzeilen().get(0);
+        assertThat(zeile.getUrlaubsstunden()).isEqualByComparingTo("200.00");
+        assertThat(zeile.isUrlaubIstDefault()).isTrue();
+    }
+
+    @Test
+    void internProzentAusDerOberflaecheSteuertDieInternenStunden() {
+        // Bug: die Oberflaeche schickte internProzent mit, der Service rechnete
+        // aber immer mit fest verdrahteten 5 %. Der Regler hatte keine Wirkung.
+        Mitarbeiter ma = mitarbeiter(9L, "Otto", "Mustermann");
+        ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
+        Zeitkonto zk = zeitkontoFuer(ma);
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
+        when(zeitkontoRepository.findByMitarbeiterId(9L)).thenReturn(Optional.of(zk));
+
+        VerrechnungslohnErgebnisDto standard = service.berechne(Year.now().getValue());
+        VerrechnungslohnErgebnisDto mitZwanzig = service.berechne(Year.now().getValue(), 20);
+
+        assertThat(standard.getInterneQuoteProzent()).isEqualTo(5);
+        assertThat(mitZwanzig.getInterneQuoteProzent()).isEqualTo(20);
+
+        BigDecimal soll = mitZwanzig.getStundenzeilen().get(0).getSollstunden();
+        assertThat(mitZwanzig.getStundenzeilen().get(0).getInterneStunden())
+                .isEqualByComparingTo(soll.multiply(new BigDecimal("0.20")).setScale(2, java.math.RoundingMode.HALF_UP));
+        // mehr interne Stunden => weniger verkaeufliche Stunden
+        assertThat(mitZwanzig.getVerkaeuflicheStundenGesamt())
+                .isLessThan(standard.getVerkaeuflicheStundenGesamt());
+    }
+
+    @Test
+    void ungueltigeInterneQuoteFaelltAufDenStandardZurueck() {
+        VerrechnungslohnErgebnisDto zuHoch = service.berechne(Year.now().getValue(), 150);
+        VerrechnungslohnErgebnisDto negativ = service.berechne(Year.now().getValue(), -5);
+
+        assertThat(zuHoch.getInterneQuoteProzent()).isEqualTo(5);
+        assertThat(negativ.getInterneQuoteProzent()).isEqualTo(5);
+    }
+
+    // ==================== Regression: Gemeinkosten ====================
+
+    @Test
+    void belegMitKostenstellenSplitZaehltNichtZusaetzlichUeberSeineDirekteKostenstelle() {
+        // Bug: am PC bleibt beim Anlegen eines Splits die direkte
+        // Beleg.kostenstelle stehen. Der Beleg floss dadurch doppelt in die
+        // Gemeinkosten -- einmal voll, einmal anteilig.
+        Kostenstelle ks = new Kostenstelle();
+        ks.setId(50L);
+        ks.setBezeichnung("Werkstattmiete");
+
+        Beleg beleg = new Beleg();
+        beleg.setId(500L);
+        beleg.setKostenstelle(ks);
+        beleg.setBetragNetto(new BigDecimal("1000.00"));
+
+        when(belegRepository.findValidierteFixkostenBelegeImZeitraum(any(), any()))
+                .thenReturn(List.of(beleg));
+        // vollstaendig aufgeteilt: 1000 von 1000
+        when(belegKostenstellenAnteilRepository.summiereAufgeteilteBetraegeProBeleg())
+                .thenReturn(List.<Object[]>of(new Object[]{500L, new BigDecimal("1000.00")}));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void belegOhneSplitFliesstWeiterhinInDieGemeinkosten() {
+        Kostenstelle ks = new Kostenstelle();
+        ks.setId(51L);
+        ks.setBezeichnung("Telefon");
+
+        Beleg beleg = new Beleg();
+        beleg.setId(501L);
+        beleg.setKostenstelle(ks);
+        beleg.setBetragNetto(new BigDecimal("240.00"));
+
+        when(belegRepository.findValidierteFixkostenBelegeImZeitraum(any(), any()))
+                .thenReturn(List.of(beleg));
+        when(belegKostenstellenAnteilRepository.summiereAufgeteilteBetraegeProBeleg())
+                .thenReturn(Collections.emptyList());
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("240.00");
+        assertThat(dto.getKostenstellen()).hasSize(1);
+    }
+
+    @Test
+    void teilweiseAufgeteilterBelegVerliertDenNichtAufgeteiltenRestNicht() {
+        // Regression: der erste Doppelzaehlungs-Fix hat den ganzen Beleg verworfen,
+        // sobald irgendein Anteil existierte. Bei 60 % Aufteilung gingen so 40 %
+        // der Gemeinkosten ersatzlos verloren -- der Stundensatz fiel zu niedrig aus.
+        Kostenstelle ks = new Kostenstelle();
+        ks.setId(53L);
+        ks.setBezeichnung("Strom");
+
+        Beleg beleg = new Beleg();
+        beleg.setId(503L);
+        beleg.setKostenstelle(ks);
+        beleg.setBetragNetto(new BigDecimal("1000.00"));
+
+        when(belegRepository.findValidierteFixkostenBelegeImZeitraum(any(), any()))
+                .thenReturn(List.of(beleg));
+        // nur 600 von 1000 aufgeteilt
+        when(belegKostenstellenAnteilRepository.summiereAufgeteilteBetraegeProBeleg())
+                .thenReturn(List.<Object[]>of(new Object[]{503L, new BigDecimal("600.00")}));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        // die restlichen 400 bleiben auf der direkten Kostenstelle
+        assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("400.00");
+        assertThat(dto.getKostenstellen()).hasSize(1);
+        assertThat(dto.getKostenstellen().get(0).getJahresbetrag()).isEqualByComparingTo("400.00");
+    }
+
+    @Test
+    void vertraegtLeereSummeAusDerAufteilungsAbfrage() {
+        // SUM(...) liefert null, wenn kein Anteil einen berechneten Betrag hat.
+        Kostenstelle ks = new Kostenstelle();
+        ks.setId(54L);
+        ks.setBezeichnung("Versicherung");
+
+        Beleg beleg = new Beleg();
+        beleg.setId(504L);
+        beleg.setKostenstelle(ks);
+        beleg.setBetragNetto(new BigDecimal("500.00"));
+
+        when(belegRepository.findValidierteFixkostenBelegeImZeitraum(any(), any()))
+                .thenReturn(List.of(beleg));
+        when(belegKostenstellenAnteilRepository.summiereAufgeteilteBetraegeProBeleg())
+                .thenReturn(List.<Object[]>of(new Object[]{504L, null}));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    void beiEinemSplitGiltDieAufteilungUndNichtMehrDieDirekteKostenstelle() {
+        // Bewusste Regel: der Split ist die zuletzt getroffene Zuordnung.
+        // Liegt er auf einer Nicht-Fixkosten-Kostenstelle oder in einem anderen
+        // Streckungsjahr, faellt der Beleg komplett aus den Gemeinkosten --
+        // die veraltete direkte Kostenstelle darf ihn nicht zurueckholen.
+        Kostenstelle fix = new Kostenstelle();
+        fix.setId(52L);
+        fix.setBezeichnung("Werkstattmiete");
+
+        Beleg beleg = new Beleg();
+        beleg.setId(502L);
+        beleg.setKostenstelle(fix);
+        beleg.setBetragNetto(new BigDecimal("800.00"));
+
+        when(belegRepository.findValidierteFixkostenBelegeImZeitraum(any(), any()))
+                .thenReturn(List.of(beleg));
+        // Voll aufgeteilt, aber der Anteil wird von der Fixkosten-Jahres-Query
+        // nicht geliefert (z.B. weil er auf einer Nicht-Fixkosten-Kostenstelle
+        // liegt oder in ein anderes Streckungsjahr faellt).
+        when(belegKostenstellenAnteilRepository.summiereAufgeteilteBetraegeProBeleg())
+                .thenReturn(List.<Object[]>of(new Object[]{502L, new BigDecimal("800.00")}));
+        when(belegKostenstellenAnteilRepository.findAktiveFixkostenAnteileImJahr(2024))
+                .thenReturn(Collections.emptyList());
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("0.00");
+        assertThat(dto.getKostenstellen()).isEmpty();
+    }
+
+    // ==================== Regression: uebernehmen ====================
+
+    @Test
+    void uebernehmenLehntAbschlagAbDerDenStundensatzNegativMacht() {
+        Abteilung abt = abteilung(10L, "Schweisserei");
+        Arbeitsgang ag = new Arbeitsgang();
+        ag.setId(100L);
+        ag.setBeschreibung("Schweissen");
+        ag.setAbteilung(abt);
+        when(arbeitsgangRepository.findAll()).thenReturn(List.of(ag));
+
+        VerrechnungslohnUebernehmenRequest req = new VerrechnungslohnUebernehmenRequest();
+        req.setJahr(2026);
+        req.setBasisSatz(new BigDecimal("50.00"));
+        VerrechnungslohnUebernehmenRequest.AbteilungAufschlag abschlag =
+                new VerrechnungslohnUebernehmenRequest.AbteilungAufschlag();
+        abschlag.setAbteilungId(10L);
+        abschlag.setAufschlagEuro(new BigDecimal("-60.00"));
+        req.setAbteilungAufschlaege(List.of(abschlag));
+
+        assertThatThrownBy(() -> service.uebernehmen(req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Schweisserei");
+        verify(stundensatzRepository, never()).save(any(ArbeitsgangStundensatz.class));
+    }
+
+    @Test
+    void uebernehmenLehntAbschlagAbDerGenauAufNullFuehrt() {
+        // Ein 0-EUR-Stundensatz zerstoert die Kalkulation genauso still wie ein negativer.
+        Abteilung abt = abteilung(10L, "Schweisserei");
+        Arbeitsgang ag = new Arbeitsgang();
+        ag.setId(100L);
+        ag.setBeschreibung("Schweissen");
+        ag.setAbteilung(abt);
+        when(arbeitsgangRepository.findAll()).thenReturn(List.of(ag));
+
+        VerrechnungslohnUebernehmenRequest req = new VerrechnungslohnUebernehmenRequest();
+        req.setJahr(2026);
+        req.setBasisSatz(new BigDecimal("50.00"));
+        VerrechnungslohnUebernehmenRequest.AbteilungAufschlag abschlag =
+                new VerrechnungslohnUebernehmenRequest.AbteilungAufschlag();
+        abschlag.setAbteilungId(10L);
+        abschlag.setAufschlagEuro(new BigDecimal("-50.00"));
+        req.setAbteilungAufschlaege(List.of(abschlag));
+
+        assertThatThrownBy(() -> service.uebernehmen(req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Schweisserei");
+        verify(stundensatzRepository, never()).save(any(ArbeitsgangStundensatz.class));
+    }
+
+    @Test
+    void uebernehmenErlaubtAbschlagSolangeDerSatzPositivBleibt() {
+        Abteilung abt = abteilung(10L, "Schweisserei");
+        Arbeitsgang ag = new Arbeitsgang();
+        ag.setId(100L);
+        ag.setBeschreibung("Schweissen");
+        ag.setAbteilung(abt);
+        when(arbeitsgangRepository.findAll()).thenReturn(List.of(ag));
+        when(stundensatzRepository.findTopByArbeitsgangIdAndJahrOrderByIdDesc(100L, 2026))
+                .thenReturn(Optional.empty());
+        when(stundensatzRepository.save(any(ArbeitsgangStundensatz.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        VerrechnungslohnUebernehmenRequest req = new VerrechnungslohnUebernehmenRequest();
+        req.setJahr(2026);
+        req.setBasisSatz(new BigDecimal("50.00"));
+        VerrechnungslohnUebernehmenRequest.AbteilungAufschlag abschlag =
+                new VerrechnungslohnUebernehmenRequest.AbteilungAufschlag();
+        abschlag.setAbteilungId(10L);
+        abschlag.setAufschlagEuro(new BigDecimal("-15.00"));
+        req.setAbteilungAufschlaege(List.of(abschlag));
+
+        service.uebernehmen(req);
+
+        ArgumentCaptor<ArbeitsgangStundensatz> captor = ArgumentCaptor.forClass(ArbeitsgangStundensatz.class);
+        verify(stundensatzRepository).save(captor.capture());
+        assertThat(captor.getValue().getSatz()).isEqualByComparingTo("35.00");
     }
 
     @Test

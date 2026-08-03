@@ -97,10 +97,24 @@ public class VerrechnungslohnService {
 
     @Transactional(readOnly = true)
     public VerrechnungslohnErgebnisDto berechne(int jahr) {
+        return berechne(jahr, null);
+    }
+
+    /**
+     * @param interneQuoteProzent Anteil interner (nicht verkaufbarer) Arbeitszeit
+     *                            in Prozent, 0-100. null = Standardwert. Wirkt nur
+     *                            im Modus HOCHRECHNUNG; rueckwirkend kommen die
+     *                            internen Stunden aus den echten Zeitbuchungen.
+     */
+    @Transactional(readOnly = true)
+    public VerrechnungslohnErgebnisDto berechne(int jahr, Integer interneQuoteProzent) {
         VerrechnungslohnErgebnisDto dto = new VerrechnungslohnErgebnisDto();
         dto.setJahr(jahr);
         Modus modus = jahr < Year.now().getValue() ? Modus.RUECKWIRKEND : Modus.HOCHRECHNUNG;
         dto.setModus(modus);
+
+        BigDecimal interneQuote = normalisiereInterneQuote(interneQuoteProzent);
+        dto.setInterneQuoteProzent(interneQuote.multiply(BigDecimal.valueOf(100)).intValue());
 
         LocalDate jahresStart = LocalDate.of(jahr, 1, 1);
         LocalDate jahresEnde = LocalDate.of(jahr, 12, 31);
@@ -118,7 +132,7 @@ public class VerrechnungslohnService {
             dto.getLohnzeilen().add(lohnZeile);
             lohnsumme = lohnsumme.add(lohnZeile.getGesamtkosten());
 
-            MitarbeiterStundenZeile stdZeile = berechneStundenZeile(ma, jahr, jahresStart, jahresEnde, modus, feiertageWerktag, dto.getDatenLuecken());
+            MitarbeiterStundenZeile stdZeile = berechneStundenZeile(ma, jahr, jahresStart, jahresEnde, modus, feiertageWerktag, interneQuote, dto.getDatenLuecken());
             dto.getStundenzeilen().add(stdZeile);
             stundenSumme = stundenSumme.add(stdZeile.getVerkaeuflicheStunden());
         }
@@ -167,6 +181,16 @@ public class VerrechnungslohnService {
                 aufschlag = aufschlaegeProAbteilung.getOrDefault(ag.getAbteilung().getId(), BigDecimal.ZERO);
             }
             BigDecimal satz = request.getBasisSatz().add(aufschlag).setScale(2, RoundingMode.HALF_UP);
+            if (satz.signum() <= 0) {
+                // Ein zu grosser Abschlag darf keinen negativen -- und auch keinen
+                // Null- -- Stundensatz auf die Arbeitsgaenge schreiben. Beides
+                // zerstoert die Kalkulation stillschweigend. @Transactional rollt
+                // bereits geschriebene Saetze zurueck.
+                String abteilung = ag.getAbteilung() != null ? ag.getAbteilung().getName() : "ohne Abteilung";
+                throw new IllegalArgumentException(
+                        "Der Abschlag fuer die Abteilung \"" + abteilung + "\" ist zu gross und wuerde einen"
+                                + " Stundensatz von " + satz + " EUR ergeben. Bitte den Abschlag verringern.");
+            }
 
             ArbeitsgangStundensatz eintrag = stundensatzRepository
                     .findTopByArbeitsgangIdAndJahrOrderByIdDesc(ag.getId(), request.getJahr())
@@ -349,6 +373,7 @@ public class VerrechnungslohnService {
                                                          LocalDate jahresEnde,
                                                          Modus modus,
                                                          Set<LocalDate> feiertageWerktag,
+                                                         BigDecimal interneQuote,
                                                          List<DatenLuecke> luecken) {
         MitarbeiterStundenZeile zeile = new MitarbeiterStundenZeile();
         zeile.setMitarbeiterId(ma.getId());
@@ -356,12 +381,26 @@ public class VerrechnungslohnService {
         zeile.setIstGeschaeftsfuehrer(Boolean.TRUE.equals(ma.getIstGeschaeftsfuehrer()));
 
         Optional<Zeitkonto> zeitkontoOpt = zeitkontoRepository.findByMitarbeiterId(ma.getId());
-        BigDecimal jahresSoll = zeitkontoOpt
-                .map(zk -> jahresSollstundenAusZeitkonto(zk, jahresStart, jahresEnde, feiertageWerktag))
-                .orElse(BigDecimal.ZERO);
-        BigDecimal feiertagsSoll = zeitkontoOpt
-                .map(zk -> feiertagSoll(zk, feiertageWerktag))
-                .orElse(BigDecimal.ZERO);
+        BigDecimal jahresSoll;
+        BigDecimal feiertagsSoll;
+        if (zeitkontoOpt.isPresent()) {
+            jahresSoll = jahresSollstundenAusZeitkonto(zeitkontoOpt.get(), jahresStart, jahresEnde, feiertageWerktag);
+            feiertagsSoll = feiertagSoll(zeitkontoOpt.get(), feiertageWerktag);
+        } else {
+            // Ohne Zeitkonto wurden bisher 0 verkaeufliche Stunden gerechnet, waehrend
+            // der Lohn-Block denselben Mitarbeiter mit vollen Jahreskosten ansetzt.
+            // Ergebnis: der Stundensatz schoss nach oben. Wir rechnen deshalb mit
+            // demselben Default wie der Lohn-Block (8 h je Werktag) und melden es.
+            jahresSoll = werktagsSollOhneZeitkonto(jahresStart, jahresEnde, feiertageWerktag);
+            feiertagsSoll = STUNDEN_PRO_TAG_DEFAULT.multiply(BigDecimal.valueOf(feiertageWerktag.size()));
+            zeile.setSollIstDefault(true);
+            DatenLuecke l = new DatenLuecke();
+            l.setMitarbeiterId(ma.getId());
+            l.setMitarbeiterName(zeile.getName());
+            l.setProblem("Keine Arbeitszeiten hinterlegt - es wird mit "
+                    + STUNDEN_PRO_TAG_DEFAULT.stripTrailingZeros().toPlainString() + " h pro Werktag gerechnet");
+            luecken.add(l);
+        }
 
         zeile.setSollstunden(jahresSoll);
         zeile.setFeiertagsstunden(feiertagsSoll);
@@ -398,7 +437,7 @@ public class VerrechnungslohnService {
                 luecken.add(l);
             }
         } else {
-            interne = jahresSoll.multiply(INTERNE_QUOTE_DEFAULT).setScale(2, RoundingMode.HALF_UP);
+            interne = jahresSoll.multiply(interneQuote).setScale(2, RoundingMode.HALF_UP);
             zeile.setInterneIstDefault(true);
             verkaeuflich = jahresSoll.subtract(urlaub).subtract(krank).subtract(interne);
             if (verkaeuflich.compareTo(BigDecimal.ZERO) < 0) {
@@ -434,17 +473,44 @@ public class VerrechnungslohnService {
         return summe.setScale(2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Jahressoll fuer Mitarbeiter ohne Zeitkonto: 8 h je Werktag (Mo-Fr) ohne
+     * Feiertage -- dieselbe Annahme, die der Lohn-Block ueber die 2080-h-Woche
+     * trifft.
+     */
+    private BigDecimal werktagsSollOhneZeitkonto(LocalDate von, LocalDate bis, Set<LocalDate> feiertage) {
+        BigDecimal summe = BigDecimal.ZERO;
+        for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
+            DayOfWeek dow = d.getDayOfWeek();
+            if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY || feiertage.contains(d)) {
+                continue;
+            }
+            summe = summe.add(STUNDEN_PRO_TAG_DEFAULT);
+        }
+        return summe.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Durchschnittliche Stunden je Arbeitstag -- Basis fuer die Bewertung von
+     * Urlaubs- und Krankheitstagen. Es wird durch die Anzahl der tatsaechlichen
+     * Arbeitstage geteilt, nicht fix durch 5: bei einer 4-Tage-Woche
+     * (4 × 8 h) kam sonst 6,4 h statt 8 h heraus und der Urlaub wurde zu
+     * niedrig bewertet. Samstagsarbeit zaehlt ebenfalls mit.
+     */
     private BigDecimal stundenProTag(Optional<Zeitkonto> zeitkontoOpt) {
         if (zeitkontoOpt.isEmpty()) return STUNDEN_PRO_TAG_DEFAULT;
         Zeitkonto zk = zeitkontoOpt.get();
-        // einfacher Mittelwert ueber Werktage Mo-Fr
-        BigDecimal summe = nz(zk.getMontagStunden())
-                .add(nz(zk.getDienstagStunden()))
-                .add(nz(zk.getMittwochStunden()))
-                .add(nz(zk.getDonnerstagStunden()))
-                .add(nz(zk.getFreitagStunden()));
-        if (summe.compareTo(BigDecimal.ZERO) == 0) return STUNDEN_PRO_TAG_DEFAULT;
-        return summe.divide(BigDecimal.valueOf(5), 2, RoundingMode.HALF_UP);
+        BigDecimal summe = BigDecimal.ZERO;
+        int arbeitstage = 0;
+        for (int dow = 1; dow <= 7; dow++) {
+            BigDecimal stunden = nz(zk.getSollstundenFuerTag(dow));
+            if (stunden.signum() > 0) {
+                summe = summe.add(stunden);
+                arbeitstage++;
+            }
+        }
+        if (arbeitstage == 0) return STUNDEN_PRO_TAG_DEFAULT;
+        return summe.divide(BigDecimal.valueOf(arbeitstage), 2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal jahresSollstunden(Mitarbeiter ma) {
@@ -452,7 +518,34 @@ public class VerrechnungslohnService {
         if (zk.isEmpty()) {
             return new BigDecimal("2080.00"); // 40h × 52
         }
-        return zk.get().getWochenstunden().multiply(BigDecimal.valueOf(52));
+        BigDecimal wochenstunden = wochenstundenSicher(zk.get());
+        if (wochenstunden.signum() <= 0) {
+            return new BigDecimal("2080.00");
+        }
+        return wochenstunden.multiply(BigDecimal.valueOf(52));
+    }
+
+    /**
+     * Wochenstunden ohne NPE-Risiko: {@link Zeitkonto#getWochenstunden()}
+     * addiert die Tagesfelder ungeprueft, in der Datenbank koennen sie null sein.
+     */
+    private static BigDecimal wochenstundenSicher(Zeitkonto zk) {
+        BigDecimal summe = BigDecimal.ZERO;
+        for (int dow = 1; dow <= 7; dow++) {
+            summe = summe.add(nz(zk.getSollstundenFuerTag(dow)));
+        }
+        return summe;
+    }
+
+    /**
+     * Bringt die interne Quote auf einen Anteil zwischen 0 und 1.
+     * null oder Werte ausserhalb 0-100 fallen auf den Standard zurueck.
+     */
+    private static BigDecimal normalisiereInterneQuote(Integer prozent) {
+        if (prozent == null || prozent < 0 || prozent > 100) {
+            return INTERNE_QUOTE_DEFAULT;
+        }
+        return BigDecimal.valueOf(prozent).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
     }
 
     private Set<LocalDate> ladeFeiertage(int jahr) {
@@ -508,9 +601,23 @@ public class VerrechnungslohnService {
         //    extrahiert werden konnte (Kassenbons ohne MwSt-Ausweis).
         LocalDate jahresStart = LocalDate.of(jahr, 1, 1);
         LocalDate jahresEnde = LocalDate.of(jahr, 12, 31);
+        // Am PC bleibt beim Anlegen einer Kostenstellen-Aufteilung die direkte
+        // Beleg.kostenstelle stehen (anders als am Handy, wo sie geleert wird).
+        // Ueber die direkte Kostenstelle zaehlen wir deshalb nur den Teil des
+        // Belegs, der NICHT aufgeteilt ist:
+        //   - voll aufgeteilt  -> Rest 0, Punkt 3 uebernimmt ihn  (keine Doppelzaehlung)
+        //   - zu 60 % aufgeteilt -> die restlichen 40 % bleiben hier erhalten
+        //   - gar nicht aufgeteilt -> voller Betrag wie bisher
+        Map<Long, BigDecimal> bereitsAufgeteilt = new HashMap<>();
+        for (Object[] zeile : belegKostenstellenAnteilRepository.summiereAufgeteilteBetraegeProBeleg()) {
+            if (zeile == null || zeile.length < 2 || zeile[0] == null) continue;
+            bereitsAufgeteilt.put((Long) zeile[0], nz((BigDecimal) zeile[1]));
+        }
         for (Beleg beleg : belegRepository.findValidierteFixkostenBelegeImZeitraum(jahresStart, jahresEnde)) {
             BigDecimal netto = beleg.getBetragNetto();
-            BigDecimal basis = netto != null ? netto : nz(beleg.getBetragBrutto());
+            BigDecimal gesamt = netto != null ? netto : nz(beleg.getBetragBrutto());
+            if (gesamt.signum() <= 0) continue;
+            BigDecimal basis = gesamt.subtract(nz(bereitsAufgeteilt.get(beleg.getId())));
             if (basis.signum() <= 0) continue;
             summe = summe.add(basis);
             final Long ksId = beleg.getKostenstelle().getId();

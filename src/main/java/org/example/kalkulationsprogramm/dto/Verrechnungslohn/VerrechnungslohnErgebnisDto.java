@@ -37,6 +37,14 @@ public class VerrechnungslohnErgebnisDto {
     private BigDecimal gemeinkostenGesamt = BigDecimal.ZERO;
     private BigDecimal selbstkostenProStunde = BigDecimal.ZERO;
 
+    /**
+     * Anteil der Arbeitszeit, der fuer interne Arbeiten (Werkstatt, Wartung,
+     * Buero) angesetzt wurde -- in Prozent. Die Oberflaeche spiegelt diesen
+     * Wert zurueck, damit Regler und Rechenergebnis nie auseinanderlaufen.
+     * Nur im Modus HOCHRECHNUNG relevant.
+     */
+    private int interneQuoteProzent;
+
     @Getter
     @Setter
     public static class MitarbeiterLohnZeile {
@@ -68,6 +76,8 @@ public class VerrechnungslohnErgebnisDto {
         private boolean urlaubIstDefault;
         private boolean krankheitIstDefault;
         private boolean interneIstDefault;
+        /** true, wenn kein Zeitkonto hinterlegt ist und mit 8 h/Werktag gerechnet wurde. */
+        private boolean sollIstDefault;
     }
 
     @Getter

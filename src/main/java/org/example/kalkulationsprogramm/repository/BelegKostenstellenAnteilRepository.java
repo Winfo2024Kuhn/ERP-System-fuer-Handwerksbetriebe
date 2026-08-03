@@ -28,6 +28,23 @@ public interface BelegKostenstellenAnteilRepository extends JpaRepository<BelegK
     void deleteByBelegId(@Param("belegId") Long belegId);
 
     /**
+     * Je Beleg die Summe der bereits auf Kostenstellen aufgeteilten Betraege
+     * (ohne Streckung, also der volle zugeordnete Betrag).
+     *
+     * Der Verrechnungslohn-Rechner braucht das, um einen Beleg nicht doppelt zu
+     * zaehlen: die PC-Oberflaeche laesst eine direkte {@code Beleg.kostenstelle}
+     * UND Anteile gleichzeitig zu. Gezaehlt wird ueber die direkte Kostenstelle
+     * nur noch der Rest, der nicht aufgeteilt ist -- bei einer Aufteilung von
+     * z.B. 60 % bleiben so die restlichen 40 % erhalten, statt ersatzlos zu
+     * verschwinden.
+     *
+     * @return Zeilen mit [0] = Beleg-ID (Long), [1] = Summe (BigDecimal, kann null sein)
+     */
+    @Query("SELECT a.beleg.id, SUM(a.berechneterBetrag) FROM BelegKostenstellenAnteil a "
+            + "GROUP BY a.beleg.id")
+    List<Object[]> summiereAufgeteilteBetraegeProBeleg();
+
+    /**
      * Alle Anteile auf einer bestimmten Kostenstelle, deren Streckungs-Zeitraum
      * das gegebene Jahr enthaelt. Wird vom Verrechnungslohn-Rechner verwendet,
      * um auch gestreckte Bar-Belege in die Gemeinkosten einzubeziehen.

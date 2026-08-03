@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.controller.advice;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import org.example.kalkulationsprogramm.dto.ApiError;
 import org.example.kalkulationsprogramm.exception.MietabrechnungValidationException;
 import org.example.kalkulationsprogramm.util.ConstraintErrorDetail;
@@ -59,6 +61,34 @@ public class RestExceptionHandler {
                 ex.getMessage()
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /**
+     * Verletzte Bean-Validation an @RequestParam/@PathVariable (z.B. @Min/@Max
+     * an einem mit @Validated annotierten Controller). Ohne diesen Handler
+     * laeuft das als HTTP 500 durch, obwohl es eine reine Eingabepruefung ist.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiError> handleConstraintViolation(ConstraintViolationException ex) {
+        List<ApiError.Field> fields = new ArrayList<>();
+        for (ConstraintViolation<?> violation : ex.getConstraintViolations()) {
+            String field = letztesPfadsegment(violation.getPropertyPath().toString());
+            fields.add(new ApiError.Field(field, humanize(field), violation.getMessage()));
+        }
+        ApiError body = new ApiError(
+                HttpStatus.BAD_REQUEST.value(),
+                "Die Eingaben sind unvollstaendig oder ungueltig.",
+                null,
+                fields,
+                ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /** "berechne.jahr" -> "jahr" */
+    private static String letztesPfadsegment(String propertyPath) {
+        int punkt = propertyPath.lastIndexOf('.');
+        return punkt >= 0 ? propertyPath.substring(punkt + 1) : propertyPath;
     }
 
     @ExceptionHandler(ResponseStatusException.class)

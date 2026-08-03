@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.dto.Verrechnungslohn.VerrechnungslohnErgebnisDto;
 import org.example.kalkulationsprogramm.dto.Verrechnungslohn.VerrechnungslohnUebernehmenRequest;
 import org.example.kalkulationsprogramm.service.VerrechnungslohnService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
@@ -37,14 +39,23 @@ public class VerrechnungslohnController {
 
     @GetMapping
     public ResponseEntity<VerrechnungslohnErgebnisDto> berechne(
-            @RequestParam @Min(2000) @Max(2100) int jahr) {
-        return ResponseEntity.ok(verrechnungslohnService.berechne(jahr));
+            @RequestParam @Min(2000) @Max(2100) int jahr,
+            @RequestParam(required = false) @Min(0) @Max(100) Integer internProzent) {
+        return ResponseEntity.ok(verrechnungslohnService.berechne(jahr, internProzent));
     }
 
     @PostMapping("/uebernehmen")
     public ResponseEntity<Map<String, Object>> uebernehmen(
             @Valid @RequestBody VerrechnungslohnUebernehmenRequest request) {
-        int aktualisiert = verrechnungslohnService.uebernehmen(request);
+        int aktualisiert;
+        try {
+            aktualisiert = verrechnungslohnService.uebernehmen(request);
+        } catch (IllegalArgumentException e) {
+            // Fachliche Ablehnung (z.B. Abschlag groesser als der Stundensatz).
+            // Ohne diese Uebersetzung liefe sie als HTTP 500 durch und die
+            // Oberflaeche koennte dem Nutzer nicht sagen, was zu tun ist.
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
         return ResponseEntity.ok(Map.of(
                 "aktualisierteArbeitsgaenge", aktualisiert,
                 "jahr", request.getJahr()));

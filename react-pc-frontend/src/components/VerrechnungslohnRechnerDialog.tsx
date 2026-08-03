@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertTriangle,
     Building2,
@@ -29,6 +29,14 @@ import {
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 import { cn } from '../lib/utils';
+import {
+    clampPercent,
+    formatEingabe,
+    formatEur,
+    formatHours,
+    leseFehlermeldung,
+    parseDecimal,
+} from './verrechnungslohnFormat';
 
 // ==================== API-Typen (Spiegel zu VerrechnungslohnErgebnisDto) ====================
 
@@ -66,6 +74,7 @@ interface MitarbeiterStundenZeile {
     urlaubIstDefault: boolean;
     krankheitIstDefault: boolean;
     interneIstDefault: boolean;
+    sollIstDefault: boolean;
 }
 
 interface KostenstelleAnteil {
@@ -99,37 +108,13 @@ interface VerrechnungslohnErgebnis {
     verkaeuflicheStundenGesamt: number;
     gemeinkostenGesamt: number;
     selbstkostenProStunde: number;
+    /** Vom Server tatsächlich verwendeter Anteil interner Stunden in %. */
+    interneQuoteProzent: number;
 }
 
 // ==================== Formatter ====================
-
-const eur = new Intl.NumberFormat('de-DE', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
-
-const num = new Intl.NumberFormat('de-DE', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
-});
-
-const formatEur = (v: number) => eur.format(Number.isFinite(v) ? v : 0);
-const formatHours = (v: number) => `${num.format(Number.isFinite(v) ? v : 0)} h`;
-
-const parseDecimal = (raw: string): number | null => {
-    const cleaned = raw.replace(/\./g, '').replace(',', '.').trim();
-    if (!cleaned) return null;
-    const n = Number(cleaned);
-    return Number.isFinite(n) && n >= 0 ? n : null;
-};
-
-const clampPercent = (raw: string): number => {
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.min(100, Math.round(n)));
-};
+// Die reinen Rechen- und Formatierregeln liegen in verrechnungslohnFormat.ts,
+// damit sie einzeln getestet werden koennen (Projekt-Konvention: x.ts + x.test.ts).
 
 // ==================== Props ====================
 
@@ -188,22 +173,34 @@ interface NumberCellProps {
     isDefault?: boolean;
     onChange: (next: number) => void;
     suffix?: string;
+    /** Erlaubt Minusbeträge – für Abschläge pro Abteilung. */
+    allowNegative?: boolean;
+    'aria-label'?: string;
 }
 
-const NumberCell: React.FC<NumberCellProps> = ({ value, isDefault, onChange, suffix }) => {
-    const [draft, setDraft] = useState<string>(value.toFixed(2));
+const NumberCell: React.FC<NumberCellProps> = ({
+    value,
+    isDefault,
+    onChange,
+    suffix,
+    allowNegative = false,
+    'aria-label': ariaLabel,
+}) => {
+    const [draft, setDraft] = useState<string>(() => formatEingabe(value));
 
     useEffect(() => {
-        setDraft(value.toFixed(2));
+        setDraft(formatEingabe(value));
     }, [value]);
 
     const commit = () => {
         const parsed = parseDecimal(draft);
-        if (parsed === null) {
-            setDraft(value.toFixed(2));
+        // Unlesbares oder (wo nicht erlaubt) negatives: auf den letzten guten Wert zurück.
+        if (parsed === null || (!allowNegative && parsed < 0)) {
+            setDraft(formatEingabe(value));
             return;
         }
         if (parsed !== value) onChange(parsed);
+        setDraft(formatEingabe(parsed));
     };
 
     return (
@@ -212,6 +209,7 @@ const NumberCell: React.FC<NumberCellProps> = ({ value, isDefault, onChange, suf
                 <input
                     type="text"
                     inputMode="decimal"
+                    aria-label={ariaLabel}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onBlur={commit}
@@ -219,7 +217,9 @@ const NumberCell: React.FC<NumberCellProps> = ({ value, isDefault, onChange, suf
                         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                     }}
                     className={cn(
-                        'w-28 text-right font-mono text-sm rounded-md border px-2 py-1 focus:outline-none focus:ring-2 focus:ring-rose-200',
+                        // pr-7 mit Suffix, sonst überdeckt das "h"/"€" die letzte Ziffer.
+                        'w-28 text-right font-mono text-sm rounded-md border py-1 pl-2 focus:outline-none focus:ring-2 focus:ring-rose-200',
+                        suffix ? 'pr-7' : 'pr-2',
                         isDefault
                             ? 'border-amber-300 bg-amber-50 text-amber-900'
                             : 'border-slate-200 bg-white text-slate-900'
@@ -251,8 +251,7 @@ const yearOptions = [currentYear - 1, currentYear, currentYear + 1].map((y) => (
     label: String(y),
 }));
 
-const DEFAULT_VERKAUFS_PROZENT = 75;
-const DEFAULT_INTERN_PROZENT = 20;
+const DEFAULT_INTERN_PROZENT = 5;
 const DEFAULT_GEWINN_PROZENT = 20;
 
 export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDialogProps> = ({
@@ -264,8 +263,10 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
     const confirmDialog = useConfirm();
 
     const [jahr, setJahr] = useState<number>(currentYear);
-    const [verkaufsProzent, setVerkaufsProzent] = useState<number>(DEFAULT_VERKAUFS_PROZENT);
-    const [internProzent, setInternProzent] = useState<number>(DEFAULT_INTERN_PROZENT);
+    // Zwei Werte mit Absicht: was im Feld steht (Entwurf) und womit zuletzt
+    // gerechnet wurde. Sonst löst jeder Tastendruck eine neue Abfrage aus.
+    const [internEntwurf, setInternEntwurf] = useState<number>(DEFAULT_INTERN_PROZENT);
+    const [internBerechnet, setInternBerechnet] = useState<number>(DEFAULT_INTERN_PROZENT);
 
     const [data, setData] = useState<VerrechnungslohnErgebnis | null>(null);
     const [loading, setLoading] = useState(false);
@@ -290,8 +291,8 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
     useEffect(() => {
         if (!open) return;
         setJahr(currentYear);
-        setVerkaufsProzent(DEFAULT_VERKAUFS_PROZENT);
-        setInternProzent(DEFAULT_INTERN_PROZENT);
+        setInternEntwurf(DEFAULT_INTERN_PROZENT);
+        setInternBerechnet(DEFAULT_INTERN_PROZENT);
         setGewinnProzent(DEFAULT_GEWINN_PROZENT);
         setLohnOverrides({});
         setStundenOverrides({});
@@ -302,17 +303,25 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
         setData(null);
     }, [open]);
 
-    // Daten laden
+    // Daten laden. Eine laufende Abfrage wird abgebrochen, sobald eine neue
+    // startet – sonst kann eine langsame alte Antwort die neue überschreiben.
+    const abbruchRef = useRef<AbortController | null>(null);
+
     const loadData = useCallback(async () => {
+        abbruchRef.current?.abort();
+        const controller = new AbortController();
+        abbruchRef.current = controller;
+
         setLoading(true);
         setError(null);
         try {
             const params = new URLSearchParams({
                 jahr: String(jahr),
-                verkaufsProzent: String(verkaufsProzent),
-                internProzent: String(internProzent),
+                internProzent: String(internBerechnet),
             });
-            const res = await fetch(`/api/verrechnungslohn?${params.toString()}`);
+            const res = await fetch(`/api/verrechnungslohn?${params.toString()}`, {
+                signal: controller.signal,
+            });
             if (!res.ok) {
                 if (res.status === 404) {
                     setError(
@@ -326,6 +335,15 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
             }
             const json: VerrechnungslohnErgebnis = await res.json();
             setData(json);
+            // Der Server sagt, mit welcher Quote er gerechnet hat – Regler und
+            // Ergebnis können so nicht auseinanderlaufen. Eine noch nicht
+            // übernommene Eingabe des Nutzers wird dabei nicht überschrieben.
+            if (typeof json.interneQuoteProzent === 'number') {
+                setInternBerechnet(json.interneQuoteProzent);
+                setInternEntwurf((entwurf) =>
+                    entwurf === internBerechnet ? json.interneQuoteProzent : entwurf
+                );
+            }
             setLohnOverrides({});
             setStundenOverrides({});
             setKostenstelleOverrides({});
@@ -333,18 +351,22 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
             for (const a of json.abteilungen) aufschlagInit[a.abteilungId] = a.aufschlagEuro;
             setAbteilungAufschlaege(aufschlagInit);
         } catch (e) {
+            if (controller.signal.aborted) return;
             console.error(e);
             setError('Verbindung zum Server fehlgeschlagen.');
             setData(null);
         } finally {
-            setLoading(false);
+            if (!controller.signal.aborted) setLoading(false);
         }
-    }, [jahr, verkaufsProzent, internProzent]);
+    }, [jahr, internBerechnet]);
 
     useEffect(() => {
         if (!open) return;
         loadData();
     }, [open, loadData]);
+
+    // Offene Abfrage beenden, wenn der Dialog verschwindet.
+    useEffect(() => () => abbruchRef.current?.abort(), []);
 
     // Effektive Werte (mit Overrides)
     const effLohn = useMemo(() => {
@@ -393,11 +415,27 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
         [selbstkosten, gewinnProzent]
     );
 
+    // Abteilungen, deren Abschlag den Stundensatz auf 0 oder ins Minus zieht.
+    // Ein 0-EUR-Stundensatz zerstört die Kalkulation genauso wie ein negativer.
+    const abteilungenImMinus = useMemo(() => {
+        if (!data) return [] as string[];
+        return data.abteilungen
+            .filter((a) => verkaufspreis + (abteilungAufschlaege[a.abteilungId] ?? 0) <= 0)
+            .map((a) => a.name);
+    }, [data, abteilungAufschlaege, verkaufspreis]);
+
     // Übernehmen
     const handleUebernehmen = async () => {
         if (!data) return;
         if (selbstkosten <= 0) {
             toast.error('Es gibt nichts zum Übernehmen — die Selbstkosten sind 0.');
+            return;
+        }
+        if (abteilungenImMinus.length > 0) {
+            toast.error(
+                `Der Abschlag bei ${abteilungenImMinus.join(', ')} ist größer als der Stundensatz. ` +
+                    'Bitte zuerst verringern.'
+            );
             return;
         }
         const confirmed = await confirmDialog({
@@ -424,7 +462,10 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                toast.error(`Übernehmen fehlgeschlagen (Status ${res.status}).`);
+                // Der Server schickt bei fachlicher Ablehnung einen verständlichen
+                // Text mit (z.B. "Der Abschlag für die Abteilung … ist zu groß").
+                // Den zeigen wir statt einer nackten Statusnummer.
+                toast.error(await leseFehlermeldung(res, 'Übernehmen fehlgeschlagen'));
                 return;
             }
             toast.success(`Stundensätze für ${data.jahr} übernommen.`);
@@ -439,6 +480,8 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
     };
 
     const istHochrechnung = data?.modus === 'HOCHRECHNUNG';
+    const internAenderungOffen = internEntwurf !== internBerechnet;
+    const keineStunden = !!data && effStunden.gesamt <= 0;
 
     return (
         <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -464,7 +507,8 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                     <Card className="border-0 shadow-sm rounded-xl p-4">
                         <div className="flex flex-wrap items-end gap-4">
                             <div className="space-y-1.5">
-                                <Label htmlFor="vrl-jahr">Welches Jahr?</Label>
+                                {/* Select rendert kein <input> – deshalb kein htmlFor, das ins Leere zeigt. */}
+                                <Label>Welches Jahr?</Label>
                                 <Select
                                     options={yearOptions}
                                     value={String(jahr)}
@@ -495,27 +539,6 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                             {istHochrechnung && (
                                 <>
                                     <div className="space-y-1.5">
-                                        <Label htmlFor="vrl-verkauf">Wie viel % verkauft ihr?</Label>
-                                        <div className="relative">
-                                            <Input
-                                                id="vrl-verkauf"
-                                                type="number"
-                                                min={0}
-                                                max={100}
-                                                step={1}
-                                                value={verkaufsProzent}
-                                                onChange={(e) =>
-                                                    setVerkaufsProzent(clampPercent(e.target.value))
-                                                }
-                                                className="w-24 text-right pr-6 font-mono"
-                                            />
-                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 max-w-[14rem]">
-                                            Erfahrungswert: ca. 75% der Arbeitszeit lassen sich an Kunden verkaufen.
-                                        </p>
-                                    </div>
-                                    <div className="space-y-1.5">
                                         <Label htmlFor="vrl-intern">Interne Stunden?</Label>
                                         <div className="relative">
                                             <Input
@@ -524,9 +547,9 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                 min={0}
                                                 max={100}
                                                 step={1}
-                                                value={internProzent}
+                                                value={internEntwurf}
                                                 onChange={(e) =>
-                                                    setInternProzent(clampPercent(e.target.value))
+                                                    setInternEntwurf(clampPercent(e.target.value))
                                                 }
                                                 className="w-24 text-right pr-6 font-mono"
                                             />
@@ -536,14 +559,25 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                             Werkstatt aufräumen, Maschinen warten, Büro — alles, was nicht beim Kunden ankommt.
                                         </p>
                                     </div>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => loadData()}
-                                        disabled={loading}
-                                    >
-                                        Neu rechnen
-                                    </Button>
+                                    <div className="space-y-1.5">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setInternBerechnet(internEntwurf)}
+                                            disabled={loading || !internAenderungOffen}
+                                            className={cn(
+                                                internAenderungOffen &&
+                                                    'border-rose-300 text-rose-700 hover:bg-rose-50'
+                                            )}
+                                        >
+                                            Neu rechnen
+                                        </Button>
+                                        {internAenderungOffen && (
+                                            <p className="text-xs text-rose-600 max-w-[14rem]">
+                                                Unten stehen noch die Zahlen mit {internBerechnet} %.
+                                            </p>
+                                        )}
+                                    </div>
                                 </>
                             )}
                         </div>
@@ -562,6 +596,25 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                 <div>
                                     <p className="text-sm font-semibold text-rose-900">Fehler</p>
                                     <p className="text-sm text-rose-800 mt-1">{error}</p>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
+
+                    {/* Ohne verkäufliche Stunden lässt sich kein Stundensatz bilden. */}
+                    {keineStunden && !loading && (
+                        <Card className="border-0 shadow-sm rounded-xl p-5 bg-rose-50 border-l-4 border-l-rose-500">
+                            <div className="flex gap-3">
+                                <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="text-sm font-semibold text-rose-900">
+                                        Es sind keine verkäuflichen Stunden hinterlegt.
+                                    </p>
+                                    <p className="text-sm text-rose-800 mt-1">
+                                        Solange niemand Stunden beisteuert, lässt sich kein Stundensatz
+                                        ausrechnen. Trage bei deinen Leuten die Arbeitszeiten ein oder
+                                        setze die verkäuflichen Stunden unten von Hand.
+                                    </p>
                                 </div>
                             </div>
                         </Card>
@@ -775,7 +828,8 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                             const anyDefault =
                                                 z.urlaubIstDefault ||
                                                 z.krankheitIstDefault ||
-                                                z.interneIstDefault;
+                                                z.interneIstDefault ||
+                                                z.sollIstDefault;
                                             return (
                                                 <tr key={z.mitarbeiterId} className="border-b border-slate-100">
                                                     <td className="py-2 pr-4">
@@ -788,8 +842,19 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td className="py-2 pr-4 text-right font-mono text-slate-600">
+                                                    <td
+                                                        className={cn(
+                                                            'py-2 pr-4 text-right font-mono',
+                                                            z.sollIstDefault ? 'text-amber-600' : 'text-slate-600'
+                                                        )}
+                                                        title={
+                                                            z.sollIstDefault
+                                                                ? 'Keine Arbeitszeiten hinterlegt – mit 8 h pro Werktag gerechnet'
+                                                                : undefined
+                                                        }
+                                                    >
                                                         {formatHours(z.sollstunden)}
+                                                        {z.sollIstDefault && ' ≈'}
                                                     </td>
                                                     <td
                                                         className={cn(
@@ -932,15 +997,22 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                         {data.abteilungen.map((a) => {
                                             const aufschlag = abteilungAufschlaege[a.abteilungId] ?? 0;
+                                            const endpreis = verkaufspreis + aufschlag;
+                                            const negativ = endpreis <= 0;
                                             return (
                                                 <div
                                                     key={a.abteilungId}
-                                                    className="flex items-center justify-between gap-3 px-3 py-2 bg-white rounded-lg border border-slate-200"
+                                                    className={cn(
+                                                        'flex items-center justify-between gap-3 px-3 py-2 bg-white rounded-lg border',
+                                                        negativ ? 'border-rose-400' : 'border-slate-200'
+                                                    )}
                                                 >
                                                     <span className="text-sm text-slate-700 truncate">{a.name}</span>
                                                     <div className="flex items-center gap-2">
                                                         <NumberCell
                                                             value={aufschlag}
+                                                            allowNegative
+                                                            aria-label={`Aufschlag oder Abschlag für ${a.name} in Euro`}
                                                             onChange={(v) =>
                                                                 setAbteilungAufschlaege((p) => ({
                                                                     ...p,
@@ -949,15 +1021,33 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                             }
                                                             suffix="€"
                                                         />
-                                                        <span className="text-xs font-mono text-slate-500 w-20 text-right">
-                                                            ={' '}
-                                                            {formatEur(verkaufspreis + aufschlag)}
+                                                        <span
+                                                            className={cn(
+                                                                'text-xs font-mono w-20 text-right',
+                                                                negativ
+                                                                    ? 'text-rose-600 font-semibold'
+                                                                    : 'text-slate-500'
+                                                            )}
+                                                        >
+                                                            = {formatEur(endpreis)}
                                                         </span>
                                                     </div>
                                                 </div>
                                             );
                                         })}
                                     </div>
+                                    {abteilungenImMinus.length > 0 && (
+                                        <p
+                                            role="alert"
+                                            className="mt-3 text-sm text-rose-700 flex items-start gap-2"
+                                        >
+                                            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                            <span>
+                                                Bei {abteilungenImMinus.join(', ')} ist der Abschlag größer
+                                                als der Stundensatz — so kannst du nicht übernehmen.
+                                            </span>
+                                        </p>
+                                    )}
                                 </div>
                             )}
                         </Card>
@@ -973,7 +1063,13 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                         className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700 disabled:opacity-50"
                         size="sm"
                         onClick={handleUebernehmen}
-                        disabled={!data || loading || applying || selbstkosten <= 0}
+                        disabled={
+                            !data ||
+                            loading ||
+                            applying ||
+                            selbstkosten <= 0 ||
+                            abteilungenImMinus.length > 0
+                        }
                     >
                         <Send className="w-4 h-4" />
                         {applying

@@ -40,6 +40,12 @@ public class SteuerberaterEmailProcessingService {
     private final GeminiDokumentAnalyseService geminiService;
     private final ObjectMapper objectMapper;
 
+    /** "1.234" / "12.500" / "1.234.567" -- Punkte als Tausendertrenner. */
+    private static final Pattern TAUSENDER_PUNKT = Pattern.compile("^-?\\d{1,3}(\\.\\d{3})+$");
+
+    /** "12,500" / "1,234,567" -- Kommas als Tausendertrenner (spiegelbildlich zu TAUSENDER_PUNKT). */
+    private static final Pattern TAUSENDER_KOMMA = Pattern.compile("^-?\\d{1,3}(,\\d{3})+$");
+
     @Value("${file.lohnabrechnung-dir:uploads/lohnabrechnungen}")
     private String lohnabrechnungDir;
 
@@ -547,30 +553,34 @@ public class SteuerberaterEmailProcessingService {
 
             String aiPrompt = """
                 Analysiere dieses PDF. Es handelt sich um eine BWA (Betriebswirtschaftliche Auswertung).
-                Extrahiere folgende Daten als JSON:
+                Extrahiere folgende Daten als JSON. Alle Betraege als reine Zahl in Euro,
+                Punkt als Dezimaltrenner, ohne Tausenderpunkte und ohne Waehrungszeichen.
+                Wenn ein Wert in der BWA nicht vorkommt, gib null zurueck (nicht 0).
                 {
                     "monat": 1-12,
                     "jahr": YYYY,
-                    "gesamtkosten": Betrag als Zahl (Summe Gesamtkosten),
-                    "gemeinkosten": Betrag als Zahl (Summe Gemeinkosten, falls ausgewiesen),
-                    "personalkosten": Betrag als Zahl
+                    "gesamtkosten": Summe aller Kosten des Monats,
+                    "gemeinkosten": Summe Gemeinkosten, nur falls die BWA sie explizit ausweist, sonst null,
+                    "personalkosten": Summe Personalkosten (Loehne, Gehaelter, soziale Abgaben),
+                    "wareneinsatz": Wareneinsatz / Materialaufwand / Roh-, Hilfs- und Betriebsstoffe,
+                    "fremdleistungen": bezogene Leistungen von Subunternehmern
                 }
                 """;
 
             String aiResponse = geminiService.rufGeminiApiMitPrompt(fileBytes, "application/pdf", aiPrompt, true);
-            
+
             // JSON Parsen
             Integer jahr = null;
             Integer monat = null;
             java.math.BigDecimal gemeinkosten = null;
-            
+
             if (aiResponse != null) {
                 String json = aiResponse.replaceAll("```json", "").replaceAll("```", "").trim();
                 if (json.startsWith("{")) {
                      JsonNode root = objectMapper.readTree(json);
-                     if (root.has("jahr")) jahr = root.get("jahr").asInt();
-                     if (root.has("monat")) monat = root.get("monat").asInt();
-                     if (root.has("gemeinkosten")) gemeinkosten = new java.math.BigDecimal(root.get("gemeinkosten").asDouble());
+                     if (root.hasNonNull("jahr")) jahr = root.get("jahr").asInt();
+                     if (root.hasNonNull("monat")) monat = root.get("monat").asInt();
+                     gemeinkosten = ermittleGemeinkosten(root);
                 }
             }
 
@@ -590,13 +600,21 @@ public class SteuerberaterEmailProcessingService {
             bwa.setUploadDatum(LocalDateTime.now());
             bwa.setSteuerberater(steuerberater);
             bwa.setSourceEmail(email);
-            // Kosten aus BWA übertragen (für Dashboard)
+            // Gemeinkosten übertragen (für Dashboard und Stundensatz-Rechner).
+            // gesamtGemeinkosten ist das Feld, das die Oberfläche anzeigt --
+            // kostenAusBwa bleibt dem Rechnungs-Abgleich vorbehalten.
             if (gemeinkosten != null) {
-                bwa.setKostenAusBwa(gemeinkosten);
+                bwa.setGesamtGemeinkosten(gemeinkosten);
                 bwa.setAnalysiert(true);
+                bwa.setAnalyseDatum(LocalDateTime.now());
+            } else {
+                // Kein verwertbarer Betrag erkannt: NICHT als analysiert markieren,
+                // sonst zeigt die Karte gruen "Analysiert" neben 0,00 EUR an.
+                log.warn("[Steuerberater] BWA {} enthaelt keine erkennbaren Gemeinkosten - bleibt 'Ausstehend'",
+                        attachment.getOriginalFilename());
             }
             bwa.setAiRawJson(aiResponse);
-            
+
             bwaUploadRepository.save(bwa);
             log.info("[Steuerberater] BWA für {}/{} erstellt (Gemeinkosten: {})", monat, jahr, gemeinkosten);
 
@@ -614,6 +632,110 @@ public class SteuerberaterEmailProcessingService {
              bwa.setSteuerberater(steuerberater);
              bwa.setSourceEmail(email);
              bwaUploadRepository.save(bwa);
+        }
+    }
+
+    /**
+     * Ermittelt die Gemeinkosten aus der KI-Antwort zu einer BWA.
+     *
+     * Reihenfolge:
+     * 1. Feld "gemeinkosten", wenn die BWA es explizit ausweist.
+     * 2. Sonst "gesamtkosten" minus Personalkosten, Wareneinsatz und
+     *    Fremdleistungen -- in einer Standard-BWA (SKR 03/04) gibt es keine
+     *    Zeile "Gemeinkosten", wohl aber diese Summen. Abgezogen wird alles,
+     *    was einem Auftrag direkt zurechenbar ist: Loehne stecken im
+     *    Stundensatz-Rechner schon im Lohn-Block, Material und
+     *    Subunternehmer-Leistungen werden dem Projekt direkt berechnet.
+     *    Bleiben sie drin, faellt der Stundensatz systematisch zu hoch aus.
+     * 3. Sonst null -- die BWA gilt dann bewusst als nicht analysiert.
+     *
+     * @return Betrag &gt; 0 auf zwei Nachkommastellen oder null, nie 0
+     */
+    static java.math.BigDecimal ermittleGemeinkosten(JsonNode root) {
+        java.math.BigDecimal direkt = leseBetrag(root, "gemeinkosten");
+        if (direkt != null && direkt.signum() > 0) {
+            return skaliere(direkt);
+        }
+        java.math.BigDecimal gesamt = leseBetrag(root, "gesamtkosten");
+        if (gesamt == null || gesamt.signum() <= 0) {
+            return null;
+        }
+        java.math.BigDecimal rest = gesamt
+                .subtract(nz(leseBetrag(root, "personalkosten")))
+                .subtract(nz(leseBetrag(root, "wareneinsatz")))
+                .subtract(nz(leseBetrag(root, "fremdleistungen")));
+        return rest.signum() > 0 ? skaliere(rest) : null;
+    }
+
+    private static java.math.BigDecimal nz(java.math.BigDecimal v) {
+        return v == null ? java.math.BigDecimal.ZERO : v;
+    }
+
+    /** Auf die Genauigkeit der Spalte bringen, statt die DB still runden zu lassen. */
+    private static java.math.BigDecimal skaliere(java.math.BigDecimal v) {
+        return v.setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Liest einen Geldbetrag aus einem JSON-Feld. Toleriert Zahlen und Strings
+     * ("1.234,56", "1234.56 EUR"), weil die KI beides liefern kann.
+     * {@code hasNonNull} ist Pflicht: bei explizitem JSON-null wuerde
+     * {@code asDouble()} stillschweigend 0 liefern.
+     *
+     * @return der Betrag als Absolutwert oder null, wenn nichts Verwertbares drinsteht
+     */
+    private static java.math.BigDecimal leseBetrag(JsonNode root, String feld) {
+        if (root == null || !root.hasNonNull(feld)) {
+            return null;
+        }
+        JsonNode node = root.get(feld);
+        if (node.isNumber()) {
+            // valueOf statt new BigDecimal(double): sonst 1234.5599999999999
+            return java.math.BigDecimal.valueOf(node.asDouble()).abs();
+        }
+        if (!node.isTextual()) {
+            return null;
+        }
+        String roh = node.asText().replaceAll("[^0-9,.-]", "").trim();
+        if (roh.isEmpty()) {
+            return null;
+        }
+        int letztesKomma = roh.lastIndexOf(',');
+        int letzterPunkt = roh.lastIndexOf('.');
+        String normalisiert;
+        if (letztesKomma >= 0 && letzterPunkt >= 0) {
+            // Beide Zeichen vorhanden: das zuletzt stehende ist das Dezimalzeichen.
+            // "1.234,56" (deutsch) und "1,234.56" (englisch) werden so beide richtig
+            // gelesen -- vorher ergab "1,234.56" 1,23 EUR, Faktor 1000 daneben.
+            normalisiert = letztesKomma > letzterPunkt
+                    ? roh.replace(".", "").replace(',', '.')
+                    : roh.replace(",", "");
+        } else if (letzterPunkt >= 0) {
+            // Nur Punkte: "12.500" und "1.234.567" sind Tausendertrenner,
+            // "12500.50" und "1.5" sind Dezimalzahlen. Ohne diese Unterscheidung
+            // wuerde aus 12.500 EUR still ein Betrag von 12,50 EUR.
+            normalisiert = TAUSENDER_PUNKT.matcher(roh).matches()
+                    ? roh.replace(".", "")
+                    : roh;
+        } else if (letztesKomma >= 0) {
+            // Nur Kommas -- spiegelbildlich zur Punkt-Seite: exakt dreistellige
+            // Gruppen ("12,500", "1,234,567") sind Tausendertrenner, alles
+            // andere ist das deutsche Dezimalkomma ("1234,56", "0,50").
+            // Der Prompt verlangt den Punkt als Dezimaltrenner; liefert die KI
+            // trotzdem ein Komma mit genau drei Folgeziffern, ist das die
+            // englische Tausenderschreibweise -- ein Geldbetrag mit drei
+            // Nachkommastellen kommt in einer BWA nicht vor.
+            normalisiert = TAUSENDER_KOMMA.matcher(roh).matches()
+                    ? roh.replace(",", "")
+                    : roh.replace(',', '.');
+        } else {
+            normalisiert = roh;
+        }
+        try {
+            return new java.math.BigDecimal(normalisiert).abs();
+        } catch (NumberFormatException e) {
+            log.warn("[Steuerberater] Betrag '{}' im Feld '{}' nicht lesbar", node.asText(), feld);
+            return null;
         }
     }
 

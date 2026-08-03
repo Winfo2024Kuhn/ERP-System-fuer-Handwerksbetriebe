@@ -38,8 +38,12 @@ public interface BwaUploadRepository extends JpaRepository<BwaUpload, Long> {
 
     /**
      * Berechnet die Summe der freigegebenen Gemeinkosten für ein Jahr.
+     *
+     * Summiert bewusst {@code gesamtGemeinkosten} -- das ist das Feld, das der
+     * BWA-Import befüllt und das die Oberfläche anzeigt. {@code kostenAusBwa}
+     * ist dem späteren Rechnungs-Abgleich vorbehalten und bleibt vorerst leer.
      */
-    @Query("SELECT COALESCE(SUM(b.kostenAusBwa), 0) FROM BwaUpload b WHERE b.jahr = :jahr AND b.freigegeben = true")
+    @Query("SELECT COALESCE(SUM(b.gesamtGemeinkosten), 0) FROM BwaUpload b WHERE b.jahr = :jahr AND b.freigegeben = true")
     java.math.BigDecimal summeGemeinkostenAusBwa(@Param("jahr") Integer jahr);
 
     boolean existsBySourceEmailIdAndOriginalDateiname(Long emailId, String originalDateiname);
