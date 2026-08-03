@@ -22,6 +22,7 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
@@ -66,6 +67,7 @@ public class OffenePostenController {
     private final ProjektRepository projektRepository;
     private final ProjektDokumentRepository projektDokumentRepository;
     private final DateiSpeicherService dateiSpeicherService;
+    private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -291,6 +293,20 @@ public class OffenePostenController {
         if (!StringUtils.hasText(rechnungsnummer)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Rechnungsnummer ist erforderlich"));
         }
+        // Der Betrag bildet bei Projekten ohne Angebot/AB den Auftragspreis. Ohne ihn
+        // liesse sich weder der Preis noch der Bezahlt-Status ableiten.
+        if (!StringUtils.hasText(betragBruttoStr)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Rechnungsbetrag ist erforderlich"));
+        }
+        BigDecimal betragBrutto;
+        try {
+            betragBrutto = new BigDecimal(betragBruttoStr.trim());
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Rechnungsbetrag ist keine gültige Zahl"));
+        }
+        if (betragBrutto.signum() <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Rechnungsbetrag muss größer als 0 sein"));
+        }
 
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
         if (projekt == null) {
@@ -346,13 +362,12 @@ public class OffenePostenController {
             if (StringUtils.hasText(faelligkeitsdatumStr)) {
                 geschaeftsdokument.setFaelligkeitsdatum(LocalDate.parse(faelligkeitsdatumStr));
             }
-            if (StringUtils.hasText(betragBruttoStr)) {
-                geschaeftsdokument.setBruttoBetrag(new BigDecimal(betragBruttoStr));
-            }
+            geschaeftsdokument.setBruttoBetrag(betragBrutto);
 
             ProjektGeschaeftsdokument result = projektDokumentRepository.save(geschaeftsdokument);
-            projekt.setBezahlt(true);
-            projektRepository.save(projekt);
+            // Auftragspreis und Bezahlt-Status neu aus den Dokumenten ableiten – bei
+            // Projekten ohne Angebot/AB bildet erst diese Rechnung den Preis.
+            ausgangsGeschaeftsDokumentService.aktualisiereProjektPreisAusDokumenten(projektId);
             log.info("Manuelle Ausgangsrechnung importiert: {} für Projekt {} (ID: {})",
                     rechnungsnummer, projekt.getBauvorhaben(), result.getId());
 

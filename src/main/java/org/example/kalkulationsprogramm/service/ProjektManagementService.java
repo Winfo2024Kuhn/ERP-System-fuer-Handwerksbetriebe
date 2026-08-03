@@ -280,8 +280,8 @@ ProjektManagementService {
         neuesProjekt.setPlz(plz);
         neuesProjekt.setOrt(ort);
 
-        // Wenn Referenzanfragen angegeben wurden, fehlende Felder aus dem ersten
-        // übernehmen und Bruttopreis summieren
+        // Wenn Referenzanfragen angegeben wurden, fehlende Felder aus dem ersten übernehmen.
+        // Der Bruttopreis wird hier NICHT gesetzt – er kommt aus den Dokumenten des Projekts.
         if (dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()) {
             List<Anfrage> anfragen = anfrageRepository.findAllById(dto.getAnfrageIds());
             if (!anfragen.isEmpty()) {
@@ -315,11 +315,6 @@ ProjektManagementService {
                             .distinct()
                             .collect(Collectors.toList()));
                 }
-                java.math.BigDecimal summe = anfragen.stream()
-                        .map(Anfrage::getBetrag)
-                        .filter(java.util.Objects::nonNull)
-                        .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-                dto.setBruttoPreis(summe);
             }
         }
 
@@ -600,9 +595,10 @@ ProjektManagementService {
         if (dto.getKurzbeschreibung() != null) {
             projekt.setKurzbeschreibung(dto.getKurzbeschreibung());
         }
-        if (dto.getBruttoPreis() != null) {
-            projekt.setBruttoPreis(dto.getBruttoPreis());
-        }
+        // bruttoPreis wird bewusst NICHT aus dem DTO übernommen: Der Auftragspreis
+        // ergibt sich ausschließlich aus den Dokumenten (Angebot/AB/Nachtragsangebot,
+        // ersatzweise die Rechnungssumme) – siehe
+        // AusgangsGeschaeftsDokumentService.aktualisiereProjektPreisAusDokumenten().
         if (dto.getAbschlussdatum() != null) {
             projekt.setAbschlussdatum(dto.getAbschlussdatum());
         }
@@ -1640,11 +1636,56 @@ ProjektManagementService {
      * </ul>
      */
     public String generiereKundenAuftragsnummer(LocalDate anlegedatum, Long kundeId) {
+        return ermittleKundenAuftragsnummer(anlegedatum, kundeId).auftragsnummer();
+    }
+
+    /**
+     * Ergebnis der kundenspezifischen Auftragsnummern-Vergabe — inklusive der Herleitung,
+     * damit das Frontend dem Benutzer erklären kann, warum die vorgeschlagene Nummer so lautet.
+     *
+     * @param auftragsnummer   die vorgeschlagene Nummer
+     * @param kundenLogik      {@code true}, wenn die Nummer nach dem Schema {@code YYYY/MM/NNNCC}
+     *                         vergeben wurde; {@code false} beim Fallback auf die rein
+     *                         fortlaufende Nummer (kein Kunde, Überlauf oder Kollision)
+     * @param neuerKundeImJahr {@code true}, wenn der Kunde in diesem Jahr noch keinen Auftrag hatte
+     * @param kundenSlot       die Kundennummer im Jahr (NNN), {@code 0} ohne Kundenlogik
+     * @param auftragImJahr    der wievielte Auftrag des Kunden in diesem Jahr (1-basiert,
+     *                         also {@code CC + 1}), {@code 0} ohne Kundenlogik
+     */
+    public record AuftragsnummerVorschlag(
+            String auftragsnummer,
+            boolean kundenLogik,
+            boolean neuerKundeImJahr,
+            int kundenSlot,
+            int auftragImJahr) {
+
+        static AuftragsnummerVorschlag fallback(String auftragsnummer) {
+            return new AuftragsnummerVorschlag(auftragsnummer, false, false, 0, 0);
+        }
+    }
+
+    /**
+     * Prüft, ob es den Kunden gibt. Der Auftragsnummer-Vorschlag darf für eine unbekannte
+     * ID keinen Kunden-Slot verbrennen und keinen Hinweistext über einen Kunden erfinden,
+     * den es nicht gibt.
+     */
+    // Vollqualifiziert, weil in dieser Datei jakarta.transaction.Transactional
+    // importiert ist – die kennt kein readOnly.
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public boolean existiertKunde(Long kundeId) {
+        return kundeId != null && kundeId > 0 && kundeRepository.existsById(kundeId);
+    }
+
+    /**
+     * Wie {@link #generiereKundenAuftragsnummer(LocalDate, Long)}, liefert zusätzlich die
+     * Herleitung der Nummer für den Hinweistext im Anlege-Dialog.
+     */
+    public AuftragsnummerVorschlag ermittleKundenAuftragsnummer(LocalDate anlegedatum, Long kundeId) {
         if (anlegedatum == null) {
             anlegedatum = LocalDate.now();
         }
         if (kundeId == null) {
-            return generiereNaechsteAuftragsnummer(anlegedatum);
+            return AuftragsnummerVorschlag.fallback(generiereNaechsteAuftragsnummer(anlegedatum));
         }
 
         String jahrPrefix = "%d/".formatted(anlegedatum.getYear());
@@ -1655,10 +1696,17 @@ ProjektManagementService {
 
         int nnn;
         int cc;
+        boolean neuerKundeImJahr;
 
         if (!kundenAuftraege.isEmpty()) {
             // Kunde hat in diesem Jahr bereits Aufträge → existierenden Slot wiederverwenden,
             // höchstes CC ermitteln und +1.
+            //
+            // Der Slot stammt aus der höchsten Nummer des Kunden (Liste kommt absteigend sortiert
+            // aus dem Repository). Weichen mehrere Nummern eines Kunden im Slot voneinander ab —
+            // etwa weil eine Nummer von Hand vergeben wurde — gewinnt so immer dieselbe, statt
+            // je nach DB-Reihenfolge zu springen. Das höchste CC wird über alle Nummern gesucht,
+            // damit auch bei gemischten Slots keine Nummer doppelt vergeben wird.
             Integer slotFromKunde = null;
             int hoechstesCc = -1;
             for (String nr : kundenAuftraege) {
@@ -1674,10 +1722,11 @@ ProjektManagementService {
                 }
             }
             if (slotFromKunde == null || hoechstesCc < 0 || hoechstesCc >= 99) {
-                return generiereNaechsteAuftragsnummer(anlegedatum);
+                return AuftragsnummerVorschlag.fallback(generiereNaechsteAuftragsnummer(anlegedatum));
             }
             nnn = slotFromKunde;
             cc = hoechstesCc + 1;
+            neuerKundeImJahr = false;
         } else {
             // Neuer Kunden-Slot im Jahr → höchste vorhandene NNN-Komponente + 1.
             // Hinweis: Bestandsdaten aus der alten reinen Fortlauf-Logik (z.B. "2026/01/00007")
@@ -1695,18 +1744,19 @@ ProjektManagementService {
                 }
             }
             if (hoechsterSlot >= 999) {
-                return generiereNaechsteAuftragsnummer(anlegedatum);
+                return AuftragsnummerVorschlag.fallback(generiereNaechsteAuftragsnummer(anlegedatum));
             }
             nnn = hoechsterSlot + 1;
             cc = 0;
+            neuerKundeImJahr = true;
         }
 
         String kandidat = "%s%03d%02d".formatted(monatPrefix, nnn, cc);
         if (projektRepository.existsByAuftragsnummer(kandidat)) {
             // Sehr unwahrscheinlich (Race oder Altdaten-Kollision) – sicherer Fallback.
-            return generiereNaechsteAuftragsnummer(anlegedatum);
+            return AuftragsnummerVorschlag.fallback(generiereNaechsteAuftragsnummer(anlegedatum));
         }
-        return kandidat;
+        return new AuftragsnummerVorschlag(kandidat, true, neuerKundeImJahr, nnn, cc + 1);
     }
 
     /**

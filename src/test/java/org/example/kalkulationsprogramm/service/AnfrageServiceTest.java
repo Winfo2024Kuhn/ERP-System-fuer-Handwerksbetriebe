@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
+import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
@@ -21,6 +23,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 class AnfrageServiceTest {
@@ -38,7 +41,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
-                null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                null, eventPublisher, ausgangsGeschaeftsDokumentService,
+                mock(DokumentFreigabeService.class));
 
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(invocation -> {
             Anfrage a = invocation.getArgument(0);
@@ -80,7 +84,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
-                null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                null, eventPublisher, ausgangsGeschaeftsDokumentService,
+                mock(DokumentFreigabeService.class));
 
         Anfrage anfrage = new Anfrage();
         anfrage.setId(5L);
@@ -114,7 +119,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
-                null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                null, eventPublisher, ausgangsGeschaeftsDokumentService,
+                mock(DokumentFreigabeService.class));
 
         Projekt projekt = new Projekt();
         projekt.setId(9L);
@@ -152,7 +158,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
-                null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                null, eventPublisher, ausgangsGeschaeftsDokumentService,
+                mock(DokumentFreigabeService.class));
 
         when(anfrageRepository.findById(999L)).thenReturn(Optional.empty());
 
@@ -174,7 +181,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
-                null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                null, eventPublisher, ausgangsGeschaeftsDokumentService,
+                mock(DokumentFreigabeService.class));
 
         Anfrage a1 = new Anfrage();
         a1.setId(1L);
@@ -211,7 +219,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
-                null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                null, eventPublisher, ausgangsGeschaeftsDokumentService,
+                mock(DokumentFreigabeService.class));
 
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(kundeRepository.findById(anyLong())).thenReturn(java.util.Optional.empty());
@@ -229,6 +238,11 @@ class AnfrageServiceTest {
     }
 
     private AnfrageService neueServiceMitAnfragen(AnfrageRepository anfrageRepository) {
+        return neueServiceMitAnfragen(anfrageRepository, mock(DokumentFreigabeService.class));
+    }
+
+    private AnfrageService neueServiceMitAnfragen(AnfrageRepository anfrageRepository,
+            DokumentFreigabeService dokumentFreigabeService) {
         DateiSpeicherService dateiSpeicherService = mock(DateiSpeicherService.class);
         AnfrageDokumentRepository anfrageDokumentRepository = mock(AnfrageDokumentRepository.class);
         KundeRepository kundeRepository = mock(KundeRepository.class);
@@ -239,7 +253,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
-                null, eventPublisher, ausgangsGeschaeftsDokumentService);
+                null, eventPublisher, ausgangsGeschaeftsDokumentService,
+                dokumentFreigabeService);
     }
 
     private Anfrage anfrageMit(long id, LocalDateTime createdAt) {
@@ -319,5 +334,78 @@ class AnfrageServiceTest {
 
         assertThat(seite.gesamt()).isEqualTo(1);
         assertThat(seite.anfragen()).extracting(AnfrageResponseDto::getId).containsExactly(1L);
+    }
+
+    /**
+     * Kernfall des Bugfixes: Der Angebots-Status-Filter muss VOR der Paginierung greifen.
+     * Sonst bleibt ein Treffer, der erst auf Seite 2 liegt, für den Nutzer unsichtbar.
+     */
+    @Test
+    void sucheSeiteFiltertNachFreigabeStatusVorDerPaginierung() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        DokumentFreigabeService dokumentFreigabeService = mock(DokumentFreigabeService.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository, dokumentFreigabeService);
+
+        List<Anfrage> vierzehn = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            vierzehn.add(anfrageMit(i + 1, LocalDateTime.of(2024, 1, 1, 0, 0).plusHours(i)));
+        }
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(vierzehn);
+        // Anfrage 1 ist die älteste und läge bei Seitengröße 12 auf Seite 2.
+        when(dokumentFreigabeService.findJuengsteProAnfrage(anyList()))
+                .thenReturn(java.util.Map.of(1L, freigabeMit(FreigabeStatus.PENDING)));
+
+        AnfrageSeiteResponseDto seite = service.sucheSeite(
+                null, null, null, null, null, false, "pending", 0, 12);
+
+        assertThat(seite.gesamt()).isEqualTo(1);
+        assertThat(seite.anfragen()).extracting(AnfrageResponseDto::getId).containsExactly(1L);
+    }
+
+    @Test
+    void sucheSeiteBehandeltExpiredUndRevokedAlsAbgelaufen() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        DokumentFreigabeService dokumentFreigabeService = mock(DokumentFreigabeService.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository, dokumentFreigabeService);
+
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(List.of(
+                anfrageMit(1L, LocalDateTime.of(2024, 1, 1, 0, 0)),
+                anfrageMit(2L, LocalDateTime.of(2024, 1, 2, 0, 0)),
+                anfrageMit(3L, LocalDateTime.of(2024, 1, 3, 0, 0))));
+        when(dokumentFreigabeService.findJuengsteProAnfrage(anyList())).thenReturn(java.util.Map.of(
+                1L, freigabeMit(FreigabeStatus.EXPIRED),
+                2L, freigabeMit(FreigabeStatus.REVOKED),
+                3L, freigabeMit(FreigabeStatus.ACCEPTED)));
+
+        AnfrageSeiteResponseDto seite = service.sucheSeite(
+                null, null, null, null, null, false, "expired", 0, 12);
+
+        assertThat(seite.gesamt()).isEqualTo(2);
+        assertThat(seite.anfragen()).extracting(AnfrageResponseDto::getId).containsExactly(2L, 1L);
+    }
+
+    @Test
+    void sucheSeiteIgnoriertUnbekanntenUndLeerenFreigabeFilter() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        DokumentFreigabeService dokumentFreigabeService = mock(DokumentFreigabeService.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository, dokumentFreigabeService);
+
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(List.of(
+                anfrageMit(1L, LocalDateTime.of(2024, 1, 1, 0, 0)),
+                anfrageMit(2L, LocalDateTime.of(2024, 1, 2, 0, 0))));
+
+        assertThat(service.sucheSeite(null, null, null, null, null, false, "all", 0, 12).gesamt())
+                .isEqualTo(2);
+        assertThat(service.sucheSeite(null, null, null, null, null, false, "'; DROP TABLE anfrage; --", 0, 12)
+                .gesamt()).isEqualTo(2);
+        assertThat(service.sucheSeite(null, null, null, null, null, false, "   ", 0, 12).gesamt())
+                .isEqualTo(2);
+        verify(dokumentFreigabeService, never()).findJuengsteProAnfrage(anyList());
+    }
+
+    private DokumentFreigabe freigabeMit(FreigabeStatus status) {
+        DokumentFreigabe freigabe = new DokumentFreigabe();
+        freigabe.setStatus(status);
+        return freigabe;
     }
 }

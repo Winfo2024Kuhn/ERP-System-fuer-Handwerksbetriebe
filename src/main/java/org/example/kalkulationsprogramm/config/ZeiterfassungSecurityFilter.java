@@ -11,9 +11,24 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * Security Filter für externe Zugriffe über Cloudflare Tunnel.
- * Erlaubt nur Zeiterfassungs-relevante Endpoints.
- * Alle anderen Endpoints sind nur aus dem lokalen Netzwerk erreichbar.
+ * Netz-Filter für externe Zugriffe über den Cloudflare Tunnel: erlaubt von
+ * außen nur die Pfade aus {@link #ALLOWED_PATHS}, alles andere ist nur aus dem
+ * lokalen Netz bzw. dem VPN erreichbar.
+ *
+ * <p><b>Das ist keine Authentifizierung.</b> Der Filter prüft ausschließlich
+ * Client-IP und Pfad — nie ein Token, nie eine Identität:
+ * <ul>
+ *   <li>IPs aus {@link #LOCAL_IP_PREFIXES} (inkl. Tailscale {@code 100.}) werden
+ *       ungeprüft durchgelassen, auf <i>jeden</i> Pfad.</li>
+ *   <li>Externe IPs kommen auf die Pfade aus {@link #ALLOWED_PATHS} — ebenfalls
+ *       ohne jede Auth.</li>
+ *   <li>Die Client-IP stammt aus {@code CF-Connecting-IP} bzw.
+ *       {@code X-Forwarded-For}. Wer das Backend direkt erreicht (also nicht über
+ *       den Tunnel), kann diese Header frei setzen und sich als lokal ausgeben.</li>
+ * </ul>
+ * Der eigentliche Auth-Schutz muss aus der Security-Chain kommen; für die
+ * Mobile-Pfade fehlt er derzeit, siehe
+ * {@code SecurityConfig#ZEITERFASSUNG_PATHS}.
  */
 @Component
 @Order(1)

@@ -119,6 +119,20 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
       """)
   java.math.BigDecimal sumBezahlteRechnungenByProjektId(@Param("projektId") Long projektId);
 
+  /**
+   * Alle Rechnungen eines Projekts, die in den Auftragspreis einfließen dürfen –
+   * unabhängig davon, ob sie im Programm erzeugt oder von Hand nacherfasst wurden.
+   * Mahnungen und Zahlungserinnerungen sind ausgenommen, weil sie denselben Betrag
+   * nur wiederholen.
+   */
+  @Query("""
+      SELECT g FROM ProjektGeschaeftsdokument g
+      WHERE g.projekt.id = :projektId
+        AND g.mahnstufe IS NULL
+        AND LOWER(g.geschaeftsdokumentart) LIKE '%rechnung%'
+      """)
+  List<ProjektGeschaeftsdokument> findRechnungenFuerPreisberechnung(@Param("projektId") Long projektId);
+
   Optional<ProjektDokument> findByGespeicherterDateiname(String gespeicherterDateiname);
 
   Optional<ProjektDokument> findByGespeicherterDateinameIgnoreCase(String gespeicherterDateiname);

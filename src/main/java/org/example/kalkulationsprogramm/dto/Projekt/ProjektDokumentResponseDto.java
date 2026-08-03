@@ -13,6 +13,8 @@ public class ProjektDokumentResponseDto {
     private String originalDateiname;
     private String dateityp;
     private String url;
+    /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+    private String thumbnailUrl;
     private String netzwerkPfad;
     private String dokumentGruppe;
     private LocalDate uploadDatum;

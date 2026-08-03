@@ -136,7 +136,8 @@ class AnfrageControllerTest {
         assertEquals(1, result.size());
         assertEquals(1L, result.get(0).getId());
         verify(anfrageService).suche(null, null, null, null, null, false);
-        verify(anfrageService, never()).sucheSeite(any(), any(), any(), any(), any(), anyBoolean(), anyInt(), anyInt());
+        verify(anfrageService, never()).sucheSeite(any(), any(), any(), any(), any(), anyBoolean(), any(), anyInt(),
+                anyInt());
     }
 
     @Test
@@ -147,17 +148,32 @@ class AnfrageControllerTest {
         AnfrageResponseDto dto = new AnfrageResponseDto();
         dto.setId(7L);
         AnfrageSeiteResponseDto seite = new AnfrageSeiteResponseDto(List.of(dto), 25L, 0, 12);
-        when(anfrageService.sucheSeite(null, null, null, null, null, false, 0, 12))
+        when(anfrageService.sucheSeite(null, null, null, null, null, false, null, 0, 12))
                 .thenReturn(seite);
 
-        AnfrageSeiteResponseDto result = controller.listeSeite(null, null, null, null, null, null, false, 0, 12);
+        AnfrageSeiteResponseDto result = controller.listeSeite(null, null, null, null, null, null, false, null, 0, 12);
 
         assertEquals(25L, result.gesamt());
         assertEquals(0, result.seite());
         assertEquals(12, result.seitenGroesse());
         assertEquals(1, result.anfragen().size());
         assertEquals(7L, result.anfragen().get(0).getId());
-        verify(anfrageService).sucheSeite(null, null, null, null, null, false, 0, 12);
+        verify(anfrageService).sucheSeite(null, null, null, null, null, false, null, 0, 12);
         verify(anfrageService, never()).suche(any(), any(), any(), any(), any(), anyBoolean());
+    }
+
+    /** Der Angebots-Status-Filter muss unverändert an den Service durchgereicht werden. */
+    @Test
+    void listeSeiteReichtFreigabeFilterDurch() {
+        AnfrageService anfrageService = mock(AnfrageService.class);
+        AnfrageController controller = neuerController(anfrageService);
+
+        AnfrageSeiteResponseDto seite = new AnfrageSeiteResponseDto(List.of(), 0L, 0, 12);
+        when(anfrageService.sucheSeite(null, null, null, null, null, false, "pending", 0, 12))
+                .thenReturn(seite);
+
+        controller.listeSeite(null, null, null, null, null, null, false, "pending", 0, 12);
+
+        verify(anfrageService).sucheSeite(null, null, null, null, null, false, "pending", 0, 12);
     }
 }

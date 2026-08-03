@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -403,6 +404,187 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
         }
 
         @Test
+        void nimmtRechnungssummeAlsPreisWennEsKeinAngebotUndKeineAbGibt() {
+            // Reparaturauftrag: Es wird direkt eine Rechnung im Programm geschrieben,
+            // ohne vorheriges Angebot/AB. Vorher blieb der Bruttopreis auf 0 stehen
+            // und musste von Hand nachgetragen werden.
+            Projekt projekt = new Projekt();
+            projekt.setId(20L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            rechnung.setDokumentNummer("2026/07/00001");
+            rechnung.setBetragBrutto(new BigDecimal("1190.00"));
+            rechnung.setStorniert(false);
+
+            when(projektRepository.findById(20L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(20L)).thenReturn(List.of(rechnung));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(20L)).thenReturn(false);
+
+            service.aktualisiereProjektPreisAusDokumenten(20L);
+
+            assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("1190.00");
+            assertThat(projekt.isBezahlt()).isTrue();
+        }
+
+        @Test
+        void nimmtSummeDerNacherfasstenRechnungenAlsPreisWennKeineInternenDokumenteExistieren() {
+            // Rechnungen wurden außerhalb des Programms geschrieben und über
+            // "Offene Posten → Manuell erfassen" nachgetragen.
+            Projekt projekt = new Projekt();
+            projekt.setId(21L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+
+            when(projektRepository.findById(21L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(21L)).thenReturn(List.of());
+            when(projektDokumentRepository.findRechnungenFuerPreisberechnung(21L)).thenReturn(List.of(
+                    nacherfassteRechnung("RE-2026-001", "500.00"),
+                    nacherfassteRechnung("RE-2026-002", "300.00")));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(21L)).thenReturn(false);
+
+            service.aktualisiereProjektPreisAusDokumenten(21L);
+
+            assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("800.00");
+        }
+
+        @Test
+        void zaehltDieselbeRechnungsnummerNurEinmal() {
+            // Eine im Programm gebuchte Rechnung erzeugt zusätzlich einen
+            // Offene-Posten-Eintrag mit derselben Nummer – der darf nicht doppelt zählen.
+            Projekt projekt = new Projekt();
+            projekt.setId(22L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            rechnung.setDokumentNummer("2026/07/00042");
+            rechnung.setBetragBrutto(new BigDecimal("1000.00"));
+            rechnung.setStorniert(false);
+
+            when(projektRepository.findById(22L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(22L)).thenReturn(List.of(rechnung));
+            when(projektDokumentRepository.findRechnungenFuerPreisberechnung(22L)).thenReturn(List.of(
+                    nacherfassteRechnung("2026/07/00042", "1000.00")));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(22L)).thenReturn(false);
+
+            service.aktualisiereProjektPreisAusDokumenten(22L);
+
+            assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("1000.00");
+        }
+
+        @Test
+        void angebotHatVorrangVorDerRechnungssumme() {
+            // Solange ein Angebot/AB existiert, ist dessen Preis maßgeblich – auch wenn
+            // bisher nur ein Abschlag berechnet wurde.
+            Projekt projekt = new Projekt();
+            projekt.setId(23L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+
+            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+            angebot.setId(230L);
+            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            angebot.setBetragBrutto(new BigDecimal("5000.00"));
+            angebot.setStorniert(false);
+
+            AusgangsGeschaeftsDokument abschlag = new AusgangsGeschaeftsDokument();
+            abschlag.setTyp(AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG);
+            abschlag.setDokumentNummer("2026/07/00007");
+            abschlag.setBetragBrutto(new BigDecimal("2000.00"));
+            abschlag.setStorniert(false);
+
+            when(projektRepository.findById(23L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(23L)).thenReturn(List.of(angebot, abschlag));
+
+            service.aktualisiereProjektPreisAusDokumenten(23L);
+
+            assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("5000.00");
+            assertThat(projekt.isBezahlt()).isFalse();
+        }
+
+        @Test
+        void zaehltStornierteRechnungNichtUeberIhrenOffenenPostenEintrag() {
+            // Beim Stornieren bleibt der Offene-Posten-Eintrag mit derselben Nummer
+            // bestehen. Er darf den stornierten Betrag nicht als "nacherfasste"
+            // Rechnung zurück in den Auftragspreis holen.
+            Projekt projekt = new Projekt();
+            projekt.setId(24L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+
+            AusgangsGeschaeftsDokument storniert = new AusgangsGeschaeftsDokument();
+            storniert.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            storniert.setDokumentNummer("2026/07/00013");
+            storniert.setBetragBrutto(new BigDecimal("3000.00"));
+            storniert.setStorniert(true);
+
+            when(projektRepository.findById(24L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(24L)).thenReturn(List.of(storniert));
+            // Der Offene-Posten-Eintrag der stornierten Rechnung existiert weiterhin
+            when(projektDokumentRepository.findRechnungenFuerPreisberechnung(24L)).thenReturn(List.of(
+                    nacherfassteRechnung("2026/07/00013", "3000.00")));
+
+            service.aktualisiereProjektPreisAusDokumenten(24L);
+
+            assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("0.00");
+            assertThat(projekt.isBezahlt()).isFalse();
+        }
+
+        @Test
+        void ignoriertNacherfassteRechnungOhneNummer() {
+            // Ohne Dokumentnummer lässt sich weder gegen die internen Dokumente
+            // abgleichen noch eine Dublette erkennen – solche Einträge zählen nicht mit.
+            Projekt projekt = new Projekt();
+            projekt.setId(25L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+
+            when(projektRepository.findById(25L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(25L)).thenReturn(List.of());
+            when(projektDokumentRepository.findRechnungenFuerPreisberechnung(25L)).thenReturn(List.of(
+                    nacherfassteRechnung(null, "400.00"),
+                    nacherfassteRechnung("RE-2026-007", "600.00")));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(25L)).thenReturn(false);
+
+            service.aktualisiereProjektPreisAusDokumenten(25L);
+
+            assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("600.00");
+        }
+
+        @Test
+        void behaeltBezahltStatusWennProjektPreisHatAberKeineDokumente() {
+            // Ein Altprojekt mit hinterlegtem Preis und bezahlter Rechnung darf durch
+            // einen beliebigen Datei-Upload nicht auf "nicht bezahlt" zurückfallen.
+            Projekt projekt = new Projekt();
+            projekt.setId(26L);
+            projekt.setBruttoPreis(new BigDecimal("2000.00"));
+            projekt.setBezahlt(true);
+
+            when(projektRepository.findById(26L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(26L)).thenReturn(List.of());
+            when(projektDokumentRepository.findRechnungenFuerPreisberechnung(26L)).thenReturn(List.of(
+                    nacherfassteRechnung("RE-2026-008", "2000.00")));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(26L)).thenReturn(false);
+
+            service.aktualisiereProjektPreisAusDokumenten(26L);
+
+            assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("2000.00");
+            assertThat(projekt.isBezahlt()).isTrue();
+        }
+
+        private ProjektGeschaeftsdokument nacherfassteRechnung(String nummer, String betrag) {
+            ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
+            rechnung.setDokumentid(nummer);
+            rechnung.setGeschaeftsdokumentart("Rechnung");
+            rechnung.setBruttoBetrag(new BigDecimal(betrag));
+            return rechnung;
+        }
+
+        @Test
         void ignoriertNullProjektId() {
             service.aktualisiereProjektPreisAusDokumenten(null);
 
@@ -415,6 +597,54 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
 
             service.aktualisiereProjektPreisAusDokumenten(99L);
 
+            verify(projektRepository, never()).save(any());
+        }
+    }
+
+    @Nested
+    class TrageFehlendePreiseNach {
+
+        @Test
+        void zaehltNurProjekteDieDurchDenNachlaufEinenPreisBekommen() {
+            // Projekt 30 hat eine Rechnung → bekommt einen Preis.
+            // Projekt 31 hat gar keine Dokumente → bleibt ohne Preis.
+            Projekt mitRechnung = new Projekt();
+            mitRechnung.setId(30L);
+            mitRechnung.setBruttoPreis(BigDecimal.ZERO);
+
+            Projekt ohneDokumente = new Projekt();
+            ohneDokumente.setId(31L);
+            ohneDokumente.setBruttoPreis(BigDecimal.ZERO);
+
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            rechnung.setDokumentNummer("2026/07/00099");
+            rechnung.setBetragBrutto(new BigDecimal("750.00"));
+            rechnung.setStorniert(false);
+
+            when(projektRepository.findIdsOhneBruttoPreis()).thenReturn(List.of(30L, 31L));
+            when(projektRepository.findById(30L)).thenReturn(Optional.of(mitRechnung));
+            when(projektRepository.findById(31L)).thenReturn(Optional.of(ohneDokumente));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(30L)).thenReturn(List.of(rechnung));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(31L)).thenReturn(List.of());
+            when(projektDokumentRepository.existsOffenePostenByProjektId(30L)).thenReturn(false);
+
+            var ergebnis = service.trageFehlendePreiseNach();
+
+            assertThat(ergebnis.geprueft()).isEqualTo(2);
+            assertThat(ergebnis.nachgetragen()).isEqualTo(1);
+            assertThat(mitRechnung.getBruttoPreis()).isEqualByComparingTo("750.00");
+            assertThat(ohneDokumente.getBruttoPreis()).isEqualByComparingTo("0.00");
+        }
+
+        @Test
+        void machtNichtsWennAlleProjekteEinenPreisHaben() {
+            when(projektRepository.findIdsOhneBruttoPreis()).thenReturn(List.of());
+
+            var ergebnis = service.trageFehlendePreiseNach();
+
+            assertThat(ergebnis.geprueft()).isZero();
+            assertThat(ergebnis.nachgetragen()).isZero();
             verify(projektRepository, never()).save(any());
         }
     }

@@ -14,6 +14,7 @@ import {
     X,
 } from 'lucide-react';
 import { Button } from './ui/button';
+import { ThumbnailImage } from './ui/ThumbnailImage';
 import { cn } from '../lib/utils';
 import type { ProjektDokument, DokumentGruppe } from '../types';
 import { DOKUMENT_GRUPPEN } from '../types';
@@ -620,11 +621,11 @@ function DocumentCard({ doc, isDeleting, onDelete, onOpen, onDownload }: Documen
                 {/* Thumbnail / Icon */}
                 <div className="absolute inset-0 flex items-center justify-center p-3">
                     {isImage ? (
-                        <img
-                            src={doc.url}
+                        <ThumbnailImage
+                            src={doc.thumbnailUrl || doc.url}
+                            fallbackSrc={doc.url}
                             alt={doc.originalDateiname}
-                            className="w-full h-full object-cover rounded"
-                            loading="lazy"
+                            className="object-cover rounded"
                         />
                     ) : iconUrl ? (
                         <img

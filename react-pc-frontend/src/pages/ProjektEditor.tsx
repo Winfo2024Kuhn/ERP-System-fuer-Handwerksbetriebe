@@ -52,6 +52,7 @@ import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import { PageLayout } from "../components/layout/PageLayout";
 
 import { ImageViewer } from "../components/ui/image-viewer";
+import { ThumbnailImage } from "../components/ui/ThumbnailImage";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import type { DocBlock } from '../components/document-editor/types';
@@ -389,6 +390,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         id: number;
         originalDateiname: string;
         url: string;
+        /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+        thumbnailUrl?: string;
         erstelltAm: string;
     }
     interface ProjektNotiz {
@@ -1348,10 +1351,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         onClick={() => setNotizBildViewer({ images: n.bilder!.map(b => ({ url: b.url, name: b.originalDateiname })), startIndex: n.bilder!.indexOf(bild) })}
                                                         className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
                                                     >
-                                                        <img
-                                                            src={bild.url}
+                                                        <ThumbnailImage
+                                                            src={bild.thumbnailUrl || bild.url}
+                                                            fallbackSrc={bild.url}
                                                             alt={bild.originalDateiname}
-                                                            className="w-full h-full object-cover"
+                                                            className="object-cover"
                                                         />
                                                     </button>
                                                     <button
@@ -3562,8 +3566,15 @@ export default function ProjektEditor() {
         status: "", // "in-arbeit", "abgeschlossen", ""
     });
 
+    // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen in den Filterfeldern
+    // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte Antwort
+    // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
+    const ladeVorgangRef = useRef(0);
+
     // Fetch List
     const loadProjekte = useCallback(async () => {
+        const ladeVorgang = ++ladeVorgangRef.current;
+        const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -3580,6 +3591,7 @@ export default function ProjektEditor() {
             ]);
             if (!res.ok) throw new Error("Fehler beim Laden");
             const data = await res.json();
+            if (!istAktuell()) return;
 
             // Projekte sortieren: zuletzt aufgerufene zuerst (Stack), dann offene vor abgeschlossenen
             const sortedProjekte = Array.isArray(data.projekte) ? data.projekte : [];
@@ -3601,6 +3613,7 @@ export default function ProjektEditor() {
             if (ids.length > 0) {
                 try {
                     const statusRes = await fetch(`/api/projekte/freigabe-status?ids=${encodeURIComponent(ids.join(','))}`);
+                    if (!istAktuell()) return;
                     if (statusRes.ok) {
                         setFreigabeStatusByProjektId(await statusRes.json() || {});
                     } else {
@@ -3614,11 +3627,12 @@ export default function ProjektEditor() {
             }
         } catch (err) {
             console.error(err);
+            if (!istAktuell()) return;
             setProjekte([]);
             setTotal(0);
             setFreigabeStatusByProjektId({});
         } finally {
-            setLoading(false);
+            if (istAktuell()) setLoading(false);
         }
     }, [page, filters]);
 
@@ -3663,14 +3677,19 @@ export default function ProjektEditor() {
     }, [searchParams]);
 
     // Handlers
+    // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
+    // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
+    // Treffer wären da, aber unsichtbar.
     const handleFilterChange = (key: string, value: string) => {
         setFilters((prev) => ({ ...prev, [key]: value }));
+        setPage(0);
     };
 
+    // Gefiltert wird bereits live beim Tippen/Auswählen. Der Button ist nur noch
+    // die vertraute Bestätigung – er darf keinen zweiten, konkurrierenden Request starten.
     const handleFilterSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPage(0);
-        loadProjekte();
     };
 
     const handleResetFilters = () => {
@@ -3865,7 +3884,7 @@ export default function ProjektEditor() {
                         <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Reset</Button>
                     </div>
                 </form>
-                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>
+                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Alle Filter gelten für die gesamte Liste, nicht nur für die angezeigte Seite.</p>
             </div>
 
             {/* Grid Content */}

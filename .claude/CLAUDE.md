@@ -46,11 +46,22 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 
 Bevor du Code schreibst oder änderst, lädst du **zwingend** die passende Dokumentation per `Read`-Tool in deinen Kontext. Das ist **keine Empfehlung** – ein PreToolUse-Hook (`.claude/hooks/check-doc-read.ps1`) blockiert deine Edit/Write/MultiEdit-Aufrufe mit Exit 2, solange das passende Doc in dieser Session noch nicht gelesen wurde:
 
-| Du willst editieren … | Pflicht-Read VORHER |
+| Du willst editieren … | Pflicht VORHER |
 | --- | --- |
-| `*.java` (Backend, Tests, Config) | `docs\agent instructions\docs\BACKEND_ARCH.md` |
-| `*.tsx` / `*.ts` / `*.jsx` / `*.js` in `react-pc-frontend/` oder `react-zeiterfassung/` | `docs\agent instructions\docs\FRONTEND_UI.md` |
-| Test-Dateien (`*Test.java`, `*Tests.java`, `*.test.tsx`, `*.spec.ts`, …) | `docs\agent instructions\docs\TESTING_SECURITY.md` |
+| `*.java` (Backend, Tests, Config) | `Read` → `docs\agent instructions\docs\BACKEND_ARCH.md` |
+| `*.tsx` / `*.ts` / `*.jsx` / `*.js` in `react-pc-frontend/` oder `react-zeiterfassung/` | `Read` → `docs\agent instructions\docs\FRONTEND_UI.md` **+ zusätzlich** `Skill` → einer der Design-Skills (siehe unten) |
+| Test-Dateien (`*Test.java`, `*Tests.java`, `*.test.tsx`, `*.spec.ts`, …) | `Read` → `docs\agent instructions\docs\TESTING_SECURITY.md` |
+
+### 🎨 Design-Skill-Pflicht bei Frontend-Arbeit
+
+Frontend-Edits brauchen **zwei** Freigaben: das gelesene `FRONTEND_UI.md` **und** einen aufgerufenen Design-Skill. Der Hook blockt sonst mit `DESIGN-SKILL-GUARD`:
+
+- `ui-ux-pro-max:ui-ux-pro-max` — Standard (Styles, Farben, Typografie, UX-Regeln)
+- `frontend-design:frontend-design` — visuelle Ausrichtung neuer UI
+- `ui-ux-pro-max:design-system` — Design-Tokens, Komponenten-Specs
+- `ui-ux-pro-max:design` — Logos, Banner, Icons, Präsentationen
+
+**MCP-Pflicht:** Für Komponenten immer die MCP-Server `shadcn` (fertige shadcn-Bausteine, installiert automatisch) und `magic` (21st.dev, animierte Tailwind-Layouts) nutzen, statt von Hand nachzubauen. Details in `FRONTEND_UI.md`.
 
 Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht für die gesamte Session. Wenn dich der Hook blockt: **nicht umgehen**, sondern das genannte Doc per Read laden und den Edit/Write danach erneut versuchen.
 

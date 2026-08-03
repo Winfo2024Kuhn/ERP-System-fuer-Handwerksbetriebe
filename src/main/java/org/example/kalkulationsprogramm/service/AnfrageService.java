@@ -8,12 +8,16 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
+import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
@@ -42,6 +46,7 @@ public class AnfrageService {
     private final Path mailAttachmentBaseDir;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
+    private final DokumentFreigabeService dokumentFreigabeService;
 
     public AnfrageService(AnfrageRepository anfrageRepository,
             DateiSpeicherService dateiSpeicherService,
@@ -52,7 +57,8 @@ public class AnfrageService {
             AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository,
             @Value("${file.mail-attachment-dir}") String mailAttachmentDir,
             org.springframework.context.ApplicationEventPublisher eventPublisher,
-            AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService) {
+            AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService,
+            DokumentFreigabeService dokumentFreigabeService) {
         this.anfrageRepository = anfrageRepository;
         this.dateiSpeicherService = dateiSpeicherService;
         this.anfrageDokumentRepository = anfrageDokumentRepository;
@@ -64,6 +70,7 @@ public class AnfrageService {
                 : Path.of(mailAttachmentDir).toAbsolutePath().normalize().resolve("email");
         this.eventPublisher = eventPublisher;
         this.ausgangsGeschaeftsDokumentService = ausgangsGeschaeftsDokumentService;
+        this.dokumentFreigabeService = dokumentFreigabeService;
     }
 
     public AnfrageResponseDto erstelleAnfrage(AnfrageErstellenDto dto) {
@@ -217,6 +224,24 @@ public class AnfrageService {
             boolean nurOhneProjekt,
             int page,
             int size) {
+        return sucheSeite(jahr, kundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt, null, page, size);
+    }
+
+    /**
+     * Wie {@link #sucheSeite(Integer, String, String, String, String, boolean, int, int)},
+     * zusätzlich mit Filter über den Angebots-Status (digitale Freigabe). Der Filter greift
+     * <b>vor</b> der Paginierung – nur so landen alle Treffer auf den vorderen Seiten,
+     * statt bloss innerhalb der bereits geladenen Seite ausgedünnt zu werden.
+     */
+    public AnfrageSeiteResponseDto sucheSeite(Integer jahr,
+            String kundenname,
+            String bauvorhaben,
+            String anfragesnummer,
+            String q,
+            boolean nurOhneProjekt,
+            String freigabe,
+            int page,
+            int size) {
         int seite = Math.max(0, page);
         int seitenGroesse = Math.min(Math.max(1, size), 100);
 
@@ -224,6 +249,7 @@ public class AnfrageService {
         // als auch nachgelagerte Filter-Streams unveränderliche Listen liefern können.
         List<Anfrage> alle = new ArrayList<>(
                 findeGefiltert(jahr, kundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt));
+        alle = filtereNachFreigabeStatus(alle, freigabe);
 
         // createdAt wird per @PrePersist immer gesetzt; LocalDateTime.MIN ist nur ein
         // Fallback für Altbestände ohne Wert, damit solche Datensätze ans Ende rutschen.
@@ -282,6 +308,48 @@ public class AnfrageService {
             alle = alle.stream().filter(a -> a.getProjekt() == null).collect(Collectors.toList());
         }
         return alle;
+    }
+
+    /**
+     * Reduziert die Trefferliste auf Anfragen, deren jüngste digitale Freigabe zum
+     * gewünschten Status passt. {@code null}, leer oder {@code "all"} lässt die Liste
+     * unverändert.
+     * <p>
+     * Mapping der Frontend-Werte: {@code accepted} → ACCEPTED, {@code pending} → PENDING,
+     * {@code expired} → EXPIRED oder REVOKED (aus Sicht des Handwerkers beides
+     * „Link nicht mehr gültig").
+     */
+    private List<Anfrage> filtereNachFreigabeStatus(List<Anfrage> anfragen, String freigabe) {
+        String wunsch = trimToNull(freigabe);
+        if (wunsch == null || "all".equalsIgnoreCase(wunsch) || anfragen.isEmpty()) {
+            return anfragen;
+        }
+
+        // Locale.ROOT: Auf einer türkischen JVM würde "PENDING".toLowerCase() zu
+        // "pendıng" und der Filter fiele stillschweigend auf „alles anzeigen" zurück.
+        Set<FreigabeStatus> erlaubteStatus = switch (wunsch.toLowerCase(java.util.Locale.ROOT)) {
+            case "accepted" -> Set.of(FreigabeStatus.ACCEPTED);
+            case "pending" -> Set.of(FreigabeStatus.PENDING);
+            case "expired" -> Set.of(FreigabeStatus.EXPIRED, FreigabeStatus.REVOKED);
+            default -> Set.of();
+        };
+        if (erlaubteStatus.isEmpty()) {
+            // Unbekannter Filterwert: lieber alles zeigen als grundlos eine leere Seite.
+            return anfragen;
+        }
+
+        List<Long> ids = anfragen.stream()
+                .map(Anfrage::getId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
+        Map<Long, DokumentFreigabe> freigabenProAnfrage = dokumentFreigabeService.findJuengsteProAnfrage(ids);
+
+        return anfragen.stream()
+                .filter(a -> {
+                    DokumentFreigabe f = a.getId() != null ? freigabenProAnfrage.get(a.getId()) : null;
+                    return f != null && erlaubteStatus.contains(f.getStatus());
+                })
+                .collect(Collectors.toList());
     }
 
     public List<Integer> verfuegbareAnlegeJahre() {

@@ -75,6 +75,8 @@ public class DateiSpeicherService {
     private final ProduktkategorieMapper produktkategorieMapper;
     private final String networkDriveLetter;
     private final SystemSettingsService systemSettingsService;
+    /** Leitet Auftragspreis und Bezahlt-Status aus den Dokumenten ab. */
+    private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
     /** Cache der Datei-Ordner-Auflösung; invalidiert sich, wenn der Einstellungs-String wechselt. */
     private volatile String zuletztAufgeloesterDateiOrdner;
     private volatile Path dateiOrdnerCache;
@@ -109,7 +111,9 @@ public class DateiSpeicherService {
             KundeRepository kundeRepository,
             ZugferdExtractorService zugferdExtractorService,
             ProduktkategorieMapper produktkategorieMapper,
-            SystemSettingsService systemSettingsService) {
+            SystemSettingsService systemSettingsService,
+            AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService) {
+        this.ausgangsGeschaeftsDokumentService = ausgangsGeschaeftsDokumentService;
         this.dokumentRepository = projektDokumentRepository;
         this.projektRepository = projektRepository;
         this.anfrageDokumentRepository = anfrageDokumentRepository;
@@ -607,9 +611,14 @@ public class DateiSpeicherService {
     }
 
     public void aktualisiereProjektFinanzstatus(Long projektID) {
-        // bruttoPreis und bezahlt werden jetzt ausschließlich von
+        // bruttoPreis und bezahlt werden ausschließlich von
         // AusgangsGeschaeftsDokumentService.aktualisiereProjektPreisAusDokumenten() berechnet.
-        // Diese Methode ist nur noch ein No-Op-Stub für Aufrufer im alten Dokumentsystem.
+        // Damit ein von Hand nacherfasstes oder gelöschtes Geschäftsdokument den
+        // Auftragspreis sofort nachzieht, delegiert diese Methode dorthin.
+        if (projektID == null) {
+            return;
+        }
+        ausgangsGeschaeftsDokumentService.aktualisiereProjektPreisAusDokumenten(projektID);
     }
 
     public List<ProjektDokument> holeDokumenteZuProjekt(Long projektID) {
@@ -1539,9 +1548,14 @@ public class DateiSpeicherService {
             for (Path basePath : new Path[] { dokumentenSpeicherplatz, anfragenSpeicherplatz, hicadSpeicherplatz() }) {
                 try {
                     if (Files.exists(basePath) && Files.isDirectory(basePath)) {
-                        java.util.Optional<Path> found = Files.list(basePath)
-                                .filter(p -> p.getFileName().toString().equalsIgnoreCase(dateiname))
-                                .findFirst();
+                        // try-with-resources: Files.list haelt ein Verzeichnis-Handle offen,
+                        // das unter Windows sonst bis zur GC belegt bleibt.
+                        java.util.Optional<Path> found;
+                        try (java.util.stream.Stream<Path> eintraege = Files.list(basePath)) {
+                            found = eintraege
+                                    .filter(p -> p.getFileName().toString().equalsIgnoreCase(dateiname))
+                                    .findFirst();
+                        }
                         if (found.isPresent()) {
                             Resource resource = new UrlResource(found.get().toUri());
                             if (resource.exists() && resource.isReadable()) {
