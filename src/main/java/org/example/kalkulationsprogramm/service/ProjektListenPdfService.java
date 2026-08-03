@@ -53,7 +53,8 @@ public class ProjektListenPdfService {
                         projekte.stream().map(Projekt::getId).toList()));
 
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            Document document = new Document(PageSize.A4.rotate(), 36, 36, 42, 36);
+            // Hochformat: Die Liste wird meist ausgedruckt und abgeheftet – Querformat passt dort nicht.
+            Document document = new Document(PageSize.A4, 36, 36, 42, 36);
             PdfWriter.getInstance(document, output);
             document.open();
 
@@ -64,14 +65,19 @@ public class ProjektListenPdfService {
                     + " · " + projekte.size() + " Projekte", subtitleFont));
             document.add(new Paragraph(" "));
 
-            PdfPTable table = new PdfPTable(new float[] { 0.7f, 1.5f, 3.6f, 3.1f, 1.5f, 1.5f });
+            // Spaltenbreiten sind auf das schmalere Hochformat abgestimmt: Auftragsnummer,
+            // Datum und Betrag brauchen genug Platz, damit sie nicht umbrechen – der Rest
+            // geht an Kunde und Bauvorhaben, die ohnehin mehrzeilig laufen dürfen.
+            PdfPTable table = new PdfPTable(new float[] { 0.7f, 1.75f, 2.7f, 3.05f, 1.5f, 1.8f });
             table.setWidthPercentage(100);
-            String[] headers = { "Art", "Auftragsnr.", "Bauvorhaben", "Kunde", "Angelegt", "Betrag" };
+            // Auf Folgeseiten die Kopfzeile wiederholen – im Hochformat passen weniger Zeilen auf eine Seite.
+            table.setHeaderRows(1);
+            String[] headers = { "Art", "Auftragsnr.", "Kunde", "Bauvorhaben", "Angelegt", "Betrag" };
             for (String header : headers) {
                 PdfPCell cell = new PdfPCell(new Paragraph(header,
                         FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.WHITE)));
                 cell.setBackgroundColor(HEADER_BG);
-                cell.setPadding(7);
+                cell.setPadding(6);
                 cell.setBorder(Rectangle.NO_BORDER);
                 table.addCell(cell);
             }
@@ -83,8 +89,8 @@ public class ProjektListenPdfService {
                 Color background = i % 2 == 0 ? Color.WHITE : ROW_ALT;
                 addCell(table, ermittleAuftragsart(projekt, folgeauftraege), cellFont, background, Element.ALIGN_CENTER);
                 addCell(table, projekt.getAuftragsnummer(), cellFont, background, Element.ALIGN_LEFT);
-                addCell(table, projekt.getBauvorhaben(), cellFont, background, Element.ALIGN_LEFT);
                 addCell(table, projekt.getKunde(), cellFont, background, Element.ALIGN_LEFT);
+                addCell(table, projekt.getBauvorhaben(), cellFont, background, Element.ALIGN_LEFT);
                 addCell(table, projekt.getAnlegedatum() == null ? "" : projekt.getAnlegedatum().format(DATE_FORMAT), cellFont, background, Element.ALIGN_LEFT);
                 BigDecimal betrag = projekt.getBruttoPreis() == null ? BigDecimal.ZERO : projekt.getBruttoPreis();
                 addCell(table, CURRENCY_FORMAT.format(betrag), cellFont, background, Element.ALIGN_RIGHT);
@@ -94,12 +100,12 @@ public class ProjektListenPdfService {
             PdfPCell sumLabel = new PdfPCell(new Paragraph("Gesamtsumme", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9)));
             sumLabel.setColspan(5);
             sumLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumLabel.setPadding(8);
+            sumLabel.setPadding(6);
             sumLabel.setBackgroundColor(new Color(241, 245, 249));
             table.addCell(sumLabel);
             PdfPCell sumValue = new PdfPCell(new Paragraph(CURRENCY_FORMAT.format(summe), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9)));
             sumValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumValue.setPadding(8);
+            sumValue.setPadding(6);
             sumValue.setBackgroundColor(new Color(241, 245, 249));
             table.addCell(sumValue);
 
@@ -116,7 +122,7 @@ public class ProjektListenPdfService {
         cell.setBackgroundColor(background);
         cell.setBorderColor(BORDER);
         cell.setBorderWidth(0.5f);
-        cell.setPadding(6);
+        cell.setPadding(5);
         cell.setHorizontalAlignment(alignment);
         table.addCell(cell);
     }
