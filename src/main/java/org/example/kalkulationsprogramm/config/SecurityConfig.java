@@ -194,6 +194,14 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/bootstrap-status").permitAll()
                 .requestMatchers("/api/auth/me", "/api/auth/me/credentials").authenticated()
+                // Steuerberater-Kontakte und Firmenstammdaten werden beim Versand der
+                // Stundenaufstellung und beim Belegexport nur gelesen (Ansprechpartner
+                // auswaehlen, Firmenname im Betreff). Das duerfen alle angemeldeten
+                // Benutzer; Anlegen/Aendern/Loeschen bleibt Admin-Sache.
+                .requestMatchers(HttpMethod.GET,
+                        "/api/firma",
+                        "/api/firma/steuerberater",
+                        "/api/firma/steuerberater/*").authenticated()
                 .requestMatchers("/api/firma/**", "/api/settings/**", "/api/frontend-users/**").hasRole("ADMIN")
                 // System-Signatur fuer automatische E-Mails ist firmenweite Konfiguration
                 // (wirkt auf Mahnungen, Auto-Auftragsbestaetigungen) — nur Admins duerfen sie umbiegen.
