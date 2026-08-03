@@ -27,7 +27,33 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProjektAuswertungPdfService {
 
+    /**
+     * Formaler Verbindlichkeitshinweis: erklaert dem Empfaenger, warum die
+     * ausgewiesenen Zeiten belastbar sind – sie sind dieselben Zeiten, die der
+     * Lohnabrechnung der eingesetzten Mitarbeiter zugrunde liegen.
+     */
+    private static final String VERBINDLICHKEITS_HINWEIS_TITEL =
+            "Verbindlichkeit der ausgewiesenen Zeiten";
+
+    private static final String VERBINDLICHKEITS_HINWEIS_TEXT =
+            "Die in diesem Regiebericht aufgeführten Arbeitszeiten stammen unmittelbar aus der "
+            + "elektronischen Zeiterfassung und sind identisch mit den Zeiten, die der Lohnabrechnung "
+            + "der eingesetzten Mitarbeiter zugrunde liegen. Es handelt sich somit nicht um eine "
+            + "gesonderte Aufstellung für Abrechnungszwecke, sondern um denselben Datenbestand, der "
+            + "auch gegenüber den Mitarbeitern vergütet wird. Jede Buchung ist einem namentlich "
+            + "benannten Mitarbeiter, einem Datum sowie einer Anfangs- und Endzeit zugeordnet und wird "
+            + "revisionssicher und unveränderbar protokolliert (GoBD-konforme Aufzeichnung). Eine "
+            + "nachträgliche Erhöhung der Zeiten allein zu Abrechnungszwecken ist damit ausgeschlossen. "
+            + "Die vorstehende Aufstellung gilt daher als gültiger Nachweis der tatsächlich erbrachten "
+            + "Arbeitsleistung.";
+
+    /** Kurzfassung des Hinweises für den Seitenkopf. */
+    private static final String VERBINDLICHKEITS_HINWEIS_KURZ =
+            "Die ausgewiesenen Zeiten entsprechen exakt den Zeiten, die der Lohnabrechnung der "
+            + "eingesetzten Mitarbeiter zugrunde liegen.";
+
     private final ZeitbuchungRepository zeitbuchungRepository;
+    private final FirmeninformationService firmeninformationService;
 
     /**
      * Erzeugt den Regiebericht-PDF.
@@ -79,21 +105,32 @@ public class ProjektAuswertungPdfService {
             PdfWriter.getInstance(doc, Files.newOutputStream(temp));
             doc.open();
 
-            // Logo
-            try {
-                Image logo = Image.getInstance(getClass().getResource("/static/firmenlogo.png"));
-                logo.scaleToFit(150, 70);
-                doc.add(logo);
-            } catch (Exception ignored) {
-            }
-            doc.add(new Paragraph(" "));
-
             Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(50, 50, 50));
             Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA, 12, new Color(100, 100, 100));
 
-            doc.add(new Paragraph("REGIEBERICHT / ZEITNACHWEIS", titleFont));
-            doc.add(new Paragraph("Gruppiert nach: " + groupByLabel(effectiveGroupBy), subTitleFont));
-            doc.add(new Paragraph(" ", subTitleFont));
+            // Titelzeile links, Firmenlogo rechts oben
+            PdfPTable titelZeile = new PdfPTable(new float[]{ 3f, 1f });
+            titelZeile.setWidthPercentage(100);
+
+            PdfPCell titelCell = new PdfPCell();
+            titelCell.setBorder(Rectangle.NO_BORDER);
+            titelCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+            titelCell.addElement(new Paragraph("REGIEBERICHT / ZEITNACHWEIS", titleFont));
+            titelCell.addElement(new Paragraph("Gruppiert nach: " + groupByLabel(effectiveGroupBy), subTitleFont));
+            titelZeile.addCell(titelCell);
+
+            PdfPCell logoCell = new PdfPCell();
+            logoCell.setBorder(Rectangle.NO_BORDER);
+            logoCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+            logoCell.setVerticalAlignment(Element.ALIGN_TOP);
+            Image logo = firmeninformationService.loadLogoImage();
+            if (logo != null) {
+                logo.scaleToFit(150, 70);
+                logo.setAlignment(Image.ALIGN_RIGHT);
+                logoCell.addElement(logo);
+            }
+            titelZeile.addCell(logoCell);
+            doc.add(titelZeile);
 
             PdfPTable headerTable = new PdfPTable(2);
             headerTable.setWidthPercentage(100);
@@ -113,6 +150,9 @@ public class ProjektAuswertungPdfService {
                 doc.add(new Paragraph(zeitraum, subTitleFont));
                 doc.add(new Paragraph(" "));
             }
+
+            doc.add(buildKurzHinweis());
+            doc.add(new Paragraph(" "));
 
             Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.WHITE);
             Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9, new Color(55, 65, 81));
@@ -306,7 +346,8 @@ public class ProjektAuswertungPdfService {
 
             doc.add(totalTable);
 
-            doc.add(new Paragraph(" "));
+            doc.add(buildVerbindlichkeitsHinweis());
+
             doc.add(new Paragraph(" "));
             Font footerFont = FontFactory.getFont(FontFactory.HELVETICA, 9, new Color(148, 163, 184));
             Paragraph footer = new Paragraph(
@@ -401,6 +442,60 @@ public class ProjektAuswertungPdfService {
         cell.setBorderColor(borderColor);
         cell.setBorderWidth(0.5f);
         return cell;
+    }
+
+    /**
+     * Schmale Hinweiszeile direkt unter dem Dokumentenkopf: macht bereits auf der
+     * ersten Bildschirmhoehe deutlich, dass die Zeiten an die Lohnabrechnung gekoppelt sind.
+     */
+    private PdfPTable buildKurzHinweis() {
+        Font kurzFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, new Color(159, 18, 57));
+
+        PdfPTable table = new PdfPTable(1);
+        table.setWidthPercentage(100);
+
+        PdfPCell cell = new PdfPCell(new Phrase(VERBINDLICHKEITS_HINWEIS_KURZ, kurzFont));
+        cell.setBackgroundColor(new Color(254, 242, 242));
+        cell.setBorder(Rectangle.LEFT);
+        cell.setBorderColor(new Color(220, 38, 38));
+        cell.setBorderWidth(3f);
+        cell.setPaddingTop(8f);
+        cell.setPaddingBottom(8f);
+        cell.setPaddingLeft(10f);
+        cell.setPaddingRight(10f);
+        table.addCell(cell);
+        return table;
+    }
+
+    /**
+     * Formaler Verbindlichkeitshinweis am Dokumentenende: begruendet die Gueltigkeit
+     * der Aufstellung ueber die Kopplung an die Lohnabrechnung und den Audit-Trail.
+     */
+    private PdfPTable buildVerbindlichkeitsHinweis() {
+        Font hinweisTitelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(30, 41, 59));
+        Font hinweisTextFont = FontFactory.getFont(FontFactory.HELVETICA, 8.5f, new Color(71, 85, 105));
+
+        Paragraph titel = new Paragraph(VERBINDLICHKEITS_HINWEIS_TITEL, hinweisTitelFont);
+        titel.setSpacingAfter(4f);
+
+        Paragraph text = new Paragraph(VERBINDLICHKEITS_HINWEIS_TEXT, hinweisTextFont);
+        text.setAlignment(Element.ALIGN_JUSTIFIED);
+        text.setLeading(11f);
+
+        PdfPCell cell = new PdfPCell();
+        cell.setBackgroundColor(new Color(248, 250, 252));
+        cell.setBorder(Rectangle.BOX);
+        cell.setBorderColor(new Color(226, 232, 240));
+        cell.setBorderWidth(0.75f);
+        cell.setPadding(10f);
+        cell.addElement(titel);
+        cell.addElement(text);
+
+        PdfPTable table = new PdfPTable(1);
+        table.setWidthPercentage(100);
+        table.setSpacingBefore(10f);
+        table.addCell(cell);
+        return table;
     }
 
     private PdfPCell noBorderCell(String text, Font font) {

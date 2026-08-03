@@ -1,7 +1,10 @@
 package org.example.kalkulationsprogramm.service;
 
+import com.lowagie.text.pdf.PdfReader;
+import com.lowagie.text.pdf.parser.PdfTextExtractor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -11,12 +14,15 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -34,6 +40,9 @@ class ProjektAuswertungPdfServiceTest {
 
     @Mock
     private ZeitbuchungRepository zeitbuchungRepository;
+
+    @Mock
+    private FirmeninformationService firmeninformationService;
 
     @InjectMocks
     private ProjektAuswertungPdfService service;
@@ -327,6 +336,92 @@ class ProjektAuswertungPdfServiceTest {
             assertThatThrownBy(() -> service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang"))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Keine Buchungen");
+        }
+    }
+
+    // ─── generatePdf – Kopfbereich & Verbindlichkeitshinweis ─────────────────
+
+    @Nested
+    @DisplayName("generatePdf – Logo und Verbindlichkeitshinweis")
+    class GeneratePdfKopfUndHinweisTests {
+
+        private Path erzeugt;
+
+        private Zeitbuchung vollstaendigeBuchung() {
+            Kunde k = new Kunde();
+            k.setName("Mustermann GmbH");
+
+            Projekt p = new Projekt();
+            p.setBauvorhaben("Musterbau Halle 1");
+            p.setKundenId(k);
+            p.setAuftragsnummer("A-2026-001");
+
+            Zeitbuchung b = buchungMitMitarbeiter(
+                    mitarbeiter("Max", "Mustermann", Qualifikation.MEISTER));
+            b.setProjekt(p);
+
+            Arbeitsgang ag = new Arbeitsgang();
+            ag.setBeschreibung("Montage");
+            b.setArbeitsgang(ag);
+            return b;
+        }
+
+        @AfterEach
+        void cleanUp() throws Exception {
+            if (erzeugt != null) {
+                Files.deleteIfExists(erzeugt);
+            }
+        }
+
+        /** Liest den Text aller Seiten des PDFs aus. */
+        private String extrahiereText(Path pdf) throws Exception {
+            PdfReader reader = new PdfReader(pdf.toString());
+            try {
+                PdfTextExtractor extractor = new PdfTextExtractor(reader);
+                StringBuilder sb = new StringBuilder();
+                for (int seite = 1; seite <= reader.getNumberOfPages(); seite++) {
+                    sb.append(extractor.getTextFromPage(seite)).append('\n');
+                }
+                return sb.toString();
+            } finally {
+                reader.close();
+            }
+        }
+
+        @Test
+        @DisplayName("Firmenlogo wird aus der Firmeninformation geladen")
+        void logoWirdGeladen() {
+            when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(vollstaendigeBuchung()));
+            when(firmeninformationService.loadLogoImage()).thenReturn(null);
+
+            erzeugt = service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang");
+
+            verify(firmeninformationService).loadLogoImage();
+            assertThat(erzeugt).exists();
+        }
+
+        @Test
+        @DisplayName("Fehlendes Logo → PDF wird trotzdem erzeugt")
+        void ohneLogoTrotzdemPdf() throws Exception {
+            when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(vollstaendigeBuchung()));
+            when(firmeninformationService.loadLogoImage()).thenReturn(null);
+
+            erzeugt = service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang");
+
+            assertThat(Files.size(erzeugt)).isPositive();
+        }
+
+        @Test
+        @DisplayName("PDF enthält den Verbindlichkeitshinweis zur Lohnabrechnung")
+        void hinweisImPdf() throws Exception {
+            when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(vollstaendigeBuchung()));
+            when(firmeninformationService.loadLogoImage()).thenReturn(null);
+
+            erzeugt = service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang");
+
+            assertThat(extrahiereText(erzeugt))
+                    .contains("Verbindlichkeit der ausgewiesenen Zeiten")
+                    .contains("Lohnabrechnung");
         }
     }
 }
