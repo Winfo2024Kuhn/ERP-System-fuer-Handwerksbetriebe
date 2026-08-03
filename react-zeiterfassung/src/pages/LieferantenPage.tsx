@@ -7,6 +7,8 @@ import { OfflineService } from '../services/OfflineService'
 interface Lieferant {
     id: number
     lieferantenname: string
+    /** Zweiter Name, unter dem die Firma im Betrieb bekannt ist */
+    aliasName?: string
     ort?: string
     strasse?: string
     plz?: string
@@ -208,7 +210,7 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                             type="text"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="Lieferant suchen..."
+                            placeholder="Name oder zweiter Name..."
                             className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
                         />
                     </div>
@@ -365,6 +367,9 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-slate-900 font-medium truncate">{lieferant.lieferantenname}</p>
+                                        {lieferant.aliasName && (
+                                            <p className="text-slate-600 text-sm truncate">auch: {lieferant.aliasName}</p>
+                                        )}
                                         {lieferant.ort && (
                                             <p className="text-slate-500 text-sm flex items-center gap-1">
                                                 <MapPin className="w-3 h-3" /> {lieferant.ort}

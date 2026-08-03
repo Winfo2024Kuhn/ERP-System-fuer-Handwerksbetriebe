@@ -21,6 +21,13 @@ public class Lieferanten {
     @Column(nullable = false, unique = true)
     private String lieferantenname;
 
+    /**
+     * Zweiter, im Betrieb gebraeuchlicher Name ("Alias"). Viele Firmen sind intern
+     * unter einem anderen Namen bekannt als unter ihrem offiziellen Firmennamen.
+     * Wird bei der Freitextsuche mitdurchsucht und auf der Lieferanten-Karte angezeigt.
+     */
+    private String aliasName;
+
     private Boolean istAktiv;
 
     private Date startZusammenarbeit;

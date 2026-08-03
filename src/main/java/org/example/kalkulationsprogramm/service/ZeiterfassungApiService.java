@@ -173,6 +173,7 @@ public class ZeiterfassungApiService {
                     Map<String, Object> map = new HashMap<>();
                     map.put("id", l.getId());
                     map.put("firmenname", l.getLieferantenname());
+                    map.put("aliasName", l.getAliasName());
 
                     // Adressdaten
                     map.put("strasse", l.getStrasse());

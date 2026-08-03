@@ -15,6 +15,7 @@ import java.util.Set;
 public class LieferantDetailDto {
     private Long id;
     private String lieferantenname;
+    private String aliasName;
     private String eigeneKundennummer;
     private String lieferantenTyp;
     private Set<LieferantRolle> rollen;

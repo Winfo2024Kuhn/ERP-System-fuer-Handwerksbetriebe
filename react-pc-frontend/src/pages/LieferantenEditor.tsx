@@ -71,6 +71,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                             )}
                         </div>
                         <div className="mt-1 text-slate-500 space-y-0.5">
+                            {lieferant.aliasName && <p className="text-slate-600">auch: {lieferant.aliasName}</p>}
                             {lieferant.vertreter && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {lieferant.vertreter}</p>}
                             <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {lieferant.strasse}, {lieferant.plz} {lieferant.ort}</p>
                         </div>
@@ -410,6 +411,7 @@ export default function LieferantenEditor() {
             id: "",
             lieferantenTyp: "",
             lieferantenname: "",
+            aliasName: "",
             eigeneKundennummer: "",
             kundenEmails: []
         });
@@ -542,7 +544,7 @@ export default function LieferantenEditor() {
                 <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Freitext</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, Telefon, Ort..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
+                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, zweiter Name, Telefon, Ort..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Name</label>
@@ -649,6 +651,11 @@ function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; o
                     <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={lieferant.lieferantenname}>
                         {lieferant.lieferantenname || "Unbenannt"}
                     </h3>
+                    {lieferant.aliasName && (
+                        <p className="text-sm text-slate-600 truncate" title={lieferant.aliasName}>
+                            auch: {lieferant.aliasName}
+                        </p>
+                    )}
                     <p className="text-sm text-slate-500 truncate">{lieferant.ort || "Kein Ort"}</p>
                 </div>
 
@@ -725,12 +732,25 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                 <div className="p-6 space-y-4 overflow-y-auto flex-1">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                            <Label>Name *</Label>
+                            <Label htmlFor="lieferant-name">Name *</Label>
                             <Input
+                                id="lieferant-name"
                                 value={formData.lieferantenname || ""}
                                 onChange={(e) => handleChange("lieferantenname", e.target.value)}
                                 required
                             />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="lieferant-alias">Zweiter Name (optional)</Label>
+                            <Input
+                                id="lieferant-alias"
+                                value={formData.aliasName || ""}
+                                onChange={(e) => handleChange("aliasName", e.target.value)}
+                                placeholder="z.B. Kfz Meier"
+                            />
+                            <p className="text-xs text-slate-400">
+                                Wie die Firma bei euch im Betrieb genannt wird. Damit wird sie auch gefunden.
+                            </p>
                         </div>
                     </div>
 

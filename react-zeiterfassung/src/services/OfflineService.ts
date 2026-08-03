@@ -36,6 +36,8 @@ interface ProjektCacheEntry {
 
 interface LieferantCacheEntry {
     firmenname: string
+    /** Zweiter Name, unter dem die Firma im Betrieb bekannt ist */
+    aliasName?: string
 }
 
 interface KundenCacheEntry {
@@ -389,6 +391,7 @@ export const OfflineService = {
         return fetchWithCache<{
             id: number;
             firmenname: string;
+            aliasName?: string;
             strasse?: string;
             plz?: string;
             ort?: string;
@@ -409,8 +412,14 @@ export const OfflineService = {
         } catch (error) {
             console.warn('Search suppliers failed', error);
         }
+        // Offline-Fallback: Name UND zweiter Name (Alias) durchsuchen, damit die
+        // Suche ohne Netz die gleichen Treffer liefert wie der Server.
         const cached = await this.getLieferanten() as LieferantCacheEntry[]
-        return cached.filter((l) => l.firmenname.toLowerCase().includes(query.toLowerCase()));
+        const needle = query.toLowerCase()
+        return cached.filter((l) =>
+            (l.firmenname || '').toLowerCase().includes(needle) ||
+            (l.aliasName || '').toLowerCase().includes(needle)
+        );
     },
 
     async getKunden() {

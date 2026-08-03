@@ -22,6 +22,7 @@ public class LieferantMapper {
         LieferantListItemDto dto = new LieferantListItemDto();
         dto.setId(lieferant.getId());
         dto.setLieferantenname(lieferant.getLieferantenname());
+        dto.setAliasName(lieferant.getAliasName());
         dto.setLieferantenTyp(lieferant.getLieferantenTyp());
         dto.setRollen(lieferant.getRollen());
         dto.setVertreter(lieferant.getVertreter());

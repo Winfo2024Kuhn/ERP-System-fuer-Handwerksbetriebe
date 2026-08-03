@@ -12,6 +12,7 @@ import java.util.Set;
 public class LieferantListItemDto {
     private Long id;
     private String lieferantenname;
+    private String aliasName;
     private String lieferantenTyp;
     private Set<LieferantRolle> rollen;
     private String vertreter;

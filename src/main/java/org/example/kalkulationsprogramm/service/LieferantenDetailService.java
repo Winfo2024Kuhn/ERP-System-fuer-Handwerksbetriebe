@@ -51,6 +51,7 @@ public class LieferantenDetailService {
         LieferantDetailDto dto = new LieferantDetailDto();
         dto.setId(lieferant.getId());
         dto.setLieferantenname(lieferant.getLieferantenname());
+        dto.setAliasName(lieferant.getAliasName());
         dto.setEigeneKundennummer(lieferant.getEigeneKundennummer());
         dto.setLieferantenTyp(lieferant.getLieferantenTyp());
         dto.setRollen(lieferant.getRollen());

@@ -20,6 +20,12 @@ public class LieferantCreateRequestDto {
     @Size(max = 255, message = "Lieferantenname ist zu lang.")
     private String lieferantenname;
 
+    /**
+     * Optionaler zweiter Name, unter dem der Lieferant im Betrieb bekannt ist.
+     */
+    @Size(max = 255, message = "Zweiter Name ist zu lang.")
+    private String aliasName;
+
     @Size(max = 50, message = "Kundennummer ist zu lang.")
     private String eigeneKundennummer;
 

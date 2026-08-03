@@ -128,6 +128,7 @@ public class LieferantenController {
                 cq.distinct(true);
                 return cb.or(
                         cb.like(cb.lower(root.get("lieferantenname")), likeValue),
+                        cb.like(cb.lower(cb.coalesce(root.get("aliasName"), "")), likeValue),
                         cb.like(cb.lower(root.get("lieferantenTyp")), likeValue),
                         cb.like(cb.lower(root.get("vertreter")), likeValue),
                         cb.like(cb.lower(root.get("ort")), likeValue),
@@ -172,6 +173,7 @@ public class LieferantenController {
 
         Lieferanten lieferant = new Lieferanten();
         lieferant.setLieferantenname(name);
+        lieferant.setAliasName(trimToNull(request.getAliasName()));
         lieferant.setEigeneKundennummer(trimToNull(request.getEigeneKundennummer()));
         lieferant.setLieferantenTyp(trimToNull(request.getLieferantenTyp()));
         lieferant.setRollen(request.getRollen() != null ? new HashSet<>(request.getRollen()) : new HashSet<>());
@@ -216,6 +218,7 @@ public class LieferantenController {
                     });
         }
         lieferant.setLieferantenname(name);
+        lieferant.setAliasName(trimToNull(request.getAliasName()));
         lieferant.setEigeneKundennummer(trimToNull(request.getEigeneKundennummer()));
         lieferant.setLieferantenTyp(trimToNull(request.getLieferantenTyp()));
         lieferant.setRollen(request.getRollen() != null ? new HashSet<>(request.getRollen()) : new HashSet<>());

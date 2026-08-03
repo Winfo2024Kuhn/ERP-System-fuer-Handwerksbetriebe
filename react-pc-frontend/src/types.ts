@@ -285,6 +285,8 @@ export interface Lieferant {
   lieferantenTyp?: string;
   rollen?: LieferantRolle[];
   lieferantenname?: string;
+  /** Zweiter Name, unter dem die Firma im Betrieb bekannt ist. Wird bei der Freitextsuche mitgefunden. */
+  aliasName?: string;
   eigeneKundennummer?: string;
   strasse?: string;
   plz?: string;
