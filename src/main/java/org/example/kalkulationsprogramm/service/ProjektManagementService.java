@@ -30,7 +30,6 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektArt;
-import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ProjektNotizBild;
 import org.example.kalkulationsprogramm.domain.ProjektProduktkategorie;
@@ -152,6 +151,18 @@ ProjektManagementService {
     /**
      * Überträgt den vollständigen Inhalt einer noch offenen Anfrage in ein
      * bestehendes Projekt und löscht die Anfrage anschließend.
+     * <p>
+     * Blockiert wird nur, wenn das Projekt bereits eine eigene Dokumentenkette in
+     * {@code ausgangs_geschaefts_dokument} hat. Nacherfasste Rechnungen und
+     * hochgeladene PDFs (beide landen als
+     * {@link org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument} im
+     * Dateien-Tab) blockieren bewusst <b>nicht</b> — das war eine Produktentscheidung,
+     * weil solche Bestände in der Praxis fast jedes Zusammenführen verhindert haben.
+     * Folge: Bringt die Anfrage ein Angebot mit, leitet das abschließende
+     * {@code findeProjektById} über
+     * {@code AusgangsGeschaeftsDokumentService#aktualisiereProjektPreisAusDokumenten}
+     * den Auftragspreis aus diesem Angebot ab statt aus einer nacherfassten Rechnung;
+     * der Bezahlt-Status kann dadurch neu bewertet werden.
      */
     @Transactional
     public ProjektResponseDto fuehreAnfrageZusammen(Long projektId, Long anfrageId) {
@@ -160,10 +171,13 @@ ProjektManagementService {
         Anfrage anfrage = anfrageRepository.findById(anfrageId)
                 .orElseThrow(() -> new NotFoundException("Anfrage mit ID " + anfrageId + " nicht gefunden."));
 
-        boolean hatNeueAusgangsdokumente = ausgangsGeschaeftsDokumentRepository.existsByProjektId(projektId);
-        boolean hatLegacyAusgangsdokumente = dateiSpeicherService.holeDokumenteZuProjekt(projektId).stream()
-                .anyMatch(ProjektGeschaeftsdokument.class::isInstance);
-        if (hatNeueAusgangsdokumente || hatLegacyAusgangsdokumente) {
+        // Nur eine bereits laufende Dokumentenkette des Projekts blockiert, weil die
+        // Kette der Anfrage sonst mit ihr kollidieren würde. Einträge im Dateien-Tab
+        // (ProjektGeschaeftsdokument) zählen bewusst nicht mehr mit — sie entstehen aus
+        // dem Offene-Posten-Editor, aus ZUGFeRD-Uploads, aus Zeichnungen/Entwürfen und
+        // aus jedem früheren Zusammenführen selbst. Letzteres machte ein zweites
+        // Zusammenführen in dasselbe Projekt bisher strukturell unmöglich.
+        if (ausgangsGeschaeftsDokumentRepository.existsByProjektId(projektId)) {
             throw new IllegalStateException(
                     "Zusammenführen nicht möglich, da im Projekt bereits Ausgangsgeschäftsdokumente vorhanden sind.");
         }

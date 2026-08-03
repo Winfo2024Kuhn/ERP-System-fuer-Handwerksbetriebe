@@ -767,7 +767,6 @@ class ProjektManagementServiceTest {
         when(projektRepository.findById(100L)).thenReturn(Optional.of(projekt));
         when(anfrageRepository.findById(10L)).thenReturn(Optional.of(anfrage));
         when(ausgangsGeschaeftsDokumentRepository.existsByProjektId(100L)).thenReturn(false);
-        when(dateiSpeicherService.holeDokumenteZuProjekt(100L)).thenReturn(List.of());
         when(emailRepository.findByAnfrageOrderBySentAtDesc(anfrage)).thenReturn(List.of(email));
         when(anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(10L)).thenReturn(List.of(notiz));
         when(projektMapper.toProjektResponseDto(projekt)).thenReturn(new ProjektResponseDto());
@@ -805,6 +804,9 @@ class ProjektManagementServiceTest {
         when(projektRepository.findById(100L)).thenReturn(Optional.of(projekt));
         when(anfrageRepository.findById(10L)).thenReturn(Optional.of(anfrage));
         when(ausgangsGeschaeftsDokumentRepository.existsByProjektId(100L)).thenReturn(true);
+        // Mischfall: Auch mit Legacy-Datei daneben entscheidet allein die neue Tabelle.
+        lenient().when(dateiSpeicherService.holeDokumenteZuProjekt(100L))
+                .thenReturn(List.of(new ProjektGeschaeftsdokument()));
 
         IllegalStateException exception = assertThrows(IllegalStateException.class,
                 () -> service.fuehreAnfrageZusammen(100L, 10L));
@@ -816,8 +818,14 @@ class ProjektManagementServiceTest {
         verify(anfrageRepository, never()).delete(any());
     }
 
+    /**
+     * Produktentscheidung: Alt-Einträge im Dateien-Tab (nacherfasste Rechnungen,
+     * ZUGFeRD-Uploads, Zeichnungen) dürfen das Zusammenführen nicht mehr blockieren.
+     * "Rechnung" ist bewusst der schärfste Fall — blockiert der bewusst nicht,
+     * blockieren die harmloseren Arten erst recht nicht.
+     */
     @Test
-    void lehntZusammenfuehrenAuchBeiLegacyAusgangsgeschaeftsdokumentAb() {
+    void erlaubtZusammenfuehrenTrotzNacherfassterRechnungImDateienTab() {
         Projekt projekt = new Projekt();
         projekt.setId(100L);
         Kunde kunde = new Kunde();
@@ -827,15 +835,23 @@ class ProjektManagementServiceTest {
         anfrage.setId(10L);
         anfrage.setKunde(kunde);
 
+        ProjektGeschaeftsdokument nacherfassteRechnung = new ProjektGeschaeftsdokument();
+        nacherfassteRechnung.setGeschaeftsdokumentart("Rechnung");
+
         when(projektRepository.findById(100L)).thenReturn(Optional.of(projekt));
         when(anfrageRepository.findById(10L)).thenReturn(Optional.of(anfrage));
         when(ausgangsGeschaeftsDokumentRepository.existsByProjektId(100L)).thenReturn(false);
-        when(dateiSpeicherService.holeDokumenteZuProjekt(100L))
-                .thenReturn(List.of(new ProjektGeschaeftsdokument()));
+        when(projektMapper.toProjektResponseDto(projekt)).thenReturn(new ProjektResponseDto());
+        // Lenient, weil der Service diese Liste bewusst nicht mehr abfragt — kehrt der
+        // Legacy-Check zurück, wirft der Service und dieser Test wird rot.
+        lenient().when(dateiSpeicherService.holeDokumenteZuProjekt(100L))
+                .thenReturn(List.of(nacherfassteRechnung));
 
-        assertThrows(IllegalStateException.class, () -> service.fuehreAnfrageZusammen(100L, 10L));
+        assertNotNull(service.fuehreAnfrageZusammen(100L, 10L));
 
-        verify(anfrageRepository, never()).delete(any());
+        verify(dateiSpeicherService, never()).holeDokumenteZuProjekt(100L);
+        verify(ausgangsGeschaeftsDokumentService).migrateFromAnfrageToProjekt(10L, projekt);
+        verify(anfrageRepository).delete(anfrage);
     }
 
     @Test
@@ -855,7 +871,6 @@ class ProjektManagementServiceTest {
         when(projektRepository.findById(100L)).thenReturn(Optional.of(projekt));
         when(anfrageRepository.findById(10L)).thenReturn(Optional.of(anfrage));
         when(ausgangsGeschaeftsDokumentRepository.existsByProjektId(100L)).thenReturn(false);
-        when(dateiSpeicherService.holeDokumenteZuProjekt(100L)).thenReturn(List.of());
 
         IllegalStateException exception = assertThrows(IllegalStateException.class,
                 () -> service.fuehreAnfrageZusammen(100L, 10L));
