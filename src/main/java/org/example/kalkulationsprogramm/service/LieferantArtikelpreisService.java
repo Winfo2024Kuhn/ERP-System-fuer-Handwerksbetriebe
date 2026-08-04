@@ -75,11 +75,6 @@ public class LieferantArtikelpreisService {
         if (lieferantId == null || artikelId == null) {
             return Optional.empty();
         }
-        Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
-        Artikel artikel = artikelRepository.findById(artikelId).orElse(null);
-        if (lieferant == null || artikel == null) {
-            return Optional.empty();
-        }
 
         String nummer = normalizeExterneArtikelnummer(externeArtikelnummer);
         Optional<LieferantenArtikelPreise> bisher =
@@ -92,6 +87,17 @@ public class LieferantArtikelpreisService {
         }
 
         artikelPreiseRepository.markiereBisherigeAlsVeraltet(artikelId, lieferantId);
+
+        // Artikel und Lieferant bewusst erst NACH dem Massen-Update laden: die
+        // Query raeumt den Persistence Context leer (clearAutomatically). Vorher
+        // geladene Entities waeren danach abgehaengt - der Mapper koennte den
+        // Werkstoff nicht mehr nachladen und liefe in eine LazyInitializationException.
+        // Ist eine der beiden IDs unbekannt, hat das Update ohnehin keine Zeile getroffen.
+        Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
+        Artikel artikel = artikelRepository.findById(artikelId).orElse(null);
+        if (lieferant == null || artikel == null) {
+            return Optional.empty();
+        }
 
         LieferantenArtikelPreise neu = new LieferantenArtikelPreise();
         neu.setArtikel(artikel);

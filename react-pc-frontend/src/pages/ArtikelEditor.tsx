@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, Package, Edit2, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus } from "lucide-react";
+import { RefreshCw, Package, ChevronLeft, ChevronRight, X, Search, Folder, FolderPlus, Plus } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -11,7 +11,6 @@ import { SupplierSelectModal } from "../components/SupplierSelectModal";
 import { CategoryTreeModal } from "../components/CategoryTreeModal";
 import { CreateArticleModal } from "../components/CreateArticleModal";
 import { PageLayout } from "../components/layout/PageLayout";
-import { useToast } from '../components/ui/toast';
 
 const PAGE_SIZE = 12;
 
@@ -48,23 +47,17 @@ const einheitText = (einheit?: string | { name: string; anzeigename?: string }) 
 // ==================== MAIN COMPONENT ====================
 
 export default function ArtikelEditor() {
-    const toast = useToast();
     const navigate = useNavigate();
     const [artikelList, setArtikelList] = useState<Artikel[]>([]);
     const [loading, setLoading] = useState(false);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
 
-    // Edit state
-    const [editingArticle, setEditingArticle] = useState<Artikel | null>(null);
-    const [editSupplierData, setEditSupplierData] = useState<{ id: number, name: string } | null>(null);
-
     // Modals state
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showCategoryManagerModal, setShowCategoryManagerModal] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [supplierSelectionMode, setSupplierSelectionMode] = useState<'filter' | 'edit'>('filter');
 
     // Sort state
     const [sortColumn, setSortColumn] = useState('produktname');
@@ -185,84 +178,8 @@ export default function ArtikelEditor() {
         return `Zeige ${start}-${end} von ${total} Artikeln`;
     }, [loading, total, page, artikelList.length]);
 
-    const openEdit = (artikel: Artikel) => {
-        setEditingArticle(artikel);
-        setEditSupplierData(artikel.lieferantId ? { id: artikel.lieferantId, name: artikel.lieferantenname || '' } : null);
-    };
-
-    const handleSavePrice = async (price: number, exNummer: string) => {
-        if (!editingArticle) return;
-
-        // Determine if update or create
-        // If we have a supplierId in editSupplierData, use it.
-        if (!editSupplierData) {
-            toast.warning("Bitte wählen Sie einen Lieferanten aus.");
-            return;
-        }
-
-        try {
-            const isNewLink = !editingArticle.lieferantId; // Or strictly checking if we are linking a new one
-            // However, API logic:
-            // Update: PUT /api/lieferanten/{supplierId}/artikelpreise/{articleId}
-            // Create: POST /api/lieferanten/{supplierId}/artikelpreise body {artikelId, ...}
-
-            let res;
-            if (isNewLink) {
-                // Create new price link
-                res = await fetch(`/api/lieferanten/${editSupplierData.id}/artikelpreise`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        artikelId: editingArticle.id,
-                        preis: price,
-                        externeArtikelnummer: exNummer
-                    })
-                });
-            } else {
-                // Update existing - assume supplier didn't change for now or we use the original ID?
-                // If the user changed the supplier (which we might allow), we would need POST if the new supplier doesn't have a price yet.
-                // For simplicity and per requirement "link if not happened", we assume if it happened, we update that one.
-                // But we use editSupplierData.id which is the current one.
-
-                // If editingArticle.lieferantId != editSupplierData.id, we are effectively creating a new price for a new supplier.
-                const supplierChanged = editingArticle.lieferantId !== editSupplierData.id;
-
-                if (supplierChanged) {
-                    res = await fetch(`/api/lieferanten/${editSupplierData.id}/artikelpreise`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            artikelId: editingArticle.id,
-                            preis: price,
-                            externeArtikelnummer: exNummer
-                        })
-                    });
-                } else {
-                    res = await fetch(`/api/lieferanten/${editSupplierData.id}/artikelpreise/${editingArticle.id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ preis: price, externeArtikelnummer: exNummer })
-                    });
-                }
-            }
-
-            if (!res.ok) throw new Error('Speichern fehlgeschlagen');
-
-            setEditingArticle(null);
-            setEditSupplierData(null);
-            loadArtikel();
-        } catch (err) {
-            toast.error('Fehler beim Speichern des Preises');
-            console.error(err);
-        }
-    };
-
     const handleSupplierSelect = (s: { id: number, name: string }) => {
-        if (supplierSelectionMode === 'filter') {
-            handleFilterChange('lieferant', s.name);
-        } else {
-            setEditSupplierData(s);
-        }
+        handleFilterChange('lieferant', s.name);
         setShowSupplierModal(false);
     };
 
@@ -305,7 +222,7 @@ export default function ArtikelEditor() {
                         <div className="relative mt-1">
                             <div
                                 className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer flex items-center justify-between"
-                                onClick={() => { setSupplierSelectionMode('filter'); setShowSupplierModal(true); }}
+                                onClick={() => setShowSupplierModal(true)}
                             >
                                 <span className={!filters.lieferant ? "text-slate-500" : ""}>{filters.lieferant || "Alle Lieferanten"}</span>
                                 <Search className="w-4 h-4 text-slate-400" />
@@ -451,7 +368,7 @@ export default function ArtikelEditor() {
                                 {artikelList.map((artikel) => (
                                     <tr
                                         key={artikel.id}
-                                        className="hover:bg-slate-50 transition-colors cursor-pointer"
+                                        className="group hover:bg-slate-50 transition-colors cursor-pointer"
                                         onClick={() => navigate(`/artikel/${artikel.id}`)}
                                         tabIndex={0}
                                         role="link"
@@ -519,15 +436,12 @@ export default function ArtikelEditor() {
                                                 </>
                                             ) : '-'}
                                         </td>
+                                        {/* Zeigt an, dass die Zeile auf die Detailseite fuehrt. */}
                                         <td className="px-4 py-3 text-center">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); openEdit(artikel); }}
-                                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                                                title="Preis bearbeiten"
-                                                aria-label={`Preis von ${artikelBezeichnung(artikel)} bearbeiten`}
-                                            >
-                                                <Edit2 className="w-4 h-4" />
-                                            </button>
+                                            <ChevronRight
+                                                className="w-4 h-4 inline-block text-slate-300 group-hover:text-rose-600 transition-colors"
+                                                aria-hidden="true"
+                                            />
                                         </td>
                                     </tr>
                                 ))}
@@ -557,21 +471,10 @@ export default function ArtikelEditor() {
                     onSave={() => { loadArtikel(); setShowCreateModal(false); }}
                 />
             )}
-            {editingArticle && (
-                <PriceEditModal
-                    artikel={editingArticle}
-                    currentSupplier={editSupplierData}
-                    onClose={() => { setEditingArticle(null); setEditSupplierData(null); }}
-                    onSave={handleSavePrice}
-                    onSelectSupplier={() => { setSupplierSelectionMode('edit'); setShowSupplierModal(true); }}
-                />
-            )}
             {showSupplierModal && (
                 <SupplierSelectModal
                     onSelect={handleSupplierSelect}
                     onClose={() => setShowSupplierModal(false)}
-                    kategorieId={supplierSelectionMode === 'edit' ? editingArticle?.kategorieId : undefined}
-                    kategorieName={supplierSelectionMode === 'edit' ? editingArticle?.kategoriePfad : undefined}
                 />
             )}
             {showCategoryModal && (
@@ -600,77 +503,5 @@ function SortableHeader({ label, column, currentSort, direction, onSort, classNa
                 </span>
             </div>
         </th>
-    );
-}
-
-interface PriceEditModalProps {
-    artikel: Artikel;
-    currentSupplier: { id: number, name: string } | null;
-    onClose: () => void;
-    onSave: (price: number, num: string) => void;
-    onSelectSupplier: () => void;
-}
-
-function PriceEditModal({ artikel, currentSupplier, onClose, onSave, onSelectSupplier }: PriceEditModalProps) {
-    const [price, setPrice] = useState(artikel.preis || 0);
-    const [nummer, setNummer] = useState(artikel.externeArtikelnummer || '');
-
-    return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                    <h3 className="font-semibold text-slate-900">Preis / Lieferant bearbeiten</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-                </div>
-                <div className="p-4 space-y-4">
-                    <div>
-                        <p className="text-sm font-medium text-slate-900">{artikel.produktname}</p>
-                        {currentSupplier ? (
-                            <p className="text-xs text-slate-500 flex items-center gap-2">
-                                Lieferant: <span className="font-medium text-slate-700">{currentSupplier.name}</span>
-                            </p>
-                        ) : (
-                            <Button variant="outline" size="sm" className="mt-2 w-full" onClick={onSelectSupplier}>
-                                <Search className="w-3 h-3 mr-2" /> Lieferant verlinken
-                            </Button>
-                        )}
-                    </div>
-                    <div>
-                        <Label htmlFor="edit-price">Preis (€)</Label>
-                        <Input
-                            id="edit-price"
-                            type="number"
-                            step="0.01"
-                            value={price}
-                            onChange={e => setPrice(parseFloat(e.target.value))}
-                        />
-                    </div>
-                    <div>
-                        <Label htmlFor="edit-nr">Externe Nummer <span className="text-rose-500">*</span></Label>
-                        <Input
-                            id="edit-nr"
-                            value={nummer}
-                            onChange={e => setNummer(e.target.value)}
-                            placeholder={currentSupplier ? "Erforderlich" : ""}
-                            className={currentSupplier && !nummer ? "border-rose-300 focus-visible:ring-rose-500" : ""}
-                        />
-                        {currentSupplier && !nummer && (
-                            <p className="text-xs text-rose-500 mt-1">Externe Nummer ist erforderlich.</p>
-                        )}
-                    </div>
-                </div>
-                <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 rounded-b-xl">
-                    <Button variant="ghost" size="sm" onClick={onClose}>Abbrechen</Button>
-                    <Button
-                        size="sm"
-                        className="bg-rose-600 hover:bg-rose-700 text-white"
-                        onClick={() => onSave(price, nummer)}
-                        disabled={!currentSupplier || !nummer}
-                    >
-                        <Save className="w-4 h-4 mr-2" /> Speichern
-                    </Button>
-                </div>
-            </div>
-        </div>
     );
 }

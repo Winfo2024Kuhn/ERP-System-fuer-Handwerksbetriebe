@@ -32,57 +32,29 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
         verrechnungseinheit: "STUECK",
         kategorieId: 0,
         kategorieName: "",
-        werkstoffId: 0 as number | null, // We only have names in options, need ID map or just use ID if passed
+        werkstoffId: 0 as number | null,
         werkstoffName: "",
         preis: 0,
         lieferantId: 0,
         lieferantName: ""
     });
 
-    // We need Werkstoff IDs actually. The current props pass strings. 
-    // Let's fetch proper Werkstoff objects map.
-    const [werkstoffe, setWerkstoffe] = useState<{id: number, name: string}[]>([]);
+    // Werkstoffe mit ID, weil der Artikel die ID braucht - nicht nur den Namen.
+    const [werkstoffe, setWerkstoffe] = useState<{ id: number, name: string }[]>([]);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        // Fetch full werkstoff objects to get IDs
-        fetch('/api/werkstoffe?full=true').then(async res => {
-             if(res.ok) {
-                 const data = await res.json();
-                 setWerkstoffe(data);
-             } else {
-                 // Fallback if endpoint doesn't exist, maybe try searching or just mapping names
-                 // For now, assume the passed strings are all we have and we might need to find IDs another way
-                 // Or assume backend can take name? No, DTO has Id.
-                 // Let's try to fetch all via existing endpoint if possible or mock.
-                 // Actually /artikel/werkstoffe returns strings.
-                 // Let's assume we can't easily set werkstoff ID without a proper endpoint.
-                 // I'll assume the backend service can look it up by name if I change DTO, but I didn't.
-                 // I'll fetch ALL articles to find werkstoffe? No too heavy.
-                 // I will add a fetch for IDs logic if needed, or just skip Werkstoff ID for now if not critical.
-                 // Wait, I can modify backend to accept Werkstoff Name? Or add an endpoint. 
-                 // Easier: I'll just list strings in UI and if user selects one, I try to find ID from a pre-fetched list? 
-                 // Let's assume there is an endpoint /api/werkstoffe/all or similar.
-                 // Since I can't check easily, I will create a small helper endpoint or just try to use the index? No.
-                 // I'll search for werkstoff by name on backend? 
-                 // Let's create a quick endpoint on backend or assume 0.
-                 // Better: I'll update ArtikelController to expose Werkstoff with IDs.
-             }
-        });
-        
-        // Quick fix: Fetch werkstoffe with IDs.
-        // Since I cannot change backend easily in this file without switching context, 
-        // I will check if I can use the existing string list and maybe the backend accepts name?
-        // The DTO has `werkstoffId`.
-        // I will add a `GET /artikel/werkstoffe/map` endpoint to Backend.
-    }, []);
-
-    // Fetch Werkstoff Map
-    useEffect(() => {
-        // We will implement this endpoint in backend next step.
-        fetch('/artikel/werkstoffe/details').then(r => r.json()).then(d => setWerkstoffe(d)).catch(() => {});
+        fetch('/api/artikel/werkstoffe/details')
+            .then(res => {
+                if (!res.ok) throw new Error("Werkstoffe konnten nicht geladen werden");
+                return res.json();
+            })
+            // Bei einem Fehler antwortet der Server mit einem Objekt statt einer
+            // Liste - ohne diese Pruefung wuerde die Auswahlliste die Seite abschiessen.
+            .then(data => setWerkstoffe(Array.isArray(data) ? data : []))
+            .catch(err => console.error("Fehler beim Laden der Werkstoffe", err));
     }, []);
 
     const handleChange = (key: string, value: string | number | boolean | null) => {
@@ -111,7 +83,7 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                 lieferantId: formData.lieferantId || null
             };
 
-            const res = await fetch('/artikel', {
+            const res = await fetch('/api/artikel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
