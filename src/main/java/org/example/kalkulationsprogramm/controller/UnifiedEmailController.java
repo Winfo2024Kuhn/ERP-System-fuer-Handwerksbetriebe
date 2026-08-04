@@ -1504,7 +1504,11 @@ public class UnifiedEmailController {
                     : systemSettingsService.getStandardMailKonto();
             org.example.email.EmailService emailService = new org.example.email.EmailService(
                     konto.host(), konto.port(), konto.username(), konto.password())
-                    .mitSentKopie(sentMailArchiver);
+                    .mitAbsenderName(konto.fromName())
+                    // Kopie in das Postfach, das die Mail auch verschickt hat.
+                    .mitSentKopie(ueberDokumentKonto
+                            ? sentMailArchiver.fuerDokumentKonto()
+                            : sentMailArchiver);
 
             String sender;
             if (ueberDokumentKonto) {
@@ -1525,6 +1529,15 @@ public class UnifiedEmailController {
                 return ResponseEntity.badRequest().body(Map.of(
                         "message",
                         "Kein Absender konfiguriert. Bitte unter Firma -> E-Mail-Absender mindestens eine Adresse anlegen."));
+            }
+
+            if (!ueberDokumentKonto) {
+                // Der zur gewaehlten Adresse gepflegte Anzeigename (Firma ->
+                // E-Mail-Absender) schlaegt den allgemeinen Namen aus den
+                // System-Einstellungen — er ist der genauere Wert.
+                emailService.mitAbsenderName(emailAbsenderService
+                        .findAnzeigenameFuerAdresse(sender)
+                        .orElse(konto.fromName()));
             }
 
             String messageId = emailService.sendEmailWithMultipleAttachments(
@@ -1704,6 +1717,12 @@ public class UnifiedEmailController {
                         "message",
                         "Kein Absender konfiguriert. Bitte unter Firma -> E-Mail-Absender mindestens eine Adresse anlegen."));
             }
+
+            // Antworten laufen ueber das Standard-Postfach; Anzeigename wie beim
+            // freien Versand aus der Absender-Liste, sonst aus den Einstellungen.
+            emailService.mitAbsenderName(emailAbsenderService
+                    .findAnzeigenameFuerAdresse(sender)
+                    .orElse(systemSettingsService.getMailAbsenderName()));
 
             String messageId = emailService.sendEmailWithMultipleAttachments(
                     recipient,

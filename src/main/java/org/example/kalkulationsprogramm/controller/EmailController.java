@@ -386,7 +386,11 @@ public class EmailController {
                 : request.getFromAddress();
         EmailService service = new EmailService(
                 konto.host(), konto.port(), konto.username(), konto.password())
-                .mitSentKopie(sentMailArchiver);
+                .mitAbsenderName(konto.fromName())
+                // Kopie in das Postfach, das die Mail auch verschickt hat.
+                .mitSentKopie(systemSettingsService.nutztDokumentMailKonto()
+                        ? sentMailArchiver.fuerDokumentKonto()
+                        : sentMailArchiver);
         String messageId;
         try {
             String finalHtml = Optional.ofNullable(request.getHtmlBody()).orElse("");
@@ -499,7 +503,11 @@ public class EmailController {
                 : request.getFromAddress();
         EmailService service = new EmailService(
                 konto.host(), konto.port(), konto.username(), konto.password())
-                .mitSentKopie(sentMailArchiver);
+                .mitAbsenderName(konto.fromName())
+                // Kopie in das Postfach, das die Mail auch verschickt hat.
+                .mitSentKopie(systemSettingsService.nutztDokumentMailKonto()
+                        ? sentMailArchiver.fuerDokumentKonto()
+                        : sentMailArchiver);
         String messageId;
         try {
             String finalHtml = Optional.ofNullable(request.getHtmlBody()).orElse("");

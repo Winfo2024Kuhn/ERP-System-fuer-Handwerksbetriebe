@@ -185,6 +185,62 @@ public class SystemSettingsService {
     }
 
     /**
+     * Anzeigename für Mails aus dem Dokument-Postfach ("Firma &lt;adresse&gt;").
+     * Leer = nur die Adresse, wie bisher.
+     */
+    public String getDokumentMailAbsenderName() {
+        return sanitizeValue(get("mail.dokumente.absender-name", ""));
+    }
+
+    /** Anzeigename für Mails über das Standard-Postfach. Leer = nur die Adresse. */
+    public String getMailAbsenderName() {
+        return sanitizeValue(get("mail.absender-name", ""));
+    }
+
+    /**
+     * Posteingangs-Server des Dokument-Postfachs. Leer = derselbe Server wie
+     * beim Versand — bei den meisten Anbietern bedient ein Servername beide
+     * Richtungen.
+     */
+    public String getDokumentImapHost() {
+        String val = sanitizeValue(get("imap.dokumente.host", ""));
+        return val.isBlank() ? getDokumentSmtpHost() : val;
+    }
+
+    public int getDokumentImapPort() {
+        String val = get("imap.dokumente.port", "993");
+        try {
+            int port = Integer.parseInt(val);
+            return port > 0 ? port : 993;
+        } catch (NumberFormatException e) {
+            return 993;
+        }
+    }
+
+    /**
+     * Postfach, in dem die Kopie einer versendeten Mail abgelegt wird.
+     *
+     * <p>Muss zum versendenden Konto passen: Sonst liegt die Kopie in einem
+     * anderen Postfach als dem, aus dem die Mail nachweislich rausging — als
+     * Beleg wäre sie damit deutlich weniger wert.</p>
+     *
+     * <p>Benutzername und Passwort stammen vom Versand: Es ist dasselbe
+     * Postfach, nur die andere Richtung.</p>
+     */
+    public ImapZugang getDokumentImapZugang() {
+        if (!nutztDokumentMailKonto()) {
+            return getStandardImapZugang();
+        }
+        return new ImapZugang(getDokumentImapHost(), getDokumentImapPort(),
+                getDokumentSmtpUsername(), getDokumentSmtpPassword());
+    }
+
+    /** Posteingang des Standard-Postfachs (manueller Schriftverkehr, Import). */
+    public ImapZugang getStandardImapZugang() {
+        return new ImapZugang(getImapHost(), getImapPort(), getImapUsername(), getImapPassword());
+    }
+
+    /**
      * {@code true}, wenn der Dokumentversand tatsächlich über das eigene Postfach
      * läuft — also eingeschaltet <em>und</em> vollständig ausgefüllt ist.
      *
@@ -199,7 +255,7 @@ public class SystemSettingsService {
     /** Zugangsdaten des Standard-Postfachs (manueller Schriftverkehr, IMAP-Abruf). */
     public MailKonto getStandardMailKonto() {
         return new MailKonto(getSmtpHost(), getSmtpPort(), getSmtpUsername(),
-                getSmtpPassword(), getMailFromAddress());
+                getSmtpPassword(), getMailFromAddress(), getMailAbsenderName());
     }
 
     /**
@@ -226,7 +282,24 @@ public class SystemSettingsService {
         }
         return new MailKonto(getDokumentSmtpHost(), getDokumentSmtpPort(),
                 getDokumentSmtpUsername(), getDokumentSmtpPassword(),
-                getDokumentMailFromAddress());
+                getDokumentMailFromAddress(), getDokumentMailAbsenderName());
+    }
+
+    @Transactional
+    public void saveMailAbsenderName(String name) {
+        save("mail.absender-name", name == null ? "" : name.trim(),
+                "Anzeigename des Absenders für Mails über das Standard-Postfach");
+    }
+
+    @Transactional
+    public void saveDokumentMailSettings(boolean aktiv, String host, int port,
+            String username, String password, String fromAddress, String fromName,
+            String imapHost) {
+        save("mail.dokumente.absender-name", fromName == null ? "" : fromName.trim(),
+                "Anzeigename des Absenders für Ausgangsgeschäftsdokumente");
+        save("imap.dokumente.host", imapHost == null ? "" : imapHost.trim(),
+                "Posteingangs-Server des Dokument-Postfachs (leer = wie beim Versand)");
+        saveDokumentMailSettings(aktiv, host, port, username, password, fromAddress);
     }
 
     @Transactional
@@ -633,7 +706,14 @@ public class SystemSettingsService {
      * versehentlich das Passwort des einen Kontos beim Server des anderen.</p>
      */
     public record MailKonto(String host, int port, String username,
-            String password, String fromAddress) {
+            String password, String fromAddress, String fromName) {
+    }
+
+    /**
+     * Zugang zum Posteingang eines Postfachs — gebraucht für die Ablage der
+     * Kopie im "Gesendet"-Ordner.
+     */
+    public record ImapZugang(String host, int port, String username, String password) {
     }
 
     /**

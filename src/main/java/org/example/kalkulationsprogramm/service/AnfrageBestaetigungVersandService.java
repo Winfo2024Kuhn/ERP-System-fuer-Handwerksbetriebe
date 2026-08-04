@@ -218,6 +218,7 @@ public class AnfrageBestaetigungVersandService {
                 systemSettingsService.getSmtpPort(),
                 systemSettingsService.getSmtpUsername(),
                 systemSettingsService.getSmtpPassword())
+                .mitAbsenderName(systemSettingsService.getMailAbsenderName())
                 .mitSentKopie(sentMailArchiver);
     }
 

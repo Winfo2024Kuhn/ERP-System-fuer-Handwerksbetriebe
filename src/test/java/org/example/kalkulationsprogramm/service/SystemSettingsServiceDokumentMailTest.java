@@ -169,6 +169,61 @@ class SystemSettingsServiceDokumentMailTest {
     }
 
     @Test
+    @DisplayName("Ohne Anzeigename bleibt das Feld leer — Versand dann wie bisher nur mit Adresse")
+    void ohneAnzeigenameLeer() {
+        hinterlegeVollstaendigesDokumentKonto();
+
+        assertThat(service.getDokumentMailKonto().fromName()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Hinterlegter Anzeigename wird ins Konto uebernommen")
+    void anzeigenameWirdUebernommen() {
+        hinterlegeVollstaendigesDokumentKonto();
+        gespeicherteWerte.put("mail.dokumente.absender-name", "Musterfirma Metallbau");
+
+        assertThat(service.getDokumentMailKonto().fromName()).isEqualTo("Musterfirma Metallbau");
+    }
+
+    @Test
+    @DisplayName("Die Kopie landet im Postfach, das auch verschickt hat")
+    void sentKopieNutztDasVersendendePostfach() {
+        hinterlegeVollstaendigesDokumentKonto();
+        gespeicherteWerte.put("imap.username", "mustermann@beispiel-provider.de");
+        gespeicherteWerte.put("imap.password", "standard-imap");
+
+        var zugang = service.getDokumentImapZugang();
+
+        // Ohne eigenen Posteingangs-Server gilt der Versand-Server.
+        assertThat(zugang.host()).isEqualTo(DOKUMENT_HOST);
+        assertThat(zugang.port()).isEqualTo(993);
+        assertThat(zugang.username()).isEqualTo(DOKUMENT_USER);
+        assertThat(zugang.password()).isEqualTo(DOKUMENT_PASSWORT);
+    }
+
+    @Test
+    @DisplayName("Abweichender Posteingangs-Server schlaegt den Versand-Server")
+    void eigenerImapHostGewinnt() {
+        hinterlegeVollstaendigesDokumentKonto();
+        gespeicherteWerte.put("imap.dokumente.host", "imap.musterfirma-beispiel.de");
+
+        assertThat(service.getDokumentImapZugang().host()).isEqualTo("imap.musterfirma-beispiel.de");
+    }
+
+    @Test
+    @DisplayName("Ohne eigenes Postfach landet die Kopie weiter im Standard-Posteingang")
+    void ohneDokumentKontoStandardPosteingang() {
+        gespeicherteWerte.put("imap.host", "imap.beispiel-provider.de");
+        gespeicherteWerte.put("imap.username", "mustermann@beispiel-provider.de");
+        gespeicherteWerte.put("imap.password", "standard-imap");
+
+        var zugang = service.getDokumentImapZugang();
+
+        assertThat(zugang.host()).isEqualTo("imap.beispiel-provider.de");
+        assertThat(zugang.username()).isEqualTo("mustermann@beispiel-provider.de");
+    }
+
+    @Test
     @DisplayName("Das Standard-Konto bleibt vom Dokument-Konto unberührt")
     void standardKontoBleibtUnveraendert() {
         hinterlegeVollstaendigesDokumentKonto();

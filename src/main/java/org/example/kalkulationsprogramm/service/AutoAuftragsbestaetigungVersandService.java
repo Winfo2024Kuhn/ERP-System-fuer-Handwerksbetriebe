@@ -148,7 +148,8 @@ public class AutoAuftragsbestaetigungVersandService
             SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
             EmailService emailService = new EmailService(
                     konto.host(), konto.port(), konto.username(), konto.password())
-                    .mitSentKopie(sentMailArchiver);
+                    .mitAbsenderName(konto.fromName())
+                    .mitSentKopie(sentMailArchiver.fuerDokumentKonto());
 
             // Absender muss aus demselben Konto stammen, sonst schlagen SPF und
             // DKIM beim Empfaenger fehl.

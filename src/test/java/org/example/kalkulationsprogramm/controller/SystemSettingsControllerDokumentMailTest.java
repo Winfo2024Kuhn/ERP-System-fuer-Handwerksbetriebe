@@ -52,7 +52,7 @@ class SystemSettingsControllerDokumentMailTest {
 
     private static DokumentMailRequest request(boolean aktiv, String host, String username,
             String password, String fromAddress) {
-        return new DokumentMailRequest(aktiv, host, 465, username, password, fromAddress);
+        return new DokumentMailRequest(aktiv, host, 465, username, password, fromAddress, "", "");
     }
 
     private static String meldung(ResponseEntity<Map<String, String>> response) {
@@ -69,7 +69,8 @@ class SystemSettingsControllerDokumentMailTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(meldung(response)).contains("selben Domain");
         verify(settingsService, never())
-                .saveDokumentMailSettings(anyBoolean(), anyString(), anyInt(), anyString(), anyString(), anyString());
+                .saveDokumentMailSettings(anyBoolean(), anyString(), anyInt(), anyString(), anyString(),
+                        anyString(), anyString(), anyString());
     }
 
     @Test
@@ -80,7 +81,7 @@ class SystemSettingsControllerDokumentMailTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(settingsService).saveDokumentMailSettings(true, HOST, 465, POSTFACH,
-                PASSWORT, "buchhaltung@musterfirma-beispiel.de");
+                PASSWORT, "buchhaltung@musterfirma-beispiel.de", "", "");
     }
 
     @Test
@@ -89,7 +90,7 @@ class SystemSettingsControllerDokumentMailTest {
         var response = controller.saveDokumentMail(request(true, HOST, POSTFACH, PASSWORT, ""));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(settingsService).saveDokumentMailSettings(true, HOST, 465, POSTFACH, PASSWORT, "");
+        verify(settingsService).saveDokumentMailSettings(true, HOST, 465, POSTFACH, PASSWORT, "", "", "");
     }
 
     @Test
@@ -120,7 +121,7 @@ class SystemSettingsControllerDokumentMailTest {
         var response = controller.saveDokumentMail(request(true, HOST, POSTFACH, "", ""));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(settingsService).saveDokumentMailSettings(true, HOST, 465, POSTFACH, PASSWORT, "");
+        verify(settingsService).saveDokumentMailSettings(true, HOST, 465, POSTFACH, PASSWORT, "", "", "");
     }
 
     @Test
@@ -140,7 +141,8 @@ class SystemSettingsControllerDokumentMailTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         verify(settingsService, never())
-                .saveDokumentMailSettings(anyBoolean(), anyString(), anyInt(), anyString(), anyString(), anyString());
+                .saveDokumentMailSettings(anyBoolean(), anyString(), anyInt(), anyString(), anyString(),
+                        anyString(), anyString(), anyString());
     }
 
     @Test
@@ -152,16 +154,16 @@ class SystemSettingsControllerDokumentMailTest {
         var response = controller.saveDokumentMail(request(false, "", "", "", ""));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(settingsService).saveDokumentMailSettings(false, "", 465, "", "", "");
+        verify(settingsService).saveDokumentMailSettings(false, "", 465, "", "", "", "", "");
     }
 
     @Test
     @DisplayName("Port 0 oder negativ faellt auf 465 zurueck")
     void ungueltigerPortFaelltAufStandard() {
         controller.saveDokumentMail(
-                new DokumentMailRequest(true, HOST, -1, POSTFACH, PASSWORT, ""));
+                new DokumentMailRequest(true, HOST, -1, POSTFACH, PASSWORT, "", "", ""));
 
-        verify(settingsService).saveDokumentMailSettings(true, HOST, 465, POSTFACH, PASSWORT, "");
+        verify(settingsService).saveDokumentMailSettings(true, HOST, 465, POSTFACH, PASSWORT, "", "", "");
     }
 
     @Test
@@ -174,7 +176,8 @@ class SystemSettingsControllerDokumentMailTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(meldung(response)).contains("zu lang");
         verify(settingsService, never())
-                .saveDokumentMailSettings(anyBoolean(), anyString(), anyInt(), anyString(), anyString(), anyString());
+                .saveDokumentMailSettings(anyBoolean(), anyString(), anyInt(), anyString(), anyString(),
+                        anyString(), anyString(), anyString());
     }
 
     @Test
@@ -185,7 +188,8 @@ class SystemSettingsControllerDokumentMailTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         verify(settingsService, never())
-                .saveDokumentMailSettings(anyBoolean(), anyString(), anyInt(), anyString(), anyString(), anyString());
+                .saveDokumentMailSettings(anyBoolean(), anyString(), anyInt(), anyString(), anyString(),
+                        anyString(), anyString(), anyString());
     }
 
     @Test
@@ -197,7 +201,7 @@ class SystemSettingsControllerDokumentMailTest {
         controller.saveDokumentMail(request(false, boesartig, "", "", ""));
 
         // JPA speichert parametrisiert; der Wert geht unveraendert als Text durch.
-        verify(settingsService).saveDokumentMailSettings(false, boesartig, 465, "", "", "");
+        verify(settingsService).saveDokumentMailSettings(false, boesartig, 465, "", "", "", "", "");
     }
 
     @Test

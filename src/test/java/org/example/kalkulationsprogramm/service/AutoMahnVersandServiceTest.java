@@ -321,7 +321,8 @@ class AutoMahnVersandServiceTest
         // Ohne eingerichtetes eigenes Postfach liefert es die Standard-Zugangsdaten.
         when(systemSettingsService.getDokumentMailKonto()).thenReturn(
                 new SystemSettingsService.MailKonto("smtp.example.org", 465,
-                        "firma@example.org", "dummy-geheim", "firma@example.org"));
+                        "firma@example.org", "dummy-geheim", "firma@example.org",
+                        "Musterfirma"));
         when(dateiSpeicherService.speichereZugferdDatei(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))

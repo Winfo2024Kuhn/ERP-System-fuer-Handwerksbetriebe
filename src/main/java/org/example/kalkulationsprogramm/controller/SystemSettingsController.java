@@ -178,7 +178,8 @@ public class SystemSettingsController {
     public ResponseEntity<MailFromResponse> getMailFrom() {
         return ResponseEntity.ok(new MailFromResponse(
                 settingsService.getMailFromAddress(),
-                settingsService.getSmtpUsername()));
+                settingsService.getSmtpUsername(),
+                settingsService.getMailAbsenderName()));
     }
 
     @PutMapping("/mail-from")
@@ -188,7 +189,12 @@ public class SystemSettingsController {
             return ResponseEntity.badRequest()
                     .body(Map.of("message", "Bitte eine gültige E-Mail-Adresse eintragen."));
         }
+        if (req.name() != null && req.name().length() > MAX_FELD_LAENGE) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Der Anzeigename ist zu lang."));
+        }
         settingsService.saveMailFromAddress(address);
+        settingsService.saveMailAbsenderName(req.name());
         return ResponseEntity.ok(Map.of("message", address.isBlank()
                 ? "Absender zurückgesetzt – Auto-Mails nutzen wieder den SMTP-Benutzer."
                 : "Absender für automatische Mails gespeichert."));
@@ -204,7 +210,9 @@ public class SystemSettingsController {
                 settingsService.getDokumentSmtpPort(),
                 settingsService.getDokumentSmtpUsername(),
                 hasValue(settingsService.getDokumentSmtpPassword()),
-                settingsService.getDokumentMailFromAddress()));
+                settingsService.getDokumentMailFromAddress(),
+                settingsService.getDokumentMailAbsenderName(),
+                settingsService.getDokumentImapHost()));
     }
 
     @PutMapping("/dokument-mail")
@@ -263,7 +271,8 @@ public class SystemSettingsController {
         }
 
         settingsService.saveDokumentMailSettings(req.aktiv(), host,
-                req.port() > 0 ? req.port() : 465, username, effectivePassword, fromAddress);
+                req.port() > 0 ? req.port() : 465, username, effectivePassword, fromAddress,
+                req.fromName(), req.imapHost());
         return ResponseEntity.ok(Map.of("message", req.aktiv()
                 ? "Rechnungen und Mahnungen gehen ab jetzt über das eigene Postfach raus."
                 : "Eigenes Postfach ausgeschaltet – der Versand läuft wieder über das Standard-Konto."));
@@ -368,12 +377,12 @@ public class SystemSettingsController {
     record GeminiTestRequest(String apiKey) {}
     record FunnelSpamFilterResponse(boolean aktiv) {}
     record FunnelSpamFilterRequest(boolean aktiv) {}
-    record MailFromResponse(String address, String smtpUsername) {}
-    record MailFromRequest(String address) {}
+    record MailFromResponse(String address, String smtpUsername, String name) {}
+    record MailFromRequest(String address, String name) {}
     record DokumentMailResponse(boolean aktiv, String host, int port, String username,
-            boolean passwordSet, String fromAddress) {}
+            boolean passwordSet, String fromAddress, String fromName, String imapHost) {}
     record DokumentMailRequest(boolean aktiv, String host, int port, String username,
-            String password, String fromAddress) {}
+            String password, String fromAddress, String fromName, String imapHost) {}
     record DokumentMailTestRequest(String host, int port, String username, String password,
             String testRecipient) {}
     record DateiOrdnerResponse(String pfad, String networkUrl, boolean konfiguriert) {}

@@ -80,6 +80,13 @@ public class EmailService {
     private SentCopyHandler sentCopyHandler;
 
     /**
+     * Anzeigename des Absenders, der im Posteingang des Empfaengers statt der
+     * nackten Adresse erscheint ("Bauschlosserei Kuhn" statt
+     * "rechnungen@..."). {@code null} oder leer = nur die Adresse, wie bisher.
+     */
+    private String absenderAnzeigename;
+
+    /**
      * Creates a new {@code EmailService} configured for the given SMTP server.
      *
      * @param host     SMTP host name
@@ -101,6 +108,36 @@ public class EmailService {
     public EmailService mitSentKopie(SentCopyHandler handler) {
         this.sentCopyHandler = handler;
         return this;
+    }
+
+    /**
+     * Setzt den Anzeigenamen des Absenders. Ohne diesen Aufruf geht wie bisher
+     * nur die nackte Adresse raus.
+     */
+    public EmailService mitAbsenderName(String anzeigename) {
+        this.absenderAnzeigename = anzeigename;
+        return this;
+    }
+
+    /**
+     * Baut die Absender-Adresse, bei gesetztem Anzeigenamen als
+     * {@code "Name <adresse>"}.
+     *
+     * <p>Der Name wird ausdruecklich UTF-8-kodiert uebergeben: Umlaute in
+     * Firmennamen wuerden sonst beim Empfaenger als Zeichensalat ankommen.
+     * Schlaegt die Kodierung fehl, faellt die Mail auf die reine Adresse
+     * zurueck — ein huebscher Absender ist den Versand nicht wert.</p>
+     */
+    private InternetAddress baueAbsender(String adresse) throws jakarta.mail.internet.AddressException {
+        if (absenderAnzeigename == null || absenderAnzeigename.isBlank()) {
+            return new InternetAddress(adresse);
+        }
+        try {
+            return new InternetAddress(adresse, absenderAnzeigename, StandardCharsets.UTF_8.name());
+        } catch (java.io.UnsupportedEncodingException e) {
+            log.warn("[EmailService] Absender-Anzeigename konnte nicht kodiert werden: {}", e.getMessage());
+            return new InternetAddress(adresse);
+        }
     }
 
     /**
@@ -171,7 +208,7 @@ public class EmailService {
 
         try {
             MimeMessage message = new MimeMessage(session);
-            message.setFrom(new InternetAddress(fromAddress));
+            message.setFrom(baueAbsender(fromAddress));
             message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
             if (cc != null && !cc.isBlank()) {
                 message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
@@ -293,7 +330,7 @@ public class EmailService {
         });
 
         MimeMessage message = new MimeMessage(session);
-        message.setFrom(new InternetAddress(fromAddress));
+        message.setFrom(baueAbsender(fromAddress));
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
         if (cc != null && !cc.isBlank()) {
             message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
@@ -373,7 +410,7 @@ public class EmailService {
         });
 
         MimeMessage message = new MimeMessage(session);
-        message.setFrom(new InternetAddress(fromAddress));
+        message.setFrom(baueAbsender(fromAddress));
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
         if (cc != null && !cc.isBlank()) {
             message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
@@ -465,7 +502,7 @@ public class EmailService {
         });
 
         MimeMessage message = new MimeMessage(session);
-        message.setFrom(new InternetAddress(fromAddress));
+        message.setFrom(baueAbsender(fromAddress));
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
         if (cc != null && !cc.isBlank()) {
             message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));

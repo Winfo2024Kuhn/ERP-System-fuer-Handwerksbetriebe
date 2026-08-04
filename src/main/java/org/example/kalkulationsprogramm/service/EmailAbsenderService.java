@@ -41,6 +41,30 @@ public class EmailAbsenderService {
         return repository.findFirstByAktivTrueOrderBySortierungAscIdAsc();
     }
 
+    /**
+     * Anzeigename, der zu einer Absender-Adresse gepflegt ist — also der Name,
+     * der beim Empfänger statt der nackten Adresse im Posteingang steht.
+     *
+     * <p>Der Vergleich läuft ohne Rücksicht auf Groß- und Kleinschreibung:
+     * E-Mail-Adressen werden im Alltag mal so, mal so getippt, und ein
+     * Anzeigename darf daran nicht scheitern.</p>
+     *
+     * @return leerer {@code Optional}, wenn die Adresse unbekannt ist oder kein
+     *         Anzeigename hinterlegt wurde
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> findAnzeigenameFuerAdresse(String emailAdresse) {
+        if (emailAdresse == null || emailAdresse.isBlank()) {
+            return Optional.empty();
+        }
+        String gesucht = emailAdresse.trim();
+        return repository.findAllByOrderBySortierungAscIdAsc().stream()
+                .filter(a -> a.getEmailAdresse() != null && a.getEmailAdresse().equalsIgnoreCase(gesucht))
+                .map(EmailAbsender::getAnzeigename)
+                .filter(name -> name != null && !name.isBlank())
+                .findFirst();
+    }
+
     @Transactional(readOnly = true)
     public Optional<EmailAbsender> findById(Long id) {
         if (id == null) {

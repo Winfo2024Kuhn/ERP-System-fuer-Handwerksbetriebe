@@ -60,6 +60,10 @@ interface DokumentMailSettings {
     username: string;
     passwordSet: boolean;
     fromAddress: string;
+    /** Name, der beim Kunden im Posteingang steht. Leer = nur die Adresse. */
+    fromName: string;
+    /** Posteingangs-Server für die Kopie im Gesendet-Ordner. Leer = wie beim Versand. */
+    imapHost: string;
 }
 
 interface TestResult {
@@ -125,6 +129,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     // Mahnungen). Leer = SMTP-Benutzer wird genommen.
     const [mailFromAddress, setMailFromAddress] = useState('');
     const [mailFromSmtpUser, setMailFromSmtpUser] = useState('');
+    const [mailFromName, setMailFromName] = useState('');
     const [mailFromSaving, setMailFromSaving] = useState(false);
 
     // Eigenes Postfach für Rechnungen, Mahnungen und Auftragsbestätigungen.
@@ -136,6 +141,8 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
         username: '',
         passwordSet: false,
         fromAddress: '',
+        fromName: '',
+        imapHost: '',
     });
     const [dokumentMailPassword, setDokumentMailPassword] = useState('');
     const [dokumentMailShowPassword, setDokumentMailShowPassword] = useState(false);
@@ -209,6 +216,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 const smtpUser: string = data?.smtpUsername || '';
                 setMailFromSmtpUser(smtpUser);
                 setMailFromAddress(stored && stored !== smtpUser ? stored : '');
+                setMailFromName(data?.name || '');
             }
 
             if (dateiOrdnerRes.ok) {
@@ -230,6 +238,10 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                     username: user,
                     passwordSet: !!data?.passwordSet,
                     fromAddress: stored && stored !== user ? stored : '',
+                    fromName: data?.fromName || '',
+                    // Wie beim Absender: identisch zum Versand-Server heißt
+                    // "nicht gesondert gesetzt" – Feld bleibt dann leer.
+                    imapHost: data?.imapHost && data.imapHost !== data.host ? data.imapHost : '',
                 });
             }
         } catch {
@@ -371,6 +383,8 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                     username: dokumentMail.username,
                     password: dokumentMailPassword || undefined,
                     fromAddress: dokumentMail.fromAddress,
+                    fromName: dokumentMail.fromName,
+                    imapHost: dokumentMail.imapHost,
                 }),
             });
             if (res.ok) {
@@ -578,7 +592,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
             const res = await fetch('/api/settings/mail-from', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address: trimmed }),
+                body: JSON.stringify({ address: trimmed, name: mailFromName.trim() }),
             });
             if (res.ok) {
                 const data = await res.json().catch(() => null);
@@ -684,6 +698,21 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                     guten Ruf Ihrer Hauptadresse und landen seltener im Spam-Ordner von
                     Gmail &amp; Co.
                 </p>
+
+                <div className="mb-4">
+                    <Label htmlFor="mailFromName">Angezeigter Name</Label>
+                    <Input
+                        id="mailFromName"
+                        placeholder="z.B. Bauschlosserei Kuhn"
+                        value={mailFromName}
+                        onChange={(e) => setMailFromName(e.target.value)}
+                        className="sm:max-w-md"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                        Steht beim Empfänger im Posteingang vor der Adresse. Leer lassen →
+                        der Kunde sieht nur die nackte E-Mail-Adresse, was anonymer wirkt.
+                    </p>
+                </div>
 
                 <div>
                     <Label>Absender-Adresse</Label>
@@ -849,6 +878,39 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                                         )}
                                     </button>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="dokumentMailName">Angezeigter Name</Label>
+                                <Input
+                                    id="dokumentMailName"
+                                    placeholder="z.B. Bauschlosserei Kuhn"
+                                    value={dokumentMail.fromName}
+                                    onChange={(e) =>
+                                        setDokumentMail((prev) => ({ ...prev, fromName: e.target.value }))
+                                    }
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Steht beim Kunden im Posteingang vor der Adresse.
+                                </p>
+                            </div>
+                            <div>
+                                <Label htmlFor="dokumentMailImapHost">Posteingangs-Server (optional)</Label>
+                                <Input
+                                    id="dokumentMailImapHost"
+                                    placeholder={dokumentMail.host || 'wie beim Versand'}
+                                    value={dokumentMail.imapHost}
+                                    onChange={(e) =>
+                                        setDokumentMail((prev) => ({ ...prev, imapHost: e.target.value }))
+                                    }
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Nur nötig, wenn Ihr Anbieter dafür einen anderen Servernamen
+                                    verwendet. Wird gebraucht, damit versendete Rechnungen auch im
+                                    Gesendet-Ordner des Postfachs landen.
+                                </p>
                             </div>
                         </div>
 

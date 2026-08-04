@@ -60,8 +60,34 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
 
     private final SystemSettingsService systemSettingsService;
 
+    /**
+     * Ablage im "Gesendet"-Ordner des Standard-Postfachs.
+     *
+     * <p>Gilt fuer den manuellen Schriftverkehr. Mails, die ueber das Postfach
+     * fuer Ausgangsgeschaeftsdokumente rausgehen, brauchen stattdessen
+     * {@link #fuerDokumentKonto()} — sonst laege die Kopie in einem anderen
+     * Postfach als dem, aus dem die Mail nachweislich versendet wurde, und
+     * waere als Beleg deutlich weniger wert.</p>
+     */
     @Override
     public void archiviereKopie(MimeMessage versendeteNachricht)
+    {
+        archiviereKopie(versendeteNachricht, systemSettingsService.getStandardImapZugang());
+    }
+
+    /**
+     * Handler fuer Mails, die ueber das Postfach fuer Ausgangsgeschaeftsdokumente
+     * versendet wurden. Ist kein eigenes Postfach eingerichtet, liefert
+     * {@code getDokumentImapZugang()} den Standard-Zugang — das Verhalten ist
+     * dann identisch zu {@link #archiviereKopie(MimeMessage)}.
+     */
+    public EmailService.SentCopyHandler fuerDokumentKonto()
+    {
+        return nachricht -> archiviereKopie(nachricht, systemSettingsService.getDokumentImapZugang());
+    }
+
+    void archiviereKopie(MimeMessage versendeteNachricht,
+            SystemSettingsService.ImapZugang zugang)
     {
         if (versendeteNachricht == null) return;
         if (!istAktiv())
@@ -69,9 +95,12 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
             log.debug("[SentKopie] Deaktiviert ({}=false)", SETTING_AKTIV);
             return;
         }
-        if (!systemSettingsService.isImapConfigured())
+        if (zugang == null
+                || zugang.host() == null || zugang.host().isBlank()
+                || zugang.username() == null || zugang.username().isBlank()
+                || zugang.password() == null || zugang.password().isBlank())
         {
-            log.debug("[SentKopie] IMAP nicht konfiguriert — keine Server-Kopie moeglich");
+            log.debug("[SentKopie] Posteingang nicht konfiguriert — keine Server-Kopie moeglich");
             return;
         }
 
@@ -83,10 +112,7 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
 
         try (Store store = Session.getInstance(props).getStore("imaps"))
         {
-            store.connect(systemSettingsService.getImapHost(),
-                    systemSettingsService.getImapPort(),
-                    systemSettingsService.getImapUsername(),
-                    systemSettingsService.getImapPassword());
+            store.connect(zugang.host(), zugang.port(), zugang.username(), zugang.password());
 
             Folder sent = findeSentOrdner(store);
             if (sent == null)
