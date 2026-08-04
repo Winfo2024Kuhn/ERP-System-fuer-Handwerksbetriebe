@@ -195,9 +195,13 @@ public class SystemSettingsController {
         }
         settingsService.saveMailFromAddress(address);
         settingsService.saveMailAbsenderName(req.name());
+        // Wortlaut bewusst ohne "automatische Mails": Rechnungen, Mahnungen,
+        // Angebote und Auftragsbestaetigungen laufen ueber das Dokument-Postfach
+        // (siehe SystemSettingsService#getDokumentMailKonto). Diese Adresse gilt
+        // fuer den Schriftverkehr im E-Mail-Center und die Anfrage-Bestaetigung.
         return ResponseEntity.ok(Map.of("message", address.isBlank()
-                ? "Absender zurückgesetzt – Auto-Mails nutzen wieder den SMTP-Benutzer."
-                : "Absender für automatische Mails gespeichert."));
+                ? "Absender zurückgesetzt – es wird wieder die Adresse des Postfachs verwendet."
+                : "Absender gespeichert."));
     }
 
     // ============ Mail-Konto für Ausgangsgeschäftsdokumente ============
