@@ -3,7 +3,7 @@ import {
     Receipt, Upload, Loader2, Search, Wallet, Banknote, CreditCard,
     Coins, FileQuestion, CheckCircle2, AlertCircle, Trash2, X, Truck,
     Save, RefreshCw, FileText, BookOpen, BarChart3, ArrowRightLeft, FileInput,
-    FileDown, Calendar, ArrowRight,
+    FileDown, Calendar, ArrowRight, Sparkles,
 } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
@@ -102,6 +102,15 @@ interface Beleg {
     sachkontoTyp?: SachkontoTyp | null;
     kiVorgeschlagenerLieferant?: string | null;
     kiConfidence?: number | null;
+    // Ergebnis des Kostenkonto-Agenten. Der Server liefert das schon lange mit
+    // (BelegDto.Response) — bis Issue #61 wurde es im UI nur nie angezeigt, der
+    // Buchhalter sah nur "KI fertig" und ein leeres Konto-Feld.
+    kiVorgeschlagenerKostenstelleId?: number | null;
+    kiVorgeschlagenerKostenstelleBezeichnung?: string | null;
+    kiVorgeschlagenerSachkontoId?: number | null;
+    kiVorgeschlagenerSachkontoBezeichnung?: string | null;
+    kiKostenkontoConfidence?: number | null;
+    kiKostenkontoBegruendung?: string | null;
     kiFehlerText?: string | null;
     originalDateiname?: string | null;
     mimeType?: string | null;
@@ -1341,6 +1350,13 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                             </div>
                         ) : null}
 
+                        <KiVorschlagKarte
+                            beleg={beleg}
+                            sachkonten={sachkonten}
+                            aktuellesSachkontoId={form.sachkontoId}
+                            onUebernehmen={id => update('sachkontoId', id)}
+                        />
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Wo gezahlt</label>
@@ -1609,6 +1625,112 @@ function AufteilungsSektion({ beleg }: { beleg: Beleg }) {
             <div className="px-3 py-2 text-xs text-slate-500 bg-white border-t border-slate-100">
                 Auswahl wurde am Handy getroffen. Zum Korrigieren in der Mobile-App neu auswählen.
             </div>
+        </div>
+    );
+}
+
+/**
+ * Uebersetzt den Confidence-Wert der KI (0..1) in Handwerker-Sprache. Die Zahl
+ * allein sagt niemandem etwas — und Farbe darf die Aussage nicht alleine
+ * tragen (Accessibility: "color-not-only"), deshalb immer zusaetzlich Text.
+ *
+ * Die Schwellen spiegeln die Confidence-Skala aus der System-Instruktion des
+ * Agenten (siehe BelegKiKostenkontoService.SYSTEM_INSTRUCTION).
+ */
+function sicherheitsText(confidence: number | null | undefined): { text: string; cls: string } {
+    if (confidence == null || !Number.isFinite(confidence)) {
+        return { text: 'Sicherheit unbekannt', cls: 'text-slate-600' };
+    }
+    if (confidence >= 0.95) return { text: 'sehr sicher', cls: 'text-emerald-700' };
+    if (confidence >= 0.70) return { text: 'ziemlich sicher', cls: 'text-slate-700' };
+    if (confidence >= 0.30) return { text: 'eher unsicher – bitte prüfen', cls: 'text-amber-700' };
+    return { text: 'sehr unsicher – bitte prüfen', cls: 'text-amber-700' };
+}
+
+/**
+ * Zeigt, was der KI-Kostenkonto-Agent vorgeschlagen hat: Konto, Begründung und
+ * wie sicher er sich ist — mit einem Klick übernehmbar.
+ *
+ * Hintergrund: Der Server liefert diese Felder schon lange mit (siehe
+ * BelegDto.Response), das UI hat sie bisher aber komplett verworfen. Der
+ * Buchhalter sah nur den Status "KI fertig" neben einem leeren Konto-Feld und
+ * musste jeden Beleg von Hand einordnen, obwohl die KI die Antwort inklusive
+ * Begründung längst geliefert hatte.
+ */
+function KiVorschlagKarte({ beleg, sachkonten, aktuellesSachkontoId, onUebernehmen }: {
+    beleg: Beleg;
+    sachkonten: Sachkonto[];
+    aktuellesSachkontoId: number | null;
+    onUebernehmen: (sachkontoId: number) => void;
+}) {
+    const vorschlagId = beleg.kiVorgeschlagenerSachkontoId;
+    const begruendung = beleg.kiKostenkontoBegruendung;
+
+    // Ohne Konto-Vorschlag gibt es nichts zu übernehmen. Eine reine Begründung
+    // ohne Konto ("ich konnte es nicht zuordnen") zeigen wir trotzdem an — das
+    // erklärt dem Buchhalter, warum das Feld leer geblieben ist.
+    if (vorschlagId == null && !begruendung) return null;
+
+    // Der Vorschlag ist nur wählbar, wenn das Konto auch wirklich in den
+    // aktiven Stammdaten steht — sonst hätte der Select-Wert keinen Eintrag
+    // und das Feld sähe nach dem Übernehmen wieder leer aus.
+    const vorschlagKonto = vorschlagId != null
+        ? sachkonten.find(s => s.id === vorschlagId) ?? null
+        : null;
+    const bereitsUebernommen = vorschlagId != null && aktuellesSachkontoId === vorschlagId;
+    const sicherheit = sicherheitsText(beleg.kiKostenkontoConfidence);
+
+    return (
+        <div className="border border-rose-200 bg-rose-50/60 rounded-lg p-3 space-y-2">
+            <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-rose-600 shrink-0" aria-hidden />
+                <span className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                    Das schlägt die KI vor
+                </span>
+            </div>
+
+            {vorschlagKonto ? (
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900">
+                            {vorschlagKonto.nummer ? `${vorschlagKonto.nummer} ` : ''}{vorschlagKonto.bezeichnung}
+                        </div>
+                        <div className={`text-xs ${sicherheit.cls}`}>{sicherheit.text}</div>
+                    </div>
+                    {bereitsUebernommen ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 shrink-0">
+                            <CheckCircle2 className="w-4 h-4" aria-hidden /> übernommen
+                        </span>
+                    ) : (
+                        <Button size="sm" type="button" variant="outline"
+                            className="border-rose-300 text-rose-700 hover:bg-rose-50 shrink-0"
+                            onClick={() => onUebernehmen(vorschlagKonto.id)}>
+                            Konto übernehmen
+                        </Button>
+                    )}
+                </div>
+            ) : vorschlagId != null ? (
+                // Vorschlag zeigt auf ein Konto, das nicht (mehr) aktiv ist.
+                <p className="text-sm text-slate-700">
+                    Vorgeschlagenes Konto ist nicht mehr aktiv – bitte von Hand wählen.
+                </p>
+            ) : (
+                <p className="text-sm text-slate-700">
+                    Die KI konnte kein Konto sicher zuordnen – bitte von Hand wählen.
+                </p>
+            )}
+
+            {begruendung && (
+                <p className="text-xs text-slate-600 leading-relaxed">
+                    <span className="font-medium text-slate-700">Warum: </span>{begruendung}
+                </p>
+            )}
+
+            {beleg.kiVorgeschlagenerKostenstelleBezeichnung && (
+                <p className="text-xs text-slate-500">
+                    Vorgeschlagener Kostenbereich: {beleg.kiVorgeschlagenerKostenstelleBezeichnung}
+                </p>
+            )}
         </div>
     );
 }

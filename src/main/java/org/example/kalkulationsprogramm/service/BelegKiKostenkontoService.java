@@ -279,7 +279,11 @@ public class BelegKiKostenkontoService {
         }
     }
 
-    private void wendeErgebnisAn(Beleg beleg, AgentErgebnis ergebnis) {
+    // Package-private statt private: die Uebernahme-Regeln (Confidence-Schwelle,
+    // Fixkosten-/Investitions-Pruefung, Aktiv-Pruefung) sind die eigentliche
+    // Fachlogik dieses Service und werden direkt getestet — ohne den Umweg ueber
+    // einen gemockten Gemini-HTTP-Call.
+    void wendeErgebnisAn(Beleg beleg, AgentErgebnis ergebnis) {
         // Vorschlaege immer protokollieren — selbst bei niedriger Confidence
         // dient das als Hinweis im UI ("KI haette das so eingeordnet").
         beleg.setKiVorgeschlagenerKostenstelleId(ergebnis.kostenstelleId());
@@ -318,19 +322,35 @@ public class BelegKiKostenkontoService {
                         beleg.getId(), ks.getId(), ks.getBezeichnung());
             }
         }
-        // Sachkonto nur uebernehmen, wenn auch die Kostenstelle auto-uebernommen
-        // wurde — sonst hat der Buchhalter nichts zum Korrigieren mehr. Zusaetzlich
-        // pruefen wir, dass das Sachkonto wirklich aktiv ist (KI darf nicht ein
-        // deaktiviertes Konto setzen, das es in liste_sachkonten gar nicht gab).
-        if (autoAppliedKostenstelle && ergebnis.sachkontoId() != null && beleg.getSachkonto() == null) {
-            sachkontoRepository.findById(ergebnis.sachkontoId())
+        // Sachkonto wird UNABHAENGIG von der Kostenstelle uebernommen. Frueher war
+        // es an autoAppliedKostenstelle gekoppelt — mit dem Effekt, dass eine
+        // Tankquittung mit Confidence 0.97 im Validier-Dialog trotzdem bei
+        // "kein Konto" landete, sobald die Kostenstelle an der Fixkosten-/
+        // Investitions-Pruefung oben scheiterte. Der Vorschlag verschwand dann
+        // stillschweigend, obwohl die KI ihn geliefert hatte.
+        //
+        // Die Entkopplung ist ungefaehrlich: das Sachkonto beantwortet nur
+        // "wofuer war das Geld" und bleibt im Pruef-Dialog frei aenderbar. Es
+        // steuert — anders als die Kostenstelle — NICHT, ob ein Beleg aus dem
+        // Bestellungs-Workflow herausfaellt. Die schuetzende Logik fuer
+        // Projekt-Material oben bleibt davon unberuehrt.
+        //
+        // Zusaetzlich pruefen wir, dass das Sachkonto wirklich aktiv ist (KI darf
+        // kein deaktiviertes Konto setzen, das es in liste_sachkonten nie gab).
+        boolean autoAppliedSachkonto = false;
+        if (highConfidence && ergebnis.sachkontoId() != null && beleg.getSachkonto() == null) {
+            Sachkonto sk = sachkontoRepository.findById(ergebnis.sachkontoId())
                     .filter(Sachkonto::isAktiv)
-                    .ifPresent(beleg::setSachkonto);
+                    .orElse(null);
+            if (sk != null) {
+                beleg.setSachkonto(sk);
+                autoAppliedSachkonto = true;
+            }
         }
 
-        log.info("KI-Agent Beleg {}: ks={} sk={} conf={} auto={}",
+        log.info("KI-Agent Beleg {}: ks={} sk={} conf={} autoKs={} autoSk={}",
                 beleg.getId(), ergebnis.kostenstelleId(), ergebnis.sachkontoId(),
-                clampedConfidence, autoAppliedKostenstelle);
+                clampedConfidence, autoAppliedKostenstelle, autoAppliedSachkonto);
     }
 
     /**
@@ -650,10 +670,10 @@ public class BelegKiKostenkontoService {
     // Helpers
     // ---------------------------------------------------------------------
 
-    private record AgentErgebnis(Long kostenstelleId,
-                                 Long sachkontoId,
-                                 BigDecimal confidence,
-                                 String begruendung) {}
+    record AgentErgebnis(Long kostenstelleId,
+                         Long sachkontoId,
+                         BigDecimal confidence,
+                         String begruendung) {}
 
     private static String stripFences(String text) {
         if (text == null) return "";
