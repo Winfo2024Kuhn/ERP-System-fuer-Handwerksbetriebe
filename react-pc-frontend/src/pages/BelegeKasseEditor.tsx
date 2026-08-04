@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Receipt, Upload, Loader2, Search, Wallet, Banknote, CreditCard,
     Coins, FileQuestion, CheckCircle2, AlertCircle, Trash2, X, Truck,
-    Save, RefreshCw, FileText, BookOpen, BarChart3, ArrowRightLeft, FileInput,
+    Save, RefreshCw, FileText, BookOpen, BarChart3, ArrowRightLeft,
     FileDown, Calendar, ArrowRight, Sparkles, ChevronDown, ChevronRight,
     Lock, Undo2,
 } from 'lucide-react';
@@ -321,7 +321,6 @@ export default function BelegeKasseEditor() {
     const [kasseBis, setKasseBis] = useState<string>(heuteIso);
     const [kasseSearch, setKasseSearch] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [umbuchungOpen, setUmbuchungOpen] = useState(false);
     const [monatsExportOpen, setMonatsExportOpen] = useState(false);
     const [steuerberaterEmailOpen, setSteuerberaterEmailOpen] = useState(false);
 
@@ -485,10 +484,6 @@ export default function BelegeKasseEditor() {
                         <RefreshCw className={loading ? 'w-4 h-4 mr-2 animate-spin' : 'w-4 h-4 mr-2'} />
                         Aktualisieren
                     </Button>
-                    <Button variant="outline" onClick={() => setUmbuchungOpen(true)}>
-                        <ArrowRightLeft className="w-4 h-4 mr-2" />
-                        Umbuchung anlegen
-                    </Button>
                     {activeTab === 'kasse' && (
                         <Button variant="outline" onClick={() => setMonatsExportOpen(true)}
                                 title="Monatsexport für den Steuerberater als PDF">
@@ -632,18 +627,6 @@ export default function BelegeKasseEditor() {
                 />
             )}
 
-            {umbuchungOpen && (
-                <UmbuchungModal
-                    sachkonten={sachkonten}
-                    zahlungsarten={zahlungsarten}
-                    onClose={() => setUmbuchungOpen(false)}
-                    onCreated={(b) => {
-                        setBelege(list => [b, ...list]);
-                        setUmbuchungOpen(false);
-                    }}
-                />
-            )}
-
             {monatsExportOpen && (
                 <MonatsExportModal onClose={() => setMonatsExportOpen(false)} />
             )}
@@ -739,174 +722,6 @@ function MonatsExportModal({ onClose }: { onClose: () => void }) {
                     <Button onClick={handleExport} className="bg-rose-600 hover:bg-rose-700 text-white">
                         <FileText className="w-4 h-4 mr-2" />
                         PDF erstellen
-                    </Button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// ===================== Umbuchungs-Modal (ohne Beleg-Datei) =====================
-
-/**
- * Belegfreie Buchung: Privatentnahme, Privat->Firma, Kasse->Bank.
- * Sendet an POST /api/buchhaltung/umbuchungen. Erzeugter Beleg ist sofort
- * validiert und mit istUmbuchung=true markiert.
- */
-function UmbuchungModal({ sachkonten, zahlungsarten, onClose, onCreated }: {
-    sachkonten: Sachkonto[];
-    zahlungsarten: Zahlungsart[];
-    onClose: () => void;
-    onCreated: (b: Beleg) => void;
-}) {
-    const heute = new Date().toISOString().slice(0, 10);
-    const [form, setForm] = useState({
-        belegKategorie: 'PRIVATENTNAHME' as BelegKategorie,
-        belegDatum: heute,
-        betragBrutto: '' as string,
-        beschreibung: '',
-        zahlungsart: '',
-        sachkontoId: null as number | null,
-        notiz: '',
-    });
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    const update = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
-        setForm(f => ({ ...f, [k]: v }));
-
-    const submit = async () => {
-        setError(null);
-        const betrag = Number(form.betragBrutto);
-        if (!Number.isFinite(betrag) || betrag <= 0) {
-            setError('Bitte einen positiven Betrag eingeben.');
-            return;
-        }
-        if (!form.belegDatum) {
-            setError('Bitte ein Datum wählen.');
-            return;
-        }
-        setSaving(true);
-        try {
-            const res = await fetch('/api/buchhaltung/umbuchungen', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    belegKategorie: form.belegKategorie,
-                    belegDatum: form.belegDatum,
-                    betragBrutto: betrag,
-                    beschreibung: form.beschreibung || null,
-                    zahlungsart: form.zahlungsart || null,
-                    sachkontoId: form.sachkontoId,
-                    notiz: form.notiz || null,
-                }),
-            });
-            if (!res.ok) {
-                const txt = await res.text().catch(() => '');
-                setError('Anlegen fehlgeschlagen: ' + (txt || res.statusText));
-                return;
-            }
-            const b: Beleg = await res.json();
-            onCreated(b);
-        } catch (e) {
-            setError('Netzwerkfehler');
-            console.error(e);
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    // Nur Bewegungskategorien erlauben — Umbuchungen ohne Wirkung im Kassenbuch
-    // (UNZUGEORDNET, SONSTIGER_BELEG) sind serverseitig blockiert.
-    const KATEGORIEN_UMBUCHUNG: BelegKategorie[] = [
-        'PRIVATENTNAHME', 'PRIVATEINLAGE', 'KASSE_EINNAHME', 'KASSE_AUSGABE', 'BANK', 'KREDITKARTE',
-    ];
-
-    return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl flex flex-col">
-                <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <FileInput className="w-5 h-5 text-rose-600" />
-                        <div>
-                            <h2 className="font-bold text-slate-900">Umbuchung ohne Beleg</h2>
-                            <p className="text-xs text-slate-500">Privatentnahme, Kasse → Bank, Privat → Firma …</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-5 h-5 text-slate-500" /></button>
-                </div>
-
-                <div className="p-6 space-y-4">
-                    {error && (
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                            {error}
-                        </div>
-                    )}
-
-                    <Field label="Art der Buchung">
-                        <Select
-                            value={form.belegKategorie}
-                            onChange={v => update('belegKategorie', v as BelegKategorie)}
-                            options={KATEGORIEN_UMBUCHUNG.map(k => ({ value: k, label: KATEGORIE_LABELS[k] }))}
-                        />
-                    </Field>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field label="Datum">
-                            <input type="date" value={form.belegDatum}
-                                onChange={e => update('belegDatum', e.target.value)}
-                                className={inputCls} />
-                        </Field>
-                        <Field label="Betrag (€)">
-                            <input type="number" step="0.01" min="0" value={form.betragBrutto}
-                                onChange={e => update('betragBrutto', e.target.value)}
-                                placeholder="z.B. 100,00"
-                                className={inputCls} />
-                        </Field>
-                    </div>
-
-                    <Field label="Beschreibung">
-                        <input type="text" value={form.beschreibung}
-                            onChange={e => update('beschreibung', e.target.value)}
-                            maxLength={500}
-                            placeholder="z.B. Privatentnahme Bar, Bareinzahlung auf Bankkonto"
-                            className={inputCls} />
-                    </Field>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field label="Zahlungsart">
-                            <Select
-                                value={form.zahlungsart}
-                                onChange={v => update('zahlungsart', v)}
-                                placeholder="– bitte wählen –"
-                                options={buildZahlungsartOptions(zahlungsarten, form.zahlungsart)}
-                            />
-                        </Field>
-                        <Field label="Konto (optional)">
-                            <Select
-                                value={form.sachkontoId != null ? String(form.sachkontoId) : ''}
-                                onChange={v => update('sachkontoId', v ? Number(v) : null)}
-                                placeholder="– kein Konto –"
-                                options={buildSachkontoOptions(sachkonten)}
-                            />
-                        </Field>
-                    </div>
-
-                    <Field label="Notiz">
-                        <textarea rows={2} value={form.notiz}
-                            onChange={e => update('notiz', e.target.value)}
-                            maxLength={1000}
-                            className={inputCls} />
-                    </Field>
-                </div>
-
-                <div className="border-t border-slate-200 p-4 flex items-center justify-end gap-2 bg-slate-50">
-                    <Button variant="outline" onClick={onClose} disabled={saving}>
-                        Abbrechen
-                    </Button>
-                    <Button onClick={submit} disabled={saving}>
-                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                        Umbuchung anlegen
                     </Button>
                 </div>
             </div>
