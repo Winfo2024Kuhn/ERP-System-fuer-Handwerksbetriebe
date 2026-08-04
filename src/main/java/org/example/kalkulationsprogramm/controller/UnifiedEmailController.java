@@ -1370,18 +1370,14 @@ public class UnifiedEmailController {
             @RequestPart(value = "dokumentId", required = false) String dokumentIdStr) {
 
         try {
-            // E-Mail senden via SMTP – Zugangsdaten zur Laufzeit aus System-Setup (DB) lesen,
-            // damit Änderungen ohne Backend-Neustart wirksam werden.
-            org.example.email.EmailService emailService = new org.example.email.EmailService(
-                    systemSettingsService.getSmtpHost(),
-                    systemSettingsService.getSmtpPort(),
-                    systemSettingsService.getSmtpUsername(),
-                    systemSettingsService.getSmtpPassword())
-                    .mitSentKopie(sentMailArchiver);
-
             // Attachments vorbereiten
             List<org.example.email.EmailService.Attachment> attachmentsForEmail = new ArrayList<>();
             List<java.io.File> tempFiles = new ArrayList<>();
+
+            // Der Versand-Account wird erst weiter unten gewaehlt: Ob das eigene
+            // Postfach zum Zug kommt, haengt davon ab, ob hier ein
+            // Ausgangsgeschaeftsdokument im Anhang steckt — und das steht erst
+            // nach dem Laden des Dokuments fest.
 
             // 1. Dokument anhängen (wenn dokumentId angegeben)
             // WICHTIG: Basierend auf DTO-Kontext das RICHTIGE Repository verwenden!
@@ -1485,14 +1481,47 @@ public class UnifiedEmailController {
                     ? String.join(",", dto.getCc())
                     : null;
 
+            // Haengt an dieser Mail ein Ausgangsgeschaeftsdokument (Rechnung,
+            // Angebot, Auftragsbestaetigung)? Nur dann greift das eigene
+            // Postfach. Zeichnungen, Aufmasse und freier Schriftverkehr bleiben
+            // auf dem Standard-Konto — sonst kippt der gesamte Mailverkehr auf
+            // die neue Domain, was ausdruecklich nicht gewollt ist.
+            // Das Kennzeichen setzt der Dokument-Editor. Der Anhang kommt dort
+            // als gewoehnliche Datei hoch (ohne dokumentId), das Backend koennte
+            // die Dokumentart also gar nicht selbst erkennen. Die zusaetzliche
+            // Pruefung auf ein verknuepftes Dokument deckt Aufrufer ab, die
+            // stattdessen eine dokumentId mitschicken.
+            boolean istGeschaeftsdokument = dto.isGeschaeftsdokument()
+                    || projektDokument instanceof org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument
+                    || anfrageDokument instanceof org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
+            boolean ueberDokumentKonto =
+                    istGeschaeftsdokument && systemSettingsService.nutztDokumentMailKonto();
+
+            // Zugangsdaten zur Laufzeit aus dem System-Setup (DB) lesen, damit
+            // Aenderungen ohne Backend-Neustart wirksam werden.
+            var konto = ueberDokumentKonto
+                    ? systemSettingsService.getDokumentMailKonto()
+                    : systemSettingsService.getStandardMailKonto();
+            org.example.email.EmailService emailService = new org.example.email.EmailService(
+                    konto.host(), konto.port(), konto.username(), konto.password())
+                    .mitSentKopie(sentMailArchiver);
+
             String sender;
-            try {
-                sender = resolveSenderAddress(dto.getSender(), dto.getFrontendUserId());
-            } catch (IllegalArgumentException ex) {
-                log.warn("Sender-Aufloesung fehlgeschlagen: {}", ex.getMessage());
-                return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+            if (ueberDokumentKonto) {
+                // Absender kommt zwingend aus dem Dokument-Konto: Eine Adresse
+                // aus der Absender-Liste wuerde nicht zum versendenden Postfach
+                // passen, SPF und DKIM schluegen beim Empfaenger fehl. Die
+                // Pruefung gegen die Absender-Liste entfaellt deshalb hier.
+                sender = konto.fromAddress();
+            } else {
+                try {
+                    sender = resolveSenderAddress(dto.getSender(), dto.getFrontendUserId());
+                } catch (IllegalArgumentException ex) {
+                    log.warn("Sender-Aufloesung fehlgeschlagen: {}", ex.getMessage());
+                    return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+                }
             }
-            if (sender == null) {
+            if (sender == null || sender.isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "message",
                         "Kein Absender konfiguriert. Bitte unter Firma -> E-Mail-Absender mindestens eine Adresse anlegen."));

@@ -121,6 +121,134 @@ public class SystemSettingsService {
         return val;
     }
 
+    // ============ Mail-Konto für Ausgangsgeschäftsdokumente ============
+    //
+    // Rechnungen, Mahnungen und Bestätigungen gehen optional über ein eigenes
+    // Postfach raus statt über das Standard-Konto. Hintergrund: Bei einem
+    // Freemail-Postfach gehören SPF und DKIM dem Provider, nicht dem Absender —
+    // Empfänger-Spamfilter bewerten geschäftliche Post mit PDF-Anhang von dort
+    // deutlich schärfer. Ein Postfach auf der eigenen Firmendomain mit eigenem
+    // SPF- und DKIM-Eintrag hebt diesen Nachteil auf.
+    //
+    // Der manuelle Schriftverkehr im E-Mail-Center und der IMAP-Abruf bleiben
+    // bewusst auf dem Standard-Konto: Nur der Dokumentversand wechselt.
+
+    /** {@code true}, wenn der Dokumentversand über das eigene Postfach laufen soll. */
+    public boolean isDokumentMailKontoAktiv() {
+        return Boolean.parseBoolean(get("smtp.dokumente.aktiv", "false"));
+    }
+
+    public String getDokumentSmtpHost() {
+        return sanitizeValue(get("smtp.dokumente.host", ""));
+    }
+
+    public int getDokumentSmtpPort() {
+        String val = get("smtp.dokumente.port", "465");
+        try {
+            int port = Integer.parseInt(val);
+            return port > 0 ? port : 465;
+        } catch (NumberFormatException e) {
+            return 465;
+        }
+    }
+
+    public String getDokumentSmtpUsername() {
+        return sanitizeValue(get("smtp.dokumente.username", ""));
+    }
+
+    public String getDokumentSmtpPassword() {
+        return sanitizeValue(get("smtp.dokumente.password", ""));
+    }
+
+    /**
+     * Sichtbare Absender-Adresse des Dokument-Kontos; leer oder ohne "@" fällt
+     * auf den SMTP-Benutzer zurück.
+     *
+     * <p>Die Adresse muss zur Domain des Postfachs passen. Trägt man hier eine
+     * Adresse einer anderen Domain ein, schlagen SPF und DKIM beim Empfänger
+     * fehl — das Ergebnis wäre schlechter als der Versand über das
+     * Standard-Konto, weil die Mail dann wie eine Fälschung aussieht.</p>
+     */
+    public String getDokumentMailFromAddress() {
+        String val = sanitizeValue(get("mail.dokumente.from-address", ""));
+        if (val.isBlank() || !val.contains("@")) {
+            return getDokumentSmtpUsername();
+        }
+        return val;
+    }
+
+    public boolean isDokumentMailKontoConfigured() {
+        return hasConfiguredValue(getDokumentSmtpHost())
+                && getDokumentSmtpPort() > 0
+                && hasConfiguredValue(getDokumentSmtpUsername())
+                && hasConfiguredValue(getDokumentSmtpPassword());
+    }
+
+    /**
+     * {@code true}, wenn der Dokumentversand tatsächlich über das eigene Postfach
+     * läuft — also eingeschaltet <em>und</em> vollständig ausgefüllt ist.
+     *
+     * <p>Wichtig für Versandstellen, an denen der Absender sonst frei wählbar
+     * ist: Läuft das eigene Konto, muss dessen Adresse gewinnen, sonst passen
+     * Absender und versendendes Postfach nicht zusammen.</p>
+     */
+    public boolean nutztDokumentMailKonto() {
+        return isDokumentMailKontoAktiv() && isDokumentMailKontoConfigured();
+    }
+
+    /** Zugangsdaten des Standard-Postfachs (manueller Schriftverkehr, IMAP-Abruf). */
+    public MailKonto getStandardMailKonto() {
+        return new MailKonto(getSmtpHost(), getSmtpPort(), getSmtpUsername(),
+                getSmtpPassword(), getMailFromAddress());
+    }
+
+    /**
+     * Konto für den Versand von Ausgangsgeschäftsdokumenten.
+     *
+     * <p>Fällt auf {@link #getStandardMailKonto()} zurück, solange das eigene
+     * Konto nicht eingeschaltet oder unvollständig ausgefüllt ist. Ein halb
+     * konfiguriertes Konto darf den Versand nicht abreißen lassen — eine
+     * Rechnung, die gar nicht rausgeht, ist schlimmer als eine, die über das
+     * bisherige Postfach geht.</p>
+     */
+    public MailKonto getDokumentMailKonto() {
+        if (!isDokumentMailKontoAktiv()) {
+            return getStandardMailKonto();
+        }
+        if (!isDokumentMailKontoConfigured()) {
+            // Bewusst debug statt warn: Diese Methode läuft pro versendeter Mail,
+            // im Mahnlauf also pro Rechnung. Gegen eine unvollständige Einrichtung
+            // schützt die Prüfung beim Speichern — hier würde eine Warnung nur
+            // das Log fluten.
+            log.debug("Dokument-Mailkonto ist eingeschaltet, aber unvollständig konfiguriert "
+                    + "— Versand läuft über das Standard-Konto.");
+            return getStandardMailKonto();
+        }
+        return new MailKonto(getDokumentSmtpHost(), getDokumentSmtpPort(),
+                getDokumentSmtpUsername(), getDokumentSmtpPassword(),
+                getDokumentMailFromAddress());
+    }
+
+    @Transactional
+    public void saveDokumentMailSettings(boolean aktiv, String host, int port,
+            String username, String password, String fromAddress) {
+        save("smtp.dokumente.aktiv", String.valueOf(aktiv),
+                "Eigenes Mail-Konto für Ausgangsgeschäftsdokumente verwenden");
+        save("smtp.dokumente.host", host == null ? "" : host.trim(),
+                "SMTP Mail-Server für Ausgangsgeschäftsdokumente");
+        save("smtp.dokumente.port", String.valueOf(port > 0 ? port : 465),
+                "SMTP Port für Ausgangsgeschäftsdokumente (465 = SSL)");
+        save("smtp.dokumente.username", username == null ? "" : username.trim(),
+                "SMTP Benutzername / E-Mail-Adresse für Ausgangsgeschäftsdokumente");
+        save("smtp.dokumente.password", password == null ? "" : password,
+                "SMTP Passwort für Ausgangsgeschäftsdokumente");
+        save("mail.dokumente.from-address", fromAddress == null ? "" : fromAddress.trim(),
+                "Sichtbare Absender-Adresse für Ausgangsgeschäftsdokumente");
+        // Bewusst ohne Passwort und ohne Absender-Adresse geloggt.
+        log.info("Dokument-Mailkonto aktualisiert (aktiv: {}, Host: {}, Port: {})",
+                aktiv, host, port);
+    }
+
     public String getImapHost() {
         String val = sanitizeValue(get("imap.host", defaultImapHost));
         return val.isBlank() ? "secureimap.t-online.de" : val;
@@ -263,6 +391,12 @@ public class SystemSettingsService {
         settings.put("imap.password", maskValue(getImapPassword()));
         settings.put("ai.gemini.api-key", maskValue(getGeminiApiKey()));
         settings.put("mail.from-address", getMailFromAddress());
+        settings.put("smtp.dokumente.aktiv", String.valueOf(isDokumentMailKontoAktiv()));
+        settings.put("smtp.dokumente.host", getDokumentSmtpHost());
+        settings.put("smtp.dokumente.port", String.valueOf(getDokumentSmtpPort()));
+        settings.put("smtp.dokumente.username", getDokumentSmtpUsername());
+        settings.put("smtp.dokumente.password", maskValue(getDokumentSmtpPassword()));
+        settings.put("mail.dokumente.from-address", getDokumentMailFromAddress());
         settings.put("datei.ordner-pfad", getDateiOrdnerPfad());
         settings.put("datei.ordner-network-url", getDateiOrdnerNetworkUrl());
 
@@ -486,6 +620,20 @@ public class SystemSettingsService {
 
     private boolean hasConfiguredValue(String value) {
         return !sanitizeValue(value).isBlank();
+    }
+
+    /**
+     * Ein vollständiger Satz Versand-Zugangsdaten samt der nach außen sichtbaren
+     * Absender-Adresse.
+     *
+     * <p>Fasst zusammen, was bisher an jeder Versandstelle einzeln aus den
+     * Einstellungen zusammengesucht wurde. Seit es zwei Postfächer gibt
+     * (Standard und Ausgangsgeschäftsdokumente), muss jede Versandstelle
+     * denselben Satz Daten geschlossen weiterreichen — sonst landet
+     * versehentlich das Passwort des einen Kontos beim Server des anderen.</p>
+     */
+    public record MailKonto(String host, int port, String username,
+            String password, String fromAddress) {
     }
 
     /**

@@ -443,7 +443,13 @@ public class AutoMahnVersandService
         }
     }
 
-    /** Separater SMTP-Abstraktionspunkt, damit die Nachversand-Schritte testbar sind. */
+    /**
+     * Separater SMTP-Abstraktionspunkt, damit die Nachversand-Schritte testbar sind.
+     *
+     * <p>Versendet ueber das Konto fuer Ausgangsgeschaeftsdokumente. Ist keins
+     * eingerichtet, liefert {@code getDokumentMailKonto()} das Standard-Konto —
+     * der Versand laeuft dann wie bisher.</p>
+     */
     protected String sendeEmail(String empfaenger,
             String absender,
             String subject,
@@ -451,11 +457,9 @@ public class AutoMahnVersandService
             Path pdf,
             String dateiname) throws Exception
     {
+        SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
         EmailService emailService = new EmailService(
-                systemSettingsService.getSmtpHost(),
-                systemSettingsService.getSmtpPort(),
-                systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword())
+                konto.host(), konto.port(), konto.username(), konto.password())
                 .mitSentKopie(sentMailArchiver);
         return emailService.sendEmailAndReturnMessageId(empfaenger, null, absender,
                 subject, htmlBody, pdf.toString(), dateiname);
@@ -1003,10 +1007,17 @@ public class AutoMahnVersandService
         return sb.length() == 0 ? "" : sb.toString();
     }
 
+    /**
+     * Sichtbare Absender-Adresse der Mahnung.
+     *
+     * <p>Kommt aus demselben Konto, ueber das auch versendet wird (siehe
+     * {@link #sendeEmail}). Beides muss zusammenpassen: Eine Absender-Adresse
+     * auf einer anderen Domain als das versendende Postfach laesst SPF und DKIM
+     * beim Empfaenger fehlschlagen — die Mahnung landet dann sicher im Spam.</p>
+     */
     private String ermittleAbsenderAdresse()
     {
-        // Konfigurierbar im Firma-Editor → System-Setup; Fallback auf SMTP-User.
-        return systemSettingsService.getMailFromAddress();
+        return systemSettingsService.getDokumentMailKonto().fromAddress();
     }
 
     private static String formatBetrag(BigDecimal betrag)

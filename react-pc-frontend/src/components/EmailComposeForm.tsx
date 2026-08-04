@@ -61,6 +61,16 @@ export interface EmailComposeFormProps {
     replyEmailId?: number;
     /** Pre-attached files (e.g. generated PDF from DocumentEditor) */
     initialAttachments?: File[];
+    /**
+     * Markiert den Versand als Ausgangsgeschäftsdokument (Rechnung, Angebot,
+     * Auftragsbestätigung). Setzt der Dokument-Editor.
+     *
+     * <p>Ist ein eigenes Postfach für Geschäftsdokumente eingerichtet, geht die
+     * Mail darüber raus und der Absender ist fest vorgegeben – eine frei
+     * gewählte Adresse würde nicht zum versendenden Postfach passen und beim
+     * Empfänger an SPF/DKIM scheitern.</p>
+     */
+    geschaeftsdokument?: boolean;
     /** Vom Benutzer im Pop-up gewählte Gültigkeit des digitalen Annahme-Links (nur Angebote). */
     gueltigkeitTage?: number;
     onSuccess?: () => void;
@@ -153,6 +163,7 @@ export function EmailComposeForm({
     replyQuote,
     replyEmailId,
     initialAttachments,
+    geschaeftsdokument = false,
     onSuccess,
     draftId: initialDraftId,
     zuordnungWaehlbar = false,
@@ -178,6 +189,11 @@ export function EmailComposeForm({
     const [fetchedVorgangName, setFetchedVorgangName] = useState('');
     const [fromAddresses, setFromAddresses] = useState<string[]>([]);
     const [fromAddress, setFromAddress] = useState('');
+    /**
+     * Absender-Adresse des eigenen Postfachs für Geschäftsdokumente, sofern
+     * eingerichtet. Leer = es gibt keins, dann bleibt die freie Auswahl.
+     */
+    const [dokumentAbsender, setDokumentAbsender] = useState('');
 
     // Props gelten nur, solange die ursprüngliche Zuordnung nicht geändert wurde
     const propProjekt = zuordnung?.typ === 'PROJEKT' && zuordnung.id === projektId ? projekt : undefined;
@@ -471,7 +487,24 @@ export function EmailComposeForm({
         } catch (err) {
             console.error('Absender-Adressen konnten nicht geladen werden:', err);
         }
-    }, []);
+
+        // Beim Versand eines Geschäftsdokuments entscheidet nicht die Auswahl,
+        // sondern das dafür eingerichtete Postfach. Wir holen die Adresse, um
+        // sie anzuzeigen und die Auswahl zu sperren.
+        if (!geschaeftsdokument) return;
+        try {
+            const res = await fetch('/api/email/dokument-absender');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data?.aktiv && typeof data.address === 'string' && data.address.trim()) {
+                setDokumentAbsender(data.address.trim());
+            }
+        } catch (err) {
+            // Kein harter Fehler: Ohne die Auskunft bleibt die freie Auswahl
+            // stehen, der Versand läuft serverseitig trotzdem korrekt.
+            console.error('Absender für Geschäftsdokumente konnte nicht geladen werden:', err);
+        }
+    }, [geschaeftsdokument]);
 
     const loadEntityDokumente = useCallback(async () => {
         if (!entityId) {
@@ -787,6 +820,9 @@ export function EmailComposeForm({
                 // Include entity assignment in the DTO
                 projektId: !isAnfrageContext && entityId ? entityId : null,
                 anfrageId: isAnfrageContext && entityId ? entityId : null,
+                // Entscheidet serverseitig, ob das Postfach für
+                // Geschäftsdokumente statt des Standard-Postfachs greift.
+                geschaeftsdokument,
             };
 
             formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
@@ -973,14 +1009,31 @@ export function EmailComposeForm({
                             </div>
 
                             <div className="space-y-2">
-                                <Label>Von</Label>
-                                <Select
-                                    options={fromAddressOptions}
-                                    value={fromAddress}
-                                    onChange={(val) => { markDirty(); setFromAddress(val); }}
-                                    placeholder="Absender wählen"
-                                    disabled={fromAddressOptions.length === 0}
-                                />
+                                <Label htmlFor={dokumentAbsender ? 'fromAddressFest' : undefined}>Von</Label>
+                                {dokumentAbsender ? (
+                                    <>
+                                        <Input
+                                            id="fromAddressFest"
+                                            value={dokumentAbsender}
+                                            readOnly
+                                            aria-describedby="fromAddressFestHinweis"
+                                            className="bg-slate-50 text-slate-700"
+                                        />
+                                        <p id="fromAddressFestHinweis" className="text-xs text-slate-500">
+                                            Rechnungen, Angebote und Auftragsbestätigungen gehen fest über
+                                            dieses Postfach raus, damit sie beim Kunden nicht im Spam landen.
+                                            Der Absender lässt sich hier deshalb nicht ändern.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <Select
+                                        options={fromAddressOptions}
+                                        value={fromAddress}
+                                        onChange={(val) => { markDirty(); setFromAddress(val); }}
+                                        placeholder="Absender wählen"
+                                        disabled={fromAddressOptions.length === 0}
+                                    />
+                                )}
                             </div>
 
                             <div className="space-y-2">

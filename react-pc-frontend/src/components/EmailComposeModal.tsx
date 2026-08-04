@@ -65,6 +65,12 @@ interface EmailComposeModalProps {
     kundeId?: number;
     /** Pre-attached files (e.g. generated PDF from DocumentEditor) */
     initialAttachments?: File[];
+    /**
+     * Markiert den Versand als Ausgangsgeschäftsdokument. Ist ein eigenes
+     * Postfach dafür eingerichtet, geht die Mail darüber raus und der Absender
+     * ist fest vorgegeben.
+     */
+    geschaeftsdokument?: boolean;
     initialRecipient?: string;
     initialSubject?: string;
     initialBody?: string;
@@ -83,6 +89,7 @@ export default function EmailComposeModal({
     anfrage,
     kundeId,
     initialAttachments,
+    geschaeftsdokument,
     initialRecipient,
     initialSubject,
     initialBody,
@@ -107,6 +114,7 @@ export default function EmailComposeModal({
                     anfrage={anfrage}
                     kundeId={kundeId}
                     initialAttachments={initialAttachments}
+                    geschaeftsdokument={geschaeftsdokument}
                     initialRecipient={initialRecipient}
                     initialSubject={initialSubject}
                     initialBody={initialBody}

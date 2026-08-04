@@ -35,6 +35,13 @@ public class SystemSettingsController {
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("^[^@\\s]+@[^@\\s.]+(?:\\.[^@\\s.]+)+$");
 
+    /**
+     * Obergrenze für einzelne Eingabefelder der Mail-Konten. Ein Hostname oder
+     * eine E-Mail-Adresse ist nie annähernd so lang; der Wert dient nur dazu,
+     * absurd große Eingaben abzuweisen, bevor sie in der Datenbank landen.
+     */
+    private static final int MAX_FELD_LAENGE = 500;
+
     // ==================== Alle Einstellungen lesen ====================
 
     @GetMapping
@@ -187,6 +194,107 @@ public class SystemSettingsController {
                 : "Absender für automatische Mails gespeichert."));
     }
 
+    // ============ Mail-Konto für Ausgangsgeschäftsdokumente ============
+
+    @GetMapping("/dokument-mail")
+    public ResponseEntity<DokumentMailResponse> getDokumentMail() {
+        return ResponseEntity.ok(new DokumentMailResponse(
+                settingsService.isDokumentMailKontoAktiv(),
+                settingsService.getDokumentSmtpHost(),
+                settingsService.getDokumentSmtpPort(),
+                settingsService.getDokumentSmtpUsername(),
+                hasValue(settingsService.getDokumentSmtpPassword()),
+                settingsService.getDokumentMailFromAddress()));
+    }
+
+    @PutMapping("/dokument-mail")
+    public ResponseEntity<Map<String, String>> saveDokumentMail(@RequestBody DokumentMailRequest req) {
+        String host = req.host() == null ? "" : req.host().trim();
+        String username = req.username() == null ? "" : req.username().trim();
+        String fromAddress = req.fromAddress() == null ? "" : req.fromAddress().trim();
+
+        // Laengenbegrenzung vor jeder weiteren Pruefung: Die Werte landen in
+        // einer TEXT-Spalte und der Host anschliessend in einem SMTP-Connect.
+        // Ueberlange Eingaben werden abgewiesen statt gespeichert.
+        if (host.length() > MAX_FELD_LAENGE || username.length() > MAX_FELD_LAENGE
+                || fromAddress.length() > MAX_FELD_LAENGE
+                || (req.password() != null && req.password().length() > MAX_FELD_LAENGE)) {
+            return ResponseEntity.badRequest().body(Map.of("message",
+                    "Eine der Eingaben ist zu lang. Bitte prüfen Sie Server, Adresse und Passwort."));
+        }
+
+        // Leeres Passwort heisst "unveraendert lassen" – sonst muesste der
+        // Anwender es bei jeder anderen Aenderung neu eintippen.
+        String effectivePassword = req.password();
+        if (effectivePassword == null || effectivePassword.isBlank()) {
+            effectivePassword = settingsService.getDokumentSmtpPassword();
+        }
+
+        // Nur beim Einschalten streng pruefen. Ausgeschaltet darf ruhig ein
+        // halb ausgefuellter Entwurf gespeichert werden.
+        if (req.aktiv()) {
+            if (!hasValue(host)) {
+                return ResponseEntity.badRequest().body(Map.of("message",
+                        "Bitte den Mail-Server des Postfachs eintragen."));
+            }
+            if (!hasValue(username) || !EMAIL_PATTERN.matcher(username).matches()) {
+                return ResponseEntity.badRequest().body(Map.of("message",
+                        "Bitte die vollständige E-Mail-Adresse des Postfachs als Benutzernamen eintragen."));
+            }
+            if (!hasValue(effectivePassword)) {
+                return ResponseEntity.badRequest().body(Map.of("message",
+                        "Bitte das Passwort des Postfachs eintragen."));
+            }
+            if (!fromAddress.isBlank() && !EMAIL_PATTERN.matcher(fromAddress).matches()) {
+                return ResponseEntity.badRequest().body(Map.of("message",
+                        "Bitte eine gültige Absender-Adresse eintragen."));
+            }
+            // Absender und Postfach muessen zur selben Domain gehoeren. Sonst
+            // verschickt das Postfach Mails im Namen einer fremden Domain –
+            // SPF und DKIM schlagen beim Empfaenger fehl und die Mail landet
+            // zuverlaessiger im Spam als vorher. Das ist genau der Fehler, den
+            // die Umstellung beseitigen soll, deshalb hart abweisen.
+            if (!fromAddress.isBlank() && !gleicheDomain(fromAddress, username)) {
+                return ResponseEntity.badRequest().body(Map.of("message",
+                        "Absender-Adresse und Postfach müssen zur selben Domain gehören. "
+                                + "Sonst stuft der Empfänger die Mail als Fälschung ein. "
+                                + "Erwartet wird eine Adresse auf @" + domainVon(username) + "."));
+            }
+        }
+
+        settingsService.saveDokumentMailSettings(req.aktiv(), host,
+                req.port() > 0 ? req.port() : 465, username, effectivePassword, fromAddress);
+        return ResponseEntity.ok(Map.of("message", req.aktiv()
+                ? "Rechnungen und Mahnungen gehen ab jetzt über das eigene Postfach raus."
+                : "Eigenes Postfach ausgeschaltet – der Versand läuft wieder über das Standard-Konto."));
+    }
+
+    @PostMapping("/dokument-mail/test")
+    public ResponseEntity<TestResult> testDokumentMail(@RequestBody DokumentMailTestRequest req) {
+        String host = hasValue(req.host()) ? req.host() : settingsService.getDokumentSmtpHost();
+        int port = req.port() > 0 ? req.port() : settingsService.getDokumentSmtpPort();
+        String username = hasValue(req.username()) ? req.username() : settingsService.getDokumentSmtpUsername();
+        String password = (req.password() != null && !req.password().isBlank())
+                ? req.password() : settingsService.getDokumentSmtpPassword();
+
+        return ResponseEntity.ok(
+                settingsService.testSmtp(host, port, username, password, req.testRecipient()));
+    }
+
+    /** Domain-Teil einer E-Mail-Adresse, kleingeschrieben; leer wenn kein "@" enthalten ist. */
+    private static String domainVon(String address) {
+        if (address == null) {
+            return "";
+        }
+        int at = address.lastIndexOf('@');
+        return at < 0 ? "" : address.substring(at + 1).trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean gleicheDomain(String a, String b) {
+        String domainA = domainVon(a);
+        return !domainA.isBlank() && domainA.equals(domainVon(b));
+    }
+
     // ==================== Funnel-Spam-Filter ====================
 
     @GetMapping("/anfrage-funnel-spamfilter")
@@ -262,6 +370,12 @@ public class SystemSettingsController {
     record FunnelSpamFilterRequest(boolean aktiv) {}
     record MailFromResponse(String address, String smtpUsername) {}
     record MailFromRequest(String address) {}
+    record DokumentMailResponse(boolean aktiv, String host, int port, String username,
+            boolean passwordSet, String fromAddress) {}
+    record DokumentMailRequest(boolean aktiv, String host, int port, String username,
+            String password, String fromAddress) {}
+    record DokumentMailTestRequest(String host, int port, String username, String password,
+            String testRecipient) {}
     record DateiOrdnerResponse(String pfad, String networkUrl, boolean konfiguriert) {}
     record DateiOrdnerRequest(String pfad, String networkUrl) {}
     record DateiOrdnerTestRequest(String pfad) {}

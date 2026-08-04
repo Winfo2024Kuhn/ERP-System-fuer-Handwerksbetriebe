@@ -6,6 +6,7 @@ import {
     ChevronUp,
     Eye,
     EyeOff,
+    FileText,
     FolderOpen,
     Inbox,
     Loader2,
@@ -50,6 +51,15 @@ interface ImapSettings {
     port: number;
     username: string;
     passwordSet: boolean;
+}
+
+interface DokumentMailSettings {
+    aktiv: boolean;
+    host: string;
+    port: number;
+    username: string;
+    passwordSet: boolean;
+    fromAddress: string;
 }
 
 interface TestResult {
@@ -117,6 +127,23 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     const [mailFromSmtpUser, setMailFromSmtpUser] = useState('');
     const [mailFromSaving, setMailFromSaving] = useState(false);
 
+    // Eigenes Postfach für Rechnungen, Mahnungen und Auftragsbestätigungen.
+    // Ausgeschaltet = alles läuft über das Haupt-Postfach oben.
+    const [dokumentMail, setDokumentMail] = useState<DokumentMailSettings>({
+        aktiv: false,
+        host: '',
+        port: 465,
+        username: '',
+        passwordSet: false,
+        fromAddress: '',
+    });
+    const [dokumentMailPassword, setDokumentMailPassword] = useState('');
+    const [dokumentMailShowPassword, setDokumentMailShowPassword] = useState(false);
+    const [dokumentMailTestRecipient, setDokumentMailTestRecipient] = useState('');
+    const [dokumentMailSaving, setDokumentMailSaving] = useState(false);
+    const [dokumentMailTesting, setDokumentMailTesting] = useState(false);
+    const [dokumentMailTestResult, setDokumentMailTestResult] = useState<TestResult | null>(null);
+
     // Gemeinsamer Datei-Ordner (HiCAD/Tenado/Excel/Filesharing)
     const [dateiOrdnerPfad, setDateiOrdnerPfad] = useState('');
     const [dateiOrdnerNetworkUrl, setDateiOrdnerNetworkUrl] = useState('');
@@ -129,14 +156,16 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     const loadSettings = useCallback(async () => {
         setLoading(true);
         try {
-            const [smtpRes, imapRes, geminiRes, funnelSpamRes, mailFromRes, dateiOrdnerRes] = await Promise.all([
-                fetch('/api/settings/smtp'),
-                fetch('/api/settings/imap'),
-                fetch('/api/settings/gemini'),
-                fetch('/api/settings/anfrage-funnel-spamfilter'),
-                fetch('/api/settings/mail-from'),
-                fetch('/api/settings/datei-ordner'),
-            ]);
+            const [smtpRes, imapRes, geminiRes, funnelSpamRes, mailFromRes, dateiOrdnerRes, dokumentMailRes] =
+                await Promise.all([
+                    fetch('/api/settings/smtp'),
+                    fetch('/api/settings/imap'),
+                    fetch('/api/settings/gemini'),
+                    fetch('/api/settings/anfrage-funnel-spamfilter'),
+                    fetch('/api/settings/mail-from'),
+                    fetch('/api/settings/datei-ordner'),
+                    fetch('/api/settings/dokument-mail'),
+                ]);
 
             if (smtpRes.ok) {
                 const smtpData = await smtpRes.json();
@@ -186,6 +215,22 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 const data = await dateiOrdnerRes.json();
                 setDateiOrdnerPfad(data?.pfad || '');
                 setDateiOrdnerNetworkUrl(data?.networkUrl || '');
+            }
+
+            if (dokumentMailRes.ok) {
+                const data = await dokumentMailRes.json();
+                // Absender leer lassen, wenn er dem Postfach-Benutzer entspricht —
+                // dann greift der Default und das Feld bleibt ehrlich leer.
+                const stored: string = data?.fromAddress || '';
+                const user: string = data?.username || '';
+                setDokumentMail({
+                    aktiv: !!data?.aktiv,
+                    host: data?.host || '',
+                    port: data?.port || 465,
+                    username: user,
+                    passwordSet: !!data?.passwordSet,
+                    fromAddress: stored && stored !== user ? stored : '',
+                });
             }
         } catch {
             toast.error('Einstellungen konnten nicht geladen werden.');
@@ -310,6 +355,67 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
             toast.error('Verbindung zum Server fehlgeschlagen.');
         } finally {
             setSmtpSaving(false);
+        }
+    };
+
+    const handleSaveDokumentMail = async () => {
+        setDokumentMailSaving(true);
+        try {
+            const res = await fetch('/api/settings/dokument-mail', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    aktiv: dokumentMail.aktiv,
+                    host: dokumentMail.host,
+                    port: dokumentMail.port,
+                    username: dokumentMail.username,
+                    password: dokumentMailPassword || undefined,
+                    fromAddress: dokumentMail.fromAddress,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json().catch(() => null);
+                toast.success(data?.message || 'Postfach für Rechnungen gespeichert.');
+                setDokumentMailPassword('');
+                if (dokumentMail.aktiv) {
+                    setDokumentMail((prev) => ({ ...prev, passwordSet: true }));
+                }
+                onSaved?.();
+            } else {
+                toast.error(await parseErrorMessage(res, 'Postfach konnte nicht gespeichert werden.'));
+            }
+        } catch {
+            toast.error('Verbindung zum Server fehlgeschlagen.');
+        } finally {
+            setDokumentMailSaving(false);
+        }
+    };
+
+    const handleTestDokumentMail = async () => {
+        setDokumentMailTesting(true);
+        setDokumentMailTestResult(null);
+        try {
+            const res = await fetch('/api/settings/dokument-mail/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    host: dokumentMail.host,
+                    port: dokumentMail.port,
+                    username: dokumentMail.username,
+                    password: dokumentMailPassword || undefined,
+                    testRecipient: dokumentMailTestRecipient || undefined,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setDokumentMailTestResult(data);
+            } else {
+                setDokumentMailTestResult({ success: false, message: 'Test fehlgeschlagen.' });
+            }
+        } catch {
+            setDokumentMailTestResult({ success: false, message: 'Verbindung zum Server fehlgeschlagen.' });
+        } finally {
+            setDokumentMailTesting(false);
         }
     };
 
@@ -598,6 +704,13 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                         . Die Adresse muss demselben Postfach gehören wie der SMTP-Login,
                         sonst lehnt der Mail-Server das Senden ab.
                     </p>
+                    {dokumentMail.aktiv && (
+                        <p className="text-xs text-slate-500 mt-2">
+                            Hinweis: Für Rechnungen, Mahnungen, Angebote und
+                            Auftragsbestätigungen gilt diese Adresse nicht – die gehen über
+                            das eigene Postfach weiter unten raus.
+                        </p>
+                    )}
                 </div>
 
                 <div className="flex justify-end mt-6">
@@ -608,6 +721,218 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                     >
                         {mailFromSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         Absender speichern
+                    </Button>
+                </div>
+            </Card>
+
+            {/* === Eigenes Postfach für Rechnungen und Mahnungen === */}
+            <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-rose-600" />
+                    Postfach für Rechnungen und Mahnungen
+                </h3>
+                <p className="text-sm text-slate-500 mb-4">
+                    Rechnungen, Mahnungen, Angebote und Auftragsbestätigungen können über ein
+                    eigenes Postfach auf Ihrer Firmen-Domain verschickt werden. Das hilft, wenn
+                    solche Mails beim Kunden im Spam-Ordner landen: Bei einer Freemail-Adresse
+                    (t-online, GMX, Web.de) gehören die Echtheitsnachweise dem Anbieter, nicht
+                    Ihnen. Mit einem Postfach auf der eigenen Domain fällt dieser Nachteil weg.
+                </p>
+                <p className="text-sm text-slate-500 mb-4">
+                    Ihr normaler Schriftverkehr im E-Mail-Center und der Posteingang bleiben
+                    davon unberührt – die laufen weiter über das Postfach ganz oben.
+                </p>
+
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={dokumentMail.aktiv}
+                        disabled={dokumentMailSaving}
+                        onChange={(e) =>
+                            setDokumentMail((prev) => ({ ...prev, aktiv: e.target.checked }))
+                        }
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    <span>
+                        <span className="font-medium text-slate-900">
+                            Eigenes Postfach für diese Dokumente verwenden
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                            Ausgeschaltet: Alles läuft wie bisher über Ihr Haupt-Postfach.
+                        </span>
+                    </span>
+                </label>
+
+                {dokumentMail.aktiv && (
+                    <div className="mt-6 pt-6 border-t border-slate-100">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="dokumentMailHost">Mail-Server für den Versand</Label>
+                                <Input
+                                    id="dokumentMailHost"
+                                    placeholder="z.B. mail.ihre-domain.de"
+                                    value={dokumentMail.host}
+                                    onChange={(e) =>
+                                        setDokumentMail((prev) => ({ ...prev, host: e.target.value }))
+                                    }
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Steht in der Anleitung Ihres Mail-Anbieters, oft als „SMTP-Server“.
+                                </p>
+                            </div>
+                            <div>
+                                <Label htmlFor="dokumentMailPort">Port</Label>
+                                <Input
+                                    id="dokumentMailPort"
+                                    type="number"
+                                    // Leeres Feld bleibt leer, damit der Anwender die Zahl
+                                    // überhaupt tippen kann. Erst beim Speichern greift der
+                                    // Rückfall auf 465 (siehe Backend).
+                                    value={dokumentMail.port === 0 ? '' : dokumentMail.port}
+                                    onChange={(e) =>
+                                        setDokumentMail((prev) => ({
+                                            ...prev,
+                                            port: parseInt(e.target.value, 10) || 0,
+                                        }))
+                                    }
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    465 verwenden. Port 587 wird noch nicht unterstützt.
+                                </p>
+                            </div>
+                            <div>
+                                <Label htmlFor="dokumentMailUser">E-Mail-Adresse des Postfachs</Label>
+                                <Input
+                                    id="dokumentMailUser"
+                                    type="email"
+                                    autoComplete="username"
+                                    placeholder="rechnungen@ihre-domain.de"
+                                    value={dokumentMail.username}
+                                    onChange={(e) =>
+                                        setDokumentMail((prev) => ({ ...prev, username: e.target.value }))
+                                    }
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Die vollständige Adresse, mit der Sie sich beim Postfach anmelden.
+                                </p>
+                            </div>
+                            <div>
+                                <Label htmlFor="dokumentMailPassword">
+                                    Passwort
+                                    {dokumentMail.passwordSet && !dokumentMailPassword && (
+                                        <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
+                                    )}
+                                </Label>
+                                <div className="relative">
+                                    <Input
+                                        id="dokumentMailPassword"
+                                        type={dokumentMailShowPassword ? 'text' : 'password'}
+                                        value={dokumentMailPassword}
+                                        onChange={(e) => setDokumentMailPassword(e.target.value)}
+                                        placeholder={
+                                            dokumentMail.passwordSet
+                                                ? '(leer lassen = unverändert)'
+                                                : 'Passwort des Postfachs'
+                                        }
+                                        autoComplete="new-password"
+                                    />
+                                    <button
+                                        type="button"
+                                        aria-label={dokumentMailShowPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                        onClick={() => setDokumentMailShowPassword((prev) => !prev)}
+                                    >
+                                        {dokumentMailShowPassword ? (
+                                            <EyeOff className="w-4 h-4" />
+                                        ) : (
+                                            <Eye className="w-4 h-4" />
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-4">
+                            <Label htmlFor="dokumentMailFrom">Absender-Adresse (optional)</Label>
+                            <Input
+                                id="dokumentMailFrom"
+                                type="email"
+                                placeholder={dokumentMail.username || 'rechnungen@ihre-domain.de'}
+                                value={dokumentMail.fromAddress}
+                                onChange={(e) =>
+                                    setDokumentMail((prev) => ({ ...prev, fromAddress: e.target.value }))
+                                }
+                                className="sm:max-w-md"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">
+                                Leer lassen → es wird die Adresse des Postfachs oben verwendet. Eine
+                                abweichende Adresse muss zur <strong>selben Domain</strong> gehören,
+                                sonst hält der Empfänger die Mail für gefälscht und sie landet erst
+                                recht im Spam.
+                            </p>
+                        </div>
+
+                        <div className="mt-6 pt-4 border-t border-slate-100">
+                            <Label htmlFor="dokumentMailTest">Test-E-Mail Empfänger (optional)</Label>
+                            <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                                <Input
+                                    id="dokumentMailTest"
+                                    type="email"
+                                    placeholder="ihre@private-adresse.de"
+                                    value={dokumentMailTestRecipient}
+                                    onChange={(e) => setDokumentMailTestRecipient(e.target.value)}
+                                    className="sm:max-w-md"
+                                />
+                                <Button
+                                    variant="outline"
+                                    onClick={handleTestDokumentMail}
+                                    disabled={dokumentMailTesting || !dokumentMail.host.trim()}
+                                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                >
+                                    {dokumentMailTesting ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <TestTube className="w-4 h-4" />
+                                    )}
+                                    {dokumentMailTesting ? 'Teste...' : 'Verbindung testen'}
+                                </Button>
+                            </div>
+
+                            {dokumentMailTestResult && (
+                                <div
+                                    role="status"
+                                    aria-live="polite"
+                                    className={cn(
+                                        'mt-3 p-3 rounded-lg flex items-start gap-2 text-sm',
+                                        dokumentMailTestResult.success
+                                            ? 'bg-emerald-50 text-emerald-800'
+                                            : 'bg-red-50 text-red-800'
+                                    )}
+                                >
+                                    {dokumentMailTestResult.success ? (
+                                        <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                    ) : (
+                                        <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                    )}
+                                    {dokumentMailTestResult.message}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex justify-end mt-6">
+                    <Button
+                        onClick={handleSaveDokumentMail}
+                        disabled={dokumentMailSaving}
+                        className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                    >
+                        {dokumentMailSaving ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                            <Save className="w-4 h-4" />
+                        )}
+                        Postfach speichern
                     </Button>
                 </div>
             </Card>

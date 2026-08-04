@@ -47,4 +47,17 @@ public class ProjektEmailDto {
 
     /** Klartext-Grund der Ablehnung, z.B. "unknown user". */
     private String zustellFehler;
+
+    /**
+     * Markiert diese Mail als Versand eines Ausgangsgeschäftsdokuments
+     * (Rechnung, Angebot, Auftragsbestätigung, Mahnung).
+     *
+     * <p>Setzt der Dokument-Editor. Nur solche Mails gehen über das separat
+     * konfigurierbare Postfach für Geschäftsdokumente raus; freier
+     * Schriftverkehr bleibt auf dem Standard-Postfach. Das Kennzeichen kommt
+     * bewusst vom Editor statt aus einer Ableitung im Backend: Der Anhang wird
+     * als gewöhnliche Datei hochgeladen, dem Backend fehlt also jeder
+     * verlässliche Hinweis auf die Dokumentart.</p>
+     */
+    private boolean geschaeftsdokument;
 }

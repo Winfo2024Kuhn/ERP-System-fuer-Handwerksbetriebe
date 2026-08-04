@@ -2980,6 +2980,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     kundenAnsprechpartner: kontextDaten.ansprechpartner,
                 }}
                 initialAttachments={emailAttachments}
+                // Alles aus dem Dokument-Editor ist ein Ausgangsgeschäftsdokument.
+                // Ist ein eigenes Postfach dafür eingerichtet, geht die Mail
+                // darüber raus und der Absender steht fest.
+                geschaeftsdokument
                 initialRecipient={kontextDaten.kundenEmails?.[0]}
                 initialSubject={emailSubject}
                 initialBody={emailBody}

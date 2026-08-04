@@ -142,14 +142,17 @@ public class AutoAuftragsbestaetigungVersandService
                 content = mitAnnahmeBeleg(content, freigabe);
             }
 
+            // Auftragsbestaetigung ist ein Ausgangsgeschaeftsdokument und geht
+            // ueber das dafuer eingerichtete Konto raus. Ohne eigenes Konto
+            // liefert getDokumentMailKonto() das Standard-Konto zurueck.
+            SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
             EmailService emailService = new EmailService(
-                    systemSettingsService.getSmtpHost(),
-                    systemSettingsService.getSmtpPort(),
-                    systemSettingsService.getSmtpUsername(),
-                    systemSettingsService.getSmtpPassword())
+                    konto.host(), konto.port(), konto.username(), konto.password())
                     .mitSentKopie(sentMailArchiver);
 
-            String absender = ermittleAbsenderAdresse();
+            // Absender muss aus demselben Konto stammen, sonst schlagen SPF und
+            // DKIM beim Empfaenger fehl.
+            String absender = konto.fromAddress();
             String htmlMitSignatur = emailSignatureService
                     .appendSystemSignatureIfConfigured(content.htmlBody());
             String messageId = emailService.sendEmailAndReturnMessageId(
@@ -1135,15 +1138,6 @@ public class AutoAuftragsbestaetigungVersandService
     }
 
     private static String nullSafe(String s) { return s == null ? "" : s; }
-
-    private String ermittleAbsenderAdresse()
-    {
-        // Konfigurierbar im Firma-Editor → System-Setup; Fallback auf SMTP-User.
-        // Hintergrund: Wer eine separate "Sub-Email" als sichtbaren Absender
-        // hinterlegt, vermeidet dass Gmail die SMTP-Login-Adresse anhand
-        // ihres reinen Auto-Mail-Verkehrs als Bulk/Spam einstuft.
-        return systemSettingsService.getMailFromAddress();
-    }
 
     private static String sanitizeForFilename(String input)
     {

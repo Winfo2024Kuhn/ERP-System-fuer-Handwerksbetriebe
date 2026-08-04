@@ -317,7 +317,11 @@ class AutoMahnVersandServiceTest
                 .thenReturn(Optional.empty());
         when(emailSignatureService.appendSystemSignatureIfConfigured(
                 org.mockito.ArgumentMatchers.anyString())).thenAnswer(inv -> inv.getArgument(0));
-        when(systemSettingsService.getMailFromAddress()).thenReturn("firma@example.org");
+        // Mahnungen laufen ueber das Konto fuer Ausgangsgeschaeftsdokumente.
+        // Ohne eingerichtetes eigenes Postfach liefert es die Standard-Zugangsdaten.
+        when(systemSettingsService.getDokumentMailKonto()).thenReturn(
+                new SystemSettingsService.MailKonto("smtp.example.org", 465,
+                        "firma@example.org", "dummy-geheim", "firma@example.org"));
         when(dateiSpeicherService.speichereZugferdDatei(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))

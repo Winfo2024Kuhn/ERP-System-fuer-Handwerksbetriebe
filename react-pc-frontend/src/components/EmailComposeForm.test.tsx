@@ -20,6 +20,9 @@ const BEKANNTE_ADRESSE = 'max.mustermann@example.com';
 /** Sammelt alle POST-Aufrufe, damit der gespeicherte Wert geprueft werden kann. */
 let gesendeteRequests: Array<{ url: string; body: unknown }>;
 
+/** Antwort auf /api/email/dokument-absender; pro Test umstellbar. */
+let dokumentAbsenderAntwort: { aktiv: boolean; address: string | null } = { aktiv: false, address: null };
+
 function mockFetch() {
     return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString();
@@ -50,6 +53,9 @@ function mockFetch() {
         }
         if (url.startsWith('/api/email/from-addresses')) {
             return jsonResponse(['firma@example.com']);
+        }
+        if (url.startsWith('/api/email/dokument-absender')) {
+            return jsonResponse(dokumentAbsenderAntwort);
         }
         if (url.startsWith('/api/email/signatures/default')) {
             return new Response(null, { status: 204 });
@@ -90,6 +96,7 @@ describe('EmailComposeForm – Rueckfrage "E-Mail-Adresse speichern?"', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+        dokumentAbsenderAntwort = { aktiv: false, address: null };
     });
 
     it('fragt nicht nach, wenn die Antwort an eine bereits gespeicherte Adresse geht', async () => {
@@ -355,5 +362,79 @@ describe('EmailComposeForm – Projekt/Anfrage verknüpfen', () => {
             expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
         );
         expect(screen.queryByText('Kein Projekt und keine Anfrage verknüpft')).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * Beim Versand aus dem Dokument-Editor darf der Absender nicht frei waehlbar
+ * sein, sobald ein eigenes Postfach fuer Geschaeftsdokumente laeuft: Eine
+ * Adresse aus der allgemeinen Liste passt dann nicht zum versendenden Postfach
+ * und die Mail scheitert beim Empfaenger an SPF/DKIM.
+ */
+describe('EmailComposeForm – Absender bei Geschaeftsdokumenten', () => {
+    beforeEach(() => {
+        gesendeteRequests = [];
+        vi.stubGlobal('fetch', mockFetch());
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        dokumentAbsenderAntwort = { aktiv: false, address: null };
+    });
+
+    it('zeigt den festen Absender an und laesst ihn nicht aendern', async () => {
+        dokumentAbsenderAntwort = { aktiv: true, address: 'rechnungen@musterfirma-beispiel.de' };
+
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                geschaeftsdokument
+                initialSubject="Rechnung RE-2026/07/0001"
+            />
+        );
+
+        const vonFeld = await screen.findByDisplayValue('rechnungen@musterfirma-beispiel.de');
+        expect(vonFeld).toHaveAttribute('readonly');
+        expect(screen.getByText(/lässt sich hier deshalb nicht ändern/i)).toBeInTheDocument();
+    });
+
+    it('laesst die freie Auswahl, solange kein eigenes Postfach eingerichtet ist', async () => {
+        dokumentAbsenderAntwort = { aktiv: false, address: null };
+
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                geschaeftsdokument
+                initialSubject="Rechnung RE-2026/07/0001"
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Rechnung RE-2026/07/0001')).toBeInTheDocument());
+        expect(screen.queryByDisplayValue('rechnungen@musterfirma-beispiel.de')).not.toBeInTheDocument();
+        expect(screen.queryByText(/lässt sich hier deshalb nicht ändern/i)).not.toBeInTheDocument();
+    });
+
+    it('meldet dem Backend, dass es sich um ein Geschaeftsdokument handelt', async () => {
+        dokumentAbsenderAntwort = { aktiv: true, address: 'rechnungen@musterfirma-beispiel.de' };
+
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                geschaeftsdokument
+                initialRecipient={BEKANNTE_ADRESSE}
+                initialSubject="Rechnung RE-2026/07/0001"
+            />
+        );
+
+        await screen.findByDisplayValue('rechnungen@musterfirma-beispiel.de');
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
     });
 });

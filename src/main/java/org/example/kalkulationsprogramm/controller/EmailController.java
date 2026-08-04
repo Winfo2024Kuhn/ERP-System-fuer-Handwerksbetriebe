@@ -94,6 +94,36 @@ public class EmailController {
         return ResponseEntity.ok(aktive);
     }
 
+    /**
+     * Auskunft fuer den Verfassen-Dialog: Laeuft der Versand von
+     * Ausgangsgeschaeftsdokumenten ueber ein eigenes Postfach, und unter welcher
+     * Adresse?
+     *
+     * <p>Ist das der Fall, darf der Benutzer den Absender fuer Rechnungen,
+     * Angebote und Auftragsbestaetigungen nicht mehr frei waehlen — eine Adresse
+     * aus der allgemeinen Absender-Liste wuerde nicht zum versendenden Postfach
+     * passen und beim Empfaenger an SPF und DKIM scheitern. Das Frontend sperrt
+     * das Feld deshalb und zeigt die tatsaechliche Adresse an.</p>
+     *
+     * <p>Bewusst ohne Zugangsdaten: Dieser Endpoint ist — anders als
+     * {@code /api/settings/**} — nicht auf Administratoren beschraenkt, weil
+     * jeder Sachbearbeiter Dokumente verschickt. Er liefert daher nur den
+     * Schalter und die nach aussen ohnehin sichtbare Absender-Adresse.</p>
+     */
+    @GetMapping("/dokument-absender")
+    public ResponseEntity<DokumentAbsenderResponse> getDokumentAbsender() {
+        boolean aktiv = systemSettingsService.nutztDokumentMailKonto();
+        return ResponseEntity.ok(new DokumentAbsenderResponse(
+                aktiv,
+                aktiv ? systemSettingsService.getDokumentMailKonto().fromAddress() : null));
+    }
+
+    /**
+     * @param aktiv   laeuft der Dokumentversand ueber ein eigenes Postfach?
+     * @param address dessen Absender-Adresse; {@code null}, wenn nicht aktiv
+     */
+    public record DokumentAbsenderResponse(boolean aktiv, String address) {}
+
     @PostMapping("/beautify")
     public ResponseEntity<EmailBeautifyResponse> beautifyEmail(@RequestBody EmailBeautifyRequest request) {
         if (request == null || request.getBody() == null || request.getBody().trim().isEmpty()) {
@@ -348,11 +378,14 @@ public class EmailController {
         String path = storedPath.toString();
         String userName = resolveUserName(request.getBenutzer(), request.getFrontendUserId());
 
+        // Ausgangsgeschaeftsdokument: laeuft ueber das dafuer eingerichtete Konto,
+        // sonst unveraendert ueber das Standard-Konto.
+        SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
+        String absender = systemSettingsService.nutztDokumentMailKonto()
+                ? konto.fromAddress()
+                : request.getFromAddress();
         EmailService service = new EmailService(
-                systemSettingsService.getSmtpHost(),
-                systemSettingsService.getSmtpPort(),
-                systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword())
+                konto.host(), konto.port(), konto.username(), konto.password())
                 .mitSentKopie(sentMailArchiver);
         String messageId;
         try {
@@ -371,7 +404,7 @@ public class EmailController {
             messageId = service.sendEmailAndReturnMessageIdWithInline(
                     request.getRecipient(),
                     request.getCc(),
-                    request.getFromAddress(),
+                    absender,
                     request.getSubject(),
                     finalHtml,
                     inline,
@@ -392,7 +425,9 @@ public class EmailController {
                 if (projekt != null) {
                     var email = new Email();
                     email.assignToProjekt(projekt);
-                    email.setFromAddress(request.getFromAddress());
+                    // Das Archiv haelt fest, was tatsaechlich rausging – nicht,
+                    // was im Editor ausgewaehlt war.
+                    email.setFromAddress(absender);
                     email.extractSenderDomain();
                     email.setRecipient(request.getRecipient());
                     email.setCc(request.getCc());
@@ -457,11 +492,13 @@ public class EmailController {
         }
         String path = storedPath.toString();
         String userName = resolveUserName(request.getBenutzer(), request.getFrontendUserId());
+        // Ausgangsgeschaeftsdokument: siehe sendInvoiceEmail(...).
+        SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
+        String absender = systemSettingsService.nutztDokumentMailKonto()
+                ? konto.fromAddress()
+                : request.getFromAddress();
         EmailService service = new EmailService(
-                systemSettingsService.getSmtpHost(),
-                systemSettingsService.getSmtpPort(),
-                systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword())
+                konto.host(), konto.port(), konto.username(), konto.password())
                 .mitSentKopie(sentMailArchiver);
         String messageId;
         try {
@@ -477,7 +514,7 @@ public class EmailController {
             messageId = service.sendEmailAndReturnMessageIdWithInline(
                     request.getRecipient(),
                     request.getCc(),
-                    request.getFromAddress(),
+                    absender,
                     request.getSubject(),
                     finalHtml,
                     inline,
@@ -513,7 +550,8 @@ public class EmailController {
             if (anfrage != null) {
                 var email = new Email();
                 email.assignToAnfrage(anfrage);
-                email.setFromAddress(request.getFromAddress());
+                // Das Archiv haelt fest, was tatsaechlich rausging.
+                email.setFromAddress(absender);
                 email.extractSenderDomain();
                 email.setRecipient(request.getRecipient());
                 email.setCc(request.getCc());
