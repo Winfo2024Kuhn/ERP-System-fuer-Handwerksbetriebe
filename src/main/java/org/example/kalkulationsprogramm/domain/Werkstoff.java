@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,10 +20,42 @@ public class Werkstoff {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Technische Bezeichnung, z.B. "1.4301" oder "EN AW-6060". */
     @Column(name = "name", unique = true)
     private String name;
 
+    /** Alltagstauglicher Name fuer die Oberflaeche, z.B. "Edelstahl 1.4301". */
+    @Column(name = "anzeigename")
+    private String anzeigename;
+
+    /** Dichte in g/cm3 - Grundlage fuer Gewicht je Meter und Flaechengewicht. */
+    @Column(name = "dichte", precision = 6, scale = 3)
+    private BigDecimal dichte;
+
+    @Column(name = "werkstoffnorm")
+    private String werkstoffnorm;
+
+    /**
+     * Standard-Eignung fuer Feuerverzinken. Der Artikel kann davon abweichen,
+     * siehe {@link Artikel#istVerzinkungsgeeignet()}.
+     */
+    @Column(name = "verzinkungsgeeignet", nullable = false)
+    private boolean verzinkungsgeeignet;
+
+    /** Standard-Eignung fuer Pulverbeschichten. */
+    @Column(name = "pulverbeschichtungsgeeignet", nullable = false)
+    private boolean pulverbeschichtungsgeeignet;
+
+    /** Erklaerung fuer den Anwender, warum eine Beschichtung geht oder nicht. */
+    @Column(name = "beschichtungshinweis")
+    private String beschichtungshinweis;
+
     @OneToMany(mappedBy = "werkstoff")
     private List<Artikel> artikel = new ArrayList<>();
+
+    /** Fuer die Anzeige: Anzeigename, sonst der technische Name. */
+    public String getAnzeigenameOderName() {
+        return anzeigename != null && !anzeigename.isBlank() ? anzeigename : name;
+    }
 }
 

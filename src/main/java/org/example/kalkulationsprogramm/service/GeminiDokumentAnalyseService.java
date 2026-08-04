@@ -24,6 +24,7 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
@@ -2421,7 +2422,7 @@ public class GeminiDokumentAnalyseService {
             }
 
             // Suche in LieferantenArtikelPreise nach externeArtikelnummer + lieferantId
-            var lapOpt = artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_Id(
+            var lapOpt = artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(
                     externeNr.trim(), lieferant.getId());
 
             if (lapOpt.isEmpty()) {
@@ -2449,11 +2450,12 @@ public class GeminiDokumentAnalyseService {
                 continue;
             }
 
-            // Update LieferantenArtikelPreise
-            LieferantenArtikelPreise lap = lapOpt.get();
-            lap.setPreis(preisProKg);
-            lap.setPreisAenderungsdatum(new Date());
-            artikelPreiseRepository.save(lap);
+            // Neuen Preisstand in die Historie schreiben. Der bisherige Stand bleibt
+            // erhalten und wird dabei als nicht mehr aktuell markiert.
+            LieferantenArtikelPreise bisher = lapOpt.get();
+            LieferantenArtikelPreise neuerStand = bisher.neuerPreisstand(preisProKg, PreisQuelle.ANGEBOT_EMAIL);
+            artikelPreiseRepository.save(bisher);
+            artikelPreiseRepository.save(neuerStand);
             updated++;
 
             log.info("Artikelpreis aktualisiert: {} = {} €/kg (war: {} {})",
@@ -2537,7 +2539,7 @@ public class GeminiDokumentAnalyseService {
             }
 
             // Suche in LieferantenArtikelPreise nach externeArtikelnummer + lieferantId
-            var lapOpt = artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_Id(
+            var lapOpt = artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(
                     externeNr.trim(), lieferant.getId());
 
             if (lapOpt.isEmpty()) {
@@ -2561,11 +2563,12 @@ public class GeminiDokumentAnalyseService {
                 continue;
             }
 
-            // Update LieferantenArtikelPreise
-            LieferantenArtikelPreise lap = lapOpt.get();
-            lap.setPreis(preisProKg);
-            lap.setPreisAenderungsdatum(new Date());
-            artikelPreiseRepository.save(lap);
+            // Neuen Preisstand in die Historie schreiben. Quelle ist hier die Rechnung,
+            // die im Zweifel verlaesslicher ist als ein Angebot.
+            LieferantenArtikelPreise bisher = lapOpt.get();
+            LieferantenArtikelPreise neuerStand = bisher.neuerPreisstand(preisProKg, PreisQuelle.RECHNUNG);
+            artikelPreiseRepository.save(bisher);
+            artikelPreiseRepository.save(neuerStand);
             updated++;
 
             log.info("ZUGFeRD-Artikelpreis aktualisiert: {} = {} €/kg (war: {} {})",

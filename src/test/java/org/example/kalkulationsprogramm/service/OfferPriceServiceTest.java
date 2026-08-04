@@ -59,7 +59,7 @@ class OfferPriceServiceTest {
         PriceUpdateResult result = offerPriceService.updatePrices(lieferant, now, List.of(item));
 
         LieferantenArtikelPreise updated = lieferantenArtikelPreiseRepository
-                .findByArtikel_IdAndLieferant_Id(artikel.getId(), lieferant.getId()).orElseThrow();
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), lieferant.getId()).orElseThrow();
         assertEquals(new BigDecimal("2.50"), updated.getPreis());
         assertEquals(now, updated.getPreisAenderungsdatum());
         assertTrue(result.unmatched().isEmpty());
@@ -91,7 +91,7 @@ class OfferPriceServiceTest {
         PriceUpdateResult result = offerPriceService.updatePrices(lieferant, older, List.of(item));
 
         LieferantenArtikelPreise updated = lieferantenArtikelPreiseRepository
-                .findByArtikel_IdAndLieferant_Id(artikel.getId(), lieferant.getId()).orElseThrow();
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), lieferant.getId()).orElseThrow();
         assertEquals(new BigDecimal("5.00"), updated.getPreis());
         assertEquals(existingDate, updated.getPreisAenderungsdatum());
         assertTrue(result.unmatched().isEmpty());
@@ -123,7 +123,7 @@ class OfferPriceServiceTest {
         PriceUpdateResult result = offerPriceService.updatePrices(lieferant, older, List.of(item), true);
 
         LieferantenArtikelPreise updated = lieferantenArtikelPreiseRepository
-                .findByArtikel_IdAndLieferant_Id(artikel.getId(), lieferant.getId()).orElseThrow();
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), lieferant.getId()).orElseThrow();
         assertEquals(new BigDecimal("4.00"), updated.getPreis());
         assertEquals(older, updated.getPreisAenderungsdatum());
         assertTrue(result.unmatched().isEmpty());
@@ -175,7 +175,7 @@ class OfferPriceServiceTest {
 
         assertEquals(1, result.unmatched().size());
         assertTrue(lieferantenArtikelPreiseRepository
-                .findByArtikel_IdAndLieferant_Id(artikel.getId(), supplierB.getId()).isEmpty());
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), supplierB.getId()).isEmpty());
         assertTrue(result.updated().isEmpty());
         assertTrue(result.skipped().isEmpty());
     }
@@ -206,7 +206,7 @@ class OfferPriceServiceTest {
         PriceUpdateResult result = offerPriceService.updatePrices(stub, now, List.of(item));
 
         LieferantenArtikelPreise updated = lieferantenArtikelPreiseRepository
-                .findByArtikel_IdAndLieferant_Id(artikel.getId(), original.getId()).orElseThrow();
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), original.getId()).orElseThrow();
         assertEquals(new BigDecimal("1.00"), updated.getPreis());
         assertEquals(now, updated.getPreisAenderungsdatum());
         assertTrue(result.unmatched().isEmpty());
@@ -239,7 +239,11 @@ class OfferPriceServiceTest {
         Date now = new Date();
         PriceUpdateResult result = service.updatePrices(supplier, now, items);
 
-        assertEquals(0, price.getPreis().compareTo(new BigDecimal("0.79")));
+        // Der neue Preis steht in einem neuen Preisstand, der bisherige bleibt
+        // als Historie erhalten und gilt nicht mehr als aktuell.
+        LieferantenArtikelPreise aktuellerStand = artikel.getAktuellePreise().getFirst();
+        assertEquals(0, aktuellerStand.getPreis().compareTo(new BigDecimal("0.79")));
+        assertFalse(price.isAktuell());
         assertEquals("KG", items.getFirst().unit());
         assertEquals(0, items.getFirst().price().compareTo(new BigDecimal("0.79")));
         assertTrue(result.unmatched().isEmpty());
@@ -273,7 +277,9 @@ class OfferPriceServiceTest {
         Date now = new Date();
         PriceUpdateResult result = service.updatePrices(supplier, now, items);
 
-        assertEquals(0, price.getPreis().compareTo(new BigDecimal("0.9800")));
+        LieferantenArtikelPreise aktuellerStand = artikel.getAktuellePreise().getFirst();
+        assertEquals(0, aktuellerStand.getPreis().compareTo(new BigDecimal("0.9800")));
+        assertFalse(price.isAktuell());
         assertEquals("KG", items.getFirst().unit());
         assertEquals(0, items.getFirst().price().compareTo(new BigDecimal("0.9800")));
         assertTrue(result.unmatched().isEmpty());
@@ -306,7 +312,9 @@ class OfferPriceServiceTest {
         Date now = new Date();
         PriceUpdateResult result = service.updatePrices(supplier, now, List.of(item));
 
-        assertEquals(0, price.getPreis().compareTo(new BigDecimal("0.79")));
+        LieferantenArtikelPreise aktuellerStand = artikel.getAktuellePreise().getFirst();
+        assertEquals(0, aktuellerStand.getPreis().compareTo(new BigDecimal("0.79")));
+        assertFalse(price.isAktuell());
         assertTrue(result.unmatched().isEmpty());
         assertTrue(result.skipped().isEmpty());
         assertEquals(1, result.updated().size());
@@ -335,7 +343,7 @@ class OfferPriceServiceTest {
         PriceUpdateResult result = offerPriceService.updatePrices(supplier, now, List.of(item));
 
         LieferantenArtikelPreise updated = lieferantenArtikelPreiseRepository
-                .findByArtikel_IdAndLieferant_Id(artikel.getId(), supplier.getId()).orElseThrow();
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), supplier.getId()).orElseThrow();
         assertEquals(new BigDecimal("3.00"), updated.getPreis());
         assertEquals(now, updated.getPreisAenderungsdatum());
         assertTrue(result.unmatched().isEmpty());
@@ -382,12 +390,12 @@ class OfferPriceServiceTest {
         PriceUpdateResult result = offerPriceService.updatePrices(supplierB, now, List.of(item));
 
         LieferantenArtikelPreise updatedB = lieferantenArtikelPreiseRepository
-                .findByArtikel_IdAndLieferant_Id(artikelB.getId(), supplierB.getId()).orElseThrow();
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikelB.getId(), supplierB.getId()).orElseThrow();
         assertEquals(new BigDecimal("5.00"), updatedB.getPreis());
         assertEquals(now, updatedB.getPreisAenderungsdatum());
 
         LieferantenArtikelPreise unchangedA = lieferantenArtikelPreiseRepository
-                .findByArtikel_IdAndLieferant_Id(artikelA.getId(), supplierA.getId()).orElseThrow();
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikelA.getId(), supplierA.getId()).orElseThrow();
         assertEquals(new BigDecimal("1.00"), unchangedA.getPreis());
 
         assertTrue(result.unmatched().isEmpty());

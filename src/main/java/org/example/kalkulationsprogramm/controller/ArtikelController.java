@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -10,14 +11,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
+import org.example.kalkulationsprogramm.domain.Fertigungszustand;
+import org.example.kalkulationsprogramm.domain.Herstellverfahren;
 import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.Profilform;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDetailDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ExterneNummerDto;
@@ -171,6 +175,11 @@ public class ArtikelController {
             @RequestParam(value = "werkstoff", required = false) String werkstoff,
             @RequestParam(value = "kategorieId", required = false) Integer kategorieId,
             @RequestParam(value = "nurMitLieferantenpreis", defaultValue = "false") boolean nurMitLieferantenpreis,
+            @RequestParam(value = "herstellverfahren", required = false) String herstellverfahren,
+            @RequestParam(value = "fertigungszustand", required = false) String fertigungszustand,
+            @RequestParam(value = "profilform", required = false) String profilform,
+            @RequestParam(value = "verzinkbar", required = false) Boolean verzinkbar,
+            @RequestParam(value = "pulverbeschichtbar", required = false) Boolean pulverbeschichtbar,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "50") int size,
             @RequestParam(value = "sort", defaultValue = "produktname") String sort,
@@ -179,14 +188,23 @@ public class ArtikelController {
         int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         List<Integer> kategorieIds = kategorieService.findeKategorieUndUnterkategorieIds(kategorieId);
         Specification<Artikel> specification = buildArtikelSpecification(query, lieferant, produktlinie, werkstoff,
-            kategorieId, kategorieIds, nurMitLieferantenpreis);
+            kategorieId, kategorieIds, nurMitLieferantenpreis,
+            herstellverfahren, fertigungszustand, profilform, verzinkbar, pulverbeschichtbar);
         Page<Artikel> result = artikelService.suche(specification,
                 PageRequest.of(pageIndex, pageSize, buildSort(sort, direction)));
 
+        // Eine Zeile je Artikel. Die Sortierung nach Preis wird hier nachgezogen,
+        // weil der guenstigste Preis erst beim Zusammenstellen feststeht.
         List<ArtikelResponseDto> daten = result.stream()
-                .flatMap(this::mappeArtikelZuDtos)
+                .map(a -> mappeArtikelZuDto(a, lieferant))
                 .filter(Objects::nonNull)
-                .toList();
+                .collect(Collectors.toCollection(ArrayList::new));
+        if ("preis".equals(sort)) {
+            Comparator<ArtikelResponseDto> nachPreis = Comparator.comparing(
+                    ArtikelResponseDto::getGuenstigsterPreis,
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+            daten.sort("desc".equalsIgnoreCase(direction) ? nachPreis.reversed() : nachPreis);
+        }
 
         ArtikelSearchResponseDto response = new ArtikelSearchResponseDto();
         response.setArtikel(daten);
@@ -217,8 +235,33 @@ public class ArtikelController {
         dto.setVerpackungseinheit(artikel.getVerpackungseinheit());
         dto.setPreiseinheit(artikel.getPreiseinheit());
         dto.setVerrechnungseinheit(artikel.getVerrechnungseinheit());
-        if (artikel instanceof ArtikelWerkstoffe aw && aw.getMasse() != null) {
-            dto.setKgProMeter(aw.getMasse());
+        if (artikel instanceof ArtikelWerkstoffe aw) {
+            if (aw.getMasse() != null) {
+                dto.setKgProMeter(aw.getMasse());
+            }
+            dto.setKgProQm(aw.getMassePerQm());
+            dto.setMantelflaeche(aw.getMantelflaeche());
+            dto.setDurchmesser(aw.getDurchmesser());
+            dto.setHoehe(aw.getHoehe());
+            dto.setBreite(aw.getBreite());
+            dto.setWandstaerke(aw.getWandstaerke());
+            dto.setStandardlaenge(aw.getStandardlaenge());
+            dto.setAbmessung(aw.getAbmessungText());
+        }
+
+        // Technische Merkmale: Verfahren und Zustand sind bewusst eigene Felder,
+        // damit die Oberflaeche "geschweisst, kaltgefertigt" anzeigen kann statt
+        // nur "EN 10219-2" - danach laesst sich ausserdem filtern.
+        dto.setArtikelnummer(artikel.getArtikelnummer());
+        dto.setProfilform(artikel.getProfilform());
+        dto.setHerstellverfahren(artikel.getHerstellverfahren());
+        dto.setFertigungszustand(artikel.getFertigungszustand());
+        dto.setMassnorm(artikel.getMassnorm());
+        dto.setWerkstoffnorm(artikel.getWirksameWerkstoffnorm());
+        dto.setVerzinkungsgeeignet(artikel.istVerzinkungsgeeignet());
+        dto.setPulverbeschichtungsgeeignet(artikel.istPulverbeschichtungsgeeignet());
+        if (artikel.getWerkstoff() != null) {
+            dto.setBeschichtungshinweis(artikel.getWerkstoff().getBeschichtungshinweis());
         }
         if (preis != null) {
             dto.setPreis(preis.getPreis());
@@ -271,22 +314,164 @@ public class ArtikelController {
         return ResponseEntity.ok().build();
     }
 
-    private Stream<ArtikelResponseDto> mappeArtikelZuDtos(Artikel artikel) {
-        var gruppiert = artikel.getArtikelpreis().stream()
-                .filter(p -> p.getPreis() != null)
-                .collect(Collectors.groupingBy(LieferantenArtikelPreise::getLieferant));
-        if (gruppiert.isEmpty()) {
-            return Stream.of(toDto(artikel, null));
+    /**
+     * Vollstaendige Sicht auf einen Artikel: Stammdaten, alle Lieferanten mit
+     * ihrer Artikelnummer und ihrem Preis sowie der Preisverlauf.
+     */
+    @GetMapping("/{id}/detail")
+    @Transactional(readOnly = true)
+    public ResponseEntity<ArtikelDetailDto> detail(@PathVariable Long id) {
+        Artikel artikel = artikelService.findeById(id).orElse(null);
+        if (artikel == null) {
+            return ResponseEntity.notFound().build();
         }
-        return gruppiert.entrySet().stream()
-                .map(entry -> {
-                    var preis = entry.getValue().stream()
-                            .max(Comparator.comparing(
-                                    LieferantenArtikelPreise::getPreisAenderungsdatum,
-                                    Comparator.nullsLast(Comparator.naturalOrder())))
-                            .orElse(null);
-                    return toDto(artikel, preis);
-                });
+
+        ArtikelDetailDto dto = new ArtikelDetailDto();
+        dto.setArtikel(mappeArtikelZuDto(artikel, null));
+
+        List<LieferantenArtikelPreise> aktuelle = artikel.getArtikelpreis().stream()
+                .filter(LieferantenArtikelPreise::isAktuell)
+                .filter(p -> p.getLieferant() != null)
+                .sorted(Comparator.comparing(LieferantenArtikelPreise::getPreis,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        BigDecimal bester = aktuelle.stream()
+                .map(LieferantenArtikelPreise::getPreis)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+
+        for (LieferantenArtikelPreise p : aktuelle) {
+            ArtikelDetailDto.LieferantEintragDto eintrag = new ArtikelDetailDto.LieferantEintragDto();
+            eintrag.setPreisId(p.getId());
+            eintrag.setLieferantId(p.getLieferant().getId());
+            eintrag.setLieferantName(p.getLieferant().getLieferantenname());
+            eintrag.setExterneArtikelnummer(p.getExterneArtikelnummer());
+            eintrag.setPreis(p.getPreis());
+            eintrag.setPreisDatum(p.getPreisAenderungsdatum());
+            eintrag.setQuelle(p.getQuelle());
+            eintrag.setNotiz(p.getNotiz());
+            eintrag.setGuenstigster(bester != null && bester.equals(p.getPreis()));
+            // Um wie viel Prozent liegt dieser Lieferant ueber dem guenstigsten?
+            if (bester != null && bester.signum() > 0 && p.getPreis() != null) {
+                eintrag.setAufschlagProzent(p.getPreis().subtract(bester)
+                        .multiply(BigDecimal.valueOf(100))
+                        .divide(bester, 1, java.math.RoundingMode.HALF_UP));
+            }
+            dto.getLieferanten().add(eintrag);
+        }
+
+        dto.setPreisverlauf(artikel.getArtikelpreis().stream()
+                .filter(p -> p.getPreis() != null)
+                .sorted(Comparator.comparing(LieferantenArtikelPreise::getPreisAenderungsdatum,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(p -> {
+                    ArtikelDetailDto.PreisstandDto stand = new ArtikelDetailDto.PreisstandDto();
+                    stand.setPreisId(p.getId());
+                    if (p.getLieferant() != null) {
+                        stand.setLieferantId(p.getLieferant().getId());
+                        stand.setLieferantName(p.getLieferant().getLieferantenname());
+                    }
+                    stand.setPreis(p.getPreis());
+                    stand.setPreisDatum(p.getPreisAenderungsdatum());
+                    stand.setQuelle(p.getQuelle());
+                    stand.setNotiz(p.getNotiz());
+                    stand.setAktuell(p.isAktuell());
+                    return stand;
+                })
+                .collect(Collectors.toCollection(ArrayList::new)));
+
+        return ResponseEntity.ok(dto);
+    }
+
+    /**
+     * Auswahlmoeglichkeiten fuer die Filterleiste, jeweils mit Klartext-Namen
+     * und Erklaerung. Damit muss die Oberflaeche die Begriffe nicht doppelt
+     * pflegen und der Anwender sieht, was ein Verfahren bedeutet.
+     */
+    @GetMapping("/filteroptionen")
+    public Map<String, Object> filteroptionen() {
+        Map<String, Object> optionen = new HashMap<>();
+        optionen.put("herstellverfahren", java.util.Arrays.stream(Herstellverfahren.values())
+                .map(v -> Map.of("wert", v.name(), "name", v.getAnzeigename(), "erklaerung", v.getErklaerung()))
+                .toList());
+        optionen.put("fertigungszustand", java.util.Arrays.stream(Fertigungszustand.values())
+                .map(v -> Map.of("wert", v.name(), "name", v.getAnzeigename(), "erklaerung", v.getErklaerung()))
+                .toList());
+        optionen.put("profilform", java.util.Arrays.stream(Profilform.values())
+                .map(v -> Map.of("wert", v.name(), "name", v.getAnzeigename(), "erklaerung", v.getErklaerung()))
+                .toList());
+        return optionen;
+    }
+
+    /**
+     * Bildet einen Artikel auf genau eine Zeile ab.
+     *
+     * <p>Frueher entstand hier je Lieferant eine eigene Zeile, wodurch derselbe
+     * Artikel in der Trefferliste mehrfach auftauchte. Gesucht wird aber der
+     * Artikel, nicht das Angebot - deshalb steht jetzt der guenstigste gueltige
+     * Preis in der Zeile und die uebrigen Lieferanten stehen auf der Detailseite.
+     *
+     * <p>Ist nach einem Lieferanten gefiltert, zaehlt nur dessen Preis.
+     */
+    private ArtikelResponseDto mappeArtikelZuDto(Artikel artikel, String lieferantFilter) {
+        List<LieferantenArtikelPreise> aktuelle = artikel.getArtikelpreis().stream()
+                .filter(LieferantenArtikelPreise::isAktuell)
+                .filter(p -> p.getPreis() != null)
+                .filter(p -> p.getLieferant() != null)
+                .filter(p -> !StringUtils.hasText(lieferantFilter)
+                        || lieferantFilter.trim().equalsIgnoreCase(p.getLieferant().getLieferantenname()))
+                .toList();
+
+        LieferantenArtikelPreise guenstigster = aktuelle.stream()
+                .min(Comparator.comparing(LieferantenArtikelPreise::getPreis))
+                .orElse(null);
+
+        ArtikelResponseDto dto = toDto(artikel, guenstigster);
+        dto.setAnzahlLieferanten(aktuelle.size());
+        if (guenstigster != null) {
+            dto.setGuenstigsterPreis(guenstigster.getPreis());
+            dto.setGuenstigsterPreisDatum(guenstigster.getPreisAenderungsdatum());
+            dto.setGuenstigsterLieferantId(guenstigster.getLieferant().getId());
+            dto.setGuenstigsterLieferantName(guenstigster.getLieferant().getLieferantenname());
+        }
+        // Alle Lieferanten mit gueltigem Preis, guenstigster zuerst - fuer die
+        // Aufklapp-Ansicht in der Trefferliste.
+        dto.setLieferantenpreise(aktuelle.stream()
+                .sorted(Comparator.comparing(LieferantenArtikelPreise::getPreis))
+                .map(p -> {
+                    LieferantPreisDto lp = new LieferantPreisDto();
+                    lp.setLieferantId(p.getLieferant().getId());
+                    lp.setLieferantName(p.getLieferant().getLieferantenname());
+                    lp.setPreis(p.getPreis());
+                    return lp;
+                })
+                .toList());
+        return dto;
+    }
+
+    /**
+     * Zerlegt eine Sucheingabe in die Woerter, die alle vorkommen muessen.
+     *
+     * <p>Neben Leerzeichen trennt auch das Malzeichen zwischen zwei Zahlen, damit
+     * "42.4x2" zu "42.4" und "2" wird - Anwender schreiben Abmessungen mal mit
+     * und mal ohne Leerzeichen. Ebenso wird ein dem Mass vorangestelltes "x"
+     * abgetrennt, denn "42.4 x2" ist eine ebenso uebliche Schreibweise. Ein
+     * allein stehendes "x" faellt weg.
+     */
+    static List<String> zerlegeSuchbegriff(String query) {
+        if (!StringUtils.hasText(query)) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(query.trim().toLowerCase(Locale.GERMAN).split("[\\s,;]+"))
+                .flatMap(teil -> java.util.Arrays.stream(teil.split("(?<=\\d)[x*](?=\\d)")))
+                // "x2" als eigenes Wort: das Malzeichen gehoert nicht zur Zahl.
+                .map(w -> w.replaceFirst("^[x*](?=\\d)", ""))
+                .map(String::trim)
+                .filter(w -> !w.isEmpty() && !"x".equals(w) && !"*".equals(w))
+                .distinct()
+                .toList();
     }
 
     private Specification<Artikel> buildArtikelSpecification(String query,
@@ -295,29 +480,44 @@ public class ArtikelController {
             String werkstoff,
             Integer kategorieId,
             List<Integer> kategorieIds,
-            boolean nurMitLieferantenpreis) {
+            boolean nurMitLieferantenpreis,
+            String herstellverfahren,
+            String fertigungszustand,
+            String profilform,
+            Boolean verzinkbar,
+            Boolean pulverbeschichtbar) {
         Specification<Artikel> specification = Specification.where((root, cq, cb) -> cb.conjunction());
 
         if (StringUtils.hasText(query)) {
-            final String likeValue = wrapLike(query).toLowerCase(Locale.GERMAN);
-            specification = specification.and((root, cq, cb) -> {
-                Join<Artikel, Werkstoff> werkstoffJoin = root.join("werkstoff", JoinType.LEFT);
-                Subquery<Long> preisSubquery = cq.subquery(Long.class);
-                Root<LieferantenArtikelPreise> subRoot = preisSubquery.from(LieferantenArtikelPreise.class);
-                Join<LieferantenArtikelPreise, Lieferanten> subLieferant = subRoot.join("lieferant", JoinType.LEFT);
-                preisSubquery.select(cb.literal(1L));
-                preisSubquery.where(
-                        cb.equal(subRoot.get("artikel"), root),
-                        cb.or(
-                                cb.like(cb.lower(subRoot.get("externeArtikelnummer")), likeValue),
-                                cb.like(cb.lower(subLieferant.get("lieferantenname")), likeValue)));
-                return cb.or(
-                        cb.like(cb.lower(root.get("produktname")), likeValue),
-                        cb.like(cb.lower(root.get("produktlinie")), likeValue),
-                        cb.like(cb.lower(root.get("produkttext")), likeValue),
-                        cb.like(cb.lower(werkstoffJoin.get("name")), likeValue),
-                        cb.exists(preisSubquery));
-            });
+            // Die Eingabe wird in einzelne Woerter zerlegt, von denen jedes
+            // vorkommen muss. "rundrohr 42.4 x2" trifft damit genau den
+            // richtigen Artikel, statt alles zu liefern, was irgendein Wort
+            // enthaelt. Trennzeichen sind Leerzeichen und das Malzeichen "x",
+            // damit "42.4x2" wie "42.4 2" behandelt wird.
+            for (String wort : zerlegeSuchbegriff(query)) {
+                final String likeValue = wrapLike(wort).toLowerCase(Locale.GERMAN);
+                specification = specification.and((root, cq, cb) -> {
+                    Join<Artikel, Werkstoff> werkstoffJoin = root.join("werkstoff", JoinType.LEFT);
+                    Subquery<Long> preisSubquery = cq.subquery(Long.class);
+                    Root<LieferantenArtikelPreise> subRoot = preisSubquery.from(LieferantenArtikelPreise.class);
+                    Join<LieferantenArtikelPreise, Lieferanten> subLieferant = subRoot.join("lieferant", JoinType.LEFT);
+                    preisSubquery.select(cb.literal(1L));
+                    preisSubquery.where(
+                            cb.equal(subRoot.get("artikel"), root),
+                            cb.or(
+                                    cb.like(cb.lower(subRoot.get("externeArtikelnummer")), likeValue),
+                                    cb.like(cb.lower(subLieferant.get("lieferantenname")), likeValue)));
+                    return cb.or(
+                            // Der Suchtext buendelt alle Schreibweisen und Synonyme.
+                            cb.like(cb.lower(root.get("suchtext")), likeValue),
+                            cb.like(cb.lower(root.get("artikelnummer")), likeValue),
+                            cb.like(cb.lower(root.get("produktname")), likeValue),
+                            cb.like(cb.lower(root.get("produktlinie")), likeValue),
+                            cb.like(cb.lower(root.get("produkttext")), likeValue),
+                            cb.like(cb.lower(werkstoffJoin.get("name")), likeValue),
+                            cb.exists(preisSubquery));
+                });
+            }
         }
 
         if (StringUtils.hasText(lieferant)) {
@@ -366,12 +566,61 @@ public class ArtikelController {
                 preisSubquery.where(
                         cb.equal(subRoot.get("artikel"), root),
                         cb.isNotNull(subRoot.get("preis")),
-                        cb.isNotNull(subRoot.get("lieferant")));
+                        cb.isNotNull(subRoot.get("lieferant")),
+                        // Nur gueltige Preisstaende - die Tabelle enthaelt seit
+                        // V338 auch vergangene.
+                        cb.isTrue(subRoot.get("aktuell")));
                 return cb.exists(preisSubquery);
             });
         }
 
+        // Filter auf die technischen Merkmale. Sie sind fuer Anwender greifbarer
+        // als die Norm: "nahtlos" und "kaltgezogen" sagen mehr als "EN 10305-1".
+        specification = ergaenzeEnumFilter(specification, "herstellverfahren", herstellverfahren);
+        specification = ergaenzeEnumFilter(specification, "fertigungszustand", fertigungszustand);
+        specification = ergaenzeEnumFilter(specification, "profilform", profilform);
+
+        // Eignungen: Der Werkstoff gibt den Standard vor, der Artikel darf
+        // abweichen. Beides muss der Filter beruecksichtigen - deshalb wird
+        // sowohl das Artikelfeld als auch der Werkstoff geprueft.
+        if (verzinkbar != null) {
+            specification = specification.and(eignungFilter("verzinkungsgeeignet", verzinkbar));
+        }
+        if (pulverbeschichtbar != null) {
+            specification = specification.and(eignungFilter("pulverbeschichtungsgeeignet", pulverbeschichtbar));
+        }
+
         return specification;
+    }
+
+    /** Filtert auf einen oder mehrere Enum-Werte, komma-getrennt uebergeben. */
+    private Specification<Artikel> ergaenzeEnumFilter(Specification<Artikel> specification,
+            String feld, String werte) {
+        if (!StringUtils.hasText(werte)) {
+            return specification;
+        }
+        List<String> gewaehlt = java.util.Arrays.stream(werte.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(s -> s.toUpperCase(Locale.GERMAN))
+                .toList();
+        if (gewaehlt.isEmpty()) {
+            return specification;
+        }
+        return specification.and((root, cq, cb) -> root.get(feld).as(String.class).in(gewaehlt));
+    }
+
+    /**
+     * Eignung fuer eine Beschichtung. Ein am Artikel gesetzter Wert geht vor,
+     * sonst gilt der Standard des Werkstoffs.
+     */
+    private Specification<Artikel> eignungFilter(String feld, boolean erwartet) {
+        return (root, cq, cb) -> {
+            Join<Artikel, Werkstoff> werkstoffJoin = root.join("werkstoff", JoinType.LEFT);
+            return cb.or(
+                    cb.equal(root.get(feld), erwartet),
+                    cb.and(cb.isNull(root.get(feld)), cb.equal(werkstoffJoin.get(feld), erwartet)));
+        };
     }
 
     private Sort buildSort(String sort, String direction) {

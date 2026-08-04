@@ -310,6 +310,19 @@ export interface Lieferant {
   vorauskasse?: boolean;
 }
 
+/** Enum-Wert vom Backend: technischer Wert plus Klartext und Erklaerung. */
+export interface Merkmal {
+  name: string;
+  anzeigename: string;
+  erklaerung?: string;
+}
+
+export interface LieferantPreis {
+  lieferantId: number;
+  lieferantName: string;
+  preis?: number;
+}
+
 export interface Artikel {
   id: number;
   externeArtikelnummer?: string;
@@ -327,6 +340,67 @@ export interface Artikel {
   kategoriePfad?: string;
   werkstoffName?: string;
   kgProMeter?: number;
+
+  // Guenstigster Preis - die Suche liefert eine Zeile je Artikel
+  guenstigsterPreis?: number;
+  guenstigsterLieferantId?: number;
+  guenstigsterLieferantName?: string;
+  guenstigsterPreisDatum?: string;
+  anzahlLieferanten?: number;
+  lieferantenpreise?: LieferantPreis[];
+
+  // Technische Stammdaten
+  artikelnummer?: string;
+  profilform?: Merkmal;
+  herstellverfahren?: Merkmal;
+  fertigungszustand?: Merkmal;
+  massnorm?: string;
+  werkstoffnorm?: string;
+  durchmesser?: number;
+  hoehe?: number;
+  breite?: number;
+  wandstaerke?: number;
+  abmessung?: string;
+  kgProQm?: number;
+  mantelflaeche?: number;
+  standardlaenge?: number;
+
+  // Eignungen fuer die Kalkulation
+  verzinkungsgeeignet?: boolean;
+  pulverbeschichtungsgeeignet?: boolean;
+  beschichtungshinweis?: string;
+}
+
+/** Ein Lieferant mit seiner Artikelnummer und seinem aktuellen Preis. */
+export interface ArtikelLieferantEintrag {
+  preisId: number;
+  lieferantId: number;
+  lieferantName: string;
+  externeArtikelnummer?: string;
+  preis?: number;
+  preisDatum?: string;
+  quelle?: Merkmal;
+  notiz?: string;
+  guenstigster: boolean;
+  aufschlagProzent?: number;
+}
+
+/** Ein Preisstand aus der Historie. */
+export interface ArtikelPreisstand {
+  preisId: number;
+  lieferantId?: number;
+  lieferantName?: string;
+  preis?: number;
+  preisDatum?: string;
+  quelle?: Merkmal;
+  notiz?: string;
+  aktuell: boolean;
+}
+
+export interface ArtikelDetail {
+  artikel: Artikel;
+  lieferanten: ArtikelLieferantEintrag[];
+  preisverlauf: ArtikelPreisstand[];
 }
 
 export interface Abteilung {

@@ -55,10 +55,15 @@ public class ArtikelInProjekt {
     @JoinColumn(name = "lieferant_id")
     private Lieferanten lieferant;
 
+    /**
+     * Der Preisstand, mit dem diese Position kalkuliert wurde.
+     *
+     * <p>Zeigt seit Migration V339 auf einen konkreten Eintrag der Preishistorie
+     * statt auf die Kombination aus Artikel und Lieferant. Damit bleibt
+     * nachvollziehbar, welcher Preis der Kalkulation zugrunde lag - auch wenn der
+     * Lieferant seine Preise seitdem geaendert hat.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumns({
-            @JoinColumn(name = "artikel_id", referencedColumnName = "artikel_id", insertable = false, updatable = false),
-            @JoinColumn(name = "lieferant_id", referencedColumnName = "lieferant_id", insertable = false, updatable = false)
-    })
+    @JoinColumn(name = "lieferanten_artikel_preis_id")
     private LieferantenArtikelPreise lieferantenArtikelPreis;
 }

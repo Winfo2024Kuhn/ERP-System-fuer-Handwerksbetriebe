@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.service;
 import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
@@ -67,12 +69,17 @@ public class OfferPriceService {
 
             artikelRepository.findByExterneArtikelnummerAndLieferantId(code, lieferant.getId()).ifPresentOrElse(artikel -> {
                 artikel.getArtikelpreis().stream()
+                        .filter(LieferantenArtikelPreise::isAktuell)
                         .filter(p -> Objects.equals(lieferant.getId(), p.getLieferant().getId()))
                         .findFirst()
                         .ifPresentOrElse(preis -> {
                             if (force || preis.getPreisAenderungsdatum() == null || mailDate.after(preis.getPreisAenderungsdatum())) {
-                                preis.setPreis(finalPrice);
-                                preis.setPreisAenderungsdatum(mailDate);
+                                // Neuen Preisstand anlegen statt den bisherigen zu
+                                // ueberschreiben - der alte Stand bleibt im Verlauf sichtbar.
+                                LieferantenArtikelPreise neuerStand =
+                                        preis.neuerPreisstand(finalPrice, PreisQuelle.ANGEBOT_EMAIL);
+                                neuerStand.setPreisAenderungsdatum(mailDate);
+                                artikel.getArtikelpreis().add(neuerStand);
                                 priceSet.set(true);
                                 try {
                                     artikelRepository.save(artikel);

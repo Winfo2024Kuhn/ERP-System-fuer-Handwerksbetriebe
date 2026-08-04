@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
@@ -67,6 +68,15 @@ public class ArtikelService implements ArtikelServiceContract {
     @Transactional(readOnly = true)
     public List<Artikel> findeAlleByIds(List<Long> ids) {
         return artikelRepository.findAllById(ids);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Artikel> findeById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return artikelRepository.findById(id);
     }
 
     @Transactional(readOnly = true)

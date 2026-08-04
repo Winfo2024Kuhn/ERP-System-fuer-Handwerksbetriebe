@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -206,17 +207,27 @@ public class ArtikelImportService {
                     }
 
                     final Artikel currentArtikel = artikel;
+                    // Nur den gueltigen Stand suchen - vergangene Preisstaende bleiben
+                    // seit V338 in derselben Tabelle stehen.
                     Optional<LieferantenArtikelPreise> existingLapOptional = currentArtikel.getArtikelpreis().stream()
+                            .filter(LieferantenArtikelPreise::isAktuell)
                             .filter(p -> p.getLieferant() != null && p.getLieferant().getId().equals(lieferant.getId()))
                             .findFirst();
 
-                    LieferantenArtikelPreise lap = existingLapOptional.orElseGet(() -> {
-                        LieferantenArtikelPreise neu = new LieferantenArtikelPreise();
-                        neu.setArtikel(currentArtikel);
-                        neu.setLieferant(lieferant);
-                        currentArtikel.getArtikelpreis().add(neu);
-                        return neu;
-                    });
+                    LieferantenArtikelPreise lap = existingLapOptional.orElse(null);
+                    if (lap == null) {
+                        lap = new LieferantenArtikelPreise();
+                        lap.setArtikel(currentArtikel);
+                        lap.setLieferant(lieferant);
+                        lap.setQuelle(PreisQuelle.CSV_IMPORT);
+                        currentArtikel.getArtikelpreis().add(lap);
+                    } else if (preis != null && !preis.equals(lap.getPreis())) {
+                        // Preis hat sich geaendert: bisherigen Stand in die Historie
+                        // schieben und einen neuen anlegen.
+                        LieferantenArtikelPreise nachfolger = lap.neuerPreisstand(preis, PreisQuelle.CSV_IMPORT);
+                        currentArtikel.getArtikelpreis().add(nachfolger);
+                        lap = nachfolger;
+                    }
 
                     lap.setExterneArtikelnummer(externeNr);
                     lap.setPreis(preis);

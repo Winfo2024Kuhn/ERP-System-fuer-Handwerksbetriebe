@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
@@ -13,6 +14,9 @@ public interface ArtikelServiceContract {
     Artikel erstelleArtikel(ArtikelCreateDto dto);
 
     List<Artikel> findeAlleByIds(List<Long> ids);
+
+    /** Einzelner Artikel samt Preisstaenden - Grundlage der Detailseite. */
+    Optional<Artikel> findeById(Long id);
 
     Page<Artikel> suche(Specification<Artikel> specification, Pageable pageable);
 

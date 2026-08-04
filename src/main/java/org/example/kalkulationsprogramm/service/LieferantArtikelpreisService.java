@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisDto;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
@@ -20,7 +21,9 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -42,44 +45,80 @@ public class LieferantArtikelpreisService {
                 .map(mapper::toDto);
     }
 
+    /**
+     * Traegt einen neuen Preisstand ein. Der bisherige Stand wird nicht
+     * ueberschrieben, sondern als veraltet markiert und bleibt im Verlauf stehen.
+     */
     @Transactional
-    public Optional<LieferantArtikelpreisDto> aktualisiere(Long lieferantId, Long artikelId, BigDecimal preis, String externeArtikelnummer) {
-        if (lieferantId == null || artikelId == null) {
-            return Optional.empty();
-        }
-        return artikelPreiseRepository.findByArtikel_IdAndLieferant_Id(artikelId, lieferantId)
-                .map(entity -> {
-                    entity.setPreis(preis);
-                    entity.setPreisAenderungsdatum(new Date());
-                    entity.setExterneArtikelnummer(normalizeExterneArtikelnummer(externeArtikelnummer));
-                    return mapper.toDto(artikelPreiseRepository.save(entity));
-                });
+    public Optional<LieferantArtikelpreisDto> aktualisiere(Long lieferantId, Long artikelId, BigDecimal preis,
+            String externeArtikelnummer) {
+        return schreibePreisstand(lieferantId, artikelId, preis, externeArtikelnummer, PreisQuelle.MANUELL, null);
     }
 
     @Transactional
-    public Optional<LieferantArtikelpreisDto> anlegen(Long lieferantId, Long artikelId, BigDecimal preis, String externeArtikelnummer) {
+    public Optional<LieferantArtikelpreisDto> anlegen(Long lieferantId, Long artikelId, BigDecimal preis,
+            String externeArtikelnummer) {
+        return schreibePreisstand(lieferantId, artikelId, preis, externeArtikelnummer, PreisQuelle.MANUELL, null);
+    }
+
+    /**
+     * Schreibt einen Preisstand in die Historie.
+     *
+     * <p>Aendert sich am Preis nichts, wird kein neuer Eintrag erzeugt - sonst
+     * wuerde jeder Speichervorgang den Verlauf mit Wiederholungen aufblaehen.
+     * Eine reine Aenderung der Lieferanten-Artikelnummer wird am bestehenden
+     * Eintrag nachgezogen, weil sie kein Preisereignis ist.
+     */
+    @Transactional
+    public Optional<LieferantArtikelpreisDto> schreibePreisstand(Long lieferantId, Long artikelId, BigDecimal preis,
+            String externeArtikelnummer, PreisQuelle quelle, String notiz) {
         if (lieferantId == null || artikelId == null) {
             return Optional.empty();
         }
         Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
-        if (lieferant == null) {
-            return Optional.empty();
-        }
         Artikel artikel = artikelRepository.findById(artikelId).orElse(null);
-        if (artikel == null) {
+        if (lieferant == null || artikel == null) {
             return Optional.empty();
         }
-        LieferantenArtikelPreise entity = artikelPreiseRepository.findByArtikel_IdAndLieferant_Id(artikelId, lieferantId)
-                .orElseGet(() -> {
-                    LieferantenArtikelPreise neu = new LieferantenArtikelPreise();
-                    neu.setArtikel(artikel);
-                    neu.setLieferant(lieferant);
-                    return neu;
-                });
-        entity.setPreis(preis);
-        entity.setPreisAenderungsdatum(new Date());
-        entity.setExterneArtikelnummer(normalizeExterneArtikelnummer(externeArtikelnummer));
-        return Optional.of(mapper.toDto(artikelPreiseRepository.save(entity)));
+
+        String nummer = normalizeExterneArtikelnummer(externeArtikelnummer);
+        Optional<LieferantenArtikelPreise> bisher =
+                artikelPreiseRepository.findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikelId, lieferantId);
+
+        if (bisher.isPresent() && Objects.equals(normalisiert(bisher.get().getPreis()), normalisiert(preis))) {
+            LieferantenArtikelPreise unveraendert = bisher.get();
+            unveraendert.setExterneArtikelnummer(nummer);
+            return Optional.of(mapper.toDto(artikelPreiseRepository.save(unveraendert)));
+        }
+
+        artikelPreiseRepository.markiereBisherigeAlsVeraltet(artikelId, lieferantId);
+
+        LieferantenArtikelPreise neu = new LieferantenArtikelPreise();
+        neu.setArtikel(artikel);
+        neu.setLieferant(lieferant);
+        neu.setPreis(preis);
+        neu.setExterneArtikelnummer(nummer);
+        neu.setPreisAenderungsdatum(new Date());
+        neu.setQuelle(quelle != null ? quelle : PreisQuelle.MANUELL);
+        neu.setNotiz(notiz);
+        neu.setAktuell(true);
+        return Optional.of(mapper.toDto(artikelPreiseRepository.save(neu)));
+    }
+
+    /** Vollstaendiger Preisverlauf eines Artikels ueber alle Lieferanten. */
+    @Transactional(readOnly = true)
+    public List<LieferantArtikelpreisDto> preisverlauf(Long artikelId) {
+        if (artikelId == null) {
+            return List.of();
+        }
+        return artikelPreiseRepository.findeVerlauf(artikelId).stream()
+                .map(mapper::toDto)
+                .toList();
+    }
+
+    /** Vergleich auf gleichen Betrag, unabhaengig von nachgestellten Nullen. */
+    private BigDecimal normalisiert(BigDecimal wert) {
+        return wert == null ? null : wert.stripTrailingZeros();
     }
 
     private Specification<LieferantenArtikelPreise> byLieferant(Long lieferantId) {

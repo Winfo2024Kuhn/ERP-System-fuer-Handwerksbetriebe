@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { RefreshCw, Package, Edit2, ChevronLeft, ChevronRight, Save, X, Search, Folder, FolderPlus, Plus } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -14,16 +15,28 @@ import { useToast } from '../components/ui/toast';
 
 const PAGE_SIZE = 12;
 
+/** Auswahlmoeglichkeit eines technischen Merkmals samt Klartext und Erklaerung. */
+interface Merkmalsoption {
+    wert: string;
+    name: string;
+    erklaerung?: string;
+}
+
 // Helpers
 const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
-const formatDate = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleDateString('de-DE') : '-';
 const formatKg = (val?: number) => val ? new Intl.NumberFormat('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(val) : '';
+
+/** Verrechnungseinheit kommt je nach Endpunkt als Text oder als Objekt. */
+const einheitText = (einheit?: string | { name: string; anzeigename?: string }) => {
+    if (!einheit) return '';
+    return typeof einheit === 'object' ? (einheit.anzeigename || einheit.name) : einheit;
+};
 
 // ==================== MAIN COMPONENT ====================
 
 export default function ArtikelEditor() {
     const toast = useToast();
-    useEffect(() => { console.log('ArtikelEditor mounted'); }, []);
+    const navigate = useNavigate();
     const [artikelList, setArtikelList] = useState<Artikel[]>([]);
     const [loading, setLoading] = useState(false);
     const [total, setTotal] = useState(0);
@@ -50,10 +63,19 @@ export default function ArtikelEditor() {
         produktlinie: "",
         werkstoff: "",
         kategorieId: 0,
-        kategorieName: ""
+        kategorieName: "",
+        // Technische Merkmale: fuer Anwender greifbarer als die Norm.
+        herstellverfahren: "",
+        fertigungszustand: "",
+        verzinkbar: "",
+        pulverbeschichtbar: ""
     });
 
     const [werkstoffOptions, setWerkstoffOptions] = useState<string[]>([]);
+    const [filterOptionen, setFilterOptionen] = useState<{
+        herstellverfahren: Merkmalsoption[];
+        fertigungszustand: Merkmalsoption[];
+    }>({ herstellverfahren: [], fertigungszustand: [] });
 
     // Fetch initial data (Werkstoffe)
     useEffect(() => {
@@ -61,6 +83,17 @@ export default function ArtikelEditor() {
             .then(res => res.json())
             .then(data => setWerkstoffOptions(Array.isArray(data) ? data : []))
             .catch(err => console.error("Fehler beim Laden der Werkstoffe", err));
+    }, []);
+
+    // Auswahlmoeglichkeiten fuer Herstellverfahren und Zustand samt Klartext.
+    useEffect(() => {
+        fetch('/api/artikel/filteroptionen')
+            .then(res => res.json())
+            .then(data => setFilterOptionen({
+                herstellverfahren: Array.isArray(data?.herstellverfahren) ? data.herstellverfahren : [],
+                fertigungszustand: Array.isArray(data?.fertigungszustand) ? data.fertigungszustand : [],
+            }))
+            .catch(err => console.error("Fehler beim Laden der Filteroptionen", err));
     }, []);
 
     // Fetch List
@@ -78,6 +111,10 @@ export default function ArtikelEditor() {
             if (filters.produktlinie) params.set("produktlinie", filters.produktlinie);
             if (filters.werkstoff) params.set("werkstoff", filters.werkstoff);
             if (filters.kategorieId) params.set("kategorieId", String(filters.kategorieId));
+            if (filters.herstellverfahren) params.set("herstellverfahren", filters.herstellverfahren);
+            if (filters.fertigungszustand) params.set("fertigungszustand", filters.fertigungszustand);
+            if (filters.verzinkbar) params.set("verzinkbar", filters.verzinkbar);
+            if (filters.pulverbeschichtbar) params.set("pulverbeschichtbar", filters.pulverbeschichtbar);
 
             const res = await fetch(`/api/artikel?${params.toString()}`);
             if (!res.ok) throw new Error("Fehler beim Laden");
@@ -109,7 +146,10 @@ export default function ArtikelEditor() {
     };
 
     const handleResetFilters = () => {
-        setFilters({ q: "", lieferant: "", produktlinie: "", werkstoff: "", kategorieId: 0, kategorieName: "" });
+        setFilters({
+            q: "", lieferant: "", produktlinie: "", werkstoff: "", kategorieId: 0, kategorieName: "",
+            herstellverfahren: "", fertigungszustand: "", verzinkbar: "", pulverbeschichtbar: ""
+        });
         setPage(0);
     };
 
@@ -304,6 +344,64 @@ export default function ArtikelEditor() {
                         <Label htmlFor="filter-produktlinie" className="text-sm font-medium text-gray-700">Produktlinie</Label>
                         <Input id="filter-produktlinie" type="text" className="mt-1" placeholder="Produktlinie" value={filters.produktlinie} onChange={e => handleFilterChange('produktlinie', e.target.value)} />
                     </div>
+
+                    {/* Technische Merkmale: "geschweißt, kaltgefertigt" sagt mehr als "EN 10219-2". */}
+                    <div>
+                        <Label htmlFor="filter-verfahren" className="text-sm font-medium text-gray-700">Herstellung</Label>
+                        <div className="mt-1">
+                            <Select
+                                options={[{ value: "", label: "Egal" },
+                                    ...filterOptionen.herstellverfahren.map(o => ({ value: o.wert, label: o.name }))]}
+                                value={filters.herstellverfahren}
+                                onChange={val => handleFilterChange('herstellverfahren', val)}
+                                placeholder="Egal"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <Label htmlFor="filter-zustand" className="text-sm font-medium text-gray-700">Zustand</Label>
+                        <div className="mt-1">
+                            <Select
+                                options={[{ value: "", label: "Egal" },
+                                    ...filterOptionen.fertigungszustand.map(o => ({ value: o.wert, label: o.name }))]}
+                                value={filters.fertigungszustand}
+                                onChange={val => handleFilterChange('fertigungszustand', val)}
+                                placeholder="Egal"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <Label className="text-sm font-medium text-gray-700">Oberfläche</Label>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                aria-pressed={filters.verzinkbar === 'true'}
+                                onClick={() => handleFilterChange('verzinkbar', filters.verzinkbar === 'true' ? '' : 'true')}
+                                className={cn(
+                                    "px-3 py-2 min-h-[40px] rounded-lg border text-sm transition-colors",
+                                    filters.verzinkbar === 'true'
+                                        ? "bg-rose-600 text-white border-rose-600"
+                                        : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                                )}
+                            >
+                                verzinkbar
+                            </button>
+                            <button
+                                type="button"
+                                aria-pressed={filters.pulverbeschichtbar === 'true'}
+                                onClick={() => handleFilterChange('pulverbeschichtbar', filters.pulverbeschichtbar === 'true' ? '' : 'true')}
+                                className={cn(
+                                    "px-3 py-2 min-h-[40px] rounded-lg border text-sm transition-colors",
+                                    filters.pulverbeschichtbar === 'true'
+                                        ? "bg-rose-600 text-white border-rose-600"
+                                        : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                                )}
+                            >
+                                pulverbeschichtbar
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="flex items-end gap-3">
                         <button type="submit" className="btn flex-1 bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700">Filtern</button>
                         <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Reset</button>
@@ -326,39 +424,89 @@ export default function ArtikelEditor() {
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                 <tr>
-                                    <SortableHeader label="Nr." column="externeArtikelnummer" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
-                                    <SortableHeader label="Produktlinie" column="produktlinie" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
-                                    <SortableHeader label="Name" column="produktname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
-                                    <SortableHeader label="Text" column="produkttext" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
-                                    <SortableHeader label="VPE" column="verpackungseinheit" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-center" />
+                                    <SortableHeader label="Artikel-Nr." column="produktname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
+                                    <SortableHeader label="Bezeichnung" column="produktname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="Werkstoff" column="werkstoffName" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
-                                    <SortableHeader label="Lieferant" column="lieferantenname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
+                                    <th className="px-4 py-3">Ausführung</th>
                                     <SortableHeader label="kg/m" column="kgProMeter" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
-                                    <SortableHeader label="Preis" column="preis" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
-                                    <SortableHeader label="Datum" column="preisDatum" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
+                                    <SortableHeader label="Bester Preis" column="preis" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} className="text-right" />
+                                    <th className="px-4 py-3">Günstigster Anbieter</th>
                                     <th className="px-4 py-3 text-center w-12"></th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {artikelList.map((artikel) => (
-                                    <tr key={artikel.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-4 py-3 font-mono text-xs text-slate-600">{artikel.externeArtikelnummer || '-'}</td>
-                                        <td className="px-4 py-3 text-slate-600">{artikel.produktlinie || '-'}</td>
-                                        <td className="px-4 py-3 font-medium text-slate-900">{artikel.produktname}</td>
-                                        <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={artikel.produkttext}>{artikel.produkttext || '-'}</td>
-                                        <td className="px-4 py-3 text-center text-slate-600">{artikel.verpackungseinheit || '-'}</td>
-                                        <td className="px-4 py-3 text-slate-600">{artikel.werkstoffName || '-'}</td>
-                                        <td className="px-4 py-3 text-slate-600">{artikel.lieferantenname || '-'}</td>
-                                        <td className="px-4 py-3 text-right text-slate-600">{formatKg(artikel.kgProMeter)}</td>
-                                        <td className="px-4 py-3 text-right font-medium text-slate-900">
-                                            {formatCurrency(artikel.preis)} <span className="text-xs font-normal text-slate-400">/ {typeof artikel.verrechnungseinheit === 'object' && artikel.verrechnungseinheit !== null ? (artikel.verrechnungseinheit as { name: string; anzeigename?: string }).anzeigename || (artikel.verrechnungseinheit as { name: string; anzeigename?: string }).name : artikel.verrechnungseinheit}</span>
+                                    <tr
+                                        key={artikel.id}
+                                        className="hover:bg-slate-50 transition-colors cursor-pointer"
+                                        onClick={() => navigate(`/artikel/${artikel.id}`)}
+                                        tabIndex={0}
+                                        role="link"
+                                        aria-label={`Details zu ${artikel.produktname} öffnen`}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                navigate(`/artikel/${artikel.id}`);
+                                            }
+                                        }}
+                                    >
+                                        <td className="px-4 py-3 font-mono text-xs text-slate-600">{artikel.artikelnummer || '-'}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium text-slate-900">{artikel.produktname}</div>
+                                            {artikel.massnorm && (
+                                                <div className="text-xs text-slate-400">{artikel.massnorm}</div>
+                                            )}
                                         </td>
-                                        <td className="px-4 py-3 text-right text-slate-500 text-xs">{formatDate(artikel.preisDatum)}</td>
+                                        <td className="px-4 py-3 text-slate-600">{artikel.werkstoffName || '-'}</td>
+                                        <td className="px-4 py-3">
+                                            {/* Klartext statt Normnummer - der Anwender soll sehen, was er bekommt. */}
+                                            <div className="flex flex-wrap gap-1">
+                                                {artikel.herstellverfahren && (
+                                                    <span title={artikel.herstellverfahren.erklaerung}
+                                                        className="inline-block rounded bg-slate-100 text-slate-700 text-xs px-1.5 py-0.5">
+                                                        {artikel.herstellverfahren.anzeigename}
+                                                    </span>
+                                                )}
+                                                {artikel.fertigungszustand && (
+                                                    <span title={artikel.fertigungszustand.erklaerung}
+                                                        className="inline-block rounded bg-slate-100 text-slate-700 text-xs px-1.5 py-0.5">
+                                                        {artikel.fertigungszustand.anzeigename}
+                                                    </span>
+                                                )}
+                                                {!artikel.herstellverfahren && !artikel.fertigungszustand && (
+                                                    <span className="text-slate-400">-</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-slate-600 tabular-nums">{formatKg(artikel.kgProMeter)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-slate-900 tabular-nums">
+                                            {artikel.guenstigsterPreis !== undefined && artikel.guenstigsterPreis !== null ? (
+                                                <>
+                                                    {formatCurrency(artikel.guenstigsterPreis)}
+                                                    <span className="text-xs font-normal text-slate-400"> / {einheitText(artikel.verrechnungseinheit)}</span>
+                                                </>
+                                            ) : (
+                                                <span className="text-slate-400 font-normal">kein Preis</span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-600">
+                                            {artikel.guenstigsterLieferantName ? (
+                                                <>
+                                                    <div>{artikel.guenstigsterLieferantName}</div>
+                                                    {(artikel.anzahlLieferanten ?? 0) > 1 && (
+                                                        <div className="text-xs text-slate-400">
+                                                            +{(artikel.anzahlLieferanten ?? 1) - 1} weitere{(artikel.anzahlLieferanten ?? 1) - 1 === 1 ? 'r' : ''}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            ) : '-'}
+                                        </td>
                                         <td className="px-4 py-3 text-center">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); openEdit(artikel); }}
-                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
                                                 title="Preis bearbeiten"
+                                                aria-label={`Preis von ${artikel.produktname} bearbeiten`}
                                             >
                                                 <Edit2 className="w-4 h-4" />
                                             </button>

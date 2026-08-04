@@ -958,7 +958,10 @@ ProjektManagementService {
                 if (artikel == null) {
                     continue;
                 }
+                // Nur gueltige Preisstaende - die Tabelle enthaelt seit V338 auch
+                // vergangene Staende, die hier nicht kalkuliert werden duerfen.
                 LieferantenArtikelPreise lap = artikel.getArtikelpreis().stream()
+                        .filter(LieferantenArtikelPreise::isAktuell)
                         .filter(p -> p.getPreis() != null)
                         .filter(p -> auswahl.getLieferantId() == null || (p.getLieferant() != null
                                 && p.getLieferant().getId().equals(auswahl.getLieferantId())))
