@@ -48,6 +48,7 @@ public class BestellungsUebersichtController {
     private final BelegRepository belegRepository;
     private final BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
     private final BelegService belegService;
+    private final org.example.kalkulationsprogramm.service.BelegAuditService belegAuditService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -414,6 +415,11 @@ public class BestellungsUebersichtController {
         if (istVollstaendigeEinzelzuordnung) {
             beleg.setKostenstelle(ersteZuordnung.kostenstelle());
             belegRepository.save(beleg);
+            // Auch die Kostenstelle ist Kontierung und damit protokollpflichtig.
+            // Sie bleibt nach der Festschreibung aenderbar -- aber nur, weil
+            // jede Aenderung daran sichtbar bleibt.
+            belegAuditService.protokolliereAenderung(beleg, null,
+                    "Kostenstelle zugeordnet: " + ersteZuordnung.kostenstelle().getBezeichnung(), null);
             return ResponseEntity.ok(Map.of("success", true, "zuordnungen", 1));
         }
 
@@ -439,6 +445,8 @@ public class BestellungsUebersichtController {
 
         belegRepository.save(beleg);
         belegKostenstellenAnteilRepository.saveAll(neueAnteile);
+        belegAuditService.protokolliereAenderung(beleg, null,
+                "Kostenstellen-Aufteilung neu gesetzt (" + neueAnteile.size() + " Anteile)", null);
         return ResponseEntity.ok(Map.of("success", true, "zuordnungen", neueAnteile.size()));
     }
 

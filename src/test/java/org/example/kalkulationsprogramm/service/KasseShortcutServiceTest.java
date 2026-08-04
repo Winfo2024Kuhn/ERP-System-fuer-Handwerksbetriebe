@@ -41,12 +41,19 @@ class KasseShortcutServiceTest {
     @Mock private BelegRepository belegRepository;
     @Mock private KasseEinstellungRepository kasseEinstellungRepository;
     @Mock private KasseSaldoService kasseSaldoService;
+    // Seit der Festschreibung laufen alle Schnellbuchungen durch den
+    // Schreibschutz (abgeschlossener Monat?) und schreiben einen
+    // Protokolleintrag. Beides hier gemockt -- geprueft wird es in
+    // KasseShortcutFestschreibungTest.
+    @Mock private KassenbuchSchreibschutz schreibschutz;
+    @Mock private BelegAuditService auditService;
 
     private KasseShortcutService service;
 
     @BeforeEach
     void setUp() {
-        service = new KasseShortcutService(belegRepository, kasseEinstellungRepository, kasseSaldoService);
+        service = new KasseShortcutService(belegRepository, kasseEinstellungRepository,
+                kasseSaldoService, schreibschutz, auditService);
         // lenient: nicht jeder Test geht in den save-Pfad (Validierungs-Fehler bricht vorher ab).
         org.mockito.Mockito.lenient()
                 .when(belegRepository.save(any(Beleg.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -179,6 +186,65 @@ class KasseShortcutServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Sachkonto");
         verify(belegRepository, never()).save(any());
+    }
+
+    // ===================== Festschreibung =====================
+    //
+    // Die Schnellbuchungen waren der bequemste Weg an der Festschreibung
+    // vorbei: Sie legen sofort validierte Bar-Belege mit einem frei
+    // waehlbaren Datum an. Ohne die beiden folgenden Zusagen liesse sich in
+    // einen abgeschlossenen Monat nachbuchen, und es entstuenden
+    // Kassenbuch-Zeilen ganz ohne Protokollspur -- waehrend die Pruefung
+    // weiterhin "Protokoll unversehrt" meldete.
+
+    @Test
+    @DisplayName("Bank-Abhebung prüft den Monat und schreibt ins Protokoll")
+    void bankAbhebung_pruefungUndProtokoll() {
+        LocalDate datum = LocalDate.of(2026, 5, 13);
+
+        service.bankAbhebung(new BigDecimal("500.00"), datum, "AB-1", "Abhebung", mitarbeiter());
+
+        verify(schreibschutz).assertMonatOffen(datum);
+        verify(auditService).protokolliereErfassung(any(Beleg.class), any(), any());
+    }
+
+    @Test
+    @DisplayName("Privateinlage prüft den Monat und schreibt ins Protokoll")
+    void privatEinlage_pruefungUndProtokoll() {
+        LocalDate datum = LocalDate.of(2026, 5, 13);
+
+        service.privatEinlage(new BigDecimal("100.00"), datum, "Einlage", mitarbeiter());
+
+        verify(schreibschutz).assertMonatOffen(datum);
+        verify(auditService).protokolliereErfassung(any(Beleg.class), any(), any());
+    }
+
+    @Test
+    @DisplayName("Privatentnahme prüft den Monat und schreibt ins Protokoll")
+    void privatEntnahme_pruefungUndProtokoll() {
+        LocalDate datum = LocalDate.of(2026, 5, 13);
+        given(kasseSaldoService.projiziereSaldo(any(), any(), any(), any()))
+                .willReturn(new BigDecimal("900.00"));
+
+        service.privatEntnahme(new BigDecimal("100.00"), datum, "Entnahme", mitarbeiter());
+
+        verify(schreibschutz).assertMonatOffen(datum);
+        verify(auditService).protokolliereErfassung(any(Beleg.class), any(), any());
+    }
+
+    @Test
+    @DisplayName("Ein abgeschlossener Monat blockt die Schnellbuchung, bevor etwas gespeichert wird")
+    void abgeschlossenerMonatBlocktSchnellbuchung() {
+        LocalDate datum = LocalDate.of(2026, 1, 15);
+        org.mockito.Mockito.doThrow(new KassenbuchGesperrtException("Monat ist abgeschlossen."))
+                .when(schreibschutz).assertMonatOffen(datum);
+
+        assertThatThrownBy(() -> service.bankAbhebung(
+                new BigDecimal("500.00"), datum, "AB-1", "Abhebung", mitarbeiter()))
+                .isInstanceOf(KassenbuchGesperrtException.class);
+
+        verify(belegRepository, never()).save(any());
+        verify(auditService, never()).protokolliereErfassung(any(), any(), any());
     }
 
     private static Mitarbeiter mitarbeiter() {

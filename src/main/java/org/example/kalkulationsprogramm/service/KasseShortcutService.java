@@ -39,6 +39,14 @@ import java.time.LocalDateTime;
  * Alle Shortcuts erzeugen sofort validierte Belege ohne Datei
  * (istUmbuchung=true).
  *
+ * Alle Shortcuts laufen ueber {@link #speichere}: dort wird geprueft, ob der
+ * Monat des Belegdatums noch offen ist, und der Vorgang ins Kassenbuch-
+ * Protokoll geschrieben. Ohne das waeren die Schnellbuchungen ein Weg an der
+ * Festschreibung vorbei — mit einem frei waehlbaren Datum liesse sich in
+ * einen laengst abgeschlossenen Monat nachbuchen, und die entstandenen
+ * Kassenbuch-Zeilen haetten keinen Protokolleintrag, obwohl die Pruefung
+ * "Protokoll unversehrt" meldet.
+ *
  * Bewusste Race-Condition: In einem Handwerker-Single-User-Setup laufen
  * Saldo-Pruefung und save() unter READ_COMMITTED ohne expliziten Row-Lock.
  * Theoretisch koennten zwei zeitgleiche Privatentnahmen den Saldo unter
@@ -54,6 +62,8 @@ public class KasseShortcutService {
     private final BelegRepository belegRepository;
     private final KasseEinstellungRepository kasseEinstellungRepository;
     private final KasseSaldoService kasseSaldoService;
+    private final KassenbuchSchreibschutz schreibschutz;
+    private final BelegAuditService auditService;
 
     @Transactional
     public Beleg bankAbhebung(BigDecimal betrag, LocalDate datum, String belegNr,
@@ -65,7 +75,7 @@ public class KasseShortcutService {
         b.setBelegNummer(belegNr);
         b.setBeschreibung(beschreibung != null && !beschreibung.isBlank()
                 ? beschreibung : "Bank-Abhebung");
-        return belegRepository.save(b);
+        return speichere(b, ersteller);
     }
 
     @Transactional
@@ -79,7 +89,7 @@ public class KasseShortcutService {
                 ? beschreibung : "Privateinlage");
         ladeEinstellung().map(KasseEinstellung::getPrivateinlageSachkonto)
                 .ifPresent(b::setSachkonto);
-        return belegRepository.save(b);
+        return speichere(b, ersteller);
     }
 
     @Transactional
@@ -95,7 +105,7 @@ public class KasseShortcutService {
         Beleg b = baseBeleg(BelegKategorie.PRIVATENTNAHME, datum, betrag, ersteller);
         b.setBeschreibung(beschreibung != null && !beschreibung.isBlank()
                 ? beschreibung : "Privatentnahme");
-        return belegRepository.save(b);
+        return speichere(b, ersteller);
     }
 
     /**
@@ -132,10 +142,26 @@ public class KasseShortcutService {
         if (kostenstelle != null) {
             lohn.setKostenstelle(kostenstelle);
         }
-        Beleg lohnGespeichert = belegRepository.save(lohn);
+        Beleg lohnGespeichert = speichere(lohn, ersteller);
 
         BigDecimal neuerSaldo = kasseSaldoService.berechneAktuellenSaldo();
         return new LohnZahlungResult(einlage, lohnGespeichert, neuerSaldo);
+    }
+
+    /**
+     * Gemeinsamer Ausgang aller Schnellbuchungen: Festschreibung pruefen,
+     * speichern, protokollieren.
+     *
+     * <p>Bewusst der einzige Weg, auf dem dieser Dienst einen Beleg in die
+     * Datenbank bringt. Ein direkter {@code belegRepository.save} waere ein
+     * Kassenbuch-Eintrag ohne Protokollspur — und damit ein Beleg, dessen
+     * Entstehung sich hinterher nicht mehr nachweisen laesst.</p>
+     */
+    private Beleg speichere(Beleg beleg, Mitarbeiter ersteller) {
+        schreibschutz.assertMonatOffen(beleg.getBelegDatum());
+        Beleg gespeichert = belegRepository.save(beleg);
+        auditService.protokolliereErfassung(gespeichert, ersteller, null);
+        return gespeichert;
     }
 
     private Beleg baseBeleg(BelegKategorie kategorie, LocalDate datum, BigDecimal betrag,

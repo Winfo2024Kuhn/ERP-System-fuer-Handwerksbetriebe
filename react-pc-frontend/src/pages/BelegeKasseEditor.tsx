@@ -4,6 +4,7 @@ import {
     Coins, FileQuestion, CheckCircle2, AlertCircle, Trash2, X, Truck,
     Save, RefreshCw, FileText, BookOpen, BarChart3, ArrowRightLeft, FileInput,
     FileDown, Calendar, ArrowRight, Sparkles, ChevronDown, ChevronRight,
+    Lock, Undo2,
 } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
@@ -13,6 +14,10 @@ import { LieferantSearchModal, type LieferantSuchErgebnis } from '../components/
 import { SteuerberaterBelegExportModal } from '../components/SteuerberaterBelegExportModal';
 import { KasseShortcuts } from '../components/kasse/KasseShortcuts';
 import { KostenstellenSplitsEditor, type KostenstellenSplit } from '../components/kasse/KostenstellenSplitsEditor';
+import { KassenbuchAbschlussLeiste } from '../components/kasse/KassenbuchAbschlussLeiste';
+import { StornoDialog } from '../components/kasse/StornoDialog';
+import { VerwerfenDialog } from '../components/kasse/VerwerfenDialog';
+import { nettoAusBrutto, schluesseleAuf, zuZahl } from '../lib/mwst';
 
 // ===================== Types =====================
 
@@ -129,6 +134,16 @@ interface Beleg {
     positionen?: BelegPosition[] | null;
     // Issue #60: Kostenstellen-Splits (mehrere Kostenstellen pro Beleg).
     kostenstellenSplits?: KostenstellenSplit[] | null;
+    // Festschreibung (GoBD): sobald der Monat abgeschlossen ist, sind Datum,
+    // Betrag, MwSt, Art der Buchung, Zahlungsart, Verwendungszweck und
+    // Belegnummer gesperrt. Die Kontierung bleibt bedienbar.
+    laufendeNummer?: number | null;
+    festgeschrieben?: boolean | null;
+    festgeschriebenAm?: string | null;
+    stornoFuerBelegId?: number | null;
+    storniertDurchBelegId?: number | null;
+    storniertAm?: string | null;
+    stornoGrund?: string | null;
 }
 
 interface KassenBewegung {
@@ -139,6 +154,18 @@ interface KassenBewegung {
     lieferantName?: string | null;
     betrag: number;
     saldoNachher: number;
+    // Festschreibung: dauerhafte Belegnummer aus dem Monatsabschluss.
+    // null = der Monat ist noch offen, die Buchung hat noch keine feste Nummer.
+    laufendeNummer?: number | null;
+    festgeschrieben?: boolean | null;
+    sachkontoNummer?: string | null;
+    sachkontoBezeichnung?: string | null;
+    zahlungsart?: string | null;
+    mwstSatz?: number | null;
+    mwstBetrag?: number | null;
+    // Storno-Verweise: die eine Zeile hebt die andere auf.
+    stornoFuerBelegId?: number | null;
+    storniertDurchBelegId?: number | null;
 }
 
 interface Kassenbuch {
@@ -149,6 +176,10 @@ interface Kassenbuch {
     summePrivatentnahmen: number;
     summePrivateinlagen: number;
     bewegungen: KassenBewegung[];
+    /** "JJJJ-MM" des zuletzt abgeschlossenen Monats, oder null. */
+    letzterAbschluss?: string | null;
+    /** Wie viele Bewegungen im Zeitraum noch änderbar sind. */
+    offeneBewegungen?: number;
 }
 
 // ===================== Helpers =====================
@@ -531,6 +562,7 @@ export default function BelegeKasseEditor() {
                             const b = belege.find(x => x.id === id);
                             if (b) setEditing(b);
                         }}
+                        onGeaendert={() => { loadBelege(); loadKassenbuch(); }}
                     />
                 </div>
             ) : activeTab === 'auswertung' ? (
@@ -987,7 +1019,7 @@ function BelegRow({ beleg, onClick }: { beleg: Beleg; onClick: () => void }) {
     );
 }
 
-function KassenbuchView({ kassenbuch, loading, von, bis, onVonChange, onBisChange, search, onSearchChange, onSelectBeleg }: {
+function KassenbuchView({ kassenbuch, loading, von, bis, onVonChange, onBisChange, search, onSearchChange, onSelectBeleg, onGeaendert }: {
     kassenbuch: Kassenbuch | null;
     loading: boolean;
     von: string;
@@ -997,6 +1029,7 @@ function KassenbuchView({ kassenbuch, loading, von, bis, onVonChange, onBisChang
     search: string;
     onSearchChange: (v: string) => void;
     onSelectBeleg: (id: number) => void;
+    onGeaendert: () => void;
 }) {
     const filterLeiste = (
         <KassenbuchFilter
@@ -1022,13 +1055,18 @@ function KassenbuchView({ kassenbuch, loading, von, bis, onVonChange, onBisChang
         );
     }
 
-    // Laufende Nummer VOR dem Filtern vergeben: sie soll die Position im Buch
-    // bezeichnen und nicht springen, nur weil gerade eine Suche aktiv ist.
+    // Die Nummer kommt jetzt vom Server und haengt dauerhaft am Beleg: sie
+    // wird beim Monatsabschluss vergeben und aendert sich nie wieder. Solange
+    // der Monat offen ist, gibt es noch keine — dann zeigen wir eine
+    // vorlaeufige Position im Zeitraum, deutlich als solche markiert.
     //
-    // Achtung: Das ist eine Orientierungshilfe fuer den Zeitraum, NICHT die
-    // steuerlich geforderte fortlaufende Nummer — die muesste dauerhaft am
-    // Beleg haengen und darf keine Luecken haben. Kommt mit der Festschreibung.
-    const nummeriert = kassenbuch.bewegungen.map((b, i) => ({ ...b, lfdNr: i + 1 }));
+    // Vorher wurde hier durchgezaehlt. Das sah aus wie eine Belegnummer, sprang
+    // aber bei jedem Zeitraumwechsel auf voellig andere Werte.
+    const nummeriert = kassenbuch.bewegungen.map((b, i) => ({
+        ...b,
+        anzeigeNummer: b.laufendeNummer ?? null,
+        vorlaeufigeNummer: i + 1,
+    }));
 
     const term = search.trim().toLowerCase();
     const sichtbar = term
@@ -1050,6 +1088,12 @@ function KassenbuchView({ kassenbuch, loading, von, bis, onVonChange, onBisChang
 
     return (
         <div className="space-y-4">
+            <KassenbuchAbschlussLeiste
+                letzterAbschluss={kassenbuch.letzterAbschluss ?? null}
+                offeneBewegungen={kassenbuch.offeneBewegungen ?? 0}
+                onGeaendert={onGeaendert}
+            />
+
             {filterLeiste}
 
             {term && (
@@ -1152,7 +1196,7 @@ function KassenbuchView({ kassenbuch, loading, von, bis, onVonChange, onBisChang
 }
 
 function TKontoZeile({ bew, side, onClick }: {
-    bew: KassenBewegung & { lfdNr: number };
+    bew: KassenBewegung & { anzeigeNummer: number | null; vorlaeufigeNummer: number };
     side: 'eingang' | 'ausgang';
     onClick: () => void;
 }) {
@@ -1161,21 +1205,57 @@ function TKontoZeile({ bew, side, onClick }: {
         ? (istPrivat ? 'text-lime-700' : 'text-emerald-700')
         : (istPrivat ? 'text-fuchsia-700' : 'text-amber-700');
     const hoverBg = side === 'eingang' ? 'hover:bg-emerald-50/40' : 'hover:bg-amber-50/40';
+    const istStorno = bew.stornoFuerBelegId != null;
+    const wurdeStorniert = bew.storniertDurchBelegId != null;
     return (
         <button type="button" onClick={onClick}
             className={`w-full text-left px-6 py-2.5 cursor-pointer ${hoverBg} focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-inset`}>
             <div className="flex items-baseline justify-between gap-3">
                 <div className="flex items-baseline gap-3 min-w-0 flex-1">
-                    <span className="text-xs text-slate-400 tabular-nums w-6 shrink-0 text-right">{bew.lfdNr}</span>
+                    {/* Feste Belegnummer, sobald der Monat abgeschlossen ist.
+                        Vorher nur eine vorlaeufige Position, in Klammern, damit
+                        sie niemand fuer die endgueltige Nummer haelt. */}
+                    <span
+                        className={`text-xs tabular-nums w-8 shrink-0 text-right ${
+                            bew.anzeigeNummer != null ? 'text-slate-600 font-semibold' : 'text-slate-300'
+                        }`}
+                        title={bew.anzeigeNummer != null
+                            ? `Feste Belegnummer ${bew.anzeigeNummer}`
+                            : 'Vorläufige Position – die feste Nummer kommt mit dem Monatsabschluss'}
+                    >
+                        {bew.anzeigeNummer ?? `(${bew.vorlaeufigeNummer})`}
+                    </span>
                     <span className="text-xs text-slate-500 tabular-nums w-20 shrink-0">{formatDate(bew.datum)}</span>
                     <div className="min-w-0 flex-1">
-                        <div className="text-sm text-slate-800 font-medium truncate">
+                        <div className={`text-sm font-medium truncate ${wurdeStorniert ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
                             {bew.beschreibung || '–'}
                             {bew.lieferantName && <span className="ml-2 text-slate-400 font-normal">({bew.lieferantName})</span>}
                         </div>
-                        <span className={`text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded ${KATEGORIE_FARBE[bew.kategorie]} mt-1 inline-block`}>
-                            {KATEGORIE_LABELS[bew.kategorie]}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                            <span className={`text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded ${KATEGORIE_FARBE[bew.kategorie]}`}>
+                                {KATEGORIE_LABELS[bew.kategorie]}
+                            </span>
+                            {/* Gegenkonto gehoert auf den Kassenbuch-Ausdruck und
+                                damit auch auf den Bildschirm — fehlt es, sieht der
+                                Buchhalter sofort, wo noch Arbeit liegt. */}
+                            {bew.sachkontoNummer && (
+                                <span className="text-[10px] text-slate-500 px-1.5 py-0.5 rounded bg-slate-100">
+                                    Konto {bew.sachkontoNummer}
+                                </span>
+                            )}
+                            {/* Storno-Markierung mit Text, nicht nur Durchstreichung:
+                                Farbe und Linie allein tragen die Aussage nicht. */}
+                            {wurdeStorniert && (
+                                <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                                    Storniert
+                                </span>
+                            )}
+                            {istStorno && (
+                                <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                                    Gegenbuchung
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
                 <div className="shrink-0 text-right">
@@ -1322,6 +1402,8 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
         sachkontoId: beleg.sachkontoId ?? null as number | null,
         notiz: beleg.notiz ?? '',
     });
+    const [zeigeStorno, setZeigeStorno] = useState(false);
+    const [zeigeVerwerfen, setZeigeVerwerfen] = useState(false);
     const [splits, setSplits] = useState<KostenstellenSplit[]>(beleg.kostenstellenSplits ?? []);
     // Wenn das Detail nachgeladen wird (TEILWEISE), beziehen wir die Splits
     // aus dem frischen DTO — die Listen-Query liefert sie ggf. nicht mit.
@@ -1391,23 +1473,27 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
     ].filter(v => v != null && v !== '').length;
 
     // Brutto → Netto/MwSt aufschluesseln. Rein zur Anzeige; geschrieben wird
-    // erst beim Klick auf einen MwSt-Knopf.
-    const bruttoNum = Number(form.betragBrutto);
-    const mwstNum = Number(form.mwstSatz);
-    const betraegeRechenbar = form.betragBrutto !== '' && Number.isFinite(bruttoNum) && bruttoNum > 0
-        && form.mwstSatz !== '' && Number.isFinite(mwstNum) && mwstNum >= 0;
-    const berechnetesNetto = betraegeRechenbar ? bruttoNum / (1 + mwstNum / 100) : null;
-    const berechneteMwst = berechnetesNetto != null ? bruttoNum - berechnetesNetto : null;
+    // erst beim Klick auf einen MwSt-Knopf. Die Rechnung selbst liegt in
+    // src/utils/mwst.ts — dort ist sie einzeln testbar, was bei Geldbetraegen
+    // die Stelle ist, an der sich ein Rundungsfehler am teuersten raecht.
+    const aufschluesselung = (() => {
+        const brutto = zuZahl(form.betragBrutto as string | number);
+        const satz = zuZahl(form.mwstSatz as string | number);
+        if (brutto === null || satz === null) return null;
+        return schluesseleAuf(brutto, satz);
+    })();
+    const berechnetesNetto = aufschluesselung?.netto ?? null;
+    const berechneteMwst = aufschluesselung?.mwst ?? null;
 
     // Setzt MwSt-Satz und rechnet das Netto passend aus. Ohne gueltiges Brutto
     // wird nur der Satz gesetzt — sonst schrieben wir NaN ins Netto-Feld.
     const setzeMwstSatz = (satz: number) => {
         setForm(f => {
-            const brutto = Number(f.betragBrutto);
-            if (f.betragBrutto === '' || !Number.isFinite(brutto) || brutto <= 0) {
+            const brutto = zuZahl(f.betragBrutto as string | number);
+            const netto = brutto === null ? null : nettoAusBrutto(brutto, satz);
+            if (netto === null) {
                 return { ...f, mwstSatz: satz as never };
             }
-            const netto = Math.round((brutto / (1 + satz / 100)) * 100) / 100;
             return { ...f, mwstSatz: satz as never, betragNetto: netto as never };
         });
     };
@@ -1520,17 +1606,15 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
         }
     };
 
-    const verwerfen = async () => {
-        if (!confirm('Beleg wirklich verwerfen? Die Datei bleibt erhalten (Steuer-Nachweis).')) return;
-        setSaving(true);
-        try {
-            const res = await fetch(`/api/buchhaltung/belege/${beleg.id}`, { method: 'DELETE' });
-            if (res.ok) onDeleted(beleg.id);
-            else alert('Verwerfen fehlgeschlagen');
-        } finally {
-            setSaving(false);
-        }
-    };
+    // Festgeschrieben = der Monat ist abgeschlossen. Ab hier sperren wir die
+    // kassenwirksamen Felder schon in der Oberflaeche, statt den Nutzer erst
+    // beim Speichern in eine Fehlermeldung laufen zu lassen. Der Server
+    // prueft dasselbe noch einmal — die Sperre hier ist Bequemlichkeit,
+    // nicht die Absicherung.
+    const istFestgeschrieben = detailBeleg.festgeschrieben === true || beleg.festgeschrieben === true;
+    const wurdeStorniert = (detailBeleg.storniertDurchBelegId ?? beleg.storniertDurchBelegId) != null;
+    const istGegenbuchung = (detailBeleg.stornoFuerBelegId ?? beleg.stornoFuerBelegId) != null;
+    const laufendeNummer = detailBeleg.laufendeNummer ?? beleg.laufendeNummer ?? null;
 
     // detailBeleg statt beleg: waehrend die KI noch laeuft, pollen wir nach —
     // der Lieferant-Vorschlag soll im offenen Dialog nachtraeglich erscheinen.
@@ -1544,7 +1628,12 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                     <div className="flex items-center gap-3">
                         <Receipt className="w-5 h-5 text-rose-600" />
                         <div>
-                            <h2 className="font-bold text-slate-900">Beleg prüfen & validieren</h2>
+                            <h2 className="font-bold text-slate-900">
+                                {istFestgeschrieben ? 'Beleg ansehen' : 'Beleg prüfen & validieren'}
+                                {laufendeNummer != null && (
+                                    <span className="ml-2 text-sm font-semibold text-slate-500 tabular-nums">Nr. {laufendeNummer}</span>
+                                )}
+                            </h2>
                             <p className="text-xs text-slate-500">Hochgeladen {formatDateTime(beleg.uploadDatum)} {beleg.uploadedByName ? `von ${beleg.uploadedByName}` : ''}</p>
                         </div>
                     </div>
@@ -1559,6 +1648,33 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
 
                     {/* Form */}
                     <div className="lg:col-span-1 overflow-auto p-6 space-y-5">
+                        {/* Festschreibungs-Hinweis ganz oben: er erklaert, warum
+                            gleich mehrere Felder nicht mehr bedienbar sind. Ohne
+                            ihn wirken die gesperrten Felder wie ein Fehler. */}
+                        {istFestgeschrieben && (
+                            <div className="bg-slate-100 border border-slate-300 rounded-lg p-3 text-sm text-slate-700 flex gap-2">
+                                <Lock className="w-4 h-4 shrink-0 mt-0.5 text-slate-500" aria-hidden />
+                                <div>
+                                    <p className="font-semibold text-slate-900">Dieser Beleg ist fest gebucht.</p>
+                                    <p className="mt-0.5">
+                                        Datum, Betrag, MwSt, Art der Buchung, Zahlungsart und Verwendungszweck
+                                        lassen sich nicht mehr ändern. Sachkonto, Kostenstelle und Notiz schon –
+                                        jede Änderung daran wird protokolliert.
+                                    </p>
+                                    {wurdeStorniert && (
+                                        <p className="mt-1 font-medium">
+                                            Diese Buchung wurde bereits durch eine Gegenbuchung aufgehoben.
+                                            {detailBeleg.stornoGrund ? ` Grund: ${detailBeleg.stornoGrund}` : ''}
+                                        </p>
+                                    )}
+                                    {istGegenbuchung && (
+                                        <p className="mt-1 font-medium">
+                                            Das ist selbst eine Gegenbuchung – sie hebt eine frühere Buchung auf.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                         {detailBeleg.kiAnalyseStatus === 'FAILED' && (
                             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
                                 <strong>KI-Analyse fehlgeschlagen:</strong> {detailBeleg.kiFehlerText}
@@ -1584,12 +1700,14 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                             <Field label="Betrag (€)">
                                 <input type="number" step="0.01" value={form.betragBrutto}
                                     onChange={e => update('betragBrutto', e.target.value as never)}
-                                    className={`${inputCls} text-lg font-semibold tabular-nums`} />
+                                    disabled={istFestgeschrieben}
+                                    className={`${inputCls} ${gesperrtCls} text-lg font-semibold tabular-nums`} />
                             </Field>
                             <Field label="Beleg-Datum">
                                 <input type="date" value={form.belegDatum}
                                     onChange={e => update('belegDatum', e.target.value)}
-                                    className={inputCls} />
+                                    disabled={istFestgeschrieben}
+                                    className={`${inputCls} ${gesperrtCls}`} />
                             </Field>
                         </div>
 
@@ -1603,10 +1721,11 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                                 return (
                                     <button key={satz} type="button" onClick={() => setzeMwstSatz(satz)}
                                         aria-pressed={aktiv}
-                                        className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                                        disabled={istFestgeschrieben}
+                                        className={`px-3 py-1 rounded-full text-sm border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                             aktiv
                                                 ? 'bg-rose-600 text-white border-rose-600'
-                                                : 'bg-white text-slate-600 border-slate-200 hover:border-rose-300 hover:text-rose-700'
+                                                : 'bg-white text-slate-600 border-slate-200 enabled:hover:border-rose-300 enabled:hover:text-rose-700'
                                         }`}>
                                         {satz} %
                                     </button>
@@ -1623,7 +1742,8 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                             <input type="text" value={form.beschreibung}
                                 onChange={e => update('beschreibung', e.target.value)}
                                 placeholder="z.B. Tankquittung, Büromaterial…"
-                                className={inputCls} />
+                                disabled={istFestgeschrieben}
+                                className={`${inputCls} ${gesperrtCls}`} />
                         </Field>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1632,6 +1752,7 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                                 <Select
                                     value={form.belegKategorie}
                                     onChange={v => update('belegKategorie', v as BelegKategorie)}
+                                    disabled={istFestgeschrieben}
                                     options={(Object.entries(KATEGORIE_LABELS) as [BelegKategorie, string][])
                                         .map(([k, label]) => ({ value: k, label }))}
                                 />
@@ -1673,25 +1794,29 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                                         <Field label="Beleg-Nummer">
                                             <input type="text" value={form.belegNummer}
                                                 onChange={e => update('belegNummer', e.target.value)}
-                                                className={inputCls} />
+                                                disabled={istFestgeschrieben}
+                                                className={`${inputCls} ${gesperrtCls}`} />
                                         </Field>
                                         <Field label="Zahlungsart">
                                             <Select
                                                 value={form.zahlungsart}
                                                 onChange={v => update('zahlungsart', v)}
                                                 placeholder="– bitte wählen –"
+                                                disabled={istFestgeschrieben}
                                                 options={buildZahlungsartOptions(zahlungsarten, form.zahlungsart)}
                                             />
                                         </Field>
                                         <Field label="Netto (€)">
                                             <input type="number" step="0.01" value={form.betragNetto}
                                                 onChange={e => update('betragNetto', e.target.value as never)}
-                                                className={inputCls} />
+                                                disabled={istFestgeschrieben}
+                                                className={`${inputCls} ${gesperrtCls}`} />
                                         </Field>
                                         <Field label="MwSt-Satz (%)">
                                             <input type="number" step="0.1" value={form.mwstSatz}
                                                 onChange={e => update('mwstSatz', e.target.value as never)}
-                                                className={inputCls} />
+                                                disabled={istFestgeschrieben}
+                                                className={`${inputCls} ${gesperrtCls}`} />
                                         </Field>
                                     </div>
 
@@ -1777,18 +1902,33 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                         </div>
                     )}
                     <div className="flex items-center justify-between gap-3">
-                        <Button variant="ghost" onClick={verwerfen} disabled={saving} className="text-red-600 hover:bg-red-50">
-                            <Trash2 className="w-4 h-4 mr-2" /> Verwerfen
-                        </Button>
+                        {/* Fest gebuchte Belege lassen sich nicht mehr verwerfen —
+                            an ihre Stelle tritt die Gegenbuchung. Bereits
+                            stornierte Belege bieten gar nichts mehr an. */}
+                        {istFestgeschrieben ? (
+                            wurdeStorniert || istGegenbuchung ? <span /> : (
+                                <Button variant="ghost" onClick={() => setZeigeStorno(true)} disabled={saving}
+                                    className="text-red-600 hover:bg-red-50">
+                                    <Undo2 className="w-4 h-4 mr-2" /> Stornieren
+                                </Button>
+                            )
+                        ) : (
+                            <Button variant="ghost" onClick={() => setZeigeVerwerfen(true)} disabled={saving}
+                                className="text-red-600 hover:bg-red-50">
+                                <Trash2 className="w-4 h-4 mr-2" /> Verwerfen
+                            </Button>
+                        )}
                         <div className="flex items-center gap-2">
                             <Button variant="outline" onClick={() => save(false)} disabled={saving}>
                                 {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                                Zwischenspeichern
+                                {istFestgeschrieben ? 'Kontierung speichern' : 'Zwischenspeichern'}
                             </Button>
-                            <Button onClick={() => save(true)} disabled={saving}>
-                                {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                                Prüfen & Übernehmen
-                            </Button>
+                            {!istFestgeschrieben && (
+                                <Button onClick={() => save(true)} disabled={saving}>
+                                    {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                                    Prüfen & Übernehmen
+                                </Button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1802,6 +1942,37 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                     onSelect={(l: LieferantSuchErgebnis) => {
                         update('lieferantId', l.id);
                         update('lieferantName', l.lieferantenname);
+                    }}
+                />
+            )}
+
+            {zeigeStorno && (
+                <StornoDialog
+                    belegId={beleg.id}
+                    laufendeNummer={laufendeNummer}
+                    beschreibung={detailBeleg.beschreibung ?? beleg.beschreibung}
+                    betragBrutto={detailBeleg.betragBrutto ?? beleg.betragBrutto}
+                    onClose={() => setZeigeStorno(false)}
+                    onStorniert={() => {
+                        setZeigeStorno(false);
+                        // Der Dialog schliesst sich komplett: nach dem Storno ist
+                        // die Gegenbuchung die interessante Zeile, nicht mehr das
+                        // Original. Der Aufrufer laedt Liste und Kassenbuch neu
+                        // und hat damit den echten neuen Stand -- deshalb hier
+                        // bewusst kein zusammengebasteltes Beleg-Objekt.
+                        onDeleted(beleg.id);
+                    }}
+                />
+            )}
+
+            {zeigeVerwerfen && (
+                <VerwerfenDialog
+                    belegId={beleg.id}
+                    beschreibung={detailBeleg.beschreibung ?? beleg.beschreibung}
+                    onClose={() => setZeigeVerwerfen(false)}
+                    onVerworfen={() => {
+                        setZeigeVerwerfen(false);
+                        onDeleted(beleg.id);
                     }}
                 />
             )}
@@ -2011,6 +2182,13 @@ function KiVorschlagKarte({ beleg, sachkonten, aktuellesSachkontoId, onUebernehm
 }
 
 const inputCls = 'w-full p-2.5 border border-slate-200 rounded-lg bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
+
+/**
+ * Zusatzklassen fuer Felder, die nach der Festschreibung gesperrt sind.
+ * Bewusst nicht ausgegraut bis zur Unlesbarkeit: der Wert soll weiter gut
+ * lesbar bleiben, nur eben erkennbar nicht mehr bedienbar.
+ */
+const gesperrtCls = 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (

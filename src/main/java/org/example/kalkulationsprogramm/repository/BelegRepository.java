@@ -120,4 +120,75 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            "ORDER BY b.belegDatum ASC, b.id ASC")
     List<Beleg> findValidierteImZeitraumFuerExport(@Param("von") LocalDate von,
                                                    @Param("bis") LocalDate bis);
+
+    // ===================== Festschreibung / Monatsabschluss =====================
+
+    /**
+     * Alle noch nicht festgeschriebenen, geprueften Belege eines Monats --
+     * genau die Menge, die ein Monatsabschluss festschreibt. Aufsteigend nach
+     * Datum, damit die laufenden Nummern in der Reihenfolge vergeben werden,
+     * in der die Bewegungen tatsaechlich stattgefunden haben.
+     *
+     * VERWORFENE bleiben draussen: sie sind buchhalterisch wirkungslos und
+     * wuerden nur Nummern verbrauchen.
+     */
+    @Query("SELECT b FROM Beleg b " +
+           "LEFT JOIN FETCH b.lieferant " +
+           "LEFT JOIN FETCH b.sachkonto " +
+           "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
+           "  AND b.festgeschrieben = false " +
+           "  AND b.belegDatum BETWEEN :von AND :bis " +
+           "ORDER BY b.belegDatum ASC, b.id ASC")
+    List<Beleg> findFestzuschreibendeImZeitraum(@Param("von") LocalDate von,
+                                                @Param("bis") LocalDate bis);
+
+    /**
+     * Belege eines Monats, die den Abschluss blockieren, weil sie noch nicht
+     * geprueft sind. Ein Monat mit ungeprueften Belegen darf nicht
+     * abgeschlossen werden -- sonst faellt die Buchung stillschweigend hinten
+     * runter und das Kassenbuch hat eine Luecke, die niemand bemerkt.
+     */
+    @Query("SELECT COUNT(b) FROM Beleg b " +
+           "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.NEU " +
+           "  AND b.belegDatum BETWEEN :von AND :bis")
+    long countUngeprueftImZeitraum(@Param("von") LocalDate von, @Param("bis") LocalDate bis);
+
+    /**
+     * Belege ohne Belegdatum. Die haengen in keinem Monat und wuerden von
+     * jedem Abschluss uebersehen -- der Buchhalter muss sie zuerst datieren.
+     */
+    @Query("SELECT COUNT(b) FROM Beleg b " +
+           "WHERE b.belegDatum IS NULL " +
+           "  AND b.status <> org.example.kalkulationsprogramm.domain.BelegStatus.VERWORFEN")
+    long countOhneBelegdatum();
+
+    /**
+     * Geprueft, aber nicht festgeschrieben und aelter als der Abschluss-
+     * zeitraum -- also zwischen die Stuehle gefallen.
+     *
+     * <p>Der Abschluss beginnt beim Tag nach dem letzten Abschluss. Ein Beleg
+     * mit noch aelterem Datum wuerde von keinem kuenftigen Abschluss mehr
+     * erfasst: nie nummeriert, nie festgeschrieben, dauerhaft frei aenderbar.
+     * Deshalb blockiert er den Abschluss, statt still liegen zu bleiben.</p>
+     */
+    @Query("SELECT COUNT(b) FROM Beleg b " +
+           "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
+           "  AND b.festgeschrieben = false " +
+           "  AND b.belegDatum IS NOT NULL " +
+           "  AND b.belegDatum < :grenze")
+    long countNichtFestgeschriebenVor(@Param("grenze") LocalDate grenze);
+
+    /**
+     * Alle festgeschriebenen und geprueften Belege eines Monats, nach
+     * laufender Nummer sortiert -- die Reihenfolge, in der sie im
+     * Steuerberater-Paket erscheinen.
+     */
+    @Query("SELECT b FROM Beleg b " +
+           "LEFT JOIN FETCH b.lieferant " +
+           "LEFT JOIN FETCH b.sachkonto " +
+           "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
+           "  AND b.belegDatum BETWEEN :von AND :bis " +
+           "ORDER BY b.laufendeNummer ASC, b.belegDatum ASC, b.id ASC")
+    List<Beleg> findGeprueftImZeitraumNachNummer(@Param("von") LocalDate von,
+                                                 @Param("bis") LocalDate bis);
 }

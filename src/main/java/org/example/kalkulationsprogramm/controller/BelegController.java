@@ -255,6 +255,8 @@ public class BelegController {
         try {
             Beleg b = belegService.createUmbuchung(req, caller);
             return ResponseEntity.ok(belegService.toDto(b));
+        } catch (org.example.kalkulationsprogramm.service.KassenbuchGesperrtException e) {
+            return gesperrt(e);
         } catch (org.example.kalkulationsprogramm.service.KasseUnterdeckungException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                     "message", e.getMessage(),
@@ -364,6 +366,8 @@ public class BelegController {
         try {
             BelegDto.Response r = belegService.updateBeleg(id, req, caller);
             return r == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(r);
+        } catch (org.example.kalkulationsprogramm.service.KassenbuchGesperrtException e) {
+            return gesperrt(e);
         } catch (org.example.kalkulationsprogramm.service.KasseUnterdeckungException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                     "message", e.getMessage(),
@@ -374,9 +378,18 @@ public class BelegController {
         }
     }
 
+    /**
+     * Verwirft einen Beleg. Nur solange sein Monat offen ist — ein
+     * festgeschriebener Beleg steht im Kassenbuch und wird stattdessen
+     * über {@code POST /kassenbuch/belege/{id}/storno} aufgehoben.
+     *
+     * Der Grund kommt als Query-Parameter, damit ein DELETE ohne Body
+     * auskommt (manche Proxys werfen Bodies bei DELETE weg).
+     */
     @DeleteMapping("/belege/{id}")
     public ResponseEntity<?> deleteBeleg(
             @PathVariable Long id,
+            @RequestParam(value = "grund", required = false) String grund,
             @RequestParam(value = "token", required = false) String token,
             Authentication auth) {
         Mitarbeiter caller = resolveCaller(token, auth);
@@ -385,8 +398,28 @@ public class BelegController {
         if (caller == null || !belegService.darfScannen(caller)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        boolean ok = belegService.deleteBeleg(id);
-        return ok ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+        try {
+            boolean ok = belegService.deleteBeleg(id, grund, caller);
+            return ok ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+        } catch (org.example.kalkulationsprogramm.service.KassenbuchGesperrtException e) {
+            return gesperrt(e);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * 409 mit Klartext: was nicht geht und was der Nutzer stattdessen tun
+     * kann. Der Hinweis landet im Frontend direkt unter der Meldung.
+     */
+    private ResponseEntity<Map<String, String>> gesperrt(
+            org.example.kalkulationsprogramm.service.KassenbuchGesperrtException e) {
+        Map<String, String> body = new java.util.LinkedHashMap<>();
+        body.put("message", e.getMessage() != null ? e.getMessage() : "Vorgang gesperrt");
+        if (e.getLoesungshinweis() != null) {
+            body.put("hinweis", e.getLoesungshinweis());
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     // ===================== Steuerberater-Beleg-Export (Issue #58) =====================

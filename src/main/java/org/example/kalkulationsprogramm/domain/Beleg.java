@@ -233,6 +233,81 @@ public class Beleg {
     @Column(length = 1000)
     private String notiz;
 
+    // ===================== Festschreibung (GoBD / § 146 Abs. 4 AO) =====================
+
+    /**
+     * Dauerhafte, lueckenlose Belegnummer. Vergeben beim Monatsabschluss und
+     * danach unveraenderlich. NULL heisst: der Beleg gehoert noch zu einem
+     * offenen Monat und hat seine endgueltige Nummer noch nicht.
+     *
+     * Nicht zu verwechseln mit {@link #belegNummer} -- das ist die Nummer, die
+     * der Lieferant auf die Quittung gedruckt hat.
+     */
+    @Column(name = "laufende_nummer")
+    private Long laufendeNummer;
+
+    /**
+     * Festgeschrieben = der Monat ist abgeschlossen. Ab hier sind Datum,
+     * Betrag, MwSt, Kategorie, Zahlungsart und Verwendungszweck gesperrt;
+     * korrigiert wird nur noch per Storno und Neubuchung. Die Kontierung
+     * (Sachkonto, Kostenstelle, Lieferant, Notiz) bleibt aenderbar, jede
+     * Aenderung landet aber im Protokoll.
+     */
+    @Column(nullable = false)
+    private Boolean festgeschrieben = false;
+
+    @Column(name = "festgeschrieben_am")
+    private LocalDateTime festgeschriebenAm;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "festgeschrieben_von_id")
+    private Mitarbeiter festgeschriebenVon;
+
+    /** Monatsabschluss, der diesen Beleg festgeschrieben hat. */
+    @Column(name = "monatsabschluss_id")
+    private Long monatsabschlussId;
+
+    // ===================== Storno =====================
+
+    /**
+     * Gesetzt, wenn dieser Beleg die Gegenbuchung zu einem anderen ist.
+     * Ohne Foreign Key, damit die Verweise auch dann lesbar bleiben, wenn am
+     * Original einmal etwas schiefgeht.
+     */
+    @Column(name = "storno_fuer_beleg_id")
+    private Long stornoFuerBelegId;
+
+    /** Gesetzt am Original, sobald es storniert wurde: zeigt auf die Gegenbuchung. */
+    @Column(name = "storniert_durch_beleg_id")
+    private Long storniertDurchBelegId;
+
+    @Column(name = "storniert_am")
+    private LocalDateTime storniertAm;
+
+    @Column(name = "storno_grund", length = 500)
+    private String stornoGrund;
+
+    /**
+     * SHA-256 der hochgeladenen Belegdatei, einmal beim Upload berechnet.
+     * Macht im Steuerberater-Paket beweisbar, dass das Bild im Ordner genau
+     * das ist, das der Buchhalter geprueft hat. NULL bei Umbuchungen (keine
+     * Datei) und bei Altbestand von vor dieser Aenderung.
+     */
+    @Column(name = "datei_hash", columnDefinition = "CHAR(64)")
+    private String dateiHash;
+
+    /** Kurzform fuer die vielen Null-Pruefungen auf dem Flag. */
+    @Transient
+    public boolean istFestgeschrieben() {
+        return Boolean.TRUE.equals(festgeschrieben);
+    }
+
+    /** true, sobald eine Gegenbuchung existiert -- der Beleg ist dann wirkungslos gestellt. */
+    @Transient
+    public boolean istStorniert() {
+        return storniertDurchBelegId != null;
+    }
+
     @PrePersist
     protected void onCreate() {
         if (uploadDatum == null) {

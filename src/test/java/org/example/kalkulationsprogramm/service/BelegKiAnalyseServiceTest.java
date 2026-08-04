@@ -58,6 +58,10 @@ class BelegKiAnalyseServiceTest {
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @Mock private GeminiDokumentAnalyseService geminiService;
     @Mock private BelegKiKostenkontoService kostenkontoService;
+    // Auch das automatische Auslesen aendert Werte am Beleg und wird deshalb
+    // protokolliert. Hier gemockt; der Protokoll-Pfad selbst haengt in
+    // BelegAuditKettenRoundtripTest.
+    @Mock private BelegAuditService auditService;
 
     // ObjectMapper kein @Mock — echte Serialisierung
     private final ObjectMapper objectMapper = new ObjectMapper();

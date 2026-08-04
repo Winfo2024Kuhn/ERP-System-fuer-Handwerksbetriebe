@@ -46,6 +46,7 @@ public class BelegSplitService {
     private final BelegPositionRepository belegPositionRepository;
     private final MwstRechnerService mwstRechnerService;
     private final BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
+    private final KassenbuchSchreibschutz schreibschutz;
 
     @Transactional(readOnly = true)
     public List<BelegPosition> ladePositionen(Long belegId) {
@@ -91,6 +92,11 @@ public class BelegSplitService {
     public Beleg aktualisiereAuswahl(Long belegId, Set<Long> firmaPositionIds) {
         Beleg beleg = belegRepository.findById(belegId).orElseThrow(
                 () -> new IllegalArgumentException("Beleg nicht gefunden: " + belegId));
+        // Die Auswahl verschiebt betragFirmaNetto/Brutto/Mwst und damit den
+        // Betrag, der buchhalterisch auf die Firma laeuft. An einem
+        // festgeschriebenen Beleg ist das eine stille Aenderung an einer
+        // abgeschlossenen Buchung -- also gesperrt.
+        schreibschutz.assertNichtFestgeschrieben(beleg, "die Aufteilung Firma/Privat");
         if (beleg.getAufteilungsModus() != BelegAufteilungsModus.TEILWEISE) {
             throw new IllegalArgumentException(
                     "Beleg ist nicht auf TEILWEISE gestellt — Positions-Auswahl nicht erlaubt");

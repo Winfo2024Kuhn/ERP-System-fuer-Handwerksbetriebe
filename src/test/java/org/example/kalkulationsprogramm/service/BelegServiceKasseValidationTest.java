@@ -60,6 +60,12 @@ class BelegServiceKasseValidationTest {
     @Mock private BelegPositionRepository belegPositionRepository;
     @Mock private KasseSaldoService kasseSaldoService;
     @Mock private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
+    // Seit der Festschreibung schreibt jeder Vorgang einen Protokolleintrag und
+    // prueft, ob der Monat schon abgeschlossen ist. Beides wird hier gemockt --
+    // getestet wird es in KassenbuchFestschreibungTest.
+    @Mock private BelegAuditService auditService;
+    @Mock private KassenbuchSchreibschutz schreibschutz;
+    @Mock private org.example.kalkulationsprogramm.repository.KassenbuchMonatsabschlussRepository monatsabschlussRepository;
 
     @InjectMocks
     private BelegService service;

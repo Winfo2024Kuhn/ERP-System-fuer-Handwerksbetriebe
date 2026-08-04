@@ -81,6 +81,20 @@ public class BelegDto {
         // Prozent/Absolut-Verteilung und optionaler Streckung ueber mehrere
         // Jahre. Wenn leer, gilt weiterhin die Einzel-Kostenstelle (kostenstelleId).
         private List<KostenstellenSplitDto> kostenstellenSplits;
+        // Festschreibung (GoBD): sobald festgeschrieben, sperrt das Frontend
+        // Datum, Betrag, MwSt, Art der Buchung, Zahlungsart, Verwendungszweck
+        // und Belegnummer. Die Kontierung bleibt bedienbar.
+        private Long laufendeNummer;
+        private Boolean festgeschrieben;
+        private LocalDateTime festgeschriebenAm;
+        // Storno-Verweise in beide Richtungen, damit das Frontend an beiden
+        // Zeilen zeigen kann, dass sie zusammengehoeren.
+        private Long stornoFuerBelegId;
+        private Long storniertDurchBelegId;
+        private LocalDateTime storniertAm;
+        private String stornoGrund;
+        /** SHA-256 der Belegdatei – Nachweis, dass das Bild nicht ausgetauscht wurde. */
+        private String dateiHash;
     }
 
     /**
@@ -222,6 +236,22 @@ public class BelegDto {
         private String lieferantName;
         private BigDecimal betrag;          // signiert: + Einnahme, - Ausgabe/Privatentnahme
         private BigDecimal saldoNachher;
+        /**
+         * Dauerhafte, lückenlose Belegnummer aus dem Monatsabschluss. null =
+         * der Monat ist noch offen. Ersetzt die früher im Frontend gezählte
+         * Zeilennummer, die sich mit jedem Zeitraumwechsel verschoben hat.
+         */
+        private Long laufendeNummer;
+        private Boolean festgeschrieben;
+        private String sachkontoNummer;
+        private String sachkontoBezeichnung;
+        private String zahlungsart;
+        private BigDecimal mwstSatz;
+        private BigDecimal mwstBetrag;
+        /** Diese Zeile ist die Gegenbuchung zu jener Beleg-ID. */
+        private Long stornoFuerBelegId;
+        /** Diese Zeile wurde durch jene Beleg-ID aufgehoben. */
+        private Long storniertDurchBelegId;
     }
 
     /**
@@ -278,6 +308,13 @@ public class BelegDto {
         private BigDecimal summePrivatentnahmen;
         private BigDecimal summePrivateinlagen;
         private List<KassenBewegung> bewegungen;
+        /**
+         * Letzter abgeschlossener Monat als "JJJJ-MM" – bis hierhin ist alles
+         * festgeschrieben. null = es wurde noch nie ein Monat abgeschlossen.
+         */
+        private String letzterAbschluss;
+        /** Wie viele Bewegungen im Zeitraum noch offen (änderbar) sind. */
+        private int offeneBewegungen;
     }
 
     /**

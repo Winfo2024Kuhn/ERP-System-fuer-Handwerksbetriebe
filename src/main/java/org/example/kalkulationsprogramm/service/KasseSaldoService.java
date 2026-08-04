@@ -57,6 +57,32 @@ public class KasseSaldoService {
     }
 
     /**
+     * Bar-Saldo zu einem Stichtag: alle validierten Bar-Bewegungen mit
+     * Belegdatum bis einschliesslich {@code stichtag}.
+     *
+     * <p>Wird vom Kassensturz gebraucht ("was muesste laut Kassenbuch heute
+     * Abend in der Lade liegen") und vom Monatsabschluss fuer Anfangs- und
+     * Endbestand. Belege ohne Datum bleiben draussen -- sie lassen sich
+     * keinem Stichtag zuordnen und werden vor dem Abschluss ohnehin
+     * eingefordert.</p>
+     *
+     * @param stichtag Tag einschliesslich; {@code null} bedeutet "alles"
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal berechneSaldoBis(java.time.LocalDate stichtag) {
+        List<Beleg> belege = belegRepository.findValidierteByKategorien(
+                BelegStatus.VALIDIERT, BAR_KATEGORIEN);
+        BigDecimal saldo = BigDecimal.ZERO;
+        for (Beleg b : belege) {
+            if (stichtag != null) {
+                if (b.getBelegDatum() == null || b.getBelegDatum().isAfter(stichtag)) continue;
+            }
+            saldo = saldo.add(signedBetrag(b.getBelegKategorie(), b.getBetragBrutto()));
+        }
+        return saldo.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
      * Saldo nach einer geplanten Aenderung. Der "alte" Anteil wird abgezogen
      * (bei Update; bei Neuanlage null/null uebergeben), der "neue" wird addiert.
      *

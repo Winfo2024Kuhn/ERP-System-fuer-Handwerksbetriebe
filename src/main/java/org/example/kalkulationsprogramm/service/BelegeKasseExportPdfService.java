@@ -12,12 +12,17 @@ import com.lowagie.text.pdf.PdfWriter;
 import java.io.IOException;
 import java.nio.file.Paths;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
-import org.example.kalkulationsprogramm.domain.BelegStatus;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
+import org.example.kalkulationsprogramm.domain.KassenbuchMonatsabschluss;
+import org.example.kalkulationsprogramm.domain.Kassenzaehlung;
+import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
+import org.example.kalkulationsprogramm.repository.KassenbuchMonatsabschlussRepository;
+import org.example.kalkulationsprogramm.repository.KassenzaehlungRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -27,31 +32,45 @@ import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
 
 /**
- * Erzeugt einen Monatsexport der Buchhaltung als PDF — geplant fuer die
- * Uebergabe an den Steuerberater (ein PDF pro Monat, zusammen mit dem Ordner
- * der hochgeladenen Belegfotos).
+ * Erzeugt das Monats-Kassenbuch als PDF -- den Papierteil des klassischen
+ * Wanderordners, den der Steuerberater bekommt.
  *
- * Inhalt:
- *  - Briefkopf mit Logo und Firmenstammdaten
- *  - Titel und Zeitraum
- *  - Kassen-Konto im klassischen T-Konto-Layout (Soll | Haben) mit
- *    Anfangs- und Endsaldo
+ * <p>Aufbau:</p>
+ * <ol>
+ *   <li>Briefkopf mit Logo und Firmenstammdaten.</li>
+ *   <li>Kopfzeile mit Zeitraum, Erstellungszeitpunkt, Ersteller und dem
+ *       Festschreibungsstand des Monats.</li>
+ *   <li>Das Kassenbuch als fortlaufendes Journal: eine Zeile pro Bewegung
+ *       mit laufender Nummer, Gegenkonto, Zahlungsart, Steuersatz,
+ *       Steuerbetrag und dem Kassenbestand <em>nach</em> jeder Buchung.</li>
+ *   <li>Kassenstuerze des Monats, falls gezaehlt wurde.</li>
+ *   <li>Die Belegbilder selbst, ein Beleg pro Seite, jeweils mit Nummer und
+ *       Fingerabdruck der Datei ueberschrieben.</li>
+ * </ol>
  *
- * Optisch an {@link ProjektAuswertungPdfService} angelehnt (rose-600 Header,
- * helle Zebra-Streifen, dezente Borders).
+ * <p>Frueher stand hier ein T-Konto mit Soll- und Habenspalte. Das sieht
+ * zwar nach Buchhaltung aus, kann aber prinzipbedingt keinen laufenden
+ * Bestand pro Zeile zeigen -- und genau den braucht man, um an einem
+ * beliebigen Tag zu sehen, was in der Kasse liegen musste. Die
+ * Soll-/Haben-Summen stehen jetzt kompakt im Summenblock darunter.</p>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BelegeKasseExportPdfService {
 
     private final BelegRepository belegRepository;
     private final FirmeninformationRepository firmeninformationRepository;
+    private final KassenbuchMonatsabschlussRepository abschlussRepository;
+    private final KassenzaehlungRepository zaehlungRepository;
+    private final BelegAuditChainVerifier verifier;
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
@@ -65,28 +84,28 @@ public class BelegeKasseExportPdfService {
     private static final Color TEXT_CELL   = new Color(55, 65, 81);    // slate-700
     private static final Color FOOTER_GREY = new Color(148, 163, 184); // slate-400
     private static final Color KPI_ACCENT  = new Color(220, 38, 38);
+    private static final Color STORNO_BG   = new Color(248, 250, 252); // slate-50
 
-    private static final DateTimeFormatter DATE_FMT  = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+    private static final DateTimeFormatter DATE_FMT   = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     private static final DateTimeFormatter DATE_SHORT = DateTimeFormatter.ofPattern("dd.MM.yy");
+    private static final DateTimeFormatter TS_FMT     = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+
+    /** Bildformate, die sich direkt ins PDF einbetten lassen. PDF-Belege werden nur referenziert. */
+    private static final Set<String> EINBETTBARE_MIME_TYPES = Set.of(
+            "image/jpeg", "image/jpg", "image/png");
 
     /**
-     * @param jahr  vierstellig (z.B. 2026)
-     * @param monat 1..12
+     * @param jahr             vierstellig (z.B. 2026)
+     * @param monat            1..12
+     * @param ersteller        wer den Export ausgeloest hat; erscheint im Kopf
+     * @param mitBelegbildern  true = die Belegfotos werden hinten angehaengt
      */
-    public Path generatePdf(int jahr, int monat) {
+    public Path generatePdf(int jahr, int monat, Mitarbeiter ersteller, boolean mitBelegbildern) {
         YearMonth ym = YearMonth.of(jahr, monat);
         LocalDate von = ym.atDay(1);
         LocalDate bis = ym.atEndOfMonth();
 
-        List<Beleg> alle = belegRepository.findByStatusOrderByUploadDatumDesc(BelegStatus.VALIDIERT);
-        List<Beleg> imMonat = alle.stream()
-                .filter(b -> b.getBelegDatum() != null
-                        && !b.getBelegDatum().isBefore(von)
-                        && !b.getBelegDatum().isAfter(bis))
-                .sorted(Comparator
-                        .comparing(Beleg::getBelegDatum, Comparator.nullsLast(Comparator.naturalOrder()))
-                        .thenComparing(Beleg::getId))
-                .toList();
+        List<Beleg> imMonat = belegRepository.findGeprueftImZeitraumNachNummer(von, bis);
 
         try {
             // Temp-PDF unter dem konfigurierten upload.path ablegen — sonst
@@ -99,18 +118,22 @@ public class BelegeKasseExportPdfService {
             PdfWriter.getInstance(doc, Files.newOutputStream(temp));
             doc.open();
 
-            // Kopfzeile: Firmenlogo links, Firmeninformationen rechts.
             Firmeninformation firma = firmeninformationRepository.findFirmeninformation().orElse(null);
             addBriefkopf(doc, firma);
+            addTitle(doc, ym, ersteller);
 
-            addTitle(doc, ym);
-            // Anfangssaldo: Stand am Vortag des Monatsanfangs (alle validierten
-            // Bar-Bewegungen vor dem Monat). Steuerberater erwartet kontinuierliche
-            // Saldofortschreibung; ohne diesen Wert beginnt das T-Konto irrtuemlich
-            // bei 0,00 EUR und stimmt nicht mit dem Vormonats-PDF ueberein.
-            BigDecimal anfangssaldo = berechneAnfangssaldo(alle, von);
-            addKassenbuchTKonto(doc, imMonat, anfangssaldo);
+            // Anfangsbestand: Stand am Vortag des Monatsanfangs. Der
+            // Steuerberater erwartet eine durchgehende Fortschreibung; ohne
+            // diesen Wert begaenne das Kassenbuch irrtuemlich bei 0,00 EUR
+            // und passte nicht zum Vormonats-PDF.
+            BigDecimal anfangsbestand = berechneAnfangsbestand(von);
+            addKassenbuchJournal(doc, imMonat, anfangsbestand);
+            addKassenstuerze(doc, von, bis);
             addFooter(doc);
+
+            if (mitBelegbildern) {
+                addBelegbilder(doc, imMonat);
+            }
 
             doc.close();
             return temp;
@@ -124,13 +147,11 @@ public class BelegeKasseExportPdfService {
 
     /**
      * Briefkopf mit Firmenlogo (aus {@code uploads/firma/logo/<logoDateiname>})
-     * links und Firmenstammdaten (Name, Adresse, Kontakt, Steuernummern) rechts.
-     * Wird oben in das Dokument gerendert, bevor der eigentliche Titel kommt —
-     * der Steuerberater sieht damit auf einen Blick, von welcher Firma der
-     * Export stammt.
+     * links und Firmenstammdaten rechts. Der Steuerberater sieht damit auf
+     * einen Blick, von welcher Firma der Export stammt.
      *
      * Fallbacks:
-     *  - Logo nicht gepflegt oder Datei fehlt: nur Firmen-Text rechts wird gerendert.
+     *  - Logo nicht gepflegt oder Datei fehlt: nur Firmen-Text rechts.
      *  - Keine Firmeninformation in der DB: nur das (eventuelle) Static-Logo.
      *  - Beides fehlt: stillschweigend ueberspringen — PDF bleibt valide.
      */
@@ -143,7 +164,6 @@ public class BelegeKasseExportPdfService {
         kopf.setWidthPercentage(100);
         kopf.setSpacingAfter(8f);
 
-        // Linke Spalte: Logo (zentriert) oder leere Zelle
         PdfPCell logoCell = new PdfPCell();
         logoCell.setBorder(Rectangle.NO_BORDER);
         logoCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
@@ -153,7 +173,6 @@ public class BelegeKasseExportPdfService {
         }
         kopf.addCell(logoCell);
 
-        // Rechte Spalte: Firmenstammdaten in Handwerker-Sprache (kein Buchhalter-Jargon)
         PdfPCell infoCell = new PdfPCell();
         infoCell.setBorder(Rectangle.NO_BORDER);
         infoCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
@@ -167,13 +186,11 @@ public class BelegeKasseExportPdfService {
             addRightLine(infoCell, firma.getFirmenname(), firmenname);
             addRightLine(infoCell, joinNonEmpty(" ", firma.getStrasse()), line);
             addRightLine(infoCell, joinNonEmpty(" ", firma.getPlz(), firma.getOrt()), line);
-            // Kontakt-Zeile: Tel · E-Mail · Web (nur was gepflegt ist)
             String kontakt = joinNonEmpty(" · ",
                     prefix("Tel. ",     firma.getTelefon()),
                     prefix("",          firma.getEmail()),
                     prefix("",          firma.getWebsite()));
             addRightLine(infoCell, kontakt, lineMuted);
-            // Steuer-Zeile: nur fuer Steuerberater relevant, daher klein darunter
             String steuer = joinNonEmpty(" · ",
                     prefix("St.-Nr. ",  firma.getSteuernummer()),
                     prefix("USt-IdNr. ", firma.getUstIdNr()));
@@ -184,11 +201,6 @@ public class BelegeKasseExportPdfService {
         doc.add(kopf);
     }
 
-    /**
-     * Laedt das im FirmaEditor hinterlegte Logo aus dem Upload-Verzeichnis.
-     * Faellt auf die mitgelieferte Static-Resource zurueck, wenn das Firmen-Logo
-     * nicht gepflegt oder die Datei nicht (mehr) vorhanden ist.
-     */
     private Image ladeFirmenlogo(Firmeninformation firma) {
         String dateiname = firma != null ? firma.getLogoDateiname() : null;
         if (dateiname != null && !dateiname.isBlank()) {
@@ -198,10 +210,6 @@ public class BelegeKasseExportPdfService {
             if (!safe.contains("..") && !safe.contains("/") && !safe.contains("\\")) {
                 Path base = Paths.get(uploadPath, "firma", "logo").toAbsolutePath().normalize();
                 Path logoPath = base.resolve(safe).normalize();
-                // Zweiter Check: nach Normalisierung muss der aufgeloeste Pfad
-                // immer noch unterhalb des Logo-Verzeichnisses liegen — sonst
-                // hat der Dateiname uns ueber einen exotischen Trick (z.B. NUL,
-                // Unicode-Slash) doch aus dem Sandkasten herausgehoben.
                 if (logoPath.startsWith(base) && Files.exists(logoPath)) {
                     try {
                         return Image.getInstance(logoPath.toString());
@@ -211,7 +219,6 @@ public class BelegeKasseExportPdfService {
                 }
             }
         }
-        // Fallback: mitgelieferte Static-Resource (kann ebenfalls fehlen).
         try {
             java.net.URL url = getClass().getResource("/static/firmenlogo_icon.png");
             if (url != null) return Image.getInstance(url);
@@ -243,32 +250,62 @@ public class BelegeKasseExportPdfService {
         return prefix + value.trim();
     }
 
-    private void addTitle(Document doc, YearMonth ym) throws DocumentException {
+    /**
+     * Titelblock. Enthaelt bewusst auch Erstellungszeitpunkt und Ersteller:
+     * ein Ausdruck ohne beides ist fuer einen Pruefer wertlos, weil sich
+     * nicht sagen laesst, welchen Datenstand er zeigt.
+     */
+    private void addTitle(Document doc, YearMonth ym, Mitarbeiter ersteller) throws DocumentException {
         Font titleFont    = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, TEXT_DARK);
-        Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA, 12, TEXT_MUTED);
+        Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA, 10, TEXT_MUTED);
         Font kategorie    = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, KPI_ACCENT);
 
-        Paragraph kat = new Paragraph("BUCHHALTUNG", kategorie);
-        doc.add(kat);
+        doc.add(new Paragraph("BUCHHALTUNG", kategorie));
+        doc.add(new Paragraph("KASSENBUCH – " + monatLabel(ym).toUpperCase(Locale.GERMAN), titleFont));
 
-        doc.add(new Paragraph("BELEGE & KASSE – MONATSEXPORT", titleFont));
+        String erstellerName = ersteller != null
+                ? ((nullToEmpty(ersteller.getVorname()) + " " + nullToEmpty(ersteller.getNachname())).trim())
+                : "";
+        String zeile = "Erstellt am " + LocalDateTime.now().format(TS_FMT) + " Uhr"
+                + (erstellerName.isEmpty() ? "" : " von " + erstellerName);
+        doc.add(new Paragraph(zeile, subTitleFont));
 
-        String zeitraum = "Zeitraum: " + monatLabel(ym)
-                + "  ·  Erstellt am " + LocalDate.now().format(DATE_FMT);
-        doc.add(new Paragraph(zeitraum, subTitleFont));
+        // Festschreibungsstand: der wichtigste Satz auf dem ganzen Blatt.
+        // Ein nicht abgeschlossener Monat ist noch aenderbar, und das muss
+        // auf dem Ausdruck stehen, damit ihn niemand fuer endgueltig haelt.
+        Optional<KassenbuchMonatsabschluss> abschluss =
+                abschlussRepository.findByJahrAndMonat(ym.getYear(), ym.getMonthValue());
+        Font statusFont;
+        String statusText;
+        if (abschluss.isPresent()) {
+            KassenbuchMonatsabschluss m = abschluss.get();
+            statusFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(21, 128, 61));
+            statusText = "Monat abgeschlossen am " + m.getAbgeschlossenAm().format(TS_FMT)
+                    + " · " + m.getAnzahlBelege() + " Belege festgeschrieben"
+                    + (m.getErsteLaufendeNummer() != null
+                        ? " · Nummern " + m.getErsteLaufendeNummer() + " bis " + m.getLetzteLaufendeNummer()
+                        : "")
+                    + (m.getEntryHash() != null ? " · Prüfsumme " + kurz(m.getEntryHash()) : "");
+        } else {
+            statusFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, KPI_ACCENT);
+            statusText = "VORLÄUFIG – dieser Monat ist noch nicht abgeschlossen. "
+                    + "Die Buchungen können sich noch ändern und haben teilweise noch keine feste Nummer.";
+        }
+        Paragraph status = new Paragraph(statusText, statusFont);
+        status.setSpacingBefore(4f);
+        doc.add(status);
         doc.add(new Paragraph(" "));
     }
 
     /**
-     * Anfangssaldo am Vortag des Monatsanfangs. Summiert ueber alle validierten
-     * Bar-Bewegungen vor dem Stichtag — Eingaenge addiert, Ausgaenge subtrahiert.
-     * Damit beginnt das T-Konto nicht bei 0, sondern setzt den Endsaldo des
-     * Vormonats lueckenlos fort.
+     * Kassenbestand am Vortag des Stichtags: alle geprueften Bar-Bewegungen
+     * davor, Eingaenge addiert, Ausgaenge abgezogen.
      */
-    private BigDecimal berechneAnfangssaldo(List<Beleg> alleValidiert, LocalDate monatsAnfang) {
+    private BigDecimal berechneAnfangsbestand(LocalDate monatsAnfang) {
+        List<Beleg> davor = belegRepository.findGeprueftImZeitraumNachNummer(
+                LocalDate.of(1900, 1, 1), monatsAnfang.minusDays(1));
         BigDecimal saldo = BigDecimal.ZERO;
-        for (Beleg b : alleValidiert) {
-            if (b.getBelegDatum() == null || !b.getBelegDatum().isBefore(monatsAnfang)) continue;
+        for (Beleg b : davor) {
             BelegKategorie k = b.getBelegKategorie();
             if (k == null || !k.istKassenBewegung()) continue;
             BigDecimal brutto = nullSafe(b.getBetragBrutto());
@@ -278,177 +315,430 @@ public class BelegeKasseExportPdfService {
     }
 
     /**
-     * Kassen-Konto im klassischen T-Konto-Layout (Steuerberater-Standard):
-     * Linke Spalte = Soll (Eingaenge: KASSE_EINNAHME + PRIVATEINLAGE),
-     * rechte Spalte = Haben (Ausgaenge: KASSE_AUSGABE + PRIVATENTNAHME).
-     * Anfangssaldo wird ueber dem T-Konto angedruckt, Endsaldo darunter.
-     * Endsaldo = Anfangssaldo + Summe Soll − Summe Haben.
+     * Das eigentliche Kassenbuch: eine Zeile pro Bewegung, chronologisch,
+     * mit dem Bestand nach jeder Buchung.
      */
-    private void addKassenbuchTKonto(Document doc, List<Beleg> belege, BigDecimal anfangssaldo)
+    private void addKassenbuchJournal(Document doc, List<Beleg> belege, BigDecimal anfangsbestand)
             throws DocumentException {
-        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, TEXT_DARK);
-        Paragraph section = new Paragraph("Kasse · Bargeldkonto (T-Konto)", sectionFont);
-        section.setSpacingBefore(10f);
+        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13, TEXT_DARK);
+        Paragraph section = new Paragraph("Kasse · Bargeldbewegungen", sectionFont);
+        section.setSpacingBefore(6f);
+        section.setSpacingAfter(6f);
         doc.add(section);
 
-        Font infoFont = FontFactory.getFont(FontFactory.HELVETICA, 10, TEXT_MUTED);
-        Paragraph anfang = new Paragraph(
-                "Anfangssaldo zu Monatsbeginn: " + formatEuro(anfangssaldo) + " €", infoFont);
-        anfang.setSpacingBefore(2f);
-        anfang.setSpacingAfter(6f);
-        doc.add(anfang);
-
         List<Beleg> kasse = belege.stream()
-                .filter(b -> b.getBelegKategorie() != null
-                        && b.getBelegKategorie().istKassenBewegung())
+                .filter(b -> b.getBelegKategorie() != null && b.getBelegKategorie().istKassenBewegung())
                 .sorted(Comparator
                         .comparing(Beleg::getBelegDatum, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(b -> b.getLaufendeNummer() == null ? Long.MAX_VALUE : b.getLaufendeNummer())
                         .thenComparing(Beleg::getId))
                 .toList();
 
-        List<Beleg> soll  = kasse.stream()
-                .filter(b -> !b.getBelegKategorie().istAusgang()).toList();
-        List<Beleg> haben = kasse.stream()
-                .filter(b -> b.getBelegKategorie().istAusgang()).toList();
-
-        BigDecimal sumSoll  = summeBrutto(soll);
-        BigDecimal sumHaben = summeBrutto(haben);
-        BigDecimal endsaldo = anfangssaldo.add(sumSoll).subtract(sumHaben);
-
-        PdfPTable t = new PdfPTable(2);
+        //           Nr   Datum Beleg-Nr Zweck Gegenkonto Zahlart MwSt% MwSt€ Ein   Aus   Bestand
+        PdfPTable t = new PdfPTable(new float[]{
+                0.7f, 1.0f, 1.2f, 4.2f, 1.9f, 1.2f, 0.8f, 1.1f, 1.2f, 1.2f, 1.3f });
         t.setWidthPercentage(100);
-        t.setSpacingBefore(4f);
+        t.setHeaderRows(1);
 
-        t.addCell(seitenHeaderCell("SOLL  ·  Eingang"));
-        t.addCell(seitenHeaderCell("HABEN  ·  Ausgang"));
-
-        t.addCell(seitenContainer(buildSeitenTabelle(soll)));
-        t.addCell(seitenContainer(buildSeitenTabelle(haben)));
-
-        t.addCell(seitenSummeCell("Summe Soll:  " + formatEuro(sumSoll) + " €"));
-        t.addCell(seitenSummeCell("Summe Haben: " + formatEuro(sumHaben) + " €"));
-
-        doc.add(t);
-
-        Font endFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13, KPI_ACCENT);
-        Paragraph end = new Paragraph(
-                "Endsaldo (Anfang + Soll − Haben): " + formatEuro(endsaldo) + " €", endFont);
-        end.setAlignment(Element.ALIGN_RIGHT);
-        end.setSpacingBefore(10f);
-        doc.add(end);
-    }
-
-    private PdfPTable buildSeitenTabelle(List<Beleg> belege) {
-        PdfPTable inner = new PdfPTable(new float[]{ 1.4f, 1.6f, 4.5f, 2f });
-        inner.setWidthPercentage(100);
-
-        Font subHdr = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, TEXT_MUTED);
-        String[] heads = { "Datum", "Beleg-Nr.", "Verwendungszweck", "Betrag €" };
+        String[] heads = { "Nr.", "Datum", "Beleg-Nr.", "Verwendungszweck", "Gegenkonto",
+                "Zahlungsart", "MwSt", "MwSt €", "Einnahme €", "Ausgabe €", "Bestand €" };
         for (String h : heads) {
-            PdfPCell c = new PdfPCell(new Phrase(h, subHdr));
-            c.setBackgroundColor(SUM_BG);
-            c.setPaddingTop(5f); c.setPaddingBottom(5f);
-            c.setPaddingLeft(6f); c.setPaddingRight(6f);
-            c.setBorder(Rectangle.BOTTOM);
-            c.setBorderColor(BORDER);
-            c.setBorderWidth(0.5f);
-            inner.addCell(c);
+            t.addCell(headerCell(h));
         }
 
-        if (belege.isEmpty()) {
-            Font muted = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 9, TEXT_MUTED);
-            PdfPCell empty = new PdfPCell(new Phrase("Keine Buchungen", muted));
-            empty.setColspan(4);
-            empty.setHorizontalAlignment(Element.ALIGN_CENTER);
-            empty.setPaddingTop(10f); empty.setPaddingBottom(10f);
-            empty.setBorder(Rectangle.NO_BORDER);
-            inner.addCell(empty);
-            return inner;
+        // Erste Zeile: der Uebertrag aus dem Vormonat.
+        PdfPCell uebertrag = new PdfPCell(new Phrase("Übertrag aus dem Vormonat",
+                FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 9, TEXT_MUTED)));
+        uebertrag.setColspan(10);
+        uebertrag.setBackgroundColor(SUM_BG);
+        uebertrag.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        setzePadding(uebertrag);
+        uebertrag.setBorder(Rectangle.BOTTOM);
+        uebertrag.setBorderColor(BORDER);
+        t.addCell(uebertrag);
+        t.addCell(betragZelle(formatEuro(anfangsbestand), SUM_BG, true));
+
+        BigDecimal bestand = anfangsbestand;
+        BigDecimal sumEin = BigDecimal.ZERO;
+        BigDecimal sumAus = BigDecimal.ZERO;
+
+        if (kasse.isEmpty()) {
+            PdfPCell leer = new PdfPCell(new Phrase("Keine Bargeldbewegungen in diesem Monat",
+                    FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 9, TEXT_MUTED)));
+            leer.setColspan(11);
+            leer.setHorizontalAlignment(Element.ALIGN_CENTER);
+            leer.setPaddingTop(12f);
+            leer.setPaddingBottom(12f);
+            leer.setBorder(Rectangle.NO_BORDER);
+            t.addCell(leer);
         }
 
         boolean alt = false;
-        for (Beleg b : belege) {
-            Color bg = alt ? ROW_ALT : Color.WHITE;
-            String datum  = b.getBelegDatum()  != null ? b.getBelegDatum().format(DATE_SHORT) : "–";
-            String nr     = b.getBelegNummer() != null ? b.getBelegNummer() : "–";
-            String zweck  = b.getBeschreibung() != null && !b.getBeschreibung().isBlank()
-                    ? b.getBeschreibung()
-                    : kategorieLabel(b.getBelegKategorie());
-            String betrag = formatEuro(nullSafe(b.getBetragBrutto()));
+        for (Beleg b : kasse) {
+            BelegKategorie k = b.getBelegKategorie();
+            BigDecimal brutto = nullSafe(b.getBetragBrutto());
+            boolean ausgang = k.istAusgang();
+            if (ausgang) {
+                bestand = bestand.subtract(brutto);
+                sumAus = sumAus.add(brutto);
+            } else {
+                bestand = bestand.add(brutto);
+                sumEin = sumEin.add(brutto);
+            }
 
-            inner.addCell(cell(datum, bg, Element.ALIGN_LEFT));
-            inner.addCell(cell(nr,    bg, Element.ALIGN_LEFT));
-            inner.addCell(cell(zweck, bg, Element.ALIGN_LEFT));
-            inner.addCell(cell(betrag, bg, Element.ALIGN_RIGHT));
+            // Stornierte Zeilen und Gegenbuchungen faerben wir grau ein --
+            // sie bleiben stehen (das verlangt die Aufbewahrung), sollen aber
+            // beim Ueberfliegen nicht mit gueltigen Buchungen verwechselt werden.
+            boolean stornoBezug = b.getStornoFuerBelegId() != null || b.getStorniertDurchBelegId() != null;
+            Color bg = stornoBezug ? STORNO_BG : (alt ? ROW_ALT : Color.WHITE);
+
+            t.addCell(zelle(b.getLaufendeNummer() != null ? b.getLaufendeNummer().toString() : "–",
+                    bg, Element.ALIGN_RIGHT));
+            t.addCell(zelle(b.getBelegDatum() != null ? b.getBelegDatum().format(DATE_SHORT) : "–",
+                    bg, Element.ALIGN_LEFT));
+            t.addCell(zelle(kuerze(b.getBelegNummer(), 14), bg, Element.ALIGN_LEFT));
+            t.addCell(zelle(verwendungszweck(b), bg, Element.ALIGN_LEFT));
+            t.addCell(zelle(gegenkonto(b), bg, Element.ALIGN_LEFT));
+            t.addCell(zelle(kuerze(b.getZahlungsart(), 12), bg, Element.ALIGN_LEFT));
+            t.addCell(zelle(b.getMwstSatz() != null
+                    ? formatProzent(b.getMwstSatz()) : "–", bg, Element.ALIGN_RIGHT));
+            t.addCell(zelle(mwstBetrag(b) != null ? formatEuro(mwstBetrag(b)) : "–", bg, Element.ALIGN_RIGHT));
+            t.addCell(zelle(ausgang ? "" : formatEuro(brutto), bg, Element.ALIGN_RIGHT));
+            t.addCell(zelle(ausgang ? formatEuro(brutto) : "", bg, Element.ALIGN_RIGHT));
+            t.addCell(betragZelle(formatEuro(bestand), bg, false));
             alt = !alt;
         }
-        return inner;
+
+        doc.add(t);
+        addSummenblock(doc, anfangsbestand, sumEin, sumAus, bestand);
+        addNichtBarHinweis(doc, belege);
     }
 
-    private PdfPCell seitenHeaderCell(String text) {
-        Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
-        PdfPCell c = new PdfPCell(new Phrase(text, headerFont));
-        c.setBackgroundColor(HEADER_BG);
-        c.setHorizontalAlignment(Element.ALIGN_CENTER);
-        c.setPaddingTop(8f); c.setPaddingBottom(8f);
-        c.setBorder(Rectangle.NO_BORDER);
-        return c;
+    /** Anfangsbestand, Summen und Endbestand -- ersetzt das frueher gezeigte T-Konto. */
+    private void addSummenblock(Document doc, BigDecimal anfang, BigDecimal ein,
+                                BigDecimal aus, BigDecimal ende) throws DocumentException {
+        PdfPTable s = new PdfPTable(new float[]{ 3f, 1.4f });
+        s.setWidthPercentage(45);
+        s.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        s.setSpacingBefore(10f);
+
+        s.addCell(summeLabel("Bestand am Monatsanfang"));
+        s.addCell(summeWert(formatEuro(anfang) + " €", false));
+        s.addCell(summeLabel("+ Einnahmen und Einlagen"));
+        s.addCell(summeWert(formatEuro(ein) + " €", false));
+        s.addCell(summeLabel("− Ausgaben und Entnahmen"));
+        s.addCell(summeWert(formatEuro(aus) + " €", false));
+        s.addCell(summeLabel("= Bestand am Monatsende"));
+        s.addCell(summeWert(formatEuro(ende) + " €", true));
+
+        doc.add(s);
     }
 
-    private PdfPCell seitenContainer(PdfPTable inner) {
-        PdfPCell c = new PdfPCell(inner);
-        c.setPadding(0f);
-        c.setBorder(Rectangle.BOX);
-        c.setBorderColor(BORDER);
-        c.setBorderWidth(0.5f);
-        return c;
+    /**
+     * Belege, die nicht bar bezahlt wurden (Bank, Kreditkarte, Sonstiges),
+     * gehoeren nicht ins Kassenbuch, liegen aber mit im Ordner. Ein Hinweis
+     * erspart dem Steuerberater die Rueckfrage, warum die Belegnummern im
+     * Journal Luecken haben.
+     */
+    private void addNichtBarHinweis(Document doc, List<Beleg> alle) throws DocumentException {
+        List<Beleg> nichtBar = alle.stream()
+                .filter(b -> b.getBelegKategorie() == null || !b.getBelegKategorie().istKassenBewegung())
+                .toList();
+        if (nichtBar.isEmpty()) return;
+
+        BigDecimal summe = BigDecimal.ZERO;
+        for (Beleg b : nichtBar) summe = summe.add(nullSafe(b.getBetragBrutto()));
+
+        Font f = FontFactory.getFont(FontFactory.HELVETICA, 9, TEXT_MUTED);
+        Paragraph p = new Paragraph(
+                "Hinweis: " + nichtBar.size() + " Belege dieses Monats über zusammen "
+                + formatEuro(summe) + " € wurden nicht bar bezahlt (Bank, Kreditkarte, Sonstiges). "
+                + "Sie stehen deshalb nicht im Kassenbuch, liegen aber mit im Belegteil dieses Pakets. "
+                + "Daher können im Journal Nummern fehlen.", f);
+        p.setSpacingBefore(10f);
+        doc.add(p);
     }
 
-    private PdfPCell seitenSummeCell(String text) {
-        Font sumFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, TEXT_DARK);
-        PdfPCell c = new PdfPCell(new Phrase(text, sumFont));
-        c.setBackgroundColor(SUM_BG);
-        c.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        c.setPaddingTop(8f); c.setPaddingBottom(8f);
-        c.setPaddingLeft(10f); c.setPaddingRight(10f);
-        c.setBorderColor(TEXT_DARK);
-        c.setBorderWidthTop(1f);
-        c.setBorderWidthBottom(0f);
-        c.setBorderWidthLeft(0f);
-        c.setBorderWidthRight(0f);
-        return c;
+    /** Kassenstuerze des Monats: gezaehltes Bargeld gegen den rechnerischen Bestand. */
+    private void addKassenstuerze(Document doc, LocalDate von, LocalDate bis) throws DocumentException {
+        List<Kassenzaehlung> zaehlungen =
+                zaehlungRepository.findByStichtagBetweenOrderByStichtagAscIdAsc(von, bis);
+        if (zaehlungen.isEmpty()) return;
+
+        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13, TEXT_DARK);
+        Paragraph section = new Paragraph("Kassenstürze in diesem Monat", sectionFont);
+        section.setSpacingBefore(16f);
+        section.setSpacingAfter(6f);
+        doc.add(section);
+
+        PdfPTable t = new PdfPTable(new float[]{ 1.3f, 1.6f, 1.6f, 1.4f, 5f });
+        t.setWidthPercentage(100);
+        for (String h : new String[]{ "Stichtag", "Gezählt €", "Laut Kassenbuch €", "Differenz €", "Bemerkung" }) {
+            t.addCell(headerCell(h));
+        }
+        boolean alt = false;
+        for (Kassenzaehlung z : zaehlungen) {
+            Color bg = alt ? ROW_ALT : Color.WHITE;
+            t.addCell(zelle(z.getStichtag().format(DATE_FMT), bg, Element.ALIGN_LEFT));
+            t.addCell(zelle(formatEuro(z.getGezaehlterBestand()), bg, Element.ALIGN_RIGHT));
+            t.addCell(zelle(formatEuro(z.getRechnerischerBestand()), bg, Element.ALIGN_RIGHT));
+            t.addCell(zelle(formatEuro(z.getDifferenz()), bg, Element.ALIGN_RIGHT));
+            String bem = z.getBemerkung() != null ? z.getBemerkung() : "";
+            if (z.getAusgleichBelegId() != null) {
+                bem = (bem.isBlank() ? "" : bem + " · ") + "Differenz wurde ausgebucht";
+            }
+            t.addCell(zelle(bem, bg, Element.ALIGN_LEFT));
+            alt = !alt;
+        }
+        doc.add(t);
     }
 
-    private BigDecimal summeBrutto(List<Beleg> belege) {
-        BigDecimal sum = BigDecimal.ZERO;
-        for (Beleg b : belege) sum = sum.add(nullSafe(b.getBetragBrutto()));
-        return sum;
+    /**
+     * Die Belegbilder, ein Beleg pro Seite. Bisher behauptete das PDF nur,
+     * die Fotos laegen "im selben Ordner" -- damit war der Ausdruck allein
+     * wertlos, sobald der Ordner auseinanderfiel.
+     *
+     * <p>Ueber jedem Bild steht die laufende Nummer, das Datum, der Betrag
+     * und der Fingerabdruck der Datei. Damit laesst sich jedes Foto genau
+     * einer Zeile im Journal zuordnen und pruefen, dass es nicht
+     * ausgetauscht wurde.</p>
+     *
+     * <p>PDF-Belege lassen sich nicht als Bild einbetten; fuer sie wird nur
+     * eine Referenzseite erzeugt. Die Datei selbst liegt im ZIP-Paket.</p>
+     */
+    private void addBelegbilder(Document doc, List<Beleg> belege) throws DocumentException {
+        List<Beleg> mitDatei = belege.stream()
+                .filter(b -> b.getGespeicherterDateiname() != null && !b.getGespeicherterDateiname().isBlank())
+                .toList();
+        if (mitDatei.isEmpty()) return;
+
+        Font ueberschrift = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, TEXT_DARK);
+        Font zeile        = FontFactory.getFont(FontFactory.HELVETICA, 9, TEXT_CELL);
+        Font hashFont     = FontFactory.getFont(FontFactory.COURIER, 7, TEXT_MUTED);
+
+        doc.newPage();
+        Paragraph titel = new Paragraph("Belege zu diesem Kassenbuch", ueberschrift);
+        titel.setSpacingAfter(6f);
+        doc.add(titel);
+        doc.add(new Paragraph(
+                mitDatei.size() + " Belege, ein Beleg je Seite. Die Zeichenfolge unter jedem Beleg ist "
+                + "der Fingerabdruck der Bilddatei – stimmt er, wurde das Bild seit der Prüfung nicht "
+                + "ausgetauscht.", zeile));
+
+        for (Beleg b : mitDatei) {
+            doc.newPage();
+
+            String kopf = "Beleg Nr. " + (b.getLaufendeNummer() != null ? b.getLaufendeNummer() : "ohne Nummer")
+                    + "  ·  " + (b.getBelegDatum() != null ? b.getBelegDatum().format(DATE_FMT) : "ohne Datum")
+                    + "  ·  " + formatEuro(nullSafe(b.getBetragBrutto())) + " €"
+                    + "  ·  " + kategorieLabel(b.getBelegKategorie())
+                    + (b.getLieferant() != null ? "  ·  " + b.getLieferant().getLieferantenname() : "");
+            Paragraph kopfP = new Paragraph(kopf,
+                    FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, TEXT_DARK));
+            doc.add(kopfP);
+
+            String zweck = verwendungszweck(b);
+            if (!zweck.isBlank()) {
+                doc.add(new Paragraph(zweck, zeile));
+            }
+            doc.add(new Paragraph("Datei: " + nullToEmpty(b.getOriginalDateiname())
+                    + (b.getDateiHash() != null ? "   ·   SHA-256: " + b.getDateiHash() : ""), hashFont));
+
+            Image bild = ladeBelegbild(b);
+            if (bild != null) {
+                // Auf den verbleibenden Seitenbereich einpassen, damit auch
+                // ein Hochformat-Scan vollstaendig sichtbar bleibt.
+                bild.scaleToFit(doc.getPageSize().getWidth() - 100, doc.getPageSize().getHeight() - 160);
+                bild.setAlignment(Element.ALIGN_CENTER);
+                doc.add(bild);
+            } else {
+                Font hinweis = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 10, TEXT_MUTED);
+                doc.add(new Paragraph(" ", hinweis));
+                doc.add(new Paragraph(
+                        istPdfBeleg(b)
+                            ? "Dieser Beleg liegt als PDF vor und ist im Ordner \"belege\" des Export-Pakets "
+                              + "unter dem oben genannten Dateinamen enthalten."
+                            : "Das Belegbild konnte nicht eingebunden werden. Die Datei liegt im Ordner "
+                              + "\"belege\" des Export-Pakets.", hinweis));
+            }
+        }
     }
 
+    private boolean istPdfBeleg(Beleg b) {
+        return b.getMimeType() != null && b.getMimeType().toLowerCase(Locale.ROOT).contains("pdf");
+    }
+
+    /**
+     * Laedt ein Belegbild aus dem Upload-Verzeichnis. Der gespeicherte
+     * Dateiname stammt aus einer UUID, wird hier aber trotzdem gegen
+     * Pfad-Traversal geprueft -- Defense-in-Depth kostet hier nichts.
+     */
+    private Image ladeBelegbild(Beleg b) {
+        String name = b.getGespeicherterDateiname();
+        if (name == null || name.isBlank()) return null;
+        String mime = b.getMimeType() != null ? b.getMimeType().toLowerCase(Locale.ROOT) : "";
+        if (!EINBETTBARE_MIME_TYPES.contains(mime)) return null;
+        if (name.contains("..") || name.contains("/") || name.contains("\\")) return null;
+
+        Path base = Paths.get(uploadPath, "belege").toAbsolutePath().normalize();
+        Path datei = base.resolve(name).normalize();
+        if (!datei.startsWith(base) || !Files.exists(datei)) return null;
+        try {
+            return Image.getInstance(datei.toString());
+        } catch (IOException | BadElementException e) {
+            log.warn("Belegbild {} konnte nicht ins PDF eingebettet werden: {}", name, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Fusszeile mit dem Zustand des Protokolls. Ein Pruefer kann damit
+     * ohne Systemzugriff erkennen, ob die Aufzeichnungen seit ihrer
+     * Entstehung unveraendert sind.
+     */
     private void addFooter(Document doc) throws DocumentException {
-        Font footerFont = FontFactory.getFont(FontFactory.HELVETICA, 9, FOOTER_GREY);
+        BelegAuditChainVerifier.Bericht bericht = verifier.verify();
+        Font footerFont = FontFactory.getFont(FontFactory.HELVETICA, 8, FOOTER_GREY);
+
+        String kette = bericht.isIntakt()
+                ? "Das Änderungsprotokoll ist unversehrt (" + bericht.getGesamtAnzahl()
+                  + " Einträge geprüft"
+                  + (bericht.getLetzterEntryHash() != null
+                        ? ", Prüfsumme " + kurz(bericht.getLetzterEntryHash()) : "") + ")."
+                : "ACHTUNG: Das Änderungsprotokoll weist eine Lücke oder Veränderung auf.";
+
         Paragraph footer = new Paragraph(
-                "Dieses Dokument wurde maschinell erstellt und enthält nur validierte Belege. "
-                + "Die zugehörigen Belegfotos liegen im selben Ordner.",
+                "Maschinell erstellt aus dem geführten Kassenbuch. Enthalten sind ausschließlich geprüfte Belege. "
+                + kette + " Jede Änderung an einer Buchung ist im Protokoll festgehalten; "
+                + "festgeschriebene Buchungen werden nicht überschrieben, sondern storniert und neu gebucht.",
                 footerFont);
         footer.setAlignment(Element.ALIGN_CENTER);
         footer.setSpacingBefore(16f);
         doc.add(footer);
     }
 
-    // ===================== Cells & Helpers =====================
+    // ===================== Zellen & Helfer =====================
 
-    private PdfPCell cell(String text, Color bg, int alignment) {
-        Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9, TEXT_CELL);
+    private PdfPCell headerCell(String text) {
+        Font f = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, Color.WHITE);
+        PdfPCell c = new PdfPCell(new Phrase(text, f));
+        c.setBackgroundColor(HEADER_BG);
+        c.setHorizontalAlignment(Element.ALIGN_LEFT);
+        setzePadding(c);
+        c.setBorder(Rectangle.NO_BORDER);
+        return c;
+    }
+
+    private PdfPCell zelle(String text, Color bg, int alignment) {
+        Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 8, TEXT_CELL);
         PdfPCell c = new PdfPCell(new Phrase(text == null ? "" : text, cellFont));
         c.setBackgroundColor(bg);
         c.setHorizontalAlignment(alignment);
-        c.setPaddingTop(6f); c.setPaddingBottom(6f);
-        c.setPaddingLeft(6f); c.setPaddingRight(6f);
+        setzePadding(c);
         c.setBorder(Rectangle.BOTTOM);
         c.setBorderColor(BORDER);
         c.setBorderWidth(0.5f);
         return c;
+    }
+
+    /** Bestand-Spalte: fett, damit man die Fortschreibung mit dem Auge verfolgen kann. */
+    private PdfPCell betragZelle(String text, Color bg, boolean hervorheben) {
+        Font f = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8,
+                hervorheben ? TEXT_DARK : TEXT_CELL);
+        PdfPCell c = new PdfPCell(new Phrase(text, f));
+        c.setBackgroundColor(bg);
+        c.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        setzePadding(c);
+        c.setBorder(Rectangle.BOTTOM);
+        c.setBorderColor(BORDER);
+        c.setBorderWidth(0.5f);
+        return c;
+    }
+
+    private PdfPCell summeLabel(String text) {
+        PdfPCell c = new PdfPCell(new Phrase(text,
+                FontFactory.getFont(FontFactory.HELVETICA, 9, TEXT_CELL)));
+        c.setBorder(Rectangle.NO_BORDER);
+        c.setPaddingTop(3f);
+        c.setPaddingBottom(3f);
+        return c;
+    }
+
+    private PdfPCell summeWert(String text, boolean hervorheben) {
+        PdfPCell c = new PdfPCell(new Phrase(text, FontFactory.getFont(
+                hervorheben ? FontFactory.HELVETICA_BOLD : FontFactory.HELVETICA,
+                hervorheben ? 11 : 9,
+                hervorheben ? KPI_ACCENT : TEXT_CELL)));
+        c.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        c.setBorder(hervorheben ? Rectangle.TOP : Rectangle.NO_BORDER);
+        c.setBorderColor(TEXT_DARK);
+        c.setPaddingTop(3f);
+        c.setPaddingBottom(3f);
+        return c;
+    }
+
+    private void setzePadding(PdfPCell c) {
+        c.setPaddingTop(5f);
+        c.setPaddingBottom(5f);
+        c.setPaddingLeft(5f);
+        c.setPaddingRight(5f);
+    }
+
+    private String verwendungszweck(Beleg b) {
+        if (b.getBeschreibung() != null && !b.getBeschreibung().isBlank()) {
+            return b.getBeschreibung().trim();
+        }
+        if (b.getLieferant() != null && b.getLieferant().getLieferantenname() != null) {
+            return b.getLieferant().getLieferantenname();
+        }
+        return kategorieLabel(b.getBelegKategorie());
+    }
+
+    /**
+     * Gegenkonto in der Form "4930 Bürobedarf". Ohne Kontierung steht dort
+     * ein deutlicher Platzhalter -- der Steuerberater sieht dann sofort,
+     * wo er noch nacharbeiten muss.
+     */
+    private String gegenkonto(Beleg b) {
+        if (b.getSachkonto() == null) return "noch offen";
+        String nummer = b.getSachkonto().getNummer();
+        String bez = b.getSachkonto().getBezeichnung();
+        return joinNonEmpty(" ", nummer, kuerze(bez, 18));
+    }
+
+    /**
+     * Steuerbetrag der Buchung. Bevorzugt aus der Differenz brutto minus
+     * netto -- das ist der Wert, den der Buchhalter tatsaechlich geprueft
+     * hat. Fehlt der Nettobetrag, wird aus dem Steuersatz herausgerechnet.
+     */
+    private BigDecimal mwstBetrag(Beleg b) {
+        BigDecimal brutto = b.getBetragBrutto();
+        if (brutto == null) return null;
+        BigDecimal netto = b.getBetragNetto();
+        if (netto != null) {
+            return brutto.subtract(netto).setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal satz = b.getMwstSatz();
+        if (satz == null || satz.signum() <= 0) return null;
+        BigDecimal faktor = BigDecimal.ONE.add(satz.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
+        BigDecimal errechnetesNetto = brutto.divide(faktor, 2, RoundingMode.HALF_UP);
+        return brutto.subtract(errechnetesNetto).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String kuerze(String s, int max) {
+        if (s == null || s.isBlank()) return "–";
+        String t = s.trim();
+        return t.length() <= max ? t : t.substring(0, max - 1) + "…";
+    }
+
+    /** Erste und letzte Stellen eines Hashes -- lang genug zum Wiedererkennen, kurz genug fuers Auge. */
+    private String kurz(String hash) {
+        if (hash == null || hash.length() < 16) return nullToEmpty(hash);
+        return hash.substring(0, 8) + "…" + hash.substring(hash.length() - 8);
+    }
+
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     private BigDecimal nullSafe(BigDecimal v) {
@@ -458,7 +748,11 @@ public class BelegeKasseExportPdfService {
     private String formatEuro(BigDecimal v) {
         BigDecimal x = v == null ? BigDecimal.ZERO : v.setScale(2, RoundingMode.HALF_UP);
         // Deutsche Formatierung: 1.234,56
-        return String.format(java.util.Locale.GERMAN, "%,.2f", x);
+        return String.format(Locale.GERMAN, "%,.2f", x);
+    }
+
+    private String formatProzent(BigDecimal satz) {
+        return satz.stripTrailingZeros().toPlainString().replace('.', ',') + " %";
     }
 
     private String kategorieLabel(BelegKategorie k) {

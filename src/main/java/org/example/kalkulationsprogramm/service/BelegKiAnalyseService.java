@@ -51,6 +51,7 @@ public class BelegKiAnalyseService {
     private final GeminiDokumentAnalyseService geminiService;
     private final BelegKiKostenkontoService kostenkontoService;
     private final BelegSplitService belegSplitService;
+    private final BelegAuditService auditService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -192,6 +193,15 @@ public class BelegKiAnalyseService {
                         belegId, e.getMessage());
             }
             belegRepository.save(beleg);
+
+            // Das automatische Auslesen schreibt Datum, Betrag, Steuersatz und
+            // Beschreibung an den Beleg. Auch das ist eine Aenderung an einer
+            // Buchhaltungs-Aufzeichnung und gehoert ins Protokoll -- sonst
+            // stuende dort nur der leere Beleg von direkt nach dem Upload und
+            // niemand koennte spaeter nachvollziehen, welche Werte von der
+            // Maschine kamen und welche der Buchhalter selbst gesetzt hat.
+            auditService.protokolliereAenderung(beleg, beleg.getUploadedBy(),
+                    "Werte automatisch vom Belegbild ausgelesen", null);
 
             // Auto-Erstellung Eingangsrechnung:
             // Wenn KI sagt "RECHNUNG"/"GUTSCHRIFT" und ein Lieferant vorhanden ist

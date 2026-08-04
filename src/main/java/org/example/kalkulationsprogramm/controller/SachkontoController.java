@@ -201,7 +201,9 @@ public class SachkontoController {
             return ResponseEntity.badRequest().body(Map.of("message", "Ungültiger Monat oder Jahr"));
         }
         try {
-            java.nio.file.Path pdfPath = belegeKasseExportPdfService.generatePdf(jahr, monat);
+            // Ersteller mitgeben: ein Ausdruck ohne "erstellt am/von" laesst
+            // sich spaeter keinem Datenstand mehr zuordnen.
+            java.nio.file.Path pdfPath = belegeKasseExportPdfService.generatePdf(jahr, monat, caller, true);
             UrlResource resource = new UrlResource(pdfPath.toUri());
             String filename = String.format("Belege-Kasse-%04d-%02d.pdf", jahr, monat);
             return ResponseEntity.ok()

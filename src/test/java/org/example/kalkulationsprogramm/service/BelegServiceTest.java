@@ -58,6 +58,12 @@ class BelegServiceTest {
     @Mock private FrontendUserProfileRepository frontendUserProfileRepository;
     @Mock private KasseSaldoService kasseSaldoService;
     @Mock private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
+    // Protokoll und Monatsabschluss-Sperre haengen seit der Festschreibung an
+    // jedem schreibenden Vorgang; hier nur gemockt, getestet in
+    // KassenbuchFestschreibungTest.
+    @Mock private BelegAuditService auditService;
+    @Mock private KassenbuchSchreibschutz schreibschutz;
+    @Mock private org.example.kalkulationsprogramm.repository.KassenbuchMonatsabschlussRepository monatsabschlussRepository;
 
     @InjectMocks
     private BelegService service;

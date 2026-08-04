@@ -59,7 +59,9 @@ class BestellungsUebersichtControllerKostenstellenAuswertungTest {
                 mock(FrontendUserProfileRepository.class),
                 belegRepository,
                 belegKostenstellenAnteilRepository,
-                belegService);
+                belegService,
+                // Kontierungsaenderungen sind protokollpflichtig; hier nur gemockt.
+                mock(org.example.kalkulationsprogramm.service.BelegAuditService.class));
     }
 
     @Test

@@ -29,12 +29,17 @@ class BelegSplitServiceTest {
     @Mock private BelegPositionRepository belegPositionRepository;
     @Mock private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
 
+    // Die Positions-Auswahl verschiebt den Firmenanteil und ist deshalb an
+    // einem festgeschriebenen Beleg gesperrt. Hier gemockt, geprueft in
+    // KassenbuchFestschreibungTest.
+    @Mock private KassenbuchSchreibschutz schreibschutz;
+
     private BelegSplitService service;
 
     @BeforeEach
     void setUp() {
         service = new BelegSplitService(belegRepository, belegPositionRepository, new MwstRechnerService(),
-                belegKostenstellenAnteilRepository);
+                belegKostenstellenAnteilRepository, schreibschutz);
     }
 
     @Test

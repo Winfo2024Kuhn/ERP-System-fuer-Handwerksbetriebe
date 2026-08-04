@@ -82,6 +82,9 @@ public class BelegService {
     private final org.example.kalkulationsprogramm.repository.BelegPositionRepository belegPositionRepository;
     private final KasseSaldoService kasseSaldoService;
     private final BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
+    private final BelegAuditService auditService;
+    private final KassenbuchSchreibschutz schreibschutz;
+    private final org.example.kalkulationsprogramm.repository.KassenbuchMonatsabschlussRepository monatsabschlussRepository;
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
@@ -196,6 +199,11 @@ public class BelegService {
         datei.transferTo(target);
 
         Beleg beleg = new Beleg();
+        // Fingerabdruck der Datei direkt nach dem Speichern. Damit ist im
+        // Steuerberater-Paket nachweisbar, dass das Bild im Ordner genau das
+        // ist, das der Buchhalter geprueft hat -- ein spaeter ausgetauschtes
+        // Foto faellt beim Abgleich sofort auf.
+        beleg.setDateiHash(berechneDateiHash(target));
         beleg.setStatus(BelegStatus.NEU);
         beleg.setKiAnalyseStatus(BelegKiAnalyseStatus.PENDING);
         beleg.setBelegKategorie(BelegKategorie.UNZUGEORDNET);
@@ -215,6 +223,7 @@ public class BelegService {
         }
 
         beleg = belegRepository.save(beleg);
+        auditService.protokolliereErfassung(beleg, uploader, null);
 
         // Async-Start NACH Transaktions-Commit. Sonst würde der Async-Thread
         // den frisch persistierten Beleg in seiner eigenen Transaktion noch
@@ -301,16 +310,36 @@ public class BelegService {
             return null;
         }
 
+        // Festgeschriebene Belege sind in ihrem Kern unveraenderlich. Was der
+        // Aufrufer trotzdem daran drehen wollte, wird hier abgewiesen --
+        // bevor irgendein Feld angefasst ist.
+        if (beleg.istFestgeschrieben()) {
+            assertNurKontierungGeaendert(beleg, req);
+        }
+        // Ein noch offener Beleg darf nicht in einen abgeschlossenen Monat
+        // umdatiert werden. Sonst faellt er zwischen die Stuehle: Der Abschluss
+        // dieses Monats ist durch, der naechste Abschluss beginnt erst danach --
+        // der Beleg wuerde also nie festgeschrieben, nie nummeriert und bliebe
+        // dauerhaft frei aenderbar, ohne dass es irgendwo auffiele.
+        if (req.getBelegDatum() != null && !req.getBelegDatum().equals(beleg.getBelegDatum())) {
+            schreibschutz.assertMonatOffen(req.getBelegDatum());
+        }
+
         // Snapshot fuer die Kasse-Mindestbestand-Pruefung am Ende. Ohne diese
         // Werte koennten wir nicht zwischen "Erstvalidierung" und "Update an
         // bereits validiertem Beleg" unterscheiden.
         BelegStatus alterStatus = beleg.getStatus();
         BelegKategorie alteKategorie = beleg.getBelegKategorie();
         BigDecimal alterBrutto = beleg.getBetragBrutto();
+        // Zweiter Snapshot, diesmal fuers Protokoll: daraus wird der Text
+        // "Betrag 12,00 -> 15,00", der spaeter im Beleg-Verlauf steht.
+        List<String> aenderungen = new ArrayList<>();
 
         if (req.getBelegKategorie() != null) {
             try {
-                beleg.setBelegKategorie(BelegKategorie.valueOf(req.getBelegKategorie()));
+                BelegKategorie neu = BelegKategorie.valueOf(req.getBelegKategorie());
+                merke(aenderungen, "Art der Buchung", beleg.getBelegKategorie(), neu);
+                beleg.setBelegKategorie(neu);
             } catch (IllegalArgumentException ignored) {
                 // ungueltige Kategorie -> Feld unveraendert lassen
             }
@@ -319,6 +348,7 @@ public class BelegService {
             try {
                 BelegAufteilungsModus neu = BelegAufteilungsModus.valueOf(req.getAufteilungsModus());
                 BelegAufteilungsModus alt = beleg.getAufteilungsModus();
+                merke(aenderungen, "Aufteilung Firma/Privat", alt, neu);
                 beleg.setAufteilungsModus(neu);
                 // Bei Wechsel werden Firma-Summen via SplitService neu berechnet
                 // (bei VOLLSTAENDIG -> Felder werden geleert).
@@ -334,6 +364,7 @@ public class BelegService {
                 BelegStatus neuerStatus = BelegStatus.valueOf(req.getStatus());
                 boolean wechselAufValidiert = beleg.getStatus() != BelegStatus.VALIDIERT
                         && neuerStatus == BelegStatus.VALIDIERT;
+                merke(aenderungen, "Status", beleg.getStatus(), neuerStatus);
                 beleg.setStatus(neuerStatus);
                 if (wechselAufValidiert) {
                     beleg.setValidiertAm(LocalDateTime.now());
@@ -342,30 +373,63 @@ public class BelegService {
             } catch (IllegalArgumentException ignored) {
             }
         }
-        if (req.getBelegDatum() != null) beleg.setBelegDatum(req.getBelegDatum());
-        if (req.getBelegNummer() != null) beleg.setBelegNummer(req.getBelegNummer());
-        if (req.getBeschreibung() != null) beleg.setBeschreibung(req.getBeschreibung());
-        if (req.getBetragNetto() != null) beleg.setBetragNetto(req.getBetragNetto());
-        if (req.getBetragBrutto() != null) beleg.setBetragBrutto(req.getBetragBrutto());
-        if (req.getMwstSatz() != null) beleg.setMwstSatz(req.getMwstSatz());
-        if (req.getZahlungsart() != null) beleg.setZahlungsart(req.getZahlungsart());
-        if (req.getNotiz() != null) beleg.setNotiz(req.getNotiz());
+        if (req.getBelegDatum() != null) {
+            merke(aenderungen, "Datum", beleg.getBelegDatum(), req.getBelegDatum());
+            beleg.setBelegDatum(req.getBelegDatum());
+        }
+        if (req.getBelegNummer() != null) {
+            merke(aenderungen, "Belegnummer", beleg.getBelegNummer(), req.getBelegNummer());
+            beleg.setBelegNummer(req.getBelegNummer());
+        }
+        if (req.getBeschreibung() != null) {
+            merke(aenderungen, "Verwendungszweck", beleg.getBeschreibung(), req.getBeschreibung());
+            beleg.setBeschreibung(req.getBeschreibung());
+        }
+        if (req.getBetragNetto() != null) {
+            merke(aenderungen, "Netto", beleg.getBetragNetto(), req.getBetragNetto());
+            beleg.setBetragNetto(req.getBetragNetto());
+        }
+        if (req.getBetragBrutto() != null) {
+            merke(aenderungen, "Brutto", beleg.getBetragBrutto(), req.getBetragBrutto());
+            beleg.setBetragBrutto(req.getBetragBrutto());
+        }
+        if (req.getMwstSatz() != null) {
+            merke(aenderungen, "MwSt-Satz", beleg.getMwstSatz(), req.getMwstSatz());
+            beleg.setMwstSatz(req.getMwstSatz());
+        }
+        if (req.getZahlungsart() != null) {
+            merke(aenderungen, "Zahlungsart", beleg.getZahlungsart(), req.getZahlungsart());
+            beleg.setZahlungsart(req.getZahlungsart());
+        }
+        if (req.getNotiz() != null) {
+            merke(aenderungen, "Notiz", beleg.getNotiz(), req.getNotiz());
+            beleg.setNotiz(req.getNotiz());
+        }
 
         if (req.getLieferantId() != null) {
             Lieferanten l = lieferantenRepository.findById(req.getLieferantId()).orElse(null);
+            merke(aenderungen, "Lieferant",
+                    beleg.getLieferant() != null ? beleg.getLieferant().getId() : null,
+                    l != null ? l.getId() : null);
             beleg.setLieferant(l);
         }
         if (req.getSachkontoId() != null) {
             Sachkonto sk = sachkontoRepository.findById(req.getSachkontoId()).orElse(null);
+            merke(aenderungen, "Sachkonto",
+                    beleg.getSachkonto() != null ? beleg.getSachkonto().getNummer() : null,
+                    sk != null ? sk.getNummer() : null);
             beleg.setSachkonto(sk);
         }
         // Kostenstelle: 0 oder negativ wird als "abwaehlen" interpretiert,
         // ungueltige ID setzt zurueck — sonst Standard-Lookup.
         if (req.getKostenstelleId() != null) {
+            String vorher = beleg.getKostenstelle() != null ? beleg.getKostenstelle().getBezeichnung() : null;
             if (req.getKostenstelleId() <= 0L) {
                 beleg.setKostenstelle(null);
+                merke(aenderungen, "Kostenstelle", vorher, null);
             } else {
                 Kostenstelle ks = kostenstelleRepository.findById(req.getKostenstelleId()).orElse(null);
+                merke(aenderungen, "Kostenstelle", vorher, ks != null ? ks.getBezeichnung() : null);
                 beleg.setKostenstelle(ks);
             }
         }
@@ -382,9 +446,105 @@ public class BelegService {
         // Modul nicht geoeffnet). Leere Liste = alle Splits loeschen.
         if (req.getKostenstellenSplits() != null) {
             persistiereSplits(beleg, req.getKostenstellenSplits(), validierer);
+            aenderungen.add("Kostenstellen-Aufteilung neu gesetzt");
+        }
+
+        // Protokoll: das Pruefen ist der buchhalterisch bedeutsame Schritt und
+        // bekommt deshalb einen eigenen Eintrag. Reine Feldaenderungen landen
+        // als GEAENDERT im Verlauf -- ein Update, das nichts veraendert hat,
+        // erzeugt bewusst keinen Eintrag, sonst waere das Protokoll voller
+        // Rauschen und der Pruefer findet die echten Aenderungen nicht mehr.
+        boolean wurdeGeprueft = alterStatus != BelegStatus.VALIDIERT
+                && beleg.getStatus() == BelegStatus.VALIDIERT;
+        if (!aenderungen.isEmpty()) {
+            auditService.protokolliereAenderung(beleg, validierer,
+                    String.join("; ", aenderungen), null);
+        }
+        if (wurdeGeprueft) {
+            auditService.protokolliereValidierung(beleg, validierer, null);
         }
 
         return toDto(beleg);
+    }
+
+    /**
+     * Felder, die nach der Festschreibung gesperrt sind: alles, was im
+     * Kassenbuch steht. Wer daran etwas aendern will, storniert und bucht neu.
+     *
+     * <p>Bewusst nicht gesperrt sind Sachkonto, Kostenstelle, Lieferant und
+     * Notiz. Das ist die Kontierung -- welcher Schublade die Ausgabe
+     * buchhalterisch zugeordnet wird. Sie aendert weder Betrag noch Bestand
+     * der Kasse, wird protokolliert und muss auch nach dem Abschluss noch
+     * korrigierbar bleiben, sonst kostet jeder Kontierungsfehler des
+     * Steuerberaters zwei zusaetzliche Zeilen im Kassenbuch.</p>
+     */
+    private void assertNurKontierungGeaendert(Beleg beleg, BelegDto.UpdateRequest req) {
+        List<String> gesperrt = new ArrayList<>();
+
+        if (req.getBelegDatum() != null && !req.getBelegDatum().equals(beleg.getBelegDatum())) {
+            gesperrt.add("Datum");
+        }
+        if (betragWeichtAb(req.getBetragBrutto(), beleg.getBetragBrutto())) {
+            gesperrt.add("Brutto-Betrag");
+        }
+        if (betragWeichtAb(req.getBetragNetto(), beleg.getBetragNetto())) {
+            gesperrt.add("Netto-Betrag");
+        }
+        if (betragWeichtAb(req.getMwstSatz(), beleg.getMwstSatz())) {
+            gesperrt.add("MwSt-Satz");
+        }
+        if (req.getBelegKategorie() != null
+                && !req.getBelegKategorie().equals(
+                        beleg.getBelegKategorie() != null ? beleg.getBelegKategorie().name() : null)) {
+            gesperrt.add("Art der Buchung");
+        }
+        if (req.getZahlungsart() != null && !req.getZahlungsart().equals(beleg.getZahlungsart())) {
+            gesperrt.add("Zahlungsart");
+        }
+        if (req.getBeschreibung() != null && !req.getBeschreibung().equals(beleg.getBeschreibung())) {
+            gesperrt.add("Verwendungszweck");
+        }
+        if (req.getBelegNummer() != null && !req.getBelegNummer().equals(beleg.getBelegNummer())) {
+            gesperrt.add("Belegnummer");
+        }
+        if (req.getAufteilungsModus() != null
+                && !req.getAufteilungsModus().equals(
+                        beleg.getAufteilungsModus() != null ? beleg.getAufteilungsModus().name() : null)) {
+            gesperrt.add("Aufteilung Firma/Privat");
+        }
+        if (req.getStatus() != null
+                && !req.getStatus().equals(beleg.getStatus() != null ? beleg.getStatus().name() : null)) {
+            gesperrt.add("Status");
+        }
+
+        if (!gesperrt.isEmpty()) {
+            throw new KassenbuchGesperrtException(
+                    "Dieser Beleg ist festgeschrieben – "
+                            + String.join(", ", gesperrt) + " kann nicht mehr geändert werden.",
+                    "Storniere den Beleg und buche ihn richtig neu. "
+                            + "Die alte Buchung bleibt dabei sichtbar stehen – so verlangt es das Finanzamt.");
+        }
+    }
+
+    /** true, wenn ein Wert gesendet wurde und er sich vom gespeicherten unterscheidet. */
+    private static boolean betragWeichtAb(BigDecimal neu, BigDecimal alt) {
+        if (neu == null) return false;
+        return alt == null || neu.compareTo(alt) != 0;
+    }
+
+    /** Haengt "Feld: alt -> neu" ans Protokoll, wenn sich wirklich etwas geaendert hat. */
+    private static void merke(List<String> ziel, String feld, Object alt, Object neu) {
+        boolean gleich = (alt instanceof BigDecimal a && neu instanceof BigDecimal n)
+                ? a.compareTo(n) == 0
+                : Objects.equals(alt, neu);
+        if (gleich) return;
+        ziel.add(feld + ": " + darstellen(alt) + " → " + darstellen(neu));
+    }
+
+    private static String darstellen(Object o) {
+        if (o == null) return "leer";
+        String s = o.toString();
+        return s.length() > 60 ? s.substring(0, 60) + "…" : s;
     }
 
     /**
@@ -489,15 +649,45 @@ public class BelegService {
         return toDto(beleg);
     }
 
+    /**
+     * Verwirft einen Beleg (Schrott, Duplikat, Fehlscan).
+     *
+     * <p>Nur solange der Monat offen ist. Ein festgeschriebener Beleg steht im
+     * Kassenbuch und kann nicht mehr verschwinden -- dort gibt es nur den Weg
+     * ueber eine Gegenbuchung, damit die urspruengliche Zeile sichtbar bleibt.</p>
+     *
+     * <p>Die Datei bleibt in jedem Fall liegen; verworfen wird nur der Status.
+     * Ein Steuerpruefer darf auch sehen, was aussortiert wurde.</p>
+     *
+     * @param grund Pflicht -- ohne Begruendung waere spaeter nicht mehr
+     *              nachvollziehbar, warum ein Betrag aus dem Kassenbuch
+     *              verschwunden ist.
+     */
     @Transactional
-    public boolean deleteBeleg(Long id) {
+    public boolean deleteBeleg(Long id, String grund, Mitarbeiter bearbeiter) {
         Beleg beleg = belegRepository.findById(id).orElse(null);
         if (beleg == null) {
             return false;
         }
-        // Datei zur Sicherheit nicht löschen — falls Steuerprüfung. Soft via VERWORFEN.
+        if (beleg.istFestgeschrieben()) {
+            throw new KassenbuchGesperrtException(
+                    "Dieser Beleg ist festgeschrieben und kann nicht mehr verworfen werden.",
+                    "Storniere ihn stattdessen – die Buchung bleibt dann sichtbar, "
+                            + "wird aber durch eine Gegenbuchung aufgehoben.");
+        }
+        if (beleg.getStatus() == BelegStatus.VERWORFEN) {
+            return true; // schon verworfen -- kein zweiter Protokolleintrag noetig
+        }
+        String begruendung = (grund == null || grund.isBlank())
+                ? "Beleg verworfen (keine Begründung angegeben)"
+                : grund.trim();
+        if (begruendung.length() > 500) {
+            throw new IllegalArgumentException("Begründung zu lang (max. 500 Zeichen)");
+        }
+
         beleg.setStatus(BelegStatus.VERWORFEN);
         belegRepository.save(beleg);
+        auditService.protokolliereVerwerfen(beleg, bearbeiter, begruendung, null);
         return true;
     }
 
@@ -547,6 +737,12 @@ public class BelegService {
         if (req.getNotiz() != null && req.getNotiz().length() > 1000) {
             throw new IllegalArgumentException("Notiz zu lang (max. 1000 Zeichen)");
         }
+        // Erst die Eingaben pruefen, dann die Buchhaltungsregel: Ein Tippfehler
+        // soll den passenden Hinweis bekommen und nicht "Monat abgeschlossen".
+        // In einen abgeschlossenen Monat darf nichts mehr hineingebucht werden
+        // -- sonst waeren Endbestand und laufende Nummern des Abschlusses
+        // nachtraeglich falsch.
+        schreibschutz.assertMonatOffen(req.getBelegDatum());
 
         Beleg beleg = new Beleg();
         beleg.setStatus(BelegStatus.VALIDIERT);
@@ -576,7 +772,38 @@ public class BelegService {
             kasseSaldoService.assertSaldoMindestensMindestbestand(projiziert);
         }
 
-        return belegRepository.save(beleg);
+        Beleg gespeichert = belegRepository.save(beleg);
+        auditService.protokolliereErfassung(gespeichert, ersteller, null);
+        return gespeichert;
+    }
+
+    /**
+     * SHA-256 der gespeicherten Belegdatei, blockweise gelesen, damit auch
+     * ein 25-MB-Scan nicht komplett in den Speicher muss.
+     *
+     * <p>Schlaegt das Lesen fehl, bleibt der Hash leer statt den Upload zu
+     * versenken -- ein fehlender Fingerabdruck ist unangenehm, ein verlorener
+     * Beleg waere schlimmer.</p>
+     */
+    private String berechneDateiHash(Path datei) {
+        try (java.io.InputStream in = Files.newInputStream(datei)) {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] puffer = new byte[8192];
+            int gelesen;
+            while ((gelesen = in.read(puffer)) > 0) {
+                md.update(puffer, 0, gelesen);
+            }
+            StringBuilder sb = new StringBuilder(64);
+            for (byte b : md.digest()) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+                sb.append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("Datei-Fingerabdruck fuer {} konnte nicht berechnet werden: {}",
+                    datei.getFileName(), e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -677,8 +904,19 @@ public class BelegService {
                     .lieferantName(b.getLieferant() != null ? b.getLieferant().getLieferantenname() : null)
                     .betrag(signed.setScale(2, RoundingMode.HALF_UP))
                     .saldoNachher(saldo.setScale(2, RoundingMode.HALF_UP))
+                    .laufendeNummer(b.getLaufendeNummer())
+                    .festgeschrieben(b.istFestgeschrieben())
+                    .sachkontoNummer(b.getSachkonto() != null ? b.getSachkonto().getNummer() : null)
+                    .sachkontoBezeichnung(b.getSachkonto() != null ? b.getSachkonto().getBezeichnung() : null)
+                    .zahlungsart(b.getZahlungsart())
+                    .mwstSatz(b.getMwstSatz())
+                    .mwstBetrag(differenzMwst(b))
+                    .stornoFuerBelegId(b.getStornoFuerBelegId())
+                    .storniertDurchBelegId(b.getStorniertDurchBelegId())
                     .build());
         }
+
+        int offene = (int) imZeitraum.stream().filter(b -> !b.istFestgeschrieben()).count();
 
         return BelegDto.KassenbuchResponse.builder()
                 .saldoStart(saldoStart.setScale(2, RoundingMode.HALF_UP))
@@ -688,6 +926,10 @@ public class BelegService {
                 .summePrivatentnahmen(sumPriv.setScale(2, RoundingMode.HALF_UP))
                 .summePrivateinlagen(sumPrivEinlage.setScale(2, RoundingMode.HALF_UP))
                 .bewegungen(bewegungen)
+                .letzterAbschluss(monatsabschlussRepository.findFirstByOrderByJahrDescMonatDesc()
+                        .map(m -> m.getJahr() + "-" + String.format("%02d", m.getMonat()))
+                        .orElse(null))
+                .offeneBewegungen(offene)
                 .build();
     }
 
@@ -887,6 +1129,14 @@ public class BelegService {
                 .kostenstellenSplits(mitPositionen
                         ? toSplitsDto(belegKostenstellenAnteilRepository.findByBelegId(b.getId()))
                         : java.util.Collections.emptyList())
+                .laufendeNummer(b.getLaufendeNummer())
+                .festgeschrieben(b.istFestgeschrieben())
+                .festgeschriebenAm(b.getFestgeschriebenAm())
+                .stornoFuerBelegId(b.getStornoFuerBelegId())
+                .storniertDurchBelegId(b.getStorniertDurchBelegId())
+                .storniertAm(b.getStorniertAm())
+                .stornoGrund(b.getStornoGrund())
+                .dateiHash(b.getDateiHash())
                 .build();
     }
 
