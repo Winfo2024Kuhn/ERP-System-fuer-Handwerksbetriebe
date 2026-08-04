@@ -180,6 +180,18 @@ const formatEuro = (v: number | null | undefined): string =>
         ? '–'
         : new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
+/**
+ * Formatiert ein Datum als YYYY-MM-DD in LOKALER Zeit.
+ *
+ * Nicht durch `toISOString()` ersetzen: das rechnet nach UTC um. In
+ * Deutschland (UTC+1/+2) wird aus dem 1. Januar 00:00 Ortszeit der
+ * 31. Dezember des Vorjahres — der Zeitraum-Filter griffe dann daneben.
+ */
+const isoDatum = (d: Date): string => {
+    const zweistellig = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${zweistellig(d.getMonth() + 1)}-${zweistellig(d.getDate())}`;
+};
+
 const formatDate = (iso?: string | null): string => {
     if (!iso) return '–';
     const d = new Date(iso);
@@ -245,7 +257,11 @@ const KI_LABEL: Record<KiStatus, { label: string; cls: string }> = {
 
 // ===================== Component =====================
 
-type Tab = 'eingang' | 'alle' | 'privat' | 'kasse' | 'auswertung';
+// Kein eigener 'privat'-Tab mehr: Privatentnahme und Privateinlage sind
+// Bargeld-Bewegungen und gehoeren damit ins Kassenbuch. Dort stehen die
+// Buchungs-Knoepfe (KasseShortcuts) und die Buchungen selbst im T-Konto —
+// ein zweiter Ort dafuer war nur eine weitere Stelle zum Suchen.
+type Tab = 'eingang' | 'alle' | 'kasse' | 'auswertung';
 
 export default function BelegeKasseEditor() {
     const [activeTab, setActiveTab] = useState<Tab>('eingang');
@@ -261,10 +277,18 @@ export default function BelegeKasseEditor() {
     const [zahlungsarten, setZahlungsarten] = useState<Zahlungsart[]>([]);
     const [auswertung, setAuswertung] = useState<Auswertung | null>(null);
     const [auswertungLoading, setAuswertungLoading] = useState(false);
-    const heuteIso = new Date().toISOString().slice(0, 10);
-    const jahresanfangIso = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
+    const heuteIso = isoDatum(new Date());
+    const jahresanfangIso = isoDatum(new Date(new Date().getFullYear(), 0, 1));
+    const monatsanfangIso = isoDatum(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     const [auswVon, setAuswVon] = useState<string>(jahresanfangIso);
     const [auswBis, setAuswBis] = useState<string>(heuteIso);
+    // Kassenbuch-Zeitraum: Vorgabe ist der laufende Monat. Vorher lud die Seite
+    // immer ALLE Bewegungen seit Beginn — bei einem gefuehrten Kassenbuch ist
+    // das nach ein paar Monaten unbrauchbar. Der Anfangsbestand stimmt trotzdem:
+    // der Server summiert alles vor `von` in saldoStart auf.
+    const [kasseVon, setKasseVon] = useState<string>(monatsanfangIso);
+    const [kasseBis, setKasseBis] = useState<string>(heuteIso);
+    const [kasseSearch, setKasseSearch] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [umbuchungOpen, setUmbuchungOpen] = useState(false);
     const [monatsExportOpen, setMonatsExportOpen] = useState(false);
@@ -329,7 +353,11 @@ export default function BelegeKasseEditor() {
     const loadKassenbuch = useCallback(async () => {
         setKassenLoading(true);
         try {
-            const res = await fetch('/api/buchhaltung/kassenbuch');
+            // von/bis kann der Server laengst — genutzt hat es bisher niemand.
+            const params = new URLSearchParams();
+            if (kasseVon) params.set('von', kasseVon);
+            if (kasseBis) params.set('bis', kasseBis);
+            const res = await fetch(`/api/buchhaltung/kassenbuch?${params}`);
             if (res.ok) {
                 setKassenbuch(await res.json());
             }
@@ -338,7 +366,7 @@ export default function BelegeKasseEditor() {
         } finally {
             setKassenLoading(false);
         }
-    }, []);
+    }, [kasseVon, kasseBis]);
 
     useEffect(() => {
         loadBelege();
@@ -401,10 +429,6 @@ export default function BelegeKasseEditor() {
                 return belege.filter(b => b.status === 'NEU' && match(b));
             case 'alle':
                 return belege.filter(b => b.status !== 'VERWORFEN' && match(b));
-            case 'privat':
-                return belege.filter(b =>
-                    (b.belegKategorie === 'PRIVATENTNAHME' || b.belegKategorie === 'PRIVATEINLAGE')
-                    && b.status !== 'VERWORFEN' && match(b));
             case 'kasse':
                 return belege.filter(b =>
                     (b.belegKategorie === 'KASSE_EINNAHME' || b.belegKategorie === 'KASSE_AUSGABE')
@@ -467,8 +491,6 @@ export default function BelegeKasseEditor() {
                     label="Eingang (Validierung)" badge={eingangsCount > 0 ? eingangsCount : undefined} />
                 <TabButton active={activeTab === 'alle'} onClick={() => setActiveTab('alle')}
                     icon={<Receipt className="w-4 h-4" />} label="Alle Belege" />
-                <TabButton active={activeTab === 'privat'} onClick={() => setActiveTab('privat')}
-                    icon={<Wallet className="w-4 h-4" />} label="Privat (Entnahme / Einlage)" />
                 <TabButton active={activeTab === 'kasse'} onClick={() => setActiveTab('kasse')}
                     icon={<Coins className="w-4 h-4" />} label="Kassenbuch" />
                 <TabButton active={activeTab === 'auswertung'} onClick={() => setActiveTab('auswertung')}
@@ -496,10 +518,20 @@ export default function BelegeKasseEditor() {
                         sachkonten={sachkonten}
                         onChanged={() => { loadBelege(); loadKassenbuch(); }}
                     />
-                    <KassenbuchView kassenbuch={kassenbuch} loading={kassenLoading} onSelectBeleg={id => {
-                        const b = belege.find(x => x.id === id);
-                        if (b) setEditing(b);
-                    }} />
+                    <KassenbuchView
+                        kassenbuch={kassenbuch}
+                        loading={kassenLoading}
+                        von={kasseVon}
+                        bis={kasseBis}
+                        onVonChange={setKasseVon}
+                        onBisChange={setKasseBis}
+                        search={kasseSearch}
+                        onSearchChange={setKasseSearch}
+                        onSelectBeleg={id => {
+                            const b = belege.find(x => x.id === id);
+                            if (b) setEditing(b);
+                        }}
+                    />
                 </div>
             ) : activeTab === 'auswertung' ? (
                 <AuswertungView
@@ -539,7 +571,6 @@ export default function BelegeKasseEditor() {
                     <Receipt className="w-12 h-12 mx-auto mb-3 opacity-30" />
                     <p className="font-medium">
                         {activeTab === 'eingang' ? 'Keine offenen Belege zur Validierung'
-                            : activeTab === 'privat' ? 'Keine Privatentnahmen oder -einlagen erfasst'
                             : 'Keine Belege gefunden'}
                     </p>
                     <p className="text-sm mt-1">Belege werden über die Handy-App gescannt oder hier hochgeladen.</p>
@@ -956,33 +987,91 @@ function BelegRow({ beleg, onClick }: { beleg: Beleg; onClick: () => void }) {
     );
 }
 
-function KassenbuchView({ kassenbuch, loading, onSelectBeleg }: {
-    kassenbuch: Kassenbuch | null; loading: boolean; onSelectBeleg: (id: number) => void;
+function KassenbuchView({ kassenbuch, loading, von, bis, onVonChange, onBisChange, search, onSearchChange, onSelectBeleg }: {
+    kassenbuch: Kassenbuch | null;
+    loading: boolean;
+    von: string;
+    bis: string;
+    onVonChange: (v: string) => void;
+    onBisChange: (v: string) => void;
+    search: string;
+    onSearchChange: (v: string) => void;
+    onSelectBeleg: (id: number) => void;
 }) {
+    const filterLeiste = (
+        <KassenbuchFilter
+            von={von} bis={bis} onVonChange={onVonChange} onBisChange={onBisChange}
+            search={search} onSearchChange={onSearchChange}
+        />
+    );
+
     if (loading) {
-        return <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-rose-500" /></div>;
+        return (
+            <div className="space-y-4">
+                {filterLeiste}
+                <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-rose-500" /></div>
+            </div>
+        );
     }
     if (!kassenbuch) {
-        return <Card className="p-12 text-center text-slate-500"><Coins className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>Kassenbuch konnte nicht geladen werden.</p></Card>;
+        return (
+            <div className="space-y-4">
+                {filterLeiste}
+                <Card className="p-12 text-center text-slate-500"><Coins className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>Kassenbuch konnte nicht geladen werden.</p></Card>
+            </div>
+        );
     }
+
+    // Laufende Nummer VOR dem Filtern vergeben: sie soll die Position im Buch
+    // bezeichnen und nicht springen, nur weil gerade eine Suche aktiv ist.
+    //
+    // Achtung: Das ist eine Orientierungshilfe fuer den Zeitraum, NICHT die
+    // steuerlich geforderte fortlaufende Nummer — die muesste dauerhaft am
+    // Beleg haengen und darf keine Luecken haben. Kommt mit der Festschreibung.
+    const nummeriert = kassenbuch.bewegungen.map((b, i) => ({ ...b, lfdNr: i + 1 }));
+
+    const term = search.trim().toLowerCase();
+    const sichtbar = term
+        ? nummeriert.filter(b =>
+            b.beschreibung?.toLowerCase().includes(term)
+            || b.lieferantName?.toLowerCase().includes(term)
+            || KATEGORIE_LABELS[b.kategorie].toLowerCase().includes(term))
+        : nummeriert;
 
     // T-Konto: Soll-Seite = Geld rein (Einnahmen + Privateinlagen),
     // Haben-Seite = Geld raus (Ausgaben + Privatentnahmen). Sortierung folgt
     // der Server-Reihenfolge (chronologisch). 0,00-€-Bewegungen (pathologisch
     // aber moeglich) landen auf der Eingang-Seite, damit nichts stillschweigend
     // verschwindet — Summenfuss-Konsistenz bleibt.
-    const eingaenge = kassenbuch.bewegungen.filter(b => b.betrag >= 0);
-    const ausgaenge = kassenbuch.bewegungen.filter(b => b.betrag < 0);
+    const eingaenge = sichtbar.filter(b => b.betrag >= 0);
+    const ausgaenge = sichtbar.filter(b => b.betrag < 0);
     const summeEingang = kassenbuch.summeEinnahmen + kassenbuch.summePrivateinlagen;
     const summeAusgang = kassenbuch.summeAusgaben + kassenbuch.summePrivatentnahmen;
 
     return (
         <div className="space-y-4">
+            {filterLeiste}
+
+            {term && (
+                // Die Summen unten kommen vom Server und gelten fuer den ganzen
+                // Zeitraum. Ohne diesen Hinweis wirkte es, als passten Zeilen und
+                // Summen nicht zusammen.
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900 flex items-start gap-2">
+                    <Search className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+                    <span>
+                        Suche aktiv – es werden <strong>{sichtbar.length} von {nummeriert.length}</strong> Zeilen gezeigt.
+                        Summen und Saldo unten gelten weiterhin für den ganzen Zeitraum.
+                    </span>
+                </div>
+            )}
             <Card className="overflow-hidden">
                 {/* Konto-Kopf */}
                 <div className="border-b-2 border-slate-800 bg-slate-50/60 px-6 py-3 text-center">
                     <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500 font-semibold">Kasse · Bargeldkonto</div>
                     <div className="text-lg font-bold text-slate-900 mt-0.5">Bar-Bewegungen</div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                        {formatDate(von)} – {formatDate(bis)} · {nummeriert.length} Buchungen
+                    </div>
                 </div>
 
                 {/* Spaltenköpfe */}
@@ -1008,7 +1097,9 @@ function KassenbuchView({ kassenbuch, loading, onSelectBeleg }: {
                     {/* Eingang / Soll */}
                     <div className="border-r-2 border-slate-800 divide-y divide-slate-100">
                         {eingaenge.length === 0 ? (
-                            <div className="px-6 py-10 text-center text-slate-400 text-sm">Keine Eingänge erfasst.</div>
+                            <div className="px-6 py-10 text-center text-slate-400 text-sm">
+                                {term ? 'Keine Treffer.' : 'Keine Eingänge in diesem Zeitraum.'}
+                            </div>
                         ) : eingaenge.map(bew => (
                             <TKontoZeile key={`in-${bew.belegId}`} bew={bew} side="eingang" onClick={() => onSelectBeleg(bew.belegId)} />
                         ))}
@@ -1016,7 +1107,9 @@ function KassenbuchView({ kassenbuch, loading, onSelectBeleg }: {
                     {/* Ausgang / Haben */}
                     <div className="divide-y divide-slate-100">
                         {ausgaenge.length === 0 ? (
-                            <div className="px-6 py-10 text-center text-slate-400 text-sm">Keine Ausgänge erfasst.</div>
+                            <div className="px-6 py-10 text-center text-slate-400 text-sm">
+                                {term ? 'Keine Treffer.' : 'Keine Ausgänge in diesem Zeitraum.'}
+                            </div>
                         ) : ausgaenge.map(bew => (
                             <TKontoZeile key={`out-${bew.belegId}`} bew={bew} side="ausgang" onClick={() => onSelectBeleg(bew.belegId)} />
                         ))}
@@ -1059,7 +1152,7 @@ function KassenbuchView({ kassenbuch, loading, onSelectBeleg }: {
 }
 
 function TKontoZeile({ bew, side, onClick }: {
-    bew: KassenBewegung;
+    bew: KassenBewegung & { lfdNr: number };
     side: 'eingang' | 'ausgang';
     onClick: () => void;
 }) {
@@ -1073,6 +1166,7 @@ function TKontoZeile({ bew, side, onClick }: {
             className={`w-full text-left px-6 py-2.5 cursor-pointer ${hoverBg} focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-inset`}>
             <div className="flex items-baseline justify-between gap-3">
                 <div className="flex items-baseline gap-3 min-w-0 flex-1">
+                    <span className="text-xs text-slate-400 tabular-nums w-6 shrink-0 text-right">{bew.lfdNr}</span>
                     <span className="text-xs text-slate-500 tabular-nums w-20 shrink-0">{formatDate(bew.datum)}</span>
                     <div className="min-w-0 flex-1">
                         <div className="text-sm text-slate-800 font-medium truncate">
@@ -1084,11 +1178,75 @@ function TKontoZeile({ bew, side, onClick }: {
                         </span>
                     </div>
                 </div>
-                <span className={`text-base font-semibold tabular-nums shrink-0 ${betragColor}`}>
-                    {formatEuro(Math.abs(bew.betrag))} €
-                </span>
+                <div className="shrink-0 text-right">
+                    <div className={`text-base font-semibold tabular-nums ${betragColor}`}>
+                        {formatEuro(Math.abs(bew.betrag))} €
+                    </div>
+                    {/* Laufender Kassenstand nach dieser Buchung. Der Server rechnet
+                        ihn laengst mit (saldoNachher) — angezeigt wurde er nie.
+                        Genau das braucht man beim Nachzaehlen der Kasse. */}
+                    <div className="text-[11px] text-slate-400 tabular-nums">
+                        Stand {formatEuro(bew.saldoNachher)} €
+                    </div>
+                </div>
             </div>
         </button>
+    );
+}
+
+/**
+ * Zeitraum + Suche fuer das Kassenbuch. Vorher gab es beides nicht: die Seite
+ * zeigte immer alle Bewegungen seit Beginn.
+ */
+function KassenbuchFilter({ von, bis, onVonChange, onBisChange, search, onSearchChange }: {
+    von: string;
+    bis: string;
+    onVonChange: (v: string) => void;
+    onBisChange: (v: string) => void;
+    search: string;
+    onSearchChange: (v: string) => void;
+}) {
+    const heute = new Date();
+    const setzeZeitraum = (start: Date, ende: Date) => {
+        onVonChange(isoDatum(start));
+        onBisChange(isoDatum(ende));
+    };
+    const dieserMonat = () => setzeZeitraum(
+        new Date(heute.getFullYear(), heute.getMonth(), 1), heute);
+    const letzterMonat = () => setzeZeitraum(
+        new Date(heute.getFullYear(), heute.getMonth() - 1, 1),
+        new Date(heute.getFullYear(), heute.getMonth(), 0));
+    const diesesJahr = () => setzeZeitraum(
+        new Date(heute.getFullYear(), 0, 1), heute);
+
+    return (
+        <Card className="p-4 flex flex-wrap items-end gap-3">
+            <Field label="Von">
+                <input type="date" value={von} onChange={e => onVonChange(e.target.value)} className={inputCls} />
+            </Field>
+            <Field label="Bis">
+                <input type="date" value={bis} onChange={e => onBisChange(e.target.value)} className={inputCls} />
+            </Field>
+            <div className="flex items-center gap-2 pb-0.5">
+                <Button variant="outline" size="sm" onClick={dieserMonat}
+                    className="border-rose-300 text-rose-700 hover:bg-rose-50">Dieser Monat</Button>
+                <Button variant="outline" size="sm" onClick={letzterMonat}
+                    className="border-rose-300 text-rose-700 hover:bg-rose-50">Letzter Monat</Button>
+                <Button variant="outline" size="sm" onClick={diesesJahr}
+                    className="border-rose-300 text-rose-700 hover:bg-rose-50">Dieses Jahr</Button>
+            </div>
+            <div className="relative flex-1 min-w-[14rem]">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Suche</label>
+                <Search className="absolute left-3 top-[2.15rem] w-4 h-4 text-slate-400" aria-hidden />
+                <input
+                    type="text"
+                    value={search}
+                    onChange={e => onSearchChange(e.target.value)}
+                    placeholder="Beschreibung, Lieferant, Art…"
+                    className={`${inputCls} pl-10`}
+                />
+            </div>
+        </Card>
     );
 }
 
