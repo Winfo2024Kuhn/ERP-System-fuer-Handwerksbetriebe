@@ -26,6 +26,19 @@ interface Merkmalsoption {
 const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
 const formatKg = (val?: number) => val ? new Intl.NumberFormat('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(val) : '';
 
+/**
+ * Klartext-Bezeichnung fuer die Liste. Der Produktname enthaelt oft nur das Mass
+ * ("0,75 mm") - erst die Form davor sagt dem Anwender, was er vor sich hat:
+ * "Blech 0,75 mm". Steht die Form schon im Namen, wird sie nicht doppelt gesetzt.
+ */
+const artikelBezeichnung = (artikel: Artikel) => {
+    const form = artikel.profilform?.anzeigename;
+    const mass = artikel.abmessung || artikel.produktname;
+    if (!form) return artikel.produktname;
+    if (mass && mass.toLowerCase().includes(form.toLowerCase())) return mass;
+    return mass ? `${form} ${mass}` : form;
+};
+
 /** Verrechnungseinheit kommt je nach Endpunkt als Text oder als Objekt. */
 const einheitText = (einheit?: string | { name: string; anzeigename?: string }) => {
     if (!einheit) return '';
@@ -442,7 +455,7 @@ export default function ArtikelEditor() {
                                         onClick={() => navigate(`/artikel/${artikel.id}`)}
                                         tabIndex={0}
                                         role="link"
-                                        aria-label={`Details zu ${artikel.produktname} öffnen`}
+                                        aria-label={`Details zu ${artikelBezeichnung(artikel)} öffnen`}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter' || e.key === ' ') {
                                                 e.preventDefault();
@@ -452,7 +465,12 @@ export default function ArtikelEditor() {
                                     >
                                         <td className="px-4 py-3 font-mono text-xs text-slate-600">{artikel.artikelnummer || '-'}</td>
                                         <td className="px-4 py-3">
-                                            <div className="font-medium text-slate-900">{artikel.produktname}</div>
+                                            <div
+                                                className="font-medium text-slate-900"
+                                                title={artikel.profilform?.erklaerung}
+                                            >
+                                                {artikelBezeichnung(artikel)}
+                                            </div>
                                             {artikel.massnorm && (
                                                 <div className="text-xs text-slate-400">{artikel.massnorm}</div>
                                             )}
@@ -506,7 +524,7 @@ export default function ArtikelEditor() {
                                                 onClick={(e) => { e.stopPropagation(); openEdit(artikel); }}
                                                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
                                                 title="Preis bearbeiten"
-                                                aria-label={`Preis von ${artikel.produktname} bearbeiten`}
+                                                aria-label={`Preis von ${artikelBezeichnung(artikel)} bearbeiten`}
                                             >
                                                 <Edit2 className="w-4 h-4" />
                                             </button>
