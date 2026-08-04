@@ -79,6 +79,46 @@ public class Beleg {
     @Column(name = "betrag_firma_mwst", precision = 15, scale = 2)
     private BigDecimal betragFirmaMwst;
 
+    /**
+     * true, wenn nur ein Teil des Belegs auf die Firma gebucht wird und dieser
+     * Teil auch beziffert ist (Mischbon mit privatem Einkauf).
+     */
+    @Transient
+    public boolean istTeilweiseFirma() {
+        return aufteilungsModus == BelegAufteilungsModus.TEILWEISE
+                && (betragFirmaNetto != null || betragFirmaBrutto != null);
+    }
+
+    /**
+     * Der Netto-Betrag, der tatsaechlich auf die Firma gebucht wird -- bei
+     * einem Mischbon also ohne den privaten Anteil.
+     *
+     * Verwendet von: Gemeinkosten im Stundensatz-Rechner,
+     * Kostenstellen-Aufteilungen und Steuerberater-Export.
+     *
+     * Bewusst NICHT verwendet vom Kassenbuch und den Kassen-Summen: dort
+     * fliesst real das ganze Bargeld ab, also zaehlt der Originalbetrag.
+     * Der Originalbetrag bleibt in jedem Fall unveraendert stehen (GoBD).
+     */
+    @Transient
+    public BigDecimal getBuchungsbetragNetto() {
+        if (istTeilweiseFirma()) {
+            return betragFirmaNetto != null ? betragFirmaNetto : betragFirmaBrutto;
+        }
+        return betragNetto != null ? betragNetto : betragBrutto;
+    }
+
+    /**
+     * Brutto-Gegenstueck zu {@link #getBuchungsbetragNetto()}.
+     */
+    @Transient
+    public BigDecimal getBuchungsbetragBrutto() {
+        if (istTeilweiseFirma() && betragFirmaBrutto != null) {
+            return betragFirmaBrutto;
+        }
+        return betragBrutto;
+    }
+
     @Column(name = "beleg_datum")
     private LocalDate belegDatum;
 

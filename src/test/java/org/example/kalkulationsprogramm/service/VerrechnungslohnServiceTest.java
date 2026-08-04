@@ -4,6 +4,8 @@ import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.Arbeitsgang;
 import org.example.kalkulationsprogramm.domain.ArbeitsgangStundensatz;
 import org.example.kalkulationsprogramm.domain.Beleg;
+import org.example.kalkulationsprogramm.domain.BelegAufteilungsModus;
+import org.example.kalkulationsprogramm.domain.BelegKostenstellenAnteil;
 import org.example.kalkulationsprogramm.domain.Beschaeftigungsart;
 import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
@@ -614,6 +616,92 @@ class VerrechnungslohnServiceTest {
 
         assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("0.00");
         assertThat(dto.getKostenstellen()).isEmpty();
+    }
+
+    @Test
+    void mischbelegBringtNurDenFirmenanteilInDieGemeinkosten() {
+        // Supermarkt-Bon ueber 100 EUR, davon 40 EUR Buerokaffee fuer die Firma.
+        // Vorher floss der volle Betrag in die Gemeinkosten -- der private
+        // Wocheneinkauf trieb den Stundensatz hoch.
+        Kostenstelle ks = new Kostenstelle();
+        ks.setId(55L);
+        ks.setBezeichnung("Bueromaterial");
+
+        Beleg beleg = new Beleg();
+        beleg.setId(505L);
+        beleg.setKostenstelle(ks);
+        beleg.setBetragNetto(new BigDecimal("100.00"));
+        beleg.setBetragBrutto(new BigDecimal("119.00"));
+        beleg.setAufteilungsModus(BelegAufteilungsModus.TEILWEISE);
+        beleg.setBetragFirmaNetto(new BigDecimal("40.00"));
+        beleg.setBetragFirmaBrutto(new BigDecimal("47.60"));
+
+        when(belegRepository.findValidierteFixkostenBelegeImZeitraum(any(), any()))
+                .thenReturn(List.of(beleg));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("40.00");
+    }
+
+    @Test
+    void vollstaendigerBelegZaehltWeiterhinKomplett() {
+        Kostenstelle ks = new Kostenstelle();
+        ks.setId(56L);
+        ks.setBezeichnung("Telefon");
+
+        Beleg beleg = new Beleg();
+        beleg.setId(506L);
+        beleg.setKostenstelle(ks);
+        beleg.setBetragNetto(new BigDecimal("100.00"));
+        beleg.setAufteilungsModus(BelegAufteilungsModus.VOLLSTAENDIG);
+
+        when(belegRepository.findValidierteFixkostenBelegeImZeitraum(any(), any()))
+                .thenReturn(List.of(beleg));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void mischbelegMitAufteilungZaehltRestUndAnteilZusammenGenauDenFirmenanteil() {
+        // 100 EUR Bon, 40 EUR Firma, davon 25 EUR bereits auf eine andere
+        // Kostenstelle aufgeteilt. Erwartung: 25 (Anteil) + 15 (Rest) = 40 --
+        // exakt der Firmenanteil, kein Cent mehr, kein Cent weniger.
+        Kostenstelle direkt = new Kostenstelle();
+        direkt.setId(57L);
+        direkt.setBezeichnung("Bueromaterial");
+        Kostenstelle ausSplit = new Kostenstelle();
+        ausSplit.setId(58L);
+        ausSplit.setBezeichnung("Werkstatt");
+
+        Beleg beleg = new Beleg();
+        beleg.setId(507L);
+        beleg.setKostenstelle(direkt);
+        beleg.setBetragNetto(new BigDecimal("100.00"));
+        beleg.setAufteilungsModus(BelegAufteilungsModus.TEILWEISE);
+        beleg.setBetragFirmaNetto(new BigDecimal("40.00"));
+
+        BelegKostenstellenAnteil anteil = new BelegKostenstellenAnteil();
+        anteil.setBeleg(beleg);
+        anteil.setKostenstelle(ausSplit);
+        anteil.setAbsoluterBetrag(new BigDecimal("25.00"));
+        anteil.setStreckungJahre(1);
+        anteil.setStreckungStartJahr(2024);
+        anteil.berechneAnteil(new BigDecimal("40.00"), new BigDecimal("40.00"));
+
+        when(belegRepository.findValidierteFixkostenBelegeImZeitraum(any(), any()))
+                .thenReturn(List.of(beleg));
+        when(belegKostenstellenAnteilRepository.summiereAufgeteilteBetraegeProBeleg())
+                .thenReturn(List.<Object[]>of(new Object[]{507L, new BigDecimal("25.00")}));
+        when(belegKostenstellenAnteilRepository.findAktiveFixkostenAnteileImJahr(2024))
+                .thenReturn(List.of(anteil));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        assertThat(dto.getGemeinkostenGesamt()).isEqualByComparingTo("40.00");
+        assertThat(dto.getKostenstellen()).hasSize(2);
     }
 
     // ==================== Regression: uebernehmen ====================

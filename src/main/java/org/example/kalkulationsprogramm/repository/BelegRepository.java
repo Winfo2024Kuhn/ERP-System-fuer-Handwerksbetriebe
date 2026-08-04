@@ -75,12 +75,19 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
      * den Gemeinkosten-Topf einzurechnen. Kostenstelle wird per JOIN FETCH
      * mitgeladen, damit der Service ohne LazyInitializationException auf
      * istFixkosten/bezeichnung zugreifen kann.
+     *
+     * Belege, zu denen ein {@code LieferantDokument} existiert, sind
+     * ausgenommen: die laufen bereits ueber {@code LieferantDokumentProjektAnteil}
+     * in die Gemeinkosten und wuerden sonst doppelt zaehlen (gescannter Beleg
+     * + Lieferantenrechnung derselben Ausgabe). Gleiche Bedingung wie in
+     * {@code BelegKostenstellenAnteilRepository#findByKostenstelleIdEager}.
      */
     @Query("SELECT b FROM Beleg b JOIN FETCH b.kostenstelle ks " +
            "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
            "  AND ks.istFixkosten = true " +
            "  AND b.belegDatum BETWEEN :von AND :bis " +
-           "  AND b.betragBrutto IS NOT NULL")
+           "  AND b.betragBrutto IS NOT NULL " +
+           "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b)")
     List<Beleg> findValidierteFixkostenBelegeImZeitraum(@Param("von") LocalDate von,
                                                        @Param("bis") LocalDate bis);
 

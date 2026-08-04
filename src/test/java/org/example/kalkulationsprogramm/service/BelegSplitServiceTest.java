@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegAufteilungsModus;
 import org.example.kalkulationsprogramm.domain.BelegPosition;
+import org.example.kalkulationsprogramm.repository.BelegKostenstellenAnteilRepository;
 import org.example.kalkulationsprogramm.repository.BelegPositionRepository;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,12 +27,14 @@ class BelegSplitServiceTest {
 
     @Mock private BelegRepository belegRepository;
     @Mock private BelegPositionRepository belegPositionRepository;
+    @Mock private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
 
     private BelegSplitService service;
 
     @BeforeEach
     void setUp() {
-        service = new BelegSplitService(belegRepository, belegPositionRepository, new MwstRechnerService());
+        service = new BelegSplitService(belegRepository, belegPositionRepository, new MwstRechnerService(),
+                belegKostenstellenAnteilRepository);
     }
 
     @Test

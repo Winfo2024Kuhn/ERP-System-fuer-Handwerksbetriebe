@@ -930,15 +930,14 @@ public class BestellungsUebersichtController {
         return dto;
     }
 
+    // Die Regel "Firmenanteil statt Originalbetrag" liegt jetzt an der
+    // Beleg-Entity, damit PC- und Handy-Pfad garantiert dasselbe rechnen.
     private BigDecimal effektiverBelegNettoBetrag(Beleg beleg) {
-        if (beleg.getBetragFirmaNetto() != null) return beleg.getBetragFirmaNetto();
-        if (beleg.getBetragNetto() != null) return beleg.getBetragNetto();
-        return beleg.getBetragBrutto();
+        return beleg.getBuchungsbetragNetto();
     }
 
     private BigDecimal effektiverBelegBruttoBetrag(Beleg beleg) {
-        if (beleg.getBetragFirmaBrutto() != null) return beleg.getBetragFirmaBrutto();
-        return beleg.getBetragBrutto();
+        return beleg.getBuchungsbetragBrutto();
     }
 
     private boolean darfBelegeSehen(String token, Authentication auth) {

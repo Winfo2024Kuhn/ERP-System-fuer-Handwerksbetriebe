@@ -396,6 +396,7 @@ public class BelegService {
     private void persistiereSplits(Beleg beleg, List<BelegDto.KostenstellenSplitDto> splits,
                                    Mitarbeiter validierer) {
         int prozentSumme = 0;
+        BigDecimal betragSumme = BigDecimal.ZERO;
         for (BelegDto.KostenstellenSplitDto s : splits) {
             if (s.getKostenstelleId() == null) {
                 throw new IllegalArgumentException("Kostenstelle pro Split-Eintrag ist Pflicht");
@@ -412,6 +413,9 @@ public class BelegService {
                 }
                 prozentSumme += s.getProzent();
             }
+            if (hatAbsolut) {
+                betragSumme = betragSumme.add(s.getAbsoluterBetrag());
+            }
             if (s.getBeschreibung() != null && s.getBeschreibung().length() > 255) {
                 throw new IllegalArgumentException("Split-Beschreibung zu lang (max. 255 Zeichen)");
             }
@@ -419,6 +423,15 @@ public class BelegService {
         if (prozentSumme > 100) {
             throw new IllegalArgumentException(
                     "Summe der Prozent-Anteile darf 100% nicht ueberschreiten (aktuell " + prozentSumme + "%)");
+        }
+        // Obergrenze fuer absolute Betraege -- wie im Handy-Pfad
+        // (BestellungsUebersichtController). Bezugsgroesse ist der Buchungsbetrag:
+        // bei einem Mischbon also nur der Firmenanteil, nicht der volle Bon.
+        BigDecimal obergrenze = beleg.getBuchungsbetragNetto();
+        if (obergrenze != null && betragSumme.compareTo(obergrenze) > 0) {
+            throw new IllegalArgumentException(
+                    "Summe der Betraege (" + betragSumme + ") darf den zu buchenden Belegbetrag ("
+                            + obergrenze + ") nicht ueberschreiten");
         }
 
         belegKostenstellenAnteilRepository.deleteByBelegId(beleg.getId());
@@ -453,7 +466,11 @@ public class BelegService {
             anteil.setStreckungStartJahr(
                     s.getStreckungStartJahr() != null ? s.getStreckungStartJahr() : defaultStartJahr);
             anteil.setZugeordnetVon(profil);
-            anteil.berechneAnteil(beleg.getBetragNetto(), beleg.getBetragBrutto());
+            // Buchungsbetrag statt Originalbetrag: bei einem Mischbon wird nur
+            // der Firmenanteil auf Kostenstellen verteilt, nicht der private.
+            // Der Handy-Pfad (BestellungsUebersichtController) macht das schon
+            // so -- hier lief es bisher auf den vollen Belegbetrag.
+            anteil.berechneAnteil(beleg.getBuchungsbetragNetto(), beleg.getBuchungsbetragBrutto());
             belegKostenstellenAnteilRepository.save(anteil);
         }
     }

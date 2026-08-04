@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegAufteilungsModus;
+import org.example.kalkulationsprogramm.domain.BelegKostenstellenAnteil;
 import org.example.kalkulationsprogramm.domain.BelegPosition;
+import org.example.kalkulationsprogramm.repository.BelegKostenstellenAnteilRepository;
 import org.example.kalkulationsprogramm.repository.BelegPositionRepository;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +45,7 @@ public class BelegSplitService {
     private final BelegRepository belegRepository;
     private final BelegPositionRepository belegPositionRepository;
     private final MwstRechnerService mwstRechnerService;
+    private final BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
 
     @Transactional(readOnly = true)
     public List<BelegPosition> ladePositionen(Long belegId) {
@@ -130,6 +134,7 @@ public class BelegSplitService {
             beleg.setBetragFirmaNetto(null);
             beleg.setBetragFirmaBrutto(null);
             beleg.setBetragFirmaMwst(null);
+            aktualisiereProzentAnteile(beleg);
             return;
         }
 
@@ -180,5 +185,41 @@ public class BelegSplitService {
         beleg.setBetragFirmaNetto(netto.setScale(2, RoundingMode.HALF_UP));
         beleg.setBetragFirmaBrutto(brutto.setScale(2, RoundingMode.HALF_UP));
         beleg.setBetragFirmaMwst(mwstSumme.setScale(2, RoundingMode.HALF_UP));
+        aktualisiereProzentAnteile(beleg);
+    }
+
+    /**
+     * Rechnet die prozentualen Kostenstellen-Anteile des Belegs auf die soeben
+     * geaenderte Bemessungsgrundlage um.
+     *
+     * Noetig, seit die Anteile auf dem Firmenanteil beruhen statt auf dem festen
+     * Originalbetrag: haekelt der Mitarbeiter am Handy eine Position an oder ab,
+     * aendert sich der Firmenanteil — die gespeicherten Anteilsbetraege waeren
+     * sonst veraltet, und Rest plus Anteile ergaeben nicht mehr den
+     * Firmenanteil (im Stundensatz-Rechner sichtbar als zu hohe Gemeinkosten).
+     *
+     * Absolute Betraege bleiben unangetastet: die hat der Nutzer bewusst
+     * eingetippt und sie sollen sich nicht hinter seinem Ruecken aendern.
+     */
+    private void aktualisiereProzentAnteile(Beleg beleg) {
+        if (beleg.getId() == null) {
+            return;
+        }
+        List<BelegKostenstellenAnteil> anteile =
+                belegKostenstellenAnteilRepository.findByBelegId(beleg.getId());
+        if (anteile.isEmpty()) {
+            return;
+        }
+        List<BelegKostenstellenAnteil> geaendert = new ArrayList<>();
+        for (BelegKostenstellenAnteil a : anteile) {
+            if (a.getProzent() == null) {
+                continue;
+            }
+            a.berechneAnteil(beleg.getBuchungsbetragNetto(), beleg.getBuchungsbetragBrutto());
+            geaendert.add(a);
+        }
+        if (!geaendert.isEmpty()) {
+            belegKostenstellenAnteilRepository.saveAll(geaendert);
+        }
     }
 }

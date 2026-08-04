@@ -82,6 +82,10 @@ public interface BelegKostenstellenAnteilRepository extends JpaRepository<BelegK
             + "JOIN FETCH a.beleg b "
             + "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT "
             + "AND ks.istFixkosten = true "
+            // Gleicher Ausschluss wie in BelegRepository#findValidierteFixkostenBelegeImZeitraum:
+            // Belege mit Lieferanten-Dokument laufen schon ueber
+            // LieferantDokumentProjektAnteil in die Gemeinkosten.
+            + "AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b) "
             + "AND ("
             + "  ((a.streckungJahre IS NULL OR a.streckungJahre <= 1) "
             + "   AND (a.streckungStartJahr IS NULL OR a.streckungStartJahr = :jahr))"

@@ -614,8 +614,10 @@ public class VerrechnungslohnService {
             bereitsAufgeteilt.put((Long) zeile[0], nz((BigDecimal) zeile[1]));
         }
         for (Beleg beleg : belegRepository.findValidierteFixkostenBelegeImZeitraum(jahresStart, jahresEnde)) {
-            BigDecimal netto = beleg.getBetragNetto();
-            BigDecimal gesamt = netto != null ? netto : nz(beleg.getBetragBrutto());
+            // Buchungsbetrag: bei einem Mischbon nur der Firmenanteil. Der
+            // private Teil gehoert nicht in die Gemeinkosten -- sonst treibt
+            // der eigene Wocheneinkauf den Stundensatz hoch.
+            BigDecimal gesamt = nz(beleg.getBuchungsbetragNetto());
             if (gesamt.signum() <= 0) continue;
             BigDecimal basis = gesamt.subtract(nz(bereitsAufgeteilt.get(beleg.getId())));
             if (basis.signum() <= 0) continue;

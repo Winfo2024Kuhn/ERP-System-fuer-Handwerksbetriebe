@@ -16,6 +16,8 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -94,6 +96,48 @@ class BelegKostenstellenAnteilRepositoryTest {
         repo.deleteByBelegId(b.getId());
         repo.flush();
         assertThat(repo.findByBelegId(b.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("summiereAufgeteilteBetraegeProBeleg summiert je Beleg, nicht je Anteil")
+    void summiereAufgeteilteBetraege() {
+        Kostenstelle ks = saveKostenstelle("Werkstatt", true);
+        Beleg mitZweiAnteilen = saveBeleg(BelegStatus.VALIDIERT);
+        saveAnteil(mitZweiAnteilen, ks, 30, 1, 2024);
+        saveAnteil(mitZweiAnteilen, ks, 30, 1, 2024);
+        Beleg mitEinemAnteil = saveBeleg(BelegStatus.VALIDIERT);
+        saveAnteil(mitEinemAnteil, ks, 100, 1, 2024);
+
+        Map<Long, BigDecimal> proBeleg = new HashMap<>();
+        for (Object[] zeile : repo.summiereAufgeteilteBetraegeProBeleg()) {
+            proBeleg.put((Long) zeile[0], (BigDecimal) zeile[1]);
+        }
+
+        // 30% + 30% von 100 EUR
+        assertThat(proBeleg.get(mitZweiAnteilen.getId())).isEqualByComparingTo("60.00");
+        assertThat(proBeleg.get(mitEinemAnteil.getId())).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    @DisplayName("Die volle Summe wird geliefert, auch wenn der Anteil gestreckt ist")
+    void summeIgnoriertStreckung() {
+        // Wichtig fuer den Verrechnungslohn: abgezogen wird der voll zugeordnete
+        // Betrag, nicht der Jahresanteil -- sonst bliebe im Belegjahr ein zu
+        // grosser Rest auf der direkten Kostenstelle stehen.
+        Kostenstelle ks = saveKostenstelle("Zertifizierung", true);
+        Beleg b = saveBeleg(BelegStatus.VALIDIERT);
+        saveAnteil(b, ks, 60, 3, 2024);
+
+        Object[] zeile = repo.summiereAufgeteilteBetraegeProBeleg().get(0);
+        assertThat((BigDecimal) zeile[1]).isEqualByComparingTo("60.00");
+    }
+
+    @Test
+    @DisplayName("Beleg ohne Anteile taucht in der Summen-Abfrage gar nicht auf")
+    void belegOhneAnteileFehltInDerSumme() {
+        saveBeleg(BelegStatus.VALIDIERT);
+
+        assertThat(repo.summiereAufgeteilteBetraegeProBeleg()).isEmpty();
     }
 
     private Kostenstelle saveKostenstelle(String name, boolean istFixkosten) {
