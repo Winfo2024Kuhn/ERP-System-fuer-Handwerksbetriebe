@@ -37,6 +37,7 @@ class EmailAttachmentProcessingServiceTest {
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @Mock private GeminiDokumentAnalyseService geminiAnalyseService;
     @Mock private LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
+    @Mock private LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
 
     @TempDir
     Path tempDir;
@@ -48,7 +49,7 @@ class EmailAttachmentProcessingServiceTest {
         service = new EmailAttachmentProcessingService(
                 emailRepository, emailAttachmentRepository, lieferantDokumentRepository,
                 lieferantenRepository, lieferantGeschaeftsdokumentRepository, geminiAnalyseService,
-                standardKostenstelleAutoAssigner);
+                standardKostenstelleAutoAssigner, vorauskasseAutoAssigner);
         ReflectionTestUtils.setField(service, "attachmentDir", tempDir.toString());
     }
 

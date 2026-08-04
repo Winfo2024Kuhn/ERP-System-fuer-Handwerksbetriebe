@@ -64,5 +64,9 @@
         ]
       }
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "shadcn",
+    "magic"
+  ]
 }
