@@ -3,7 +3,7 @@ import {
     Receipt, Upload, Loader2, Search, Wallet, Banknote, CreditCard,
     Coins, FileQuestion, CheckCircle2, AlertCircle, Trash2, X, Truck,
     Save, RefreshCw, FileText, BookOpen, BarChart3, ArrowRightLeft, FileInput,
-    FileDown, Calendar, ArrowRight, Sparkles,
+    FileDown, Calendar, ArrowRight, Sparkles, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
@@ -1114,22 +1114,41 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
     onSaved: (b: Beleg) => void;
     onDeleted: (id: number) => void;
 }) {
-    // Issue #58: Detail-Beleg inkl. Positionen nachladen — die Listen-Query
-    // liefert positionen[] aus Performance-Gruenden nicht. Erst nach dem
-    // Nachladen kennen wir die Position-Details fuer den Aufteilungs-Bereich.
+    // Detail-Beleg nachladen. Zwei Gruende:
+    //  (a) Issue #58: Die Listen-Query liefert positionen[] aus Performance-
+    //      Gruenden nicht — der Aufteilungs-Bereich braucht sie aber.
+    //  (b) Solange die KI noch analysiert, pollen wir alle 4s nach. Der
+    //      Auto-Refresh der Liste pausiert naemlich, sobald ein Beleg offen ist
+    //      (`if (!hatOffene || editing) return`) — der Hinweis "Werte erscheinen
+    //      automatisch" war im offenen Dialog schlicht gelogen.
+    //
+    // Wichtig: Das Nachladen fuellt NUR `detailBeleg` (Anzeige), niemals `form`.
+    // Sonst wuerde eine spaet eintreffende KI-Antwort die Eingaben ueberschreiben,
+    // die der Buchhalter waehrenddessen getippt hat.
     const [detailBeleg, setDetailBeleg] = useState<Beleg>(beleg);
     useEffect(() => {
-        if (beleg.aufteilungsModus !== 'TEILWEISE') return;
+        const kiOffen = (b: Beleg) => b.kiAnalyseStatus === 'PENDING' || b.kiAnalyseStatus === 'LAEUFT';
+        if (beleg.aufteilungsModus !== 'TEILWEISE' && !kiOffen(beleg)) return;
+
         let cancelled = false;
-        fetch(`/api/buchhaltung/belege/${beleg.id}`)
-            .then(r => r.ok ? r.json() : null)
-            .then((data: Beleg | null) => {
-                if (cancelled || !data) return;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+
+        const lade = async () => {
+            try {
+                const res = await fetch(`/api/buchhaltung/belege/${beleg.id}`);
+                if (!res.ok) return;
+                const data: Beleg = await res.json();
+                if (cancelled) return;
                 setDetailBeleg(data);
-            })
-            .catch(err => console.error('Beleg-Detail laden fehlgeschlagen', err));
-        return () => { cancelled = true; };
-    }, [beleg.id, beleg.aufteilungsModus]);
+                if (kiOffen(data)) timer = setTimeout(lade, 4000);
+            } catch (e) {
+                console.error('Beleg-Detail laden fehlgeschlagen', e);
+            }
+        };
+        lade();
+
+        return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    }, [beleg.id, beleg.aufteilungsModus, beleg.kiAnalyseStatus]);
 
     const [form, setForm] = useState({
         belegKategorie: beleg.belegKategorie,
@@ -1153,6 +1172,16 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
     }, [detailBeleg]);
     const [saving, setSaving] = useState(false);
     const [lieferantPicker, setLieferantPicker] = useState(false);
+    // Seltene Felder (Beleg-Nr., Netto, MwSt-Satz, Zahlungsart, Lieferant, Notiz)
+    // sind eingeklappt. Sie standen bisher gleichberechtigt neben Betrag und
+    // Datum — dadurch sahen alle 12 Felder gleich wichtig aus und der Dialog
+    // erschlug den Nutzer.
+    //
+    // Bewusst IMMER zu, auch wenn Werte drinstehen: die KI fuellt Beleg-Nummer
+    // und Zahlungsart bei fast jedem Scan, ein "auf, sobald gefuellt" waere
+    // also praktisch immer auf. Damit trotzdem nichts unsichtbar verschwindet,
+    // zeigt der zugeklappte Knopf, wie viele Felder belegt sind.
+    const [mehrDetails, setMehrDetails] = useState(false);
     const [saldoInfo, setSaldoInfo] = useState<{ saldo: number; mindestbestand: number } | null>(null);
     const [konflikt, setKonflikt] = useState<{ projizierterSaldo: number; mindestbestand: number; message: string } | null>(null);
     // Inline-Validierungs-Hinweis statt blocking alert(), gemäß Toast-Pattern
@@ -1192,6 +1221,38 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
 
     const update = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
         setForm(f => ({ ...f, [k]: v }));
+
+    // Wie viele der eingeklappten Felder sind belegt? Steht als Hinweis am
+    // zugeklappten "Mehr Details"-Knopf, damit gefuellte Werte nicht unsichtbar
+    // werden (§8 progressive-disclosure darf nichts verstecken, nur ordnen).
+    const offeneDetails = [
+        form.belegNummer, form.zahlungsart, form.notiz,
+        form.betragNetto === '' ? null : form.betragNetto,
+        form.mwstSatz === '' ? null : form.mwstSatz,
+        form.lieferantId,
+    ].filter(v => v != null && v !== '').length;
+
+    // Brutto → Netto/MwSt aufschluesseln. Rein zur Anzeige; geschrieben wird
+    // erst beim Klick auf einen MwSt-Knopf.
+    const bruttoNum = Number(form.betragBrutto);
+    const mwstNum = Number(form.mwstSatz);
+    const betraegeRechenbar = form.betragBrutto !== '' && Number.isFinite(bruttoNum) && bruttoNum > 0
+        && form.mwstSatz !== '' && Number.isFinite(mwstNum) && mwstNum >= 0;
+    const berechnetesNetto = betraegeRechenbar ? bruttoNum / (1 + mwstNum / 100) : null;
+    const berechneteMwst = berechnetesNetto != null ? bruttoNum - berechnetesNetto : null;
+
+    // Setzt MwSt-Satz und rechnet das Netto passend aus. Ohne gueltiges Brutto
+    // wird nur der Satz gesetzt — sonst schrieben wir NaN ins Netto-Feld.
+    const setzeMwstSatz = (satz: number) => {
+        setForm(f => {
+            const brutto = Number(f.betragBrutto);
+            if (f.betragBrutto === '' || !Number.isFinite(brutto) || brutto <= 0) {
+                return { ...f, mwstSatz: satz as never };
+            }
+            const netto = Math.round((brutto / (1 + satz / 100)) * 100) / 100;
+            return { ...f, mwstSatz: satz as never, betragNetto: netto as never };
+        });
+    };
 
     const save = async (alsValidiert: boolean) => {
         // Splits-Vorab-Validierung: Summe Prozent <= 100 + jeder Eintrag hat
@@ -1313,8 +1374,10 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
         }
     };
 
-    const kiVorschlag = beleg.kiVorgeschlagenerLieferant && !form.lieferantName
-        ? beleg.kiVorgeschlagenerLieferant : null;
+    // detailBeleg statt beleg: waehrend die KI noch laeuft, pollen wir nach —
+    // der Lieferant-Vorschlag soll im offenen Dialog nachtraeglich erscheinen.
+    const kiVorschlag = detailBeleg.kiVorgeschlagenerLieferant && !form.lieferantName
+        ? detailBeleg.kiVorgeschlagenerLieferant : null;
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -1338,24 +1401,72 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
 
                     {/* Form */}
                     <div className="lg:col-span-1 overflow-auto p-6 space-y-5">
-                        {beleg.kiAnalyseStatus === 'FAILED' && (
+                        {detailBeleg.kiAnalyseStatus === 'FAILED' && (
                             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                                <strong>KI-Analyse fehlgeschlagen:</strong> {beleg.kiFehlerText}
+                                <strong>KI-Analyse fehlgeschlagen:</strong> {detailBeleg.kiFehlerText}
                             </div>
                         )}
-                        {beleg.kiAnalyseStatus === 'PENDING' || beleg.kiAnalyseStatus === 'LAEUFT' ? (
+                        {detailBeleg.kiAnalyseStatus === 'PENDING' || detailBeleg.kiAnalyseStatus === 'LAEUFT' ? (
                             <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-sm text-sky-700 inline-flex items-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                KI-Analyse läuft – Werte erscheinen automatisch, sobald sie fertig ist.
+                                KI-Analyse läuft – der Vorschlag erscheint gleich hier.
                             </div>
                         ) : null}
 
                         <KiVorschlagKarte
-                            beleg={beleg}
+                            beleg={detailBeleg}
                             sachkonten={sachkonten}
                             aktuellesSachkontoId={form.sachkontoId}
                             onUebernehmen={id => update('sachkontoId', id)}
                         />
+
+                        {/* ---------- Das Wichtigste: was, wie viel, wann, wofür ---------- */}
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label="Betrag (€)">
+                                <input type="number" step="0.01" value={form.betragBrutto}
+                                    onChange={e => update('betragBrutto', e.target.value as never)}
+                                    className={`${inputCls} text-lg font-semibold tabular-nums`} />
+                            </Field>
+                            <Field label="Beleg-Datum">
+                                <input type="date" value={form.belegDatum}
+                                    onChange={e => update('belegDatum', e.target.value)}
+                                    className={inputCls} />
+                            </Field>
+                        </div>
+
+                        {/* MwSt per Klick statt Kopfrechnen. Der Klick setzt Satz UND Netto —
+                            bewusst als ausdrueckliche Nutzer-Aktion, damit sich Betraege auf
+                            einem Steuerbeleg nie von selbst aendern. */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">MwSt</span>
+                            {[19, 7, 0].map(satz => {
+                                const aktiv = Number(form.mwstSatz) === satz && form.mwstSatz !== '';
+                                return (
+                                    <button key={satz} type="button" onClick={() => setzeMwstSatz(satz)}
+                                        aria-pressed={aktiv}
+                                        className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                                            aktiv
+                                                ? 'bg-rose-600 text-white border-rose-600'
+                                                : 'bg-white text-slate-600 border-slate-200 hover:border-rose-300 hover:text-rose-700'
+                                        }`}>
+                                        {satz} %
+                                    </button>
+                                );
+                            })}
+                            {berechneteMwst != null && berechnetesNetto != null && (
+                                <span className="text-xs text-slate-500 tabular-nums">
+                                    = {formatEuro(berechneteMwst)} € MwSt · {formatEuro(berechnetesNetto)} € netto
+                                </span>
+                            )}
+                        </div>
+
+                        <Field label="Beschreibung">
+                            <input type="text" value={form.beschreibung}
+                                onChange={e => update('beschreibung', e.target.value)}
+                                placeholder="z.B. Tankquittung, Büromaterial…"
+                                className={inputCls} />
+                        </Field>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
@@ -1380,73 +1491,79 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                            <Field label="Beleg-Nummer">
-                                <input type="text" value={form.belegNummer}
-                                    onChange={e => update('belegNummer', e.target.value)}
-                                    className={inputCls} />
-                            </Field>
-                            <Field label="Beleg-Datum">
-                                <input type="date" value={form.belegDatum}
-                                    onChange={e => update('belegDatum', e.target.value)}
-                                    className={inputCls} />
-                            </Field>
-                            <Field label="Brutto (€)">
-                                <input type="number" step="0.01" value={form.betragBrutto}
-                                    onChange={e => update('betragBrutto', e.target.value as never)}
-                                    className={inputCls} />
-                            </Field>
-                            <Field label="Netto (€)">
-                                <input type="number" step="0.01" value={form.betragNetto}
-                                    onChange={e => update('betragNetto', e.target.value as never)}
-                                    className={inputCls} />
-                            </Field>
-                            <Field label="MwSt-Satz (%)">
-                                <input type="number" step="0.1" value={form.mwstSatz}
-                                    onChange={e => update('mwstSatz', e.target.value as never)}
-                                    className={inputCls} />
-                            </Field>
-                            <Field label="Zahlungsart">
-                                <Select
-                                    value={form.zahlungsart}
-                                    onChange={v => update('zahlungsart', v)}
-                                    placeholder="– bitte wählen –"
-                                    options={buildZahlungsartOptions(zahlungsarten, form.zahlungsart)}
-                                />
-                            </Field>
-                        </div>
+                        {/* ---------- Alles Seltene eingeklappt (Progressive Disclosure) ---------- */}
 
-                        <Field label="Beschreibung">
-                            <input type="text" value={form.beschreibung}
-                                onChange={e => update('beschreibung', e.target.value)}
-                                placeholder="z.B. Tankquittung, Büromaterial…"
-                                className={inputCls} />
-                        </Field>
-
-                        <Field label="Lieferant (optional)">
-                            <div className="flex items-center gap-2">
-                                <input type="text" readOnly
-                                    value={form.lieferantName || (kiVorschlag ? `KI-Vorschlag: ${kiVorschlag}` : '')}
-                                    placeholder="Kein Lieferant – z.B. bei Kassen-Einnahme"
-                                    className={`${inputCls} bg-slate-50`} />
-                                <Button variant="outline" type="button" onClick={() => setLieferantPicker(true)}>
-                                    <Truck className="w-4 h-4 mr-2" />
-                                    Wählen
-                                </Button>
-                                {form.lieferantId && (
-                                    <Button variant="ghost" type="button"
-                                        onClick={() => { update('lieferantId', null); update('lieferantName', ''); }}>
-                                        <X className="w-4 h-4" />
-                                    </Button>
+                        <div className="border-t border-slate-200 pt-3">
+                            <button type="button"
+                                onClick={() => setMehrDetails(v => !v)}
+                                aria-expanded={mehrDetails}
+                                className="inline-flex items-center gap-1.5 text-sm font-medium text-rose-700 hover:text-rose-800">
+                                {mehrDetails
+                                    ? <ChevronDown className="w-4 h-4" aria-hidden />
+                                    : <ChevronRight className="w-4 h-4" aria-hidden />}
+                                Mehr Details
+                                {!mehrDetails && offeneDetails > 0 && (
+                                    <span className="ml-1 text-xs font-normal text-slate-500">
+                                        ({offeneDetails} ausgefüllt)
+                                    </span>
                                 )}
-                            </div>
-                        </Field>
+                            </button>
 
-                        <Field label="Notiz">
-                            <textarea rows={2} value={form.notiz}
-                                onChange={e => update('notiz', e.target.value)}
-                                className={inputCls} />
-                        </Field>
+                            {mehrDetails && (
+                                <div className="mt-3 space-y-4">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <Field label="Beleg-Nummer">
+                                            <input type="text" value={form.belegNummer}
+                                                onChange={e => update('belegNummer', e.target.value)}
+                                                className={inputCls} />
+                                        </Field>
+                                        <Field label="Zahlungsart">
+                                            <Select
+                                                value={form.zahlungsart}
+                                                onChange={v => update('zahlungsart', v)}
+                                                placeholder="– bitte wählen –"
+                                                options={buildZahlungsartOptions(zahlungsarten, form.zahlungsart)}
+                                            />
+                                        </Field>
+                                        <Field label="Netto (€)">
+                                            <input type="number" step="0.01" value={form.betragNetto}
+                                                onChange={e => update('betragNetto', e.target.value as never)}
+                                                className={inputCls} />
+                                        </Field>
+                                        <Field label="MwSt-Satz (%)">
+                                            <input type="number" step="0.1" value={form.mwstSatz}
+                                                onChange={e => update('mwstSatz', e.target.value as never)}
+                                                className={inputCls} />
+                                        </Field>
+                                    </div>
+
+                                    <Field label="Lieferant (optional)">
+                                        <div className="flex items-center gap-2">
+                                            <input type="text" readOnly
+                                                value={form.lieferantName || (kiVorschlag ? `KI-Vorschlag: ${kiVorschlag}` : '')}
+                                                placeholder="Kein Lieferant – z.B. bei Kassen-Einnahme"
+                                                className={`${inputCls} bg-slate-50`} />
+                                            <Button variant="outline" type="button" onClick={() => setLieferantPicker(true)}>
+                                                <Truck className="w-4 h-4 mr-2" />
+                                                Wählen
+                                            </Button>
+                                            {form.lieferantId && (
+                                                <Button variant="ghost" type="button"
+                                                    onClick={() => { update('lieferantId', null); update('lieferantName', ''); }}>
+                                                    <X className="w-4 h-4" />
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </Field>
+
+                                    <Field label="Notiz">
+                                        <textarea rows={2} value={form.notiz}
+                                            onChange={e => update('notiz', e.target.value)}
+                                            className={inputCls} />
+                                    </Field>
+                                </div>
+                            )}
+                        </div>
 
                         {detailBeleg.aufteilungsModus === 'TEILWEISE' && (
                             <AufteilungsSektion beleg={detailBeleg} />
