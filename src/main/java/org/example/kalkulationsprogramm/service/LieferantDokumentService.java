@@ -54,6 +54,7 @@ public class LieferantDokumentService {
         @Lazy
         private final GeminiDokumentAnalyseService geminiService;
         private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
+        private final LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
 
         @Value("${upload.path:uploads}")
         private String uploadPath;
@@ -276,6 +277,9 @@ public class LieferantDokumentService {
                                 dokument = dokumentRepository.saveAndFlush(dokument);
 
                                 standardKostenstelleAutoAssigner.applyIfApplicable(dokument);
+                                // Vorauskasse-Lieferant? Dann ist die Rechnung schon bezahlt und
+                                // darf nicht in den Offenen Posten stehen.
+                                vorauskasseAutoAssigner.applyIfApplicable(dokument);
                         } else {
                                 log.warn("Analyse ergab keine Ergebnisse für Dokument {}", dokument.getId());
                         }

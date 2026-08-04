@@ -64,6 +64,7 @@ public class LieferantenDetailService {
         dto.setIstAktiv(lieferant.getIstAktiv());
         dto.setStartZusammenarbeit(toLocalDate(lieferant.getStartZusammenarbeit()));
         dto.setKundenEmails(new ArrayList<>(Objects.requireNonNullElse(lieferant.getKundenEmails(), List.of())));
+        dto.setVorauskasse(Boolean.TRUE.equals(lieferant.getVorauskasse()));
         if (lieferant.getStandardKostenstelle() != null) {
             dto.setStandardKostenstelleId(lieferant.getStandardKostenstelle().getId());
             dto.setStandardKostenstelleName(lieferant.getStandardKostenstelle().getBezeichnung());

@@ -30,6 +30,8 @@ public class LieferantDetailDto {
     private List<String> kundenEmails;
     private Long standardKostenstelleId;
     private String standardKostenstelleName;
+    /** true = Rechnungen dieses Lieferanten gelten beim Import sofort als bezahlt. */
+    private Boolean vorauskasse;
     private LieferantStatistikDto statistik;
     private List<LieferantArtikelpreisDto> artikelpreise;
     private List<LieferantKommunikationDto> kommunikation;

@@ -302,6 +302,12 @@ export interface Lieferant {
   erfassungsDatum?: string;
   standardKostenstelleId?: number | null;
   standardKostenstelleName?: string;
+  /**
+   * true = Bei diesem Lieferanten wird im Voraus bezahlt. Eingehende Rechnungen
+   * werden beim Import automatisch als bezahlt markiert und tauchen nicht in den
+   * Offenen Posten auf, damit sie nicht ein zweites Mal überwiesen werden.
+   */
+  vorauskasse?: boolean;
 }
 
 export interface Artikel {

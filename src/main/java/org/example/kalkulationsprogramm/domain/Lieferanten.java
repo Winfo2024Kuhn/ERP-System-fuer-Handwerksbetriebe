@@ -78,4 +78,14 @@ public class Lieferanten {
     @JoinColumn(name = "standard_kostenstelle_id")
     private Kostenstelle standardKostenstelle;
 
+    /**
+     * Bei diesem Lieferanten wird grundsaetzlich im Voraus bezahlt (Vorkasse,
+     * Lastschrift, Kreditkarte im Shop). Eingehende Rechnungen sind damit schon
+     * beglichen und werden beim Import automatisch als "bereits gezahlt"
+     * markiert, damit sie nicht in den Offenen Posten stehen und versehentlich
+     * ein zweites Mal ueberwiesen werden.
+     */
+    @Column(nullable = false)
+    private Boolean vorauskasse = false;
+
 }

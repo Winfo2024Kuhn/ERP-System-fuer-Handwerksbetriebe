@@ -45,6 +45,7 @@ public class EmailAttachmentProcessingService {
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final GeminiDokumentAnalyseService geminiAnalyseService;
     private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
+    private final LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
 
     // Self-injection für transactional proxy calls auf eigene Methoden
     // Setter-Injection um zirkuläre Abhängigkeit zu vermeiden
@@ -460,6 +461,15 @@ public class EmailAttachmentProcessingService {
             standardKostenstelleAutoAssigner.applyIfApplicable(dokument);
         } catch (Exception e) {
             log.warn("Auto-Zuweisung Standard-Kostenstelle fehlgeschlagen für Dokument {}: {}",
+                    dokument.getId(), e.getMessage());
+        }
+
+        // Vorauskasse-Lieferant? Dann ist die Rechnung schon bezahlt und darf nicht
+        // in den Offenen Posten stehen - sonst droht eine zweite Überweisung.
+        try {
+            vorauskasseAutoAssigner.applyIfApplicable(dokument);
+        } catch (Exception e) {
+            log.warn("Vorauskasse-Markierung fehlgeschlagen für Dokument {}: {}",
                     dokument.getId(), e.getMessage());
         }
 

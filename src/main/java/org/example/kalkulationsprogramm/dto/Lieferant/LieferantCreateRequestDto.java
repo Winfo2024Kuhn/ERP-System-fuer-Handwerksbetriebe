@@ -63,4 +63,10 @@ public class LieferantCreateRequestDto {
      * Optionale Standard-Kostenstelle. Wird bei späteren Zuordnungen automatisch vorgeschlagen.
      */
     private Long standardKostenstelleId;
+
+    /**
+     * Bei diesem Lieferanten wird im Voraus bezahlt. Eingehende Rechnungen gelten
+     * dann sofort als bezahlt und tauchen nicht in den Offenen Posten auf.
+     */
+    private Boolean vorauskasse = Boolean.FALSE;
 }

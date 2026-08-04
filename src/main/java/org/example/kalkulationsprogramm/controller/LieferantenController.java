@@ -187,6 +187,7 @@ public class LieferantenController {
         lieferant.setStartZusammenarbeit(toDate(request.getStartZusammenarbeit()));
         lieferant.setKundenEmails(new ArrayList<>(normalizeEmails(request.getKundenEmails())));
         lieferant.setStandardKostenstelle(resolveKostenstelle(request.getStandardKostenstelleId()));
+        lieferant.setVorauskasse(Boolean.TRUE.equals(request.getVorauskasse()));
 
         Lieferanten saved = lieferantenRepository.save(lieferant);
         try {
@@ -232,6 +233,7 @@ public class LieferantenController {
         lieferant.setStartZusammenarbeit(toDate(request.getStartZusammenarbeit()));
         lieferant.setKundenEmails(new ArrayList<>(normalizeEmails(request.getKundenEmails())));
         lieferant.setStandardKostenstelle(resolveKostenstelle(request.getStandardKostenstelleId()));
+        lieferant.setVorauskasse(Boolean.TRUE.equals(request.getVorauskasse()));
 
         lieferantenRepository.save(lieferant);
         try {

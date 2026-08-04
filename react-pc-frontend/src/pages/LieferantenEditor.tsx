@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle, Package } from "lucide-react";
+import { Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle, Package, Wallet } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -67,6 +67,15 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                             ) : (
                                 <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
                                     {lieferant.lieferantenTyp || "Lieferant"}
+                                </span>
+                            )}
+                            {lieferant.vorauskasse && (
+                                <span
+                                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-xs font-medium border border-amber-200"
+                                    title="Rechnungen dieser Firma gelten sofort als bezahlt und stehen nicht unter Offene Posten."
+                                >
+                                    <Wallet className="w-3 h-3" />
+                                    Zahlung im Voraus
                                 </span>
                             )}
                         </div>
@@ -277,6 +286,19 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                         <p className="text-xs text-slate-500">Standard-Kostenstelle</p>
                         <p className="font-medium text-slate-900">
                             {lieferant.standardKostenstelleName || <span className="text-slate-400">Keine zugewiesen</span>}
+                        </p>
+                    </div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                        <Wallet className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <p className="text-xs text-slate-500">Bezahlung</p>
+                        <p className="font-medium text-slate-900">
+                            {lieferant.vorauskasse
+                                ? "Im Voraus — Rechnungen sind beim Eintreffen schon bezahlt"
+                                : "Auf Rechnung — Rechnungen landen in den Offenen Posten"}
                         </p>
                     </div>
                 </div>
@@ -647,6 +669,15 @@ function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; o
                                 {lieferant.lieferantenTyp || "Ohne Rolle"}
                             </span>
                         )}
+                        {lieferant.vorauskasse && (
+                            <span
+                                className="inline-flex items-center gap-1 text-xs font-semibold tracking-wider text-amber-800 uppercase bg-amber-50 px-2 py-0.5 rounded-full"
+                                title="Rechnungen dieser Firma gelten sofort als bezahlt und stehen nicht unter Offene Posten."
+                            >
+                                <Wallet className="w-3 h-3" />
+                                Vorkasse
+                            </span>
+                        )}
                     </div>
                     <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={lieferant.lieferantenname}>
                         {lieferant.lieferantenname || "Unbenannt"}
@@ -825,6 +856,29 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                                 )}
                             </div>
                         </div>
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-4">
+                        <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-50 transition-colors">
+                            <input
+                                type="checkbox"
+                                checked={!!formData.vorauskasse}
+                                onChange={(e) => handleChange("vorauskasse", e.target.checked)}
+                                className="w-5 h-5 mt-0.5 shrink-0 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                            />
+                            <div>
+                                <span className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                    <Wallet className="w-4 h-4 text-slate-400" />
+                                    Wird immer im Voraus bezahlt
+                                </span>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Anhaken, wenn hier per Vorkasse, Lastschrift oder Kreditkarte gezahlt wird.
+                                    Rechnungen dieser Firma sind dann schon beglichen, wenn sie per E-Mail
+                                    ankommen — sie werden automatisch als bezahlt eingetragen und stehen nicht
+                                    unter „Offene Posten“. So wird nichts versehentlich doppelt überwiesen.
+                                </p>
+                            </div>
+                        </label>
                     </div>
 
                     <AddressAutocomplete
