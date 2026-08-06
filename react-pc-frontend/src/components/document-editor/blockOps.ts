@@ -266,6 +266,11 @@ export function insertBlocksBeforeClosure(prev: DocBlock[], blocksToInsert: DocB
  * Nur IDs aus dem Container des ERSTEN Treffers werden beruecksichtigt; ein
  * Bauabschnitt und die Root-Ebene lassen sich nicht ueber Kreuz gruppieren, weil die
  * Freigabe-Seite nur zwei Ebenen tief liest.
+ *
+ * Die Funktion beschreibt den ZIELZUSTAND der Gruppe, nicht nur einen Zuwachs:
+ * `blockIds` ist die vollstaendige Mitgliederliste. Wer vorher zu `gruppenName`
+ * gehoerte und jetzt fehlt, verliert die Gruppe wieder. Damit deckt derselbe
+ * Aufruf das Anlegen und das spaetere Bearbeiten im Dialog ab.
  */
 export function gruppiereAlsAlternativen(
     blocks: DocBlock[],
@@ -295,10 +300,15 @@ function gruppiereEbene(ebene: DocBlock[], blockIds: string[], name: string): Do
     const trefferIdx = ebene.findIndex(b => b.type === 'SERVICE' && blockIds.includes(b.id));
     if (trefferIdx === -1) return ebene;
 
-    const markiert = ebene.map(b =>
-        b.type === 'SERVICE' && blockIds.includes(b.id)
-            ? { ...b, optional: true, alternativGruppe: name }
-            : b);
+    const markiert = ebene.map(b => {
+        if (b.type === 'SERVICE' && blockIds.includes(b.id)) {
+            return { ...b, optional: true, alternativGruppe: name };
+        }
+        // Frueheres Mitglied, das der Nutzer im Dialog abgewaehlt hat: es bleibt
+        // eine Wahlposition, faellt aber aus der Gruppe zurueck auf "optional".
+        if (b.alternativGruppe === name) return ohneAlternativGruppe(b);
+        return b;
+    });
 
     const varianten = markiert.filter(b => b.type === 'SERVICE' && blockIds.includes(b.id));
     const rest = markiert.filter(b => !(b.type === 'SERVICE' && blockIds.includes(b.id)));
@@ -306,15 +316,42 @@ function gruppiereEbene(ebene: DocBlock[], blockIds: string[], name: string): Do
 }
 
 /**
+ * Alle Leistungen, die mit `blockId` in einer Auswahl landen duerfen — also die
+ * SERVICE-Bloecke seines Containers (Root-Ebene ODER derselbe Bauabschnitt).
+ *
+ * Ueber Container-Grenzen hinweg gibt es bewusst keine Kandidaten: eine Gruppe
+ * muss zusammenhaengend in EINER Ebene liegen, sonst kann `buildPositionMap`
+ * keine a/b-Nummern vergeben und die Freigabe-Seite die Gruppe nicht darstellen.
+ */
+export function sammleGruppenKandidaten(blocks: DocBlock[], blockId: string): DocBlock[] {
+    const nurLeistungen = (ebene: DocBlock[]) => ebene.filter(b => b.type === 'SERVICE');
+
+    if (blocks.some(b => b.type === 'SERVICE' && b.id === blockId)) {
+        return nurLeistungen(blocks);
+    }
+    const section = blocks.find(b => b.type === 'SECTION_HEADER'
+        && (b.children ?? []).some(c => c.type === 'SERVICE' && c.id === blockId));
+    return section ? nurLeistungen(section.children ?? []) : [];
+}
+
+/**
+ * Kopie eines Blocks ohne Gruppenzugehoerigkeit. Das Feld wird wirklich entfernt
+ * statt auf `undefined` gesetzt — sonst taucht es im gespeicherten
+ * positionenJson als leerer Schluessel auf.
+ */
+export function ohneAlternativGruppe(block: DocBlock): DocBlock {
+    const rest = { ...block };
+    delete rest.alternativGruppe;
+    return rest;
+}
+
+/**
  * Loest eine Gruppe auf. Die Mitglieder bleiben `optional` und werden damit zu
  * frei dazubuchbaren Zusatzpositionen.
  */
 export function loeseAlternativGruppeAuf(blocks: DocBlock[], gruppenName: string): DocBlock[] {
-    const entferne = (b: DocBlock): DocBlock => {
-        if (b.alternativGruppe !== gruppenName) return b;
-        const { alternativGruppe: _weg, ...rest } = b;
-        return rest;
-    };
+    const entferne = (b: DocBlock): DocBlock =>
+        b.alternativGruppe === gruppenName ? ohneAlternativGruppe(b) : b;
     return blocks.map(b => b.type === 'SECTION_HEADER' && b.children
         ? { ...b, children: b.children.map(entferne) }
         : entferne(b));
@@ -373,9 +410,7 @@ export function normalisiereAlternativGruppen(blocks: DocBlock[]): DocBlock[] {
             const gueltig = b.type === 'SERVICE'
                 && b.optional === true
                 && (anzahl.get(b.alternativGruppe) ?? 0) >= 2;
-            if (gueltig) return b;
-            const { alternativGruppe: _weg, ...rest } = b;
-            return rest;
+            return gueltig ? b : ohneAlternativGruppe(b);
         });
     };
 
@@ -383,24 +418,6 @@ export function normalisiereAlternativGruppen(blocks: DocBlock[]): DocBlock[] {
     return root.map(b => b.type === 'SECTION_HEADER' && b.children
         ? { ...b, children: bereinigeEbene(b.children) }
         : b);
-}
-
-/**
- * Duerfen zwei benachbarte Bloecke zu einer Gruppe verbunden werden?
- * Liefert die Zielgruppe (Name einer bereits bestehenden Gruppe) oder
- * `{ moeglich: true, gruppe: null }` fuer eine neue Gruppe.
- *
- * Zwei Bloecke, die BEIDE schon in unterschiedlichen Gruppen stecken, werden
- * nicht verschmolzen — das waere fuer den Nutzer nicht vorhersagbar.
- */
-export function verbindbar(a: DocBlock, b: DocBlock): { moeglich: boolean; gruppe: string | null } {
-    const wahl = (x: DocBlock) => x.type === 'SERVICE' && x.optional === true;
-    if (!wahl(a) || !wahl(b)) return { moeglich: false, gruppe: null };
-
-    const ga = a.alternativGruppe ?? null;
-    const gb = b.alternativGruppe ?? null;
-    if (ga && gb) return { moeglich: false, gruppe: null };
-    return { moeglich: true, gruppe: ga ?? gb };
 }
 
 /** Alle Gruppennamen des Dokuments in Reihenfolge ihres ersten Auftretens. */

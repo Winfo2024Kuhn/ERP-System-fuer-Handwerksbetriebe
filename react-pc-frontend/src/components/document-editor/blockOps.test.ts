@@ -21,6 +21,7 @@ import {
     gruppiereAlsAlternativen,
     loeseAlternativGruppeAuf,
     normalisiereAlternativGruppen,
+    sammleGruppenKandidaten,
     sammleGruppenNamen,
 } from './blockOps';
 import type { DocBlock } from './types';
@@ -469,6 +470,53 @@ describe('gruppiereAlsAlternativen', () => {
         // root1 bleibt allein -> Invariante loest die Gruppe wieder auf.
         expect(result[0].alternativGruppe).toBeUndefined();
         expect(result[1].children![0].alternativGruppe).toBeUndefined();
+    });
+
+    it('wirft im Dialog abgewaehlte Varianten aus der Gruppe, laesst sie aber optional', () => {
+        const blocks = [
+            svc('a', { optional: true, alternativGruppe: 'Geländer' }),
+            svc('b', { optional: true, alternativGruppe: 'Geländer' }),
+            svc('c', { optional: true, alternativGruppe: 'Geländer' }),
+        ];
+        const result = gruppiereAlsAlternativen(blocks, ['a', 'b'], 'Geländer');
+
+        expect(result.find(b => b.id === 'c')).toMatchObject({ optional: true });
+        expect(result.find(b => b.id === 'c')!.alternativGruppe).toBeUndefined();
+        expect(result.find(b => b.id === 'a')!.alternativGruppe).toBe('Geländer');
+    });
+
+    it('benennt die Gruppe um, wenn derselbe Kreis unter neuem Namen gespeichert wird', () => {
+        const blocks = [
+            svc('a', { optional: true, alternativGruppe: 'Auswahl' }),
+            svc('b', { optional: true, alternativGruppe: 'Auswahl' }),
+        ];
+        const result = gruppiereAlsAlternativen(blocks, ['a', 'b'], 'Bodenbelag');
+
+        expect(result.map(b => b.alternativGruppe)).toEqual(['Bodenbelag', 'Bodenbelag']);
+    });
+});
+
+describe('sammleGruppenKandidaten', () => {
+    it('liefert auf Root-Ebene alle Leistungen, aber keine Text- oder Section-Bloecke', () => {
+        const blocks: DocBlock[] = [
+            svc('a'), text('t1'), svc('b'),
+            { id: 'sec', type: 'SECTION_HEADER', children: [svc('k1')] },
+        ];
+
+        expect(sammleGruppenKandidaten(blocks, 'a').map(b => b.id)).toEqual(['a', 'b']);
+    });
+
+    it('liefert fuer ein Kind nur die Geschwister desselben Bauabschnitts', () => {
+        const blocks: DocBlock[] = [
+            svc('root1'),
+            { id: 'sec', type: 'SECTION_HEADER', children: [svc('k1'), text('t1'), svc('k2')] },
+        ];
+
+        expect(sammleGruppenKandidaten(blocks, 'k1').map(b => b.id)).toEqual(['k1', 'k2']);
+    });
+
+    it('liefert nichts fuer eine unbekannte Id', () => {
+        expect(sammleGruppenKandidaten([svc('a')], 'gibtsnicht')).toEqual([]);
     });
 });
 

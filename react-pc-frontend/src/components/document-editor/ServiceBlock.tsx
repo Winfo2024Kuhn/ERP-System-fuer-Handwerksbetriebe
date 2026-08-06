@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { KategorieAnalyseModal } from '../KategorieAnalyseModal';
 import { AddBelowButton } from './TextBlock';
+import { WahlpositionMenu } from './WahlpositionMenu';
 
 interface ServiceBlockProps {
     block: DocBlock;
@@ -19,7 +20,10 @@ interface ServiceBlockProps {
     onEditorReady: (editorKey: string, editor: EditorInstance | null) => void;
     onUpdate: (id: string, updates: Partial<DocBlock>) => void;
     onRemove: (id: string) => void;
-    onToggleOptional: (id: string, current: boolean | undefined) => void;
+    /** Setzt die Leistung auf "fest beauftragt" oder "optional". */
+    onModusWechsel: (id: string, modus: 'fest' | 'optional') => void;
+    /** Oeffnet den Dialog, in dem die Entweder-Oder-Gruppe zusammengestellt wird. */
+    onAlternativOeffnen: (id: string) => void;
     onFocus: (blockId: string) => void;
     onEditorFocus: (editor: EditorInstance | null) => void;
     /** Optional: oeffnet den AddTypeDialog mit dieser Karte als Anker (Insert direkt darunter). */
@@ -41,7 +45,8 @@ export function ServiceBlock({
     onEditorReady,
     onUpdate,
     onRemove,
-    onToggleOptional,
+    onModusWechsel,
+    onAlternativOeffnen,
     onFocus,
     onEditorFocus,
     onAddBelow,
@@ -159,23 +164,12 @@ export function ServiceBlock({
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); onToggleOptional(block.id, block.optional); }}
-                        disabled={isLocked}
-                        className={cn(
-                            "h-7 px-2 text-[11px] gap-1 rounded-md",
-                            block.optional
-                                ? "text-amber-600 bg-amber-50 hover:bg-amber-100"
-                                : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                        )}
-                        title={block.alternativGruppe
-                            ? `Variante der Auswahl „${block.alternativGruppe}" — der Kunde wählt genau eine`
-                            : 'Optional: der Kunde kann diese Position dazubuchen (zählt nicht in die Summe)'}
-                    >
-                        {block.alternativGruppe ? 'Alternative' : 'Optional'}
-                    </Button>
+                    <WahlpositionMenu
+                        block={block}
+                        isLocked={isLocked}
+                        onModusWechsel={onModusWechsel}
+                        onAlternativOeffnen={onAlternativOeffnen}
+                    />
                     <Button
                         variant="ghost"
                         size="sm"
@@ -191,7 +185,7 @@ export function ServiceBlock({
             {/* Description - nur aufgeklappt */}
             {!collapsed && (
             <div className="px-4 pt-2 pb-3">
-                <div className="pl-[52px]">
+                <div className="pl-[52px] doc-pdf-metrics doc-pdf-metrics--spalte">
                     <TiptapEditor
                         value={block.description || ''}
                         onChange={(val) => onUpdate(block.id, { description: val })}

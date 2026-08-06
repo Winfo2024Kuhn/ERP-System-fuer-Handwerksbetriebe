@@ -5,8 +5,6 @@ import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { ServiceBlock } from './ServiceBlock';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
-import { AlternativVerbinder } from './AlternativVerbinder';
-import { verbindbar } from './blockOps';
 import { calculateSectionSubtotal, formatCurrency, gruppiereFuerAnzeige } from './helpers';
 import type { DocBlock, EditorInstance } from './types';
 
@@ -21,7 +19,10 @@ interface SectionHeaderBlockProps {
     onRemove: (id: string) => void;
     onRemoveChild: (sectionId: string, childId: string) => void;
     onEjectChild: (sectionId: string, childId: string) => void;
-    onToggleChildOptional: (sectionId: string, childId: string, current: boolean | undefined) => void;
+    /** Setzt eine Leistung des Bauabschnitts auf "fest beauftragt" oder "optional". */
+    onChildModusWechsel: (sectionId: string, childId: string, modus: 'fest' | 'optional') => void;
+    /** Oeffnet den Dialog, in dem die Entweder-Oder-Gruppe zusammengestellt wird. */
+    onAlternativOeffnen: (childId: string) => void;
     onFocus: (blockId: string) => void;
     onEditorFocus: (editor: EditorInstance | null) => void;
     getPositionString: (block: DocBlock) => string;
@@ -34,8 +35,6 @@ interface SectionHeaderBlockProps {
     onGruppeUmbenennen?: (alt: string, neu: string) => void;
     /** Loest eine Entweder-Oder-Gruppe auf; die Varianten bleiben Optional-Positionen. */
     onGruppeAufloesen?: (name: string) => void;
-    /** Fasst zwei benachbarte Wahlpositionen zu einer Auswahl zusammen. */
-    onVerbinden?: (idA: string, idB: string, zielGruppe: string | null) => void;
 }
 
 export function SectionHeaderBlock({
@@ -49,7 +48,8 @@ export function SectionHeaderBlock({
     onRemove,
     onRemoveChild,
     onEjectChild,
-    onToggleChildOptional,
+    onChildModusWechsel,
+    onAlternativOeffnen,
     onFocus,
     onEditorFocus,
     getPositionString,
@@ -58,7 +58,6 @@ export function SectionHeaderBlock({
     onAddIntoSection,
     onGruppeUmbenennen,
     onGruppeAufloesen,
-    onVerbinden,
 }: SectionHeaderBlockProps) {
     const [editing, setEditing] = useState(false);
     const [localLabel, setLocalLabel] = useState(block.sectionLabel || '');
@@ -130,7 +129,8 @@ export function SectionHeaderBlock({
                     onEditorReady={(key, editor) => { editorRefs.current[key] = editor; }}
                     onUpdate={(id, updates) => onUpdateChild(block.id, id, updates)}
                     onRemove={(id) => onRemoveChild(block.id, id)}
-                    onToggleOptional={(id, current) => onToggleChildOptional(block.id, id, current)}
+                    onModusWechsel={(id, modus) => onChildModusWechsel(block.id, id, modus)}
+                    onAlternativOeffnen={onAlternativOeffnen}
                     onFocus={onFocus}
                     onEditorFocus={onEditorFocus}
                     onAddBelow={onAddBelow}
@@ -259,44 +259,19 @@ export function SectionHeaderBlock({
                     {/* Children */}
                     {children.length > 0 && (
                         <div className="px-3 pt-3 space-y-2">
-                            {gruppiereFuerAnzeige(children).map((eintrag, i, alle) => {
-                                const node = eintrag.art === 'gruppe'
-                                    ? (
-                                        <AlternativGruppeBox
-                                            name={eintrag.name}
-                                            isLocked={isLocked || !onGruppeUmbenennen}
-                                            onUmbenennen={(alt, neu) => onGruppeUmbenennen?.(alt, neu)}
-                                            onAufloesen={(name) => onGruppeAufloesen?.(name)}
-                                        >
-                                            {eintrag.positionen.map(v => renderChild(v))}
-                                        </AlternativGruppeBox>
-                                    )
-                                    : renderChild(eintrag.block);
-
-                                // Verbinder zwischen diesem und dem naechsten Eintrag.
-                                const naechster = alle[i + 1];
-                                const letzter = eintrag.art === 'gruppe'
-                                    ? eintrag.positionen[eintrag.positionen.length - 1]
-                                    : eintrag.block;
-                                const ersterDesNaechsten = naechster
-                                    ? (naechster.art === 'gruppe' ? naechster.positionen[0] : naechster.block)
-                                    : null;
-                                const pruef = ersterDesNaechsten
-                                    ? verbindbar(letzter, ersterDesNaechsten)
-                                    : { moeglich: false, gruppe: null };
-
-                                return (
-                                    <div key={letzter.id}>
-                                        {node}
-                                        {!isLocked && onVerbinden && pruef.moeglich && (
-                                            <AlternativVerbinder
-                                                zielGruppe={pruef.gruppe}
-                                                onVerbinden={() => onVerbinden(letzter.id, ersterDesNaechsten!.id, pruef.gruppe)}
-                                            />
-                                        )}
-                                    </div>
-                                );
-                            })}
+                            {gruppiereFuerAnzeige(children).map(eintrag => (
+                                eintrag.art === 'gruppe' ? (
+                                    <AlternativGruppeBox
+                                        key={eintrag.positionen[0].id}
+                                        name={eintrag.name}
+                                        isLocked={isLocked || !onGruppeUmbenennen}
+                                        onUmbenennen={(alt, neu) => onGruppeUmbenennen?.(alt, neu)}
+                                        onAufloesen={(name) => onGruppeAufloesen?.(name)}
+                                    >
+                                        {eintrag.positionen.map(v => renderChild(v))}
+                                    </AlternativGruppeBox>
+                                ) : renderChild(eintrag.block)
+                            ))}
                         </div>
                     )}
 

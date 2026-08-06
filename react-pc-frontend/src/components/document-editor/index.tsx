@@ -43,7 +43,7 @@ import {
     gruppiereAlsAlternativen,
     loeseAlternativGruppeAuf,
     normalisiereAlternativGruppen,
-    verbindbar,
+    ohneAlternativGruppe,
 } from './blockOps';
 
 /**
@@ -72,7 +72,7 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
 }
 import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
-import { AlternativVerbinder } from './AlternativVerbinder';
+import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
@@ -310,6 +310,9 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     // Global Rabatt
     const [globalRabatt, setGlobalRabatt] = useState<number>(0);
     const [showRabattDialog, setShowRabattDialog] = useState(false);
+
+    // Id der Leistung, von der aus der Alternativ-Dialog geoeffnet wurde (null = zu).
+    const [alternativDialogAnker, setAlternativDialogAnker] = useState<string | null>(null);
 
     // Kategorie-Bestätigung beim Einfügen einer Leistung
     const [pendingLeistungInsert, setPendingLeistungInsert] = useState<{
@@ -1780,28 +1783,41 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         })));
     };
 
-    /** Toggle optional on a section child */
-    const toggleSectionChildOptional = (sectionId: string, childId: string, current: boolean | undefined) => {
-        updateSectionChild(sectionId, childId, { optional: !current });
+    /**
+     * Setzt eine Leistung auf "fest beauftragt" oder "optional" — der dritte
+     * Zustand (Variante einer Auswahl) laeuft ueber den Dialog.
+     *
+     * Beide Ziele verlassen eine bestehende Gruppe, deshalb laeuft das bewusst
+     * nicht ueber `updateBlock`: bleibt die Gruppe mit nur einer Variante zurueck,
+     * muss `normalisiereAlternativGruppen` sie aufloesen.
+     */
+    const setzeWahlmodus = (block: DocBlock, modus: 'fest' | 'optional'): DocBlock =>
+        ({ ...ohneAlternativGruppe(block), optional: modus === 'optional' });
+
+    const childModusWechsel = (sectionId: string, childId: string, modus: 'fest' | 'optional') => {
+        if (isLocked) return;
+        setBlocks(prev => syncClosureBlock(normalisiereAlternativGruppen(prev.map(b =>
+            b.id === sectionId && b.children
+                ? { ...b, children: b.children.map(c => c.id === childId ? setzeWahlmodus(c, modus) : c) }
+                : b
+        ))));
     };
 
-    const toggleOptional = (id: string, currentOptional: boolean | undefined) => {
-        updateBlock(id, { optional: !currentOptional });
+    const modusWechsel = (id: string, modus: 'fest' | 'optional') => {
+        if (isLocked) return;
+        setBlocks(prev => syncClosureBlock(normalisiereAlternativGruppen(
+            prev.map(b => b.id === id ? setzeWahlmodus(b, modus) : b)
+        )));
     };
 
     /**
-     * Verbindet zwei benachbarte Wahlpositionen zu einer Entweder-Oder-Gruppe.
-     * Ohne Zielgruppe wird nach einem Namen gefragt — der ist die Ueberschrift,
-     * die der Kunde spaeter auf der Freigabe-Seite sieht.
+     * Uebernimmt die im Dialog zusammengestellte Auswahl. `blockIds` ist die
+     * vollstaendige Mitgliederliste — abgewaehlte Varianten fallen dadurch
+     * automatisch aus der Gruppe zurueck auf "optional".
      */
-    const verbinde = (idA: string, idB: string, zielGruppe: string | null) => {
+    const alternativGruppeSpeichern = (blockIds: string[], name: string) => {
         if (isLocked) return;
-        const name = zielGruppe ?? window.prompt(
-            'Wie soll die Auswahl heißen? Der Kunde sieht diesen Text als Überschrift.',
-            'Auswahl',
-        )?.trim();
-        if (!name) return;
-        setBlocks(prev => syncClosureBlock(gruppiereAlsAlternativen(prev, [idA, idB], name)));
+        setBlocks(prev => syncClosureBlock(gruppiereAlsAlternativen(prev, blockIds, name)));
     };
 
     const gruppeAufloesen = (name: string) => {
@@ -2648,7 +2664,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     onRemove={removeBlock}
                     onRemoveChild={removeSectionChild}
                     onEjectChild={ejectChildFromSection}
-                    onToggleChildOptional={toggleSectionChildOptional}
+                    onChildModusWechsel={childModusWechsel}
+                    onAlternativOeffnen={setAlternativDialogAnker}
                     onFocus={(id) => setActiveEditorId(id)}
                     onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
                     getPositionString={getPositionString}
@@ -2657,7 +2674,6 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     onAddIntoSection={handleAddIntoSection}
                     onGruppeUmbenennen={gruppeUmbenennen}
                     onGruppeAufloesen={gruppeAufloesen}
-                    onVerbinden={verbinde}
                 />
             )}
             {block.type === 'TEXT' && (
@@ -2687,7 +2703,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     onEditorReady={setEditorRef}
                     onUpdate={updateBlock}
                     onRemove={removeBlock}
-                    onToggleOptional={toggleOptional}
+                    onModusWechsel={modusWechsel}
+                    onAlternativOeffnen={setAlternativDialogAnker}
                     onFocus={(id) => setActiveEditorId(id)}
                     onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
                     onAddBelow={handleAddBelow}
@@ -2850,44 +2867,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     items={blocks.map(b => b.id)}
                                     strategy={verticalListSortingStrategy}
                                 >
-                                    {gruppiereFuerAnzeige(blocks).map((eintrag, i, alle) => {
-                                        const node = eintrag.art === 'gruppe'
-                                            ? (
-                                                <AlternativGruppeBox
-                                                    name={eintrag.name}
-                                                    isLocked={isLocked}
-                                                    onUmbenennen={gruppeUmbenennen}
-                                                    onAufloesen={gruppeAufloesen}
-                                                >
-                                                    {eintrag.positionen.map(v => renderRootBlock(v))}
-                                                </AlternativGruppeBox>
-                                            )
-                                            : renderRootBlock(eintrag.block);
-
-                                        // Verbinder zwischen diesem und dem naechsten Eintrag.
-                                        const naechster = alle[i + 1];
-                                        const letzter = eintrag.art === 'gruppe'
-                                            ? eintrag.positionen[eintrag.positionen.length - 1]
-                                            : eintrag.block;
-                                        const ersterDesNaechsten = naechster
-                                            ? (naechster.art === 'gruppe' ? naechster.positionen[0] : naechster.block)
-                                            : null;
-                                        const pruef = ersterDesNaechsten
-                                            ? verbindbar(letzter, ersterDesNaechsten)
-                                            : { moeglich: false, gruppe: null };
-
-                                        return (
-                                            <div key={letzter.id}>
-                                                {node}
-                                                {!isLocked && pruef.moeglich && (
-                                                    <AlternativVerbinder
-                                                        zielGruppe={pruef.gruppe}
-                                                        onVerbinden={() => verbinde(letzter.id, ersterDesNaechsten!.id, pruef.gruppe)}
-                                                    />
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                                    {gruppiereFuerAnzeige(blocks).map(eintrag => (
+                                        eintrag.art === 'gruppe' ? (
+                                            <AlternativGruppeBox
+                                                key={eintrag.positionen[0].id}
+                                                name={eintrag.name}
+                                                isLocked={isLocked}
+                                                onUmbenennen={gruppeUmbenennen}
+                                                onAufloesen={gruppeAufloesen}
+                                            >
+                                                {eintrag.positionen.map(v => renderRootBlock(v))}
+                                            </AlternativGruppeBox>
+                                        ) : renderRootBlock(eintrag.block)
+                                    ))}
                                 </SortableContext>
                                 <DragOverlay dropAnimation={{
                                     duration: 200,
@@ -3152,6 +3144,15 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         setShowRabattDialog(false);
                     }}
                     onClose={() => setShowRabattDialog(false)}
+                />
+            )}
+            {alternativDialogAnker && (
+                <AlternativGruppeDialog
+                    blocks={blocks}
+                    ankerId={alternativDialogAnker}
+                    onSpeichern={alternativGruppeSpeichern}
+                    onAufloesen={gruppeAufloesen}
+                    onClose={() => setAlternativDialogAnker(null)}
                 />
             )}
 
