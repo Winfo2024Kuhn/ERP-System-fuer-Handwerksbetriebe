@@ -268,21 +268,27 @@ export function insertBlocksBeforeClosure(prev: DocBlock[], blocksToInsert: DocB
  * Freigabe-Seite nur zwei Ebenen tief liest.
  *
  * Die Funktion beschreibt den ZIELZUSTAND der Gruppe, nicht nur einen Zuwachs:
- * `blockIds` ist die vollstaendige Mitgliederliste. Wer vorher zu `gruppenName`
+ * `blockIds` ist die vollstaendige Mitgliederliste. Wer vorher zu `bisherigeGruppe`
  * gehoerte und jetzt fehlt, verliert die Gruppe wieder. Damit deckt derselbe
  * Aufruf das Anlegen und das spaetere Bearbeiten im Dialog ab.
+ *
+ * `bisherigeGruppe` ist der Name, unter dem die Gruppe VOR dem Speichern lief —
+ * beim Anlegen `null`. Die Abwahl darf sich nicht am neuen Namen orientieren:
+ * eine gleichnamige fremde Gruppe (der Dialog schlaegt "Auswahl" vor, also ein
+ * realistischer Fall) wuerde sonst still in lose Optional-Positionen zerfallen.
  */
 export function gruppiereAlsAlternativen(
     blocks: DocBlock[],
     blockIds: string[],
     gruppenName: string,
+    bisherigeGruppe: string | null = null,
 ): DocBlock[] {
     const name = gruppenName.trim();
     if (!name || blockIds.length === 0) return blocks;
 
     const imRoot = blocks.some(b => b.type === 'SERVICE' && blockIds.includes(b.id));
     if (imRoot) {
-        return normalisiereAlternativGruppen(gruppiereEbene(blocks, blockIds, name));
+        return normalisiereAlternativGruppen(gruppiereEbene(blocks, blockIds, name, bisherigeGruppe));
     }
 
     const sectionIdx = blocks.findIndex(b =>
@@ -291,12 +297,17 @@ export function gruppiereAlsAlternativen(
 
     const next = blocks.map((b, i) => i !== sectionIdx
         ? b
-        : { ...b, children: gruppiereEbene(b.children ?? [], blockIds, name) });
+        : { ...b, children: gruppiereEbene(b.children ?? [], blockIds, name, bisherigeGruppe) });
     return normalisiereAlternativGruppen(next);
 }
 
 /** Markiert die Treffer einer Ebene und schiebt sie an die Position des ersten. */
-function gruppiereEbene(ebene: DocBlock[], blockIds: string[], name: string): DocBlock[] {
+function gruppiereEbene(
+    ebene: DocBlock[],
+    blockIds: string[],
+    name: string,
+    bisherigeGruppe: string | null,
+): DocBlock[] {
     const trefferIdx = ebene.findIndex(b => b.type === 'SERVICE' && blockIds.includes(b.id));
     if (trefferIdx === -1) return ebene;
 
@@ -306,7 +317,9 @@ function gruppiereEbene(ebene: DocBlock[], blockIds: string[], name: string): Do
         }
         // Frueheres Mitglied, das der Nutzer im Dialog abgewaehlt hat: es bleibt
         // eine Wahlposition, faellt aber aus der Gruppe zurueck auf "optional".
-        if (b.alternativGruppe === name) return ohneAlternativGruppe(b);
+        if (bisherigeGruppe && b.alternativGruppe === bisherigeGruppe) {
+            return ohneAlternativGruppe(b);
+        }
         return b;
     });
 

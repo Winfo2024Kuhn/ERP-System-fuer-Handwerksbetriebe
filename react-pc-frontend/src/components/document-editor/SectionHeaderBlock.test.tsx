@@ -24,7 +24,8 @@ const props = {
     block, isLocked: false, isActive: false, activeEditorId: null,
     editorRefs: { current: {} } as never,
     onUpdate: vi.fn(), onUpdateChild: vi.fn(), onRemove: vi.fn(), onRemoveChild: vi.fn(),
-    onEjectChild: vi.fn(), onToggleChildOptional: vi.fn(), onFocus: vi.fn(), onEditorFocus: vi.fn(),
+    onEjectChild: vi.fn(), onChildModusWechsel: vi.fn(), onAlternativOeffnen: vi.fn(),
+    onFocus: vi.fn(), onEditorFocus: vi.fn(),
     getPositionString: () => '1.1', sectionPosition: '1',
 };
 

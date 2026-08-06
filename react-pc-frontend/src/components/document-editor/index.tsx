@@ -1815,9 +1815,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
      * vollstaendige Mitgliederliste — abgewaehlte Varianten fallen dadurch
      * automatisch aus der Gruppe zurueck auf "optional".
      */
-    const alternativGruppeSpeichern = (blockIds: string[], name: string) => {
+    const alternativGruppeSpeichern = (blockIds: string[], name: string, bisherigeGruppe: string | null) => {
         if (isLocked) return;
-        setBlocks(prev => syncClosureBlock(gruppiereAlsAlternativen(prev, blockIds, name)));
+        setBlocks(prev => syncClosureBlock(
+            gruppiereAlsAlternativen(prev, blockIds, name, bisherigeGruppe)
+        ));
     };
 
     const gruppeAufloesen = (name: string) => {

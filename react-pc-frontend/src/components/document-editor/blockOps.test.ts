@@ -478,7 +478,7 @@ describe('gruppiereAlsAlternativen', () => {
             svc('b', { optional: true, alternativGruppe: 'Geländer' }),
             svc('c', { optional: true, alternativGruppe: 'Geländer' }),
         ];
-        const result = gruppiereAlsAlternativen(blocks, ['a', 'b'], 'Geländer');
+        const result = gruppiereAlsAlternativen(blocks, ['a', 'b'], 'Geländer', 'Geländer');
 
         expect(result.find(b => b.id === 'c')).toMatchObject({ optional: true });
         expect(result.find(b => b.id === 'c')!.alternativGruppe).toBeUndefined();
@@ -490,9 +490,41 @@ describe('gruppiereAlsAlternativen', () => {
             svc('a', { optional: true, alternativGruppe: 'Auswahl' }),
             svc('b', { optional: true, alternativGruppe: 'Auswahl' }),
         ];
-        const result = gruppiereAlsAlternativen(blocks, ['a', 'b'], 'Bodenbelag');
+        const result = gruppiereAlsAlternativen(blocks, ['a', 'b'], 'Bodenbelag', 'Auswahl');
 
         expect(result.map(b => b.alternativGruppe)).toEqual(['Bodenbelag', 'Bodenbelag']);
+    });
+
+    it('laesst eine gleichnamige fremde Gruppe unangetastet', () => {
+        // Der Dialog schlaegt "Auswahl" vor. Ohne den bisherigen Gruppennamen als
+        // Bezug wuerde die zweite Gruppe die erste still in lose Optional-
+        // Positionen zerlegen — Datenverlust an einem Kundendokument.
+        const blocks = [
+            svc('a', { optional: true, alternativGruppe: 'Auswahl' }),
+            svc('b', { optional: true, alternativGruppe: 'Auswahl' }),
+            svc('c'), svc('d'),
+        ];
+        const result = gruppiereAlsAlternativen(blocks, ['c', 'd'], 'Auswahl', null);
+
+        expect(result.find(b => b.id === 'a')!.alternativGruppe).toBe('Auswahl');
+        expect(result.find(b => b.id === 'b')!.alternativGruppe).toBe('Auswahl');
+        expect(result.find(b => b.id === 'c')!.alternativGruppe).toBe('Auswahl');
+    });
+
+    it('laesst beim Umbenennen keine Rest-Gruppe unter dem alten Namen stehen', () => {
+        // Zwei Abwahlen auf einmal: die Rest-Gruppe haette sonst noch zwei
+        // Mitglieder und wuerde von normalisiereAlternativGruppen nicht aufgeloest.
+        const blocks = [
+            svc('a', { optional: true, alternativGruppe: 'Auswahl' }),
+            svc('b', { optional: true, alternativGruppe: 'Auswahl' }),
+            svc('c', { optional: true, alternativGruppe: 'Auswahl' }),
+            svc('d', { optional: true, alternativGruppe: 'Auswahl' }),
+        ];
+        const result = gruppiereAlsAlternativen(blocks, ['a', 'b'], 'Bodenbelag', 'Auswahl');
+
+        expect(result.filter(b => b.alternativGruppe === 'Bodenbelag').map(b => b.id)).toEqual(['a', 'b']);
+        expect(result.filter(b => b.alternativGruppe === 'Auswahl')).toEqual([]);
+        expect(result.find(b => b.id === 'c')).toMatchObject({ optional: true });
     });
 });
 

@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Diamond, Unlink, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { buildPositionMap, formatCurrency, serviceLineTotal } from './helpers';
-import { sammleGruppenKandidaten } from './blockOps';
+import { sammleGruppenKandidaten, sammleGruppenNamen } from './blockOps';
 import type { DocBlock } from './types';
 
 interface AlternativGruppeDialogProps {
@@ -11,7 +11,7 @@ interface AlternativGruppeDialogProps {
     blocks: DocBlock[];
     /** Die Leistung, von der aus der Dialog geoeffnet wurde. Immer Teil der Gruppe. */
     ankerId: string;
-    onSpeichern: (blockIds: string[], name: string) => void;
+    onSpeichern: (blockIds: string[], name: string, bisherigeGruppe: string | null) => void;
     onAufloesen: (name: string) => void;
     onClose: () => void;
 }
@@ -42,6 +42,35 @@ export function AlternativGruppeDialog({
             : [ankerId]
     ));
 
+    const dialogRef = useRef<HTMLDivElement>(null);
+
+    // Escape muss auch greifen, wenn der Fokus auf `document.body` liegt (Klick
+    // auf die Kopfzeile). Ein Handler am Dialog-Div allein reicht dafuer nicht —
+    // das Repo nutzt an allen anderen Modals denselben document-Listener.
+    useEffect(() => {
+        const beiTaste = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') { onClose(); return; }
+            if (e.key !== 'Tab' || !dialogRef.current) return;
+
+            const fokussierbar = dialogRef.current.querySelectorAll<HTMLElement>(
+                'button:not([disabled]), input:not([disabled]), [href], select, textarea'
+            );
+            if (fokussierbar.length === 0) return;
+            const erster = fokussierbar[0];
+            const letzter = fokussierbar[fokussierbar.length - 1];
+
+            if (e.shiftKey && document.activeElement === erster) {
+                e.preventDefault();
+                letzter.focus();
+            } else if (!e.shiftKey && document.activeElement === letzter) {
+                e.preventDefault();
+                erster.focus();
+            }
+        };
+        document.addEventListener('keydown', beiTaste);
+        return () => document.removeEventListener('keydown', beiTaste);
+    }, [onClose]);
+
     const umschalten = (id: string) => {
         if (id === ankerId) return; // Der Anker bleibt immer Teil der Gruppe.
         setGewaehlt(prev => {
@@ -53,11 +82,15 @@ export function AlternativGruppeDialog({
 
     const nameGetrimmt = name.trim();
     const genugVarianten = gewaehlt.size >= 2;
-    const speicherbar = genugVarianten && nameGetrimmt.length > 0;
+    // Zwei Gruppen mit demselben Namen waeren im Dokument nicht auseinanderzuhalten —
+    // weder fuer den Kunden auf der Freigabe-Seite noch beim Aufloesen im Editor.
+    const nameVergeben = sammleGruppenNamen(blocks)
+        .some(vorhanden => vorhanden === nameGetrimmt && vorhanden !== bestehendeGruppe);
+    const speicherbar = genugVarianten && nameGetrimmt.length > 0 && !nameVergeben;
 
     const speichern = () => {
         if (!speicherbar) return;
-        onSpeichern([...gewaehlt], nameGetrimmt);
+        onSpeichern([...gewaehlt], nameGetrimmt, bestehendeGruppe);
         onClose();
     };
 
@@ -68,10 +101,10 @@ export function AlternativGruppeDialog({
 
             {/* Dialog */}
             <div
+                ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
-                aria-label="Alternative Leistungen zusammenstellen"
-                onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+                aria-labelledby="alternativ-gruppe-titel"
                 className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95 duration-200"
             >
                 {/* Header */}
@@ -81,7 +114,7 @@ export function AlternativGruppeDialog({
                             <Diamond className="w-4 h-4 text-amber-600" />
                         </div>
                         <div>
-                            <h2 className="text-base font-bold text-slate-900">Alternative Leistungen</h2>
+                            <h2 id="alternativ-gruppe-titel" className="text-base font-bold text-slate-900">Alternative Leistungen</h2>
                             <p className="text-xs text-slate-400">Der Kunde wählt genau eine davon aus</p>
                         </div>
                     </div>
@@ -110,8 +143,13 @@ export function AlternativGruppeDialog({
                         placeholder="z.B. Bodenbelag"
                         className="w-full text-sm font-medium text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 placeholder:text-slate-300 transition-all"
                     />
-                    <p className="text-[11px] text-slate-400 mt-1">
-                        Diesen Text sieht der Kunde über den Varianten.
+                    <p className={cn(
+                        "text-[11px] mt-1",
+                        nameVergeben ? "text-rose-600 font-medium" : "text-slate-400"
+                    )}>
+                        {nameVergeben
+                            ? `„${nameGetrimmt}“ gibt es in diesem Dokument schon — bitte einen anderen Namen wählen.`
+                            : 'Diesen Text sieht der Kunde über den Varianten.'}
                     </p>
                 </div>
 
@@ -170,7 +208,7 @@ export function AlternativGruppeDialog({
                                                 <span className="block text-[10px] text-amber-600">
                                                     {istAnker
                                                         ? 'Ausgangsposition — immer dabei'
-                                                        : `Bisher in „${kandidat.alternativGruppe}"`}
+                                                        : `Kommt aus „${kandidat.alternativGruppe}“ — bleibt dort nur, wenn du sie hier nicht ankreuzt`}
                                                 </span>
                                             )}
                                         </span>
@@ -201,7 +239,7 @@ export function AlternativGruppeDialog({
                         {!genugVarianten && kandidaten.length >= 2 && (
                             <span className="text-[11px] text-amber-600">Mindestens zwei auswählen</span>
                         )}
-                        <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-500 hover:bg-slate-100">
+                        <Button variant="ghost" size="sm" onClick={onClose} className="text-rose-700 hover:bg-rose-100">
                             Abbrechen
                         </Button>
                         <Button

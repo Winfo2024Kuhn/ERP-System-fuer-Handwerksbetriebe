@@ -50,7 +50,51 @@ describe('AlternativGruppeDialog', () => {
         fireEvent.change(screen.getByLabelText('Überschrift'), { target: { value: 'Bodenbelag' } });
         fireEvent.click(screen.getByRole('button', { name: /Übernehmen/ }));
 
-        expect(onSpeichern).toHaveBeenCalledWith(['a', 'b'], 'Bodenbelag');
+        expect(onSpeichern).toHaveBeenCalledWith(['a', 'b'], 'Bodenbelag', null);
+    });
+
+    it('meldet die bisherige Gruppe mit, damit keine gleichnamige fremde zerfaellt', () => {
+        const onSpeichern = vi.fn();
+        render(<AlternativGruppeDialog {...props} onSpeichern={onSpeichern}
+            blocks={[
+                svc('a', 'Parkett Eiche', { optional: true, alternativGruppe: 'Bodenbelag' }),
+                svc('b', 'Vinyl grau', { optional: true, alternativGruppe: 'Bodenbelag' }),
+                svc('c', 'Laminat hell'),
+            ]}
+            ankerId="a" />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: /Laminat hell/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Übernehmen/ }));
+
+        expect(onSpeichern).toHaveBeenCalledWith(['a', 'b', 'c'], 'Bodenbelag', 'Bodenbelag');
+    });
+
+    it('verweigert einen Namen, den es im Dokument schon gibt', () => {
+        render(<AlternativGruppeDialog {...props}
+            blocks={[
+                svc('a', 'Parkett Eiche', { optional: true, alternativGruppe: 'Bodenbelag' }),
+                svc('b', 'Vinyl grau', { optional: true, alternativGruppe: 'Bodenbelag' }),
+                svc('c', 'Wandfarbe weiß'),
+                svc('d', 'Wandfarbe grau'),
+            ]}
+            ankerId="c" />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: /Wandfarbe grau/ }));
+        fireEvent.change(screen.getByLabelText('Überschrift'), { target: { value: 'Bodenbelag' } });
+
+        expect(screen.getByRole('button', { name: /Übernehmen/ })).toBeDisabled();
+        expect(screen.getByText(/gibt es in diesem Dokument schon/)).toBeInTheDocument();
+    });
+
+    it('laesst den eigenen Namen beim Bearbeiten zu', () => {
+        render(<AlternativGruppeDialog {...props}
+            blocks={[
+                svc('a', 'Parkett Eiche', { optional: true, alternativGruppe: 'Bodenbelag' }),
+                svc('b', 'Vinyl grau', { optional: true, alternativGruppe: 'Bodenbelag' }),
+            ]}
+            ankerId="a" />);
+
+        expect(screen.getByRole('button', { name: /Übernehmen/ })).toBeEnabled();
     });
 
     it('speichert nicht mit leerer Ueberschrift', () => {
