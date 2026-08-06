@@ -13,7 +13,6 @@ import {
     MapPin,
     Plus,
     RefreshCw,
-    Search,
     User,
     Building2,
     X,
@@ -283,14 +282,19 @@ const KundenAuswahlView: React.FC<{
         }
     }, [searchTerm]);
 
+    // Gesucht wird live beim Tippen. Die kurze Pause bündelt schnelle Eingaben,
+    // damit nicht jeder Tastenanschlag einen Request auslöst.
     useEffect(() => {
-        searchKunden();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        const timer = setTimeout(() => {
+            searchKunden();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm, searchKunden]);
 
+    // Enter im Suchfeld darf das Formular nicht abschicken – sonst lädt der Browser
+    // die Seite neu. Gesucht wird ohnehin schon live.
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        searchKunden();
     };
 
     return (
@@ -310,10 +314,6 @@ const KundenAuswahlView: React.FC<{
                     placeholder="Kunde suchen (Name, Kundennummer)..."
                     className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
-                <Button type="submit" size="sm" className="bg-rose-600 text-white hover:bg-rose-700">
-                    <Search className="w-4 h-4 mr-1" />
-                    Suchen
-                </Button>
             </form>
 
             <div className="max-h-[300px] overflow-y-auto space-y-2">
@@ -1645,7 +1645,10 @@ export default function AnfrageEditor() {
                         setFreigabeStatusByAnfrageId({});
                     }
                 } catch {
-                    setFreigabeStatusByAnfrageId({});
+                    // Auch im Fehlerfall nur schreiben, wenn dieser Ladevorgang noch
+                    // der aktuelle ist – sonst löscht ein veralteter Request die
+                    // Status-Icons der inzwischen angezeigten Liste.
+                    if (istAktuell()) setFreigabeStatusByAnfrageId({});
                 }
             } else {
                 setFreigabeStatusByAnfrageId({});
@@ -1723,6 +1726,16 @@ export default function AnfrageEditor() {
     // Handlers (Refactored to loadDetails below)
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+    // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
+    // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
+    // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
+    // `total` noch der alte Wert.
+    useEffect(() => {
+        if (loading) return;
+        const letzteSeite = totalPages - 1;
+        if (page > letzteSeite) setPage(letzteSeite);
+    }, [loading, totalPages, page]);
 
     const statusText = useMemo(() => {
         if (loading) return 'Anfragen werden geladen...';
@@ -1870,8 +1883,8 @@ export default function AnfrageEditor() {
                         />
                     </div>
                     <div className="flex items-end gap-3">
-                        <Button type="submit" className="flex-1 bg-rose-600 text-white hover:bg-rose-700">Filtern</Button>
-                        <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Reset</Button>
+                        {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
+                        <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Filter zurücksetzen</Button>
                     </div>
                 </form>
                 <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Alle Filter gelten für die gesamte Liste, nicht nur für die angezeigte Seite.</p>

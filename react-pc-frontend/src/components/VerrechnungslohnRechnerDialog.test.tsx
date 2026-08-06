@@ -72,6 +72,11 @@ const antwortOk = (body: unknown) => ({ ok: true, status: 200, json: async () =>
 const aufschlagFeld = () =>
     screen.getByLabelText('Aufschlag oder Abschlag für Schweisserei in Euro') as HTMLInputElement;
 
+const neuRechnenButton = () =>
+    screen
+        .getAllByRole('button')
+        .find((b) => b.textContent?.includes('Neu rechnen')) as HTMLButtonElement;
+
 describe('VerrechnungslohnRechnerDialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -95,6 +100,53 @@ describe('VerrechnungslohnRechnerDialog', () => {
 
         await waitFor(() => expect(aufschlagFeld().value).toBe('1.234,56'));
         expect(aufschlagFeld().value).not.toBe('123.456,00');
+    });
+
+    it('behaelt einen eingegebenen Aufschlag, wenn der Server erneut antwortet', async () => {
+        // Regression: die zweite Server-Antwort setzte die Aufschlaege stumm auf die
+        // Serverwerte zurueck und loeschte damit die Eingabe des Nutzers.
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
+
+        fireEvent.change(aufschlagFeld(), { target: { value: '1.234,56' } });
+        fireEvent.blur(aufschlagFeld());
+        await waitFor(() => expect(aufschlagFeld().value).toBe('1.234,56'));
+
+        // Die zweite Antwort kommt mit der angefragten Quote zurueck.
+        mockFetch.mockResolvedValue(antwortOk(antwort(30)));
+
+        // Interne Quote aendern und neu rechnen lassen – erst dann fragt der
+        // Dialog den Server ueberhaupt ein zweites Mal.
+        fireEvent.change(await screen.findByLabelText('Interne Stunden?'), { target: { value: '30' } });
+        fireEvent.click(neuRechnenButton());
+        await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+
+        // Erst wenn der Knopf wieder gesperrt ist, hat der Dialog die zweite
+        // Antwort auch verarbeitet. Ohne dieses Warten war der Test gruen,
+        // bevor das Ueberschreiben ueberhaupt passieren konnte.
+        await waitFor(() => expect(neuRechnenButton().disabled).toBe(true));
+
+        expect(aufschlagFeld().value).toBe('1.234,56');
+    });
+
+    it('uebernimmt einen neu berechneten Aufschlag, solange niemand ihn angefasst hat', async () => {
+        // Gegenstueck zum Test darueber: Was der Nutzer NICHT angefasst hat, muss
+        // dem Server folgen. Sonst rechnet der Dialog stumm mit veralteten Zahlen.
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
+        expect(aufschlagFeld().value).toBe('0,00');
+
+        // Zweite Antwort: gleiche Abteilung, aber ein anderer Vorschlag.
+        const mitAufschlag = antwort(30);
+        mitAufschlag.abteilungen = [{ abteilungId: 10, name: 'Schweisserei', aufschlagEuro: 12.5 }];
+        mockFetch.mockResolvedValue(antwortOk(mitAufschlag));
+
+        fireEvent.change(await screen.findByLabelText('Interne Stunden?'), { target: { value: '30' } });
+        fireEvent.click(neuRechnenButton());
+        await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(neuRechnenButton().disabled).toBe(true));
+
+        expect(aufschlagFeld().value).toBe('12,50');
     });
 
     it('laesst einen Abschlag mit Minuszeichen zu', async () => {

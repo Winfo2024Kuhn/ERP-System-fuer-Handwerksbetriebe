@@ -3620,7 +3620,10 @@ export default function ProjektEditor() {
                         setFreigabeStatusByProjektId({});
                     }
                 } catch {
-                    setFreigabeStatusByProjektId({});
+                    // Auch im Fehlerfall nur schreiben, wenn dieser Ladevorgang noch
+                    // der aktuelle ist – sonst löscht ein veralteter Request die
+                    // Status-Icons der inzwischen angezeigten Liste.
+                    if (istAktuell()) setFreigabeStatusByProjektId({});
                 }
             } else {
                 setFreigabeStatusByProjektId({});
@@ -3745,6 +3748,16 @@ export default function ProjektEditor() {
     };
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+    // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
+    // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
+    // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
+    // `total` noch der alte Wert.
+    useEffect(() => {
+        if (loading) return;
+        const letzteSeite = totalPages - 1;
+        if (page > letzteSeite) setPage(letzteSeite);
+    }, [loading, totalPages, page]);
 
     const statusText = useMemo(() => {
         if (loading) return 'Projekte werden geladen...';
@@ -3880,8 +3893,8 @@ export default function ProjektEditor() {
                         />
                     </div>
                     <div className="flex items-end gap-3">
-                        <Button type="submit" className="flex-1 bg-rose-600 text-white hover:bg-rose-700">Filtern</Button>
-                        <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Reset</Button>
+                        {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
+                        <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Filter zurücksetzen</Button>
                     </div>
                 </form>
                 <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Alle Filter gelten für die gesamte Liste, nicht nur für die angezeigte Seite.</p>

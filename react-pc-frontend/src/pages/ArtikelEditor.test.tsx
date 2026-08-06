@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -67,8 +68,12 @@ let aktuellerNavigationsState: unknown = null;
 
 function AdressSpion() {
     const location = useLocation();
-    aktuelleAdresse = location.pathname + location.search;
-    aktuellerNavigationsState = location.state;
+    // Im Effekt statt beim Rendern: Schreiben nach außen ist ein Seiteneffekt.
+    // Effekte laufen vor der naechsten waitFor-Runde, die Assertions bleiben gueltig.
+    useEffect(() => {
+        aktuelleAdresse = location.pathname + location.search;
+        aktuellerNavigationsState = location.state;
+    });
     return null;
 }
 

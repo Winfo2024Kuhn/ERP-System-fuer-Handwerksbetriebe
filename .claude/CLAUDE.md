@@ -20,7 +20,9 @@ Das ist keine Empfehlung — der Hook `.claude/hooks/graphify-research-reminder.
 - Du suchst nach einem konkreten Symbol-String, von dem du sicher bist, dass graphify es nicht hat (z.B. Strings in Migrations, Property-Keys).
 - graphify hat die Frage schon beantwortet und du brauchst nur das letzte Detail.
 
-**Nach Code-Änderungen:** `graphify update .` (AST-only, gratis, hält den Graph aktuell).
+**Nach Code-Änderungen:** `graphify update .` — **einmal am Ende der Aufgabe**, nicht nach jedem einzelnen Edit.
+
+Der Lauf kostet zwar keine API-Credits (AST-only), aber ca. **2 Minuten Laufzeit** (16-MB-Graph komplett neu schreiben). Früher hing das als PostToolUse-Hook an jedem Edit/Write und hat jeden Edit um ~126 s verzögert — deshalb ist der Hook entfernt. Der Graph ist nach einem Lauf am Aufgabenende genauso aktuell wie nach zwanzig Zwischenläufen.
 
 ---
 

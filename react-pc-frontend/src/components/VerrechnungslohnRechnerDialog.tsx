@@ -188,9 +188,16 @@ const NumberCell: React.FC<NumberCellProps> = ({
 }) => {
     const [draft, setDraft] = useState<string>(() => formatEingabe(value));
 
-    useEffect(() => {
+    // Ändert sich der Wert von außen (neue Server-Antwort), zieht der Entwurf nach.
+    // Bewusst beim Rendern statt in einem Effekt: Effekte laufen erst nach dem
+    // Rendern. Tippte der Nutzer in dieser Lücke, verwarf der Effekt die frische
+    // Eingabe wieder und stellte den Serverwert her — beim Öffnen des Dialogs gingen
+    // so die ersten Zeichen verloren.
+    const [letzterWert, setLetzterWert] = useState(value);
+    if (letzterWert !== value) {
+        setLetzterWert(value);
         setDraft(formatEingabe(value));
-    }, [value]);
+    }
 
     const commit = () => {
         const parsed = parseDecimal(draft);
@@ -281,6 +288,10 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
 
     const [gewinnProzent, setGewinnProzent] = useState<number>(DEFAULT_GEWINN_PROZENT);
 
+    // Die zuletzt vom Server vorgeschlagenen Aufschläge. Nur daran lässt sich
+    // erkennen, welche Beträge der Nutzer selbst eingetragen hat.
+    const letzteVorschlaegeRef = useRef<Record<number, number>>({});
+
     const [expanded, setExpanded] = useState({
         lohn: false,
         gemeinkosten: false,
@@ -298,6 +309,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
         setStundenOverrides({});
         setKostenstelleOverrides({});
         setAbteilungAufschlaege({});
+        letzteVorschlaegeRef.current = {};
         setExpanded({ lohn: false, gemeinkosten: false, stunden: false });
         setError(null);
         setData(null);
@@ -347,9 +359,27 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
             setLohnOverrides({});
             setStundenOverrides({});
             setKostenstelleOverrides({});
-            const aufschlagInit: Record<number, number> = {};
-            for (const a of json.abteilungen) aufschlagInit[a.abteilungId] = a.aufschlagEuro;
-            setAbteilungAufschlaege(aufschlagInit);
+            // Der Server schickt bei jeder Antwort seine Aufschlags-Vorschläge mit.
+            // Was der Nutzer selbst eingetragen hat, bleibt dabei stehen — erkennbar
+            // daran, dass der aktuelle Betrag vom zuletzt vorgeschlagenen abweicht.
+            // Ohne das löschte eine zweite Antwort die Eingabe stumm wieder weg.
+            const vorschlaege: Record<number, number> = {};
+            for (const a of json.abteilungen) vorschlaege[a.abteilungId] = a.aufschlagEuro;
+            // Die alten Vorschläge vorher festhalten: der Updater unten läuft erst
+            // beim nächsten Rendern, die Ref zeigt dann schon auf die neuen Werte.
+            const vorherigeVorschlaege = letzteVorschlaegeRef.current;
+            letzteVorschlaegeRef.current = vorschlaege;
+            setAbteilungAufschlaege((bisher) => {
+                const naechste: Record<number, number> = {};
+                for (const a of json.abteilungen) {
+                    const aktuell = bisher[a.abteilungId];
+                    const vomNutzer =
+                        aktuell !== undefined &&
+                        aktuell !== vorherigeVorschlaege[a.abteilungId];
+                    naechste[a.abteilungId] = vomNutzer ? aktuell : a.aufschlagEuro;
+                }
+                return naechste;
+            });
         } catch (e) {
             if (controller.signal.aborted) return;
             console.error(e);

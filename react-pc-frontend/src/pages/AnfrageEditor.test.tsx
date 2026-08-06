@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -123,5 +123,77 @@ describe('AnfrageEditor – Anfragenliste', () => {
         await waitFor(() => expect(screen.getByText('Dachsanierung Musterweg 1')).toBeInTheDocument());
 
         expect(anfragenlistenAufrufe(fetchMock).every(url => !url.includes('freigabe='))).toBe(true);
+    });
+});
+
+describe('AnfrageEditor – Pagination', () => {
+    // PAGE_SIZE im AnfrageEditor ist 12 – bei 40 Treffern also 4 Seiten.
+    const PAGE_SIZE = 12;
+    const GESAMT = 40;
+
+    let fetchMock: ReturnType<typeof vi.fn>;
+    // Über diese Variable lässt sich im Test simulieren, dass die Trefferzahl schrumpft.
+    let gesamtTreffer = GESAMT;
+
+    /** Query-Parameter des zuletzt abgesetzten Listen-Requests. */
+    function letzterListenRequest(): URLSearchParams {
+        const alle = anfragenlistenAufrufe(fetchMock as ReturnType<typeof mockFetch>);
+        const letzte = alle[alle.length - 1];
+        return new URLSearchParams(letzte.substring(letzte.indexOf('?') + 1));
+    }
+
+    beforeEach(() => {
+        gesamtTreffer = GESAMT;
+        fetchMock = vi.fn((url: string) => {
+            const antwort = (daten: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(daten) });
+            if (typeof url !== 'string') return antwort({});
+            if (url.startsWith('/api/anfragen/jahre')) return antwort([2026]);
+            if (url.startsWith('/api/anfragen/funnel-ids')) return antwort([]);
+            if (url.startsWith('/api/anfragen/freigabe-status')) return antwort({});
+            if (url.startsWith('/api/last-accessed/')) return antwort({});
+            if (url.startsWith('/api/anfragen?')) {
+                const params = new URLSearchParams(url.substring(url.indexOf('?') + 1));
+                const seite = Number(params.get('page') ?? 0);
+                const verbleibend = Math.max(0, gesamtTreffer - seite * PAGE_SIZE);
+                return antwort({
+                    anfragen: mockAnfragen.slice(0, Math.min(PAGE_SIZE, verbleibend)),
+                    gesamt: gesamtTreffer,
+                });
+            }
+            return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('springt auf die letzte gültige Seite, wenn die Trefferzahl schrumpft', async () => {
+        const user = userEvent.setup();
+        renderAnfrageEditor();
+
+        await waitFor(() => expect(letzterListenRequest().get('page')).toBe('0'));
+
+        const weiter = () => screen.getByRole('button', { name: /Weiter/i });
+        await user.click(weiter());
+        await user.click(weiter());
+        await user.click(weiter());
+        await waitFor(() => expect(letzterListenRequest().get('page')).toBe('3'));
+
+        // Ab jetzt liefert das Backend nur noch 20 Treffer – also zwei Seiten (0 und 1).
+        gesamtTreffer = 20;
+        await user.click(screen.getByRole('button', { name: /Aktualisieren/i }));
+
+        await waitFor(() => expect(letzterListenRequest().get('page')).toBe('1'));
+        expect(screen.getByText('Dachsanierung Musterweg 1')).toBeInTheDocument();
+
+        // Der Guard darf sich nicht selbst nachtriggern. Erwartet sind 6 Requests
+        // (Start, 3x Weiter, Aktualisieren, Korrektur-Sprung); eine Endlosschleife
+        // würde hier sofort auffallen.
+        await act(async () => {
+            await Promise.resolve();
+        });
+        expect(anfragenlistenAufrufe(fetchMock as ReturnType<typeof mockFetch>).length).toBeLessThanOrEqual(8);
     });
 });

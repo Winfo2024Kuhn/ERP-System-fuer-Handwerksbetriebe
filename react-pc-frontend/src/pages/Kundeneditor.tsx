@@ -899,7 +899,14 @@ export const Kundeneditor: React.FC = () => {
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+    // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen in den Filterfeldern
+    // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte Antwort
+    // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
+    const ladeVorgangRef = useRef(0);
+
     const fetchKunden = useCallback(async () => {
+        const ladeVorgang = ++ladeVorgangRef.current;
+        const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -913,14 +920,16 @@ export const Kundeneditor: React.FC = () => {
             if (!res.ok) throw new Error('Laden fehlgeschlagen');
 
             const data = await res.json();
+            if (!istAktuell()) return;
             setKunden(Array.isArray(data?.kunden) ? data.kunden : []);
             setTotal(typeof data?.gesamt === 'number' ? data.gesamt : 0);
         } catch (err) {
             console.warn('Kunden konnten nicht geladen werden', err);
+            if (!istAktuell()) return;
             setKunden([]);
             setTotal(0);
         } finally {
-            setLoading(false);
+            if (istAktuell()) setLoading(false);
         }
     }, [page, filters]);
 
@@ -928,14 +937,29 @@ export const Kundeneditor: React.FC = () => {
         fetchKunden();
     }, [fetchKunden]);
 
+    // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
+    // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
+    // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
+    // `total` noch der alte Wert.
+    useEffect(() => {
+        if (loading) return;
+        const letzteSeite = totalPages - 1;
+        if (page > letzteSeite) setPage(letzteSeite);
+    }, [loading, totalPages, page]);
+
+    // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
+    // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
+    // Treffer wären da, aber unsichtbar.
     const handleFilterChange = (field: keyof FilterState, value: string) => {
         setFilters(prev => ({ ...prev, [field]: value }));
+        setPage(0);
     };
 
+    // Gefiltert wird bereits live beim Tippen/Auswählen. Der Button ist nur noch
+    // die vertraute Bestätigung – er darf keinen zweiten, konkurrierenden Request starten.
     const handleFilterSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPage(0);
-        fetchKunden();
     };
 
     const handleResetFilters = () => {
@@ -1077,9 +1101,9 @@ export const Kundeneditor: React.FC = () => {
                             className="w-full mt-1"
                         />
                     </div>
-                    <div className="flex items-end gap-3">
-                        <button type="submit" className="btn flex-1 bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700">Filtern</button>
-                        <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Reset</button>
+                    {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
+                    <div className="flex items-end">
+                        <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Filter zurücksetzen</button>
                     </div>
                 </form>
                 <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>

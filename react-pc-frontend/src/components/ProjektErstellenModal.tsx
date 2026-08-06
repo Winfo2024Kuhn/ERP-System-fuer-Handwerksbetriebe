@@ -107,9 +107,10 @@ const KundenAuswahlView: React.FC<{
         return () => clearTimeout(timer);
     }, [searchTerm, searchKunden]);
 
+    // Enter im Suchfeld darf das Formular nicht abschicken – sonst lädt der Browser
+    // die Seite neu. Gesucht wird ohnehin schon live (siehe Debounce oben).
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        searchKunden();
     };
 
     return (
@@ -129,10 +130,6 @@ const KundenAuswahlView: React.FC<{
                     placeholder="Kunde suchen (Name, Kundennummer)..."
                     className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
-                <Button type="submit" size="sm" className="bg-rose-600 text-white hover:bg-rose-700">
-                    <Search className="w-4 h-4 mr-1" />
-                    Suchen
-                </Button>
             </form>
 
             <div className="max-h-[300px] overflow-y-auto space-y-2">

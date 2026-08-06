@@ -138,7 +138,7 @@ describe('EmailCenter', () => {
 
     describe('Folder-Navigation', () => {
         it('wechselt zu Gesendet-Ordner', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             renderEmailCenter();
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
 
@@ -150,7 +150,7 @@ describe('EmailCenter', () => {
         });
 
         it('zeigt Steuerberater unter Lieferanten und lädt den neuen Ordner', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             renderEmailCenter();
             await waitFor(() => expect(screen.getByText('Lieferanten')).toBeInTheDocument());
 
@@ -167,7 +167,7 @@ describe('EmailCenter', () => {
 
     describe('E-Mail-Auswahl', () => {
         it('zeigt E-Mail-Details bei Klick', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             renderEmailCenter();
 
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
@@ -190,7 +190,7 @@ describe('EmailCenter', () => {
         });
 
         it('filtert E-Mails lokal bei Eingabe', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             renderEmailCenter();
 
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
@@ -207,7 +207,7 @@ describe('EmailCenter', () => {
 
     describe('Globale Suche', () => {
         it('wechselt zwischen Ordner- und Serversuche', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             renderEmailCenter();
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
 
@@ -226,7 +226,7 @@ describe('EmailCenter', () => {
 
     describe('AssignModal – Manuelle Suche (Zuordnung)', () => {
         it('ruft /api/projekte/suche auf bei Projekt-Suche', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             const projektResults = [
                 { id: 10, bauvorhaben: 'BV Riedel Höchberg', kunde: 'Riedel GmbH', auftragsnummer: '2026-003', abgeschlossen: false }
             ];
@@ -275,7 +275,7 @@ describe('EmailCenter', () => {
         });
 
         it('ruft /api/anfragen auf bei Anfrage-Suche', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             const anfrageResults = [
                 { id: 20, bauvorhaben: 'Geländer Müller', kundenName: 'Müller Bau', anfragesnummer: 'ANF-2026-005' }
             ];
@@ -328,7 +328,7 @@ describe('EmailCenter', () => {
         });
 
         it('zeigt keine Ergebnisse bei leerem Suchfeld', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             fetchMock = mockFetchResponses({
                 '/api/emails/1/possible-assignments': { projekte: [], anfragen: [] },
             });
@@ -355,7 +355,7 @@ describe('EmailCenter', () => {
 
     describe('Optimistic Updates', () => {
         it('entfernt E-Mail sofort aus Liste bei Spam-Markierung', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             renderEmailCenter();
 
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
@@ -384,7 +384,7 @@ describe('EmailCenter', () => {
         });
 
         it('entfernt E-Mail sofort bei Löschung', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             renderEmailCenter();
 
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
@@ -448,7 +448,7 @@ describe('EmailCenter', () => {
 
     describe('Neue E-Mail schreiben', () => {
         it('öffnet Compose-Dialog bei Klick auf Neue E-Mail', async () => {
-            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             renderEmailCenter();
 
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
