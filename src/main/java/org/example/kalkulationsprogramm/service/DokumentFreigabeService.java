@@ -728,12 +728,15 @@ public class DokumentFreigabeService
      */
     private AlternativAuswahl loeseAlternativAuswahl(DokumentFreigabe freigabe, List<String> angefragt)
     {
-        if (angefragt == null || angefragt.isEmpty()
-                || freigabe.getQuellTyp() != FreigabeQuellTyp.AUSGANGS_DOKUMENT
+        if (freigabe.getQuellTyp() != FreigabeQuellTyp.AUSGANGS_DOKUMENT
                 || freigabe.getQuellDokumentId() == null)
         {
             return AlternativAuswahl.LEER;
         }
+        // Die Leer-Pruefung steht bewusst NICHT hier: eine leere Auswahl muss erst
+        // gegen die Pflichtgruppen laufen (siehe unten), sonst koennte ein
+        // manipulierter Client die Pflichtwahl schlicht weglassen.
+        List<String> gewaehlteIds = angefragt != null ? angefragt : List.of();
 
         // Gegen den Snapshot vom Versand-Zeitpunkt rechnen (GoBD/Tamper) — nur Alt-Freigaben
         // ohne Snapshot greifen ersatzweise auf das Live-Dokument zurück.
@@ -756,11 +759,35 @@ public class DokumentFreigabeService
         // Tamper-Schutz: nur IDs übernehmen, die im Snapshot tatsächlich als optionale
         // (alternative) SERVICE-Position existieren. Unbekanntes/Manipuliertes wird verworfen.
         Set<String> erlaubt = ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(json);
-        List<String> gueltig = angefragt.stream()
+        List<String> gueltig = gewaehlteIds.stream()
                 .filter(erlaubt::contains)
                 .distinct()
                 .sorted()
                 .toList();
+
+        // Pflichtwahl pruefen, BEVOR eine leere Auswahl als "keine Alternativen" durchgeht.
+        // Sonst koennte ein manipulierter Client die teure Variante einfach weglassen und
+        // die Annahme trotzdem durchbringen.
+        Map<String, Set<String>> gruppen = ausgangsGeschaeftsDokumentService.sammleAlternativGruppen(json);
+        if (!gruppen.isEmpty())
+        {
+            Set<String> gewaehlt = new HashSet<>(gueltig);
+            for (Map.Entry<String, Set<String>> eintrag : gruppen.entrySet())
+            {
+                long treffer = eintrag.getValue().stream().filter(gewaehlt::contains).count();
+                if (treffer == 0)
+                {
+                    throw new IllegalArgumentException(
+                            "Bitte wählen Sie eine Variante für: " + eintrag.getKey());
+                }
+                if (treffer > 1)
+                {
+                    throw new IllegalArgumentException(
+                            "Für \"" + eintrag.getKey() + "\" ist nur eine Variante zulässig.");
+                }
+            }
+        }
+
         if (gueltig.isEmpty())
         {
             return AlternativAuswahl.LEER;

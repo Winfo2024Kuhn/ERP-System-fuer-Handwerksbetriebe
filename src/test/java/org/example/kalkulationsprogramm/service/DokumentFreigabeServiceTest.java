@@ -659,6 +659,116 @@ class DokumentFreigabeServiceTest {
         assertThat(html).contains("&lt;script&gt;");
     }
 
+    // ─── Pflichtwahl je Alternativgruppe ────────────────────────────────────
+    // Der Kunde MUSS je Entweder-Oder-Gruppe genau eine Variante waehlen. Die
+    // Website sperrt den CTA bereits clientseitig; diese Pruefung ist der
+    // Backstop gegen einen manipulierten Client, der die teure Variante einfach
+    // weglaesst.
+
+    /** DSGVO: ausschliesslich Dummy-Daten. */
+    private static final String GRUPPEN_SNAPSHOT = """
+        [
+          {"id":"a","type":"SERVICE","title":"Stahlkonstruktion","quantity":1,"price":6800},
+          {"id":"b","type":"SERVICE","title":"Gelaender Edelstahl","quantity":1,"price":1240,
+           "optional":true,"alternativGruppe":"Gelaender"},
+          {"id":"c","type":"SERVICE","title":"Gelaender verzinkt","quantity":1,"price":890,
+           "optional":true,"alternativGruppe":"Gelaender"}
+        ]
+        """;
+
+    /** PENDING-Freigabe mit Snapshot, der genau eine Alternativgruppe fuehrt. */
+    private DokumentFreigabe freigabeMitGruppe(String uuid) {
+        DokumentFreigabe f = pendingFreigabe(uuid);
+        f.setPositionenSnapshot(GRUPPEN_SNAPSHOT);
+        f.setBasisNetto(new BigDecimal("6800.00"));
+        f.setMwstSatz(new BigDecimal("0.19"));
+        return f;
+    }
+
+    private DokumentFreigabe annehmen(String uuid, List<String> auswahl) {
+        return service.akzeptiere(uuid, "192.0.2.1", "UA", "max@mustermann.de",
+                "Max", "Mustermann", "Max Mustermann", auswahl);
+    }
+
+    @Test
+    void akzeptiere_ohneWahl_wirdAbgelehntWennEineGruppeExistiert() {
+        DokumentFreigabe f = freigabeMitGruppe("uuid-gruppe-leer");
+        when(repository.findByUuid("uuid-gruppe-leer")).thenReturn(Optional.of(f));
+        when(ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(GRUPPEN_SNAPSHOT))
+                .thenReturn(Set.of("b", "c"));
+        when(ausgangsGeschaeftsDokumentService.sammleAlternativGruppen(GRUPPEN_SNAPSHOT))
+                .thenReturn(Map.of("Gelaender", Set.of("b", "c")));
+
+        assertThatThrownBy(() -> annehmen("uuid-gruppe-leer", List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Gelaender");
+    }
+
+    @Test
+    void akzeptiere_zweiVariantenDerselbenGruppe_wirdAbgelehnt() {
+        DokumentFreigabe f = freigabeMitGruppe("uuid-gruppe-zwei");
+        when(repository.findByUuid("uuid-gruppe-zwei")).thenReturn(Optional.of(f));
+        when(ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(GRUPPEN_SNAPSHOT))
+                .thenReturn(Set.of("b", "c"));
+        when(ausgangsGeschaeftsDokumentService.sammleAlternativGruppen(GRUPPEN_SNAPSHOT))
+                .thenReturn(Map.of("Gelaender", Set.of("b", "c")));
+
+        assertThatThrownBy(() -> annehmen("uuid-gruppe-zwei", List.of("b", "c")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("nur eine");
+    }
+
+    @Test
+    void akzeptiere_genauEineVarianteJeGruppe_wirdAngenommen() {
+        DokumentFreigabe f = freigabeMitGruppe("uuid-gruppe-ok");
+        when(repository.findByUuid("uuid-gruppe-ok")).thenReturn(Optional.of(f));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(GRUPPEN_SNAPSHOT))
+                .thenReturn(Set.of("b", "c"));
+        when(ausgangsGeschaeftsDokumentService.sammleAlternativGruppen(GRUPPEN_SNAPSHOT))
+                .thenReturn(Map.of("Gelaender", Set.of("b", "c")));
+        when(ausgangsGeschaeftsDokumentService.summeAusgewaehlterAlternativenNetto(eq(GRUPPEN_SNAPSHOT), any()))
+                .thenReturn(new BigDecimal("1240.00"));
+
+        DokumentFreigabe result = annehmen("uuid-gruppe-ok", List.of("b"));
+
+        assertThat(result.getStatus()).isEqualTo(FreigabeStatus.ACCEPTED);
+        assertThat(result.getAkzeptierteAlternativen()).isEqualTo("[\"b\"]");
+    }
+
+    @Test
+    void akzeptiere_dokumentOhneGruppen_bleibtOhneWahlAnnehmbar() {
+        DokumentFreigabe f = freigabeMitGruppe("uuid-ohne-gruppe");
+        String ohneGruppen = """
+            [{"id":"a","type":"SERVICE","title":"Stahl","quantity":1,"price":100}]
+            """;
+        f.setPositionenSnapshot(ohneGruppen);
+        when(repository.findByUuid("uuid-ohne-gruppe")).thenReturn(Optional.of(f));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(ohneGruppen))
+                .thenReturn(Set.of());
+        when(ausgangsGeschaeftsDokumentService.sammleAlternativGruppen(ohneGruppen))
+                .thenReturn(Map.of());
+
+        DokumentFreigabe result = annehmen("uuid-ohne-gruppe", List.of());
+
+        assertThat(result.getStatus()).isEqualTo(FreigabeStatus.ACCEPTED);
+        assertThat(result.getAkzeptierteAlternativen()).isNull();
+    }
+
+    @Test
+    void akzeptiere_altFreigabeOhneSnapshotUndOhneDokument_brichtNicht() {
+        DokumentFreigabe f = freigabeMitGruppe("uuid-alt-ohne-snapshot");
+        f.setPositionenSnapshot(null);
+        when(repository.findByUuid("uuid-alt-ohne-snapshot")).thenReturn(Optional.of(f));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.empty());
+
+        DokumentFreigabe result = annehmen("uuid-alt-ohne-snapshot", List.of());
+
+        assertThat(result.getStatus()).isEqualTo(FreigabeStatus.ACCEPTED);
+    }
+
     /**
      * Helper: PENDING-Freigabe mit Hash und Salt-Init, sodass {@code akzeptiere}
      * den Acceptance-Hash berechnen kann ohne NPE.
