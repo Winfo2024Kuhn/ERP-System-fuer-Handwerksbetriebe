@@ -11,6 +11,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -2178,7 +2180,8 @@ public class AusgangsGeschaeftsDokumentService {
                 .bezeichnung(textOrNull(block, "title"))
                 .beschreibungHtml(textOrNull(block, "description"))
                 .sectionLabel(textOrNull(block, "sectionLabel"))
-                .optional(block.path("optional").asBoolean(false));
+                .optional(block.path("optional").asBoolean(false))
+                .alternativGruppe(textOrNull(block, "alternativGruppe"));
 
         if ("SERVICE".equals(typ)) {
             BigDecimal menge = decimalOrNull(block, "quantity");
@@ -2224,6 +2227,41 @@ public class AusgangsGeschaeftsDokumentService {
         if ("SECTION_HEADER".equals(typ) && block.has("children") && block.get("children").isArray()) {
             for (JsonNode child : block.get("children")) {
                 sammleOptionaleAlternativIds(child, ids);
+            }
+        }
+    }
+
+    /**
+     * Sammelt die Entweder-Oder-Gruppen: Gruppenname → blockIds der Varianten.
+     * Gleiche Traversierung wie {@link #sammleOptionaleAlternativIds} (Top-Level +
+     * eine Ebene SECTION_HEADER-children). Nur SERVICE-Blöcke, die {@code optional}
+     * sind UND eine nicht-leere {@code alternativGruppe} tragen.
+     *
+     * <p>Reihenfolge ist stabil (LinkedHashMap), damit Fehlermeldungen an den Kunden
+     * immer dieselbe Gruppe zuerst nennen.</p>
+     */
+    public Map<String, Set<String>> sammleAlternativGruppen(String positionenJson) {
+        Map<String, Set<String>> gruppen = new LinkedHashMap<>();
+        JsonNode blocks = leseBlocks(positionenJson);
+        if (blocks == null) return gruppen;
+        for (JsonNode block : blocks) {
+            sammleAlternativGruppen(block, gruppen);
+        }
+        return gruppen;
+    }
+
+    private void sammleAlternativGruppen(JsonNode block, Map<String, Set<String>> gruppen) {
+        String typ = textOrNull(block, "type");
+        if ("SERVICE".equals(typ) && block.path("optional").asBoolean(false)) {
+            String gruppe = textOrNull(block, "alternativGruppe");
+            String id = textOrNull(block, "id");
+            if (gruppe != null && !gruppe.isBlank() && id != null) {
+                gruppen.computeIfAbsent(gruppe, k -> new LinkedHashSet<>()).add(id);
+            }
+        }
+        if ("SECTION_HEADER".equals(typ) && block.has("children") && block.get("children").isArray()) {
+            for (JsonNode child : block.get("children")) {
+                sammleAlternativGruppen(child, gruppen);
             }
         }
     }

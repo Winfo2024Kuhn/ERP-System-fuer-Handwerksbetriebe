@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -1179,6 +1180,68 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getKategorieId()).isEqualTo(20L);
             assertThat(result.get(0).getMenge()).isEqualByComparingTo(new BigDecimal("4"));
+        }
+    }
+
+    @Nested
+    class Alternativgruppen {
+
+        /** DSGVO: ausschliesslich Dummy-Daten. */
+        private static final String JSON = """
+            [
+              {"id":"a","type":"SERVICE","title":"Stahlkonstruktion","quantity":1,"price":6800},
+              {"id":"b","type":"SERVICE","title":"Gelaender Edelstahl","quantity":1,"price":1240,
+               "optional":true,"alternativGruppe":"Gelaender"},
+              {"id":"c","type":"SERVICE","title":"Gelaender verzinkt","quantity":1,"price":890,
+               "optional":true,"alternativGruppe":"Gelaender"},
+              {"id":"d","type":"SERVICE","title":"Blende","quantity":1,"price":340,"optional":true},
+              {"id":"sec","type":"SECTION_HEADER","sectionLabel":"Dach","children":[
+                {"id":"e","type":"SERVICE","title":"Rinne links","quantity":1,"price":200,
+                 "optional":true,"alternativGruppe":"Rinne"},
+                {"id":"f","type":"SERVICE","title":"Rinne rechts","quantity":1,"price":260,
+                 "optional":true,"alternativGruppe":"Rinne"}
+              ]}
+            ]
+            """;
+
+        @Test
+        void sammeltGruppenUeberBeideEbenen() {
+            Map<String, Set<String>> gruppen = service.sammleAlternativGruppen(JSON);
+
+            assertThat(gruppen).containsOnlyKeys("Gelaender", "Rinne");
+            assertThat(gruppen.get("Gelaender")).containsExactlyInAnyOrder("b", "c");
+            assertThat(gruppen.get("Rinne")).containsExactlyInAnyOrder("e", "f");
+        }
+
+        @Test
+        void ignoriertGruppenloseUndNichtOptionalePositionen() {
+            Map<String, Set<String>> gruppen = service.sammleAlternativGruppen(JSON);
+
+            assertThat(gruppen.values().stream().flatMap(Set::stream))
+                    .doesNotContain("a", "d");
+        }
+
+        @Test
+        void liefertLeereMapOhneGruppen() {
+            String ohne = """
+                [{"id":"a","type":"SERVICE","title":"Stahl","quantity":1,"price":100,"optional":true}]
+                """;
+            assertThat(service.sammleAlternativGruppen(ohne)).isEmpty();
+        }
+
+        @Test
+        void liefertLeereMapBeiUngueltigemJson() {
+            assertThat(service.sammleAlternativGruppen("kein json")).isEmpty();
+            assertThat(service.sammleAlternativGruppen(null)).isEmpty();
+        }
+
+        @Test
+        void reichtAlternativGruppeAnDieKundenansichtDurch() {
+            List<FreigabePositionDto> positionen = service.baueKundenPositionen(JSON);
+
+            assertThat(positionen.get(1).getAlternativGruppe()).isEqualTo("Gelaender");
+            assertThat(positionen.get(3).getAlternativGruppe()).isNull();
+            assertThat(positionen.get(4).getChildren().get(0).getAlternativGruppe()).isEqualTo("Rinne");
         }
     }
 }

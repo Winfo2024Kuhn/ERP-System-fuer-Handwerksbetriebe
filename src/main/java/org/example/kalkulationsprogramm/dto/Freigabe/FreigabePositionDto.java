@@ -55,6 +55,13 @@ public class FreigabePositionDto
     /** true = Alternativposition, die der Kunde per Checkbox mitbeauftragen kann. */
     private boolean optional;
 
+    /**
+     * Name der Entweder-Oder-Gruppe. Gesetzt = der Kunde muss genau eine Variante
+     * dieser Gruppe waehlen (Radio); {@code null} = frei dazubuchbare Zusatzposition
+     * (Checkbox). Der Wert ist zugleich die Gruppenueberschrift auf der Freigabe-Seite.
+     */
+    private String alternativGruppe;
+
     /** Label eines SECTION_HEADER (Bauabschnitt). */
     private String sectionLabel;
 
