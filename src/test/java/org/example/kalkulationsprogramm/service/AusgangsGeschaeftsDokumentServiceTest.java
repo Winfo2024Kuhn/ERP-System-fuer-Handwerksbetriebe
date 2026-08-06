@@ -7,6 +7,9 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collections;
@@ -163,12 +166,19 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(sec.getChildren().get(1).isOptional()).isTrue();
         }
 
+        /**
+         * Seit 2026-08: Die AB bildet exakt die Entscheidung des Kunden ab. Gewähltes
+         * wird fest, alles Abgewählte fliegt raus — frueher blieb a2 als optionale
+         * 0,00-Zeile stehen, was in einem Vertragsdokument irrefuehrend war.
+         */
         @Test
-        void markiereAlternativenAlsBeauftragt_entferntOptionalFlagNurFuerGewaehlte() {
+        void markiereAlternativenAlsBeauftragt_machtGewaehlteFestUndEntferntAbgewaehlte() {
             String merged = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("a1"));
-            // a1 ist jetzt fest → nur noch a2 bleibt optional.
-            assertThat(service.sammleOptionaleAlternativIds(merged))
-                    .containsExactly("a2");
+
+            // Nach der Aufbereitung gibt es ueberhaupt keine Wahlpositionen mehr.
+            assertThat(service.sammleOptionaleAlternativIds(merged)).isEmpty();
+            // a1 ist als feste Position enthalten, a2 wurde entfernt.
+            assertThat(merged).contains("a1").doesNotContain("a2");
         }
     }
 
@@ -1242,6 +1252,92 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(positionen.get(1).getAlternativGruppe()).isEqualTo("Gelaender");
             assertThat(positionen.get(3).getAlternativGruppe()).isNull();
             assertThat(positionen.get(4).getChildren().get(0).getAlternativGruppe()).isEqualTo("Rinne");
+        }
+
+        /**
+         * Bestandsschutz-Regression: Angebot von vor der Umstellung, im Snapshot gibt es
+         * kein alternativGruppe. Die neue AB-Regel muss trotzdem greifen — und darf die
+         * festen Positionen nicht anfassen.
+         */
+        @Test
+        void altAngebotOhneGruppenVerliertAbgewaehlteZusatzposition() throws Exception {
+            String altJson = """
+                [
+                  {"id":"a","type":"SERVICE","title":"Stahlkonstruktion","quantity":1,"price":6800},
+                  {"id":"opt1","type":"SERVICE","title":"Blende","quantity":1,"price":340,"optional":true},
+                  {"id":"opt2","type":"SERVICE","title":"Sonderlack","quantity":1,"price":520,"optional":true}
+                ]
+                """;
+            String result = service.markiereAlternativenAlsBeauftragt(altJson, Set.of("opt1"));
+            JsonNode blocks = new ObjectMapper().readTree(result);
+
+            assertThat(finde(blocks, "a")).isNotNull();
+            assertThat(finde(blocks, "opt1")).isNotNull();
+            assertThat(finde(blocks, "opt1").path("optional").asBoolean()).isFalse();
+            assertThat(finde(blocks, "opt2")).isNull();
+        }
+
+        @Test
+        void machtGewaehlteVarianteZurFestenPosition() throws Exception {
+            String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
+            JsonNode blocks = new ObjectMapper().readTree(result);
+
+            JsonNode gewaehlt = finde(blocks, "b");
+            assertThat(gewaehlt.path("optional").asBoolean()).isFalse();
+        }
+
+        @Test
+        void entferntAbgewaehlteVarianteVollstaendig() throws Exception {
+            String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
+            JsonNode blocks = new ObjectMapper().readTree(result);
+
+            assertThat(finde(blocks, "c")).isNull();
+        }
+
+        @Test
+        void entferntAuchAbgewaehlteZusatzposition() throws Exception {
+            String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
+            JsonNode blocks = new ObjectMapper().readTree(result);
+
+            assertThat(finde(blocks, "d")).isNull();
+        }
+
+        @Test
+        void laesstFestePositionenUnberuehrt() throws Exception {
+            String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
+            JsonNode blocks = new ObjectMapper().readTree(result);
+
+            assertThat(finde(blocks, "a")).isNotNull();
+        }
+
+        @Test
+        void entferntAbgewaehlteAuchInnerhalbEinesBauabschnitts() throws Exception {
+            String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b", "e"));
+            JsonNode blocks = new ObjectMapper().readTree(result);
+
+            assertThat(finde(blocks, "e")).isNotNull();
+            assertThat(finde(blocks, "f")).isNull();
+        }
+
+        @Test
+        void entferntAlleOptionalenWennNichtsGewaehltWurde() throws Exception {
+            String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of());
+            JsonNode blocks = new ObjectMapper().readTree(result);
+
+            assertThat(finde(blocks, "a")).isNotNull();
+            assertThat(finde(blocks, "b")).isNull();
+            assertThat(finde(blocks, "d")).isNull();
+        }
+
+        /** Sucht einen Block ueber beide Ebenen; null wenn nicht vorhanden. */
+        private JsonNode finde(JsonNode blocks, String id) {
+            for (JsonNode b : blocks) {
+                if (id.equals(b.path("id").asText())) return b;
+                for (JsonNode k : b.path("children")) {
+                    if (id.equals(k.path("id").asText())) return k;
+                }
+            }
+            return null;
         }
     }
 }

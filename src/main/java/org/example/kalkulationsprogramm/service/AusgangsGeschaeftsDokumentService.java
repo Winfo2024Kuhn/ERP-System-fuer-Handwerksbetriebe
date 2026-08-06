@@ -11,6 +11,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -2303,26 +2304,58 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Setzt {@code optional=false} auf allen SERVICE-Blöcken, deren id ausgewählt wurde,
-     * sodass sie in einem Folgedokument (Auftragsbestätigung) als feste Positionen zählen.
-     * Liefert das modifizierte JSON; bei Fehlern unverändert das Eingangs-JSON.
+     * Bereitet das positionenJson für die Auftragsbestätigung auf:
+     *
+     * <ol>
+     *   <li>Gewählte Wahlpositionen werden zu festen Positionen ({@code optional=false}).</li>
+     *   <li>Alles übrige Abgewählte wird ENTFERNT — Varianten wie Zusatzpositionen.</li>
+     * </ol>
+     *
+     * <p>Punkt 2 ist bewusst eine einheitliche Regel: Die AB geht automatisch und
+     * verbindlich raus. Eine abgewählte Variante als durchgestrichene 0,00-Zeile neben
+     * der gewählten wäre in einem Vertragsdokument irreführend. Was der Kunde nicht
+     * beauftragt hat, steht weiterhin im Angebot.</p>
+     *
+     * <p>{@code blockIds} darf leer sein — dann fliegen alle Wahlpositionen raus.</p>
      */
     public String markiereAlternativenAlsBeauftragt(String positionenJson, Set<String> blockIds) {
-        if (positionenJson == null || positionenJson.isBlank() || blockIds == null || blockIds.isEmpty()) {
+        if (positionenJson == null || positionenJson.isBlank()) {
             return positionenJson;
         }
+        Set<String> gewaehlt = blockIds != null ? blockIds : Set.of();
         try {
             JsonNode root = ALTERNATIV_MAPPER.readTree(positionenJson);
             JsonNode blocks = root.isArray() ? root
                     : (root.isObject() && root.has("blocks") && root.get("blocks").isArray() ? root.get("blocks") : null);
             if (blocks == null) return positionenJson;
             for (JsonNode block : blocks) {
-                markiereBlock(block, blockIds);
+                markiereBlock(block, gewaehlt);
             }
+            entferneAbgewaehlte(blocks);
             return ALTERNATIV_MAPPER.writeValueAsString(root);
         } catch (Exception e) {
-            log.warn("Fehler beim Markieren beauftragter Alternativen: {}", e.getMessage());
+            log.warn("Fehler beim Aufbereiten der beauftragten Positionen: {}", e.getMessage());
             return positionenJson;
+        }
+    }
+
+    /**
+     * Entfernt alle SERVICE-Blöcke, die nach {@link #markiereBlock} noch {@code optional}
+     * tragen — das sind genau die, die der Kunde nicht beauftragt hat.
+     */
+    private void entferneAbgewaehlte(JsonNode ebene) {
+        if (!(ebene instanceof ArrayNode arr)) return;
+        Iterator<JsonNode> it = arr.elements();
+        while (it.hasNext()) {
+            JsonNode block = it.next();
+            String typ = textOrNull(block, "type");
+            if ("SERVICE".equals(typ) && block.path("optional").asBoolean(false)) {
+                it.remove();
+                continue;
+            }
+            if ("SECTION_HEADER".equals(typ)) {
+                entferneAbgewaehlte(block.get("children"));
+            }
         }
     }
 

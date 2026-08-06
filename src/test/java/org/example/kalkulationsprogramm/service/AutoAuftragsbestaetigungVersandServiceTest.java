@@ -125,6 +125,50 @@ class AutoAuftragsbestaetigungVersandServiceTest {
     }
 
     /**
+     * Kette bei digitaler Annahme: Der Kunde nimmt an → die AB wird automatisch
+     * erzeugt UND versendet. Das PDF dieser Mail baut dieser Service aus dem
+     * positionenJson der AB — also aus dem bereits bereinigten JSON.
+     *
+     * <p>Der Test verdrahtet beide Schritte, damit die Bereinigung nicht an dieser
+     * Naht verloren geht: Was der Kunde abgewählt hat, darf im versendeten PDF
+     * weder als Position noch als Nummernlücke auftauchen.</p>
+     *
+     * <p>DSGVO: ausschliesslich Dummy-Daten.</p>
+     */
+    @Test
+    void parser_abNachAnnahme_enthaeltNurBeauftragtesUndNummeriertLueckenlos() {
+        String angebotJson = """
+            [
+              {"id":"a","type":"SERVICE","title":"Stahlkonstruktion","quantity":1,"price":6800},
+              {"id":"b","type":"SERVICE","title":"Gelaender Edelstahl","quantity":1,"price":1240,
+               "optional":true,"alternativGruppe":"Gelaender"},
+              {"id":"c","type":"SERVICE","title":"Gelaender verzinkt","quantity":1,"price":890,
+               "optional":true,"alternativGruppe":"Gelaender"},
+              {"id":"d","type":"SERVICE","title":"Blende","quantity":1,"price":340,"optional":true}
+            ]
+            """;
+        // Schritt 1: Aufbereitung wie in DokumentFreigabeService.erzeugeAutoAuftragsbestaetigung.
+        String abJson = neuesDokumentService()
+                .markiereAlternativenAlsBeauftragt(angebotJson, java.util.Set.of("b"));
+
+        // Schritt 2: PDF-Blöcke der automatisch versendeten Mail.
+        List<ContentBlockDto> bloecke =
+                AutoAuftragsbestaetigungVersandService.parsePositionenJsonZuContentBlocks(abJson);
+
+        assertThat(bloecke).extracting(ContentBlockDto::beschreibung)
+                .containsExactly("Stahlkonstruktion", "Gelaender Edelstahl");
+        assertThat(bloecke).noneMatch(ContentBlockDto::optional);
+        // Keine Nummernluecke, wo die abgewaehlten Positionen standen.
+        assertThat(bloecke).extracting(ContentBlockDto::pos).containsExactly("1", "2");
+    }
+
+    /** Reine JSON-Logik — die Repository-Mocks des Service werden dafür nicht gebraucht. */
+    private AusgangsGeschaeftsDokumentService neuesDokumentService() {
+        return new AusgangsGeschaeftsDokumentService(
+                "uploads", null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    /**
      * Regression: In der automatischen Auftragsbestätigung stand die komplette
      * Leistungsbeschreibung fett im PDF, obwohl im Richtext nur einzelne Wörter
      * fett markiert waren.

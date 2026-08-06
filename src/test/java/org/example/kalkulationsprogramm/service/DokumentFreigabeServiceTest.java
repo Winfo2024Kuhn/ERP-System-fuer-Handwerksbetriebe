@@ -241,6 +241,10 @@ class DokumentFreigabeServiceTest {
         when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(positionenJson))
                 .thenReturn(Set.of("alt-1"));
+        when(ausgangsGeschaeftsDokumentService.bereitePositionenFuerTypwechsel(positionenJson))
+                .thenReturn(positionenJson);
+        when(ausgangsGeschaeftsDokumentService.markiereAlternativenAlsBeauftragt(eq(positionenJson), any()))
+                .thenReturn("{\"bereinigt\":true}");
         when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(null);
 
         DokumentFreigabe result = service.akzeptiere(
@@ -252,12 +256,12 @@ class DokumentFreigabeServiceTest {
         assertThat(result.getAkzeptierteAlternativen()).isNull();
         assertThat(result.getAkzeptierterBetrag()).isNull();
 
-        // AB ohne explizite Positionen/Betrag (Standard-Pfad, Service erbt selbst).
+        // Seit 2026-08: Auch ohne gueltige Auswahl wird das positionenJson aufbereitet —
+        // sonst blieben die abgelehnten Zusatzpositionen in der verbindlichen AB stehen.
         ArgumentCaptor<AusgangsGeschaeftsDokumentErstellenDto> captor =
                 ArgumentCaptor.forClass(AusgangsGeschaeftsDokumentErstellenDto.class);
         verify(ausgangsGeschaeftsDokumentService).erstellen(captor.capture());
-        assertThat(captor.getValue().getPositionenJson()).isNull();
-        assertThat(captor.getValue().getBetragNetto()).isNull();
+        assertThat(captor.getValue().getPositionenJson()).isEqualTo("{\"bereinigt\":true}");
     }
 
     @Test

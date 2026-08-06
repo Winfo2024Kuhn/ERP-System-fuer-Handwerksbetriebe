@@ -931,17 +931,22 @@ public class DokumentFreigabeService
         // Alternativen bleibt alles wie bisher (Service erbt Positionen/Textbausteine selbst).
         String snapshotJson = freigabe.getPositionenSnapshot() != null
                 ? freigabe.getPositionenSnapshot() : angebot.getPositionenJson();
-        if (ausgewaehlteAlternativen != null && !ausgewaehlteAlternativen.isEmpty() && snapshotJson != null)
+        // Auch ohne gewählte Alternativen aufbereiten: abgelehnte Zusatzpositionen
+        // dürfen nicht in die verbindliche AB durchrutschen.
+        boolean hatWahlpositionen = snapshotJson != null
+                && !ausgangsGeschaeftsDokumentService.sammleOptionaleAlternativIds(snapshotJson).isEmpty();
+        if (hatWahlpositionen)
         {
+            Set<String> gewaehlt = ausgewaehlteAlternativen != null ? ausgewaehlteAlternativen : Set.of();
             String basisJson = ausgangsGeschaeftsDokumentService.bereitePositionenFuerTypwechsel(snapshotJson);
             String mergedJson = ausgangsGeschaeftsDokumentService
-                    .markiereAlternativenAlsBeauftragt(basisJson, ausgewaehlteAlternativen);
+                    .markiereAlternativenAlsBeauftragt(basisJson, gewaehlt);
             dto.setPositionenJson(mergedJson);
 
             BigDecimal basisNetto = freigabe.getBasisNetto() != null ? freigabe.getBasisNetto()
                     : (angebot.getBetragNetto() != null ? angebot.getBetragNetto() : BigDecimal.ZERO);
             BigDecimal deltaNetto = ausgangsGeschaeftsDokumentService
-                    .summeAusgewaehlterAlternativenNetto(snapshotJson, ausgewaehlteAlternativen);
+                    .summeAusgewaehlterAlternativenNetto(snapshotJson, gewaehlt);
             dto.setBetragNetto(basisNetto.add(deltaNetto));
             dto.setMwstSatz(freigabe.getMwstSatz() != null ? freigabe.getMwstSatz() : angebot.getMwstSatz());
         }
