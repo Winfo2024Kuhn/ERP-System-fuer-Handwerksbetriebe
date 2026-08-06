@@ -25,6 +25,12 @@ export interface DocBlock {
     children?: DocBlock[];
     /** Rabatt in Prozent für diese Position (0-100) */
     discount?: number;
+    /**
+     * Name der Entweder-Oder-Gruppe. Gesetzt = der Kunde muss genau eine Variante
+     * der Gruppe waehlen. Leer/undefined bei `optional: true` = frei dazubuchbare
+     * Zusatzposition. Nur zusammen mit `optional: true` sinnvoll.
+     */
+    alternativGruppe?: string;
     /** ID der Leistung aus der Stammdaten-Tabelle (für Kategoriezuordnung) */
     leistungId?: number;
     /** ID der Produktkategorie (von Leistung.kategorie) */

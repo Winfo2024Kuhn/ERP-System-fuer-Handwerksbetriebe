@@ -444,35 +444,95 @@ export function formatCurrency(value: number): string {
     return value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const VARIANTEN_BUCHSTABEN = 'abcdefghijklmnopqrstuvwxyz';
+
+/**
+ * Nummeriert eine Blockebene. Aufeinanderfolgende SERVICE-Bloecke derselben
+ * alternativGruppe teilen sich EINE Nummer und unterscheiden sich nur im
+ * Buchstaben ("2a", "2b") — im PDF ist das ohne Gruppennamen das einzige
+ * Signal, welche Varianten zur selben Entscheidung gehoeren.
+ */
+function nummeriereEbene(
+    blocks: DocBlock[],
+    praefix: string,
+    map: Map<string, string>,
+    startCounter: number,
+): void {
+    let counter = startCounter;
+    let i = 0;
+    while (i < blocks.length) {
+        const block = blocks[i];
+        if (block.type !== 'SERVICE') { i++; continue; }
+
+        const gruppe = block.alternativGruppe;
+        if (!gruppe) {
+            map.set(block.id, `${praefix}${counter}`);
+            counter++;
+            i++;
+            continue;
+        }
+
+        let j = i;
+        let buchstabe = 0;
+        while (j < blocks.length
+            && blocks[j].type === 'SERVICE'
+            && blocks[j].alternativGruppe === gruppe) {
+            map.set(blocks[j].id, `${praefix}${counter}${VARIANTEN_BUCHSTABEN[buchstabe] ?? ''}`);
+            buchstabe++;
+            j++;
+        }
+        counter++;
+        i = j;
+    }
+}
+
+/** Wie viele Positionsnummern eine Blockliste verbraucht (Gruppe = eine Nummer). */
+function zaehleNummern(blocks: DocBlock[]): number {
+    let anzahl = 0;
+    let i = 0;
+    while (i < blocks.length) {
+        const block = blocks[i];
+        if (block.type !== 'SERVICE') { i++; continue; }
+        const gruppe = block.alternativGruppe;
+        if (!gruppe) { anzahl++; i++; continue; }
+        let j = i;
+        while (j < blocks.length
+            && blocks[j].type === 'SERVICE'
+            && blocks[j].alternativGruppe === gruppe) { j++; }
+        anzahl++;
+        i = j;
+    }
+    return anzahl;
+}
+
 /**
  * Builds a position map for all blocks with hierarchical numbering.
  * SECTION_HEADER → "1.0", its children → "1.1", "1.2", etc.
  * Root-level SERVICE → next top-level number ("2", "3", etc.)
+ * Varianten einer Alternativgruppe → "2a", "2b" (eine gemeinsame Nummer).
  * Other block types are skipped.
  * Returns Map<blockId, positionString>.
  */
 export function buildPositionMap(blocks: DocBlock[]): Map<string, string> {
     const map = new Map<string, string>();
     let topCounter = 1;
+    const rootEbene: DocBlock[] = [];
 
     for (const block of blocks) {
         if (block.type === 'SECTION_HEADER') {
+            // Angesammelte Root-Leistungen vor der Section nummerieren.
+            nummeriereEbene(rootEbene, '', map, topCounter);
+            topCounter += zaehleNummern(rootEbene);
+            rootEbene.length = 0;
+
             map.set(block.id, `${topCounter}.0`);
-            if (block.children) {
-                let serviceCounter = 1;
-                for (const child of block.children) {
-                    if (child.type === 'SERVICE') {
-                        map.set(child.id, `${topCounter}.${serviceCounter}`);
-                        serviceCounter++;
-                    }
-                }
-            }
+            nummeriereEbene(block.children ?? [], `${topCounter}.`, map, 1);
             topCounter++;
         } else if (block.type === 'SERVICE') {
-            map.set(block.id, `${topCounter}`);
-            topCounter++;
+            rootEbene.push(block);
         }
     }
+    nummeriereEbene(rootEbene, '', map, topCounter);
     return map;
 }
 

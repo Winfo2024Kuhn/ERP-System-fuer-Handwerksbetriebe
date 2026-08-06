@@ -19,6 +19,9 @@
 import { describe, it, expect } from 'vitest';
 import {
     brauchtAnnahmeLinkAbfrage,
+    buildPositionMap,
+    calculateNetto,
+    calculateSectionSubtotal,
     extractBoldFromHtml,
     extractFontSizeFromHtml,
     zahlungszielPlaceholderToChipHtml,
@@ -32,6 +35,7 @@ import {
     mussAufKontextWarten,
     repariereLeeresBezugsdatumInStandardtext,
 } from './helpers';
+import type { DocBlock } from './types';
 
 describe('extractBoldFromHtml', () => {
     it('liefert false fuer leeres oder undefiniertes HTML', () => {
@@ -292,5 +296,77 @@ describe('brauchtAnnahmeLinkAbfrage', () => {
     it('fragt nicht bei Dokumenten ohne digitale Annahme', () => {
         expect(brauchtAnnahmeLinkAbfrage('RECHNUNG', false, false)).toBe(false);
         expect(brauchtAnnahmeLinkAbfrage('AUFTRAGSBESTAETIGUNG', false, false)).toBe(false);
+    });
+});
+
+const leistung = (id: string, preis: number, extra: Partial<DocBlock> = {}): DocBlock => ({
+    id, type: 'SERVICE', title: `Leistung ${id}`, quantity: 1, unit: 'Stk', price: preis, ...extra,
+});
+
+describe('buildPositionMap mit Alternativgruppen', () => {
+    it('gibt Varianten derselben Gruppe eine Nummer mit Buchstaben', () => {
+        const blocks = [
+            leistung('a', 100),
+            leistung('b', 200, { optional: true, alternativGruppe: 'Geländer' }),
+            leistung('c', 300, { optional: true, alternativGruppe: 'Geländer' }),
+            leistung('d', 400),
+        ];
+        const map = buildPositionMap(blocks);
+        expect(map.get('a')).toBe('1');
+        expect(map.get('b')).toBe('2a');
+        expect(map.get('c')).toBe('2b');
+        expect(map.get('d')).toBe('3');
+    });
+
+    it('nummeriert Gruppen innerhalb eines Bauabschnitts mit Praefix', () => {
+        const blocks: DocBlock[] = [{
+            id: 'sec', type: 'SECTION_HEADER', sectionLabel: 'Stahlbau', children: [
+                leistung('k1', 100),
+                leistung('k2', 200, { optional: true, alternativGruppe: 'Geländer' }),
+                leistung('k3', 300, { optional: true, alternativGruppe: 'Geländer' }),
+                leistung('k4', 400),
+            ],
+        }];
+        const map = buildPositionMap(blocks);
+        expect(map.get('sec')).toBe('1.0');
+        expect(map.get('k1')).toBe('1.1');
+        expect(map.get('k2')).toBe('1.2a');
+        expect(map.get('k3')).toBe('1.2b');
+        expect(map.get('k4')).toBe('1.3');
+    });
+
+    it('zwei Gruppen im selben Dokument bekommen eigene Nummern', () => {
+        const blocks = [
+            leistung('g1', 100, { optional: true, alternativGruppe: 'Geländer' }),
+            leistung('g2', 200, { optional: true, alternativGruppe: 'Geländer' }),
+            leistung('t1', 300, { optional: true, alternativGruppe: 'Treppe' }),
+            leistung('t2', 400, { optional: true, alternativGruppe: 'Treppe' }),
+        ];
+        const map = buildPositionMap(blocks);
+        expect(map.get('g1')).toBe('1a');
+        expect(map.get('g2')).toBe('1b');
+        expect(map.get('t1')).toBe('2a');
+        expect(map.get('t2')).toBe('2b');
+    });
+});
+
+describe('Basisbetrag schliesst Gruppenmitglieder aus', () => {
+    it('calculateNetto zaehlt weder Optional noch Alternative', () => {
+        const blocks = [
+            leistung('fest', 1000),
+            leistung('opt', 500, { optional: true }),
+            leistung('alt', 700, { optional: true, alternativGruppe: 'Geländer' }),
+        ];
+        expect(calculateNetto(blocks)).toBe(1000);
+    });
+
+    it('calculateSectionSubtotal zaehlt weder Optional noch Alternative', () => {
+        const section: DocBlock = {
+            id: 'sec', type: 'SECTION_HEADER', children: [
+                leistung('fest', 1000),
+                leistung('alt', 700, { optional: true, alternativGruppe: 'Geländer' }),
+            ],
+        };
+        expect(calculateSectionSubtotal(section)).toBe(1000);
     });
 });
