@@ -924,6 +924,24 @@ public class AutoAuftragsbestaetigungVersandService
         }
     }
 
+    // Neutrale Block-Defaults für TEXT- und SERVICE-Blöcke.
+    //
+    // Der RechnungPdfService verwendet fett und fontSize des Blocks als Vorgabe
+    // für jeden Text-Chunk, der NICHT in einem eigenen <strong>/<span>-Tag
+    // steckt. Die Formatierung des Richtexts steht aber vollständig im HTML
+    // selbst — der Block-Wert darf sie deshalb nicht zusätzlich überschreiben.
+    //
+    // Im positionenJson stehen trotzdem oft fett: true und eine abweichende
+    // fontSize: Der DocumentEditor setzt sie beim Einfügen aus
+    // extractBoldFromHtml/extractFontSizeFromHtml, und die liefern schon bei
+    // EINEM formatierten Wort einen Treffer. Beim manuellen Export überschreibt
+    // das Frontend die Werte deshalb bewusst mit neutral (siehe
+    // document-editor/index.tsx → contentBlocks-Mapping). Ohne dieselbe
+    // Normalisierung stünde in der automatischen Auftragsbestätigung die ganze
+    // Leistung fett bzw. vergrößert im PDF.
+    private static final boolean BLOCK_DEFAULT_FETT = false;
+    private static final int BLOCK_DEFAULT_FONT_SIZE = 10;
+
     private static void appendBlock(JsonNode block, String parentPos, int[] counters, List<ContentBlockDto> out)
     {
         String type = optString(block, "type");
@@ -934,9 +952,7 @@ public class AutoAuftragsbestaetigungVersandService
             case "TEXT" ->
             {
                 String text = optString(block, "content");
-                int fontSize = optInt(block, "fontSize", 10);
-                boolean fett = optBoolean(block, "fett", false);
-                out.add(new ContentBlockDto("TEXT", text, fett, fontSize,
+                out.add(new ContentBlockDto("TEXT", text, BLOCK_DEFAULT_FETT, BLOCK_DEFAULT_FONT_SIZE,
                         null, null, null, null, null, null, null, false, null, null));
             }
             case "SERVICE" ->
@@ -960,8 +976,8 @@ public class AutoAuftragsbestaetigungVersandService
                 out.add(new ContentBlockDto(
                         "SERVICE",
                         null,
-                        optBoolean(block, "fett", false),
-                        optInt(block, "fontSize", 10),
+                        BLOCK_DEFAULT_FETT,
+                        BLOCK_DEFAULT_FONT_SIZE,
                         pos,
                         optString(block, "title"),
                         optString(block, "description"),
@@ -1005,11 +1021,6 @@ public class AutoAuftragsbestaetigungVersandService
     {
         if (node == null || !node.has(key) || node.get(key).isNull()) return fallback;
         return node.get(key).asText();
-    }
-    private static int optInt(JsonNode node, String key, int fallback)
-    {
-        if (node == null || !node.has(key) || node.get(key).isNull()) return fallback;
-        return node.get(key).asInt(fallback);
     }
     private static boolean optBoolean(JsonNode node, String key, boolean fallback)
     {

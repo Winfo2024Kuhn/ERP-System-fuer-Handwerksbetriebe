@@ -572,6 +572,17 @@ public class RechnungPdfService {
             } else if (block.isText()) {
                  // Rich-Text-Formatierungen (fett, kursiv, Farben, Schriftgrößen, Listen, Bilder)
                  // werden über den erweiterten HTML-Parser übernommen.
+                 //
+                 // Vertrag fuer TEXT/SERVICE: Die Block-Werte fett/fontSize sollen hier
+                 // neutral (false/10) ankommen — die gesamte Formatierung steckt im HTML.
+                 // Grund: der Parser benutzt sie als Vorgabe fuer JEDEN Chunk ausserhalb
+                 // der <strong>/<span>-Tags, ein "true" wuerde also den ganzen Block fett
+                 // setzen. Die beiden aktiven Zulieferer normalisieren deshalb vorher:
+                 // document-editor/index.tsx (manueller Export) und
+                 // AutoAuftragsbestaetigungVersandService#appendBlock (Auto-Versand).
+                 // ACHTUNG: Serverseitig erzwungen ist das nicht — DokumentGeneratorController
+                 // reicht die Werte des Clients ungefiltert durch. Ein neuer Client dieses
+                 // Endpoints muss die Neutralisierung selbst mitbringen.
                  float defaultFontSize = Math.max(10f, Math.min(20f, block.fontSize()));
                  boolean defaultBold = block.fett();
                  String content = block.text() != null ? block.text() : "";
@@ -824,10 +835,10 @@ public class RechnungPdfService {
                 descCell.addElement(altHint);
             }
             try {
-                // Block-Default-Schriftgröße/Fett aus dem ContentBlockDto verwenden, damit Service-
-                // Beschreibungen ohne inline <span style="font-size">-Tag dieselbe Größe wie der
-                // vom User im Editor gewählte Wert bekommen. Sonst fielen ungespannte Textteile
-                // auf 10pt zurück, während andere Teile (mit span) auf 12pt blieben.
+                // Block-Default-Schriftgröße/Fett aus dem ContentBlockDto — fuer SERVICE
+                // bewusst neutral (10/false), siehe Vertrag beim TEXT-Zweig oben. Der Wert
+                // gilt fuer jeden Chunk ausserhalb der <strong>/<span>-Tags; er darf die
+                // im HTML markierten Stellen nur ergaenzen, nie den ganzen Block umsetzen.
                 float serviceDefaultFontSize = Math.max(10f, Math.min(20f, block.fontSize()));
                 java.util.List<com.lowagie.text.Element> elements = parseHtmlToElements(
                         block.beschreibungHtml(), textColor, serviceDefaultFontSize, block.fett());

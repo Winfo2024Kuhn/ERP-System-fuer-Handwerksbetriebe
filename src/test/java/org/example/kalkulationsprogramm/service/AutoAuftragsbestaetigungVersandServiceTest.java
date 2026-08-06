@@ -124,6 +124,94 @@ class AutoAuftragsbestaetigungVersandServiceTest {
         assertThat(result).isEmpty();
     }
 
+    /**
+     * Regression: In der automatischen Auftragsbestätigung stand die komplette
+     * Leistungsbeschreibung fett im PDF, obwohl im Richtext nur einzelne Wörter
+     * fett markiert waren.
+     *
+     * <p>Ursache: Der DocumentEditor schreibt beim Einfügen einer Leistung
+     * {@code fett: extractBoldFromHtml(html)} und {@code fontSize:
+     * extractFontSizeFromHtml(html)} in den Block — beides wird schon bei EINEM
+     * formatierten Wort gesetzt und landet so im {@code positionenJson}. Der
+     * {@link RechnungPdfService} nutzt diese Werte als {@code defaultBold} /
+     * {@code defaultFontSize} für jeden Text-Chunk ausserhalb der
+     * {@code <strong>}/{@code <span>}-Tags. Beim manuellen Export überschreibt
+     * das Frontend sie deshalb bewusst mit neutral (siehe
+     * {@code document-editor/index.tsx} → contentBlocks-Mapping); der
+     * Backend-Parser hat das bisher nicht getan.</p>
+     */
+    @Test
+    void parser_serviceUebernimmtBlockFormatierungNichtAlsDefault() {
+        String json = "[{\"type\":\"SERVICE\",\"title\":\"Handlauf\",\"quantity\":1,\"price\":100,"
+                + "\"description\":\"<p>Rohr <strong>V2A</strong> geschliffen</p>\","
+                + "\"fett\":true,\"fontSize\":14}]";
+
+        List<ContentBlockDto> result = AutoAuftragsbestaetigungVersandService.parsePositionenJsonZuContentBlocks(json);
+
+        assertThat(result).hasSize(1);
+        ContentBlockDto block = result.get(0);
+        // Neutral: die Formatierung steckt im HTML, nicht im Block-Default.
+        assertThat(block.fett()).isFalse();
+        assertThat(block.fontSize()).isEqualTo(10);
+        assertThat(block.beschreibungHtml()).isEqualTo("<p>Rohr <strong>V2A</strong> geschliffen</p>");
+    }
+
+    @Test
+    void parser_textUebernimmtBlockFormatierungNichtAlsDefault() {
+        String html = "<p>Sehr geehrte <strong>Frau Mustermann</strong></p>";
+        String json = "[{\"type\":\"TEXT\",\"content\":\"" + html + "\",\"fett\":true,\"fontSize\":16}]";
+
+        List<ContentBlockDto> result = AutoAuftragsbestaetigungVersandService.parsePositionenJsonZuContentBlocks(json);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).fett()).isFalse();
+        assertThat(result.get(0).fontSize()).isEqualTo(10);
+        // Das HTML selbst bleibt unangetastet — nur die Block-Defaults werden neutralisiert.
+        assertThat(result.get(0).text()).isEqualTo(html);
+    }
+
+    /**
+     * Gegenprobe zur Neutralisierung: Eine Leistung ohne Rich-Text-Beschreibung
+     * verliert nichts. Der {@link RechnungPdfService} rendert den Titel in
+     * diesem Fall über die feste Label-Schrift und liest {@code fett}/
+     * {@code fontSize} gar nicht — der Titel bleibt also hervorgehoben.
+     */
+    @Test
+    void parser_serviceOhneBeschreibungBehaeltTitel() {
+        String json = "[{\"type\":\"SERVICE\",\"title\":\"Montage vor Ort\",\"quantity\":2,\"price\":75}]";
+
+        List<ContentBlockDto> result = AutoAuftragsbestaetigungVersandService.parsePositionenJsonZuContentBlocks(json);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).beschreibung()).isEqualTo("Montage vor Ort");
+        assertThat(result.get(0).beschreibungHtml()).isNull();
+        assertThat(result.get(0).fett()).isFalse();
+    }
+
+    /**
+     * Struktur-Blöcke tragen keine eigene Textformatierung — sie werden im
+     * PDF-Service über feste Schriften gerendert. Die {@code fontSize 0} wird
+     * von deren Renderern gar nicht gelesen: {@code addSectionHeader},
+     * {@code addSubtotalRow} und {@code addSeparatorLine} bekommen den Wert
+     * nicht übergeben. Der Test hält damit fest, dass der Parser hier nichts
+     * aus dem JSON durchreicht — den echten Regressionspin trägt der
+     * SECTION_HEADER, der im {@code positionenJson} ein {@code fett} tragen kann.
+     */
+    @Test
+    void parser_strukturBloeckeBleibenOhneFormatierung() {
+        String json = "[{\"type\":\"SECTION_HEADER\",\"sectionLabel\":\"Aussenanlagen\",\"fett\":true,\"fontSize\":18},"
+                + "{\"type\":\"SUBTOTAL\"},{\"type\":\"SEPARATOR\"},{\"type\":\"CLOSURE\"}]";
+
+        List<ContentBlockDto> result = AutoAuftragsbestaetigungVersandService.parsePositionenJsonZuContentBlocks(json);
+
+        assertThat(result).hasSize(4);
+        assertThat(result).allSatisfy(block -> {
+            assertThat(block.fett()).isFalse();
+            assertThat(block.fontSize()).isZero();
+        });
+        assertThat(result.get(0).sectionLabel()).isEqualTo("Aussenanlagen");
+    }
+
     // ------------- ladeTemplateName: Fallback-Kette -------------
     // Hintergrund: Inhaber pflegen im Formularwesen typischerweise eine
     // einzige Briefpapier-Vorlage mit Vor-/Nachtexten für ALLE Dokumenttypen

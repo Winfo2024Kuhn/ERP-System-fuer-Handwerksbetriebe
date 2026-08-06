@@ -22,12 +22,21 @@ import java.util.List;
 
 /**
  * Manuelle Vorschau für die Auto-Auftragsbestätigung — schreibt das gerenderte
- * PDF nach {@code C:/temp/auto-ab-preview.pdf}, damit man es im Explorer
+ * PDF nach {@code target/auto-ab-preview.pdf}, damit man es im Explorer
  * doppelklicken und prüfen kann. Lädt Briefkopf-Bild + FormBlocks aus
  * {@code uploads/formulare/templates/Rechnungen.json}, falls vorhanden.
  *
- * <p>Wird als ganz normaler Unit-Test ausgeführt — keine Datenbank, kein
- * Spring-Kontext. Failt nie, schreibt nur die Datei.</p>
+ * <p><b>Kein automatischer Test.</b> Der Klassenname endet auf {@code Preview}
+ * und matcht damit keines der Surefire-Standardmuster
+ * ({@code *Test}/{@code *Tests}/{@code Test*}) — die Klasse läuft im normalen
+ * Build also NICHT mit und liefert keinen Regressionsschutz. Sie ist ein reines
+ * Sicht-Harness und bewusst so benannt, damit nicht bei jedem Build ein PDF
+ * erzeugt wird. Regressionen gehören in
+ * {@link AutoAuftragsbestaetigungVersandServiceTest}.</p>
+ *
+ * <p>Manuell starten mit:
+ * {@code ./mvnw.cmd test -Dtest=AutoAuftragsbestaetigungVersandServicePreview}
+ * — keine Datenbank, kein Spring-Kontext, failt nie.</p>
  */
 class AutoAuftragsbestaetigungVersandServicePreview {
 
@@ -154,8 +163,14 @@ class AutoAuftragsbestaetigungVersandServicePreview {
                 "   {\"type\":\"SERVICE\",\"title\":\"Wangentreppe aus Stahl\"," +
                 "    \"description\":\"Pulverbeschichtet RAL 9005, 16 Stufen, mit Setzstufen aus Eichenholz\"," +
                 "    \"quantity\":1,\"unit\":\"Stk\",\"price\":2800.00}," +
+                // Regressionsfall: Der DocumentEditor schreibt fett/fontSize in den
+                // Block, sobald die Leistungsbeschreibung IRGENDWO ein <strong> oder
+                // eine Schriftgröße enthält. Nur die markierten Wörter dürfen im PDF
+                // fett sein — nicht die ganze Position.
                 "   {\"type\":\"SERVICE\",\"title\":\"Handlauf aus Edelstahl\"," +
-                "    \"description\":\"Edelstahl V2A, geschliffen, an der Wand befestigt, ca. 4,5 m\"," +
+                "    \"description\":\"<p>Edelstahl <strong>1.4301 (V2A)</strong>, geschliffen K240, " +
+                "an der Wand befestigt, ca. 4,5 m</p>\"," +
+                "    \"fett\":true,\"fontSize\":14," +
                 "    \"quantity\":4.5,\"unit\":\"m\",\"price\":120.00}" +
                 " ]}," +
                 " {\"type\":\"SECTION_HEADER\",\"sectionLabel\":\"Geländer Galerie\",\"children\":[" +
