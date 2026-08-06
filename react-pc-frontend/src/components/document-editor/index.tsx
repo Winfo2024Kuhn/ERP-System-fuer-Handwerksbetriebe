@@ -66,7 +66,7 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
             return insertIntoSection(prev, block, anchor.sectionId);
     }
 }
-import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
@@ -2111,9 +2111,9 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
     const handleFormatSelected = (format: PdfFormat) => {
         // Bei Angeboten muss vor dem finalen Versand die Gültigkeit des
-        // Annahme-Links gewählt werden. Im Entwurfs-Modus gibt es keinen
-        // Annahme-Link, also auch keinen Gültigkeits-Dialog.
-        if ((dokumentTyp === 'ANGEBOT' || dokumentTyp === 'NACHTRAGSANGEBOT') && !draftSendMode) {
+        // Annahme-Links gewählt werden — aber nur, wenn überhaupt einer
+        // entsteht (siehe brauchtAnnahmeLinkAbfrage).
+        if (brauchtAnnahmeLinkAbfrage(dokumentTyp, draftSendMode, dokument?.digitalAngenommen)) {
             setPendingFormat(format);
             setShowFormatDialog(false);
             setShowValidityDialog(true);

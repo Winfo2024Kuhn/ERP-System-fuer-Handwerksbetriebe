@@ -330,6 +330,176 @@ class DokumentFreigabeServiceTest {
         assertThat(block.get()).contains("Nachtragsangebot");
     }
 
+    // ============== Kein zweiter Annahme-Link nach digitaler Annahme ==============
+
+    /**
+     * Regression: Ein bereits digital angenommenes Angebot liess sich ueber den
+     * DocumentEditor erneut per Mail versenden — und bekam dabei einen frischen,
+     * gueltigen Annahme-Link. Damit konnte derselbe Vorgang ein zweites Mal
+     * angenommen werden (anderer Unterzeichner, andere IP, andere Alternativ-Auswahl),
+     * waehrend die bereits erzeugte Auftragsbestaetigung unveraendert blieb.
+     * Jetzt: kein neuer Link, sondern ein Hinweis auf die bestehende Annahme.
+     */
+    @Test
+    void erstelleFreigabeBlock_fuerBereitsAngenommenesAngebot_liefertHinweisStattAnnahmeLink() {
+        AusgangsGeschaeftsDokument angenommen = new AusgangsGeschaeftsDokument();
+        angenommen.setId(55L);
+        angenommen.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angenommen.setDokumentNummer("ANG-2026/06/00001");
+        angenommen.setDigitalAngenommen(true);
+        when(ausgangsGeschaeftsDokumentRepository.findById(55L)).thenReturn(Optional.of(angenommen));
+
+        DokumentFreigabe bestehende = new DokumentFreigabe();
+        bestehende.setQuellTyp(FreigabeQuellTyp.AUSGANGS_DOKUMENT);
+        bestehende.setQuellDokumentId(55L);
+        bestehende.setStatus(FreigabeStatus.ACCEPTED);
+        bestehende.setDokumentArt("Angebot");
+        bestehende.setErstelltAm(LocalDateTime.of(2026, 6, 1, 9, 0));
+        bestehende.setAkzeptiertAm(LocalDateTime.of(2026, 6, 3, 14, 30));
+        when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(55L)))
+                .thenReturn(List.of(bestehende));
+
+        Optional<String> block = service.erstelleFreigabeBlockFuerDokument(
+                55L, false, "max@mustermann.de", "angebot.pdf");
+
+        assertThat(block).isPresent();
+        assertThat(block.get()).contains("bereits angenommen");
+        assertThat(block.get()).contains("03.06.2026");
+        // Entscheidend: kein klickbarer Annahme-Link mehr in der Mail.
+        assertThat(block.get()).doesNotContain("/freigabe/");
+        assertThat(block.get()).doesNotContain("Jetzt ansehen und annehmen");
+        // Und keine neue Freigabe in der Datenbank.
+        verify(repository, org.mockito.Mockito.never()).save(any(DokumentFreigabe.class));
+    }
+
+    /**
+     * Ein Alt-Link, der vor der Annahme verschickt wurde, steht sonst weiter auf
+     * PENDING: Die oeffentliche Freigabe-Seite zeigt dem Kunden dann noch das
+     * Annahme-Formular und wirft erst beim Absenden 410. Ausserdem bliebe die
+     * zugehoerige PDF auf der Platte liegen.
+     */
+    @Test
+    void erstelleFreigabeBlock_fuerBereitsAngenommenesAngebot_ziehtNochOffeneAltLinksZurueck() {
+        AusgangsGeschaeftsDokument angenommen = new AusgangsGeschaeftsDokument();
+        angenommen.setId(57L);
+        angenommen.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angenommen.setDokumentNummer("ANG-2026/06/00003");
+        angenommen.setDigitalAngenommen(true);
+        when(ausgangsGeschaeftsDokumentRepository.findById(57L)).thenReturn(Optional.of(angenommen));
+
+        DokumentFreigabe akzeptiert = new DokumentFreigabe();
+        akzeptiert.setUuid("uuid-akzeptiert");
+        akzeptiert.setQuellTyp(FreigabeQuellTyp.AUSGANGS_DOKUMENT);
+        akzeptiert.setQuellDokumentId(57L);
+        akzeptiert.setStatus(FreigabeStatus.ACCEPTED);
+        akzeptiert.setErstelltAm(LocalDateTime.of(2026, 6, 1, 9, 0));
+        akzeptiert.setAkzeptiertAm(LocalDateTime.of(2026, 6, 3, 14, 30));
+
+        DokumentFreigabe nochOffen = new DokumentFreigabe();
+        nochOffen.setUuid("uuid-alt-link");
+        nochOffen.setQuellTyp(FreigabeQuellTyp.AUSGANGS_DOKUMENT);
+        nochOffen.setQuellDokumentId(57L);
+        nochOffen.setStatus(FreigabeStatus.PENDING);
+        nochOffen.setErstelltAm(LocalDateTime.of(2026, 6, 2, 8, 0));
+        nochOffen.setDokumentDatei("angebot-alt.pdf");
+
+        when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(57L)))
+                .thenReturn(List.of(akzeptiert, nochOffen));
+
+        service.erstelleFreigabeBlockFuerDokument(57L, false, "max@mustermann.de", null);
+
+        assertThat(nochOffen.getStatus()).isEqualTo(FreigabeStatus.REVOKED);
+        assertThat(nochOffen.getDokumentDatei()).isNull();
+        verify(dateiSpeicherService).loescheDokumentPdfByDateiname("angebot-alt.pdf");
+        // Der Beweis der ersten Annahme bleibt unangetastet.
+        assertThat(akzeptiert.getStatus()).isEqualTo(FreigabeStatus.ACCEPTED);
+    }
+
+    /**
+     * Das alte Anfrage-/Projekt-Dokumentsystem kennt kein {@code digitalAngenommen}-Flag.
+     * Dort schuetzt nur die Freigabe-Historie selbst: Existiert zu derselben Quelle
+     * schon eine akzeptierte Freigabe, ist der Vorgang abgeschlossen.
+     */
+    @Test
+    void akzeptiere_imAltsystem_mitBereitsAkzeptierterFreigabe_wirftIllegalStateException() {
+        DokumentFreigabe zweiterLink = new DokumentFreigabe();
+        zweiterLink.setUuid("uuid-projekt-zweit");
+        zweiterLink.setQuellTyp(FreigabeQuellTyp.PROJEKT);
+        zweiterLink.setQuellDokumentId(900L);
+        zweiterLink.setDokumentArt("Angebot");
+        zweiterLink.setStatus(FreigabeStatus.PENDING);
+        zweiterLink.setErstelltAm(LocalDateTime.now().minusHours(1));
+        zweiterLink.setAblaufDatum(LocalDateTime.now().plusDays(14));
+        when(repository.findByUuid("uuid-projekt-zweit")).thenReturn(Optional.of(zweiterLink));
+
+        DokumentFreigabe ersterAngenommen = new DokumentFreigabe();
+        ersterAngenommen.setUuid("uuid-projekt-erst");
+        ersterAngenommen.setQuellTyp(FreigabeQuellTyp.PROJEKT);
+        ersterAngenommen.setQuellDokumentId(900L);
+        ersterAngenommen.setStatus(FreigabeStatus.ACCEPTED);
+        ersterAngenommen.setErstelltAm(LocalDateTime.now().minusDays(3));
+        ersterAngenommen.setAkzeptiertAm(LocalDateTime.now().minusDays(2));
+        when(repository.findByQuelle(FreigabeQuellTyp.PROJEKT, List.of(900L)))
+                .thenReturn(List.of(ersterAngenommen, zweiterLink));
+
+        assertThatThrownBy(() -> service.akzeptiere(
+                "uuid-projekt-zweit", "1.2.3.4", "UA", "erika@musterfrau.de",
+                "Erika", "Musterfrau", "Erika Musterfrau"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("bereits angenommen");
+
+        assertThat(zweiterLink.getStatus()).isEqualTo(FreigabeStatus.PENDING);
+        assertThat(zweiterLink.getHashAcceptance()).isNull();
+    }
+
+    /**
+     * Zweite Verteidigungslinie: Auch ein direkter Service-Aufruf (an der
+     * Mail-Vorlage vorbei) darf zu einem angenommenen Dokument keinen neuen
+     * Token mehr ausstellen.
+     */
+    @Test
+    void erstelleFuerAusgangsGeschaeftsDokument_beiDigitalAngenommen_wirftIllegalStateException() {
+        AusgangsGeschaeftsDokument angenommen = new AusgangsGeschaeftsDokument();
+        angenommen.setId(56L);
+        angenommen.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angenommen.setDokumentNummer("ANG-2026/06/00002");
+        angenommen.setDigitalAngenommen(true);
+
+        assertThatThrownBy(() -> service.erstelleFuerAusgangsGeschaeftsDokument(
+                angenommen, "max@mustermann.de", "angebot.pdf"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("bereits angenommen");
+
+        verify(repository, org.mockito.Mockito.never()).save(any(DokumentFreigabe.class));
+    }
+
+    /**
+     * Alt-Links, die vor dem Fix schon im Postfach des Kunden liegen, muessen
+     * ebenfalls ins Leere laufen — sonst bliebe die Doppel-Annahme ueber genau
+     * diese Mails weiter moeglich.
+     */
+    @Test
+    void akzeptiere_wennQuelldokumentBereitsAngenommen_wirftIllegalStateException() {
+        DokumentFreigabe zweiterLink = pendingFreigabe("uuid-zweiter-link");
+        when(repository.findByUuid("uuid-zweiter-link")).thenReturn(Optional.of(zweiterLink));
+
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angebot.setDigitalAngenommen(true);
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+
+        assertThatThrownBy(() -> service.akzeptiere(
+                "uuid-zweiter-link", "1.2.3.4", "UA", "erika@musterfrau.de",
+                "Erika", "Musterfrau", "Erika Musterfrau"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("bereits angenommen");
+
+        // Die zweite Annahme darf nichts an der Beweislage aendern.
+        assertThat(zweiterLink.getStatus()).isEqualTo(FreigabeStatus.PENDING);
+        assertThat(zweiterLink.getHashAcceptance()).isNull();
+    }
+
     /**
      * Regression fuer den async AB-Versand: Die Auto-AB-Mail darf erst NACH dem
      * Commit der Annahme-Transaktion (via afterCommit + TaskExecutor) rausgehen

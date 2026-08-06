@@ -162,6 +162,44 @@ class FreigabeInternalControllerTest {
                 .andExpect(jsonPath("$.fields[?(@.field=='unterzeichnerName')]").exists());
     }
 
+    /**
+     * Fachlicher Abbruch-Pfad: Der Service wirft {@link IllegalStateException},
+     * wenn der Vorgang bereits angenommen, abgelaufen oder zurueckgezogen ist.
+     * Der Kunde muss dafuer eine verstaendliche Meldung sehen und nicht einen
+     * generischen Serverfehler — deshalb 410 Gone plus Klartext im Body.
+     */
+    @Test
+    void akzeptieren_bereitsAngenommenerVorgang_gibt410MitKlartextMeldung() throws Exception {
+        given(freigabeService.akzeptiere(
+                eq("uuid-zweitlink"), anyString(), anyString(), anyString(),
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any()))
+                .willThrow(new IllegalStateException("Angebot wurde bereits angenommen."));
+
+        String json = objectMapper.writeValueAsString(validRequest());
+
+        mockMvc.perform(post("/api/internal/freigabe/uuid-zweitlink/akzeptieren")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Angebot wurde bereits angenommen."));
+    }
+
+    @Test
+    void akzeptieren_unbekannteUuid_gibt404() throws Exception {
+        given(freigabeService.akzeptiere(
+                eq("uuid-gibts-nicht"), anyString(), anyString(), anyString(),
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any()))
+                .willThrow(new IllegalArgumentException(DokumentFreigabeService.UNBEKANNTE_UUID_MESSAGE));
+
+        String json = objectMapper.writeValueAsString(validRequest());
+
+        mockMvc.perform(post("/api/internal/freigabe/uuid-gibts-nicht/akzeptieren")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void akzeptieren_ohneBestaetigung_gibt400() throws Exception {
         FreigabeAkzeptierenRequest req = validRequest();

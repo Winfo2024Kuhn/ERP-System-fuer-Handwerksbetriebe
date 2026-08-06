@@ -18,6 +18,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+    brauchtAnnahmeLinkAbfrage,
     extractBoldFromHtml,
     extractFontSizeFromHtml,
     zahlungszielPlaceholderToChipHtml,
@@ -263,5 +264,33 @@ describe('mussAufKontextWarten', () => {
 
     it('wartet nie, wenn das Dokument weder Projekt noch Anfrage hat', () => {
         expect(mussAufKontextWarten({}, false, false)).toBe(false);
+    });
+});
+
+/**
+ * Gueltigkeitsdauer-Dialog vor dem Mailversand (Bug, 2026-08-06):
+ *  Ein bereits digital angenommenes Angebot liess sich erneut versenden und
+ *  bekam dabei einen frischen Annahme-Link. Das Backend stellt jetzt keinen
+ *  zweiten Link mehr aus — dann darf der Anwender vorher auch nicht mehr nach
+ *  der Gueltigkeit eines Links gefragt werden, den es gar nicht gibt.
+ */
+describe('brauchtAnnahmeLinkAbfrage', () => {
+    it('fragt bei einem noch offenen Angebot nach der Gueltigkeit', () => {
+        expect(brauchtAnnahmeLinkAbfrage('ANGEBOT', false, false)).toBe(true);
+        expect(brauchtAnnahmeLinkAbfrage('NACHTRAGSANGEBOT', false, undefined)).toBe(true);
+    });
+
+    it('fragt NICHT mehr, wenn der Kunde das Angebot bereits angenommen hat', () => {
+        expect(brauchtAnnahmeLinkAbfrage('ANGEBOT', false, true)).toBe(false);
+        expect(brauchtAnnahmeLinkAbfrage('NACHTRAGSANGEBOT', false, true)).toBe(false);
+    });
+
+    it('fragt nicht beim Entwurfs-Versand — dort gibt es nie einen Annahme-Link', () => {
+        expect(brauchtAnnahmeLinkAbfrage('ANGEBOT', true, false)).toBe(false);
+    });
+
+    it('fragt nicht bei Dokumenten ohne digitale Annahme', () => {
+        expect(brauchtAnnahmeLinkAbfrage('RECHNUNG', false, false)).toBe(false);
+        expect(brauchtAnnahmeLinkAbfrage('AUFTRAGSBESTAETIGUNG', false, false)).toBe(false);
     });
 });

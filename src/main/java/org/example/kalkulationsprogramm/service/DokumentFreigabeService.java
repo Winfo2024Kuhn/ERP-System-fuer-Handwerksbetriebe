@@ -247,6 +247,81 @@ public class DokumentFreigabeService
     }
 
     /**
+     * Ersetzt den Annahme-Block in der E-Mail, wenn das Dokument bereits digital
+     * angenommen wurde. Bewusst ohne Link und ohne Button: Der Vorgang ist
+     * abgeschlossen, die Mail ist nur noch eine Zweitschrift für den Kunden.
+     *
+     * <p>Die Texte kommen ohne Artikel vor der Dokumentart aus ("Ihre Zusage" statt
+     * "dieses {@code <Art>}"), damit sie für jedes Genus stimmen — "Dieses
+     * Auftragsbestätigung" wäre sonst über den Guard in
+     * {@link #erstelleFuerAusgangsGeschaeftsDokument} erreichbar.</p>
+     *
+     * @param akzeptiertAm Zeitpunkt der ursprünglichen Annahme; {@code null} wenn
+     *                     keine Freigabe mehr auffindbar ist (dann ohne Datumsangabe).
+     */
+    private static String buildBereitsAngenommenBlockHtml(String dokumentArt, LocalDateTime akzeptiertAm)
+    {
+        String art = escapeHtml(dokumentArt == null || dokumentArt.isBlank() ? "Dokument" : dokumentArt);
+        String satz = akzeptiertAm != null
+                ? "Ihre Zusage vom " + akzeptiertAm.format(ABLAUF_DATUM_FORMAT) + " liegt uns vor."
+                : "Ihre Zusage liegt uns vor.";
+        return "<div style=\"margin:24px 0;padding:16px 18px;border-left:3px solid #500010;background:#fafafa;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<p style=\"margin:0 0 6px 0;font-weight:600;font-size:16px;color:#1e293b;\">" + art + " bereits angenommen</p>"
+                + "<p style=\"margin:0;color:#475569;line-height:1.45;\">"
+                + satz + " Sie brauchen nichts weiter zu tun — diese E-Mail ist nur Ihre Kopie."
+                + "</p>"
+                + "</div>";
+    }
+
+    /**
+     * Meldung für alle Wege, auf denen ein bereits angenommenes Dokument erneut
+     * freigegeben werden soll. Ohne Artikel formuliert (siehe
+     * {@link #buildBereitsAngenommenBlockHtml}).
+     */
+    private static String bereitsAngenommenMeldung(String dokumentArt)
+    {
+        String art = dokumentArt == null || dokumentArt.isBlank() ? "Dokument" : dokumentArt;
+        return art + " wurde bereits angenommen.";
+    }
+
+    /**
+     * Liefert den Zeitpunkt der bestehenden Annahme eines Ausgangs-Dokuments,
+     * oder {@code null}, wenn keine akzeptierte Freigabe (mehr) dazu existiert.
+     */
+    private LocalDateTime findeAnnahmeZeitpunkt(Long quellDokumentId)
+    {
+        DokumentFreigabe f = findJuengsteProQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(quellDokumentId))
+                .get(quellDokumentId);
+        return f != null && f.getStatus() == FreigabeStatus.ACCEPTED ? f.getAkzeptiertAm() : null;
+    }
+
+    /**
+     * Existiert zu derselben Quelle bereits eine andere, akzeptierte Freigabe?
+     * Quelltyp-übergreifend und damit die einzige Absicherung, die auch für das
+     * alte Anfrage-/Projekt-Dokumentsystem greift.
+     */
+    private boolean hatBereitsAkzeptierteFreigabe(DokumentFreigabe freigabe)
+    {
+        if (freigabe.getQuellTyp() == null || freigabe.getQuellDokumentId() == null) return false;
+        return repository.findByQuelle(freigabe.getQuellTyp(), List.of(freigabe.getQuellDokumentId()))
+                .stream()
+                .anyMatch(f -> f.getStatus() == FreigabeStatus.ACCEPTED
+                        && !java.util.Objects.equals(f.getUuid(), freigabe.getUuid()));
+    }
+
+    /** Trägt das Quelldokument im neuen Dokumentsystem bereits das Annahme-Flag? */
+    private boolean istQuelleDigitalAngenommen(DokumentFreigabe freigabe)
+    {
+        if (freigabe.getQuellTyp() != FreigabeQuellTyp.AUSGANGS_DOKUMENT || freigabe.getQuellDokumentId() == null)
+        {
+            return false;
+        }
+        return ausgangsGeschaeftsDokumentRepository.findById(freigabe.getQuellDokumentId())
+                .map(AusgangsGeschaeftsDokument::isDigitalAngenommen)
+                .orElse(false);
+    }
+
+    /**
      * Minimal-Escaping für Werte, die in den Freigabe-Block eingesetzt werden.
      * Die Dokumentart stammt aus der DB und ist damit nicht garantiert HTML-sicher.
      */
@@ -277,6 +352,16 @@ public class DokumentFreigabeService
     @Transactional
     public DokumentFreigabe erstelleFuerAusgangsGeschaeftsDokument(AusgangsGeschaeftsDokument dok, String kundeEmail, String pdfDateiname, int gueltigkeitTage)
     {
+        // Ein angenommenes Dokument darf keinen zweiten Annahme-Token mehr bekommen:
+        // sonst könnte derselbe Vorgang ein zweites Mal angenommen werden (anderer
+        // Unterzeichner, andere IP, andere Alternativ-Auswahl), während die bereits
+        // erzeugte Auftragsbestätigung unverändert bleibt. Der Mail-Weg fängt das
+        // vorher ab (siehe erstelleFreigabeBlockFuerDokument) — das hier ist die
+        // Absicherung für alle übrigen Aufrufer.
+        if (dok.isDigitalAngenommen())
+        {
+            throw new IllegalStateException(bereitsAngenommenMeldung(typZuBezeichnung(dok.getTyp())));
+        }
         revokeAltePendingFreigaben(FreigabeQuellTyp.AUSGANGS_DOKUMENT, dok.getId());
         DokumentFreigabe freigabe = baseFreigabe(gueltigkeitTage);
         freigabe.setQuellTyp(FreigabeQuellTyp.AUSGANGS_DOKUMENT);
@@ -373,6 +458,21 @@ public class DokumentFreigabeService
             {
                 AusgangsGeschaeftsDokument agd = agdOpt.get();
                 if (!istAngebotOderABTyp(agd.getTyp())) return Optional.empty();
+                // Bereits digital angenommen: Der Anwender darf das Dokument weiter per
+                // Mail zusenden (Kunde will z.B. nochmal die PDF), aber ohne neuen
+                // Annahme-Link. Statt des Buttons steht ein Hinweis auf die bestehende
+                // Annahme in der Mail — sonst würde der Kunde zu einer zweiten,
+                // widersprüchlichen Annahme desselben Vorgangs eingeladen.
+                if (agd.isDigitalAngenommen())
+                {
+                    // Noch offene Links aus der Zeit vor der Annahme mit zurückziehen:
+                    // sonst zeigt die öffentliche Freigabe-Seite dem Kunden weiterhin das
+                    // Annahme-Formular und bricht erst beim Absenden ab — und die dort
+                    // hinterlegte PDF bliebe abrufbar liegen.
+                    revokeAltePendingFreigaben(FreigabeQuellTyp.AUSGANGS_DOKUMENT, agd.getId());
+                    return Optional.of(buildBereitsAngenommenBlockHtml(
+                            typZuBezeichnung(agd.getTyp()), findeAnnahmeZeitpunkt(agd.getId())));
+                }
                 DokumentFreigabe freigabe = erstelleFuerAusgangsGeschaeftsDokument(agd, recipient, pdfDateiname, tage);
                 return Optional.of(buildFreigabeBlockHtml(buildPublicUrl(freigabe), typZuBezeichnung(agd.getTyp()), tage, freigabe.getAblaufDatum()));
             }
@@ -407,6 +507,11 @@ public class DokumentFreigabeService
         }
         catch (Exception e)
         {
+            // Ohne Log ginge die Mail still ganz ohne Block raus — weder Annahme-Link
+            // noch "bereits angenommen"-Hinweis — und niemand könnte nachvollziehen,
+            // warum. Der Versand selbst soll trotzdem nicht scheitern.
+            log.warn("Freigabe-Block für Dokument {} konnte nicht erzeugt werden: {}",
+                    dokumentId, e.getMessage(), e);
             return Optional.empty();
         }
     }
@@ -515,6 +620,21 @@ public class DokumentFreigabeService
             freigabe.setStatus(FreigabeStatus.EXPIRED);
             repository.save(freigabe);
             throw new IllegalStateException("Freigabe ist abgelaufen");
+        }
+        // Der Vorgang selbst kann nur einmal angenommen werden. Greift für Links, die
+        // vor dieser Absicherung verschickt wurden und noch in Postfächern liegen:
+        // eine zweite Annahme hinge sonst mit eigenem Unterzeichner, eigener IP und
+        // eigener Alternativ-Auswahl neben der ersten, ohne dass die längst erzeugte
+        // Auftragsbestätigung das noch abbilden würde.
+        //
+        // Geprüft wird über die Freigabe-Historie — das gilt quelltyp-übergreifend und
+        // deckt damit auch das alte Anfrage-/Projekt-Dokumentsystem ab, das gar kein
+        // digitalAngenommen-Flag kennt. Das Flag wird zusätzlich geprüft, weil es auch
+        // ohne eigene akzeptierte Freigabe gesetzt sein kann (z.B. bei der automatisch
+        // erzeugten Auftragsbestätigung, die die Annahme des Angebots erbt).
+        if (hatBereitsAkzeptierteFreigabe(freigabe) || istQuelleDigitalAngenommen(freigabe))
+        {
+            throw new IllegalStateException(bereitsAngenommenMeldung(freigabe.getDokumentArt()));
         }
 
         String vornameNorm = normalisiereName(vorname);

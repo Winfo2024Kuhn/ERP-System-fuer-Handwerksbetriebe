@@ -249,6 +249,26 @@ export function mussAufKontextWarten(
 }
 
 /**
+ * Entscheidet, ob vor dem Mailversand nach der Gueltigkeitsdauer des
+ * Annahme-Links gefragt werden muss.
+ *
+ * Gefragt wird nur, wenn tatsaechlich ein Link entsteht: bei Angeboten und
+ * Nachtragsangeboten, im finalen Versand (Entwuerfe bekommen nie einen Link)
+ * und solange der Kunde noch nicht angenommen hat. Nach der digitalen Annahme
+ * stellt das Backend bewusst keinen zweiten Link mehr aus (die Mail enthaelt
+ * dann nur noch einen Hinweis auf die bestehende Annahme) — eine Frage nach
+ * der Gueltigkeit waere dort irrefuehrend.
+ */
+export function brauchtAnnahmeLinkAbfrage(
+    dokumentTyp: string,
+    istEntwurfsVersand: boolean,
+    digitalAngenommen: boolean | undefined,
+): boolean {
+    const istAngebot = dokumentTyp === 'ANGEBOT' || dokumentTyp === 'NACHTRAGSANGEBOT';
+    return istAngebot && !istEntwurfsVersand && !digitalAngenommen;
+}
+
+/**
  * Dokumenttyp-Labels, unter denen die Standard-Textbausteine (Vor-/Nachtexte)
  * der Formular-Vorlage gesucht werden — in Fallback-Reihenfolge.
  * Nachtragsangebote verhalten sich wie Angebote: Ist fuer "Nachtragsangebot"
