@@ -38,6 +38,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -175,25 +176,87 @@ public class DokumentFreigabeService
     }
 
     /**
+     * Bevorzugte Variante: Gültigkeitsdauer und Ablaufdatum stammen beide aus derselben
+     * Freigabe und können deshalb nicht auseinanderlaufen. Die Variante mit explizitem
+     * {@code gueltigkeitTage} bleibt für Aufrufer ohne gespeicherte Entity (Vorschau).
+     */
+    public static String buildFreigabeBlockHtml(String url, String dokumentArt, DokumentFreigabe freigabe)
+    {
+        return buildFreigabeBlockHtml(url, dokumentArt, ermittleGueltigkeitTage(freigabe),
+                freigabe == null ? null : freigabe.getAblaufDatum());
+    }
+
+    /**
+     * Leitet die Gültigkeit in Tagen aus der Freigabe selbst ab, damit im Mail-Text nie
+     * eine andere Zahl steht als das genannte Ablaufdatum hergibt. Fehlt eines der beiden
+     * Daten oder ergibt sich ein unplausibler Wert, bleibt es beim Default.
+     */
+    private static int ermittleGueltigkeitTage(DokumentFreigabe freigabe)
+    {
+        if (freigabe == null || freigabe.getErstelltAm() == null || freigabe.getAblaufDatum() == null)
+        {
+            return DEFAULT_GUELTIGKEITS_TAGE;
+        }
+        long tage = ChronoUnit.DAYS.between(freigabe.getErstelltAm(), freigabe.getAblaufDatum());
+        if (tage < MIN_GUELTIGKEITS_TAGE || tage > MAX_GUELTIGKEITS_TAGE)
+        {
+            return DEFAULT_GUELTIGKEITS_TAGE;
+        }
+        return (int) tage;
+    }
+
+    /**
      * Erzeugt den HTML-Block für die E-Mail, der den Freigabe-Link enthält.
      * Wird sowohl beim E-Mail-Versand als auch bei der Template-Vorschau genutzt.
+     *
+     * Der Link steht bewusst zweimal drin — einmal als Button, einmal als sichtbare
+     * Klartext-Adresse. Unsere Mails haben keinen text/plain-Teil: sowohl
+     * {@code SmtpHtmlMailSender} als auch {@code org.example.email.EmailService} bauen
+     * mixed → related → nur text/html. Wer HTML abschaltet, sieht daher nur, was sein
+     * Mail-Programm aus dem HTML herausschält, und darin überlebt ein href="" nicht.
+     * Ohne die Klartext-Zeile käme dieser Empfänger nicht mehr an seine Freigabe.
      */
     public static String buildFreigabeBlockHtml(String url, String dokumentArt, int gueltigkeitTage, LocalDateTime ablaufDatum)
     {
-        String art = dokumentArt == null || dokumentArt.isBlank() ? "Dokument" : dokumentArt;
+        String art = escapeHtml(dokumentArt == null || dokumentArt.isBlank() ? "Dokument" : dokumentArt);
+        String link = escapeHtml(url);
         String tageText = gueltigkeitTage == 1 ? "1 Tag" : gueltigkeitTage + " Tage";
         String ablaufText = ablaufDatum != null
                 ? "Der Link ist " + tageText + " gültig (bis zum " + ablaufDatum.format(ABLAUF_DATUM_FORMAT) + ")."
                 : "Der Link ist " + tageText + " gültig.";
         return "<div style=\"margin:24px 0;padding:16px 18px;border-left:3px solid #500010;background:#fafafa;font-family:Arial,Helvetica,sans-serif;\">"
-                + "<p style=\"margin:0 0 6px 0;font-weight:600;color:#1e293b;\">" + art + " digital prüfen und annehmen</p>"
-                + "<p style=\"margin:0 0 10px 0;color:#475569;line-height:1.45;\">"
-                + "Sie können dieses " + art + " bequem online ansehen und mit einem Klick verbindlich annehmen:"
+                + "<p style=\"margin:0 0 6px 0;font-weight:600;font-size:16px;color:#1e293b;\">" + art + " digital prüfen und annehmen</p>"
+                + "<p style=\"margin:0 0 16px 0;color:#475569;line-height:1.45;\">"
+                + "Sie können dieses " + art + " bequem online ansehen und mit einem Klick verbindlich annehmen."
                 + "</p>"
-                + "<p style=\"margin:0;\"><a href=\"" + url + "\" style=\"color:#500010;font-weight:600;text-decoration:underline;\">"
-                + url + "</a></p>"
-                + "<p style=\"margin:8px 0 0 0;color:#94a3b8;font-size:13px;\">" + ablaufText + "</p>"
+                // Button als Tabellenzelle mit bgcolor: Outlook rendert Hintergrundfarben
+                // auf <a> nicht, auf <td> dagegen zuverlässig. border-radius ignoriert
+                // Outlook — dort wird der Button eckig, bleibt aber vollständig sichtbar.
+                + "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:separate;margin:0 0 16px 0;\">"
+                + "<tr><td bgcolor=\"#500010\" style=\"border-radius:6px;\">"
+                + "<a href=\"" + link + "\" style=\"display:inline-block;padding:13px 26px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;\">"
+                + "Jetzt ansehen und annehmen</a>"
+                + "</td></tr></table>"
+                + "<p style=\"margin:0 0 4px 0;color:#64748b;font-size:13px;line-height:1.45;\">"
+                + "Falls der Button nicht funktioniert, öffnen Sie diese Adresse im Browser:"
+                + "</p>"
+                + "<p style=\"margin:0;\"><a href=\"" + link + "\" style=\"color:#500010;font-size:13px;text-decoration:underline;word-break:break-all;\">"
+                + link + "</a></p>"
+                + "<p style=\"margin:12px 0 0 0;color:#94a3b8;font-size:13px;\">" + ablaufText + "</p>"
                 + "</div>";
+    }
+
+    /**
+     * Minimal-Escaping für Werte, die in den Freigabe-Block eingesetzt werden.
+     * Die Dokumentart stammt aus der DB und ist damit nicht garantiert HTML-sicher.
+     */
+    private static String escapeHtml(String s)
+    {
+        if (s == null) return "";
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 
     /**

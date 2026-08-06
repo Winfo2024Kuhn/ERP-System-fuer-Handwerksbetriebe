@@ -625,7 +625,8 @@ public class EmailController {
             String kundeName = gesDoc.getAnfrage() != null && gesDoc.getAnfrage().getKunde() != null
                     ? gesDoc.getAnfrage().getKunde().getName() : null;
             DokumentFreigabe freigabe = dokumentFreigabeService.erstelleFuerAnfrage(gesDoc, kundeName, recipient);
-            return html + buildFreigabeBlock(dokumentFreigabeService.buildPublicUrl(freigabe), gesDoc.getGeschaeftsdokumentart());
+            return html + buildFreigabeBlock(freigabe, dokumentFreigabeService.buildPublicUrl(freigabe),
+                    gesDoc.getGeschaeftsdokumentart());
         } catch (Exception e) {
             log.warn("Freigabe-Link für Anfrage-Dokument {} konnte nicht erzeugt werden: {}",
                     gesDoc.getId(), e.getMessage());
@@ -644,7 +645,8 @@ public class EmailController {
             String kundeName = gesDoc.getProjekt() != null && gesDoc.getProjekt().getKundenId() != null
                     ? gesDoc.getProjekt().getKundenId().getName() : null;
             DokumentFreigabe freigabe = dokumentFreigabeService.erstelleFuerProjekt(gesDoc, kundeName, recipient);
-            return html + buildFreigabeBlock(dokumentFreigabeService.buildPublicUrl(freigabe), gesDoc.getGeschaeftsdokumentart());
+            return html + buildFreigabeBlock(freigabe, dokumentFreigabeService.buildPublicUrl(freigabe),
+                    gesDoc.getGeschaeftsdokumentart());
         } catch (Exception e) {
             log.warn("Freigabe-Link für Projekt-Dokument {} konnte nicht erzeugt werden: {}",
                     gesDoc.getId(), e.getMessage());
@@ -659,17 +661,16 @@ public class EmailController {
                 || lower.contains("auftragsbest"); // matched "Auftragsbestätigung", "Auftragsbestaetigung"
     }
 
-    private static String buildFreigabeBlock(String url, String dokumentArt) {
-        String art = dokumentArt == null || dokumentArt.isBlank() ? "Dokument" : dokumentArt;
-        return "<div style=\"margin:24px 0;padding:16px 18px;border-left:3px solid #dc2626;background:#fafafa;font-family:Arial,Helvetica,sans-serif;\">"
-                + "<p style=\"margin:0 0 6px 0;font-weight:600;color:#1e293b;\">" + art + " digital prüfen und annehmen</p>"
-                + "<p style=\"margin:0 0 10px 0;color:#475569;line-height:1.45;\">"
-                + "Sie können dieses " + art + " bequem online ansehen und mit einem Klick verbindlich annehmen:"
-                + "</p>"
-                + "<p style=\"margin:0;\"><a href=\"" + url + "\" style=\"color:#dc2626;font-weight:600;text-decoration:underline;\">"
-                + url + "</a></p>"
-                + "<p style=\"margin:8px 0 0 0;color:#94a3b8;font-size:13px;\">Der Link ist 14 Tage gültig.</p>"
-                + "</div>";
+    /**
+     * Baut den Freigabe-Block über {@link DokumentFreigabeService#buildFreigabeBlockHtml}.
+     * Früher lag hier eine eigene Kopie des HTML — die lief auseinander (andere Akzentfarbe,
+     * hart eingetragene "14 Tage" statt echtem Ablaufdatum). Beide Wege nutzen jetzt
+     * dieselbe Quelle, damit der Block nur an einer Stelle gepflegt werden muss.
+     * Die Freigabe wird komplett durchgereicht, damit Tageszahl und Ablaufdatum aus
+     * derselben Entität stammen und nicht erneut auseinanderlaufen können.
+     */
+    private static String buildFreigabeBlock(DokumentFreigabe freigabe, String url, String dokumentArt) {
+        return DokumentFreigabeService.buildFreigabeBlockHtml(url, dokumentArt, freigabe);
     }
 
     private Optional<EmailSignature> getSignatureForFrontendUser(Long frontendUserId, String displayName) {

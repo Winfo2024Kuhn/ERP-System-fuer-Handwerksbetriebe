@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
+import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -375,6 +376,117 @@ class DokumentFreigabeServiceTest {
 
         verify(autoAuftragsbestaetigungVersandService).versendeNachAnnahme(
                 eq(777L), eq("max@example.de"), eq("uuid-async-ab"));
+    }
+
+    /**
+     * Unsere Mails haben keinen text/plain-Teil (SmtpHtmlMailSender und EmailService bauen
+     * beide mixed → related → nur text/html). Wer HTML abschaltet, bekommt vom Mail-Programm
+     * nur den gestrippten Text zu sehen — und darin überlebt ein href="" nicht. Die
+     * Freigabe-Adresse muss deshalb zusätzlich als sichtbarer Klartext im Block stehen,
+     * sonst kommt dieser Empfänger nicht mehr an sein Angebot.
+     *
+     * Gestrippt wird mit {@link EmailHtmlSanitizer#htmlToPlainText}, weil derselbe Weg auch
+     * produktiv genutzt wird — ein handgerollter Tag-Regex im Test würde eine strengere
+     * Bedingung prüfen als real gilt (er dekodiert keine HTML-Entities).
+     */
+    @Test
+    void freigabeBlock_zeigtDieAdresseAuchOhneHtmlDarstellung() {
+        String url = "https://example.test/freigabe/c97b2b03-ef93-49c1-80c4-4859b6e5d94e";
+
+        String html = DokumentFreigabeService.buildFreigabeBlockHtml(
+                url, "Angebot", 14, LocalDateTime.of(2026, 8, 20, 9, 33));
+
+        // Button verlinkt korrekt …
+        assertThat(html).contains("href=\"" + url + "\"");
+        // … und die Adresse steht zusätzlich als sichtbarer Text im Block.
+        String nurText = EmailHtmlSanitizer.htmlToPlainText(html);
+        assertThat(nurText).contains(url);
+        assertThat(nurText).contains("bis zum 20.08.2026");
+    }
+
+    /**
+     * Eine URL mit Query-Parametern wird im href als {@code &amp;} escaped (HTML-konform),
+     * muss beim Empfänger aber wieder als echtes {@code &} ankommen — sonst führt der
+     * Klartext-Fallback ins Leere.
+     */
+    @Test
+    void freigabeBlock_haeltEineUrlMitQueryParameternHeil() {
+        String url = "https://example.test/freigabe/abc?quelle=mail&lang=de";
+
+        String html = DokumentFreigabeService.buildFreigabeBlockHtml(url, "Angebot", 14, null);
+
+        assertThat(html).contains("href=\"https://example.test/freigabe/abc?quelle=mail&amp;lang=de\"");
+        assertThat(EmailHtmlSanitizer.htmlToPlainText(html)).contains(url);
+    }
+
+    /**
+     * Ein Klick-Ziel reicht nicht: Der Button ist eine Tabellenzelle mit bgcolor,
+     * weil Outlook Hintergrundfarben auf {@code <a>} ignoriert.
+     */
+    @Test
+    void freigabeBlock_bautDenButtonAlsTabellenzelleMitBgcolor() {
+        String html = DokumentFreigabeService.buildFreigabeBlockHtml(
+                "https://example.test/freigabe/abc", "Auftragsbestätigung", 14, null);
+
+        assertThat(html).contains("bgcolor=\"#500010\"");
+        assertThat(html).contains("Auftragsbestätigung digital prüfen und annehmen");
+    }
+
+    /** Ohne Dokumentart bleibt der Text lesbar statt "null digital prüfen und annehmen". */
+    @Test
+    void freigabeBlock_faelltOhneDokumentartAufDokumentZurueck() {
+        String html = DokumentFreigabeService.buildFreigabeBlockHtml(
+                "https://example.test/freigabe/abc", "  ", 14, null);
+
+        assertThat(html).contains("Dokument digital prüfen und annehmen");
+        assertThat(html).doesNotContain("null");
+    }
+
+    /**
+     * Die Overload mit Entität ist der Weg, den der Mail-Versand nimmt: Tageszahl und
+     * Ablaufdatum müssen dabei aus derselben Freigabe stammen. Vorher zog der EmailController
+     * die Tageszahl aus einer Konstanten — bei abweichender Gültigkeit hätte im Text "14 Tage"
+     * gestanden, während das Datum 30 Tage in der Zukunft lag.
+     */
+    @Test
+    void freigabeBlock_leitetDieTageZahlAusDerFreigabeAb() {
+        DokumentFreigabe f = new DokumentFreigabe();
+        f.setErstelltAm(LocalDateTime.of(2026, 8, 6, 9, 33));
+        f.setAblaufDatum(LocalDateTime.of(2026, 9, 5, 9, 33));
+
+        String html = DokumentFreigabeService.buildFreigabeBlockHtml(
+                "https://example.test/freigabe/abc", "Angebot", f);
+
+        assertThat(html).contains("Der Link ist 30 Tage gültig (bis zum 05.09.2026)");
+    }
+
+    /** Ohne verwertbare Daten in der Freigabe bleibt es beim Default statt bei "0 Tage". */
+    @Test
+    void freigabeBlock_nutztDenDefaultWennDieFreigabeKeineDatenHat() {
+        String html = DokumentFreigabeService.buildFreigabeBlockHtml(
+                "https://example.test/freigabe/abc", "Angebot", new DokumentFreigabe());
+
+        assertThat(html).contains("Der Link ist 14 Tage gültig.");
+    }
+
+    /** Ein-Tages-Gültigkeit darf nicht "1 Tage" heißen. */
+    @Test
+    void freigabeBlock_formuliertEinenEinzelnenTagKorrekt() {
+        String html = DokumentFreigabeService.buildFreigabeBlockHtml(
+                "https://example.test/freigabe/abc", "Angebot", 1, null);
+
+        assertThat(html).contains("1 Tag gültig");
+        assertThat(html).doesNotContain("1 Tage");
+    }
+
+    /** Die Dokumentart kommt aus der DB und wird ungeprüft in die Mail gesetzt → escapen. */
+    @Test
+    void freigabeBlock_escaptDieDokumentart() {
+        String html = DokumentFreigabeService.buildFreigabeBlockHtml(
+                "https://example.test/freigabe/abc", "<script>alert(1)</script>", 14, null);
+
+        assertThat(html).doesNotContain("<script>");
+        assertThat(html).contains("&lt;script&gt;");
     }
 
     /**
