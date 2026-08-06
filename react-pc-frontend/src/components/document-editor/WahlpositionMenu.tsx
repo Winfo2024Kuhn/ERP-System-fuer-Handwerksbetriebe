@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, CircleCheck, Diamond, Plus } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -34,7 +34,6 @@ const EINTRAEGE: {
 ];
 
 const MENU_BREITE = 240;
-const MENU_HOEHE = 156;
 
 /**
  * Ein Knopf pro Leistung, der bestimmt, was der Kunde damit tun darf.
@@ -57,16 +56,28 @@ export function WahlpositionMenu({
     const menuRef = useRef<HTMLDivElement>(null);
     const modus = wahlmodusVon(block);
 
-    // Vor dem Paint messen, damit das Menue nicht kurz an der falschen Stelle blitzt.
-    useLayoutEffect(() => {
-        if (!offen || !triggerRef.current) return;
-        const rect = triggerRef.current.getBoundingClientRect();
-        const passtNachUnten = rect.bottom + 4 + MENU_HOEHE <= window.innerHeight;
+    /** Rechnet die Liste an den Trigger und klappt bei Platzmangel nach oben. */
+    const berechnePosition = useCallback((hoehe: number) => {
+        const rect = triggerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const passtNachUnten = rect.bottom + 4 + hoehe <= window.innerHeight;
         setPosition({
-            top: passtNachUnten ? rect.bottom + 4 : rect.top - MENU_HOEHE - 4,
+            top: passtNachUnten ? rect.bottom + 4 : Math.max(8, rect.top - hoehe - 4),
             left: Math.max(8, Math.min(rect.right - MENU_BREITE, window.innerWidth - MENU_BREITE - 8)),
         });
-    }, [offen]);
+    }, []);
+
+    /**
+     * Gemessen wird im Ref-Callback, nicht in einem Effect: React ruft ihn im
+     * Commit auf, also vor dem Paint — die Liste erscheint direkt an der
+     * richtigen Stelle. Und nur hier steht ihre echte Hoehe zur Verfuegung, die
+     * bei Browser-Zoom oder grosser Systemschrift deutlich von einem festen
+     * Schaetzwert abweicht.
+     */
+    const menuMounten = useCallback((node: HTMLDivElement | null) => {
+        menuRef.current = node;
+        if (node) berechnePosition(node.offsetHeight);
+    }, [berechnePosition]);
 
     useEffect(() => {
         if (!offen) return;
@@ -90,10 +101,13 @@ export function WahlpositionMenu({
 
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                punkte[(aktuell + 1) % punkte.length].focus();
+                // aktuell === -1 heisst: Fokus steht noch auf dem Trigger.
+                punkte[aktuell === -1 ? 0 : (aktuell + 1) % punkte.length].focus();
             } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
-                punkte[(aktuell - 1 + punkte.length) % punkte.length].focus();
+                punkte[aktuell === -1
+                    ? punkte.length - 1
+                    : (aktuell - 1 + punkte.length) % punkte.length].focus();
             } else if (e.key === 'Home') {
                 e.preventDefault();
                 punkte[0].focus();
@@ -135,7 +149,7 @@ export function WahlpositionMenu({
 
     const menu = (
         <div
-            ref={menuRef}
+            ref={menuMounten}
             role="menu"
             aria-label="Was darf der Kunde wählen?"
             style={{ position: 'fixed', top: position.top, left: position.left, width: MENU_BREITE, zIndex: 99999 }}

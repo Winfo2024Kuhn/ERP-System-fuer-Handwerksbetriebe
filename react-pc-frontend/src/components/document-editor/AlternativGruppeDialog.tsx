@@ -3,7 +3,7 @@ import { Check, Diamond, Unlink, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { buildPositionMap, formatCurrency, serviceLineTotal } from './helpers';
-import { sammleGruppenKandidaten, sammleGruppenNamen } from './blockOps';
+import { gruppenNameVergeben, sammleGruppenKandidaten } from './blockOps';
 import type { DocBlock } from './types';
 
 interface AlternativGruppeDialogProps {
@@ -82,10 +82,7 @@ export function AlternativGruppeDialog({
 
     const nameGetrimmt = name.trim();
     const genugVarianten = gewaehlt.size >= 2;
-    // Zwei Gruppen mit demselben Namen waeren im Dokument nicht auseinanderzuhalten —
-    // weder fuer den Kunden auf der Freigabe-Seite noch beim Aufloesen im Editor.
-    const nameVergeben = sammleGruppenNamen(blocks)
-        .some(vorhanden => vorhanden === nameGetrimmt && vorhanden !== bestehendeGruppe);
+    const nameVergeben = gruppenNameVergeben(blocks, nameGetrimmt, bestehendeGruppe);
     const speicherbar = genugVarianten && nameGetrimmt.length > 0 && !nameVergeben;
 
     const speichern = () => {

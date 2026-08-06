@@ -41,6 +41,7 @@ import {
     insertBlocksBeforeClosure,
     validateRootReorder,
     gruppiereAlsAlternativen,
+    gruppenNameVergeben,
     loeseAlternativGruppeAuf,
     normalisiereAlternativGruppen,
     ohneAlternativGruppe,
@@ -1829,6 +1830,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
     const gruppeUmbenennen = (alt: string, neu: string) => {
         if (isLocked) return;
+        // Ohne diesen Guard verschmelzen zwei gleichnamige Gruppen dokumentweit:
+        // der Editor zeigt weiter zwei Kaesten, das Backend sieht eine Gruppe —
+        // der Kunde waehlt zweimal und kann das Angebot danach nicht annehmen.
+        if (gruppenNameVergeben(blocks, neu, alt)) {
+            toast.error(`„${neu}“ ist in diesem Dokument schon vergeben. Bitte einen anderen Namen wählen.`);
+            return;
+        }
         setBlocks(prev => normalisiereAlternativGruppen(prev.map(b => {
             const um = (x: DocBlock) => x.alternativGruppe === alt ? { ...x, alternativGruppe: neu } : x;
             return b.type === 'SECTION_HEADER' && b.children

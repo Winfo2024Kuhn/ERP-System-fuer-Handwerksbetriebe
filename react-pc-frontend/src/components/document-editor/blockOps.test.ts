@@ -20,6 +20,7 @@ import {
     validateRootReorder,
     gruppiereAlsAlternativen,
     loeseAlternativGruppeAuf,
+    gruppenNameVergeben,
     normalisiereAlternativGruppen,
     sammleGruppenKandidaten,
     sammleGruppenNamen,
@@ -525,6 +526,47 @@ describe('gruppiereAlsAlternativen', () => {
         expect(result.filter(b => b.alternativGruppe === 'Bodenbelag').map(b => b.id)).toEqual(['a', 'b']);
         expect(result.filter(b => b.alternativGruppe === 'Auswahl')).toEqual([]);
         expect(result.find(b => b.id === 'c')).toMatchObject({ optional: true });
+    });
+});
+
+describe('gruppenNameVergeben', () => {
+    const doc = [
+        svc('a', { optional: true, alternativGruppe: 'Bodenbelag' }),
+        svc('b', { optional: true, alternativGruppe: 'Bodenbelag' }),
+        svc('c'),
+    ];
+
+    it('erkennt einen bereits vergebenen Namen', () => {
+        expect(gruppenNameVergeben(doc, 'Bodenbelag')).toBe(true);
+    });
+
+    it('ignoriert Gross-/Kleinschreibung und Randleerzeichen', () => {
+        // Fuer den Kunden waeren "Bodenbelag" und "bodenbelag" zwei
+        // ununterscheidbare Ueberschriften.
+        expect(gruppenNameVergeben(doc, '  bodenbelag ')).toBe(true);
+    });
+
+    it('nimmt die gerade bearbeitete Gruppe aus', () => {
+        expect(gruppenNameVergeben(doc, 'Bodenbelag', 'Bodenbelag')).toBe(false);
+    });
+
+    it('laesst einen freien Namen durch', () => {
+        expect(gruppenNameVergeben(doc, 'Wandfarbe')).toBe(false);
+    });
+
+    it('wertet einen leeren Namen nicht als Kollision', () => {
+        expect(gruppenNameVergeben(doc, '   ')).toBe(false);
+    });
+
+    it('findet auch Gruppen in einem Bauabschnitt', () => {
+        const mitSection: DocBlock[] = [
+            svc('root1'),
+            { id: 'sec', type: 'SECTION_HEADER', children: [
+                svc('k1', { optional: true, alternativGruppe: 'Treppe' }),
+                svc('k2', { optional: true, alternativGruppe: 'Treppe' }),
+            ] },
+        ];
+        expect(gruppenNameVergeben(mitSection, 'Treppe')).toBe(true);
     });
 });
 

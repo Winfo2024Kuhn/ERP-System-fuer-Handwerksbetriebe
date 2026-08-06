@@ -433,6 +433,32 @@ export function normalisiereAlternativGruppen(blocks: DocBlock[]): DocBlock[] {
         : b);
 }
 
+/**
+ * Ist `name` im Dokument schon als Gruppenname vergeben?
+ *
+ * Zwei gleichnamige Gruppen sind nicht nur unschoen, sie machen das Dokument
+ * unannehmbar: Editor und PDF gruppieren pro Ebene, das Backend
+ * (`AusgangsGeschaeftsDokumentService.sammleAlternativGruppen`) dagegen
+ * dokumentweit ueber den Namen. Der Kunde waehlt dann in zwei Kaesten je eine
+ * Variante, und die Freigabe lehnt die Annahme mit "nur eine Variante zulaessig"
+ * ab. Deshalb pruefen BEIDE Schreibpfade — Dialog und Inline-Umbenennen — hier.
+ *
+ * Verglichen wird ohne Ruecksicht auf Gross-/Kleinschreibung: "Bodenbelag" und
+ * "bodenbelag" waeren fuer den Kunden zwei ununterscheidbare Ueberschriften.
+ * `ausser` nimmt die Gruppe aus, die gerade selbst bearbeitet wird.
+ */
+export function gruppenNameVergeben(
+    blocks: DocBlock[],
+    name: string,
+    ausser: string | null = null,
+): boolean {
+    const normiert = (s: string) => s.trim().toLocaleLowerCase('de-DE');
+    const gesucht = normiert(name);
+    if (!gesucht) return false;
+    return sammleGruppenNamen(blocks)
+        .some(vorhanden => vorhanden !== ausser && normiert(vorhanden) === gesucht);
+}
+
 /** Alle Gruppennamen des Dokuments in Reihenfolge ihres ersten Auftretens. */
 export function sammleGruppenNamen(blocks: DocBlock[]): string[] {
     const namen: string[] = [];
