@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { RefreshCw, Package, ChevronLeft, ChevronRight, X, Search, Folder, FolderPlus, Plus } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -13,6 +13,7 @@ import { CreateArticleModal } from "../components/CreateArticleModal";
 import { PageLayout } from "../components/layout/PageLayout";
 
 const PAGE_SIZE = 12;
+const SORT_STANDARD = "produktname";
 
 /** Auswahlmoeglichkeit eines technischen Merkmals samt Klartext und Erklaerung. */
 interface Merkmalsoption {
@@ -20,6 +21,60 @@ interface Merkmalsoption {
     name: string;
     erklaerung?: string;
 }
+
+/** Ausgangslage der Suche - zugleich das Ziel von "Filter zuruecksetzen". */
+const LEERE_FILTER = {
+    q: "",
+    lieferant: "",
+    produktlinie: "",
+    werkstoff: "",
+    kategorieId: 0,
+    kategorieName: "",
+    // Technische Merkmale: fuer Anwender greifbarer als die Norm.
+    herstellverfahren: "",
+    fertigungszustand: "",
+    verzinkbar: "",
+    pulverbeschichtbar: "",
+};
+type Filterzustand = typeof LEERE_FILTER;
+
+/**
+ * Suche aus der Adresszeile lesen.
+ *
+ * Filter, Sortierung und Seite stehen in der URL, nicht nur im Komponenten-State:
+ * Oeffnet man einen Artikel und kommt zurueck, wird die Liste neu aufgebaut - ohne
+ * die URL waere die muehsam eingegrenzte Suche dann weg. Nebeneffekt: Eine
+ * gefilterte Liste laesst sich als Link weitergeben.
+ */
+const filterAusUrl = (params: URLSearchParams): Filterzustand => ({
+    q: params.get("q") ?? "",
+    lieferant: params.get("lieferant") ?? "",
+    produktlinie: params.get("produktlinie") ?? "",
+    werkstoff: params.get("werkstoff") ?? "",
+    kategorieId: Number(params.get("kategorieId")) || 0,
+    kategorieName: params.get("kategorieName") ?? "",
+    herstellverfahren: params.get("herstellverfahren") ?? "",
+    fertigungszustand: params.get("fertigungszustand") ?? "",
+    verzinkbar: params.get("verzinkbar") ?? "",
+    pulverbeschichtbar: params.get("pulverbeschichtbar") ?? "",
+});
+
+/** Nur belegte Werte wandern in die URL - Standardwerte wuerden sie nur zumuellen. */
+const urlAusFilter = (
+    filter: Filterzustand,
+    page: number,
+    sortColumn: string,
+    sortDirection: string,
+): URLSearchParams => {
+    const params = new URLSearchParams();
+    for (const [schluessel, wert] of Object.entries(filter)) {
+        if (wert !== "" && wert !== 0) params.set(schluessel, String(wert));
+    }
+    if (page > 0) params.set("page", String(page));
+    if (sortColumn !== SORT_STANDARD) params.set("sort", sortColumn);
+    if (sortDirection !== "asc") params.set("dir", sortDirection);
+    return params;
+};
 
 // Helpers
 const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
@@ -48,10 +103,17 @@ const einheitText = (einheit?: string | { name: string; anzeigename?: string }) 
 
 export default function ArtikelEditor() {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [artikelList, setArtikelList] = useState<Artikel[]>([]);
     const [loading, setLoading] = useState(false);
     const [total, setTotal] = useState(0);
-    const [page, setPage] = useState(0);
+    // Vor der ersten Antwort ist `total` nur ein Platzhalter (0) - der Seiten-Guard
+    // weiter unten duerfte daraus noch keine Schluesse ziehen.
+    const [ersteAntwortDa, setErsteAntwortDa] = useState(false);
+
+    // Startwerte kommen aus der Adresszeile (siehe filterAusUrl). Nur beim ersten
+    // Rendern - danach fuehrt der State und schreibt die URL fort.
+    const [page, setPage] = useState(() => Math.max(0, Number(searchParams.get("page")) || 0));
 
     // Modals state
     const [showSupplierModal, setShowSupplierModal] = useState(false);
@@ -60,22 +122,11 @@ export default function ArtikelEditor() {
     const [showCreateModal, setShowCreateModal] = useState(false);
 
     // Sort state
-    const [sortColumn, setSortColumn] = useState('produktname');
-    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+    const [sortColumn, setSortColumn] = useState(() => searchParams.get("sort") || SORT_STANDARD);
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(
+        () => (searchParams.get("dir") === "desc" ? "desc" : "asc"));
 
-    const [filters, setFilters] = useState({
-        q: "",
-        lieferant: "",
-        produktlinie: "",
-        werkstoff: "",
-        kategorieId: 0,
-        kategorieName: "",
-        // Technische Merkmale: fuer Anwender greifbarer als die Norm.
-        herstellverfahren: "",
-        fertigungszustand: "",
-        verzinkbar: "",
-        pulverbeschichtbar: ""
-    });
+    const [filters, setFilters] = useState<Filterzustand>(() => filterAusUrl(searchParams));
 
     const [werkstoffOptions, setWerkstoffOptions] = useState<string[]>([]);
     const [filterOptionen, setFilterOptionen] = useState<{
@@ -102,8 +153,15 @@ export default function ArtikelEditor() {
             .catch(err => console.error("Fehler beim Laden der Filteroptionen", err));
     }, []);
 
+    // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen in den Filterfeldern
+    // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte Antwort
+    // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
+    const ladeVorgangRef = useRef(0);
+
     // Fetch List
     const loadArtikel = useCallback(async () => {
+        const ladeVorgang = ++ladeVorgangRef.current;
+        const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -125,15 +183,20 @@ export default function ArtikelEditor() {
             const res = await fetch(`/api/artikel?${params.toString()}`);
             if (!res.ok) throw new Error("Fehler beim Laden");
             const data = await res.json();
+            if (!istAktuell()) return;
 
             setArtikelList(data && Array.isArray(data.artikel) ? data.artikel : []);
             setTotal(data && typeof data.gesamt === "number" ? data.gesamt : 0);
         } catch (err) {
             console.error(err);
+            if (!istAktuell()) return;
             setArtikelList([]);
             setTotal(0);
         } finally {
-            setLoading(false);
+            if (istAktuell()) {
+                setLoading(false);
+                setErsteAntwortDa(true);
+            }
         }
     }, [page, filters, sortColumn, sortDirection]);
 
@@ -141,24 +204,39 @@ export default function ArtikelEditor() {
         loadArtikel();
     }, [loadArtikel]);
 
+    // Suche in die Adresszeile spiegeln. Bewusst ohne neuen History-Eintrag: Sonst
+    // muesste man sich nach dem Tippen durch jeden einzelnen Buchstaben zurueckklicken.
+    const gewuenschteUrl = useMemo(
+        () => urlAusFilter(filters, page, sortColumn, sortDirection).toString(),
+        [filters, page, sortColumn, sortDirection],
+    );
+    useEffect(() => {
+        if (searchParams.toString() === gewuenschteUrl) return;
+        setSearchParams(gewuenschteUrl, { replace: true });
+    }, [gewuenschteUrl, searchParams, setSearchParams]);
+
+    // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
+    // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
+    // Treffer wären da, aber unsichtbar.
     const handleFilterChange = (key: string, value: string | number) => {
         setFilters((prev) => ({ ...prev, [key]: value }));
+        setPage(0);
     };
 
+    // Gefiltert wird bereits live beim Tippen/Auswählen. Der Button ist nur noch
+    // die vertraute Bestätigung – er darf keinen zweiten, konkurrierenden Request starten.
     const handleFilterSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPage(0);
-        loadArtikel();
     };
 
     const handleResetFilters = () => {
-        setFilters({
-            q: "", lieferant: "", produktlinie: "", werkstoff: "", kategorieId: 0, kategorieName: "",
-            herstellverfahren: "", fertigungszustand: "", verzinkbar: "", pulverbeschichtbar: ""
-        });
+        setFilters(LEERE_FILTER);
         setPage(0);
     };
 
+    // Eine neue Sortierung stellt die gesamte Liste um – Seite 3 zeigte danach
+    // beliebige Artikel. Deshalb zurück auf die erste Seite.
     const handleSort = (column: string) => {
         if (sortColumn === column) {
             setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -166,9 +244,21 @@ export default function ArtikelEditor() {
             setSortColumn(column);
             setSortDirection('asc');
         }
+        setPage(0);
     };
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+    // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
+    // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
+    // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
+    // `total` noch der alte Wert – und vor der allerersten Antwort schlicht 0, was
+    // eine aus der URL übernommene Seite sofort verschlucken würde.
+    useEffect(() => {
+        if (loading || !ersteAntwortDa) return;
+        const letzteSeite = totalPages - 1;
+        if (page > letzteSeite) setPage(letzteSeite);
+    }, [loading, ersteAntwortDa, totalPages, page]);
 
     const statusText = useMemo(() => {
         if (loading) return 'Artikel werden geladen...';
@@ -177,6 +267,13 @@ export default function ArtikelEditor() {
         const end = Math.min(start + artikelList.length - 1, total);
         return `Zeige ${start}-${end} von ${total} Artikeln`;
     }, [loading, total, page, artikelList.length]);
+
+    // Vermerkt, dass die Detailseite aus der Liste heraus geoeffnet wurde. Ihr
+    // Zurueck-Button geht dann einen Schritt in der History zurueck - und landet
+    // damit auf genau dieser Suche samt Treffern statt auf der leeren Liste.
+    const oeffneArtikel = (artikelId: number) => {
+        navigate(`/artikel/${artikelId}`, { state: { vonListe: true } });
+    };
 
     const handleSupplierSelect = (s: { id: number, name: string }) => {
         handleFilterChange('lieferant', s.name);
@@ -332,9 +429,9 @@ export default function ArtikelEditor() {
                         </div>
                     </div>
 
-                    <div className="flex items-end gap-3">
-                        <button type="submit" className="btn flex-1 bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700">Filtern</button>
-                        <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Reset</button>
+                    {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
+                    <div className="flex items-end">
+                        <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Filter zurücksetzen</button>
                     </div>
                 </form>
                 <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>
@@ -369,14 +466,14 @@ export default function ArtikelEditor() {
                                     <tr
                                         key={artikel.id}
                                         className="group hover:bg-slate-50 transition-colors cursor-pointer"
-                                        onClick={() => navigate(`/artikel/${artikel.id}`)}
+                                        onClick={() => oeffneArtikel(artikel.id)}
                                         tabIndex={0}
                                         role="link"
                                         aria-label={`Details zu ${artikelBezeichnung(artikel)} öffnen`}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter' || e.key === ' ') {
                                                 e.preventDefault();
-                                                navigate(`/artikel/${artikel.id}`);
+                                                oeffneArtikel(artikel.id);
                                             }
                                         }}
                                     >

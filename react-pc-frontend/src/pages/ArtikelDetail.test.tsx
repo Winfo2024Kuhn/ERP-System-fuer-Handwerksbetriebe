@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import ArtikelDetail from './ArtikelDetail';
 import { ToastProvider } from '../components/ui/toast';
@@ -56,6 +57,32 @@ function renderSeite() {
         <ToastProvider>
             <MemoryRouter initialEntries={['/artikel/1']}>
                 <Routes>
+                    <Route path="/artikel/:id" element={<ArtikelDetail />} />
+                </Routes>
+            </MemoryRouter>
+        </ToastProvider>,
+    );
+}
+
+/** Platzhalter fuer die Artikelliste, der die aufgerufene Suche sichtbar macht. */
+function ListenPlatzhalter() {
+    const location = useLocation();
+    return <div>Liste{location.search}</div>;
+}
+
+/**
+ * Rendert die Detailseite so, wie man sie aus der Liste heraus erreicht:
+ * Die gefilterte Liste liegt als vorheriger Eintrag in der History.
+ */
+function renderAusListeHeraus(listenAdresse: string, vonListe = true) {
+    return render(
+        <ToastProvider>
+            <MemoryRouter
+                initialEntries={[listenAdresse, { pathname: '/artikel/1', state: vonListe ? { vonListe: true } : null }]}
+                initialIndex={1}
+            >
+                <Routes>
+                    <Route path="/artikel" element={<ListenPlatzhalter />} />
                     <Route path="/artikel/:id" element={<ArtikelDetail />} />
                 </Routes>
             </MemoryRouter>
@@ -143,5 +170,39 @@ describe('ArtikelDetail', () => {
         await waitFor(() => {
             expect(screen.getByText('Die Artikeldaten konnten nicht geladen werden.')).toBeInTheDocument();
         });
+    });
+
+    it('fuehrt "Zurück" auf die Liste mit der urspruenglichen Suche', async () => {
+        const user = userEvent.setup();
+        renderAusListeHeraus('/artikel?q=rohr&werkstoff=S235JR&page=2');
+
+        await user.click(await screen.findByRole('button', { name: 'Zurück' }));
+
+        // Der Kern: Die Suche darf nicht verloren gehen, sonst muss der Anwender
+        // alle Filter erneut setzen, nur weil er einen Artikel angesehen hat.
+        expect(await screen.findByText('Liste?q=rohr&werkstoff=S235JR&page=2')).toBeInTheDocument();
+    });
+
+    it('fuehrt "Zurück" auch aus der Fehleranzeige auf die urspruengliche Suche', async () => {
+        vi.stubGlobal('fetch', vi.fn(() =>
+            Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) }),
+        ));
+        const user = userEvent.setup();
+        renderAusListeHeraus('/artikel?q=rohr');
+
+        await user.click(await screen.findByRole('button', { name: /Zurück zur Artikelliste/i }));
+
+        expect(await screen.findByText('Liste?q=rohr')).toBeInTheDocument();
+    });
+
+    it('landet ohne Vorgeschichte auf der vollstaendigen Liste', async () => {
+        const user = userEvent.setup();
+        // Direkter Aufruf per Link oder Lesezeichen: Es gibt keine Suche, zu der
+        // man zurueckkehren koennte.
+        renderAusListeHeraus('/irgendwo', false);
+
+        await user.click(await screen.findByRole('button', { name: 'Zurück' }));
+
+        expect(await screen.findByText('Liste')).toBeInTheDocument();
     });
 });

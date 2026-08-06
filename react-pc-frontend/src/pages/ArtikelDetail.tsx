@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
     ArrowLeft, Minus, Package, RefreshCw, Save, ShieldCheck, ShieldX,
     TrendingDown, TrendingUp
@@ -35,7 +35,24 @@ const formatZahl = (val?: number, nachkomma = 3) =>
 export default function ArtikelDetail() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
     const toast = useToast();
+
+    /**
+     * Zurueck zur Artikelliste.
+     *
+     * Kam man aus der Liste, geht es einen Schritt in der History zurueck: Die
+     * Liste haelt ihre Suche in der URL, also stehen Filter und Treffer wieder
+     * genau so da, wie man sie verlassen hat. Ein festes navigate("/artikel")
+     * wuerde die muehsam eingegrenzte Suche stattdessen wegwerfen.
+     * Wer die Seite direkt geoeffnet hat (Link, Lesezeichen), hat keinen solchen
+     * Schritt in der History - fuer den fuehrt der Weg auf die volle Liste.
+     */
+    const vonListe = Boolean((location.state as { vonListe?: boolean } | null)?.vonListe);
+    const zurueckZurListe = useCallback(() => {
+        if (vonListe) navigate(-1);
+        else navigate("/artikel");
+    }, [vonListe, navigate]);
 
     const [daten, setDaten] = useState<ArtikelDetailData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -131,7 +148,7 @@ export default function ArtikelDetail() {
                     <Package className="w-12 h-12 mx-auto text-slate-300 mb-3" aria-hidden="true" />
                     <p className="text-slate-600">{fehler ?? "Artikel nicht gefunden."}</p>
                     <Button className="mt-4 border-rose-300 text-rose-700 hover:bg-rose-50"
-                        variant="outline" size="sm" onClick={() => navigate("/artikel")}>
+                        variant="outline" size="sm" onClick={zurueckZurListe}>
                         <ArrowLeft className="w-4 h-4 mr-2" aria-hidden="true" />
                         Zurück zur Artikelliste
                     </Button>
@@ -149,7 +166,7 @@ export default function ArtikelDetail() {
                 <div className="flex gap-2">
                     <Button variant="outline" size="sm"
                         className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                        onClick={() => navigate("/artikel")}>
+                        onClick={zurueckZurListe}>
                         <ArrowLeft className="w-4 h-4 mr-2" aria-hidden="true" />
                         Zurück
                     </Button>
