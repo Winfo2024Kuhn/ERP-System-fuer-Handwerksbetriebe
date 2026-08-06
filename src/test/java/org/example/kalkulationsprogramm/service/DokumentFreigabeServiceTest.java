@@ -245,6 +245,8 @@ class DokumentFreigabeServiceTest {
                 .thenReturn(positionenJson);
         when(ausgangsGeschaeftsDokumentService.markiereAlternativenAlsBeauftragt(eq(positionenJson), any()))
                 .thenReturn("{\"bereinigt\":true}");
+        when(ausgangsGeschaeftsDokumentService.summeAusgewaehlterAlternativenNetto(eq(positionenJson), any()))
+                .thenReturn(BigDecimal.ZERO);
         when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(null);
 
         DokumentFreigabe result = service.akzeptiere(

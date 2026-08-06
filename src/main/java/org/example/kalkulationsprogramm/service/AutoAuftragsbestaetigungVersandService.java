@@ -541,14 +541,15 @@ public class AutoAuftragsbestaetigungVersandService
                 b.gesamt(),
                 b.optional(),
                 aufloesePlatzhalter(b.sectionLabel(), ctx),
-                b.rabattProzent());
+                b.rabattProzent(),
+                b.alternativGruppe());
     }
 
     private static ContentBlockDto textbausteinAlsBlock(Textbaustein tb, Map<String, String> ctx)
     {
         String html = aufloesePlatzhalter(tb.getHtml() != null ? tb.getHtml() : "", ctx);
         return new ContentBlockDto("TEXT", html, false, 10,
-                null, null, null, null, null, null, null, false, null, null);
+                null, null, null, null, null, null, null, false, null, null, null);
     }
 
     /**
@@ -953,7 +954,7 @@ public class AutoAuftragsbestaetigungVersandService
             {
                 String text = optString(block, "content");
                 out.add(new ContentBlockDto("TEXT", text, BLOCK_DEFAULT_FETT, BLOCK_DEFAULT_FONT_SIZE,
-                        null, null, null, null, null, null, null, false, null, null));
+                        null, null, null, null, null, null, null, false, null, null, null));
             }
             case "SERVICE" ->
             {
@@ -987,7 +988,8 @@ public class AutoAuftragsbestaetigungVersandService
                         gesamt,
                         optBoolean(block, "optional", false),
                         null,
-                        rabattProzent));
+                        rabattProzent,
+                        optString(block, "alternativGruppe")));
             }
             case "SECTION_HEADER" ->
             {
@@ -995,7 +997,7 @@ public class AutoAuftragsbestaetigungVersandService
                 String pos = parentPos.isEmpty() ? String.valueOf(counters[0]) : parentPos + "." + counters[0];
                 out.add(new ContentBlockDto("SECTION_HEADER", null, false, 0,
                         pos, null, null, null, null, null, null, false,
-                        optString(block, "sectionLabel", ""), null));
+                        optString(block, "sectionLabel", ""), null, null));
                 JsonNode children = block.get("children");
                 if (children != null && children.isArray())
                 {
@@ -1007,11 +1009,11 @@ public class AutoAuftragsbestaetigungVersandService
                 }
             }
             case "SUBTOTAL" -> out.add(new ContentBlockDto("SUBTOTAL", null, false, 0,
-                    null, null, null, null, null, null, null, false, null, null));
+                    null, null, null, null, null, null, null, false, null, null, null));
             case "SEPARATOR" -> out.add(new ContentBlockDto("SEPARATOR", null, false, 0,
-                    null, null, null, null, null, null, null, false, null, null));
+                    null, null, null, null, null, null, null, false, null, null, null));
             case "CLOSURE" -> out.add(new ContentBlockDto("CLOSURE", null, false, 0,
-                    null, null, null, null, null, null, null, false, null, null));
+                    null, null, null, null, null, null, null, false, null, null, null));
             default -> { /* unbekannter Blocktyp wird ignoriert */ }
         }
     }

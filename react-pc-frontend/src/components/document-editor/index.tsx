@@ -2525,6 +2525,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             fontSize: b.type === 'TEXT' || b.type === 'SERVICE' ? 10 : (b.fontSize || 10),
             fett: b.type === 'TEXT' || b.type === 'SERVICE' ? false : (b.fett || false),
             optional: b.optional || false,
+            alternativGruppe: b.alternativGruppe || null,
             sectionLabel: b.sectionLabel || '',
             discount: b.discount || 0
         }));

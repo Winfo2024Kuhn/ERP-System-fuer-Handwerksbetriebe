@@ -168,19 +168,19 @@ class RechnungPdfServiceTest {
                 "SERVICE", null, false, 0,
                 "1", "Edelstahlgeländer", "Hier Geländer Beschreibung",
                 BigDecimal.valueOf(1), "lfm", BigDecimal.valueOf(67), BigDecimal.valueOf(67),
-                false, null, null));
+                false, null, null, null));
 
         // Text-Block dazwischen
         blocks.add(new ContentBlockDto(
                 "TEXT", "<p>Zwischentext: Vielen Dank</p>", false, 10,
-                null, null, null, null, null, null, null, false, null, null));
+                null, null, null, null, null, null, null, false, null, null, null));
 
         // Service-Block 2
         blocks.add(new ContentBlockDto(
                 "SERVICE", null, false, 0,
                 "2", "Edelstahlgeländer 2", null,
                 BigDecimal.valueOf(2), "lfm", BigDecimal.valueOf(45), BigDecimal.valueOf(90),
-                false, null, null));
+                false, null, null, null));
 
         return blocks;
     }
@@ -744,10 +744,10 @@ class RechnungPdfServiceTest {
             List<ContentBlockDto> contentBlocks = List.of(
                     new ContentBlockDto("SERVICE", null, false, 0,
                             "1", "Edelstahlgeländer", "Hier Geländer Bratan",
-                            BigDecimal.valueOf(1), "lfm", BigDecimal.valueOf(67), BigDecimal.valueOf(67), false, null, null),
+                            BigDecimal.valueOf(1), "lfm", BigDecimal.valueOf(67), BigDecimal.valueOf(67), false, null, null, null),
                     new ContentBlockDto("SERVICE", null, false, 0,
                             "2", "Edelstahlgeländer 2", null,
-                            BigDecimal.valueOf(1), "lfm", BigDecimal.valueOf(67), BigDecimal.valueOf(67), false, null, null)
+                            BigDecimal.valueOf(1), "lfm", BigDecimal.valueOf(67), BigDecimal.valueOf(67), false, null, null, null)
             );
 
             // 4. Layout aus FormBlocks erstellen
@@ -848,15 +848,15 @@ class RechnungPdfServiceTest {
                     new ContentBlockDto("SERVICE", null, false, 0,
                             "1", "Leistung A", null,
                             BigDecimal.valueOf(1), "Stk", BigDecimal.valueOf(1000), BigDecimal.valueOf(1000),
-                            false, null, null),
+                            false, null, null, null),
                     // 2. Leistung: 1.000€  -> Positions-Summe = 2.000€
                     new ContentBlockDto("SERVICE", null, false, 0,
                             "2", "Leistung B", null,
                             BigDecimal.valueOf(1), "Stk", BigDecimal.valueOf(1000), BigDecimal.valueOf(1000),
-                            false, null, null),
+                            false, null, null, null),
                     // CLOSURE-Marker direkt nach den Leistungen (vom DnD-Refactor synthetisiert)
                     new ContentBlockDto("CLOSURE", null, false, 0,
-                            null, null, null, null, null, null, null, false, null, null)
+                            null, null, null, null, null, null, null, false, null, null, null)
             );
 
             List<FormBlockDto> formBlocks = createRealisticFormBlocks(kopf, false);
@@ -900,9 +900,9 @@ class RechnungPdfServiceTest {
                     new ContentBlockDto("SERVICE", null, false, 0,
                             "1", "Test-Leistung", null,
                             BigDecimal.valueOf(1), "Stk", BigDecimal.valueOf(100), BigDecimal.valueOf(100),
-                            false, null, null),
+                            false, null, null, null),
                     new ContentBlockDto("CLOSURE", null, false, 0,
-                            null, null, null, null, null, null, null, false, null, null)
+                            null, null, null, null, null, null, null, false, null, null, null)
             );
 
             List<FormBlockDto> formBlocks = createRealisticFormBlocks(kopf, false);
@@ -918,6 +918,43 @@ class RechnungPdfServiceTest {
             assertTrue(text.contains("100,00"), "Positions-Netto '100,00' fehlt. Text:\n" + text);
             assertTrue(text.contains("19,00"), "MwSt '19,00' fehlt. Text:\n" + text);
             assertTrue(text.contains("119,00"), "Brutto '119,00' fehlt. Text:\n" + text);
+        }
+    }
+
+    /**
+     * Wahlpositionen im PDF: bewusst nüchtern. Das PDF ist ein Angebot, kein
+     * Formular — die Entscheidung trifft der Kunde über die Freigabe-Seite.
+     */
+    @Nested
+    @DisplayName("Wahlpositionen im PDF")
+    class WahlpositionenImPdf {
+
+        @Test
+        void kennzeichnetZusatzpositionAlsOptional() {
+            assertEquals(" (Optional)", RechnungPdfService.wahlpositionSuffix(dto(true, null)));
+        }
+
+        @Test
+        void kennzeichnetGruppenmitgliedAlsAlternative() {
+            assertEquals(" (Alternative)", RechnungPdfService.wahlpositionSuffix(dto(true, "Gelaender")));
+        }
+
+        @Test
+        void laesstFestePositionOhneZusatz() {
+            assertEquals("", RechnungPdfService.wahlpositionSuffix(dto(false, null)));
+        }
+
+        @Test
+        void nenntDenGruppennamenNichtImPdf() {
+            assertFalse(RechnungPdfService.wahlpositionSuffix(dto(true, "Gelaender")).contains("Gelaender"));
+        }
+
+        /** DSGVO: ausschliesslich Dummy-Daten. */
+        private RechnungPdfService.ContentBlockDto dto(boolean optional, String gruppe) {
+            return new RechnungPdfService.ContentBlockDto(
+                    "SERVICE", null, false, 10, "3a", "Gelaender Edelstahl", "<p>Dummy</p>",
+                    BigDecimal.ONE, "Stk", new BigDecimal("100.00"), new BigDecimal("100.00"),
+                    optional, null, BigDecimal.ZERO, gruppe);
         }
     }
 }

@@ -123,7 +123,8 @@ public class DokumentGeneratorController {
             Integer fontSize, // Schriftgröße für TEXT
             Boolean fett, // Fett für TEXT
             String sectionLabel, // Label für SECTION_HEADER
-            Double discount // Rabatt in % pro Position (0-100)
+            Double discount, // Rabatt in % pro Position (0-100)
+            String alternativGruppe // Name der Entweder-Oder-Gruppe; null = Zusatzposition
     ) {
     }
 
@@ -189,7 +190,7 @@ public class DokumentGeneratorController {
                             b.content(), // HTML beibehalten (wird im Service geparst)
                             Boolean.TRUE.equals(b.fett()),
                             b.fontSize() != null ? b.fontSize() : 10,
-                            null, null, null, null, null, null, null, false, null, null));
+                            null, null, null, null, null, null, null, false, null, null, null));
                 } else if ("SERVICE".equals(b.type())) {
                     BigDecimal menge = b.quantity() != null ? BigDecimal.valueOf(b.quantity()) : BigDecimal.ONE;
                     BigDecimal einzelpreis = b.price() != null ? BigDecimal.valueOf(b.price()) : BigDecimal.ZERO;
@@ -224,29 +225,30 @@ public class DokumentGeneratorController {
                             gesamt,
                             Boolean.TRUE.equals(b.optional()),
                             null,
-                            rabattProzent));
+                            rabattProzent,
+                            b.alternativGruppe()));
                 } else if ("CLOSURE".equals(b.type())) {
                     contentBlocks.add(new ContentBlockDto(
                             "CLOSURE",
                             null, false, 0,
-                            null, null, null, null, null, null, null, false, null, null));
+                            null, null, null, null, null, null, null, false, null, null, null));
                 } else if ("SEPARATOR".equals(b.type())) {
                     contentBlocks.add(new ContentBlockDto(
                             "SEPARATOR",
                             null, false, 0,
-                            null, null, null, null, null, null, null, false, null, null));
+                            null, null, null, null, null, null, null, false, null, null, null));
                 } else if ("SECTION_HEADER".equals(b.type())) {
                     String sectionPos = b.pos() != null ? b.pos() : "";
                     contentBlocks.add(new ContentBlockDto(
                             "SECTION_HEADER",
                             null, false, 0,
                             sectionPos, null, null, null, null, null, null, false,
-                            b.sectionLabel() != null ? b.sectionLabel() : "", null));
+                            b.sectionLabel() != null ? b.sectionLabel() : "", null, null));
                 } else if ("SUBTOTAL".equals(b.type())) {
                     contentBlocks.add(new ContentBlockDto(
                             "SUBTOTAL",
                             null, false, 0,
-                            null, null, null, null, null, null, null, false, null, null));
+                            null, null, null, null, null, null, null, false, null, null, null));
                 }
             }
 

@@ -796,13 +796,13 @@ public class AutoMahnVersandService
         String html = AutoAuftragsbestaetigungVersandService.aufloesePlatzhalter(
                 tb.getHtml() != null ? tb.getHtml() : "", ctx);
         return new ContentBlockDto("TEXT", html, false, 10,
-                null, null, null, null, null, null, null, false, null, null);
+                null, null, null, null, null, null, null, false, null, null, null);
     }
 
     private static ContentBlockDto textBlock(String html)
     {
         return new ContentBlockDto("TEXT", html, false, 10,
-                null, null, null, null, null, null, null, false, null, null);
+                null, null, null, null, null, null, null, false, null, null, null);
     }
 
     private static String buildAnredeBlock(Map<String, String> ctx)

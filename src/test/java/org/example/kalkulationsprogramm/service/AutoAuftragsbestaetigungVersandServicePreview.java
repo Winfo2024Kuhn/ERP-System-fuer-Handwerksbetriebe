@@ -210,7 +210,7 @@ class AutoAuftragsbestaetigungVersandServicePreview {
 
     private static ContentBlockDto demoText(String html) {
         return new ContentBlockDto("TEXT", html, false, 10,
-                null, null, null, null, null, null, null, false, null, null);
+                null, null, null, null, null, null, null, false, null, null, null);
     }
 
     private static String baueAdresseAusKunde(Kunde k) {

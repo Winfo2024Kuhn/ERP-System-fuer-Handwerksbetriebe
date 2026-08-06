@@ -177,7 +177,7 @@ class AutoMahnVersandServicePreview
     private static ContentBlockDto textBlock(String html)
     {
         return new ContentBlockDto("TEXT", html, false, 10,
-                null, null, null, null, null, null, null, false, null, null);
+                null, null, null, null, null, null, null, false, null, null, null);
     }
 
     private static String buildAnrede(Kunde kunde)

@@ -176,7 +176,9 @@ public class RechnungPdfService {
             // Für SECTION_HEADER:
             String sectionLabel,
             // Rabatt pro Position in Prozent (0-100)
-            BigDecimal rabattProzent) {
+            BigDecimal rabattProzent,
+            /** Name der Entweder-Oder-Gruppe; null = frei dazubuchbare Zusatzposition. */
+            String alternativGruppe) {
 
         public boolean isText() {
             return "TEXT".equals(type);
@@ -759,6 +761,19 @@ public class RechnungPdfService {
         return table;
     }
 
+    /**
+     * Kennzeichnung einer Wahlposition hinter dem Titel. Bewusst nüchtern und ohne
+     * Gruppennamen: das PDF ist ein Angebot, kein Formular — die Entscheidung trifft
+     * der Kunde über die Freigabe-Seite. Welche Varianten zusammengehören, zeigt
+     * die Positionsnummer (3a/3b), die das Frontend bereits liefert.
+     */
+    static String wahlpositionSuffix(ContentBlockDto block) {
+        if (!block.optional()) return "";
+        return block.alternativGruppe() != null && !block.alternativGruppe().isBlank()
+                ? " (Alternative)"
+                : " (Optional)";
+    }
+
     private void addServiceRow(PdfPTable table, ContentBlockDto block, Font textFont, Font posFont, Font labelFont, NumberFormat nf, Color textColor) {
         boolean isAlternative = block.optional();
         Font currentTextFont = isAlternative ? FontFactory.getFont(FontFactory.TIMES_ITALIC, 10, textColor) : textFont;
@@ -830,7 +845,9 @@ public class RechnungPdfService {
         // Bezeichnung wird in dem Fall weggelassen, um Dopplung zu vermeiden.
         if (hasDescription) {
             if (isAlternative) {
-                Paragraph altHint = new Paragraph("Alternativ:", currentLabelFont);
+                // Ohne Titel-Zeile (die steckt im HTML) bekommt die Kennzeichnung eine
+                // eigene Zeile — Wortlaut identisch zum Suffix hinter dem Titel.
+                Paragraph altHint = new Paragraph(wahlpositionSuffix(block).trim(), currentLabelFont);
                 altHint.setLeading(currentLabelFont.getSize() * 1.3f);
                 descCell.addElement(altHint);
             }
@@ -852,10 +869,7 @@ public class RechnungPdfService {
             }
         } else {
             // Kein beschreibungHtml: nur Titel (bezeichnung) anzeigen
-            String descText = block.beschreibung();
-            if (isAlternative) {
-                descText = "Alternativ: " + descText;
-            }
+            String descText = block.beschreibung() + wahlpositionSuffix(block);
             Paragraph titleParagraph = new Paragraph(descText, currentLabelFont);
             titleParagraph.setLeading(currentLabelFont.getSize() * 1.3f);
             descCell.addElement(titleParagraph);
