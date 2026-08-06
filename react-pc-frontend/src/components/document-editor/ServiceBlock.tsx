@@ -1,4 +1,4 @@
-import { Trash2, Clock, BarChart3 } from 'lucide-react';
+import { Trash2, Clock, BarChart3, ChevronRight } from 'lucide-react';
 import { Button } from '../ui/button';
 import { TiptapEditor } from '../TiptapEditor';
 import { cn } from '../../lib/utils';
@@ -24,6 +24,12 @@ interface ServiceBlockProps {
     onEditorFocus: (editor: EditorInstance | null) => void;
     /** Optional: oeffnet den AddTypeDialog mit dieser Karte als Anker (Insert direkt darunter). */
     onAddBelow?: (anchorId: string) => void;
+    /**
+     * Startzustand der Karte. Default `true`: beim Oeffnen eines Dokuments ist
+     * alles zu, damit 20 Positionen auf einen Bildschirm passen. Reine
+     * Ansichtssache — wird bewusst nicht persistiert.
+     */
+    defaultCollapsed?: boolean;
 }
 
 export function ServiceBlock({
@@ -39,10 +45,12 @@ export function ServiceBlock({
     onFocus,
     onEditorFocus,
     onAddBelow,
+    defaultCollapsed = true,
 }: ServiceBlockProps) {
     const total = serviceLineTotal(block);
     const hasDiscount = (block.discount ?? 0) > 0;
 
+    const [collapsed, setCollapsed] = useState(defaultCollapsed);
     const [zeitprognose, setZeitprognose] = useState<ZeitprognoseDto | null>(null);
     const [prognoseLoading, setPrognoseLoading] = useState(false);
     const [showAnalyse, setShowAnalyse] = useState(false);
@@ -100,7 +108,18 @@ export function ServiceBlock({
             onClick={() => onFocus(block.id)}
         >
             {/* Header row: pos badge + title + actions */}
-            <div className="flex items-start gap-3 p-4 pb-0">
+            <div className={cn("flex items-start gap-3 p-4 pb-0", collapsed && "pb-4")}>
+                {/* Auf-/Zuklappen */}
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); }}
+                    aria-label={collapsed ? 'Aufklappen' : 'Zuklappen'}
+                    aria-expanded={!collapsed}
+                    className="flex-shrink-0 mt-1.5 w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 transition-colors"
+                >
+                    <ChevronRight className={cn("w-3.5 h-3.5 transition-transform duration-200", !collapsed && "rotate-90")} />
+                </button>
+
                 {/* Position badge */}
                 <div className="flex-shrink-0 mt-0.5">
                     <div className={cn(
@@ -127,6 +146,16 @@ export function ServiceBlock({
                         )}
                     />
                 </div>
+
+                {/* Zugeklappt: Summe direkt in der Kopfzeile */}
+                {collapsed && (
+                    <div className={cn(
+                        "flex-shrink-0 pt-1 text-sm font-bold tabular-nums",
+                        block.optional ? "text-amber-600" : "text-slate-900"
+                    )}>
+                        {formatCurrency(block.optional ? 0 : total)} €
+                    </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -157,7 +186,8 @@ export function ServiceBlock({
                 </div>
             </div>
 
-            {/* Description - always visible */}
+            {/* Description - nur aufgeklappt */}
+            {!collapsed && (
             <div className="px-4 pt-2 pb-3">
                 <div className="pl-[52px]">
                     <TiptapEditor
@@ -174,8 +204,10 @@ export function ServiceBlock({
                     />
                 </div>
             </div>
+            )}
 
-            {/* Calculation row */}
+            {/* Calculation row - nur aufgeklappt */}
+            {!collapsed && (
             <div className="mx-4 mb-4 bg-slate-50 rounded-lg border border-slate-100 p-3">
                 <div className="flex items-center gap-3">
                     {/* Menge + Einheit */}
@@ -185,6 +217,7 @@ export function ServiceBlock({
                             <input
                                 type="number"
                                 min="0"
+                                aria-label="Menge"
                                 value={block.quantity || ''}
                                 onFocus={(e) => { if (e.target.value === '0') e.target.value = ''; }}
                                 onChange={(e) => {
@@ -219,6 +252,7 @@ export function ServiceBlock({
                                 type="number"
                                 step="0.01"
                                 min="0"
+                                aria-label="Einzelpreis"
                                 value={block.price || ''}
                                 onFocus={(e) => { if (e.target.value === '0') e.target.value = ''; }}
                                 onChange={(e) => {
@@ -277,6 +311,7 @@ export function ServiceBlock({
                     </div>
                 )}
             </div>
+            )}
         </div>
         {!isLocked && onAddBelow && (
             <AddBelowButton onClick={() => onAddBelow(block.id)} />
