@@ -254,3 +254,149 @@ export function insertBlocksBeforeClosure(prev: DocBlock[], blocksToInsert: DocB
         ...prev.slice(insertAt),
     ];
 }
+
+/**
+ * Fasst mehrere Positionen zu einer Entweder-Oder-Gruppe zusammen.
+ *
+ * Die Gruppe wird NICHT als eigener Block gespeichert — sie entsteht dadurch, dass
+ * die Mitglieder dasselbe `alternativGruppe`-Feld tragen und im Dokument nebeneinander
+ * liegen. Diese Nachbarschaft ist Voraussetzung dafuer, dass der Editor den Kasten
+ * zeichnen und `buildPositionMap` die a/b-Nummern vergeben kann.
+ *
+ * Nur IDs aus dem Container des ERSTEN Treffers werden beruecksichtigt; ein
+ * Bauabschnitt und die Root-Ebene lassen sich nicht ueber Kreuz gruppieren, weil die
+ * Freigabe-Seite nur zwei Ebenen tief liest.
+ */
+export function gruppiereAlsAlternativen(
+    blocks: DocBlock[],
+    blockIds: string[],
+    gruppenName: string,
+): DocBlock[] {
+    const name = gruppenName.trim();
+    if (!name || blockIds.length === 0) return blocks;
+
+    const imRoot = blocks.some(b => b.type === 'SERVICE' && blockIds.includes(b.id));
+    if (imRoot) {
+        return normalisiereAlternativGruppen(gruppiereEbene(blocks, blockIds, name));
+    }
+
+    const sectionIdx = blocks.findIndex(b =>
+        b.type === 'SECTION_HEADER' && (b.children ?? []).some(c => blockIds.includes(c.id)));
+    if (sectionIdx === -1) return blocks;
+
+    const next = blocks.map((b, i) => i !== sectionIdx
+        ? b
+        : { ...b, children: gruppiereEbene(b.children ?? [], blockIds, name) });
+    return normalisiereAlternativGruppen(next);
+}
+
+/** Markiert die Treffer einer Ebene und schiebt sie an die Position des ersten. */
+function gruppiereEbene(ebene: DocBlock[], blockIds: string[], name: string): DocBlock[] {
+    const trefferIdx = ebene.findIndex(b => b.type === 'SERVICE' && blockIds.includes(b.id));
+    if (trefferIdx === -1) return ebene;
+
+    const markiert = ebene.map(b =>
+        b.type === 'SERVICE' && blockIds.includes(b.id)
+            ? { ...b, optional: true, alternativGruppe: name }
+            : b);
+
+    const varianten = markiert.filter(b => b.type === 'SERVICE' && blockIds.includes(b.id));
+    const rest = markiert.filter(b => !(b.type === 'SERVICE' && blockIds.includes(b.id)));
+    return [...rest.slice(0, trefferIdx), ...varianten, ...rest.slice(trefferIdx)];
+}
+
+/**
+ * Loest eine Gruppe auf. Die Mitglieder bleiben `optional` und werden damit zu
+ * frei dazubuchbaren Zusatzpositionen.
+ */
+export function loeseAlternativGruppeAuf(blocks: DocBlock[], gruppenName: string): DocBlock[] {
+    const entferne = (b: DocBlock): DocBlock => {
+        if (b.alternativGruppe !== gruppenName) return b;
+        const { alternativGruppe: _weg, ...rest } = b;
+        return rest;
+    };
+    return blocks.map(b => b.type === 'SECTION_HEADER' && b.children
+        ? { ...b, children: b.children.map(entferne) }
+        : entferne(b));
+}
+
+/**
+ * Stellt die Gruppen-Invariante wieder her. Wird nach JEDER Struktur-Aenderung
+ * aufgerufen — Loeschen, Drag&Drop, Aus-Bauabschnitt-Werfen, Einfuegen:
+ *
+ *  1. Varianten einer Gruppe stehen direkt untereinander. Zieht der Nutzer eine
+ *     Position dazwischen, ruecken sie wieder zusammen (an die Stelle der ersten
+ *     Variante) — die Gruppe wird NICHT aufgeloest. Ohne Nachbarschaft koennte
+ *     der Editor den Kasten nicht zeichnen und `buildPositionMap` keine a/b-Nummern
+ *     vergeben.
+ *  2. Eine Gruppe braucht mindestens zwei Mitglieder IM SELBEN Container. Bleibt
+ *     eines uebrig, verliert es die Gruppe und wird wieder eine Zusatzposition —
+ *     sonst haette der Kunde eine Pflichtwahl ohne Alternative.
+ *  3. `alternativGruppe` ohne `optional` ist widerspruechlich und wird entfernt.
+ */
+export function normalisiereAlternativGruppen(blocks: DocBlock[]): DocBlock[] {
+    /** Schritt 1: verstreute Varianten an die Position der ersten zurueckholen. */
+    const rueckeZusammen = (ebene: DocBlock[]): DocBlock[] => {
+        const ersteProGruppe = new Map<string, number>();
+        ebene.forEach((b, i) => {
+            if (b.type === 'SERVICE' && b.optional && b.alternativGruppe
+                && !ersteProGruppe.has(b.alternativGruppe)) {
+                ersteProGruppe.set(b.alternativGruppe, i);
+            }
+        });
+        if (ersteProGruppe.size === 0) return ebene;
+
+        const result: DocBlock[] = [];
+        const schonGesetzt = new Set<string>();
+        ebene.forEach((b, i) => {
+            const gruppe = b.type === 'SERVICE' && b.optional ? b.alternativGruppe : undefined;
+            if (!gruppe) { result.push(b); return; }
+            if (ersteProGruppe.get(gruppe) !== i) return; // spaetere Variante: hier ueberspringen
+            if (schonGesetzt.has(gruppe)) return;
+            schonGesetzt.add(gruppe);
+            result.push(...ebene.filter(x =>
+                x.type === 'SERVICE' && x.optional && x.alternativGruppe === gruppe));
+        });
+        return result;
+    };
+
+    const bereinigeEbene = (roh: DocBlock[]): DocBlock[] => {
+        const ebene = rueckeZusammen(roh);
+        const anzahl = new Map<string, number>();
+        for (const b of ebene) {
+            if (b.type === 'SERVICE' && b.optional && b.alternativGruppe) {
+                anzahl.set(b.alternativGruppe, (anzahl.get(b.alternativGruppe) ?? 0) + 1);
+            }
+        }
+        return ebene.map(b => {
+            if (!b.alternativGruppe) return b;
+            const gueltig = b.type === 'SERVICE'
+                && b.optional === true
+                && (anzahl.get(b.alternativGruppe) ?? 0) >= 2;
+            if (gueltig) return b;
+            const { alternativGruppe: _weg, ...rest } = b;
+            return rest;
+        });
+    };
+
+    const root = bereinigeEbene(blocks);
+    return root.map(b => b.type === 'SECTION_HEADER' && b.children
+        ? { ...b, children: bereinigeEbene(b.children) }
+        : b);
+}
+
+/** Alle Gruppennamen des Dokuments in Reihenfolge ihres ersten Auftretens. */
+export function sammleGruppenNamen(blocks: DocBlock[]): string[] {
+    const namen: string[] = [];
+    const merke = (b: DocBlock) => {
+        if (b.type === 'SERVICE' && b.optional && b.alternativGruppe
+            && !namen.includes(b.alternativGruppe)) {
+            namen.push(b.alternativGruppe);
+        }
+    };
+    for (const b of blocks) {
+        merke(b);
+        if (b.type === 'SECTION_HEADER') (b.children ?? []).forEach(merke);
+    }
+    return namen;
+}

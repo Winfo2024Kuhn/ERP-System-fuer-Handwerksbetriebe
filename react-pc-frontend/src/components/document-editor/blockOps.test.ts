@@ -18,6 +18,10 @@ import {
     insertIntoSection,
     insertBlocksBeforeClosure,
     validateRootReorder,
+    gruppiereAlsAlternativen,
+    loeseAlternativGruppeAuf,
+    normalisiereAlternativGruppen,
+    sammleGruppenNamen,
 } from './blockOps';
 import type { DocBlock } from './types';
 
@@ -424,5 +428,143 @@ describe('validateRootReorder', () => {
         // Defensiver Pfad: CLOSURE im Array aber keine Leistungen mehr -> kein Block-Grund
         const order: DocBlock[] = [text('t1'), closure];
         expect(validateRootReorder(order, CLOSURE_BLOCK_ID)).toEqual({ ok: true });
+    });
+});
+
+// ─── Alternativgruppen ──────────────────────────────────────────────────────
+const svc = (id: string, extra: Partial<DocBlock> = {}): DocBlock => ({
+    id, type: 'SERVICE', title: `Leistung ${id}`, quantity: 1, unit: 'Stk', price: 100, ...extra,
+});
+
+describe('gruppiereAlsAlternativen', () => {
+    it('setzt optional und Gruppe und rueckt die Varianten zusammen', () => {
+        const blocks = [svc('a'), svc('b'), svc('c'), svc('d')];
+        const result = gruppiereAlsAlternativen(blocks, ['b', 'd'], 'Geländer');
+
+        expect(result.map(b => b.id)).toEqual(['a', 'b', 'd', 'c']);
+        expect(result[1]).toMatchObject({ optional: true, alternativGruppe: 'Geländer' });
+        expect(result[2]).toMatchObject({ optional: true, alternativGruppe: 'Geländer' });
+        expect(result[3].alternativGruppe).toBeUndefined();
+    });
+
+    it('gruppiert Kinder innerhalb desselben Bauabschnitts', () => {
+        const blocks: DocBlock[] = [{
+            id: 'sec', type: 'SECTION_HEADER', children: [svc('k1'), svc('k2'), svc('k3')],
+        }];
+        const result = gruppiereAlsAlternativen(blocks, ['k1', 'k3'], 'Geländer');
+        const kinder = result[0].children!;
+
+        expect(kinder.map(b => b.id)).toEqual(['k1', 'k3', 'k2']);
+        expect(kinder[0].alternativGruppe).toBe('Geländer');
+        expect(kinder[1].alternativGruppe).toBe('Geländer');
+    });
+
+    it('ignoriert IDs aus einem anderen Container', () => {
+        const blocks: DocBlock[] = [
+            svc('root1'),
+            { id: 'sec', type: 'SECTION_HEADER', children: [svc('k1')] },
+        ];
+        const result = gruppiereAlsAlternativen(blocks, ['root1', 'k1'], 'Geländer');
+
+        // root1 bleibt allein -> Invariante loest die Gruppe wieder auf.
+        expect(result[0].alternativGruppe).toBeUndefined();
+        expect(result[1].children![0].alternativGruppe).toBeUndefined();
+    });
+});
+
+describe('loeseAlternativGruppeAuf', () => {
+    it('entfernt die Gruppe, laesst optional aber stehen', () => {
+        const blocks = [
+            svc('a', { optional: true, alternativGruppe: 'Geländer' }),
+            svc('b', { optional: true, alternativGruppe: 'Geländer' }),
+        ];
+        const result = loeseAlternativGruppeAuf(blocks, 'Geländer');
+
+        expect(result.every(b => b.alternativGruppe === undefined)).toBe(true);
+        expect(result.every(b => b.optional === true)).toBe(true);
+    });
+});
+
+describe('normalisiereAlternativGruppen', () => {
+    it('loest eine Gruppe mit nur einem Mitglied auf', () => {
+        const blocks = [svc('a', { optional: true, alternativGruppe: 'Geländer' }), svc('b')];
+        const result = normalisiereAlternativGruppen(blocks);
+
+        expect(result[0].alternativGruppe).toBeUndefined();
+        expect(result[0].optional).toBe(true);
+    });
+
+    it('entfernt die Gruppe von nicht-optionalen Bloecken', () => {
+        const blocks = [
+            svc('a', { optional: false, alternativGruppe: 'Geländer' }),
+            svc('b', { optional: true, alternativGruppe: 'Geländer' }),
+        ];
+        const result = normalisiereAlternativGruppen(blocks);
+
+        expect(result[0].alternativGruppe).toBeUndefined();
+        expect(result[1].alternativGruppe).toBeUndefined();
+    });
+
+    it('laesst eine gueltige Gruppe unveraendert', () => {
+        const blocks = [
+            svc('a', { optional: true, alternativGruppe: 'Geländer' }),
+            svc('b', { optional: true, alternativGruppe: 'Geländer' }),
+        ];
+        expect(normalisiereAlternativGruppen(blocks)).toEqual(blocks);
+    });
+
+    it('rueckt auseinandergezogene Varianten wieder zusammen statt aufzuloesen', () => {
+        // Nutzer hat per Drag&Drop eine feste Position zwischen die Varianten gezogen.
+        const blocks = [
+            svc('a', { optional: true, alternativGruppe: 'Geländer' }),
+            svc('dazwischen'),
+            svc('b', { optional: true, alternativGruppe: 'Geländer' }),
+        ];
+        const result = normalisiereAlternativGruppen(blocks);
+
+        expect(result.map(x => x.id)).toEqual(['a', 'b', 'dazwischen']);
+        expect(result[0].alternativGruppe).toBe('Geländer');
+        expect(result[1].alternativGruppe).toBe('Geländer');
+    });
+
+    it('holt eine ans Ende gezogene Variante zurueck an die Gruppe', () => {
+        const blocks = [
+            svc('a', { optional: true, alternativGruppe: 'Geländer' }),
+            svc('x'),
+            svc('y'),
+            svc('b', { optional: true, alternativGruppe: 'Geländer' }),
+        ];
+        expect(normalisiereAlternativGruppen(blocks).map(x => x.id))
+            .toEqual(['a', 'b', 'x', 'y']);
+    });
+
+    it('behandelt Container getrennt: je eine Variante oben und unten ist keine Gruppe', () => {
+        const blocks: DocBlock[] = [
+            svc('root1', { optional: true, alternativGruppe: 'Geländer' }),
+            {
+                id: 'sec', type: 'SECTION_HEADER',
+                children: [svc('k1', { optional: true, alternativGruppe: 'Geländer' })],
+            },
+        ];
+        const result = normalisiereAlternativGruppen(blocks);
+
+        expect(result[0].alternativGruppe).toBeUndefined();
+        expect(result[1].children![0].alternativGruppe).toBeUndefined();
+    });
+});
+
+describe('sammleGruppenNamen', () => {
+    it('liefert jede Gruppe einmal, in Dokumentreihenfolge', () => {
+        const blocks: DocBlock[] = [
+            svc('a', { optional: true, alternativGruppe: 'Geländer' }),
+            svc('b', { optional: true, alternativGruppe: 'Geländer' }),
+            {
+                id: 'sec', type: 'SECTION_HEADER', children: [
+                    svc('k1', { optional: true, alternativGruppe: 'Treppe' }),
+                    svc('k2', { optional: true, alternativGruppe: 'Treppe' }),
+                ],
+            },
+        ];
+        expect(sammleGruppenNamen(blocks)).toEqual(['Geländer', 'Treppe']);
     });
 });
