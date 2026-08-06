@@ -46,3 +46,21 @@ describe('ServiceBlock Einklappen', () => {
         expect(screen.getByLabelText('Menge')).toBeInTheDocument();
     });
 });
+
+describe('ServiceBlock Wording', () => {
+    it('nennt eine gruppenlose Wahlposition "Optional"', () => {
+        render(<ServiceBlock {...props} block={{ ...block, optional: true }} />);
+        expect(screen.getByRole('button', { name: 'Optional' })).toBeInTheDocument();
+    });
+
+    it('nennt ein Gruppenmitglied "Alternative" und sperrt den Schalter nicht', () => {
+        render(<ServiceBlock {...props}
+            block={{ ...block, optional: true, alternativGruppe: 'Geländer' }} />);
+        expect(screen.getByRole('button', { name: 'Alternative' })).toBeInTheDocument();
+    });
+
+    it('nennt eine feste Position "Optional" als Angebot zum Umschalten', () => {
+        render(<ServiceBlock {...props} />);
+        expect(screen.getByRole('button', { name: 'Optional' })).toBeInTheDocument();
+    });
+});

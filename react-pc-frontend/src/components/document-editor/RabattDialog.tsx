@@ -218,7 +218,11 @@ export function RabattDialog({ blocks, globalRabatt: initialGlobalRabatt, onAppl
                                         <div className="flex-1 min-w-0">
                                             <div className="text-sm font-medium text-slate-800 truncate">
                                                 {block.title || 'Ohne Titel'}
-                                                {block.optional && <span className="text-amber-500 text-xs ml-1">(Alt.)</span>}
+                                                {block.optional && (
+                                                    <span className="text-amber-500 text-xs ml-1">
+                                                        {block.alternativGruppe ? '(Alternative)' : '(Optional)'}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="text-xs text-slate-400">
                                                 {(block.quantity || 0)} {block.unit || 'Stk'} × {formatCurrency(block.price || 0)} €

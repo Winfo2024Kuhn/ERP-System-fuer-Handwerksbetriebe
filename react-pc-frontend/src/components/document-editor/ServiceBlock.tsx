@@ -170,9 +170,11 @@ export function ServiceBlock({
                                 ? "text-amber-600 bg-amber-50 hover:bg-amber-100"
                                 : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                         )}
-                        title="Als Alternativ-Position markieren (nicht in Summe)"
+                        title={block.alternativGruppe
+                            ? `Variante der Auswahl „${block.alternativGruppe}" — der Kunde wählt genau eine`
+                            : 'Optional: der Kunde kann diese Position dazubuchen (zählt nicht in die Summe)'}
                     >
-                        {block.optional ? 'Alternativ' : 'Opt'}
+                        {block.alternativGruppe ? 'Alternative' : 'Optional'}
                     </Button>
                     <Button
                         variant="ghost"
