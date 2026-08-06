@@ -50,6 +50,15 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class RechnungPdfService {
 
+    /**
+     * Grenzen für Schriftgrößen, die direkt im HTML stehen (z.B. aus dem Größen-Dropdown des
+     * Editors oder per Copy-Paste aus Word/Outlook mitgebracht). Sie sind bewusst weit gefasst:
+     * Was der Editor anzeigt, soll auch im PDF stehen. Beschnitten wird nur, was auf Papier
+     * unlesbar klein oder unbrauchbar groß wäre.
+     */
+    private static final float MIN_HTML_FONT_SIZE = 4f;
+    private static final float MAX_HTML_FONT_SIZE = 36f;
+
     // ======================= DTOs =======================
 
     /**
@@ -841,12 +850,19 @@ public class RechnungPdfService {
         descCell.setUseAscender(true);
         
         // Bezeichnung und Beschreibung:
-        // Wenn beschreibungHtml vorhanden ist, nur diese rendern (enthält bereits alle Infos).
-        // Bezeichnung wird in dem Fall weggelassen, um Dopplung zu vermeiden.
+        // Der Titel wird als eigene Zeile vorangestellt — außer die Beschreibung führt ihn
+        // bereits selbst als erste Zeile. Viele Leistungs-Stammdaten wiederholen den Namen
+        // im Beschreibungstext; nur für die darf er nicht doppelt erscheinen.
         if (hasDescription) {
-            if (isAlternative) {
-                // Ohne Titel-Zeile (die steckt im HTML) bekommt die Kennzeichnung eine
-                // eigene Zeile — Wortlaut identisch zum Suffix hinter dem Titel.
+            boolean titelStecktImHtml = beschreibungWiederholtTitel(block.beschreibungHtml(), block.beschreibung());
+            if (!titelStecktImHtml) {
+                Paragraph titleParagraph = new Paragraph(
+                        block.beschreibung() + wahlpositionSuffix(block), currentLabelFont);
+                titleParagraph.setLeading(currentLabelFont.getSize() * 1.3f);
+                descCell.addElement(titleParagraph);
+            } else if (isAlternative) {
+                // Titel steckt im HTML — dann bekommt die Kennzeichnung eine
+                // eigene Zeile, Wortlaut identisch zum Suffix hinter dem Titel.
                 Paragraph altHint = new Paragraph(wahlpositionSuffix(block).trim(), currentLabelFont);
                 altHint.setLeading(currentLabelFont.getSize() * 1.3f);
                 descCell.addElement(altHint);
@@ -940,6 +956,52 @@ public class RechnungPdfService {
         table.addCell(gpCell);
     }
     
+    /**
+     * Prüft, ob die Beschreibung den Positionstitel bereits als erste Zeile wiederholt.
+     *
+     * Hintergrund: In den Leistungs-Stammdaten ist der Name mal als eigenes Feld gepflegt
+     * und mal zusätzlich als erste (fette) Zeile im Beschreibungstext wiederholt. Nur im
+     * zweiten Fall darf der Titel im PDF nicht noch einmal davorgesetzt werden.
+     *
+     * Verglichen wird die ganze erste Zeile, nicht nur ihr Anfang: Eine Zeile wie
+     * "Geländer Edelstahl V2A" bei Titel "Geländer Edelstahl" trägt zusätzliche
+     * Information und ersetzt den Titel deshalb bewusst nicht.
+     *
+     * Bekannte Grenze: Benannte HTML-Entities jenseits der sechs in
+     * {@link #stripHtmlForFallback} behandelten (z.B. {@code &auml;}) bleiben unaufgelöst.
+     * Aus dem TiptapEditor kommen sie nicht — nur Legacy-Stammdaten könnten sie enthalten,
+     * und dort führt es lediglich zu einer zusätzlichen Titelzeile, nicht zu einem Fehler.
+     *
+     * Ein leerer Titel gilt als "steckt schon drin" — es gibt dann nichts zu rendern.
+     */
+    private boolean beschreibungWiederholtTitel(String beschreibungHtml, String titel) {
+        if (titel == null || titel.isBlank()) return true;
+        return normalisiereFuerVergleich(ersteTextZeile(beschreibungHtml))
+                .equals(normalisiereFuerVergleich(titel));
+    }
+
+    /** Liefert die erste Textzeile eines HTML-Fragments (bis zum ersten Absatz-, Listen- oder Zeilenumbruch). */
+    private String ersteTextZeile(String html) {
+        if (html == null) return "";
+        // stripHtmlForFallback kennt nur </p> und <br> als Zeilengrenze. Für den Titelvergleich
+        // zählen auch Listenpunkte und Blockelemente — sonst verschmilzt der erste Listenpunkt
+        // mit dem zweiten ("Reparatur Sichtschutzinkl. Kleinmaterial") und der Vergleich
+        // schlägt fälschlich fehl, der Titel stünde doppelt auf dem Kundendokument.
+        String mitZeilengrenzen = html.replaceAll("(?i)</(li|div|h[1-6]|td|tr)>", "</p>");
+        String plain = stripHtmlForFallback(mitZeilengrenzen);
+        int umbruch = plain.indexOf('\n');
+        return umbruch >= 0 ? plain.substring(0, umbruch) : plain;
+    }
+
+    /** Vereinheitlicht Groß-/Kleinschreibung und Trennzeichen für den Titelvergleich. */
+    private String normalisiereFuerVergleich(String text) {
+        if (text == null) return "";
+        // Javas \s matcht kein U+00A0, und trim() schneidet nur Zeichen bis U+0020. Aus Word
+        // und Outlook eingefügte Texte enthalten aber genau dieses geschützte Leerzeichen —
+        // ohne \p{Z} kippt der Vergleich und der Titel erscheint doppelt.
+        return text.replaceAll("[\\s\\p{Z}]+", " ").trim().toLowerCase();
+    }
+
     /** Helper: Creates a right-aligned Paragraph for use inside PdfPCell.addElement(). */
     private Paragraph createRightAlignedParagraph(String text, Font font) {
         Paragraph p = new Paragraph(text, font);
@@ -967,7 +1029,9 @@ public class RechnungPdfService {
      * @param defaultFontSize  Standard-Schriftgröße (aus Block-Einstellungen, 10-20pt)
      * @param defaultBold      Standard-Fett (aus Block-Einstellungen)
      */
-    private java.util.List<com.lowagie.text.Element> parseHtmlToElements(
+    // Package-private statt private, damit RechnungPdfServiceTest die Schriftgrößen-Umrechnung
+    // direkt prüfen kann — über den extrahierten PDF-Text sind Schriftgrößen nicht sichtbar.
+    java.util.List<com.lowagie.text.Element> parseHtmlToElements(
             String html, Color defaultColor, float defaultFontSize, boolean defaultBold) {
         java.util.List<com.lowagie.text.Element> elements = new java.util.ArrayList<>();
         if (html == null || html.isBlank()) return elements;
@@ -1113,7 +1177,7 @@ public class RechnungPdfService {
                             } else if ("em".equals(unit) || "rem".equals(unit)) {
                                 size = size * defaultFontSize;
                             }
-                            newFontSize = Math.max(10f, Math.min(20f, size));
+                            newFontSize = Math.max(MIN_HTML_FONT_SIZE, Math.min(MAX_HTML_FONT_SIZE, size));
                         } catch (NumberFormatException ignored) {}
                     }
 

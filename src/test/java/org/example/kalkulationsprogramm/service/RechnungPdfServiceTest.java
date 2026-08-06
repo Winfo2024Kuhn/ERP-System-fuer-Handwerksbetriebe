@@ -442,6 +442,184 @@ class RechnungPdfServiceTest {
     }
 
     @Nested
+    @DisplayName("Positionstitel in der Leistungstabelle")
+    class PositionsTitelTests {
+
+        /** Baut ein PDF mit genau einer SERVICE-Position und liefert den extrahierten Text. */
+        private String pdfTextFuerPosition(String titel, String beschreibungHtml) {
+            List<FormBlockDto> formBlocks = List.of(
+                    new FormBlockDto("t", "table", 1, 24, 100, 540, 600, "", null));
+            LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
+
+            List<ContentBlockDto> blocks = List.of(new ContentBlockDto(
+                    "SERVICE", null, false, 0,
+                    "1", titel, beschreibungHtml,
+                    BigDecimal.valueOf(1), "Stk", BigDecimal.valueOf(18.5), BigDecimal.valueOf(18.5),
+                    false, null, null, null));
+
+            RechnungDto dto = new RechnungDto(
+                    layout, createTestKopfdaten(), blocks, formBlocks, "Schlusstext", null, null);
+
+            return generateAndExtractText(dto);
+        }
+
+        private int zaehleVorkommen(String text, String suche) {
+            int treffer = 0;
+            int idx = 0;
+            while ((idx = text.indexOf(suche, idx)) != -1) {
+                treffer++;
+                idx += suche.length();
+            }
+            return treffer;
+        }
+
+        @Test
+        @DisplayName("Titel erscheint im PDF, wenn die Beschreibung ihn nicht selbst enthält")
+        void titelErscheintWennBeschreibungIhnNichtEnthaelt() {
+            String text = pdfTextFuerPosition(
+                    "Fahrkostenpauschale",
+                    "<p>An- und Abfahrt zur Baustelle mit einem Servicefahrzeug.</p>");
+
+            assertTrue(text.contains("Fahrkostenpauschale"),
+                    "Positionstitel fehlt im PDF, obwohl die Beschreibung ihn nicht enthält. Text: " + text);
+            assertTrue(text.contains("An- und Abfahrt"),
+                    "Beschreibungstext fehlt im PDF");
+        }
+
+        @Test
+        @DisplayName("Titel erscheint nur einmal, wenn die Beschreibung mit ihm beginnt")
+        void titelErscheintNurEinmalWennBeschreibungMitIhmBeginnt() {
+            String text = pdfTextFuerPosition(
+                    "Reparatur Sichtschutz",
+                    "<p><strong>Reparatur Sichtschutz</strong></p>"
+                            + "<p>Reparatur- und Instandsetzungsarbeiten inkl. Kleinmaterial.</p>");
+
+            assertEquals(1, zaehleVorkommen(text, "Reparatur Sichtschutz"),
+                    "Titel darf nicht doppelt erscheinen, wenn die Beschreibung ihn bereits enthält. Text: " + text);
+        }
+
+        @Test
+        @DisplayName("Titel erscheint nur einmal, wenn die Beschreibung mit einer Aufzählung beginnt")
+        void titelErscheintNurEinmalWennBeschreibungMitListeBeginnt() {
+            // Aufzählungen haben kein </p> als Zeilengrenze — ohne eigene Behandlung
+            // verschmilzt der erste Punkt mit dem zweiten und der Vergleich schlägt fehl.
+            String text = pdfTextFuerPosition(
+                    "Reparatur Sichtschutz",
+                    "<ul><li><strong>Reparatur Sichtschutz</strong></li>"
+                            + "<li>inkl. Kleinmaterial</li></ul>");
+
+            assertEquals(1, zaehleVorkommen(text, "Reparatur Sichtschutz"),
+                    "Titel darf nicht doppelt erscheinen, wenn die Aufzählung mit ihm beginnt. Text: " + text);
+        }
+
+        /** U+00A0 — das geschuetzte Leerzeichen, das Word und Outlook beim Kopieren liefern. */
+        private static final String GESCHUETZTES_LEERZEICHEN = Character.toString(160);
+
+        @Test
+        @DisplayName("Titel erscheint nur einmal, wenn ein geschütztes Leerzeichen aus Word darin steckt")
+        void titelErscheintNurEinmalTrotzGeschuetztemLeerzeichen() {
+            // Word/Outlook liefern U+00A0 statt eines normalen Leerzeichens.
+            // Javas \s matcht das nicht — ohne eigene Behandlung kippt der Vergleich.
+            String text = pdfTextFuerPosition(
+                    "Reparatur Sichtschutz",
+                    "<p><strong>Reparatur" + GESCHUETZTES_LEERZEICHEN
+                            + "Sichtschutz</strong></p><p>Instandsetzung.</p>");
+
+            assertEquals(1, zaehleVorkommen(text, "Sichtschutz"),
+                    "Titel darf nicht doppelt erscheinen, nur weil ein NBSP im HTML steht. Text: " + text);
+        }
+
+        @Test
+        @DisplayName("Titel erscheint nur einmal, wenn sich die Beschreibung nur in der Groß-/Kleinschreibung unterscheidet")
+        void titelErscheintNurEinmalTrotzAbweichenderSchreibweise() {
+            String text = pdfTextFuerPosition(
+                    "Reparatur Sichtschutz",
+                    "<p><strong>REPARATUR SICHTSCHUTZ</strong></p><p>Instandsetzung.</p>");
+
+            assertEquals(0, zaehleVorkommen(text, "Reparatur Sichtschutz"),
+                    "Bei abweichender Schreibweise darf nur die Fassung aus dem HTML stehen. Text: " + text);
+            assertEquals(1, zaehleVorkommen(text, "REPARATUR SICHTSCHUTZ"),
+                    "Die Schreibweise aus dem HTML muss erhalten bleiben. Text: " + text);
+        }
+
+        @Test
+        @DisplayName("Ohne Titel wird nur die Beschreibung gerendert, ohne 'null' im Text")
+        void ohneTitelWirdNurDieBeschreibungGerendert() {
+            String text = pdfTextFuerPosition(null, "<p>Reine Beschreibung ohne eigenen Titel.</p>");
+
+            assertTrue(text.contains("Reine Beschreibung"), "Beschreibung fehlt. Text: " + text);
+            assertFalse(text.contains("null"), "Ein fehlender Titel darf nicht als 'null' erscheinen. Text: " + text);
+        }
+
+        @Test
+        @DisplayName("Titel erscheint, wenn die Beschreibung nur zufällig ähnlich beginnt")
+        void titelErscheintWennBeschreibungNurAehnlichBeginnt() {
+            // Titel bewusst so gewählt, dass er KEIN Teilstring der Beschreibung ist —
+            // sonst könnte der Test auch ohne gerenderten Titel grün werden.
+            String text = pdfTextFuerPosition(
+                    "Montage Zaunanlage",
+                    "<p>Montage Zaunfelder inklusive Ausrichten der Pfosten.</p>");
+
+            assertTrue(text.contains("Montage Zaunanlage"),
+                    "Titel fehlt, obwohl die erste Zeile der Beschreibung nur ähnlich, nicht identisch ist. Text: " + text);
+        }
+    }
+
+    @Nested
+    @DisplayName("Schriftgrößen aus dem HTML")
+    class SchriftgroessenTests {
+
+        /** Liefert die Schriftgröße des ersten nicht-leeren Text-Chunks. */
+        private float ersteChunkSchriftgroesse(List<com.lowagie.text.Element> elements) {
+            for (com.lowagie.text.Element el : elements) {
+                if (el instanceof com.lowagie.text.Phrase phrase) {
+                    for (Object o : phrase.getChunks()) {
+                        com.lowagie.text.Chunk chunk = (com.lowagie.text.Chunk) o;
+                        if (!chunk.getContent().isBlank()) {
+                            return chunk.getFont().getSize();
+                        }
+                    }
+                }
+            }
+            fail("Kein Text-Chunk in den geparsten Elementen gefunden");
+            return -1f;
+        }
+
+        @Test
+        @DisplayName("Aus Word gepastete 12px-Schrift bleibt bei 9pt statt auf 10pt hochgezogen zu werden")
+        void gepasteteSchriftgroesseUnterZehnPunktBleibtErhalten() {
+            List<com.lowagie.text.Element> elements = service.parseHtmlToElements(
+                    "<p><span style=\"font-size: 12px\">Kleingedrucktes</span></p>",
+                    java.awt.Color.BLACK, 10f, false);
+
+            assertEquals(9f, ersteChunkSchriftgroesse(elements), 0.01f,
+                    "12px entsprechen 9pt und dürfen nicht auf 10pt angehoben werden");
+        }
+
+        @Test
+        @DisplayName("Explizit gesetzte 24pt bleiben erhalten statt auf 20pt gedeckelt zu werden")
+        void grosseSchriftgroesseBleibtErhalten() {
+            List<com.lowagie.text.Element> elements = service.parseHtmlToElements(
+                    "<p><span style=\"font-size: 24pt\">Überschrift</span></p>",
+                    java.awt.Color.BLACK, 10f, false);
+
+            assertEquals(24f, ersteChunkSchriftgroesse(elements), 0.01f,
+                    "24pt dürfen nicht auf 20pt gedeckelt werden");
+        }
+
+        @Test
+        @DisplayName("Unlesbar kleine Schriftgröße wird auf das Mindestmaß angehoben")
+        void unlesbarKleineSchriftgroesseWirdAngehoben() {
+            List<com.lowagie.text.Element> elements = service.parseHtmlToElements(
+                    "<p><span style=\"font-size: 1pt\">Winzig</span></p>",
+                    java.awt.Color.BLACK, 10f, false);
+
+            assertEquals(4f, ersteChunkSchriftgroesse(elements), 0.01f,
+                    "Unter 4pt ist Text auf Papier nicht mehr lesbar");
+        }
+    }
+
+    @Nested
     @DisplayName("Reale Template-Simulation (Rechnungen.json)")
     class RealTemplateTests {
 

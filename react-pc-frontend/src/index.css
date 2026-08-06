@@ -128,6 +128,44 @@ body {
 }
 
 /* ========================================
+   WYSIWYG-Metriken für den Dokumenteditor
+
+   Der Editor soll den Text so setzen und umbrechen wie der PDF-Ausdruck. Ohne
+   diese Regeln greift Tailwinds prose-sm (14px, Zeilenabstand 1,71) und der Text
+   bricht an ganz anderer Stelle um als im Dokument. Die Werte sind 1:1 aus
+   RechnungPdfService übernommen:
+     - Schriftgröße  10pt  (Block-Default in addServiceRow)
+     - Zeilenabstand 1,3   (Paragraph.setLeading(fontSize * 1.3f))
+     - Absatzabstand 2pt   (Paragraph.setSpacingAfter(2f))
+
+   Die Breiten entsprechen den Content-Bereichen der PDF-Seite (1pt = 1,333px):
+     - Bezeichnungsspalte der Positionstabelle: 4.8 von 9.6 Spaltenanteilen ≈ 257pt
+     - Freitext über die volle Contentbreite ≈ 515pt
+   Beides sind Richtwerte für das Standard-Template. Ein Template mit abweichender
+   Tabellenbreite verschiebt den Umbruch entsprechend.
+   ======================================== */
+.doc-pdf-metrics .tiptap-editor-content {
+  font-size: 10pt;
+  line-height: 1.3;
+}
+
+.doc-pdf-metrics .tiptap-editor-content p {
+  margin: 0 0 2pt 0;
+}
+
+/* Tailwind-Preflight setzt global box-sizing: border-box, und der Editor bringt
+   12px Innenabstand je Seite mit (siehe .tiptap-editor-content oben sowie p-3 in
+   TiptapEditor.tsx). Ohne den Aufschlag von 24px wäre die Textbreite um genau
+   diesen Betrag zu schmal und der Umbruch wieder falsch. */
+.doc-pdf-metrics--spalte .tiptap-editor-content {
+  max-width: calc(257pt + 24px);
+}
+
+.doc-pdf-metrics--voll .tiptap-editor-content {
+  max-width: calc(515pt + 24px);
+}
+
+/* ========================================
    Zahlungsziel-Chip (geschützter Platzhalter im Textbaustein)
    Styling bewusst per Attribut-Selektor statt class im HTML,
    damit editor.getHTML() dem serialisierten Markup entspricht.

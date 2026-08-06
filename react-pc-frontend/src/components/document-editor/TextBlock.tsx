@@ -79,7 +79,7 @@ export function TextBlock({
                 </div>
 
                 {/* Editor */}
-                <div className="ml-0.5">
+                <div className="ml-0.5 doc-pdf-metrics doc-pdf-metrics--voll">
                     <TiptapEditor
                         value={prepareContent(block.content || '')}
                         onChange={(val) => onUpdate(block.id, { content: serializeContent(val) })}
