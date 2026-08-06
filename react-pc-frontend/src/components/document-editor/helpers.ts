@@ -536,6 +536,41 @@ export function buildPositionMap(blocks: DocBlock[]): Map<string, string> {
     return map;
 }
 
+/** Ein Eintrag der Editor-Anzeige: einzelner Block oder eine Entweder-Oder-Gruppe. */
+export type AnzeigeEintrag =
+    | { art: 'block'; block: DocBlock }
+    | { art: 'gruppe'; name: string; positionen: DocBlock[] };
+
+/**
+ * Bereitet eine Blockebene fuer die Anzeige auf: aufeinanderfolgende Varianten
+ * derselben Gruppe werden zu einem Eintrag. Bauabschnitte bleiben stehen — fuer
+ * deren children ruft die Anzeige die Funktion erneut auf.
+ *
+ * Bewusst spiegelbildlich zur Gruppierung der Kundenseite
+ * (molecular-mercury/src/lib/freigabe-positionen.ts), damit der Handwerker im
+ * Editor dieselbe Gruppierung sieht wie sein Kunde auf der Freigabe-Seite.
+ */
+export function gruppiereFuerAnzeige(blocks: DocBlock[]): AnzeigeEintrag[] {
+    const eintraege: AnzeigeEintrag[] = [];
+    let offen: { art: 'gruppe'; name: string; positionen: DocBlock[] } | null = null;
+
+    for (const block of blocks) {
+        const gruppe = block.type === 'SERVICE' && block.optional ? block.alternativGruppe : undefined;
+        if (!gruppe) {
+            offen = null;
+            eintraege.push({ art: 'block', block });
+            continue;
+        }
+        if (offen && offen.name === gruppe) {
+            offen.positionen.push(block);
+            continue;
+        }
+        offen = { art: 'gruppe', name: gruppe, positionen: [block] };
+        eintraege.push(offen);
+    }
+    return eintraege;
+}
+
 export interface ClosureSectionSummary {
     label: string;
     total: number;

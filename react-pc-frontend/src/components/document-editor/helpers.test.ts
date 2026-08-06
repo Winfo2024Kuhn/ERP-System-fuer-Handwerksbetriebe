@@ -22,6 +22,7 @@ import {
     buildPositionMap,
     calculateNetto,
     calculateSectionSubtotal,
+    gruppiereFuerAnzeige,
     extractBoldFromHtml,
     extractFontSizeFromHtml,
     zahlungszielPlaceholderToChipHtml,
@@ -368,5 +369,29 @@ describe('Basisbetrag schliesst Gruppenmitglieder aus', () => {
             ],
         };
         expect(calculateSectionSubtotal(section)).toBe(1000);
+    });
+});
+
+describe('gruppiereFuerAnzeige', () => {
+    it('fasst aufeinanderfolgende Varianten zu einem Eintrag zusammen', () => {
+        const blocks = [
+            leistung('a', 100),
+            leistung('b', 200, { optional: true, alternativGruppe: 'Geländer' }),
+            leistung('c', 300, { optional: true, alternativGruppe: 'Geländer' }),
+            leistung('d', 400, { optional: true }),
+        ];
+        const eintraege = gruppiereFuerAnzeige(blocks);
+
+        expect(eintraege).toHaveLength(3);
+        expect(eintraege[0]).toMatchObject({ art: 'block' });
+        expect(eintraege[1]).toMatchObject({ art: 'gruppe', name: 'Geländer' });
+        expect(eintraege[1].art === 'gruppe' && eintraege[1].positionen.map(p => p.id))
+            .toEqual(['b', 'c']);
+        expect(eintraege[2]).toMatchObject({ art: 'block' });
+    });
+
+    it('loest Bauabschnitte nicht auf', () => {
+        const blocks: DocBlock[] = [{ id: 'sec', type: 'SECTION_HEADER', children: [] }];
+        expect(gruppiereFuerAnzeige(blocks)).toEqual([{ art: 'block', block: blocks[0] }]);
     });
 });

@@ -4,7 +4,10 @@ import { useDroppable } from '@dnd-kit/core';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { ServiceBlock } from './ServiceBlock';
-import { calculateSectionSubtotal, formatCurrency } from './helpers';
+import { AlternativGruppeBox } from './AlternativGruppeBox';
+import { AlternativVerbinder } from './AlternativVerbinder';
+import { verbindbar } from './blockOps';
+import { calculateSectionSubtotal, formatCurrency, gruppiereFuerAnzeige } from './helpers';
 import type { DocBlock, EditorInstance } from './types';
 
 interface SectionHeaderBlockProps {
@@ -27,6 +30,12 @@ interface SectionHeaderBlockProps {
     onAddBelow?: (anchorId: string) => void;
     /** Oeffnet den AddTypeDialog mit "in diesen Bauabschnitt einfuegen" als Ziel. */
     onAddIntoSection?: (sectionId: string) => void;
+    /** Benennt eine Entweder-Oder-Gruppe um (dokumentweit). */
+    onGruppeUmbenennen?: (alt: string, neu: string) => void;
+    /** Loest eine Entweder-Oder-Gruppe auf; die Varianten bleiben Optional-Positionen. */
+    onGruppeAufloesen?: (name: string) => void;
+    /** Fasst zwei benachbarte Wahlpositionen zu einer Auswahl zusammen. */
+    onVerbinden?: (idA: string, idB: string, zielGruppe: string | null) => void;
 }
 
 export function SectionHeaderBlock({
@@ -47,6 +56,9 @@ export function SectionHeaderBlock({
     sectionPosition,
     onAddBelow,
     onAddIntoSection,
+    onGruppeUmbenennen,
+    onGruppeAufloesen,
+    onVerbinden,
 }: SectionHeaderBlockProps) {
     const [editing, setEditing] = useState(false);
     const [localLabel, setLocalLabel] = useState(block.sectionLabel || '');
@@ -73,6 +85,73 @@ export function SectionHeaderBlock({
             (e.target as HTMLInputElement).blur();
         }
     };
+
+    /**
+     * Rendert ein Kind des Bauabschnitts. Ausgelagert, weil eine Leistung
+     * entweder direkt in der Liste steht oder — als Variante einer Auswahl —
+     * innerhalb der AlternativGruppeBox.
+     */
+    const renderChild = (child: DocBlock) => (
+        <div key={child.id} className="relative group/child group/card">
+            {child.type === 'TEXT' ? (
+                /* Inline TEXT (Remark) block within section */
+                <>
+                <div className="bg-white rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                        <FileText className="w-3 h-3 text-slate-400" />
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Hinweis</span>
+                    </div>
+                    <div
+                        className="text-xs text-slate-600 leading-relaxed prose prose-xs max-w-none"
+                        dangerouslySetInnerHTML={{ __html: child.content || '' }}
+                    />
+                </div>
+                {!isLocked && onAddBelow && (
+                    <div className="flex justify-center -mt-1 mb-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onAddBelow(child.id); }}
+                            title="Direkt darunter einfügen"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed border-rose-300 bg-white text-rose-600 text-[11px] font-medium hover:bg-rose-50 hover:border-rose-500 hover:shadow-sm transition-all"
+                        >
+                            <Plus className="w-3 h-3" />
+                            Hier einfügen
+                        </button>
+                    </div>
+                )}
+                </>
+            ) : (
+                <ServiceBlock
+                    block={child}
+                    positionNumber={getPositionString(child)}
+                    isLocked={isLocked}
+                    isActive={activeEditorId === child.id}
+                    editorRefs={editorRefs}
+                    onEditorReady={(key, editor) => { editorRefs.current[key] = editor; }}
+                    onUpdate={(id, updates) => onUpdateChild(block.id, id, updates)}
+                    onRemove={(id) => onRemoveChild(block.id, id)}
+                    onToggleOptional={(id, current) => onToggleChildOptional(block.id, id, current)}
+                    onFocus={onFocus}
+                    onEditorFocus={onEditorFocus}
+                    onAddBelow={onAddBelow}
+                />
+            )}
+            {/* Eject button */}
+            {!isLocked && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onEjectChild(block.id, child.id);
+                    }}
+                    className="absolute -right-2 top-2 opacity-0 group-hover/child:opacity-100 transition-opacity z-10 w-6 h-6 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center hover:bg-rose-50 hover:border-rose-300"
+                    title="Aus Bauabschnitt entfernen"
+                    aria-label="Aus Bauabschnitt entfernen"
+                >
+                    <ArrowUpFromLine className="w-3 h-3 text-slate-400 hover:text-rose-500" />
+                </button>
+            )}
+        </div>
+    );
 
     return (
         <div
@@ -180,66 +259,44 @@ export function SectionHeaderBlock({
                     {/* Children */}
                     {children.length > 0 && (
                         <div className="px-3 pt-3 space-y-2">
-                            {children.map(child => (
-                                <div key={child.id} className="relative group/child group/card">
-                                    {child.type === 'TEXT' ? (
-                                        /* Inline TEXT (Remark) block within section */
-                                        <>
-                                        <div className="bg-white rounded-lg border border-slate-200 p-3">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <FileText className="w-3 h-3 text-slate-400" />
-                                                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Hinweis</span>
-                                            </div>
-                                            <div
-                                                className="text-xs text-slate-600 leading-relaxed prose prose-xs max-w-none"
-                                                dangerouslySetInnerHTML={{ __html: child.content || '' }}
-                                            />
-                                        </div>
-                                        {!isLocked && onAddBelow && (
-                                            <div className="flex justify-center -mt-1 mb-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => { e.stopPropagation(); onAddBelow(child.id); }}
-                                                    title="Direkt darunter einfügen"
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed border-rose-300 bg-white text-rose-600 text-[11px] font-medium hover:bg-rose-50 hover:border-rose-500 hover:shadow-sm transition-all"
-                                                >
-                                                    <Plus className="w-3 h-3" />
-                                                    Hier einfügen
-                                                </button>
-                                            </div>
-                                        )}
-                                        </>
-                                    ) : (
-                                        <ServiceBlock
-                                            block={child}
-                                            positionNumber={getPositionString(child)}
-                                            isLocked={isLocked}
-                                            isActive={activeEditorId === child.id}
-                                            editorRefs={editorRefs}
-                                            onEditorReady={(key, editor) => { editorRefs.current[key] = editor; }}
-                                            onUpdate={(id, updates) => onUpdateChild(block.id, id, updates)}
-                                            onRemove={(id) => onRemoveChild(block.id, id)}
-                                            onToggleOptional={(id, current) => onToggleChildOptional(block.id, id, current)}
-                                            onFocus={onFocus}
-                                            onEditorFocus={onEditorFocus}
-                                            onAddBelow={onAddBelow}
-                                        />
-                                    )}
-                                    {/* Eject button */}
-                                    {!isLocked && (
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onEjectChild(block.id, child.id);
-                                            }}
-                                            className="absolute -right-2 top-2 opacity-0 group-hover/child:opacity-100 transition-opacity z-10 w-6 h-6 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center hover:bg-rose-50 hover:border-rose-300"
-                                            title="Aus Bauabschnitt entfernen"
+                            {gruppiereFuerAnzeige(children).map((eintrag, i, alle) => {
+                                const node = eintrag.art === 'gruppe'
+                                    ? (
+                                        <AlternativGruppeBox
+                                            name={eintrag.name}
+                                            isLocked={isLocked || !onGruppeUmbenennen}
+                                            onUmbenennen={(alt, neu) => onGruppeUmbenennen?.(alt, neu)}
+                                            onAufloesen={(name) => onGruppeAufloesen?.(name)}
                                         >
-                                            <ArrowUpFromLine className="w-3 h-3 text-slate-400 hover:text-rose-500" />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
+                                            {eintrag.positionen.map(v => renderChild(v))}
+                                        </AlternativGruppeBox>
+                                    )
+                                    : renderChild(eintrag.block);
+
+                                // Verbinder zwischen diesem und dem naechsten Eintrag.
+                                const naechster = alle[i + 1];
+                                const letzter = eintrag.art === 'gruppe'
+                                    ? eintrag.positionen[eintrag.positionen.length - 1]
+                                    : eintrag.block;
+                                const ersterDesNaechsten = naechster
+                                    ? (naechster.art === 'gruppe' ? naechster.positionen[0] : naechster.block)
+                                    : null;
+                                const pruef = ersterDesNaechsten
+                                    ? verbindbar(letzter, ersterDesNaechsten)
+                                    : { moeglich: false, gruppe: null };
+
+                                return (
+                                    <div key={letzter.id}>
+                                        {node}
+                                        {!isLocked && onVerbinden && pruef.moeglich && (
+                                            <AlternativVerbinder
+                                                zielGruppe={pruef.gruppe}
+                                                onVerbinden={() => onVerbinden(letzter.id, ersterDesNaechsten!.id, pruef.gruppe)}
+                                            />
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
 

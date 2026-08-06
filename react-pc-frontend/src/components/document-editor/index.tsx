@@ -40,6 +40,10 @@ import {
     insertIntoSection,
     insertBlocksBeforeClosure,
     validateRootReorder,
+    gruppiereAlsAlternativen,
+    loeseAlternativGruppeAuf,
+    normalisiereAlternativGruppen,
+    verbindbar,
 } from './blockOps';
 
 /**
@@ -66,7 +70,9 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
             return insertIntoSection(prev, block, anchor.sectionId);
     }
 }
-import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
+import { AlternativGruppeBox } from './AlternativGruppeBox';
+import { AlternativVerbinder } from './AlternativVerbinder';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
@@ -1510,11 +1516,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         }
                         return items; // revert
                     }
-                    return newOrder;
+                    // Varianten einer Auswahl muessen nebeneinander bleiben — wurde
+                    // etwas dazwischen gezogen, ruecken sie wieder zusammen.
+                    return normalisiereAlternativGruppen(newOrder);
                 });
             } else {
                 // Within a section: reorder children
-                setBlocks(prev => prev.map(b => {
+                setBlocks(prev => normalisiereAlternativGruppen(prev.map(b => {
                     if (b.id === activeContainer && b.children) {
                         const oldIndex = b.children.findIndex(c => c.id === activeId);
                         const newIndex = b.children.findIndex(c => c.id === overId);
@@ -1522,7 +1530,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         return { ...b, children: arrayMove(b.children, oldIndex, newIndex) };
                     }
                     return b;
-                }));
+                })));
             }
         }
         // Cross-container drag handled by drop zones, not by sorting overlap
@@ -1573,7 +1581,9 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 return b;
             });
 
-            return newBlocks;
+            // Container-Wechsel: die Variante verlaesst ihre Gruppe, im Ziel steht
+            // sie zunaechst allein. Beides regelt die Invariante.
+            return normalisiereAlternativGruppen(newBlocks);
         });
     }, []);
 
@@ -1600,7 +1610,9 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 newBlocks.push(child);
             }
 
-            return newBlocks;
+            // Die herausgeworfene Variante wechselt den Container: im Bauabschnitt
+            // bleibt evtl. nur eine zurueck, auf Root-Ebene steht sie allein.
+            return normalisiereAlternativGruppen(newBlocks);
         });
     }, []);
 
@@ -1733,9 +1745,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 const idx = prev.findIndex(b => b.id === id);
                 const newBlocks = [...prev];
                 newBlocks.splice(idx, 1, ...block.children);
-                return newBlocks;
+                // Aus einem aufgeloesten Bauabschnitt gekippte Varianten landen auf
+                // Root-Ebene — dort gilt die Gruppen-Invariante erneut.
+                return normalisiereAlternativGruppen(newBlocks);
             }
-            return prev.filter(b => b.id !== id);
+            // Bleibt nach dem Loeschen nur noch eine Variante uebrig, verliert sie
+            // die Gruppe und wird wieder eine normale Zusatzposition.
+            return normalisiereAlternativGruppen(prev.filter(b => b.id !== id));
         });
     };
 
@@ -1756,12 +1772,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     /** Remove a child from a section (delete it entirely) */
     const removeSectionChild = (sectionId: string, childId: string) => {
         if (isLocked) return;
-        setBlocks(prev => prev.map(b => {
+        setBlocks(prev => normalisiereAlternativGruppen(prev.map(b => {
             if (b.id === sectionId && b.children) {
                 return { ...b, children: b.children.filter(c => c.id !== childId) };
             }
             return b;
-        }));
+        })));
     };
 
     /** Toggle optional on a section child */
@@ -1771,6 +1787,36 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
     const toggleOptional = (id: string, currentOptional: boolean | undefined) => {
         updateBlock(id, { optional: !currentOptional });
+    };
+
+    /**
+     * Verbindet zwei benachbarte Wahlpositionen zu einer Entweder-Oder-Gruppe.
+     * Ohne Zielgruppe wird nach einem Namen gefragt — der ist die Ueberschrift,
+     * die der Kunde spaeter auf der Freigabe-Seite sieht.
+     */
+    const verbinde = (idA: string, idB: string, zielGruppe: string | null) => {
+        if (isLocked) return;
+        const name = zielGruppe ?? window.prompt(
+            'Wie soll die Auswahl heißen? Der Kunde sieht diesen Text als Überschrift.',
+            'Auswahl',
+        )?.trim();
+        if (!name) return;
+        setBlocks(prev => syncClosureBlock(gruppiereAlsAlternativen(prev, [idA, idB], name)));
+    };
+
+    const gruppeAufloesen = (name: string) => {
+        if (isLocked) return;
+        setBlocks(prev => syncClosureBlock(loeseAlternativGruppeAuf(prev, name)));
+    };
+
+    const gruppeUmbenennen = (alt: string, neu: string) => {
+        if (isLocked) return;
+        setBlocks(prev => normalisiereAlternativGruppen(prev.map(b => {
+            const um = (x: DocBlock) => x.alternativGruppe === alt ? { ...x, alternativGruppe: neu } : x;
+            return b.type === 'SECTION_HEADER' && b.children
+                ? { ...b, children: b.children.map(um) }
+                : um(b);
+        })));
     };
 
     // --- Preview & Export ---
@@ -2574,6 +2620,91 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         return positionMap.get(block.id) || '';
     };
 
+    /**
+     * Rendert einen Root-Block samt Drag-Handle. Ausgelagert, weil ein Block
+     * entweder direkt in der Liste steht oder — als Variante einer Auswahl —
+     * innerhalb der AlternativGruppeBox. Die SortableContext-Reihenfolge bleibt
+     * davon unberuehrt: gruppiert wird nur die Darstellung, nicht das Array.
+     */
+    const renderRootBlock = (block: DocBlock) => (
+        <SortableBlock key={block.id} block={block} isLocked={isLocked}>
+            {block.type === 'SEPARATOR' && (
+                <SeparatorBlock
+                    blockId={block.id}
+                    isLocked={isLocked}
+                    onRemove={removeBlock}
+                />
+            )}
+            {block.type === 'SECTION_HEADER' && (
+                <SectionHeaderBlock
+                    block={block}
+                    isLocked={isLocked}
+                    isActive={activeEditorId === block.id}
+                    activeEditorId={activeEditorId}
+                    editorRefs={editorRefs}
+                    onUpdate={updateBlock}
+                    onUpdateChild={updateSectionChild}
+                    onRemove={removeBlock}
+                    onRemoveChild={removeSectionChild}
+                    onEjectChild={ejectChildFromSection}
+                    onToggleChildOptional={toggleSectionChildOptional}
+                    onFocus={(id) => setActiveEditorId(id)}
+                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
+                    getPositionString={getPositionString}
+                    sectionPosition={getPositionString(block)}
+                    onAddBelow={handleAddBelow}
+                    onAddIntoSection={handleAddIntoSection}
+                    onGruppeUmbenennen={gruppeUmbenennen}
+                    onGruppeAufloesen={gruppeAufloesen}
+                    onVerbinden={verbinde}
+                />
+            )}
+            {block.type === 'TEXT' && (
+                <TextBlock
+                    block={block}
+                    isLocked={isLocked}
+                    isActive={activeEditorId === block.id}
+                    editorRefs={editorRefs}
+                    onEditorReady={setEditorRef}
+                    onUpdate={updateBlock}
+                    onRemove={removeBlock}
+                    onFocus={(id) => setActiveEditorId(id)}
+                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
+                    prepareContent={prepareEditorContent}
+                    serializeContent={serializeEditorContent}
+                    onZahlungszielChipClick={handleZahlungszielChipClick}
+                    onAddBelow={handleAddBelow}
+                />
+            )}
+            {block.type === 'SERVICE' && (
+                <ServiceBlock
+                    block={block}
+                    positionNumber={getPositionString(block)}
+                    isLocked={isLocked}
+                    isActive={activeEditorId === block.id}
+                    editorRefs={editorRefs}
+                    onEditorReady={setEditorRef}
+                    onUpdate={updateBlock}
+                    onRemove={removeBlock}
+                    onToggleOptional={toggleOptional}
+                    onFocus={(id) => setActiveEditorId(id)}
+                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
+                    onAddBelow={handleAddBelow}
+                />
+            )}
+            {block.type === 'CLOSURE' && closureSummary.gesamtNetto > 0 && (
+                <ClosureBlock
+                    summary={closureSummary}
+                    dokumentTyp={dokumentTyp}
+                    abschlagBetragNetto={abschlagBetragNetto}
+                    bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
+                    abrechnungsPositionen={abrechnungsPositionen}
+                    basisdokumentBetragNetto={basisdokumentBetragNetto}
+                />
+            )}
+        </SortableBlock>
+    );
+
     // --- Loading state ---
     if (loading) {
         return (
@@ -2718,81 +2849,44 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     items={blocks.map(b => b.id)}
                                     strategy={verticalListSortingStrategy}
                                 >
-                                    {blocks.map((block) => (
-                                        <SortableBlock key={block.id} block={block} isLocked={isLocked}>
-                                            {block.type === 'SEPARATOR' && (
-                                                <SeparatorBlock
-                                                    blockId={block.id}
+                                    {gruppiereFuerAnzeige(blocks).map((eintrag, i, alle) => {
+                                        const node = eintrag.art === 'gruppe'
+                                            ? (
+                                                <AlternativGruppeBox
+                                                    name={eintrag.name}
                                                     isLocked={isLocked}
-                                                    onRemove={removeBlock}
-                                                />
-                                            )}
-                                            {block.type === 'SECTION_HEADER' && (
-                                                <SectionHeaderBlock
-                                                    block={block}
-                                                    isLocked={isLocked}
-                                                    isActive={activeEditorId === block.id}
-                                                    activeEditorId={activeEditorId}
-                                                    editorRefs={editorRefs}
-                                                    onUpdate={updateBlock}
-                                                    onUpdateChild={updateSectionChild}
-                                                    onRemove={removeBlock}
-                                                    onRemoveChild={removeSectionChild}
-                                                    onEjectChild={ejectChildFromSection}
-                                                    onToggleChildOptional={toggleSectionChildOptional}
-                                                    onFocus={(id) => setActiveEditorId(id)}
-                                                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
-                                                    getPositionString={getPositionString}
-                                                    sectionPosition={getPositionString(block)}
-                                                    onAddBelow={handleAddBelow}
-                                                    onAddIntoSection={handleAddIntoSection}
-                                                />
-                                            )}
-                                            {block.type === 'TEXT' && (
-                                                <TextBlock
-                                                    block={block}
-                                                    isLocked={isLocked}
-                                                    isActive={activeEditorId === block.id}
-                                                    editorRefs={editorRefs}
-                                                    onEditorReady={setEditorRef}
-                                                    onUpdate={updateBlock}
-                                                    onRemove={removeBlock}
-                                                    onFocus={(id) => setActiveEditorId(id)}
-                                                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
-                                                    prepareContent={prepareEditorContent}
-                                                    serializeContent={serializeEditorContent}
-                                                    onZahlungszielChipClick={handleZahlungszielChipClick}
-                                                    onAddBelow={handleAddBelow}
-                                                />
-                                            )}
-                                            {block.type === 'SERVICE' && (
-                                                <ServiceBlock
-                                                    block={block}
-                                                    positionNumber={getPositionString(block)}
-                                                    isLocked={isLocked}
-                                                    isActive={activeEditorId === block.id}
-                                                    editorRefs={editorRefs}
-                                                    onEditorReady={setEditorRef}
-                                                    onUpdate={updateBlock}
-                                                    onRemove={removeBlock}
-                                                    onToggleOptional={toggleOptional}
-                                                    onFocus={(id) => setActiveEditorId(id)}
-                                                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
-                                                    onAddBelow={handleAddBelow}
-                                                />
-                                            )}
-                                            {block.type === 'CLOSURE' && closureSummary.gesamtNetto > 0 && (
-                                                <ClosureBlock
-                                                    summary={closureSummary}
-                                                    dokumentTyp={dokumentTyp}
-                                                    abschlagBetragNetto={abschlagBetragNetto}
-                                                    bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
-                                                    abrechnungsPositionen={abrechnungsPositionen}
-                                                    basisdokumentBetragNetto={basisdokumentBetragNetto}
-                                                />
-                                            )}
-                                        </SortableBlock>
-                                    ))}
+                                                    onUmbenennen={gruppeUmbenennen}
+                                                    onAufloesen={gruppeAufloesen}
+                                                >
+                                                    {eintrag.positionen.map(v => renderRootBlock(v))}
+                                                </AlternativGruppeBox>
+                                            )
+                                            : renderRootBlock(eintrag.block);
+
+                                        // Verbinder zwischen diesem und dem naechsten Eintrag.
+                                        const naechster = alle[i + 1];
+                                        const letzter = eintrag.art === 'gruppe'
+                                            ? eintrag.positionen[eintrag.positionen.length - 1]
+                                            : eintrag.block;
+                                        const ersterDesNaechsten = naechster
+                                            ? (naechster.art === 'gruppe' ? naechster.positionen[0] : naechster.block)
+                                            : null;
+                                        const pruef = ersterDesNaechsten
+                                            ? verbindbar(letzter, ersterDesNaechsten)
+                                            : { moeglich: false, gruppe: null };
+
+                                        return (
+                                            <div key={letzter.id}>
+                                                {node}
+                                                {!isLocked && pruef.moeglich && (
+                                                    <AlternativVerbinder
+                                                        zielGruppe={pruef.gruppe}
+                                                        onVerbinden={() => verbinde(letzter.id, ersterDesNaechsten!.id, pruef.gruppe)}
+                                                    />
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </SortableContext>
                                 <DragOverlay dropAnimation={{
                                     duration: 200,

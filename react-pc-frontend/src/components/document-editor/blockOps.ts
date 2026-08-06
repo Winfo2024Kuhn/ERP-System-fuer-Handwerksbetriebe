@@ -385,6 +385,24 @@ export function normalisiereAlternativGruppen(blocks: DocBlock[]): DocBlock[] {
         : b);
 }
 
+/**
+ * Duerfen zwei benachbarte Bloecke zu einer Gruppe verbunden werden?
+ * Liefert die Zielgruppe (Name einer bereits bestehenden Gruppe) oder
+ * `{ moeglich: true, gruppe: null }` fuer eine neue Gruppe.
+ *
+ * Zwei Bloecke, die BEIDE schon in unterschiedlichen Gruppen stecken, werden
+ * nicht verschmolzen — das waere fuer den Nutzer nicht vorhersagbar.
+ */
+export function verbindbar(a: DocBlock, b: DocBlock): { moeglich: boolean; gruppe: string | null } {
+    const wahl = (x: DocBlock) => x.type === 'SERVICE' && x.optional === true;
+    if (!wahl(a) || !wahl(b)) return { moeglich: false, gruppe: null };
+
+    const ga = a.alternativGruppe ?? null;
+    const gb = b.alternativGruppe ?? null;
+    if (ga && gb) return { moeglich: false, gruppe: null };
+    return { moeglich: true, gruppe: ga ?? gb };
+}
+
 /** Alle Gruppennamen des Dokuments in Reihenfolge ihres ersten Auftretens. */
 export function sammleGruppenNamen(blocks: DocBlock[]): string[] {
     const namen: string[] = [];
