@@ -144,10 +144,14 @@ function RechnungsadresseBlock({
     if (editing) {
         return (
             <div className="bg-white rounded-lg border-2 border-rose-300 p-3">
-                <label className="block text-[10px] font-semibold text-rose-500 uppercase tracking-wider mb-1">
+                <label
+                    htmlFor="rechnungsadresse-eingabe"
+                    className="block text-[10px] font-semibold text-rose-500 uppercase tracking-wider mb-1"
+                >
                     Rechnungsadresse bearbeiten
                 </label>
                 <textarea
+                    id="rechnungsadresse-eingabe"
                     ref={textareaRef}
                     value={draft}
                     onChange={(e) => {
@@ -221,6 +225,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     useEffect(() => { datumRef.current = datum; }, [datum]);
     const [blocks, setBlocks] = useState<DocBlock[]>([]);
     const [kontextDaten, setKontextDaten] = useState<KontextDaten>({});
+    // Gleicher Grund wie bei `datumRef`: `handleSave` haengt `kontextDaten` nicht
+    // in seiner useCallback-Dep-Liste. Eine reine Adressaenderung beruehrt keine
+    // der gelisteten Deps, die Callback-Instanz bliebe also eingefroren und
+    // wuerde die Adresse VOR der Aenderung ans Backend schicken.
+    const kontextDatenRef = useRef(kontextDaten);
+    useEffect(() => { kontextDatenRef.current = kontextDaten; }, [kontextDaten]);
     // Wird auf true gesetzt sobald der User die Rechnungsadresse manuell bearbeitet hat.
     // Dann darf loadKontext sie nicht mehr überschreiben.
     const adresseUserEditedRef = useRef(false);
@@ -233,6 +243,16 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
     const lastSavedStateRef = useRef<string>('');
+    // Die Rechnungsadresse liegt in `kontextDaten` und damit ausserhalb der
+    // State-Signatur, gegen die `lastSavedStateRef` vergleicht. Sie kann dort
+    // auch nicht aufgenommen werden: die Signatur wird beim Laden aus dem
+    // Server-Payload gebaut, die angezeigte Adresse ist bei Dokumenten ohne
+    // `rechnungsadresseOverride` aber ein abgeleiteter Wert (buildAdresse aus
+    // den Kundenstammdaten), der im Payload gar nicht vorkommt. Die Signatur
+    // wuerde also dauerhaft abweichen und jedes solche Dokument schon beim
+    // Oeffnen als geaendert melden. Stattdessen ein eigenes Flag, das additiv
+    // in Dirty-Check und Auto-Save einfliesst und beim Speichern zuruecksetzt.
+    const [adresseGeaendert, setAdresseGeaendert] = useState(false);
 
     // Vorlagen
     const [textbausteine, setTextbausteine] = useState<TextbausteinApiDto[]>([]);
@@ -244,6 +264,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewStale, setPreviewStale] = useState(false);
+    // Wird nach jedem erfolgreichen Speichern hochgezaehlt und stoesst ein
+    // sofortiges Neu-Rendern der Vorschau an. Noetig fuer Kopfdaten wie die
+    // Rechnungsadresse: sie stecken in `kontextDaten`, nicht in `blocks`, und
+    // werden vom Debounce-Effect auf den Bloecken daher nicht erfasst.
+    const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
+    // Laufende Nummer der jeweils juengsten Preview-Anfrage (siehe handlePreview).
+    const previewRequestIdRef = useRef(0);
+    // Synchroner Spiegel von `previewStale`, weil der Token-Effect ihn im
+    // selben Commit lesen muss, in dem der Stale-Marker ihn setzt.
+    const previewStaleRef = useRef(false);
+    // Spiegelt die aktuell angezeigte Blob-URL, damit sie beim Schliessen des
+    // Editors freigegeben werden kann, ohne den Effect an `previewUrl` zu binden.
+    const previewUrlRef = useRef<string | null>(null);
 
     // UI Layout State
 
@@ -1131,6 +1164,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const handleSave = useCallback(async (): Promise<AusgangsGeschaeftsDokument | null> => {
         if (isLocked) return null;
         setSaving(true);
+        // Adresse EINMAL zum Start festhalten: sie geht so in den Request und
+        // dient nach der Antwort als Vergleichswert. Aendert der User waehrend
+        // des Roundtrips erneut, bleibt das Dirty-Flag stehen, statt die zweite
+        // Aenderung stillschweigend zu verwerfen (Lost Update).
+        const gesendeteAdresse = kontextDatenRef.current.rechnungsadresse;
+        const adresseUnveraendert = () => kontextDatenRef.current.rechnungsadresse === gesendeteAdresse;
         try {
             // CLOSURE-Marker wird NICHT persistiert: er ist ein UI-Konstrukt, der per
             // useEffect bei Bedarf wieder eingefuegt wird. Damit bleibt positionenJson
@@ -1160,9 +1199,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     betragNetto,
                     htmlInhalt,
                     positionenJson: positionenData,
-                    // Nur mitschicken wenn User die Adresse bewusst geändert hat
+                    // Nur mitschicken wenn User die Adresse bewusst geändert hat.
+                    // Ueber das Ref lesen, nicht ueber den State — siehe kontextDatenRef.
                     ...(adresseUserEditedRef.current
-                        ? { rechnungsadresseOverride: kontextDaten.rechnungsadresse ?? null }
+                        ? { rechnungsadresseOverride: gesendeteAdresse ?? null }
                         : {})
                 });
                 const doPut = () => fetch(`/api/ausgangs-dokumente/${id}`, {
@@ -1194,6 +1234,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
+                    if (adresseUnveraendert()) setAdresseGeaendert(false);
+                    setPreviewRefreshToken(t => t + 1);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
                     return updated;
                 } else {
@@ -1214,8 +1256,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     // Hat der User die Adresse schon vor dem ersten Speichern bearbeitet,
                     // gilt seine Fassung — sonst erbt das Backend die zuletzt geänderte
                     // Rechnungsanschrift des Vorgangs.
-                    ...(adresseUserEditedRef.current && kontextDaten.rechnungsadresse
-                        ? { rechnungsadresseOverride: kontextDaten.rechnungsadresse }
+                    // Wie im PUT-Pfad an `adresseUserEditedRef` gekoppelt statt an
+                    // die Truthiness der Adresse. Hinweis: eine bewusst geleerte
+                    // Adresse laesst sich beim ANLEGEN trotzdem nicht ausdruecken —
+                    // das Backend wertet leer als "erbe vom Vorgang" (siehe
+                    // AusgangsGeschaeftsDokumentService#erstellen). Beim Speichern
+                    // eines bestehenden Dokuments greift der Reset dagegen.
+                    ...(adresseUserEditedRef.current
+                        ? { rechnungsadresseOverride: gesendeteAdresse ?? undefined }
                         : {})
                 };
                 const res = await fetch('/api/ausgangs-dokumente', {
@@ -1233,6 +1281,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
+                    if (adresseUnveraendert()) setAdresseGeaendert(false);
+                    setPreviewRefreshToken(t => t + 1);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: created.id });
                     return created;
                 } else {
@@ -1277,8 +1327,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             lastSavedStateRef.current = currentState;
             return;
         }
-        setHasUnsavedChanges(currentState !== lastSavedStateRef.current);
-    }, [blocks, datum, betreff, dokumentTyp]);
+        // `adresseGeaendert` additiv, sonst wuerde ein Undo, das die Bloecke
+        // exakt auf den gespeicherten Stand zuruecksetzt, das Dirty-Flag
+        // loeschen und die geaenderte Adresse ginge beim Schliessen verloren.
+        setHasUnsavedChanges(currentState !== lastSavedStateRef.current || adresseGeaendert);
+    }, [blocks, datum, betreff, dokumentTyp, adresseGeaendert]);
 
     // --- Auto-Save ---
     useEffect(() => {
@@ -1286,13 +1339,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         const intervalId = setInterval(() => {
             const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
             const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
-            if (currentState !== lastSavedStateRef.current && !saving) {
-                console.log('Auto-Save: Speichere Änderungen...');
+            if ((currentState !== lastSavedStateRef.current || adresseGeaendert) && !saving) {
                 handleSave();
             }
         }, 10000);
         return () => clearInterval(intervalId);
-    }, [blocks, datum, betreff, dokumentTyp, saving, isLocked, handleSave]);
+    }, [blocks, datum, betreff, dokumentTyp, saving, isLocked, handleSave, adresseGeaendert]);
 
     // --- Close Handler ---
     const handleClose = useCallback(() => {
@@ -1723,6 +1775,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
     // --- Preview & Export ---
     const handlePreview = useCallback(async () => {
+        // Laufende Nummer je Anfrage: bei zwei ueberlappenden Renderings darf
+        // nicht die zuerst gestartete, aber spaeter eintreffende Antwort
+        // gewinnen — sonst springt die Vorschau auf einen aelteren Stand
+        // zurueck (z.B. auf die Adresse von vor dem Speichern).
+        const requestId = ++previewRequestIdRef.current;
         setPreviewLoading(true);
         try {
             const request = await createPdfRequest(true);
@@ -1733,26 +1790,40 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             });
             if (response.ok) {
                 const blob = await response.blob();
-                if (previewUrl) URL.revokeObjectURL(previewUrl);
+                if (requestId !== previewRequestIdRef.current) return;
                 const url = URL.createObjectURL(blob);
+                // Vorgaenger ueber das Ref freigeben statt ueber den State: der
+                // Wert aus der Closure koennte veraltet sein, und ein State-
+                // Updater mit Seiteneffekt liefe im StrictMode doppelt.
+                const alteUrl = previewUrlRef.current;
+                previewUrlRef.current = url;
                 setPreviewUrl(url);
+                if (alteUrl) URL.revokeObjectURL(alteUrl);
+                previewStaleRef.current = false;
                 setPreviewStale(false);
             }
         } catch (error) {
             console.error('Fehler bei Vorschau:', error);
         } finally {
-            setPreviewLoading(false);
+            if (requestId === previewRequestIdRef.current) setPreviewLoading(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer, previewUrl]);
+    }, [blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer]);
 
-    // Mark preview as stale when content changes
+    // Mark preview as stale when content changes.
+    // `kontextDaten` steht als ganzes Objekt drin, nicht nur die Adresse: auch
+    // Zahlungsziel & Co. landen ueber `createPdfRequest` im PDF und gehoeren
+    // damit zum Vorschau-Inhalt. Die Objekt-Identitaet aendert sich nur bei
+    // `setKontextDaten`, loest also keine Endlosschleife aus.
+    // `dokumentNummer` ebenfalls: sie wird erst beim ersten Speichern vom
+    // Server vergeben, vorher steht "VORSCHAU" im PDF.
     useEffect(() => {
         if (showPreview && previewUrl) {
+            previewStaleRef.current = true;
             setPreviewStale(true);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [blocks, datum, betreff, dokumentTyp]);
+    }, [blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer]);
 
     // Debounced auto-preview: refresh 2s after last change when preview panel is open
     const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1765,8 +1836,49 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         return () => {
             if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
         };
+    // Muss dieselben Abhaengigkeiten haben wie der Stale-Marker oben, sonst
+    // bliebe die Vorschau nach einer Adressaenderung dauerhaft als veraltet
+    // markiert (und damit hinter dem Lade-Skelett verborgen).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [blocks, datum, betreff, dokumentTyp, showPreview]);
+    }, [blocks, datum, betreff, dokumentTyp, showPreview, kontextDaten, dokumentNummer]);
+
+    // Nach jedem erfolgreichen Speichern die Vorschau sofort neu rendern.
+    // Damit landet z.B. eine geaenderte Rechnungsadresse direkt im Vorschau-PDF,
+    // ohne dass der User zusaetzlich einen Block anfassen muss.
+    useEffect(() => {
+        // Token 0 = Erstmontage, noch kein Speichern passiert. Der Guard haelt
+        // ausserdem den StrictMode-Doppelmount raus — bitte nicht "aufraeumen".
+        if (previewRefreshToken === 0) return;
+        // Nur rendern, wenn die Vorschau den gespeicherten Stand noch nicht
+        // zeigt. `handleSave` haengt an neun Aufrufern (Auto-Save, Export,
+        // Druck, Buchen, Mail); ohne diesen Guard liefe parallel zu jedem
+        // davon eine zweite, ueberfluessige PDF-Generierung.
+        // Ueber das Ref lesen, nicht ueber den State: der Stale-Marker oben
+        // laeuft im selben Commit wie dieser Effect, sein `setPreviewStale`
+        // waere hier also noch nicht sichtbar (z.B. wenn das erste Speichern
+        // gleichzeitig die Dokumentnummer setzt).
+        if (!previewStaleRef.current) return;
+        // Ein laufender Debounce-Timer wuerde sonst kurz darauf ein zweites,
+        // identisches Preview-Rendering ausloesen.
+        if (previewTimerRef.current) {
+            clearTimeout(previewTimerRef.current);
+            previewTimerRef.current = null;
+        }
+        handlePreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [previewRefreshToken]);
+
+    // Letzte Blob-URL beim Schliessen des Editors freigeben, sonst haelt der
+    // Browser das komplette Vorschau-PDF bis zum Reload im Speicher.
+    useEffect(() => {
+        previewUrlRef.current = previewUrl;
+    }, [previewUrl]);
+    useEffect(() => () => {
+        // Hochzaehlen entwertet eine noch laufende Anfrage: ihre Antwort legt
+        // sonst nach dem Unmount eine Blob-URL an, die niemand mehr freigibt.
+        previewRequestIdRef.current++;
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    }, []);
 
     // When preview panel is shown for the first time, trigger an immediate preview
     const prevShowPreview = useRef(false);
@@ -1783,9 +1895,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         if (!dokument?.id) return false;
         if (dokument.gebucht || dokument.storniert) return true; // bereits gesperrt
         try {
-            // Erst unsaved changes speichern, bevor das Dokument gebucht wird
+            // Erst unsaved changes speichern, bevor das Dokument gebucht wird.
+            // Schlaegt das fehl (Lock-Konflikt, Netz, Server), darf NICHT gebucht
+            // werden: das Dokument waere sonst GoBD-gesperrt mit einem Stand, den
+            // der User so nie gesehen hat — etwa der alten Rechnungsadresse.
             if (hasUnsavedChanges) {
-                await handleSave();
+                const gespeichert = await handleSave();
+                if (!gespeichert) return false;
             }
             const bookRes = await fetch(`/api/ausgangs-dokumente/${dokument.id}/buchen`, { method: 'POST' });
             if (!bookRes.ok) {
@@ -1794,10 +1910,18 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             }
             const updated = await bookRes.json();
             setDokument(updated); // State sofort aktualisieren → UI sperrt instant
-            // Saved-State synchronisieren, damit Auto-Save nicht mehr feuert
-            const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+            // Saved-State synchronisieren, damit Auto-Save nicht mehr feuert.
+            // Signatur exakt wie in handleSave bilden: CLOSURE-Marker raus und
+            // Datum aus dem Ref. Sonst meldet die Change-Detection direkt nach
+            // dem Buchen eine Abweichung, die niemand mehr speichern kann.
+            const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
+            const currentState = JSON.stringify({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp });
             lastSavedStateRef.current = currentState;
             setHasUnsavedChanges(false);
+            // Muss mit zurueck: nach dem Buchen ist das Dokument gesperrt und
+            // handleSave steigt sofort aus. Ein stehengebliebenes Flag waere
+            // dann nicht mehr loeschbar und meldete dauerhaft "ungespeichert".
+            setAdresseGeaendert(false);
             notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
             return true;
         } catch (err) {
@@ -2215,13 +2339,16 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 `;
             }
             const parsedBlocks = deserializeTemplate(html);
-            console.log('[DocumentEditor] Template HTML length:', html.length);
-            console.log('[DocumentEditor] Parsed blocks from template:', parsedBlocks.map(b => ({
-                id: b.id, type: b.type, page: b.page, x: b.x, y: b.y,
-                width: b.width, height: b.height,
-                content: b.content ? b.content.substring(0, 50) : '(empty)',
-                hasStyles: !!b.styles
-            })));
+            // Nur in der Entwicklung: laeuft bei offener Vorschau alle zwei Sekunden.
+            if (import.meta.env.DEV) {
+                console.debug('[DocumentEditor] Template HTML length:', html.length);
+                console.debug('[DocumentEditor] Parsed blocks from template:', parsedBlocks.map(b => ({
+                    id: b.id, type: b.type, page: b.page, x: b.x, y: b.y,
+                    width: b.width, height: b.height,
+                    content: b.content ? b.content.substring(0, 50) : '(empty)',
+                    hasStyles: !!b.styles
+                })));
+            }
             const layoutBlocks = parsedBlocks.map(b => ({
                 id: b.id,
                 type: b.type,
@@ -2278,17 +2405,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             return copy;
         });
 
-        console.log('[DocumentEditor] Filled layout blocks for PDF:', filledLayoutBlocks.map(b => ({
-            id: b.id, type: b.type, page: b.page,
-            x: b.x, y: b.y, width: b.width, height: b.height,
-            content: b.content ? (b.content.length > 80 ? b.content.substring(0, 80) + '...' : b.content) : '(empty)'
-        })));
-        console.log('[DocumentEditor] kontextDaten:', {
-            kundennummer: kontextDaten.kundennummer,
-            projektnummer: kontextDaten.projektnummer,
-            kundenName: kontextDaten.kundenName,
-            rechnungsadresse: kontextDaten.rechnungsadresse ? kontextDaten.rechnungsadresse.substring(0, 50) : '(empty)'
-        });
+        // Diagnose-Log fuer die Layout-Positionierung. Nur in der Entwicklung,
+        // weil es bei offener Vorschau alle zwei Sekunden feuert. Bewusst OHNE
+        // Inhalte: die gefuellten Bloecke tragen Kundenname und Rechnungs-
+        // adresse, also personenbezogene Daten.
+        if (import.meta.env.DEV) {
+            console.debug('[DocumentEditor] Filled layout blocks for PDF:', filledLayoutBlocks.map(b => ({
+                id: b.id, type: b.type, page: b.page,
+                x: b.x, y: b.y, width: b.width, height: b.height,
+                hasContent: Boolean(b.content)
+            })));
+        }
 
         if (isPreview && showFinalizationPrompt) {
             filledLayoutBlocks.push({
@@ -2568,8 +2695,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 value={kontextDaten.rechnungsadresse || ''}
                                 isLocked={isLocked}
                                 onChange={(newAddr) => {
+                                    // "Uebernehmen" ohne echte Aenderung darf nichts ausloesen:
+                                    // `adresseUserEditedRef` schaltet das Dokument dauerhaft auf
+                                    // eine eigene Adresse um und kappt damit die Vererbung vom
+                                    // Vorgang — das soll keine Nebenwirkung eines No-ops sein.
+                                    if (newAddr === (kontextDaten.rechnungsadresse ?? '')) return;
                                     adresseUserEditedRef.current = true;
                                     setKontextDaten(prev => ({ ...prev, rechnungsadresse: newAddr }));
+                                    setAdresseGeaendert(true);
                                 }}
                             />
 
@@ -2819,7 +2952,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         onClose();
                     }}
                     onSaveAndClose={async () => {
-                        await handleSave();
+                        // Nur schliessen, wenn das Speichern wirklich geklappt
+                        // hat. Sonst waere die Aenderung weg und der Fehler-Toast
+                        // verschwaende mit dem Editor.
+                        const gespeichert = await handleSave();
+                        if (!gespeichert) return;
                         setShowUnsavedWarning(false);
                         onClose();
                     }}
