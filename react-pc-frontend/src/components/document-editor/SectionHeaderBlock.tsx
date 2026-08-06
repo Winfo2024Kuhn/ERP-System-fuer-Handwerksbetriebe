@@ -50,7 +50,9 @@ export function SectionHeaderBlock({
 }: SectionHeaderBlockProps) {
     const [editing, setEditing] = useState(false);
     const [localLabel, setLocalLabel] = useState(block.sectionLabel || '');
-    const [collapsed, setCollapsed] = useState(false);
+    // Beim Oeffnen ist jeder Bauabschnitt zu — bei 20 Positionen ist die
+    // Uebersicht sonst weg. Reine Ansichtssache, wird nicht persistiert.
+    const [collapsed, setCollapsed] = useState(true);
 
     const { setNodeRef, isOver } = useDroppable({
         id: `section-drop-${block.id}`,
@@ -142,6 +144,8 @@ export function SectionHeaderBlock({
                         variant="ghost"
                         size="sm"
                         onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); }}
+                        aria-label={collapsed ? 'Aufklappen' : 'Zuklappen'}
+                        aria-expanded={!collapsed}
                         className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-700 rounded-md"
                     >
                         {collapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
