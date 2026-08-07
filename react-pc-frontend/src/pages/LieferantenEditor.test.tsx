@@ -1,9 +1,10 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { ToastProvider } from '../components/ui/toast';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
+import { AuthProvider } from '../auth/AuthContext';
 import LieferantenEditor from './LieferantenEditor';
 
 // PAGE_SIZE im LieferantenEditor ist 12 – bei 40 Treffern also 4 Seiten.
@@ -192,5 +193,135 @@ describe('LieferantenEditor – Pagination und Filter', () => {
 
         expect(screen.queryByText('Alte Treffer GmbH')).not.toBeInTheDocument();
         expect(screen.getByText('Neue Treffer GmbH')).toBeInTheDocument();
+    });
+});
+
+// ==================== DEEP-LINKS AUF DIE REITER ====================
+
+/** DSGVO: reine Dummy-Daten. */
+const DUMMY_DETAIL = {
+    id: 7,
+    lieferantenname: 'Musterbedarf 7 GmbH',
+    strasse: 'Musterweg 1',
+    plz: '12345',
+    ort: 'Musterstadt',
+    lieferantenTyp: 'Lieferant',
+    rollen: [],
+    emails: [],
+    kommunikation: [],
+    dokumente: [],
+    notizen: [],
+    kundenEmails: [],
+};
+
+/**
+ * Beantwortet Detail-Abruf und Listen-Abruf getrennt; alles andere (die
+ * Unter-Reiter laden ihre Inhalte selbst nach) bekommt eine leere Antwort,
+ * damit der Test nicht an Nebenschauplätzen scheitert.
+ */
+function mockDetailApi() {
+    return vi.fn((url: string) => {
+        const antwort = (body: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+        if (typeof url === 'string' && /^\/api\/lieferanten\/\d+$/.test(url)) {
+            return antwort(DUMMY_DETAIL);
+        }
+        if (typeof url === 'string' && url.startsWith('/api/lieferanten?')) {
+            return antwort({ lieferanten: dummyLieferanten(1), gesamt: 1 });
+        }
+        if (typeof url === 'string' && url.startsWith('/api/auth/me')) {
+            // Der Dokumente-Reiter fragt über useAuth die Admin-Rechte ab.
+            return antwort({
+                id: 1,
+                displayName: 'Max Mustermann',
+                username: 'max.mustermann',
+                active: true,
+                roles: ['ADMIN'],
+                admin: true,
+                requiresInitialSetup: false,
+            });
+        }
+        return antwort([]);
+    });
+}
+
+/** Macht die Adresszeile sichtbar und erlaubt einen echten Browser-Zurück-Schritt. */
+function RouterSonde() {
+    const location = useLocation();
+    const navigate = useNavigate();
+    return (
+        <>
+            <span data-testid="adresse">{location.pathname + location.search}</span>
+            <button onClick={() => navigate(-1)}>Browserzurueck</button>
+        </>
+    );
+}
+
+function renderMitAdresse(eintraege: string[], startIndex?: number) {
+    return render(
+        <MemoryRouter initialEntries={eintraege} initialIndex={startIndex}>
+            <AuthProvider>
+                <ConfirmProvider>
+                    <ToastProvider>
+                        <LieferantenEditor />
+                        <RouterSonde />
+                    </ToastProvider>
+                </ConfirmProvider>
+            </AuthProvider>
+        </MemoryRouter>
+    );
+}
+
+describe('LieferantenEditor – Reiter in der Adresszeile', () => {
+    beforeEach(() => {
+        fetchMock = mockDetailApi();
+        global.fetch = fetchMock as unknown as typeof fetch;
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('öffnet über ?tab=dokumente direkt die Dokumente statt des E-Mail-Verlaufs', async () => {
+        // Genau dieser Link steckt hinter "Neuer Lieferschein" in der Glocke.
+        renderMitAdresse(['/lieferanten?lieferantId=7&tab=dokumente']);
+
+        const offenerReiter = await screen.findByRole('tab', { selected: true });
+        expect(offenerReiter).toHaveTextContent(/Dokumente/);
+    });
+
+    it('fällt bei unbekanntem Reiter auf den E-Mail-Verlauf zurück', async () => {
+        renderMitAdresse(['/lieferanten?lieferantId=7&tab=quatsch']);
+
+        const offenerReiter = await screen.findByRole('tab', { selected: true });
+        expect(offenerReiter).toHaveTextContent(/E-Mail-Verlauf/);
+    });
+
+    it('schreibt den angetippten Reiter in die Adresszeile', async () => {
+        const user = userEvent.setup();
+        renderMitAdresse(['/lieferanten?lieferantId=7']);
+
+        await screen.findByRole('tab', { selected: true });
+        await user.click(screen.getByRole('tab', { name: /Notizen/ }));
+
+        await waitFor(() => {
+            expect(screen.getByTestId('adresse')).toHaveTextContent('tab=notizen');
+        });
+        expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/Notizen/);
+    });
+
+    it('schließt die Detailansicht, wenn der Browser-Zurück-Knopf die Kennung entfernt', async () => {
+        const user = userEvent.setup();
+        // Zustand wie nach einem Klick aus der Liste heraus: Liste im Rücken,
+        // Detailansicht im Vordergrund.
+        renderMitAdresse(['/lieferanten', '/lieferanten?lieferantId=7&tab=dokumente'], 1);
+
+        await screen.findByRole('tab', { selected: true });
+
+        await user.click(screen.getByRole('button', { name: 'Browserzurueck' }));
+
+        await waitFor(() => {
+            expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+        });
+        expect(screen.getByTestId('adresse')).toHaveTextContent('/lieferanten');
     });
 });

@@ -33,13 +33,31 @@ const PAGE_SIZE = 12;
 
 // ==================== DETAIL VIEW ====================
 
+/**
+ * Die Reiter der Lieferanten-Detailansicht stehen in der Adresszeile
+ * (`/lieferanten?lieferantId=7&tab=dokumente`).
+ *
+ * <p>Dadurch landet ein Klick auf "Neuer Lieferschein" in der Glocke direkt
+ * bei den Dokumenten statt im E-Mail-Verlauf, ein Link lässt sich teilen,
+ * und der Zurück-Knopf des Browsers führt wieder aus der Detailansicht
+ * heraus zur Liste.</p>
+ */
+const LIEFERANT_TABS = ['emails', 'dokumente', 'notizen', 'reklamationen'] as const;
+type LieferantTab = typeof LIEFERANT_TABS[number];
+
+function istGueltigerTab(value: string | null): value is LieferantTab {
+    return value !== null && LIEFERANT_TABS.some((tab) => tab === value);
+}
+
 interface LieferantDetailViewProps {
     lieferant: LieferantDetail;
+    activeTab: LieferantTab;
+    onTabChange: (tab: LieferantTab) => void;
     onBack: () => void;
     onEdit: () => void;
 }
 
-const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, onBack, onEdit }) => {
+const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, activeTab, onTabChange, onBack, onEdit }) => {
     const initials = lieferant.lieferantenname?.slice(0, 2).toUpperCase() || "??";
 
     // Formatter helpers
@@ -116,15 +134,14 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
         </Card>
     );
 
-    // Tab State
-    const [activeTab, setActiveTab] = useState<'emails' | 'dokumente' | 'notizen' | 'reklamationen'>('emails');
-
     const mainContent = (
         <>
-            {/* Tab Navigation */}
-            <div className="flex items-center gap-1 mb-6 border-b border-slate-200">
+            {/* Tab Navigation — der offene Reiter steht in der URL, nicht im lokalen State */}
+            <div role="tablist" aria-label="Bereiche des Lieferanten" className="flex items-center gap-1 mb-6 border-b border-slate-200">
                 <button
-                    onClick={() => setActiveTab('emails')}
+                    role="tab"
+                    aria-selected={activeTab === 'emails'}
+                    onClick={() => onTabChange('emails')}
                     className={cn(
                         "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
                         activeTab === 'emails'
@@ -139,7 +156,9 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                     </span>
                 </button>
                 <button
-                    onClick={() => setActiveTab('dokumente')}
+                    role="tab"
+                    aria-selected={activeTab === 'dokumente'}
+                    onClick={() => onTabChange('dokumente')}
                     className={cn(
                         "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
                         activeTab === 'dokumente'
@@ -154,7 +173,9 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                     </span>
                 </button>
                 <button
-                    onClick={() => setActiveTab('notizen')}
+                    role="tab"
+                    aria-selected={activeTab === 'notizen'}
+                    onClick={() => onTabChange('notizen')}
                     className={cn(
                         "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
                         activeTab === 'notizen'
@@ -170,7 +191,9 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, on
                 </button>
 
                 <button
-                    onClick={() => setActiveTab('reklamationen')}
+                    role="tab"
+                    aria-selected={activeTab === 'reklamationen'}
+                    onClick={() => onTabChange('reklamationen')}
                     className={cn(
                         "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
                         activeTab === 'reklamationen'
@@ -353,11 +376,40 @@ export default function LieferantenEditor() {
     const [editingLieferant, setEditingLieferant] = useState<Lieferant | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // Deep-link: restore detail view from URL param ?lieferantId=123
+    // Welcher Reiter offen ist, steht in der Adresszeile. Ein unbekannter oder
+    // fehlender Wert fällt auf den E-Mail-Verlauf zurück — eine kaputte URL
+    // soll die Seite nicht leer lassen.
+    const tabParam = searchParams.get('tab');
+    const activeTab: LieferantTab = istGueltigerTab(tabParam) ? tabParam : 'emails';
+
+    /**
+     * Reiterwechsel bewusst mit `replace` statt `push`: Sonst müsste man den
+     * Zurück-Knopf für jeden angetippten Reiter einmal extra drücken, um die
+     * Detailansicht überhaupt zu verlassen. Die Adresse bleibt trotzdem
+     * teilbar und ein Lesezeichen landet im richtigen Reiter.
+     */
+    const wechsleTab = useCallback((tab: LieferantTab) => {
+        setSearchParams((vorherige) => {
+            const naechste = new URLSearchParams(vorherige);
+            naechste.set('tab', tab);
+            return naechste;
+        }, { replace: true });
+    }, [setSearchParams]);
+
+    // Deep-Link: Die Adresszeile ist die Wahrheit — `?lieferantId=123` öffnet
+    // die Detailansicht, ihr Verschwinden schließt sie wieder.
     const lastProcessedLieferantId = useRef<string | null>(null);
     useEffect(() => {
         const lieferantIdParam = searchParams.get('lieferantId');
-        if (!lieferantIdParam) return;
+        if (!lieferantIdParam) {
+            // Browser-Zurück aus der Detailansicht heraus. Ohne diesen Zweig
+            // bliebe die Detailansicht offen, obwohl die Adresse längst die
+            // Liste zeigt.
+            lastProcessedLieferantId.current = null;
+            setSelectedLieferant(null);
+            setViewMode('list');
+            return;
+        }
         if (lastProcessedLieferantId.current === lieferantIdParam) return;
         const lieferantId = Number(lieferantIdParam);
         if (isNaN(lieferantId) || !lieferantId) return;
@@ -459,21 +511,50 @@ export default function LieferantenEditor() {
         setIsModalOpen(true);
     };
 
+    /**
+     * Lädt die Detaildaten neu, ohne die Adresszeile anzufassen — der offene
+     * Reiter bleibt also stehen. Genau das braucht man nach dem Speichern.
+     */
+    const aktualisiereDetail = async (id: string | number) => {
+        try {
+            setLoading(true);
+            const res = await fetch(`/api/lieferanten/${id}`);
+            if (!res.ok) throw new Error("Fehler beim Laden der Details");
+            setSelectedLieferant(await res.json() as LieferantDetail);
+        } catch (err) {
+            console.error("Detail reload error", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    /**
+     * Öffnet einen Lieferanten aus der Liste heraus.
+     *
+     * <p>Bewusst ein echter History-Eintrag (kein `replace`): Der Zurück-Knopf
+     * des Browsers soll aus der Detailansicht zurück in die Liste führen, nicht
+     * gleich die ganze Seite verlassen.</p>
+     *
+     * <p>Die Kennung wird vorab vermerkt, damit der Deep-Link-Effekt die
+     * gerade geladenen Daten nicht ein zweites Mal vom Server holt.</p>
+     */
     const handleDetail = async (lieferant: Lieferant) => {
+        const oeffne = (detail: LieferantDetail, id: string | number) => {
+            lastProcessedLieferantId.current = String(id);
+            setSelectedLieferant(detail);
+            setViewMode('detail');
+            setSearchParams({ lieferantId: String(id) });
+        };
         try {
             setLoading(true);
             const res = await fetch(`/api/lieferanten/${lieferant.id}`);
             if (!res.ok) throw new Error("Fehler beim Laden der Details");
             const data: LieferantDetail = await res.json();
 
-            setSelectedLieferant(data);
-            setViewMode('detail');
-            setSearchParams({ lieferantId: String(data.id) }, { replace: true });
+            oeffne(data, data.id);
         } catch (err) {
             console.error("Detail load error", err);
-            setSelectedLieferant(lieferant as LieferantDetail);
-            setViewMode('detail');
-            setSearchParams({ lieferantId: String(lieferant.id) }, { replace: true });
+            oeffne(lieferant as LieferantDetail, lieferant.id);
         } finally {
             setLoading(false);
         }
@@ -501,7 +582,10 @@ export default function LieferantenEditor() {
             setEditingLieferant(null);
 
             if (viewMode === 'detail' && selectedLieferant?.id === data.id) {
-                handleDetail(data);
+                // Nur die Daten auffrischen, nicht neu "öffnen": Sonst fiele der
+                // gerade offene Reiter aus der Adresszeile und der Nutzer stünde
+                // nach dem Speichern unvermittelt wieder im E-Mail-Verlauf.
+                await aktualisiereDetail(data.id);
             } else {
                 loadLieferanten();
             }
@@ -510,6 +594,15 @@ export default function LieferantenEditor() {
             toast.error("Ein Fehler ist aufgetreten.");
         }
     };
+
+    /**
+     * Zurück zur Liste: Es reicht, die Kennung aus der Adresszeile zu nehmen —
+     * der Deep-Link-Effekt oben schließt die Detailansicht daraufhin selbst.
+     * So gibt es nur eine Stelle, die über "Liste oder Detail?" entscheidet.
+     */
+    const zurueckZurListe = useCallback(() => {
+        setSearchParams({});
+    }, [setSearchParams]);
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -538,22 +631,16 @@ export default function LieferantenEditor() {
                 title="LIEFERANTENDETAILS"
                 subtitle={selectedLieferant.lieferantenname}
                 actions={
-                    <Button variant="outline" size="sm" onClick={() => {
-                        setSelectedLieferant(null);
-                        setViewMode('list');
-                        setSearchParams({}, { replace: true });
-                    }}>
+                    <Button variant="outline" size="sm" onClick={zurueckZurListe}>
                         <ArrowLeft className="w-4 h-4 mr-2" /> Zurück
                     </Button>
                 }
             >
                 <LieferantDetailView
                     lieferant={selectedLieferant}
-                    onBack={() => {
-                        setSelectedLieferant(null);
-                        setViewMode('list');
-                        setSearchParams({}, { replace: true });
-                    }}
+                    activeTab={activeTab}
+                    onTabChange={wechsleTab}
+                    onBack={zurueckZurListe}
                     onEdit={() => handleEdit(selectedLieferant)}
                 />
                 {isModalOpen && editingLieferant && (

@@ -504,6 +504,7 @@ public class NotificationController {
                                                                         lieferantId != null
                                                                                         ? "/lieferanten?lieferantId="
                                                                                                         + lieferantId
+                                                                                                        + "&tab=dokumente"
                                                                                         : "/lieferanten"));
                                                 });
                         }
