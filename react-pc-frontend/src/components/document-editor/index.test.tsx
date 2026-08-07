@@ -10,11 +10,18 @@ import DocumentEditor from './index';
 const ALTE_ADRESSE = 'Max Mustermann\nMusterweg 1\n12345 Musterstadt';
 const NEUE_ADRESSE = 'Max Mustermann\nNeue Gasse 7\n54321 Beispielstadt';
 
+// Bewusst "heute": Bei einem noch nicht versendeten Dokument laesst der Editor
+// das Datum mit heute mitlaufen. Ein fest verdrahtetes Datum waere ab dem
+// Folgetag Vergangenheit, der Editor wuerde es bumpen und das Dokument allein
+// deshalb als "Ungespeichert" melden — die Adress-Assertions unten haetten
+// nichts damit zu tun.
+const HEUTE_ISO = new Date().toISOString().split('T')[0];
+
 const dokumentAntwort = {
     id: 1,
     typ: 'RECHNUNG',
     dokumentNummer: 'RE-2026/08/00001',
-    datum: '2026-08-06',
+    datum: HEUTE_ISO,
     betreff: 'Dachsanierung',
     betragNetto: 1000,
     htmlInhalt: '',

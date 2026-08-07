@@ -241,8 +241,15 @@ public class AusgangsGeschaeftsDokumentService {
                     dokument.setProjekt(vorgaenger.getProjekt());
                 }
 
-                // Validierung: Rechnungsbetrag darf Restbetrag nicht übersteigen
+                if (dto.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG) {
+                    validiereEinzigeAuftragsbestaetigung(vorgaenger);
+                }
+
                 if (RECHNUNGSTYPEN.contains(dto.getTyp())) {
+                    // Rechnungen gehören an das unterste Dokument des Vorgangs
+                    validiereAbrechnungsbasis(vorgaenger);
+
+                    // Rechnungsbetrag darf Restbetrag nicht übersteigen
                     BigDecimal zuPruefenderBetrag = dto.getBetragNetto();
                     // Fallback: Betrag aus positionenJson berechnen (z.B. Teilrechnung)
                     if (zuPruefenderBetrag == null && dto.getPositionenJson() != null) {
@@ -1431,6 +1438,81 @@ public class AusgangsGeschaeftsDokumentService {
             }
             throw new IllegalStateException("Es existiert bereits ein Basisdokument.");
         }
+    }
+
+    /**
+     * Rechnungen gehören an das unterste Dokument eines Vorgangs.
+     *
+     * <p>Sobald unter einem Angebot oder Nachtragsangebot eine Auftragsbestätigung
+     * hängt, wird ausschließlich dort abgerechnet. Andernfalls liefen zwei
+     * Abrechnungsstände nebeneinander — einer am Angebot, einer an der AB — und der
+     * Restbetrag (siehe {@link #getAbrechnungsverlauf(Long)}) stimmte in keinem von
+     * beiden, weil er nur die direkten Nachfolger des jeweiligen Basisdokuments zählt.</p>
+     *
+     * <p><strong>Ausnahme für Bestandsvorgänge:</strong> Wurde am Angebot bereits
+     * abgerechnet und erst danach eine AB angelegt, bleibt die Abrechnung am Angebot.
+     * Ein erzwungener Wechsel auf die AB würde dort einen Restbetrag in voller
+     * Angebotshöhe ausweisen — die schon am Angebot abgerechneten Beträge zählt der
+     * Verlauf der AB nicht mit, und die Schlussrechnung würde still zu hoch
+     * vorbefüllt. Solche Vorgänge rechnen deshalb dort weiter ab, wo ihr Verlauf
+     * vollständig ist.</p>
+     *
+     * <p>Ein nachträglicher Typwechsel kann die Regel nicht umgehen:
+     * {@code AusgangsGeschaeftsDokumentUpdateDto} führt kein {@code typ}-Feld, und
+     * der Controller bietet keinen entsprechenden Endpoint. Wird das je geändert,
+     * muss dieser Guard auch im Update-Pfad greifen.</p>
+     */
+    /**
+     * Ein Angebot oder Nachtragsangebot trägt höchstens eine aktive
+     * Auftragsbestätigung.
+     *
+     * <p>Zwei ABs am selben Angebot erzeugen dasselbe Problem wie Rechnungen an
+     * Angebot und AB gleichzeitig, nur eine Ebene tiefer: Beide hätten ihren
+     * eigenen Abrechnungsverlauf über denselben Auftragswert, und keiner der
+     * beiden Restbeträge stimmte. Braucht ein Vorgang mehr Volumen, ist das
+     * ein Nachtragsangebot mit eigener Kette (siehe
+     * {@link AusgangsGeschaeftsDokumentTyp#NACHTRAGSANGEBOT}).</p>
+     *
+     * <p>Stornierte ABs zählen nicht mit — sonst bliebe der Vorgang nach einer
+     * Stornierung dauerhaft ohne Auftragsbestätigung.</p>
+     */
+    private void validiereEinzigeAuftragsbestaetigung(AusgangsGeschaeftsDokument vorgaenger) {
+        boolean hatAktiveAuftragsbestaetigung = dokumentRepository
+                .findByVorgaengerIdOrderByErstelltAmAsc(vorgaenger.getId()).stream()
+                .anyMatch(n -> n.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG
+                        && !n.isStorniert());
+        if (hatAktiveAuftragsbestaetigung) {
+            throw new IllegalStateException(
+                    "Zu " + vorgaenger.getDokumentNummer() + " gibt es bereits eine Auftragsbestätigung. "
+                            + "Für zusätzliche Leistungen legen Sie bitte ein Nachtragsangebot an.");
+        }
+    }
+
+    private void validiereAbrechnungsbasis(AusgangsGeschaeftsDokument vorgaenger) {
+        if (vorgaenger.getTyp() != AusgangsGeschaeftsDokumentTyp.ANGEBOT
+                && vorgaenger.getTyp() != AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT) {
+            return;
+        }
+
+        List<AusgangsGeschaeftsDokument> nachfolger =
+                dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(vorgaenger.getId());
+
+        boolean hatAuftragsbestaetigung = nachfolger.stream()
+                .anyMatch(n -> n.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG
+                        && !n.isStorniert());
+        if (!hatAuftragsbestaetigung) {
+            return;
+        }
+
+        boolean bereitsAmVorgaengerAbgerechnet = nachfolger.stream()
+                .anyMatch(n -> RECHNUNGSTYPEN.contains(n.getTyp()) && !n.isStorniert());
+        if (bereitsAmVorgaengerAbgerechnet) {
+            return;
+        }
+
+        throw new IllegalStateException(
+                "Zu " + vorgaenger.getDokumentNummer() + " gibt es bereits eine Auftragsbestätigung. "
+                        + "Bitte legen Sie die Rechnung dort an.");
     }
 
     private String generiereNummer(AusgangsGeschaeftsDokumentTyp typ) {

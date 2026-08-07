@@ -515,6 +515,240 @@ class AusgangsGeschaeftsDokumentServiceTest {
                     .hasMessageContaining("Nachtragsangebot benötigt ein bestehendes Angebot");
         }
 
+        /** Basisdokument (Angebot/AB), an dem eine Rechnung angelegt werden soll. */
+        private AusgangsGeschaeftsDokument basisdokument(
+                long id, AusgangsGeschaeftsDokumentTyp typ, String nummer) {
+            AusgangsGeschaeftsDokument dok = new AusgangsGeschaeftsDokument();
+            dok.setId(id);
+            dok.setTyp(typ);
+            dok.setDokumentNummer(nummer);
+            dok.setBetragNetto(new BigDecimal("10000.00"));
+            return dok;
+        }
+
+        /** Nachfolger-Dokument in der Kette unter einem Basisdokument. */
+        private AusgangsGeschaeftsDokument nachfolger(
+                AusgangsGeschaeftsDokumentTyp typ, String betragNetto, boolean storniert) {
+            AusgangsGeschaeftsDokument dok = new AusgangsGeschaeftsDokument();
+            dok.setTyp(typ);
+            if (betragNetto != null) {
+                dok.setBetragNetto(new BigDecimal(betragNetto));
+            }
+            dok.setStorniert(storniert);
+            return dok;
+        }
+
+        @Test
+        void verhindertZweiteAuftragsbestaetigungAmSelbenAngebot() {
+            // Zwei ABs am selben Angebot hätten je einen eigenen Abrechnungsverlauf
+            // über denselben Auftragswert — beide Restbeträge wären falsch.
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    70L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "2025/01/00010");
+            when(dokumentRepository.findById(70L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(70L)).thenReturn(
+                    List.of(nachfolger(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "10000.00", false)));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            dto.setVorgaengerId(70L);
+
+            assertThatThrownBy(() -> service.erstellen(dto))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("2025/01/00010")
+                    .hasMessageContaining("Nachtragsangebot");
+        }
+
+        @Test
+        void erlaubtErsteAuftragsbestaetigungAmAngebot() {
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    71L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "2025/01/00011");
+            when(dokumentRepository.findById(71L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(71L)).thenReturn(Collections.emptyList());
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(8L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            dto.setVorgaengerId(71L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            assertThat(result.getVorgaenger()).isEqualTo(angebot);
+        }
+
+        @Test
+        void erlaubtNeueAuftragsbestaetigungNachStornierterAuftragsbestaetigung() {
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    72L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "2025/01/00012");
+            when(dokumentRepository.findById(72L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(72L)).thenReturn(
+                    List.of(nachfolger(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "10000.00", true)));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(9L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            dto.setVorgaengerId(72L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getVorgaenger()).isEqualTo(angebot);
+        }
+
+        @Test
+        void verhindertRechnungAmAngebotWennAuftragsbestaetigungExistiert() {
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    60L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "2025/01/00001");
+            when(dokumentRepository.findById(60L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(60L)).thenReturn(
+                    List.of(nachfolger(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "10000.00", false)));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dto.setVorgaengerId(60L);
+            dto.setBetragNetto(new BigDecimal("1000.00"));
+
+            assertThatThrownBy(() -> service.erstellen(dto))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("2025/01/00001")
+                    .hasMessageContaining("Auftragsbestätigung");
+        }
+
+        @Test
+        void verhindertRechnungAmNachtragsangebotWennAuftragsbestaetigungExistiert() {
+            AusgangsGeschaeftsDokument nachtrag = basisdokument(
+                    61L, AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT, "NA-2025/01/00001");
+            when(dokumentRepository.findById(61L)).thenReturn(Optional.of(nachtrag));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(61L)).thenReturn(
+                    List.of(nachfolger(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "10000.00", false)));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG);
+            dto.setVorgaengerId(61L);
+            dto.setBetragNetto(new BigDecimal("500.00"));
+
+            assertThatThrownBy(() -> service.erstellen(dto))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("NA-2025/01/00001");
+        }
+
+        @Test
+        void erlaubtRechnungAmAngebotSolangeKeineAuftragsbestaetigungExistiert() {
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    62L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "2025/01/00002");
+            when(dokumentRepository.findById(62L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(62L)).thenReturn(Collections.emptyList());
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(4L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dto.setVorgaengerId(62L);
+            dto.setBetragNetto(new BigDecimal("1000.00"));
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            assertThat(result.getVorgaenger()).isEqualTo(angebot);
+        }
+
+        @Test
+        void erlaubtRechnungAnDerAuftragsbestaetigung() {
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument auftragsbestaetigung = basisdokument(
+                    63L, AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "2025/01/00003");
+            when(dokumentRepository.findById(63L)).thenReturn(Optional.of(auftragsbestaetigung));
+            // Bewusst eine AB unter der AB: Der Guard darf hier gar nicht erst
+            // hinschauen, weil der Vorgänger kein Angebot ist. Ohne den
+            // Typ-Early-Return würde dieser Test fehlschlagen.
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(63L)).thenReturn(
+                    List.of(nachfolger(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "10000.00", false)));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(5L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dto.setVorgaengerId(63L);
+            dto.setBetragNetto(new BigDecimal("1000.00"));
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            assertThat(result.getVorgaenger()).isEqualTo(auftragsbestaetigung);
+        }
+
+        @Test
+        void erlaubtWeitereRechnungAmAngebotWennDortBereitsAbgerechnetWurde() {
+            // Bestandsfall: erst am Angebot abgerechnet, dann eine AB angelegt.
+            // Der Verlauf der AB kennt die 3.000 EUR nicht — ein erzwungener
+            // Wechsel dorthin würde den Restbetrag auf volle 10.000 EUR stellen
+            // und den Kunden mit 13.000 EUR belasten. Also bleibt es am Angebot.
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    64L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "2025/01/00004");
+            when(dokumentRepository.findById(64L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(64L)).thenReturn(List.of(
+                    nachfolger(AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG, "3000.00", false),
+                    nachfolger(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "10000.00", false)));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(6L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG);
+            dto.setVorgaengerId(64L);
+            dto.setBetragNetto(new BigDecimal("7000.00"));
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG);
+            assertThat(result.getVorgaenger()).isEqualTo(angebot);
+        }
+
+        @Test
+        void ignoriertStornierteAuftragsbestaetigungBeiDerAbrechnungsbasis() {
+            // Eine stornierte AB ist kein aktiver Vorgang — sie darf das Angebot
+            // nicht dauerhaft für Rechnungen sperren.
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    65L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "2025/01/00005");
+            when(dokumentRepository.findById(65L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(65L)).thenReturn(
+                    List.of(nachfolger(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "10000.00", true)));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(7L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dto.setVorgaengerId(65L);
+            dto.setBetragNetto(new BigDecimal("1000.00"));
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getVorgaenger()).isEqualTo(angebot);
+        }
+
         @Test
         void setztAbschlagsnummerKorrekt() {
             mockCounterForNummer();

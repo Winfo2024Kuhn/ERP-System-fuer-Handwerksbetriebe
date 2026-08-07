@@ -38,7 +38,7 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
 import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel } from "../types";
-import { canCreateEinfacheRechnung } from "../lib/abrechnungsverlauf";
+import { canCreateEinfacheRechnung, istRechnungAmVorgaengerGesperrt, hatAktiveAuftragsbestaetigung } from "../lib/abrechnungsverlauf";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
 import { DetailLayout } from "../components/DetailLayout";
 import { ProjektErstellenModal } from "../components/ProjektErstellenModal";
@@ -1681,6 +1681,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                     const typConfig = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dok.typ);
                                     const hasChildren = node.children.length > 0;
                                     const isChild = node.depth > 0;
+                                    // Abgerechnet wird am untersten Dokument des Vorgangs — Regel und
+                                    // Bestandsdaten-Ausnahme siehe istRechnungAmVorgaengerGesperrt().
+                                    const folgeDokumente = node.children.map(c => c.dokument);
+                                    const rechnungGesperrt = istRechnungAmVorgaengerGesperrt(folgeDokumente);
+                                    const abGesperrt = hatAktiveAuftragsbestaetigung(folgeDokumente);
 
                                     return (
                                         <div
@@ -1882,7 +1887,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                 <p className="px-4 py-1 text-xs text-slate-400 font-medium">Folgedokument erstellen:</p>
                                                                 {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT') && (
                                                                     <button
-                                                                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2"
+                                                                        className={cn(
+                                                                            'w-full text-left px-4 py-2 text-sm flex items-center gap-2',
+                                                                            abGesperrt
+                                                                                ? 'text-slate-400 cursor-not-allowed'
+                                                                                : 'text-slate-700 hover:bg-rose-50 hover:text-rose-700'
+                                                                        )}
+                                                                        disabled={abGesperrt}
                                                                         onClick={async () => {
                                                                             if (await confirmDialog({ title: "Auftragsbestätigung erstellen", message: `Auftragsbestätigung basierend auf ${dok.dokumentNummer} erstellen?`, variant: "info", confirmLabel: "Erstellen" })) {
                                                                                 try {
@@ -1910,11 +1921,24 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                         }}
                                                                     >
                                                                         <FileText className="w-4 h-4" />
-                                                                        Auftragsbestätigung
+                                                                        <span className="flex flex-col items-start gap-0.5">
+                                                                            <span>Auftragsbestätigung</span>
+                                                                            {abGesperrt && (
+                                                                                <span className="text-xs text-slate-400">
+                                                                                    Für mehr Leistungen ein Nachtragsangebot anlegen
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
                                                                     </button>
                                                                 )}
                                                                 <button
-                                                                    className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2"
+                                                                    className={cn(
+                                                                        'w-full text-left px-4 py-2 text-sm flex items-center gap-2',
+                                                                        rechnungGesperrt
+                                                                            ? 'text-slate-400 cursor-not-allowed'
+                                                                            : 'text-slate-700 hover:bg-rose-50 hover:text-rose-700'
+                                                                    )}
+                                                                    disabled={rechnungGesperrt}
                                                                     onClick={async () => {
                                                                         // Menü sofort schließen
                                                                         setActionMenuDokument(null);
@@ -1995,7 +2019,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                     }}
                                                                 >
                                                                     <Receipt className="w-4 h-4" />
-                                                                    Rechnung erstellen
+                                                                    <span className="flex flex-col items-start gap-0.5">
+                                                                        <span>Rechnung erstellen</span>
+                                                                        {rechnungGesperrt && (
+                                                                            <span className="text-xs text-slate-400">
+                                                                                Rechnung bitte an der Auftragsbestätigung anlegen
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
                                                                 </button>
                                                             </>
                                                         )}

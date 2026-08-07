@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { canCreateEinfacheRechnung } from './abrechnungsverlauf';
-import type { AbrechnungsverlaufDto, AbrechnungspositionDto } from '../types';
+import {
+    canCreateEinfacheRechnung,
+    istRechnungAmVorgaengerGesperrt,
+    hatAktiveAuftragsbestaetigung,
+} from './abrechnungsverlauf';
+import type { AbrechnungsverlaufDto, AbrechnungspositionDto, AusgangsGeschaeftsDokumentTyp } from '../types';
 
 const basisVerlauf: Omit<AbrechnungsverlaufDto, 'positionen'> = {
     basisdokumentId: 1,
@@ -63,5 +67,61 @@ describe('canCreateEinfacheRechnung', () => {
             ],
         };
         expect(canCreateEinfacheRechnung(verlauf)).toBe(false);
+    });
+});
+
+const folge = (typ: AusgangsGeschaeftsDokumentTyp, storniert = false) => ({ typ, storniert });
+
+describe('hatAktiveAuftragsbestaetigung', () => {
+    it('erkennt eine aktive Auftragsbestätigung', () => {
+        expect(hatAktiveAuftragsbestaetigung([folge('AUFTRAGSBESTAETIGUNG')])).toBe(true);
+    });
+
+    it('ignoriert eine stornierte Auftragsbestätigung', () => {
+        // Sonst bliebe der Vorgang nach einer Stornierung dauerhaft ohne AB.
+        expect(hatAktiveAuftragsbestaetigung([folge('AUFTRAGSBESTAETIGUNG', true)])).toBe(false);
+    });
+
+    it('liefert false ohne Folgedokumente und bei anderen Typen', () => {
+        expect(hatAktiveAuftragsbestaetigung([])).toBe(false);
+        expect(hatAktiveAuftragsbestaetigung([folge('ABSCHLAGSRECHNUNG')])).toBe(false);
+    });
+});
+
+describe('istRechnungAmVorgaengerGesperrt', () => {
+
+    it('sperrt nicht, solange keine Auftragsbestätigung existiert', () => {
+        expect(istRechnungAmVorgaengerGesperrt([])).toBe(false);
+        expect(istRechnungAmVorgaengerGesperrt([folge('ABSCHLAGSRECHNUNG')])).toBe(false);
+    });
+
+    it('sperrt, sobald eine Auftragsbestätigung darunter hängt', () => {
+        expect(istRechnungAmVorgaengerGesperrt([folge('AUFTRAGSBESTAETIGUNG')])).toBe(true);
+    });
+
+    it('sperrt nicht, wenn am Vorgänger bereits abgerechnet wurde (Bestandsvorgang)', () => {
+        // Der Verlauf der AB kennt die schon am Angebot abgerechneten Beträge nicht.
+        // Ein erzwungener Wechsel würde dort den vollen Restbetrag ausweisen.
+        expect(istRechnungAmVorgaengerGesperrt([
+            folge('ABSCHLAGSRECHNUNG'),
+            folge('AUFTRAGSBESTAETIGUNG'),
+        ])).toBe(false);
+    });
+
+    it('ignoriert eine stornierte Auftragsbestätigung', () => {
+        expect(istRechnungAmVorgaengerGesperrt([folge('AUFTRAGSBESTAETIGUNG', true)])).toBe(false);
+    });
+
+    it('sperrt trotz stornierter Vorrechnung, wenn eine aktive AB existiert', () => {
+        // Die stornierte Rechnung zählt nicht als "hier wurde schon abgerechnet" —
+        // ihr Betrag ist wieder frei, der Vorgang gehört an die AB.
+        expect(istRechnungAmVorgaengerGesperrt([
+            folge('ABSCHLAGSRECHNUNG', true),
+            folge('AUFTRAGSBESTAETIGUNG'),
+        ])).toBe(true);
+    });
+
+    it('behandelt fehlendes storniert-Flag als aktiv', () => {
+        expect(istRechnungAmVorgaengerGesperrt([{ typ: 'AUFTRAGSBESTAETIGUNG' }])).toBe(true);
     });
 });

@@ -19,6 +19,7 @@ import { DokumentLoeschenDialog } from './dokument/DokumentLoeschenDialog';
 import { DokumentVerlaufDrawer } from './dokument/DokumentVerlaufDrawer';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
+import { istRechnungAmVorgaengerGesperrt } from '../lib/abrechnungsverlauf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -313,6 +314,15 @@ export function DokumentHierarchie({
         const hasChildren = children.length > 0;
         const isCollapsed = collapsedIds.has(dok.id);
 
+        // Abgerechnet wird immer am untersten Dokument des Vorgangs: Sobald unter
+        // einem Angebot eine Auftragsbestätigung hängt, entstehen die Rechnungen
+        // dort. Sonst liefen zwei Abrechnungsstände (einer am Angebot, einer an
+        // der AB) unabhängig nebeneinander und der Restbetrag stimmte in keinem.
+        // Ausnahme: Wurde hier schon abgerechnet, bleibt der Vorgang hier — an der
+        // AB fehlten diese Beträge im Verlauf. Spiegelt validiereAbrechnungsbasis()
+        // im AusgangsGeschaeftsDokumentService.
+        const rechnungGesperrt = istRechnungAmVorgaengerGesperrt(children.map(c => c.dok));
+
         return (
             <div key={dok.id}>
                 <div
@@ -496,16 +506,17 @@ export function DokumentHierarchie({
                             </button>
 
                             {/* Umwandeln / Rechnung erstellen */}
-                            {(dok.typ === 'ANGEBOT' || dok.typ === 'AUFTRAGSBESTAETIGUNG') && (
+                            {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT' || dok.typ === 'AUFTRAGSBESTAETIGUNG') && (
                                 <>
                                     <hr className="my-1 border-slate-100" />
                                     <p className="px-4 py-1 text-xs text-slate-400 font-medium">Umwandeln in:</p>
 
-                                    {dok.typ === 'ANGEBOT' && (
+                                    {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT') && (
                                         <button
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2"
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2"
                                             onClick={async () => {
-                                                if (await confirmDialog({ title: "In Auftragsbestätigung umwandeln", message: `Anfrage ${dok.dokumentNummer} in Auftragsbestätigung umwandeln?`, variant: "info", confirmLabel: "Umwandeln" })) {
+                                                const typLabel = dok.typ === 'NACHTRAGSANGEBOT' ? 'Nachtragsangebot' : 'Angebot';
+                                                if (await confirmDialog({ title: "In Auftragsbestätigung umwandeln", message: `${typLabel} ${dok.dokumentNummer} in Auftragsbestätigung umwandeln?`, variant: "info", confirmLabel: "Umwandeln" })) {
                                                     try {
                                                         const response = await fetch('/api/ausgangs-dokumente', {
                                                             method: 'POST',
@@ -532,16 +543,30 @@ export function DokumentHierarchie({
                                         </button>
                                     )}
 
-                                    {/* Rechnung erstellen → Dialog */}
+                                    {/* Rechnung erstellen → Dialog.
+                                        Hängt schon eine Auftragsbestätigung darunter, wird dort
+                                        abgerechnet — der Eintrag bleibt sichtbar, erklärt aber
+                                        den Weg, statt kommentarlos zu verschwinden. */}
                                     {!hideRechnungActions && (
                                     <button
-                                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2"
+                                        className={cn(
+                                            'w-full text-left px-4 py-2 text-sm flex flex-col items-start gap-0.5',
+                                            rechnungGesperrt
+                                                ? 'text-slate-400 cursor-not-allowed'
+                                                : 'text-slate-700 hover:bg-rose-50 hover:text-rose-700'
+                                        )}
+                                        disabled={rechnungGesperrt}
                                         onClick={() => {
                                             handleOpenRechnungDialog(dok);
                                             setActionMenuId(null);
                                         }}
                                     >
-                                        → Rechnung erstellen
+                                        <span>→ Rechnung erstellen</span>
+                                        {rechnungGesperrt && (
+                                            <span className="text-xs text-slate-400">
+                                                Rechnung bitte an der Auftragsbestätigung anlegen
+                                            </span>
+                                        )}
                                     </button>
                                     )}
                                 </>
