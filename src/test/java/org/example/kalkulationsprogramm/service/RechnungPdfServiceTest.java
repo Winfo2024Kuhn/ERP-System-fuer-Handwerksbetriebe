@@ -447,6 +447,12 @@ class RechnungPdfServiceTest {
 
         /** Baut ein PDF mit genau einer SERVICE-Position und liefert den extrahierten Text. */
         private String pdfTextFuerPosition(String titel, String beschreibungHtml) {
+            return pdfTextFuerPosition(titel, beschreibungHtml, false, null);
+        }
+
+        /** Wie oben, zusätzlich mit Wahlpositions-Kennzeichnung (optional / Alternativgruppe). */
+        private String pdfTextFuerPosition(String titel, String beschreibungHtml,
+                                           boolean optional, String alternativGruppe) {
             List<FormBlockDto> formBlocks = List.of(
                     new FormBlockDto("t", "table", 1, 24, 100, 540, 600, "", null));
             LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
@@ -455,7 +461,7 @@ class RechnungPdfServiceTest {
                     "SERVICE", null, false, 0,
                     "1", titel, beschreibungHtml,
                     BigDecimal.valueOf(1), "Stk", BigDecimal.valueOf(18.5), BigDecimal.valueOf(18.5),
-                    false, null, null, null));
+                    optional, null, null, alternativGruppe));
 
             RechnungDto dto = new RechnungDto(
                     layout, createTestKopfdaten(), blocks, formBlocks, "Schlusstext", null, null);
@@ -474,76 +480,45 @@ class RechnungPdfServiceTest {
         }
 
         @Test
-        @DisplayName("Titel erscheint im PDF, wenn die Beschreibung ihn nicht selbst enthält")
-        void titelErscheintWennBeschreibungIhnNichtEnthaelt() {
+        @DisplayName("Kurztext bleibt aus dem PDF, auch wenn die Beschreibung ihn nicht enthält")
+        void kurztextErscheintNichtNebenDerBeschreibung() {
+            // Kurztext bewusst so gewählt, dass er KEIN Teilstring der Beschreibung ist —
+            // sonst wäre nicht unterscheidbar, ob er weggelassen oder nur verdeckt wurde.
             String text = pdfTextFuerPosition(
                     "Fahrkostenpauschale",
                     "<p>An- und Abfahrt zur Baustelle mit einem Servicefahrzeug.</p>");
 
-            assertTrue(text.contains("Fahrkostenpauschale"),
-                    "Positionstitel fehlt im PDF, obwohl die Beschreibung ihn nicht enthält. Text: " + text);
+            assertFalse(text.contains("Fahrkostenpauschale"),
+                    "Der Kurztext ist eine Innensicht für den Bediener und gehört nicht aufs "
+                            + "Kundendokument. Text: " + text);
             assertTrue(text.contains("An- und Abfahrt"),
-                    "Beschreibungstext fehlt im PDF");
+                    "Beschreibungstext fehlt im PDF. Text: " + text);
         }
 
         @Test
-        @DisplayName("Titel erscheint nur einmal, wenn die Beschreibung mit ihm beginnt")
-        void titelErscheintNurEinmalWennBeschreibungMitIhmBeginnt() {
+        @DisplayName("Wiederholt die Beschreibung den Kurztext, steht er trotzdem nur einmal da")
+        void kurztextErscheintNurEinmalWennBeschreibungMitIhmBeginnt() {
             String text = pdfTextFuerPosition(
                     "Reparatur Sichtschutz",
                     "<p><strong>Reparatur Sichtschutz</strong></p>"
                             + "<p>Reparatur- und Instandsetzungsarbeiten inkl. Kleinmaterial.</p>");
 
             assertEquals(1, zaehleVorkommen(text, "Reparatur Sichtschutz"),
-                    "Titel darf nicht doppelt erscheinen, wenn die Beschreibung ihn bereits enthält. Text: " + text);
+                    "Die Überschrift aus dem Beschreibungstext soll bleiben, der Kurztext nicht "
+                            + "zusätzlich davorgesetzt werden. Text: " + text);
         }
 
         @Test
-        @DisplayName("Titel erscheint nur einmal, wenn die Beschreibung mit einer Aufzählung beginnt")
-        void titelErscheintNurEinmalWennBeschreibungMitListeBeginnt() {
-            // Aufzählungen haben kein </p> als Zeilengrenze — ohne eigene Behandlung
-            // verschmilzt der erste Punkt mit dem zweiten und der Vergleich schlägt fehl.
-            String text = pdfTextFuerPosition(
-                    "Reparatur Sichtschutz",
-                    "<ul><li><strong>Reparatur Sichtschutz</strong></li>"
-                            + "<li>inkl. Kleinmaterial</li></ul>");
+        @DisplayName("Ohne Beschreibungstext springt der Kurztext ein, damit die Zeile nicht leer bleibt")
+        void ohneBeschreibungSpringtDerKurztextEin() {
+            String text = pdfTextFuerPosition("Fahrkostenpauschale", null);
 
-            assertEquals(1, zaehleVorkommen(text, "Reparatur Sichtschutz"),
-                    "Titel darf nicht doppelt erscheinen, wenn die Aufzählung mit ihm beginnt. Text: " + text);
-        }
-
-        /** U+00A0 — das geschuetzte Leerzeichen, das Word und Outlook beim Kopieren liefern. */
-        private static final String GESCHUETZTES_LEERZEICHEN = Character.toString(160);
-
-        @Test
-        @DisplayName("Titel erscheint nur einmal, wenn ein geschütztes Leerzeichen aus Word darin steckt")
-        void titelErscheintNurEinmalTrotzGeschuetztemLeerzeichen() {
-            // Word/Outlook liefern U+00A0 statt eines normalen Leerzeichens.
-            // Javas \s matcht das nicht — ohne eigene Behandlung kippt der Vergleich.
-            String text = pdfTextFuerPosition(
-                    "Reparatur Sichtschutz",
-                    "<p><strong>Reparatur" + GESCHUETZTES_LEERZEICHEN
-                            + "Sichtschutz</strong></p><p>Instandsetzung.</p>");
-
-            assertEquals(1, zaehleVorkommen(text, "Sichtschutz"),
-                    "Titel darf nicht doppelt erscheinen, nur weil ein NBSP im HTML steht. Text: " + text);
+            assertTrue(text.contains("Fahrkostenpauschale"),
+                    "Ohne Beschreibungstext stünde die Position sonst namenlos mit Preis da. Text: " + text);
         }
 
         @Test
-        @DisplayName("Titel erscheint nur einmal, wenn sich die Beschreibung nur in der Groß-/Kleinschreibung unterscheidet")
-        void titelErscheintNurEinmalTrotzAbweichenderSchreibweise() {
-            String text = pdfTextFuerPosition(
-                    "Reparatur Sichtschutz",
-                    "<p><strong>REPARATUR SICHTSCHUTZ</strong></p><p>Instandsetzung.</p>");
-
-            assertEquals(0, zaehleVorkommen(text, "Reparatur Sichtschutz"),
-                    "Bei abweichender Schreibweise darf nur die Fassung aus dem HTML stehen. Text: " + text);
-            assertEquals(1, zaehleVorkommen(text, "REPARATUR SICHTSCHUTZ"),
-                    "Die Schreibweise aus dem HTML muss erhalten bleiben. Text: " + text);
-        }
-
-        @Test
-        @DisplayName("Ohne Titel wird nur die Beschreibung gerendert, ohne 'null' im Text")
+        @DisplayName("Ohne Kurztext wird nur die Beschreibung gerendert, ohne 'null' im Text")
         void ohneTitelWirdNurDieBeschreibungGerendert() {
             String text = pdfTextFuerPosition(null, "<p>Reine Beschreibung ohne eigenen Titel.</p>");
 
@@ -552,16 +527,38 @@ class RechnungPdfServiceTest {
         }
 
         @Test
-        @DisplayName("Titel erscheint, wenn die Beschreibung nur zufällig ähnlich beginnt")
-        void titelErscheintWennBeschreibungNurAehnlichBeginnt() {
-            // Titel bewusst so gewählt, dass er KEIN Teilstring der Beschreibung ist —
-            // sonst könnte der Test auch ohne gerenderten Titel grün werden.
-            String text = pdfTextFuerPosition(
-                    "Montage Zaunanlage",
-                    "<p>Montage Zaunfelder inklusive Ausrichten der Pfosten.</p>");
+        @DisplayName("Weder Kurztext noch Beschreibung: kein 'null' auf dem Kundendokument")
+        void ohneTitelUndOhneBeschreibungStehtKeinNullImPdf() {
+            String text = pdfTextFuerPosition(null, null);
 
-            assertTrue(text.contains("Montage Zaunanlage"),
-                    "Titel fehlt, obwohl die erste Zeile der Beschreibung nur ähnlich, nicht identisch ist. Text: " + text);
+            assertFalse(text.contains("null"),
+                    "Eine Position ganz ohne Text darf kein 'null' ins Angebot schreiben. Text: " + text);
+        }
+
+        @Test
+        @DisplayName("'(Optional)' steht auch dann im PDF, wenn die Beschreibung den Kurztext wiederholt")
+        void optionalKennzeichnungStehtAuchBeiWiederholtemKurztext() {
+            String text = pdfTextFuerPosition(
+                    "Reparatur Sichtschutz",
+                    "<p><strong>Reparatur Sichtschutz</strong></p><p>Instandsetzung.</p>",
+                    true, null);
+
+            assertTrue(text.contains("(Optional)"),
+                    "Die Kennzeichnung muss unabhängig vom Beschreibungstext erscheinen. Text: " + text);
+        }
+
+        @Test
+        @DisplayName("'(Alternative)' steht im PDF, wenn die Beschreibung den Kurztext nicht wiederholt")
+        void alternativKennzeichnungStehtAuchOhneWiederholtenKurztext() {
+            // Gegenstück zum Test oben: früher hing die Kennzeichnung hier hinter dem Titel
+            // und fiel mit ihm weg — jetzt steht sie in beiden Fällen an derselben Stelle.
+            String text = pdfTextFuerPosition(
+                    "Fahrkostenpauschale",
+                    "<p>An- und Abfahrt zur Baustelle.</p>",
+                    true, "Anfahrt");
+
+            assertTrue(text.contains("(Alternative)"),
+                    "Die Kennzeichnung muss unabhängig vom Beschreibungstext erscheinen. Text: " + text);
         }
     }
 

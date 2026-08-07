@@ -850,19 +850,14 @@ public class RechnungPdfService {
         descCell.setUseAscender(true);
         
         // Bezeichnung und Beschreibung:
-        // Der Titel wird als eigene Zeile vorangestellt — außer die Beschreibung führt ihn
-        // bereits selbst als erste Zeile. Viele Leistungs-Stammdaten wiederholen den Namen
-        // im Beschreibungstext; nur für die darf er nicht doppelt erscheinen.
+        // Der Kurztext (block.beschreibung()) ist eine reine Innensicht — er hilft dem
+        // Bediener, die Leistung im Editor wiederzufinden, und gehört nicht aufs
+        // Kundendokument. Gedruckt wird deshalb allein der Beschreibungstext.
         if (hasDescription) {
-            boolean titelStecktImHtml = beschreibungWiederholtTitel(block.beschreibungHtml(), block.beschreibung());
-            if (!titelStecktImHtml) {
-                Paragraph titleParagraph = new Paragraph(
-                        block.beschreibung() + wahlpositionSuffix(block), currentLabelFont);
-                titleParagraph.setLeading(currentLabelFont.getSize() * 1.3f);
-                descCell.addElement(titleParagraph);
-            } else if (isAlternative) {
-                // Titel steckt im HTML — dann bekommt die Kennzeichnung eine
-                // eigene Zeile, Wortlaut identisch zum Suffix hinter dem Titel.
+            // Die Wahlpositions-Kennzeichnung steht immer als eigene Zeile über dem Text.
+            // Früher hing sie mal hinter dem Titel und mal darüber, je nachdem ob der
+            // Beschreibungstext den Titel wiederholte — für den Leser wirkte das zufällig.
+            if (isAlternative) {
                 Paragraph altHint = new Paragraph(wahlpositionSuffix(block).trim(), currentLabelFont);
                 altHint.setLeading(currentLabelFont.getSize() * 1.3f);
                 descCell.addElement(altHint);
@@ -884,8 +879,11 @@ public class RechnungPdfService {
                 descCell.addElement(new Phrase(plainText, currentTextFont));
             }
         } else {
-            // Kein beschreibungHtml: nur Titel (bezeichnung) anzeigen
-            String descText = block.beschreibung() + wahlpositionSuffix(block);
+            // Notnagel: Ohne Beschreibungstext bliebe die Bezeichnungsspalte sonst leer.
+            // Dann springt der Kurztext ein — lieber die Innensicht auf dem Papier als
+            // eine namenlose Position mit Preis.
+            String titel = block.beschreibung() != null ? block.beschreibung() : "";
+            String descText = titel + wahlpositionSuffix(block);
             Paragraph titleParagraph = new Paragraph(descText, currentLabelFont);
             titleParagraph.setLeading(currentLabelFont.getSize() * 1.3f);
             descCell.addElement(titleParagraph);
@@ -956,52 +954,6 @@ public class RechnungPdfService {
         table.addCell(gpCell);
     }
     
-    /**
-     * Prüft, ob die Beschreibung den Positionstitel bereits als erste Zeile wiederholt.
-     *
-     * Hintergrund: In den Leistungs-Stammdaten ist der Name mal als eigenes Feld gepflegt
-     * und mal zusätzlich als erste (fette) Zeile im Beschreibungstext wiederholt. Nur im
-     * zweiten Fall darf der Titel im PDF nicht noch einmal davorgesetzt werden.
-     *
-     * Verglichen wird die ganze erste Zeile, nicht nur ihr Anfang: Eine Zeile wie
-     * "Geländer Edelstahl V2A" bei Titel "Geländer Edelstahl" trägt zusätzliche
-     * Information und ersetzt den Titel deshalb bewusst nicht.
-     *
-     * Bekannte Grenze: Benannte HTML-Entities jenseits der sechs in
-     * {@link #stripHtmlForFallback} behandelten (z.B. {@code &auml;}) bleiben unaufgelöst.
-     * Aus dem TiptapEditor kommen sie nicht — nur Legacy-Stammdaten könnten sie enthalten,
-     * und dort führt es lediglich zu einer zusätzlichen Titelzeile, nicht zu einem Fehler.
-     *
-     * Ein leerer Titel gilt als "steckt schon drin" — es gibt dann nichts zu rendern.
-     */
-    private boolean beschreibungWiederholtTitel(String beschreibungHtml, String titel) {
-        if (titel == null || titel.isBlank()) return true;
-        return normalisiereFuerVergleich(ersteTextZeile(beschreibungHtml))
-                .equals(normalisiereFuerVergleich(titel));
-    }
-
-    /** Liefert die erste Textzeile eines HTML-Fragments (bis zum ersten Absatz-, Listen- oder Zeilenumbruch). */
-    private String ersteTextZeile(String html) {
-        if (html == null) return "";
-        // stripHtmlForFallback kennt nur </p> und <br> als Zeilengrenze. Für den Titelvergleich
-        // zählen auch Listenpunkte und Blockelemente — sonst verschmilzt der erste Listenpunkt
-        // mit dem zweiten ("Reparatur Sichtschutzinkl. Kleinmaterial") und der Vergleich
-        // schlägt fälschlich fehl, der Titel stünde doppelt auf dem Kundendokument.
-        String mitZeilengrenzen = html.replaceAll("(?i)</(li|div|h[1-6]|td|tr)>", "</p>");
-        String plain = stripHtmlForFallback(mitZeilengrenzen);
-        int umbruch = plain.indexOf('\n');
-        return umbruch >= 0 ? plain.substring(0, umbruch) : plain;
-    }
-
-    /** Vereinheitlicht Groß-/Kleinschreibung und Trennzeichen für den Titelvergleich. */
-    private String normalisiereFuerVergleich(String text) {
-        if (text == null) return "";
-        // Javas \s matcht kein U+00A0, und trim() schneidet nur Zeichen bis U+0020. Aus Word
-        // und Outlook eingefügte Texte enthalten aber genau dieses geschützte Leerzeichen —
-        // ohne \p{Z} kippt der Vergleich und der Titel erscheint doppelt.
-        return text.replaceAll("[\\s\\p{Z}]+", " ").trim().toLowerCase();
-    }
-
     /** Helper: Creates a right-aligned Paragraph for use inside PdfPCell.addElement(). */
     private Paragraph createRightAlignedParagraph(String text, Font font) {
         Paragraph p = new Paragraph(text, font);
