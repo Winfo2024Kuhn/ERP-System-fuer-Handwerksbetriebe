@@ -40,14 +40,16 @@ describe('DokumentHierarchie – Rechnungen nur am untersten Dokument', () => {
         } as AusgangsGeschaeftsDokument;
     }
 
-    function renderBaum(dokumente: AusgangsGeschaeftsDokument[]) {
+    function renderBaum(
+        dokumente: AusgangsGeschaeftsDokument[],
+        kontext: { projektId?: number; anfrageId?: number } = { projektId: 158 }
+    ) {
         return render(
             <ToastProvider>
                 <DokumentHierarchie
                     ausgangsDokumente={dokumente}
-                    projektId={158}
+                    {...kontext}
                     onRefresh={vi.fn()}
-                    confirmDialog={vi.fn().mockResolvedValue(true)}
                     toast={{ error: vi.fn(), success: vi.fn() }}
                 />
             </ToastProvider>
@@ -105,6 +107,17 @@ describe('DokumentHierarchie – Rechnungen nur am untersten Dokument', () => {
 
         expect(screen.getByText('→ Rechnung erstellen').closest('button')).toBeEnabled();
         expect(screen.queryByText('Rechnung bitte an der Auftragsbestätigung anlegen')).not.toBeInTheDocument();
+    });
+
+    it('bietet gar keine Auftragsbestätigung an', async () => {
+        // Eine AB bestätigt einen Auftrag — den gibt es erst, wenn aus der
+        // Anfrage ein Projekt geworden ist. Sie entsteht deshalb nur im
+        // Projekt-Editor oder automatisch bei digitaler Angebotsannahme.
+        renderBaum([dok(1, 'ANGEBOT', '2026/01/00001')], { anfrageId: 42 });
+
+        await oeffneAktionsmenue('2026/01/00001');
+
+        expect(screen.queryByText('→ Auftragsbestätigung')).not.toBeInTheDocument();
     });
 
     it('erlaubt "Rechnung erstellen" an der Auftragsbestätigung selbst', async () => {

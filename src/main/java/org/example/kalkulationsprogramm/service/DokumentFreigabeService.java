@@ -918,6 +918,21 @@ public class DokumentFreigabeService
             angebot = ausgangsGeschaeftsDokumentRepository.findById(angebotId).orElse(angebot);
         }
 
+        // Zweiter, frischer Blick auf die Nachfolger: Der Check oben liest die
+        // Lazy-Relation, die den Stand vor dem Reload abbilden kann. erstellen()
+        // lehnt eine zweite aktive AB inzwischen mit IllegalStateException ab —
+        // die würde hier die ganze Transaktion zurückrollen und damit die eben
+        // gespeicherte digitale Annahme des Kunden mitreißen. Lieber still
+        // aussteigen: Die AB, um die es geht, existiert ja bereits.
+        boolean abBereitsVorhanden = ausgangsGeschaeftsDokumentRepository
+                .findByVorgaengerIdOrderByErstelltAmAsc(angebotId).stream()
+                .anyMatch(n -> n.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG
+                        && !n.isStorniert());
+        if (abBereitsVorhanden)
+        {
+            return;
+        }
+
         AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
         dto.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
         dto.setVorgaengerId(angebotId);

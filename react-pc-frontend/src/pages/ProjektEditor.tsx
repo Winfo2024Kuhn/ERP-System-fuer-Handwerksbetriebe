@@ -1912,9 +1912,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                         const newDoc = await response.json();
                                                                                         loadAusgangsDokumente();
                                                                                         window.open(`/dokument-editor?projektId=${projekt.id}&dokumentId=${newDoc.id}`, '_blank');
+                                                                                    } else {
+                                                                                        // Sonst bliebe ein abgelehnter POST (z.B. zweite AB aus
+                                                                                        // einem veralteten zweiten Tab) für den Nutzer unsichtbar.
+                                                                                        toast.error(await response.text() || 'Auftragsbestätigung konnte nicht erstellt werden.');
                                                                                     }
                                                                                 } catch (e) {
                                                                                     console.error(e);
+                                                                                    toast.error('Auftragsbestätigung konnte nicht erstellt werden.');
                                                                                 }
                                                                             }
                                                                             setActionMenuDokument(null);

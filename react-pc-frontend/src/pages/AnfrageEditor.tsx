@@ -1164,7 +1164,6 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     allowedTypes={['ANGEBOT', 'AUFTRAGSBESTAETIGUNG']}
                     hideRechnungActions={true}
                     onRefresh={loadAusgangsDokumente}
-                    confirmDialog={confirmDialog}
                     toast={toast}
                 />
             )}

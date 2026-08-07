@@ -71,7 +71,6 @@ interface DokumentHierarchieProps {
     /** Wenn true, werden Rechnungserstellungs-Aktionen ausgeblendet */
     hideRechnungActions?: boolean;
     onRefresh: () => void;
-    confirmDialog: (opts: { title?: string; message: string; variant?: 'danger' | 'warning' | 'info'; confirmLabel?: string }) => Promise<boolean>;
     toast: { error: (msg: string) => void; success: (msg: string) => void };
 }
 
@@ -82,7 +81,6 @@ export function DokumentHierarchie({
     allowedTypes,
     hideRechnungActions,
     onRefresh,
-    confirmDialog,
     toast,
 }: DokumentHierarchieProps) {
     // URL-Param für den Dokument-Editor: projektId oder anfrageId
@@ -505,49 +503,21 @@ export function DokumentHierarchie({
                                 Öffnen (neuer Tab)
                             </button>
 
-                            {/* Umwandeln / Rechnung erstellen */}
-                            {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT' || dok.typ === 'AUFTRAGSBESTAETIGUNG') && (
+                            {/* Rechnung erstellen.
+                                Kein "→ Auftragsbestätigung" hier: Diese Ansicht läuft im
+                                Anfrage-Kontext, und eine Auftragsbestätigung bestätigt einen
+                                Auftrag — den gibt es erst, wenn aus der Anfrage ein Projekt
+                                geworden ist. Die AB entsteht deshalb ausschließlich im
+                                Projekt-Editor oder automatisch bei digitaler Angebotsannahme. */}
+                            {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT' || dok.typ === 'AUFTRAGSBESTAETIGUNG')
+                                && !hideRechnungActions && (
                                 <>
                                     <hr className="my-1 border-slate-100" />
                                     <p className="px-4 py-1 text-xs text-slate-400 font-medium">Umwandeln in:</p>
 
-                                    {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT') && (
-                                        <button
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2"
-                                            onClick={async () => {
-                                                const typLabel = dok.typ === 'NACHTRAGSANGEBOT' ? 'Nachtragsangebot' : 'Angebot';
-                                                if (await confirmDialog({ title: "In Auftragsbestätigung umwandeln", message: `${typLabel} ${dok.dokumentNummer} in Auftragsbestätigung umwandeln?`, variant: "info", confirmLabel: "Umwandeln" })) {
-                                                    try {
-                                                        const response = await fetch('/api/ausgangs-dokumente', {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({
-                                                                typ: 'AUFTRAGSBESTAETIGUNG',
-                                                                ...createPayloadIds,
-                                                                vorgaengerId: dok.id,
-                                                                betreff: dok.betreff,
-                                                                betragNetto: dok.betragNetto,
-                                                            }),
-                                                        });
-                                                        if (response.ok) {
-                                                            const newDoc = await response.json();
-                                                            onRefresh();
-                                                            window.open(`/dokument-editor?${editorParam}&dokumentId=${newDoc.id}`, '_blank');
-                                                        }
-                                                    } catch (e) { console.error(e); }
-                                                }
-                                                setActionMenuId(null);
-                                            }}
-                                        >
-                                            → Auftragsbestätigung
-                                        </button>
-                                    )}
-
-                                    {/* Rechnung erstellen → Dialog.
-                                        Hängt schon eine Auftragsbestätigung darunter, wird dort
+                                    {/* Hängt schon eine Auftragsbestätigung darunter, wird dort
                                         abgerechnet — der Eintrag bleibt sichtbar, erklärt aber
                                         den Weg, statt kommentarlos zu verschwinden. */}
-                                    {!hideRechnungActions && (
                                     <button
                                         className={cn(
                                             'w-full text-left px-4 py-2 text-sm flex flex-col items-start gap-0.5',
@@ -568,7 +538,6 @@ export function DokumentHierarchie({
                                             </span>
                                         )}
                                     </button>
-                                    )}
                                 </>
                             )}
 

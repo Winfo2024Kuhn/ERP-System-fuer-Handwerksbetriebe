@@ -1441,28 +1441,6 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Rechnungen gehören an das unterste Dokument eines Vorgangs.
-     *
-     * <p>Sobald unter einem Angebot oder Nachtragsangebot eine Auftragsbestätigung
-     * hängt, wird ausschließlich dort abgerechnet. Andernfalls liefen zwei
-     * Abrechnungsstände nebeneinander — einer am Angebot, einer an der AB — und der
-     * Restbetrag (siehe {@link #getAbrechnungsverlauf(Long)}) stimmte in keinem von
-     * beiden, weil er nur die direkten Nachfolger des jeweiligen Basisdokuments zählt.</p>
-     *
-     * <p><strong>Ausnahme für Bestandsvorgänge:</strong> Wurde am Angebot bereits
-     * abgerechnet und erst danach eine AB angelegt, bleibt die Abrechnung am Angebot.
-     * Ein erzwungener Wechsel auf die AB würde dort einen Restbetrag in voller
-     * Angebotshöhe ausweisen — die schon am Angebot abgerechneten Beträge zählt der
-     * Verlauf der AB nicht mit, und die Schlussrechnung würde still zu hoch
-     * vorbefüllt. Solche Vorgänge rechnen deshalb dort weiter ab, wo ihr Verlauf
-     * vollständig ist.</p>
-     *
-     * <p>Ein nachträglicher Typwechsel kann die Regel nicht umgehen:
-     * {@code AusgangsGeschaeftsDokumentUpdateDto} führt kein {@code typ}-Feld, und
-     * der Controller bietet keinen entsprechenden Endpoint. Wird das je geändert,
-     * muss dieser Guard auch im Update-Pfad greifen.</p>
-     */
-    /**
      * Ein Angebot oder Nachtragsangebot trägt höchstens eine aktive
      * Auftragsbestätigung.
      *
@@ -1488,6 +1466,28 @@ public class AusgangsGeschaeftsDokumentService {
         }
     }
 
+    /**
+     * Rechnungen gehören an das unterste Dokument eines Vorgangs.
+     *
+     * <p>Sobald unter einem Angebot oder Nachtragsangebot eine Auftragsbestätigung
+     * hängt, wird ausschließlich dort abgerechnet. Andernfalls liefen zwei
+     * Abrechnungsstände nebeneinander — einer am Angebot, einer an der AB — und der
+     * Restbetrag (siehe {@link #getAbrechnungsverlauf(Long)}) stimmte in keinem von
+     * beiden, weil er nur die direkten Nachfolger des jeweiligen Basisdokuments zählt.</p>
+     *
+     * <p><strong>Ausnahme für Bestandsvorgänge:</strong> Wurde am Angebot bereits
+     * abgerechnet und erst danach eine AB angelegt, bleibt die Abrechnung am Angebot.
+     * Ein erzwungener Wechsel auf die AB würde dort einen Restbetrag in voller
+     * Angebotshöhe ausweisen — die schon am Angebot abgerechneten Beträge zählt der
+     * Verlauf der AB nicht mit, und die Schlussrechnung würde still zu hoch
+     * vorbefüllt. Solche Vorgänge rechnen deshalb dort weiter ab, wo ihr Verlauf
+     * vollständig ist.</p>
+     *
+     * <p>Ein nachträglicher Typwechsel kann die Regel nicht umgehen:
+     * {@code AusgangsGeschaeftsDokumentUpdateDto} führt kein {@code typ}-Feld, und
+     * der Controller bietet keinen entsprechenden Endpoint. Wird das je geändert,
+     * muss dieser Guard auch im Update-Pfad greifen.</p>
+     */
     private void validiereAbrechnungsbasis(AusgangsGeschaeftsDokument vorgaenger) {
         if (vorgaenger.getTyp() != AusgangsGeschaeftsDokumentTyp.ANGEBOT
                 && vorgaenger.getTyp() != AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT) {
