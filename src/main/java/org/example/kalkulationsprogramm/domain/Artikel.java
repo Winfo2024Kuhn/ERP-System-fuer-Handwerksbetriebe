@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -133,6 +134,31 @@ public class Artikel
     String hicadName;
 
     String preiseinheit;
+
+    /**
+     * Kurztext fuer die Innensicht: Er hilft dem Bediener, den Artikel im
+     * DocumentEditor wiederzufinden, und steht nicht auf dem Kundendokument.
+     * Entspricht {@code Leistung.bezeichnung}.
+     */
+    @Column(name = "kurzbeschreibung", length = 255)
+    private String kurzbeschreibung;
+
+    /**
+     * Rich-Text-HTML, das der Kunde auf PDF und Freigabe-Website liest.
+     * Entspricht {@code Leistung.beschreibung}.
+     */
+    @Column(name = "beschreibung", columnDefinition = "TEXT")
+    private String beschreibung;
+
+    /**
+     * Aufschlag auf den Einkaufspreis in Prozent. {@code null} = nicht gepflegt;
+     * dann steht der reine Einkaufspreis im Vorschlag und der Editor warnt.
+     *
+     * <p>Nicht zu verwechseln mit {@code ArtikelDetailDto.LieferantEintragDto.aufschlagProzent} —
+     * das ist die Abweichung zum guenstigsten Lieferanten, keine Verkaufsmarge.
+     */
+    @Column(name = "verkaufsaufschlag_prozent", precision = 5, scale = 2)
+    private BigDecimal verkaufsaufschlagProzent;
 
     @Enumerated(EnumType.STRING)
     private Verrechnungseinheit verrechnungseinheit;
