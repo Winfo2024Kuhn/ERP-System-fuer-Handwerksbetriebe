@@ -22,6 +22,7 @@ import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Profilform;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDetailDto;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumenttexteRequest;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ExterneNummerDto;
@@ -40,6 +41,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -300,6 +302,9 @@ public class ArtikelController {
             dto.setWerkstoffId(artikel.getWerkstoff().getId());
             dto.setWerkstoffName(artikel.getWerkstoff().getName());
         }
+        dto.setKurzbeschreibung(artikel.getKurzbeschreibung());
+        dto.setBeschreibung(artikel.getBeschreibung());
+        dto.setVerkaufsaufschlagProzent(artikel.getVerkaufsaufschlagProzent());
         return dto;
     }
 
@@ -312,6 +317,32 @@ public class ArtikelController {
         }
         artikelService.fuegeExterneNummerHinzu(artikelId, lieferant, dto.getNummer());
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Pflegt die Felder, mit denen der Artikel als Position in einem
+     * Kundendokument auftauchen kann: Kurzbeschreibung (Innensicht),
+     * Beschreibung (Kundentext) und Verkaufsaufschlag.
+     *
+     * <p>Bedient zwei Aufrufer: die Detailseite im Frontend und das
+     * Backfill-Skript unter {@code scripts/artikel_dokumenttexte_backfill.py}.
+     */
+    @PatchMapping("/{id}/dokumenttexte")
+    @Transactional
+    public ResponseEntity<ArtikelResponseDto> aktualisiereDokumenttexte(
+            @PathVariable Long id,
+            @RequestBody ArtikelDokumenttexteRequest request) {
+        try {
+            Artikel aktualisiert = artikelService.aktualisiereDokumenttexte(id, request);
+            return ResponseEntity.ok(toDto(aktualisiert, null));
+        }
+        catch (IllegalArgumentException e) {
+            // Unbekannte ID ist ein 404, alles andere eine unzulaessige Eingabe.
+            if (e.getMessage() != null && e.getMessage().startsWith("Artikel nicht gefunden")) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     /**

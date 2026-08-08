@@ -68,6 +68,17 @@ public class ArtikelResponseDto {
     /** Kurzform der Abmessung fuer die Anzeige, z.B. "42,4 x 2". */
     private String abmessung;
 
+    // --- Angebotsrelevante Texte ---------------------------------------
+
+    /** Innensicht fuer den DocumentEditor - nicht fuer den Kunden. */
+    private String kurzbeschreibung;
+
+    /** Rich-Text-HTML fuer das Kundendokument. */
+    private String beschreibung;
+
+    /** Aufschlag auf den Einkaufspreis in Prozent. */
+    private BigDecimal verkaufsaufschlagProzent;
+
     /** Gewicht je Quadratmeter - nur bei Blechen belegt. */
     private BigDecimal kgProQm;
     /** Abzuwickelnde Oberflaeche in m2 je Meter - Basis fuer Beschichtungskosten. */
