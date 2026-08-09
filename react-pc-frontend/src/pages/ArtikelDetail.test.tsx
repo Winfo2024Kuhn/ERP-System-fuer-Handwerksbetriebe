@@ -1,9 +1,18 @@
+import type { ReactNode } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import ArtikelDetail from './ArtikelDetail';
 import { ToastProvider } from '../components/ui/toast';
+
+// Der echte Tiptap-Editor braucht Browser-APIs, die jsdom nicht bereitstellt
+// (z. B. document.createRange). Fuer diese Seite reicht ein einfacher Stub -
+// die Kurzbeschreibung und der Aufschlag werden ueber gewoehnliche Inputs
+// getestet, nicht ueber den Rich-Text-Inhalt.
+vi.mock('../components/TiptapEditor', () => ({
+    TiptapEditor: () => <div data-testid="tiptap" />,
+}));
 
 /**
  * Testdaten mit Dummy-Lieferanten (DSGVO: keine echten Firmennamen).
@@ -88,6 +97,36 @@ function renderAusListeHeraus(listenAdresse: string, vonListe = true) {
             </MemoryRouter>
         </ToastProvider>,
     );
+}
+
+/** Wrapper fuer render(ui, { wrapper: Wrapper }) - stellt Route/Params/Toast bereit. */
+function Wrapper({ children }: { children: ReactNode }) {
+    return (
+        <ToastProvider>
+            <MemoryRouter initialEntries={['/artikel/7']}>
+                <Routes>
+                    <Route path="/artikel/:id" element={children} />
+                </Routes>
+            </MemoryRouter>
+        </ToastProvider>
+    );
+}
+
+/** Fetch-Mock, der die uebergebene Detail-Antwort fuer GET liefert und PATCH mitschneidet. */
+let fetchMock: ReturnType<typeof vi.fn>;
+
+function mockFetchDetail(antwort: {
+    artikel: Record<string, unknown>;
+    lieferanten: unknown[];
+    preisverlauf: unknown[];
+}) {
+    fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') {
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(antwort) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
 }
 
 describe('ArtikelDetail', () => {
@@ -204,5 +243,67 @@ describe('ArtikelDetail', () => {
         await user.click(await screen.findByRole('button', { name: 'Zurück' }));
 
         expect(await screen.findByText('Liste')).toBeInTheDocument();
+    });
+
+    it('zeigt den Abschnitt für Angebote mit den gepflegten Werten', async () => {
+        mockFetchDetail({
+            artikel: {
+                id: 7,
+                produktname: 'T-Stahl',
+                kurzbeschreibung: 'T-Stahl 40x40 Lager',
+                beschreibung: '<p>T-Stahl 40 x 40 x 5 mm</p>',
+                verkaufsaufschlagProzent: 40,
+                positionsEinheit: 'lfm',
+                positionsEinzelpreis: 8.4,
+                preisHinweis: 'OK',
+            },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        expect(await screen.findByText('Für Angebote und Rechnungen')).toBeInTheDocument();
+        expect(screen.getByLabelText('Kurzbeschreibung')).toHaveValue('T-Stahl 40x40 Lager');
+        expect(screen.getByLabelText('Aufschlag auf den Einkaufspreis')).toHaveValue(40);
+        expect(screen.getByText(/8,40/)).toBeInTheDocument();
+    });
+
+    it('warnt, wenn kein Aufschlag gepflegt ist', async () => {
+        mockFetchDetail({
+            artikel: {
+                id: 8,
+                produktname: 'Rundrohr',
+                positionsEinheit: 'lfm',
+                positionsEinzelpreis: 6,
+                preisHinweis: 'KEIN_AUFSCHLAG',
+            },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        expect(await screen.findByText(/Kein Aufschlag hinterlegt/)).toBeInTheDocument();
+    });
+
+    it('speichert die Angebotsfelder über den PATCH-Endpunkt', async () => {
+        mockFetchDetail({
+            artikel: { id: 7, produktname: 'T-Stahl', preisHinweis: 'KEIN_AUFSCHLAG' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        await userEvent.type(await screen.findByLabelText('Kurzbeschreibung'), 'T-Stahl 40x40 Lager');
+        await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
+
+        await waitFor(() => {
+            expect(fetchMock).toHaveBeenCalledWith(
+                '/api/artikel/7/dokumenttexte',
+                expect.objectContaining({ method: 'PATCH' }),
+            );
+        });
     });
 });
