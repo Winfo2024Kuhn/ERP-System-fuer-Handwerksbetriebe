@@ -326,6 +326,10 @@ public class ArtikelController {
      *
      * <p>Bedient zwei Aufrufer: die Detailseite im Frontend und das
      * Backfill-Skript unter {@code scripts/artikel_dokumenttexte_backfill.py}.
+     *
+     * <p>Unbekannte ID meldet der Service ueber {@code NotFoundException}, die
+     * dank {@code @ResponseStatus(HttpStatus.NOT_FOUND)} von Spring automatisch
+     * in 404 uebersetzt wird - ohne dass dieser Controller sie faengt.
      */
     @PatchMapping("/{id}/dokumenttexte")
     @Transactional
@@ -337,10 +341,7 @@ public class ArtikelController {
             return ResponseEntity.ok(toDto(aktualisiert, null));
         }
         catch (IllegalArgumentException e) {
-            // Unbekannte ID ist ein 404, alles andere eine unzulaessige Eingabe.
-            if (e.getMessage() != null && e.getMessage().startsWith("Artikel nicht gefunden")) {
-                return ResponseEntity.notFound().build();
-            }
+            // Unzulaessige Eingabe (Grenzwerte, Aufschlag ausserhalb des Bereichs).
             return ResponseEntity.badRequest().build();
         }
     }

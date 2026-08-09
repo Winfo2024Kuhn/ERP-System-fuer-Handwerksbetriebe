@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
@@ -69,7 +70,7 @@ class ArtikelDokumenttexteControllerTest {
     @Test
     void antwortetMit404BeiUnbekannterId() throws Exception {
         when(artikelService.aktualisiereDokumenttexte(eq(999L), any()))
-                .thenThrow(new IllegalArgumentException("Artikel nicht gefunden: 999"));
+                .thenThrow(new NotFoundException("Artikel 999 nicht gefunden"));
 
         mockMvc.perform(patch("/api/artikel/999/dokumenttexte")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -89,7 +90,7 @@ class ArtikelDokumenttexteControllerTest {
     }
 
     @Test
-    void reichtSkriptMarkupAnDenServiceWeiterDerEsSaeubert() throws Exception {
+    void reichtDenBodyAnDenServiceWeiter() throws Exception {
         Artikel gespeichert = new Artikel();
         gespeichert.setId(7L);
         gespeichert.setBeschreibung("<p>Rohr</p>");
@@ -102,12 +103,38 @@ class ArtikelDokumenttexteControllerTest {
                 .andExpect(jsonPath("$.beschreibung").value(not(containsString("script"))));
     }
 
+    // ==================================================================
+    // Ungueltige IDs (TESTING_SECURITY.md: negativ, 0, Long.MAX_VALUE)
+    // ==================================================================
+
     @Test
     void antwortetMit404BeiNegativerId() throws Exception {
         when(artikelService.aktualisiereDokumenttexte(eq(-1L), any()))
-                .thenThrow(new IllegalArgumentException("Artikel nicht gefunden: -1"));
+                .thenThrow(new NotFoundException("Artikel -1 nicht gefunden"));
 
         mockMvc.perform(patch("/api/artikel/-1/dokumenttexte")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"kurzbeschreibung\":\"x\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void antwortetMit404BeiIdGleich0() throws Exception {
+        when(artikelService.aktualisiereDokumenttexte(eq(0L), any()))
+                .thenThrow(new NotFoundException("Artikel 0 nicht gefunden"));
+
+        mockMvc.perform(patch("/api/artikel/0/dokumenttexte")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"kurzbeschreibung\":\"x\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void antwortetMit404BeiMaximalGrosserId() throws Exception {
+        when(artikelService.aktualisiereDokumenttexte(eq(Long.MAX_VALUE), any()))
+                .thenThrow(new NotFoundException("Artikel " + Long.MAX_VALUE + " nicht gefunden"));
+
+        mockMvc.perform(patch("/api/artikel/" + Long.MAX_VALUE + "/dokumenttexte")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"kurzbeschreibung\":\"x\"}"))
                 .andExpect(status().isNotFound());

@@ -27,9 +27,11 @@ public interface ArtikelServiceContract {
 
     /**
      * Pflegt die Felder, mit denen ein Artikel als Position in einem
-     * Kundendokument auftauchen kann.
+     * Kundendokument auftauchen kann. Echtes Teil-Update - siehe
+     * {@link ArtikelDokumenttexteRequest}.
      *
-     * @throws IllegalArgumentException bei unbekannter ID oder unzulaessigen Werten
+     * @throws org.example.kalkulationsprogramm.exception.NotFoundException bei unbekannter ID
+     * @throws IllegalArgumentException bei unzulaessigen Werten
      */
     Artikel aktualisiereDokumenttexte(Long id, ArtikelDokumenttexteRequest request);
 }
