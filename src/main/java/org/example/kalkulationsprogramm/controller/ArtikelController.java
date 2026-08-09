@@ -31,6 +31,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
+import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
 import org.example.kalkulationsprogramm.service.ArtikelServiceContract;
 import org.example.kalkulationsprogramm.service.KategorieService;
 import org.springframework.data.domain.Page;
@@ -79,6 +80,7 @@ public class ArtikelController {
     private final LieferantenRepository lieferantenRepository;
     private final KategorieService kategorieService;
     private final WerkstoffRepository werkstoffRepository;
+    private final ArtikelPositionsPreisService artikelPositionsPreisService;
 
     @PostMapping
     @Transactional
@@ -305,6 +307,12 @@ public class ArtikelController {
         dto.setKurzbeschreibung(artikel.getKurzbeschreibung());
         dto.setBeschreibung(artikel.getBeschreibung());
         dto.setVerkaufsaufschlagProzent(artikel.getVerkaufsaufschlagProzent());
+
+        ArtikelPositionsPreisService.ArtikelPositionsVorschlag vorschlag =
+                artikelPositionsPreisService.berechne(artikel);
+        dto.setPositionsEinheit(vorschlag.einheit());
+        dto.setPositionsEinzelpreis(vorschlag.einzelpreis());
+        dto.setPreisHinweis(vorschlag.hinweis().name());
         return dto;
     }
 

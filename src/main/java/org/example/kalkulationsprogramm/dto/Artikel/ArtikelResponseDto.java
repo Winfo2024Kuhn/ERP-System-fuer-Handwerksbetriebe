@@ -79,6 +79,20 @@ public class ArtikelResponseDto {
     /** Aufschlag auf den Einkaufspreis in Prozent. */
     private BigDecimal verkaufsaufschlagProzent;
 
+    // --- Preisvorschlag fuer die Dokumentposition ----------------------
+    // Diese drei versorgen das Auswahlfenster im DocumentEditor. Sie stehen
+    // bewusst schon in der Suchantwort: sonst muesste das Frontend je Treffer
+    // einzeln nachladen, um einen Preis anzeigen zu koennen.
+
+    /** Einheit, in der die Position gefuehrt wird: lfm, m2, kg oder Stk. */
+    private String positionsEinheit;
+
+    /** Vorgeschlagener Einzelpreis inklusive Aufschlag. {@code null} = nicht ermittelbar. */
+    private BigDecimal positionsEinzelpreis;
+
+    /** OK, KEIN_AUFSCHLAG, KEIN_PREIS oder KEIN_GEWICHT. */
+    private String preisHinweis;
+
     /** Gewicht je Quadratmeter - nur bei Blechen belegt. */
     private BigDecimal kgProQm;
     /** Abzuwickelnde Oberflaeche in m2 je Meter - Basis fuer Beschichtungskosten. */

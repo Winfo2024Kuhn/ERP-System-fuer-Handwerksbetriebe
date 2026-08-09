@@ -1,13 +1,16 @@
 package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelPreisHinweis;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
+import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
 import org.example.kalkulationsprogramm.service.ArtikelServiceContract;
 import org.example.kalkulationsprogramm.service.KategorieService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -49,6 +52,19 @@ class ArtikelDokumenttexteControllerTest {
 
     @MockBean
     private KategorieService kategorieService;
+
+    @MockBean
+    private ArtikelPositionsPreisService artikelPositionsPreisService;
+
+    @BeforeEach
+    void setUp() {
+        // Neutraler Default, damit diese Tests den Preisvorschlag nicht extra
+        // stubben muessen - siehe ArtikelSuchePreisvorschlagTest fuer den
+        // tatsaechlich berechneten Vorschlag.
+        when(artikelPositionsPreisService.berechne(any()))
+                .thenReturn(new ArtikelPositionsPreisService.ArtikelPositionsVorschlag(
+                        "Stk", null, ArtikelPreisHinweis.KEIN_PREIS));
+    }
 
     @Test
     void schreibtDieTexteUndAntwortetMitDemArtikel() throws Exception {
