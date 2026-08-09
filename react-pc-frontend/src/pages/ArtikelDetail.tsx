@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
     ArrowLeft, Minus, Package, RefreshCw, Save, ShieldCheck, ShieldX,
@@ -12,7 +12,7 @@ import { SupplierSelectModal } from "../components/SupplierSelectModal";
 import { useToast } from "../components/ui/toast";
 import { TiptapEditor } from "../components/TiptapEditor";
 import { preisHinweisText, type PreisHinweis } from "../components/artikel/preisHinweis";
-import type { ArtikelDetail as ArtikelDetailData, ArtikelPreisstand } from "../types";
+import type { Artikel, ArtikelDetail as ArtikelDetailData, ArtikelPreisstand } from "../types";
 
 const formatCurrency = (val?: number) =>
     val === undefined || val === null
@@ -26,6 +26,22 @@ const formatZahl = (val?: number, nachkomma = 3) =>
     val === undefined || val === null
         ? "—"
         : new Intl.NumberFormat("de-DE", { maximumFractionDigits: nachkomma }).format(val);
+
+/**
+ * Ein Rich-Text ohne sichtbaren Inhalt gilt als leer und wird als `null`
+ * gesendet - sonst bleibt ein geleertes Beschreibungsfeld "gepflegt", weil
+ * Tiptap beim Leeren typischerweise "<p></p>" liefert statt eines leeren
+ * Strings. Zaehlt nicht als Inhalt: Tags, "&nbsp;" (als Entity oder echtes
+ * Zeichen) und gewoehnliche Leerzeichen.
+ */
+function richtextOderNull(html: string): string | null {
+    const sichtbarerText = html
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/\u00a0/g, " ")
+        .trim();
+    return sichtbarerText === "" ? null : html;
+}
 
 /**
  * Detailseite eines Artikels.
@@ -100,9 +116,21 @@ export default function ArtikelDetail() {
 
     useEffect(() => { laden(); }, [laden]);
 
-    // Beim Laden der Detaildaten die Angebotsfelder vorbelegen.
+    /**
+     * Merkt sich, fuer welche Artikel-ID die Angebotsfelder zuletzt aus den
+     * Serverdaten vorbelegt wurden. `daten` wechselt nicht nur beim
+     * Erstladen - auch "Aktualisieren" und ein gespeicherter Lieferantenpreis
+     * loesen `laden()` erneut aus. Ohne diese Bremse wuerde jedes Neuladen
+     * eine noch ungespeicherte Eingabe kommentarlos verwerfen.
+     */
+    const vorbelegteArtikelId = useRef<number | null>(null);
+
+    // Beim ersten Laden eines Artikels die Angebotsfelder vorbelegen -
+    // danach nicht mehr, damit ungespeicherte Eingaben ein Neuladen ueberleben.
     useEffect(() => {
         if (!daten?.artikel) return;
+        if (vorbelegteArtikelId.current === daten.artikel.id) return;
+        vorbelegteArtikelId.current = daten.artikel.id;
         setKurzbeschreibung(daten.artikel.kurzbeschreibung ?? "");
         setBeschreibung(daten.artikel.beschreibung ?? "");
         setAufschlag(
@@ -160,11 +188,25 @@ export default function ArtikelDetail() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     kurzbeschreibung: kurzbeschreibung || null,
-                    beschreibung: beschreibung || null,
+                    beschreibung: richtextOderNull(beschreibung),
                     verkaufsaufschlagProzent: aufschlag === "" ? null : Number(aufschlag),
                 }),
             });
             if (!res.ok) throw new Error("Speichern fehlgeschlagen");
+            // Die Antwort ist der frisch gespeicherte Artikel - das ist der
+            // Server-Stand, mit dem die Felder jetzt uebereinstimmen sollen.
+            // Ein Ueberschreiben ist hier richtig: Der Bediener hat genau das
+            // ausgeloest. Die ID bleibt gleich, darum wuerde der Vorbelege-
+            // Effekt oben sonst nicht erneut greifen.
+            const aktualisiert: Artikel = await res.json();
+            vorbelegteArtikelId.current = aktualisiert.id;
+            setKurzbeschreibung(aktualisiert.kurzbeschreibung ?? "");
+            setBeschreibung(aktualisiert.beschreibung ?? "");
+            setAufschlag(
+                aktualisiert.verkaufsaufschlagProzent == null
+                    ? ""
+                    : String(aktualisiert.verkaufsaufschlagProzent),
+            );
             toast.success("Die Angebotsfelder sind aktualisiert.");
             await laden();
         } catch (err) {
