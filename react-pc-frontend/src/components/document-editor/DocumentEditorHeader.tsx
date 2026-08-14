@@ -1,4 +1,4 @@
-import { X, Save, Upload, Download, FileText, Wrench, Clock, Printer, Minus, FolderOpen, Percent, Mail, FileEdit } from 'lucide-react';
+import { X, Save, Upload, Download, FileText, Wrench, Clock, Package, Printer, Minus, FolderOpen, Percent, Mail, FileEdit } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import type { AusgangsGeschaeftsDokument } from './types';
@@ -18,6 +18,7 @@ interface DocumentEditorHeaderProps {
     onOpenTextbausteinPicker: () => void;
     onOpenLeistungPicker: () => void;
     onOpenStundensatzPicker: () => void;
+    onOpenMaterialPicker: () => void;
     onAddSeparator: () => void;
     onAddSectionHeader: () => void;
     onOpenRabattDialog: () => void;
@@ -44,6 +45,7 @@ export function DocumentEditorHeader({
     onOpenTextbausteinPicker,
     onOpenLeistungPicker,
     onOpenStundensatzPicker,
+    onOpenMaterialPicker,
     onAddSeparator,
     onAddSectionHeader,
     onOpenRabattDialog,
@@ -124,6 +126,16 @@ export function DocumentEditorHeader({
                     >
                         <Clock className="w-3 h-3" />
                         Stundensätze
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onOpenMaterialPicker}
+                        disabled={isLocked}
+                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                    >
+                        <Package className="w-3 h-3" />
+                        Material
                     </Button>
                     <div className="w-px h-5 bg-slate-200 mx-0.5" />
                     <Button
