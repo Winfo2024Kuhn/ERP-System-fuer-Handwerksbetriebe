@@ -553,7 +553,18 @@ export function ArtikelSuche({
                                             ) : '-'}
                                         </td>
                                         {/* Ohne eigene Zeilenaktion zeigt der Pfeil an, dass die Zeile auf die Detailseite fuehrt. */}
-                                        <td className="px-4 py-3 text-center">
+                                        {/* Eine eigene Zeilenaktion gehoert sich selbst: Ihr Klick darf nicht
+                                            zusaetzlich den Zeilen-Handler ausloesen, sonst uebernaehme das
+                                            Auswahlfenster die Position doppelt - oder navigierte, mangels
+                                            onZeilenKlick, aus dem Fenster heraus auf die Detailseite. Die Zeile
+                                            faengt auch Enter/Leertaste ab, deshalb der Stopp fuer beide Wege.
+                                            Ohne Zeilenaktion bleibt die Pfeil-Zelle bewusst durchlaessig: Dort
+                                            ist der Klick Teil des Zeilen-Klicks. */}
+                                        <td
+                                            className="px-4 py-3 text-center"
+                                            onClick={zeilenAktion ? (e) => e.stopPropagation() : undefined}
+                                            onKeyDown={zeilenAktion ? (e) => e.stopPropagation() : undefined}
+                                        >
                                             {zeilenAktion ? zeilenAktion(artikel) : <StandardZeilenAktion />}
                                         </td>
                                     </tr>

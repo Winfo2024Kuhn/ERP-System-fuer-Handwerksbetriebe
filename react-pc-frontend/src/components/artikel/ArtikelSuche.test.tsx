@@ -90,6 +90,69 @@ describe('ArtikelSuche', () => {
         expect(await screen.findByRole('button', { name: /Übernehmen T-Stahl/ })).toBeInTheDocument();
     });
 
+    // Die Zeilenaktion sitzt in einer Zelle der anklickbaren Zeile. Ohne Stopp
+    // liefe jeder Klick auf sie zusaetzlich in den Zeilen-Handler: Das
+    // Auswahlfenster wuerde die Position doppelt uebernehmen bzw. aus dem
+    // Fenster heraus auf die Detailseite navigieren.
+    it('loest beim Klick auf die Zeilenaktion nicht zusaetzlich den Zeilenklick aus', async () => {
+        const onZeilenKlick = vi.fn();
+        const uebernehmen = vi.fn();
+        zeigeSuche(
+            <ArtikelSuche
+                onZeilenKlick={onZeilenKlick}
+                zeilenAktion={(a) => (
+                    <button onClick={() => uebernehmen(a.id)}>Übernehmen {a.produktname}</button>
+                )}
+            />,
+        );
+
+        await userEvent.click(await screen.findByRole('button', { name: /Übernehmen T-Stahl/ }));
+
+        expect(uebernehmen).toHaveBeenCalledWith(7);
+        expect(onZeilenKlick).not.toHaveBeenCalled();
+    });
+
+    // Die Zeile faengt Enter/Leertaste ab - das darf die Zeilenaktion nicht mitreissen.
+    it('loest auch per Tastatur keinen zusaetzlichen Zeilenklick aus', async () => {
+        const onZeilenKlick = vi.fn();
+        const uebernehmen = vi.fn();
+        zeigeSuche(
+            <ArtikelSuche
+                onZeilenKlick={onZeilenKlick}
+                zeilenAktion={(a) => (
+                    <button onClick={() => uebernehmen(a.id)}>Übernehmen {a.produktname}</button>
+                )}
+            />,
+        );
+
+        (await screen.findByRole('button', { name: /Übernehmen T-Stahl/ })).focus();
+        await userEvent.keyboard('{Enter}');
+
+        expect(uebernehmen).toHaveBeenCalledWith(7);
+        expect(onZeilenKlick).not.toHaveBeenCalled();
+    });
+
+    it('navigiert nicht, wenn die Zeilenaktion ohne onZeilenKlick geklickt wird', async () => {
+        zeigeSuche(<ArtikelSuche zeilenAktion={(a) => <button>Übernehmen {a.produktname}</button>} />);
+
+        await userEvent.click(await screen.findByRole('button', { name: /Übernehmen T-Stahl/ }));
+
+        // Ohne Stopp landete man hier auf /artikel/7 - im Auswahlfenster fatal.
+        expect(aktuelleAdresse).toBe('/');
+    });
+
+    // Ohne eigene Zeilenaktion bleibt die Pfeil-Zelle bewusst durchlaessig:
+    // Dort ist der Klick Teil des Zeilen-Klicks (Artikelverwaltung).
+    it('behaelt den Zeilenklick auf der Pfeil-Zelle ohne eigene Zeilenaktion', async () => {
+        const onZeilenKlick = vi.fn();
+        zeigeSuche(<ArtikelSuche onZeilenKlick={onZeilenKlick} />);
+
+        const zeile = await screen.findByRole('link', { name: /Details zu T-Stahl öffnen/i });
+        await userEvent.click(zeile.querySelector('td:last-child') as HTMLElement);
+
+        expect(onZeilenKlick).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+    });
+
     it('laesst die URL unangetastet, wenn urlSync aus ist', async () => {
         zeigeSuche(<ArtikelSuche urlSync={false} />);
 
