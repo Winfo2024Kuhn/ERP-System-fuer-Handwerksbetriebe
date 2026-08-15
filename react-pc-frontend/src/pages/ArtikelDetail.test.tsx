@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import ArtikelDetail from './ArtikelDetail';
 import { ToastProvider } from '../components/ui/toast';
+import { ConfirmProvider } from '../components/ui/confirm-dialog';
 
 // Der echte Tiptap-Editor braucht Browser-APIs, die jsdom nicht bereitstellt
 // (z. B. document.createRange). Fuer diese Seite reicht ein steuerbarer Stub -
@@ -66,11 +67,13 @@ const detailAntwort = {
 function renderSeite() {
     return render(
         <ToastProvider>
-            <MemoryRouter initialEntries={['/artikel/1']}>
-                <Routes>
-                    <Route path="/artikel/:id" element={<ArtikelDetail />} />
-                </Routes>
-            </MemoryRouter>
+            <ConfirmProvider>
+                <MemoryRouter initialEntries={['/artikel/1']}>
+                    <Routes>
+                        <Route path="/artikel/:id" element={<ArtikelDetail />} />
+                    </Routes>
+                </MemoryRouter>
+            </ConfirmProvider>
         </ToastProvider>,
     );
 }
@@ -88,28 +91,32 @@ function ListenPlatzhalter() {
 function renderAusListeHeraus(listenAdresse: string, vonListe = true) {
     return render(
         <ToastProvider>
-            <MemoryRouter
-                initialEntries={[listenAdresse, { pathname: '/artikel/1', state: vonListe ? { vonListe: true } : null }]}
-                initialIndex={1}
-            >
-                <Routes>
-                    <Route path="/artikel" element={<ListenPlatzhalter />} />
-                    <Route path="/artikel/:id" element={<ArtikelDetail />} />
-                </Routes>
-            </MemoryRouter>
+            <ConfirmProvider>
+                <MemoryRouter
+                    initialEntries={[listenAdresse, { pathname: '/artikel/1', state: vonListe ? { vonListe: true } : null }]}
+                    initialIndex={1}
+                >
+                    <Routes>
+                        <Route path="/artikel" element={<ListenPlatzhalter />} />
+                        <Route path="/artikel/:id" element={<ArtikelDetail />} />
+                    </Routes>
+                </MemoryRouter>
+            </ConfirmProvider>
         </ToastProvider>,
     );
 }
 
-/** Wrapper fuer render(ui, { wrapper: Wrapper }) - stellt Route/Params/Toast bereit. */
+/** Wrapper fuer render(ui, { wrapper: Wrapper }) - stellt Route/Params/Toast/Confirm bereit. */
 function Wrapper({ children }: { children: ReactNode }) {
     return (
         <ToastProvider>
-            <MemoryRouter initialEntries={['/artikel/7']}>
-                <Routes>
-                    <Route path="/artikel/:id" element={children} />
-                </Routes>
-            </MemoryRouter>
+            <ConfirmProvider>
+                <MemoryRouter initialEntries={['/artikel/7']}>
+                    <Routes>
+                        <Route path="/artikel/:id" element={children} />
+                    </Routes>
+                </MemoryRouter>
+            </ConfirmProvider>
         </ToastProvider>
     );
 }
@@ -129,11 +136,17 @@ function mockFetchDetail(antwort: {
     lieferanten: unknown[];
     preisverlauf: unknown[];
 }) {
-    fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+    fetchMock = vi.fn((url: string, options?: RequestInit) => {
         if (options?.method === 'PATCH') {
             const gesendet = JSON.parse(String(options.body));
             const aktualisiert = { ...antwort.artikel, ...gesendet };
             return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(aktualisiert) });
+        }
+        // Der Abschnitt "Bilder & Unterlagen" laedt seine eigene, unabhaengige
+        // Liste - ohne diese Weiche bekaeme er faelschlich das Detail-Objekt statt
+        // eines Arrays und wuerde beim .find()/.filter() crashen.
+        if (url.includes('/dokumente')) {
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
         }
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(antwort) });
     });
@@ -142,9 +155,12 @@ function mockFetchDetail(antwort: {
 
 describe('ArtikelDetail', () => {
     beforeEach(() => {
-        vi.stubGlobal('fetch', vi.fn(() =>
-            Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(detailAntwort) }),
-        ));
+        vi.stubGlobal('fetch', vi.fn((url: string) => {
+            if (url.includes('/dokumente')) {
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(detailAntwort) });
+        }));
     });
 
     afterEach(() => {
@@ -413,9 +429,12 @@ describe('ArtikelDetail', () => {
             kurzbeschreibung: 'T-Stahl 40x40 Lager (Server)',
             preisHinweis: 'KEIN_AUFSCHLAG',
         };
-        fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+        fetchMock = vi.fn((url: string, options?: RequestInit) => {
             if (options?.method === 'PATCH') {
                 return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(patchAntwort) });
+            }
+            if (url.includes('/dokumente')) {
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
             }
             return Promise.resolve({
                 ok: true,

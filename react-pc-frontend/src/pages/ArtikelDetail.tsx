@@ -12,6 +12,7 @@ import { SupplierSelectModal } from "../components/SupplierSelectModal";
 import { useToast } from "../components/ui/toast";
 import { TiptapEditor } from "../components/TiptapEditor";
 import { preisHinweisText, type PreisHinweis } from "../components/artikel/preisHinweis";
+import { ArtikelDokumente } from "../components/artikel/ArtikelDokumente";
 import type { Artikel, ArtikelDetail as ArtikelDetailData, ArtikelPreisstand } from "../types";
 
 const formatCurrency = (val?: number) =>
@@ -292,6 +293,9 @@ export default function ArtikelDetail() {
                     <Datenfeld label="Werkstoffnorm" wert={artikel.werkstoffnorm} />
                 </dl>
             </section>
+
+            {/* ============ Bilder & Unterlagen ============ */}
+            <ArtikelDokumente artikelId={artikel.id} />
 
             {/* ============ Oberflächenbehandlung ============ */}
             <section className="bg-white border border-slate-200 rounded-lg p-5">

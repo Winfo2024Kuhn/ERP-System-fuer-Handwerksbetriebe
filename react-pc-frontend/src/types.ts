@@ -424,6 +424,42 @@ export interface ArtikelDetail {
   preisverlauf: ArtikelPreisstand[];
 }
 
+// ==================== Artikel Bilder & Unterlagen ====================
+
+/**
+ * VORSCHAUBILD ist das grosse Produktbild, alle anderen Typen sind
+ * Zusatzunterlagen (siehe {@link ARTIKEL_DOKUMENT_TYPEN} fuer deren
+ * Klartext-Beschriftung in der Oberflaeche).
+ */
+export type ArtikelDokumentTyp =
+  | 'VORSCHAUBILD'
+  | 'ZULASSUNG'
+  | 'ZEICHNUNG'
+  | 'DATENBLATT'
+  | 'MONTAGEANLEITUNG'
+  | 'SONSTIGES';
+
+/** Auswahlbare Typen fuer Zusatzunterlagen - VORSCHAUBILD bekommt eine eigene Upload-Fläche. */
+export const ARTIKEL_DOKUMENT_TYPEN: { value: ArtikelDokumentTyp; label: string }[] = [
+  { value: 'ZULASSUNG', label: 'Zulassung' },
+  { value: 'ZEICHNUNG', label: 'Zeichnung' },
+  { value: 'DATENBLATT', label: 'Datenblatt' },
+  { value: 'MONTAGEANLEITUNG', label: 'Montageanleitung' },
+  { value: 'SONSTIGES', label: 'Sonstiges' },
+];
+
+/** Ein Bild oder eine Unterlage zu einem Artikel (Backend: ArtikelDokumentDto). */
+export interface ArtikelDokument {
+  id: number;
+  originalDateiname: string;
+  typ: ArtikelDokumentTyp;
+  beschreibung?: string;
+  erstelltAm?: string;
+  dateigroesseBytes?: number;
+  /** Fertiger Pfad auf den Datei-Endpunkt - hier nicht selbst zusammensetzen. */
+  url: string;
+}
+
 export interface Abteilung {
   id: number;
   name: string;
