@@ -44,6 +44,19 @@ MAX_BESCHREIBUNG = 10_000
 
 ZEITLIMIT_SEKUNDEN = 30
 
+# Vorhandene Texte stehen zur Kontrolle mit im Protokoll. Eine gepflegte
+# Beschreibung kann 10.000 Zeichen lang sein - fuers Durchsehen reicht der
+# Anfang, solange erkennbar bleibt, was drinsteht.
+CSV_WERT_LIMIT = 300
+
+
+def fuer_csv(text) -> str:
+    """Kuerzt lange Werte fuer das Protokoll, erkennbar am Zusatz."""
+    text = (text or "").strip()
+    if len(text) <= CSV_WERT_LIMIT:
+        return text
+    return text[:CSV_WERT_LIMIT] + " ... [gekuerzt]"
+
 # ---------------------------------------------------------------------------
 # Textbau-Regeln
 # ---------------------------------------------------------------------------
@@ -55,9 +68,15 @@ ZEITLIMIT_SEKUNDEN = 30
 #      den Werkstoffcode; Normkuerzel wie "EN 10219-2" bleiben ganz weg.
 
 # Kundenfreundliche Namen fuer die Werkstoffcodes aus den Stammdaten.
-# Die Zuordnung folgt woertlich den Anzeigenamen aus Migration
-# V337__werkstoff_dichte_und_eignungen.sql - hier wird nichts erfunden,
-# nur die dort bereits getroffene Uebersetzung wiederverwendet.
+# Ausgangspunkt sind die Anzeigenamen aus Migration
+# V337__werkstoff_dichte_und_eignungen.sql; die Zuordnung Code ->
+# Werkstofffamilie (1.4301 = Edelstahl, S235JR = Baustahl, ...) stammt
+# von dort - neu erfunden wird hier nichts. Die Formulierung ist aber
+# bewusst NICHT woertlich uebernommen, sondern fuers Kundendokument
+# angepasst: Erklaer-Zusaetze wie "(hochfest)", "(seewasserfest)" und
+# "(Blech)" sind gekuerzt, und aus "Stahlblech verzinkt (Sendzimir)"
+# wird "verzinktem Stahl (DX51D+Z)", damit der Satz
+# "... aus <Werkstoff>" lesbar bleibt.
 # Unbekannte Werkstoffe behalten unveraendert ihren technischen Namen.
 WERKSTOFF_KLARTEXT = {
     "S235JR": "Baustahl S235JR",
@@ -383,7 +402,8 @@ def main() -> int:
     with open(args.protokoll, "w", newline="", encoding="utf-8-sig") as datei:
         schreiber = csv.writer(datei, delimiter=";")
         schreiber.writerow(["id", "artikelnummer", "produktname", "profilform",
-                            "aktion", "neue_kurzbeschreibung", "neue_beschreibung"])
+                            "aktion", "alte_kurzbeschreibung", "alte_beschreibung",
+                            "neue_kurzbeschreibung", "neue_beschreibung"])
 
         try:
             for artikel in alle_artikel(client):
@@ -391,14 +411,19 @@ def main() -> int:
                 nummer = artikel.get("artikelnummer") or ""
                 name = artikel.get("produktname") or ""
                 form = enum_name(artikel.get("profilform")) or ""
+                alte_kurz = fuer_csv(artikel.get("kurzbeschreibung"))
+                alte_beschreibung = fuer_csv(artikel.get("beschreibung"))
 
                 # Bereits gepflegte Artikel bleiben unangetastet. Ein von Hand
                 # geschriebener Kundentext ist immer besser als ein generierter.
-                if (artikel.get("kurzbeschreibung") or "").strip() \
-                        or (artikel.get("beschreibung") or "").strip():
+                # Die vorhandenen Werte stehen mit im Protokoll, damit beim
+                # Durchsehen erkennbar ist, WAS da schon steht - echter Text
+                # oder nur ein Rest wie "<p></p>".
+                if alte_kurz or alte_beschreibung:
                     uebersprungen_gepflegt += 1
                     schreiber.writerow([artikel_id, nummer, name, form,
-                                        "uebersprungen: schon gepflegt", "", ""])
+                                        "uebersprungen: schon gepflegt",
+                                        alte_kurz, alte_beschreibung, "", ""])
                     continue
 
                 kurz = baue_kurzbeschreibung(artikel)
@@ -406,7 +431,8 @@ def main() -> int:
                 if not kurz or not beschreibung:
                     uebersprungen_duerftig += 1
                     schreiber.writerow([artikel_id, nummer, name, form,
-                                        "uebersprungen: zu wenig Daten", "", ""])
+                                        "uebersprungen: zu wenig Daten",
+                                        alte_kurz, alte_beschreibung, "", ""])
                     continue
 
                 if args.apply:
@@ -414,17 +440,23 @@ def main() -> int:
                         schreibe(client, artikel_id, kurz, beschreibung)
                         gesetzt += 1
                         schreiber.writerow([artikel_id, nummer, name, form,
-                                            "geschrieben", kurz, beschreibung])
+                                            "geschrieben",
+                                            alte_kurz, alte_beschreibung,
+                                            kurz, beschreibung])
                     except (urllib.error.HTTPError, urllib.error.URLError) as e:
                         fehler += 1
                         grund = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else str(e.reason)
                         schreiber.writerow([artikel_id, nummer, name, form,
-                                            f"fehler: {grund}", kurz, beschreibung])
+                                            f"fehler: {grund}",
+                                            alte_kurz, alte_beschreibung,
+                                            kurz, beschreibung])
                         print(f"FEHLER bei Artikel {artikel_id}: {grund}", file=sys.stderr)
                 else:
                     gesetzt += 1
                     schreiber.writerow([artikel_id, nummer, name, form,
-                                        "geplant", kurz, beschreibung])
+                                        "geplant",
+                                        alte_kurz, alte_beschreibung,
+                                        kurz, beschreibung])
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
                 print(f"Zugriff verweigert (HTTP {e.code}). Login noetig: "

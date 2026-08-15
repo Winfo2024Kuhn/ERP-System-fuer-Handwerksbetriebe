@@ -27,6 +27,7 @@ sich direkt in Excel oeffnen) mit einer Zeile je Artikel:
 | Spalte | Inhalt |
 | --- | --- |
 | `aktion` | `geplant`, `uebersprungen: schon gepflegt`, `uebersprungen: zu wenig Daten` oder `fehler: ...` |
+| `alte_kurzbeschreibung` / `alte_beschreibung` | Was aktuell am Artikel steht. Bei `schon gepflegt` sieht man so, OB da echter Text steht oder nur ein Rest wie `<p></p>`. Werte ueber 300 Zeichen werden erkennbar gekuerzt (`... [gekuerzt]`). |
 | `neue_kurzbeschreibung` | Innensicht, z.B. `Rundrohr 42.4x2 1.4301` |
 | `neue_beschreibung` | Kundentext als HTML, z.B. `<p>Rundrohr 42,4 x 2 mm aus Edelstahl 1.4301</p>` |
 
@@ -43,7 +44,9 @@ Erst nach Durchsicht der CSV:
 
 - Kundentext-Regelfall (Halbzeug mit Profilform und Abmessung):
   `Rundrohr 42,4 x 2 mm aus Edelstahl 1.4301, nahtlos`. Werkstoffcodes
-  werden in Handwerker-Sprache uebersetzt (Zuordnung wie in Migration V337),
+  werden in Handwerker-Sprache uebersetzt - angelehnt an die Anzeigenamen
+  aus Migration V337, aber fuers Kundendokument vereinfacht (Zusaetze wie
+  `(hochfest)` gekuerzt); unbekannte Codes behalten den technischen Namen.
   Normkuerzel wie `EN 10219-2` bleiben weg. `nahtlos`, `kaltgezogen` und
   `geschliffen` stehen dabei, weil sie sonst gleiche Positionen ununterscheidbar
   machen wuerden - alle uebrigen Verfahren sind der Normalfall und entfallen.
