@@ -103,8 +103,13 @@ selbst über 10 MB groß, lässt du es weg und vermerkst das im Report (Abschnit
 **Vorschaubild:** höchstens **eines** je Artikel. Lädt das ERP später ein zweites hoch, ersetzt
 es automatisch das erste — liefere also gleich das richtige Bild.
 
-**Wie die Dateien im ERP landen:** Nach dem CSV-Import wird jede in `vorschaubild` und
-`dokumente` referenzierte Datei einzeln mit dem passenden Artikel verknüpft, über vier
+**Wie die Dateien im ERP landen:** Lieferung und Verknüpfung sind **zwei getrennte Schritte**.
+Du lieferst CSV und `dateien/`-Ordner — das Verknüpfen mit den Artikeln läuft **nicht**
+automatisch nebenher, es gibt (Stand heute) bewusst keinen Massen-Import, der beides in einem
+Rutsch einliest. Das Verknüpfen ist ein eigener Schritt danach, der **nicht zu deiner
+Lieferung gehört**: Für jede Datei wird nach dem CSV-Import der zugehörige Artikel über seine
+`materialnummer` (die externe Artikelnummer, siehe Abschnitt 6) gesucht, um die interne
+Artikel-`id` zu bekommen — erst damit lässt sich der passende Endpoint aufrufen, über vier
 Endpoints unter `/api/artikel`:
 
 | Endpoint | Zweck |
@@ -114,9 +119,10 @@ Endpoints unter `/api/artikel`:
 | `GET /dokumente/{dokumentId}/datei` | Datei herunterladen. |
 | `DELETE /dokumente/{dokumentId}` | Dokument löschen. |
 
-Für dich als Scraping-Agent sind die Endpoints Hintergrundwissen. Entscheidend für deine
-Lieferung sind die Regeln oben — Format, Größe, ein Vorschaubild je Artikel — sowie dass jeder
-Wert in `dokument_typen` exakt einer der erlaubten Typen aus Abschnitt 2 ist.
+Für dich als Scraping-Agent sind die Endpoints Hintergrundwissen, kein Auftrag. Deine Lieferung
+ist abgeschlossen, sobald CSV und `dateien/`-Ordner die Regeln oben erfüllen — Format, Größe,
+ein Vorschaubild je Artikel, und jeder Wert in `dokument_typen` exakt einer der erlaubten Typen
+aus Abschnitt 2.
 
 **Keine Fremdlinks:** Dateien werden heruntergeladen und mitgeliefert, nie als URL auf den Shop
 von Feldmann hinterlegt. Ein Link ist morgen tot oder zeigt hinter ein Login — die Datei im
@@ -231,7 +237,8 @@ Führe diese Prüfungen aus und liefere das Ergebnis mit:
 
 **Report mitliefern:** Anzahl Artikel, Anzahl übersprungener Seiten mit Grund (kein Preis, keine
 Artikelnummer, Variantenseite), Preisspanne min/max, Liste der Werkstoffbezeichnungen, die du
-verworfen hast.
+verworfen hast, Liste der wegen Übergröße (> 10 MB) weggelassenen Dokumente mit Artikelnummer
+(siehe Abschnitt 3).
 
 ---
 
