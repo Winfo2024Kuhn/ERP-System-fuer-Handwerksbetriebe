@@ -257,4 +257,169 @@ class ZugferdExtractorServiceTest {
             assertThat(result.getArtikelPositionen()).isNotNull().isEmpty();
         }
     }
+
+    /**
+     * Rechnungen kommen sowohl als ZUGFeRD-PDF (CII) als auch als reine
+     * XRechnung-Datei herein - letztere in beiden Syntaxen. Aus allen dreien muss
+     * die Preisuebernahme die Positionen bekommen.
+     */
+    @Nested
+    class ArtikelpositionenAusXml {
+
+        @Test
+        void liestCiiPositionenMitTonnenbasis() {
+            String xml = """
+                    <rsm:CrossIndustryInvoice>
+                      <ram:IncludedSupplyChainTradeLineItem>
+                        <ram:SpecifiedTradeProduct>
+                          <ram:SellerAssignedID>S235-100</ram:SellerAssignedID>
+                          <ram:Name>Flachstahl 100x10</ram:Name>
+                        </ram:SpecifiedTradeProduct>
+                        <ram:SpecifiedLineTradeAgreement>
+                          <ram:NetPriceProductTradePrice>
+                            <ram:ChargeAmount>1250.00</ram:ChargeAmount>
+                            <ram:BasisQuantity unitCode="KGM">1000</ram:BasisQuantity>
+                          </ram:NetPriceProductTradePrice>
+                        </ram:SpecifiedLineTradeAgreement>
+                        <ram:SpecifiedLineTradeDelivery>
+                          <ram:BilledQuantity unitCode="KGM">340.00</ram:BilledQuantity>
+                        </ram:SpecifiedLineTradeDelivery>
+                      </ram:IncludedSupplyChainTradeLineItem>
+                    </rsm:CrossIndustryInvoice>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).hasSize(1);
+            assertThat(positionen.getFirst().getExterneArtikelnummer()).isEqualTo("S235-100");
+            assertThat(positionen.getFirst().getEinzelpreis()).isEqualByComparingTo("1250.00");
+            assertThat(positionen.getFirst().getPreiseinheit()).isEqualTo("1000 KGM");
+            assertThat(positionen.getFirst().getMengeneinheit()).isEqualTo("KGM");
+        }
+
+        @Test
+        void liestUblPositionenMitStueckpreis() {
+            String xml = """
+                    <Invoice>
+                      <cac:InvoiceLine>
+                        <cbc:ID>1</cbc:ID>
+                        <cbc:InvoicedQuantity unitCode="C62">4</cbc:InvoicedQuantity>
+                        <cbc:LineExtensionAmount currencyID="EUR">248.00</cbc:LineExtensionAmount>
+                        <cac:Item>
+                          <cbc:Name>Handlaufhalter</cbc:Name>
+                          <cac:SellersItemIdentification>
+                            <cbc:ID>HLH-42</cbc:ID>
+                          </cac:SellersItemIdentification>
+                        </cac:Item>
+                        <cac:Price>
+                          <cbc:PriceAmount currencyID="EUR">62.00</cbc:PriceAmount>
+                          <cbc:BaseQuantity unitCode="C62">1</cbc:BaseQuantity>
+                        </cac:Price>
+                      </cac:InvoiceLine>
+                    </Invoice>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).hasSize(1);
+            assertThat(positionen.getFirst().getExterneArtikelnummer()).isEqualTo("HLH-42");
+            // Der Einzelpreis, nicht die Positionssumme von 248,00.
+            assertThat(positionen.getFirst().getEinzelpreis()).isEqualByComparingTo("62.00");
+            assertThat(positionen.getFirst().getPreiseinheit()).isEqualTo("1 C62");
+            assertThat(positionen.getFirst().getMengeneinheit()).isEqualTo("C62");
+        }
+
+        @Test
+        void liestMehrereUblPositionen() {
+            String xml = """
+                    <Invoice>
+                      <cac:InvoiceLine>
+                        <cac:Item>
+                          <cac:SellersItemIdentification><cbc:ID>A-1</cbc:ID></cac:SellersItemIdentification>
+                        </cac:Item>
+                        <cac:Price><cbc:PriceAmount>10.00</cbc:PriceAmount></cac:Price>
+                      </cac:InvoiceLine>
+                      <cac:InvoiceLine>
+                        <cac:Item>
+                          <cac:SellersItemIdentification><cbc:ID>A-2</cbc:ID></cac:SellersItemIdentification>
+                        </cac:Item>
+                        <cac:Price><cbc:PriceAmount>20.00</cbc:PriceAmount></cac:Price>
+                      </cac:InvoiceLine>
+                    </Invoice>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).extracting("externeArtikelnummer").containsExactly("A-1", "A-2");
+        }
+
+        @Test
+        void ueberspringtPositionenOhneArtikelnummer() {
+            String xml = """
+                    <Invoice>
+                      <cac:InvoiceLine>
+                        <cac:Item><cbc:Name>Frachtpauschale</cbc:Name></cac:Item>
+                        <cac:Price><cbc:PriceAmount>19.90</cbc:PriceAmount></cac:Price>
+                      </cac:InvoiceLine>
+                    </Invoice>
+                    """;
+
+            assertThat(service.extractLineItems(xml)).isEmpty();
+        }
+
+        @Test
+        void liestUblGutschriftspositionen() {
+            String xml = """
+                    <CreditNote>
+                      <cac:CreditNoteLine>
+                        <cbc:CreditedQuantity unitCode="C62">2</cbc:CreditedQuantity>
+                        <cac:Item>
+                          <cac:SellersItemIdentification><cbc:ID>RET-7</cbc:ID></cac:SellersItemIdentification>
+                        </cac:Item>
+                        <cac:Price><cbc:PriceAmount>15.00</cbc:PriceAmount></cac:Price>
+                      </cac:CreditNoteLine>
+                    </CreditNote>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).hasSize(1);
+            assertThat(positionen.getFirst().getExterneArtikelnummer()).isEqualTo("RET-7");
+            assertThat(positionen.getFirst().getMengeneinheit()).isEqualTo("C62");
+        }
+
+        @Test
+        void faelltOhneBasisQuantityAufDieMengeneinheitZurueck() {
+            String xml = """
+                    <rsm:CrossIndustryInvoice>
+                      <ram:IncludedSupplyChainTradeLineItem>
+                        <ram:SpecifiedTradeProduct>
+                          <ram:SellerAssignedID>S235-400</ram:SellerAssignedID>
+                        </ram:SpecifiedTradeProduct>
+                        <ram:SpecifiedLineTradeAgreement>
+                          <ram:NetPriceProductTradePrice>
+                            <ram:ChargeAmount>1250.00</ram:ChargeAmount>
+                          </ram:NetPriceProductTradePrice>
+                        </ram:SpecifiedLineTradeAgreement>
+                        <ram:SpecifiedLineTradeDelivery>
+                          <ram:BilledQuantity unitCode="TNE">2.5</ram:BilledQuantity>
+                        </ram:SpecifiedLineTradeDelivery>
+                      </ram:IncludedSupplyChainTradeLineItem>
+                    </rsm:CrossIndustryInvoice>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).hasSize(1);
+            assertThat(positionen.getFirst().getPreiseinheit()).isNull();
+            // Ohne Preisbasis entscheidet die Mengeneinheit - hier Tonnen.
+            assertThat(positionen.getFirst().getMengeneinheit()).isEqualTo("TNE");
+        }
+
+        @Test
+        void liefertLeereListeOhneXml() {
+            assertThat(service.extractLineItems(null)).isEmpty();
+            assertThat(service.extractLineItems("<Invoice></Invoice>")).isEmpty();
+        }
+    }
 }

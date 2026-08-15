@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -13,6 +12,8 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
@@ -23,12 +24,10 @@ import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
-import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -59,7 +58,7 @@ public class GeminiDokumentAnalyseService {
     private final LieferantenRepository lieferantenRepository;
     private final LieferantDokumentRepository dokumentRepository;
     private final ZugferdExtractorService zugferdExtractorService;
-    private final LieferantenArtikelPreiseRepository artikelPreiseRepository;
+    private final PreisUebernahmeService preisUebernahmeService;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final SystemSettingsService systemSettingsService;
 
@@ -184,9 +183,16 @@ public class GeminiDokumentAnalyseService {
 
             ARTIKELPOSITIONEN EXTRAKTION (WICHTIG für Rechnungen):
             - Extrahiere ALLE Positionen mit Artikelnummer/Materialnummer
+            - Jede Position: {"externeArtikelnummer": "...", "einzelpreis": 12.34,
+              "preiseinheit": "...", "mengeneinheit": "..."}
             - Die externe Artikelnummer ist oft eine Materialnummer wie "12345" oder "MAT-001"
-            - Die Preiseinheit ist entscheidend: "€/t" = pro Tonne, "€/100kg" = pro 100kg, "€/kg" = pro kg
-            - Falls keine Preiseinheit erkennbar, nimm "kg" an
+            - einzelpreis ist der Preis EINER Preiseinheit, NICHT die Positionssumme
+            - Die Preiseinheit ist entscheidend: "€/t" = pro Tonne, "€/100kg" = pro 100kg,
+              "€/kg" = pro kg, "€/Stück" = pro Stück, "€/m" = pro laufendem Meter
+            - Die Mengeneinheit ist die Einheit der gelieferten Menge, z.B. "Stück", "kg", "m"
+            - Falls keine Preiseinheit erkennbar: gib null zurück. NICHT raten und NICHT
+              "kg" annehmen - auf Rechnungen stehen genauso oft Stückpreise für
+              Zukaufteile (Handlaufhalter, Glasklemmen) wie Kilopreise für Stahl.
 
             ZAHLUNGSBEDINGUNGEN ERKENNUNG (SEHR WICHTIG!):
             Typische Muster auf deutschen Rechnungen:
@@ -1018,6 +1024,21 @@ public class GeminiDokumentAnalyseService {
                 log.info("Keine ZUGFeRD/XML-Daten gefunden, verwende KI-Analyse für Dokument {}",
                         freshDokument.getId());
                 geschaeftsdaten = analysierePerKi(freshDokument, dateiPfad);
+
+                // Preise aus der KI-Auswertung uebernehmen. Erst hier liegen
+                // Artikelpositionen und Lieferant gleichzeitig vor.
+                if (geschaeftsdaten != null && geschaeftsdaten.getAiRawJson() != null) {
+                    try {
+                        verarbeiteArtikelPositionen(
+                                objectMapper.readTree(geschaeftsdaten.getAiRawJson()),
+                                freshDokument.getLieferant(),
+                                geschaeftsdaten.getDetectedTyp(),
+                                geschaeftsdaten.getDokumentDatum());
+                    } catch (Exception e) {
+                        log.warn("Preisuebernahme aus KI-Analyse fehlgeschlagen für Dokument {}: {}",
+                                freshDokument.getId(), e.getMessage());
+                    }
+                }
             }
 
             if (geschaeftsdaten == null) {
@@ -1216,8 +1237,9 @@ public class GeminiDokumentAnalyseService {
             }
 
             // Artikelpositionen verarbeiten und Preise aktualisieren
-            if (dokument != null && dokument.getLieferant() != null && zugferd.getArtikelPositionen() != null) {
-                verarbeiteZugferdArtikelPositionen(zugferd.getArtikelPositionen(), dokument.getLieferant());
+            if (dokument != null) {
+                verarbeiteStrukturiertePositionen(zugferd.getArtikelPositionen(), dokument.getLieferant(),
+                        gd.getDetectedTyp(), gd.getDokumentDatum());
             }
 
             return gd;
@@ -1331,7 +1353,27 @@ public class GeminiDokumentAnalyseService {
                 dokument.setTyp(xmlTyp);
             }
 
-            return gd.getDokumentNummer() != null || gd.getBetragBrutto() != null ? gd : null;
+            // Taugt die XML ueberhaupt? Wenn nicht, faellt die Analyse gleich auf die
+            // KI zurueck - dann darf hier auch kein Preis geschrieben werden, sonst
+            // laege derselbe Beleg zweimal in der Historie, einmal je Lesart.
+            if (gd.getDokumentNummer() == null && gd.getBetragBrutto() == null) {
+                return null;
+            }
+
+            // Auch die reine XRechnung fuehrt ihre Positionen mit - vorher wurden hier
+            // nur die Kopfdaten gelesen und kein Preis aktualisiert.
+            //
+            // Fuer die Preisuebernahme zaehlt aber nur ein ausdruecklich ausgewiesener
+            // Typ, nicht die Annahme "Rechnung" von oben. Sonst laege jede XML ohne
+            // TypeCode als Rechnung vor - auch ein Lieferschein (270) oder eine
+            // Auftragsbestaetigung (231), also genau das, was die Typpruefung in
+            // preisQuelleFuer aussperren soll.
+            if (dokument != null) {
+                verarbeiteStrukturiertePositionen(zugferdExtractorService.extractLineItems(xmlContent),
+                        dokument.getLieferant(), ausgewiesenerTyp(typeCode), gd.getDokumentDatum());
+            }
+
+            return gd;
 
         } catch (Exception e) {
             log.debug("XML-Extraktion fehlgeschlagen: {}", e.getMessage());
@@ -2359,13 +2401,9 @@ public class GeminiDokumentAnalyseService {
                 gd.setAiConfidence(json.get("confidence").asDouble());
             }
 
-            // Artikelpositionen verarbeiten (Preise aktualisieren) - hier noch nicht
-            // möglich ohne Lieferant/DB
-            // Verlagen wir auf nach dem Speichern wenn nötig.
-            // if (dokument.getLieferant() != null) {
-            // verarbeiteArtikelPositionen(json, dokument.getLieferant());
-            // }
-
+            // Die Artikelpositionen bleiben hier unangetastet: diese Methode kennt nur
+            // die KI-Antwort, nicht den Lieferanten. Die Preisuebernahme passiert in
+            // analysiereDokument(), sobald beides vorliegt.
             return gd;
 
         } catch (Exception e) {
@@ -2392,192 +2430,145 @@ public class GeminiDokumentAnalyseService {
     }
 
     /**
-     * Verarbeitet extrahierte Artikelpositionen und aktualisiert Preise in der
-     * Datenbank.
-     * Nur Artikel mit bekannter externeArtikelnummer werden aktualisiert.
+     * Uebergibt die von der KI ausgelesenen Artikelpositionen an die
+     * Preisuebernahme.
+     *
+     * <p>Dieser Weg lag lange brach: Der Aufruf war auskommentiert mit dem
+     * Vermerk, ohne Lieferant und DB gehe das hier nicht. Der Lieferant haengt
+     * aber am Dokument und steht in {@code analysiereDokument} bereit - gescannte
+     * Rechnungen haben deshalb nie einen Preis aktualisiert.
      */
-    private void verarbeiteArtikelPositionen(JsonNode json, Lieferanten lieferant) {
-        if (lieferant == null) {
-            log.debug("Kein Lieferant - überspringe Artikelpreis-Update");
+    private void verarbeiteArtikelPositionen(JsonNode json, Lieferanten lieferant, LieferantDokumentTyp typ,
+            LocalDate dokumentDatum) {
+        if (lieferant == null || json == null || !json.has("artikelPositionen")) {
             return;
         }
-
-        if (!json.has("artikelPositionen") || json.get("artikelPositionen").isNull()) {
+        PreisQuelle quelle = preisQuelleFuer(typ);
+        if (quelle == null) {
             return;
         }
-
         JsonNode positionen = json.get("artikelPositionen");
-        if (!positionen.isArray()) {
+        if (positionen == null || !positionen.isArray()) {
             return;
         }
 
-        int updated = 0;
-        int skipped = 0;
-
+        List<PreisUebernahmeService.Position> ausgelesen = new ArrayList<>();
         for (JsonNode pos : positionen) {
-            String externeNr = pos.has("externeArtikelnummer") ? pos.get("externeArtikelnummer").asText(null) : null;
-            if (externeNr == null || externeNr.isBlank()) {
-                skipped++;
-                continue;
-            }
-
-            // Suche in LieferantenArtikelPreise nach externeArtikelnummer + lieferantId
-            var lapOpt = artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(
-                    externeNr.trim(), lieferant.getId());
-
-            if (lapOpt.isEmpty()) {
-                log.debug("Artikel nicht gefunden: {} für Lieferant {}", externeNr, lieferant.getLieferantenname());
-                skipped++;
-                continue;
-            }
-
-            // Extrahiere Preis und Einheit
-            BigDecimal einzelpreis = pos.has("einzelpreis") && !pos.get("einzelpreis").isNull()
-                    ? new BigDecimal(pos.get("einzelpreis").asText().replace(',', '.'))
-                    : null;
-            String preiseinheit = pos.has("preiseinheit") ? pos.get("preiseinheit").asText("kg") : "kg";
-
-            if (einzelpreis == null) {
-                skipped++;
-                continue;
-            }
-
-            // Normalisiere Preis auf €/kg
-            BigDecimal preisProKg = normalizePreisZuKg(einzelpreis, preiseinheit);
-            if (preisProKg == null) {
-                log.debug("Preis außerhalb Bereich für {}: {} {}", externeNr, einzelpreis, preiseinheit);
-                skipped++;
-                continue;
-            }
-
-            // Neuen Preisstand in die Historie schreiben. Der bisherige Stand bleibt
-            // erhalten und wird dabei als nicht mehr aktuell markiert.
-            LieferantenArtikelPreise bisher = lapOpt.get();
-            LieferantenArtikelPreise neuerStand = bisher.neuerPreisstand(preisProKg, PreisQuelle.ANGEBOT_EMAIL);
-            artikelPreiseRepository.save(bisher);
-            artikelPreiseRepository.save(neuerStand);
-            updated++;
-
-            log.info("Artikelpreis aktualisiert: {} = {} €/kg (war: {} {})",
-                    externeNr, preisProKg, einzelpreis, preiseinheit);
+            ausgelesen.add(new PreisUebernahmeService.Position(
+                    textOderNull(pos, "externeArtikelnummer"),
+                    betragOderNull(pos),
+                    textOderNull(pos, "preiseinheit"),
+                    textOderNull(pos, "mengeneinheit")));
         }
 
-        if (updated > 0 || skipped > 0) {
-            log.info("Artikelpreise verarbeitet: {} aktualisiert, {} übersprungen", updated, skipped);
+        preisUebernahmeService.uebernehmePreise(lieferant, quelle, alsDatum(dokumentDatum), ausgelesen);
+    }
+
+    private String textOderNull(JsonNode pos, String feld) {
+        if (pos == null || !pos.has(feld) || pos.get(feld).isNull()) {
+            return null;
+        }
+        String wert = pos.get(feld).asText();
+        return wert == null || wert.isBlank() ? null : wert.trim();
+    }
+
+    private BigDecimal betragOderNull(JsonNode pos) {
+        String roh = textOderNull(pos, "einzelpreis");
+        if (roh == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(roh.replace(',', '.'));
+        } catch (NumberFormatException e) {
+            log.debug("Einzelpreis aus KI-Antwort nicht lesbar: {}", roh);
+            return null;
         }
     }
 
     /**
-     * Normalisiert einen Preis auf €/kg basierend auf der Preiseinheit.
-     * Übernimmt Logik aus ArtikelImportService.
+     * Uebergibt Artikelpositionen aus strukturierten Rechnungsdaten (ZUGFeRD-PDF
+     * oder XRechnung-XML) an die Preisuebernahme.
      */
-    private BigDecimal normalizePreisZuKg(BigDecimal preis, String einheit) {
-        if (preis == null)
-            return null;
-
-        // Umrechnung basierend auf Einheit
-        if (einheit != null) {
-            String e = einheit.toLowerCase().trim();
-            if (e.contains("tonne") || e.equals("t") || e.equals("to") || e.contains("1000 kg")
-                    || e.contains("1000kg")) {
-                preis = preis.divide(BigDecimal.valueOf(1000), 4, RoundingMode.HALF_UP);
-            } else if (e.contains("100 kg") || e.contains("100kg")) {
-                preis = preis.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-            }
-            // "kg" = keine Umrechnung
-        }
-
-        // Plausibilitäts-Check: typische Stahlpreise liegen bei 0.50 - 10.00 €/kg
-        BigDecimal min = new BigDecimal("0.50");
-        BigDecimal max = new BigDecimal("10.00");
-
-        if (preis.compareTo(max) > 0) {
-            // Vielleicht wurde Preis pro Tonne ohne Einheit angegeben
-            BigDecimal durchTausend = preis.divide(BigDecimal.valueOf(1000), 4, RoundingMode.HALF_UP);
-            if (durchTausend.compareTo(min) >= 0 && durchTausend.compareTo(max) <= 0) {
-                return durchTausend;
-            }
-            BigDecimal durchHundert = preis.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-            if (durchHundert.compareTo(min) >= 0 && durchHundert.compareTo(max) <= 0) {
-                return durchHundert;
-            }
-            return null; // Außerhalb Bereich
-        }
-
-        if (preis.compareTo(min) < 0) {
-            // Vielleicht wurde Preis pro Gramm angegeben
-            BigDecimal malTausend = preis.multiply(BigDecimal.valueOf(1000));
-            if (malTausend.compareTo(min) >= 0 && malTausend.compareTo(max) <= 0) {
-                return malTausend;
-            }
-            return null;
-        }
-
-        return preis;
-    }
-
-    /**
-     * Verarbeitet Artikelpositionen aus strukturierten ZUGFeRD-Daten und
-     * aktualisiert Preise.
-     * Analog zu verarbeiteArtikelPositionen, aber mit ZugferdArtikelPosition DTO.
-     */
-    private void verarbeiteZugferdArtikelPositionen(
-            java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen,
-            Lieferanten lieferant) {
+    private void verarbeiteStrukturiertePositionen(
+            List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen,
+            Lieferanten lieferant, LieferantDokumentTyp typ, LocalDate dokumentDatum) {
         if (lieferant == null || positionen == null || positionen.isEmpty()) {
             return;
         }
-
-        int updated = 0;
-        int skipped = 0;
-
-        for (var pos : positionen) {
-            String externeNr = pos.getExterneArtikelnummer();
-            if (externeNr == null || externeNr.isBlank()) {
-                skipped++;
-                continue;
-            }
-
-            // Suche in LieferantenArtikelPreise nach externeArtikelnummer + lieferantId
-            var lapOpt = artikelPreiseRepository.findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(
-                    externeNr.trim(), lieferant.getId());
-
-            if (lapOpt.isEmpty()) {
-                log.debug("ZUGFeRD-Artikel nicht in DB: {} für Lieferant {}", externeNr,
-                        lieferant.getLieferantenname());
-                skipped++;
-                continue;
-            }
-
-            if (pos.getEinzelpreis() == null) {
-                skipped++;
-                continue;
-            }
-
-            // Normalisiere Preis auf €/kg
-            BigDecimal preisProKg = normalizePreisZuKg(pos.getEinzelpreis(), pos.getPreiseinheit());
-            if (preisProKg == null) {
-                log.debug("ZUGFeRD-Preis außerhalb Bereich für {}: {} {}",
-                        externeNr, pos.getEinzelpreis(), pos.getPreiseinheit());
-                skipped++;
-                continue;
-            }
-
-            // Neuen Preisstand in die Historie schreiben. Quelle ist hier die Rechnung,
-            // die im Zweifel verlaesslicher ist als ein Angebot.
-            LieferantenArtikelPreise bisher = lapOpt.get();
-            LieferantenArtikelPreise neuerStand = bisher.neuerPreisstand(preisProKg, PreisQuelle.RECHNUNG);
-            artikelPreiseRepository.save(bisher);
-            artikelPreiseRepository.save(neuerStand);
-            updated++;
-
-            log.info("ZUGFeRD-Artikelpreis aktualisiert: {} = {} €/kg (war: {} {})",
-                    externeNr, preisProKg, pos.getEinzelpreis(), pos.getPreiseinheit());
+        PreisQuelle quelle = preisQuelleFuer(typ);
+        if (quelle == null) {
+            return;
         }
 
-        if (updated > 0 || skipped > 0) {
-            log.info("ZUGFeRD-Artikelpreise: {} aktualisiert, {} übersprungen", updated, skipped);
+        List<PreisUebernahmeService.Position> ausgelesen = positionen.stream()
+                .map(pos -> new PreisUebernahmeService.Position(
+                        pos.getExterneArtikelnummer(),
+                        pos.getEinzelpreis(),
+                        pos.getPreiseinheit(),
+                        pos.getMengeneinheit()))
+                .toList();
+
+        preisUebernahmeService.uebernehmePreise(lieferant, quelle, alsDatum(dokumentDatum), ausgelesen);
+    }
+
+    /**
+     * Entscheidet, ob aus diesem Dokumenttyp ueberhaupt ein Einkaufspreis werden
+     * darf, und haelt dessen Herkunft im Verlauf fest.
+     *
+     * <p>Nur Belege, die einen ausgehandelten Einkaufspreis nennen, kommen durch:
+     * <ul>
+     * <li><b>Rechnung</b> - der tatsaechlich berechnete Preis, die verlaesslichste Quelle.</li>
+     * <li><b>Angebot, Auftragsbestaetigung</b> - zugesagte Preise; als Angebotsquelle
+     *     gekennzeichnet, damit im Verlauf sichtbar bleibt, dass noch nichts geflossen ist.</li>
+     * </ul>
+     *
+     * <p>Alles andere wird abgelehnt, und zwar mit Absicht: Ein <b>Lieferschein</b>
+     * fuehrt Listen- statt Nettopreise. Eine <b>Gutschrift</b> nennt den erstatteten
+     * Betrag, nicht den Einkaufspreis - eine Mengenrabatt-Gutschrift wuerde sonst
+     * den Artikelpreis auf den Rabattbetrag setzen. Und <b>SONSTIG</b> bzw. ein
+     * unerkannter Typ steht laut Analyse-Prompt fuer Kataloge, Preislisten und
+     * Rechnungszusammenstellungen - dort stehen zwar Zahlen neben Artikelnummern,
+     * aber keine, die in die Kalkulation gehoeren.
+     *
+     * @return die Quelle, oder {@code null} wenn aus diesem Typ kein Preis werden darf
+     */
+    private PreisQuelle preisQuelleFuer(LieferantDokumentTyp typ) {
+        if (typ == null) {
+            return null;
         }
+        return switch (typ) {
+            case RECHNUNG -> PreisQuelle.RECHNUNG;
+            case ANGEBOT, AUFTRAGSBESTAETIGUNG -> PreisQuelle.ANGEBOT_EMAIL;
+            default -> null;
+        };
+    }
+
+    private Date alsDatum(LocalDate datum) {
+        return datum == null ? null : Date.from(datum.atStartOfDay(ZoneId.systemDefault()).toInstant());
+    }
+
+    /**
+     * Dokumenttyp, den die XML selbst ausweist (UNTDID 1001) - ohne Annahmen.
+     *
+     * <p>Bewusst getrennt von der Typ-Erkennung fuer die Anzeige: die darf im
+     * Zweifel "Rechnung" raten, damit der Beleg in der Liste einsortiert ist. Fuer
+     * die Preisuebernahme waere dasselbe Raten gefaehrlich, weil daraus
+     * Kalkulationsdaten werden.
+     *
+     * @return der ausgewiesene Typ, oder {@code null} wenn die XML keinen nennt
+     */
+    private LieferantDokumentTyp ausgewiesenerTyp(String typeCode) {
+        if (typeCode == null) {
+            return null;
+        }
+        return switch (typeCode.trim()) {
+            case "380", "384", "389" -> LieferantDokumentTyp.RECHNUNG;
+            case "381" -> LieferantDokumentTyp.GUTSCHRIFT;
+            case "351" -> LieferantDokumentTyp.ANGEBOT;
+            case "231" -> LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG;
+            case "261", "270" -> LieferantDokumentTyp.LIEFERSCHEIN;
+            default -> null;
+        };
     }
 
     /**

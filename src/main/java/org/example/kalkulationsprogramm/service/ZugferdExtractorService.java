@@ -273,17 +273,38 @@ public class ZugferdExtractorService {
     }
 
     /**
-     * Extrahiert alle Artikelpositionen aus dem ZUGFeRD-XML.
-     * Die Positionen befinden sich in IncludedSupplyChainTradeLineItem Knoten.
+     * Extrahiert alle Artikelpositionen aus einer Rechnungs-XML.
+     *
+     * <p>Deckt beide in Deutschland gebraeuchlichen Syntaxen ab: CII (ZUGFeRD,
+     * XRechnung-CII) mit {@code IncludedSupplyChainTradeLineItem} und UBL
+     * (XRechnung-UBL) mit {@code InvoiceLine}. Rechnungen kommen sowohl als
+     * ZUGFeRD-PDF als auch als reine XML-Datei herein - beide Wege brauchen die
+     * Positionen fuer die Preisuebernahme.
      */
-    private java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> extractLineItems(
+    public java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> extractLineItems(
             String xml) {
         java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen = new java.util.ArrayList<>();
 
         if (xml == null)
             return positionen;
 
-        // Finde alle IncludedSupplyChainTradeLineItem Blöcke
+        positionen.addAll(extractCiiLineItems(xml));
+        if (positionen.isEmpty()) {
+            positionen.addAll(extractUblLineItems(xml));
+        }
+
+        if (!positionen.isEmpty()) {
+            log.info("Rechnungs-XML: {} Artikelpositionen extrahiert", positionen.size());
+        }
+
+        return positionen;
+    }
+
+    /** CII-Syntax (ZUGFeRD, XRechnung-CII): IncludedSupplyChainTradeLineItem. */
+    private java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> extractCiiLineItems(
+            String xml) {
+        java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen = new java.util.ArrayList<>();
+
         Pattern lineItemPattern = Pattern.compile(
                 "IncludedSupplyChainTradeLineItem[^>]*>(.*?)</[^>]*IncludedSupplyChainTradeLineItem>",
                 Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
@@ -332,32 +353,105 @@ public class ZugferdExtractorService {
                     }
                 }
 
-                // Preiseinheit (BasisQuantity)
-                String basisMenge = extractFromXml(itemXml,
-                        "BasisQuantity[^>]*>([0-9.,]+)</");
-                String basisEinheit = extractFromXml(itemXml,
-                        "BasisQuantity[^>]*unitCode=\"([^\"]+)\"");
-                if (basisMenge != null && basisEinheit != null) {
-                    pos.setPreiseinheit(basisMenge + " " + basisEinheit);
-                } else if (basisEinheit != null) {
-                    pos.setPreiseinheit(basisEinheit);
-                }
+                // Preiseinheit (BasisQuantity). Im Netto-Block verankert: CII fuehrt
+                // GrossPriceProductTradePrice VOR NetPriceProductTradePrice, ein freies
+                // Muster wuerde also den Netto-Preis mit der Brutto-Basis paaren.
+                setzePreiseinheit(pos,
+                        extractFromXml(itemXml,
+                                "NetPriceProductTradePrice>.*?BasisQuantity[^>]*>([0-9.,]+)</",
+                                "BasisQuantity[^>]*>([0-9.,]+)</"),
+                        extractFromXml(itemXml,
+                                "NetPriceProductTradePrice>.*?BasisQuantity[^>]*unitCode=\"([^\"]+)\"",
+                                "BasisQuantity[^>]*unitCode=\"([^\"]+)\""));
 
-                // Nur hinzufügen wenn Artikelnummer vorhanden
-                if (pos.getExterneArtikelnummer() != null && !pos.getExterneArtikelnummer().isBlank()) {
-                    positionen.add(pos);
-                    log.debug("ZUGFeRD Artikel gefunden: {} - {} x {} {}",
-                            pos.getExterneArtikelnummer(), pos.getMenge(), pos.getEinzelpreis(), pos.getPreiseinheit());
-                }
+                uebernimmWennArtikelnummerVorhanden(positionen, pos);
             } catch (Exception e) {
-                log.debug("Fehler beim Parsen einer Position: {}", e.getMessage());
+                log.debug("Fehler beim Parsen einer CII-Position: {}", e.getMessage());
             }
         }
 
-        if (!positionen.isEmpty()) {
-            log.info("ZUGFeRD: {} Artikelpositionen extrahiert", positionen.size());
+        return positionen;
+    }
+
+    /** UBL-Syntax (XRechnung-UBL): InvoiceLine bzw. CreditNoteLine. */
+    private java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> extractUblLineItems(
+            String xml) {
+        java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen = new java.util.ArrayList<>();
+
+        Pattern lineItemPattern = Pattern.compile(
+                "<(?:[^:>\\s]+:)?(InvoiceLine|CreditNoteLine)[^>]*>(.*?)</(?:[^:>\\s]+:)?\\1>",
+                Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+        Matcher lineItemMatcher = lineItemPattern.matcher(xml);
+
+        while (lineItemMatcher.find()) {
+            String itemXml = lineItemMatcher.group(2);
+
+            try {
+                org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition pos = new org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition();
+
+                // Artikelnummer: bevorzugt die des Verkaeufers, sonst unsere eigene
+                // oder die GTIN.
+                pos.setExterneArtikelnummer(extractFromXml(itemXml,
+                        "SellersItemIdentification>.*?ID[^>]*>([^<]+)</",
+                        "BuyersItemIdentification>.*?ID[^>]*>([^<]+)</",
+                        "StandardItemIdentification>.*?ID[^>]*>([^<]+)</"));
+
+                pos.setBezeichnung(restoreUmlauts(extractFromXml(itemXml, "Name>([^<]+)</")));
+
+                String mengeStr = extractFromXml(itemXml,
+                        "InvoicedQuantity[^>]*>([0-9.,]+)</",
+                        "CreditedQuantity[^>]*>([0-9.,]+)</");
+                if (mengeStr != null) {
+                    try {
+                        pos.setMenge(new BigDecimal(mengeStr.replace(',', '.')));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+
+                pos.setMengeneinheit(extractFromXml(itemXml,
+                        "InvoicedQuantity[^>]*unitCode=\"([^\"]+)\"",
+                        "CreditedQuantity[^>]*unitCode=\"([^\"]+)\""));
+
+                // PriceAmount ist der Einzelpreis; LineExtensionAmount waere die
+                // Positionssumme und darf hier nicht als Preis durchgehen.
+                String preisStr = extractFromXml(itemXml, "PriceAmount[^>]*>([0-9.,]+)</");
+                if (preisStr != null) {
+                    try {
+                        pos.setEinzelpreis(new BigDecimal(preisStr.replace(',', '.')));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+
+                setzePreiseinheit(pos,
+                        extractFromXml(itemXml, "BaseQuantity[^>]*>([0-9.,]+)</"),
+                        extractFromXml(itemXml, "BaseQuantity[^>]*unitCode=\"([^\"]+)\""));
+
+                uebernimmWennArtikelnummerVorhanden(positionen, pos);
+            } catch (Exception e) {
+                log.debug("Fehler beim Parsen einer UBL-Position: {}", e.getMessage());
+            }
         }
 
         return positionen;
+    }
+
+    private void setzePreiseinheit(org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition pos,
+            String basisMenge, String basisEinheit) {
+        if (basisMenge != null && basisEinheit != null) {
+            pos.setPreiseinheit(basisMenge + " " + basisEinheit);
+        } else if (basisEinheit != null) {
+            pos.setPreiseinheit(basisEinheit);
+        }
+    }
+
+    private void uebernimmWennArtikelnummerVorhanden(
+            java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen,
+            org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition pos) {
+        if (pos.getExterneArtikelnummer() == null || pos.getExterneArtikelnummer().isBlank()) {
+            return;
+        }
+        positionen.add(pos);
+        log.debug("Artikelposition gefunden: {} - {} x {} {}",
+                pos.getExterneArtikelnummer(), pos.getMenge(), pos.getEinzelpreis(), pos.getPreiseinheit());
     }
 }

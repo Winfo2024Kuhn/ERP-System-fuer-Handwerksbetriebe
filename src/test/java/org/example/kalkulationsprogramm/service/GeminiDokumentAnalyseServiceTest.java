@@ -10,17 +10,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.Mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -33,7 +39,7 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private LieferantDokumentRepository dokumentRepository;
     @Mock private ZugferdExtractorService zugferdExtractorService;
-    @Mock private LieferantenArtikelPreiseRepository artikelPreiseRepository;
+    @Mock private PreisUebernahmeService preisUebernahmeService;
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @Mock private SystemSettingsService systemSettingsService;
 
@@ -46,7 +52,7 @@ class GeminiDokumentAnalyseServiceTest {
                 lieferantenRepository,
                 dokumentRepository,
                 zugferdExtractorService,
-                artikelPreiseRepository,
+                preisUebernahmeService,
                 lieferantGeschaeftsdokumentRepository,
                 systemSettingsService
         );
@@ -695,6 +701,223 @@ class GeminiDokumentAnalyseServiceTest {
             String valid = "{\"dokumentTyp\": \"RECHNUNG\", \"betrag\": 119.0}";
             boolean result = invokeIsJsonTruncated(valid);
             assertThat(result).isFalse();
+        }
+    }
+
+    /**
+     * Der KI-Pfad hat lange gar keine Preise aktualisiert - der Aufruf war
+     * auskommentiert. Diese Tests halten fest, dass die Positionen jetzt
+     * tatsaechlich bei der Preisuebernahme ankommen, und zwar unveraendert.
+     */
+    @Nested
+    class PreisuebernahmeAusKiAnalyse {
+
+        private final ObjectMapper echterMapper = new ObjectMapper();
+
+        @Test
+        void reichtStueckpreisPositionenUnveraendertWeiter() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [
+                      {"externeArtikelnummer": "HLH-42", "einzelpreis": "62,00",
+                       "preiseinheit": "Stück", "mengeneinheit": "Stück"}
+                    ]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<java.util.List<PreisUebernahmeService.Position>> captor =
+                    ArgumentCaptor.forClass(java.util.List.class);
+            verify(preisUebernahmeService).uebernehmePreise(eq(lieferant), eq(PreisQuelle.RECHNUNG),
+                    any(), captor.capture());
+
+            assertThat(captor.getValue()).hasSize(1);
+            PreisUebernahmeService.Position position = captor.getValue().getFirst();
+            assertThat(position.externeArtikelnummer()).isEqualTo("HLH-42");
+            // Komma-Dezimaltrennzeichen aus dem deutschen PDF muss ankommen.
+            assertThat(position.einzelpreis()).isEqualByComparingTo("62.00");
+            assertThat(position.preiseinheit()).isEqualTo("Stück");
+        }
+
+        @Test
+        void reichtDasBelegdatumWeiter() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG,
+                    java.time.LocalDate.of(2026, 3, 14));
+
+            ArgumentCaptor<java.util.Date> datum = ArgumentCaptor.forClass(java.util.Date.class);
+            verify(preisUebernahmeService).uebernehmePreise(any(), any(), datum.capture(), any());
+
+            assertThat(datum.getValue()).isNotNull();
+            assertThat(datum.getValue().toInstant()
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate())
+                    .isEqualTo(java.time.LocalDate.of(2026, 3, 14));
+        }
+
+        @Test
+        void meldetFehlendePreiseinheitAlsNullStattSieZuRaten() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "X-1", "einzelpreis": 18.50}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<java.util.List<PreisUebernahmeService.Position>> captor =
+                    ArgumentCaptor.forClass(java.util.List.class);
+            verify(preisUebernahmeService).uebernehmePreise(any(), any(), any(), captor.capture());
+
+            assertThat(captor.getValue().getFirst().preiseinheit()).isNull();
+            assertThat(captor.getValue().getFirst().mengeneinheit()).isNull();
+        }
+
+        @Test
+        void buchtAngebotspositionenAlsAngebotsquelle() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.ANGEBOT, null);
+
+            verify(preisUebernahmeService).uebernehmePreise(any(), eq(PreisQuelle.ANGEBOT_EMAIL), any(), any());
+        }
+
+        /**
+         * Kataloge, Preislisten und Rechnungszusammenstellungen stuft die KI als
+         * SONSTIG ein. Dort stehen zwar Zahlen neben Artikelnummern - in die
+         * Kalkulation gehoeren sie aber nicht.
+         */
+        @Test
+        void schreibtKeinePreiseAusNichtGeschaeftsdokumenten() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "KAT-1", "einzelpreis": 99.00}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.SONSTIG, null);
+
+            verifyNoInteractions(preisUebernahmeService);
+        }
+
+        /**
+         * Bei nicht erkanntem Typ - etwa wenn die KI-Antwort nicht parsebar war und
+         * nur ein Ersatzobjekt entstand - darf ebenfalls nichts geschrieben werden.
+         */
+        @Test
+        void schreibtKeinePreiseBeiUnerkanntemDokumenttyp() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, null, null);
+
+            verifyNoInteractions(preisUebernahmeService);
+        }
+
+        /** Eine Gutschrift nennt den erstatteten Betrag, nicht den Einkaufspreis. */
+        @Test
+        void schreibtKeinePreiseAusGutschriften() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 4.00}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.GUTSCHRIFT, null);
+
+            verifyNoInteractions(preisUebernahmeService);
+        }
+
+        /** Ein Lieferschein fuehrt Listen- statt Nettopreise. */
+        @Test
+        void schreibtKeinePreiseAusLieferscheinen() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.LIEFERSCHEIN, null);
+
+            verifyNoInteractions(preisUebernahmeService);
+        }
+
+        @Test
+        void ruehrtOhneLieferantNichtsAn() throws Exception {
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, null, LieferantDokumentTyp.RECHNUNG, null);
+
+            verifyNoInteractions(preisUebernahmeService);
+        }
+
+        @Test
+        void kommtMitFehlendenUndUnlesbarenFeldernZurecht() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [
+                      {"externeArtikelnummer": null, "einzelpreis": "keine Zahl"},
+                      {"externeArtikelnummer": "  ", "einzelpreis": 5.00}
+                    ]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<java.util.List<PreisUebernahmeService.Position>> captor =
+                    ArgumentCaptor.forClass(java.util.List.class);
+            verify(preisUebernahmeService).uebernehmePreise(any(), any(), any(), captor.capture());
+
+            // Aussortiert wird erst im PreisUebernahmeService - hier darf nichts knallen.
+            assertThat(captor.getValue()).hasSize(2);
+            assertThat(captor.getValue().getFirst().externeArtikelnummer()).isNull();
+            assertThat(captor.getValue().getFirst().einzelpreis()).isNull();
+        }
+
+        @Test
+        void ignoriertAntwortOhneArtikelPositionen() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            invokeVerarbeiteArtikelPositionen("{\"dokumentTyp\": \"RECHNUNG\"}", lieferant,
+                    LieferantDokumentTyp.RECHNUNG, null);
+
+            verifyNoInteractions(preisUebernahmeService);
+        }
+
+        private void invokeVerarbeiteArtikelPositionen(String json, Lieferanten lieferant,
+                LieferantDokumentTyp typ, java.time.LocalDate dokumentDatum) throws Exception {
+            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+                    "verarbeiteArtikelPositionen", com.fasterxml.jackson.databind.JsonNode.class,
+                    Lieferanten.class, LieferantDokumentTyp.class, java.time.LocalDate.class);
+            method.setAccessible(true);
+            method.invoke(service, echterMapper.readTree(json), lieferant, typ, dokumentDatum);
         }
     }
 
