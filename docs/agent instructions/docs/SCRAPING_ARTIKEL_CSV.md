@@ -20,6 +20,7 @@ Der Importer ist ein einfacher Zeilen-Splitter, **kein RFC-4180-CSV-Parser**. De
 | Trennzeichen | **Semikolon `;`** | Der Import splittet hart auf `;`. Komma wird beim eigentlichen Import **nicht** erkannt. |
 | Anführungszeichen | **verboten** | Es gibt kein Quoting. `"Halter A"` landet inklusive Gänsefüßchen im Produktnamen. |
 | Semikolon im Wert | **verboten** | Zerreißt die Zeile. Ersetze es durch ein Komma. |
+| Mehrfachwerte in `dokumente`/`dokument_typen` | **Pipe `\|`** | Nur in diesen zwei Spalten erlaubt. Semikolon ist bereits das Spaltentrennzeichen — ein zweites Semikolon im Feld würde die Zeile zerreißen. |
 | Zeilenumbruch im Wert | **verboten** | Eine Zeile = ein Artikel. Ersetze Umbrüche durch ` – `. |
 | Kodierung | **UTF-8 mit BOM** | Sichert Umlaute (Größe, Öse, Weiß). |
 | Zeilenende | `\n` oder `\r\n` | beides wird gelesen |
@@ -39,8 +40,8 @@ Der Importer ist ein einfacher Zeilen-Splitter, **kein RFC-4180-CSV-Parser**. De
 
 Kopfzeile exakt so, in dieser Reihenfolge:
 
-```
-materialnummer;nettopreis;produktname;produktlinie;werkstoff;preiseinheit;packgroesse;produkttext
+```text
+materialnummer;nettopreis;produktname;produktlinie;werkstoff;preiseinheit;packgroesse;produkttext;vorschaubild;dokumente;dokument_typen
 ```
 
 | Spalte | Pflicht | Typ | Max. | Inhalt |
@@ -49,18 +50,81 @@ materialnummer;nettopreis;produktname;produktlinie;werkstoff;preiseinheit;packgr
 | `nettopreis` | **ja** | Dezimalzahl | — | Netto-**Stückpreis** in Euro. Ohne Währungszeichen, ohne Tausendertrenner. Komma oder Punkt als Dezimalzeichen. `18,50` oder `18.50`. **`1.250,00` ist falsch** → `1250,00`. Ohne gültigen Preis wird die Zeile verworfen. |
 | `produktname` | ja | Text | 255 | Bezeichnung wie im Shop, z.B. `Handlaufhalter gerade M8`. Das ist der Name, den der Handwerker in der Suche sieht. |
 | `produktlinie` | nein | Text | 255 | Feldmann-Serie oder Produktgruppe, z.B. `Glasklemmen` oder `Serie 2000`. Nutzen wir zum Gruppieren. |
-| `werkstoff` | nein | Text | 255 | **Nur aus der Liste unter Punkt 4.** Steht auf der Seite ein anderer Werkstoff oder gar keiner → **Feld leer lassen**. |
+| `werkstoff` | nein | Text | 255 | **Nur aus der Liste unter Punkt 5.** Steht auf der Seite ein anderer Werkstoff oder gar keiner → **Feld leer lassen**. |
 | `preiseinheit` | nein | Text | 255 | Immer **`Stk`**. Niemals eine Zahl eintragen — eine Zahl wird als Divisor auf den Preis angewendet. |
-| `packgroesse` | nein | Ganzzahl | — | Verpackungseinheit als **reine Zahl**, z.B. `10` für "VE 10 Stück". Kein Text drumherum (siehe Punkt 5). Unbekannt → leer. |
+| `packgroesse` | nein | Ganzzahl | — | Verpackungseinheit als **reine Zahl**, z.B. `10` für "VE 10 Stück". Kein Text drumherum (siehe Punkt 6). Unbekannt → leer. |
 | `produkttext` | nein | Text | 255 | Kurze technische Beschreibung, einzeilig, ohne HTML. Bei längeren Shop-Texten sinnvoll auf 255 Zeichen kürzen — **nicht** hart abschneiden. |
+| `vorschaubild` | nein | Text | 255 | Dateiname des Vorschaubilds im Ordner `dateien/` (siehe Abschnitt 3), z.B. `12345_vorschau.jpg`. Kein Pfad, keine URL — nur der Dateiname. **Höchstens ein** Bild je Artikel. Kein Bild vorhanden → Feld leer lassen. |
+| `dokumente` | nein | Text | — | Dateinamen weiterer Unterlagen im Ordner `dateien/`, mit Pipe `\|` getrennt, z.B. `12345_zulassung.pdf\|12345_zeichnung.pdf`. **Kein Semikolon** (siehe Abschnitt 1). Keine Unterlagen vorhanden → Feld leer lassen. |
+| `dokument_typen` | nein* | Text | — | Ein Typ je Eintrag in `dokumente`, **gleiche Reihenfolge, gleiche Anzahl**, ebenfalls mit `\|` getrennt. Erlaubt: `ZULASSUNG`, `ZEICHNUNG`, `DATENBLATT`, `MONTAGEANLEITUNG`, `SONSTIGES`. |
+
+\* `dokument_typen` ist **Pflicht, sobald `dokumente` gefüllt ist** — sonst lässt sich eine
+Datei keinem Typ zuordnen. `vorschaubild` bekommt beim Hochladen automatisch den Typ
+`VORSCHAUBILD`; der taucht nicht in `dokument_typen` auf, das ist ausschließlich für die
+Einträge in `dokumente` reserviert.
 
 **Zusatzspalten sind erlaubt** und werden vom Import ignoriert (nach Namen gelesen, nicht nach
-Position). Nützlich für die spätere Pflege — hänge sie **hinten** an:
-`oberflaeche;bild_url;datenblatt_url;quelle_url`
+Position). Nützlich für die spätere Pflege — hänge sie ganz **hinten** an, nach den
+Dokumentenspalten: `oberflaeche;quelle_url`. `quelle_url` dient nur der Nachverfolgung, welche
+Shop-Seite du gescrapt hast — **nicht** der Bild- oder Dokumentenlieferung. Dafür gelten
+ausschließlich `vorschaubild` und `dokumente` (Abschnitt 3), nie ein Link.
 
 ---
 
-## 3. Was du NICHT lieferst
+## 3. Dateien: Vorschaubild und Unterlagen
+
+Neben der CSV lieferst du einen Ordner `dateien/` mit allen heruntergeladenen Bildern und
+PDFs, auf die die Spalten `vorschaubild` und `dokumente` verweisen.
+
+**Ablage:** CSV und Ordner nebeneinander:
+
+```text
+artikel.csv
+dateien/
+├── 12345_vorschau.jpg
+├── 12345_zulassung.pdf
+├── 12345_zeichnung.pdf
+├── 12346_vorschau.jpg
+├── 12347_datenblatt.pdf
+├── 12348_vorschau.jpg
+└── 12348_montage.pdf
+```
+
+**Dateinamen:** keine Leerzeichen, keine Umlaute, keine Sonderzeichen außer `_`, `-`, `.`.
+Präfix immer die `materialnummer`, damit Datei und Zeile eindeutig zuordenbar bleiben, z.B.
+`12345_vorschau.jpg`, `12345_zulassung_din.pdf`.
+
+**Erlaubte Formate:** `pdf`, `png`, `jpg`, `jpeg`, `webp`, `gif`. Andere Formate (z.B. `.docx`,
+`.zip`, `.tiff`) werden abgelehnt — wandle sie vorher um.
+
+**Maximalgröße:** 10 MB je Datei. Größere Bilder vorher herunterrechnen. Ist ein Dokument
+selbst über 10 MB groß, lässt du es weg und vermerkst das im Report (Abschnitt 8).
+
+**Vorschaubild:** höchstens **eines** je Artikel. Lädt das ERP später ein zweites hoch, ersetzt
+es automatisch das erste — liefere also gleich das richtige Bild.
+
+**Wie die Dateien im ERP landen:** Nach dem CSV-Import wird jede in `vorschaubild` und
+`dokumente` referenzierte Datei einzeln mit dem passenden Artikel verknüpft, über vier
+Endpoints unter `/api/artikel`:
+
+| Endpoint | Zweck |
+| --- | --- |
+| `POST /{id}/dokumente` | Datei hochladen. Multipart-Felder: `datei`, `typ`, optional `beschreibung`. |
+| `GET /{id}/dokumente` | Dokumente eines Artikels auflisten. |
+| `GET /dokumente/{dokumentId}/datei` | Datei herunterladen. |
+| `DELETE /dokumente/{dokumentId}` | Dokument löschen. |
+
+Für dich als Scraping-Agent sind die Endpoints Hintergrundwissen. Entscheidend für deine
+Lieferung sind die Regeln oben — Format, Größe, ein Vorschaubild je Artikel — sowie dass jeder
+Wert in `dokument_typen` exakt einer der erlaubten Typen aus Abschnitt 2 ist.
+
+**Keine Fremdlinks:** Dateien werden heruntergeladen und mitgeliefert, nie als URL auf den Shop
+von Feldmann hinterlegt. Ein Link ist morgen tot oder zeigt hinter ein Login — die Datei im
+`dateien/`-Ordner nicht.
+
+---
+
+## 4. Was du NICHT lieferst
 
 Diese Felder setzt der Mensch beim Upload bzw. später im ERP — eine Spalte dafür wird ignoriert
 oder richtet Schaden an:
@@ -77,7 +141,7 @@ oder richtet Schaden an:
 
 ---
 
-## 4. Werkstoff — kontrollierte Liste
+## 5. Werkstoff — kontrollierte Liste
 
 Der Import legt jeden unbekannten Werkstoffnamen **automatisch neu an**. Schreibst du
 `Edelstahl`, `V2A`, `Edelstahl rostfrei` und `INOX`, entstehen vier Karteileichen ohne Dichte
@@ -99,7 +163,7 @@ falsch angelegte Werkstoff-Karteileiche nicht.
 
 ---
 
-## 5. Fallstricke, die wir dir vorab abnehmen
+## 6. Fallstricke, die wir dir vorab abnehmen
 
 **Verpackungseinheit:** Aus dem Feld werden alle Nicht-Ziffern entfernt und der Rest als eine
 Zahl gelesen. `1/2 Zoll` wird damit zu `12`, `VE 10 (à 2 Stk)` zu `102`. Deshalb: **nur die
@@ -108,37 +172,42 @@ reine Zahl** oder leer.
 **Preiseinheit:** Steht dort eine Zahl, wird der Preis dadurch geteilt. `100` macht aus 62,00 €
 still und leise 0,62 €. Deshalb ausschließlich `Stk`.
 
-**Artikelnummern-Kollision:** Der Import sucht bestehende Artikel nur über die externe
-Artikelnummer — **lieferantenübergreifend**. Nutzt ein anderer Lieferant zufällig dieselbe
-Nummer, wird dessen Artikel überschrieben statt ein neuer angelegt. Liefere die Nummern
-deshalb exakt so, wie Feldmann sie führt, und **melde Duplikate innerhalb deiner eigenen
-Datei** — jede `materialnummer` darf in der CSV nur **einmal** vorkommen.
+**Artikelnummern-Kollision:** Der Import sucht bestehende Artikel nur **innerhalb des beim
+Upload gewählten Lieferanten** (Feldmann). Nutzt ein anderer Lieferant zufällig dieselbe
+Nummer, bleiben beide Artikel getrennt erhalten. Liefere die Nummern trotzdem exakt so, wie
+Feldmann sie führt, und **melde Duplikate innerhalb deiner eigenen Datei** — jede
+`materialnummer` darf in der CSV nur **einmal** vorkommen, sonst überschreibt die zweite Zeile
+die erste.
 
 **Textlängen:** Die Textspalten fassen 255 Zeichen. Ein längerer Wert lässt den Import mit einem
 Datenbankfehler abbrechen — und weil alles in einer Transaktion läuft, ist dann die **komplette
-Datei** nicht importiert. Kürze konsequent.
+Datei** nicht importiert. Kürze konsequent. Ausgenommen sind `dokumente` und `dokument_typen`:
+dort zählt nicht die Zeichenlänge, sondern die Zahl der Pipe-getrennten Einträge (Abschnitt 2).
 
 **Preis fehlt / „auf Anfrage":** Zeile weglassen und in den Report schreiben. Kein `0`, kein
 Platzhalter.
 
 ---
 
-## 6. Beispiel
+## 7. Beispiel
 
 ```csv
-materialnummer;nettopreis;produktname;produktlinie;werkstoff;preiseinheit;packgroesse;produkttext
-12345;18,50;Handlaufhalter gerade M8;Handlaufhalter;1.4301;Stk;10;Wandhalter mit Gewindestift, geschliffen K240
-12346;62,00;Glasklemme 45x45 flach;Glasklemmen;1.4301;Stk;1;Für Glasstärke 8-10 mm, inkl. Gummieinlagen
-12347;3,20;Rohrkappe flach 42,4x2,0;Endkappen;1.4301;Stk;25;Einschlagkappe, geschliffen
-12348;1250,00;Pfostenset komplett 4-teilig;Pfosten;1.4571;Stk;1;Seewasserfest, Staffel ab 5 Stk auf Anfrage
-12349;7,90;Rosette Kunststoff schwarz;Zubehör;;Stk;50;Kunststoff, kein Werkstoff aus der Stammliste
+materialnummer;nettopreis;produktname;produktlinie;werkstoff;preiseinheit;packgroesse;produkttext;vorschaubild;dokumente;dokument_typen
+12345;18,50;Handlaufhalter gerade M8;Handlaufhalter;1.4301;Stk;10;Wandhalter mit Gewindestift, geschliffen K240;12345_vorschau.jpg;12345_zulassung.pdf|12345_zeichnung.pdf;ZULASSUNG|ZEICHNUNG
+12346;62,00;Glasklemme 45x45 flach;Glasklemmen;1.4301;Stk;1;Für Glasstärke 8-10 mm, inkl. Gummieinlagen;12346_vorschau.jpg;;
+12347;3,20;Rohrkappe flach 42,4x2,0;Endkappen;1.4301;Stk;25;Einschlagkappe, geschliffen;;12347_datenblatt.pdf;DATENBLATT
+12348;1250,00;Pfostenset komplett 4-teilig;Pfosten;1.4571;Stk;1;Seewasserfest, Staffel ab 5 Stk auf Anfrage;12348_vorschau.jpg;12348_montage.pdf;MONTAGEANLEITUNG
+12349;7,90;Rosette Kunststoff schwarz;Zubehör;;Stk;50;Kunststoff, kein Werkstoff aus der Stammliste;;;
 ```
 
-Zeile 5 zeigt den Normalfall für Nicht-Stammwerkstoffe: `werkstoff` bleibt leer.
+Zeile 5 zeigt den Normalfall für Nicht-Stammwerkstoffe: `werkstoff` bleibt leer. Zeile 2 hat ein
+Vorschaubild, aber keine weiteren Unterlagen — `dokumente` und `dokument_typen` bleiben leer.
+Zeile 3 hat kein Vorschaubild, aber ein Datenblatt. Der zugehörige `dateien/`-Ordner steht in
+Abschnitt 3 — jede hier referenzierte Datei ist dort aufgeführt.
 
 ---
 
-## 7. Selbstcheck vor Abgabe
+## 8. Selbstcheck vor Abgabe
 
 Führe diese Prüfungen aus und liefere das Ergebnis mit:
 
@@ -152,6 +221,13 @@ Führe diese Prüfungen aus und liefere das Ergebnis mit:
 8. `werkstoff` ist entweder leer oder einer von: `1.4301`, `1.4571`, `S355J2`, `DX51D+Z`, `EN AW-5754`.
 9. Kein Textfeld länger als 255 Zeichen.
 10. Datei ist UTF-8 mit BOM, Umlaute im Klartext lesbar.
+11. `dokumente` und `dokument_typen` haben in jeder Zeile **gleich viele** Pipe-getrennte
+    Einträge — ein leeres Feld zählt in beiden als 0.
+12. Jede in `vorschaubild` und `dokumente` genannte Datei liegt tatsächlich im Ordner `dateien/`.
+13. Keine Datei im Ordner `dateien/` größer als 10 MB.
+14. Jede Datei hat eine der Endungen `pdf`, `png`, `jpg`, `jpeg`, `webp`, `gif`.
+15. Jeder Eintrag in `dokument_typen` ist einer von: `ZULASSUNG`, `ZEICHNUNG`, `DATENBLATT`,
+    `MONTAGEANLEITUNG`, `SONSTIGES`.
 
 **Report mitliefern:** Anzahl Artikel, Anzahl übersprungener Seiten mit Grund (kein Preis, keine
 Artikelnummer, Variantenseite), Preisspanne min/max, Liste der Werkstoffbezeichnungen, die du
@@ -159,24 +235,24 @@ verworfen hast.
 
 ---
 
-## 8. Hinweis für uns (nicht für den Scraping-Agenten)
+## 9. Hinweis für uns (nicht für den Scraping-Agenten)
 
-`ArtikelImportService.normalizePreis()` erzwingt einen Preis zwischen **0,50 € und 10,00 €** —
-gebaut für Stahl-Kilopreise. Auf Feldmann-Stückpreise angewendet heißt das:
+Zwei Dinge, die seit der ersten Fassung dieses Dokuments repariert wurden — hier festgehalten,
+damit niemand erneut danach sucht:
 
-| Echter Preis | Ergebnis im ERP |
-| --- | --- |
-| 3,20 € | 3,20 € — korrekt |
-| 18,50 € | Zeile wird kommentarlos übersprungen |
-| 62,00 € | **0,62 €** — still verfälscht |
-| 1.250,00 € | **1,25 €** — still verfälscht |
+**Preis-Normalisierung ist aus.** `ArtikelImportService.normalizePreis()` presste früher jeden
+Preis in den Bereich 0,50 € – 10,00 € (gebaut für Stahl-Kilopreise) und verfälschte damit
+Feldmann-Stückpreise still. Die Korrektur läuft heute nur noch, wenn der Import sie über einen
+API-Parameter ausdrücklich anfordert — die Vorgabe steht auf **aus**. Was in `nettopreis`
+steht, landet unverändert in der Datenbank. Verwirft oder korrigiert der Import trotzdem einmal
+einen Preis, steht das mit Artikelnummer, Ausgangswert und Ergebnis im Log, statt lautlos zu
+verschwinden.
 
-Betroffene Codestelle: `ArtikelImportService.java:316-345`, aufgerufen in Zeile 203.
-Die Normalisierung muss abgeschaltet oder an den Lieferanten/die Kategorie gekoppelt werden,
-**bevor** eine Feldmann-CSV eingelesen wird. Die CSV selbst kann das nicht kompensieren —
-gegenzurechnen wäre schlimmer, weil die Umrechnung von der Preishöhe abhängt.
+**Einschränkung:** Es gibt dafür bislang **keinen Schalter in der Oberfläche** — die Korrektur
+ist ausschließlich über den API-Parameter erreichbar. Für den normalen Weg über die
+Upload-Oberfläche heißt das: Preise werden immer unverändert übernommen.
 
-Zweiter Punkt: Der Import matcht über `findByExterneArtikelnummer` (global) statt über
-`findByExterneArtikelnummerAndLieferantId`, obwohl es die Methode gibt
-(`ArtikelRepository.java:17`). Bei Nummernkollisionen zwischen Lieferanten überschreibt der
-Import fremde Artikel.
+**Artikel-Matching ist lieferantenspezifisch.** Der Import sucht bestehende Artikel nur noch
+über `findByExterneArtikelnummerAndLieferantId`, nicht mehr global über
+`findByExterneArtikelnummer`. Zwei Lieferanten mit derselben Artikelnummer überschreiben sich
+dadurch nicht mehr gegenseitig (siehe auch Abschnitt 6).
