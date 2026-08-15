@@ -170,6 +170,7 @@ public class ArtikelController {
                     Map<String, Object> map = new HashMap<>();
                     map.put("id", w.getId());
                     map.put("name", w.getName());
+                    map.put("werkstattname", w.getWerkstattname());
                     return map;
                 })
                 .sorted(Comparator.comparing(m -> (String) m.get("name"), String.CASE_INSENSITIVE_ORDER))
@@ -671,6 +672,9 @@ public class ArtikelController {
                             cb.like(cb.lower(root.get("produktlinie")), likeValue),
                             cb.like(cb.lower(root.get("produkttext")), likeValue),
                             cb.like(cb.lower(werkstoffJoin.get("name")), likeValue),
+                            // "V2A" statt "1.4301": in der Werkstatt wird der
+                            // Kurzname getippt, nicht die Werkstoffnummer.
+                            cb.like(cb.lower(werkstoffJoin.get("werkstattname")), likeValue),
                             cb.exists(preisSubquery));
                 });
             }
@@ -701,7 +705,11 @@ public class ArtikelController {
             final String normalized = werkstoff.trim().toLowerCase(Locale.GERMAN);
             specification = specification.and((root, cq, cb) -> {
                 Join<Artikel, Werkstoff> werkstoffJoin = root.join("werkstoff", JoinType.LEFT);
-                return cb.equal(cb.lower(werkstoffJoin.get("name")), normalized);
+                // Auch der Werkstattname zaehlt: "V4A" liefert dann 1.4404 und
+                // 1.4571 - beide sind fuer den Schlosser dasselbe Material.
+                return cb.or(
+                        cb.equal(cb.lower(werkstoffJoin.get("name")), normalized),
+                        cb.equal(cb.lower(werkstoffJoin.get("werkstattname")), normalized));
             });
         }
 

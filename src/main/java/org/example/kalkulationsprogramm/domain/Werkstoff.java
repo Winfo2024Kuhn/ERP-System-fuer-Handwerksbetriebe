@@ -28,6 +28,14 @@ public class Werkstoff {
     @Column(name = "anzeigename")
     private String anzeigename;
 
+    /**
+     * Der Begriff aus der Werkstatt, z.B. "V2A" fuer 1.4301 oder "Baustahl" fuer
+     * S235JR. Der Schlosser tippt ihn in die Artikelsuche - die Werkstoffnummer
+     * steht auf dem Lieferschein, im Kopf hat er den Kurznamen.
+     */
+    @Column(name = "werkstattname")
+    private String werkstattname;
+
     /** Dichte in g/cm3 - Grundlage fuer Gewicht je Meter und Flaechengewicht. */
     @Column(name = "dichte", precision = 6, scale = 3)
     private BigDecimal dichte;
