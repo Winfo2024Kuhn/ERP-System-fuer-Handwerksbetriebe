@@ -151,12 +151,17 @@ const escape = (text: string): string =>
 /**
  * Traegt dieses Rich-Text-HTML ueberhaupt Text? `<p></p>` und `<p>&nbsp;</p>`
  * sind fuer den Leser leer, auch wenn der String es nicht ist — und genau solche
- * Reste hinterlaesst ein Rich-Text-Editor, wenn jemand ein Feld leert.
+ * Reste hinterlaesst ein Rich-Text-Editor, wenn jemand ein Feld leert. Das
+ * rohe U+00A0 zaehlt genauso als leer wie die Entity: Echte Editoren liefern
+ * beim Leeren beides, und `richtextOderNull` in `ArtikelDetail.tsx` urteilt
+ * bereits so — beide Stellen muessen denselben Artikel gleich bewerten, sonst
+ * gilt er auf der Detailseite als leer, im Auswahlfenster aber als gepflegt.
  */
 export function hatKundentext(html?: string | null): boolean {
     if (!html) return false;
     return html.replace(/<[^>]*>/g, '')
         .replace(/&nbsp;/gi, ' ')
+        .replace(/\u00a0/g, ' ')
         .trim().length > 0;
 }
 

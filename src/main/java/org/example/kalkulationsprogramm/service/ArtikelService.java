@@ -43,10 +43,14 @@ public class ArtikelService implements ArtikelServiceContract {
      * Tags, die der TiptapEditor fuer die Beschreibung tatsaechlich erzeugt.
      * Bewusst kein {@code a} (Phishing-Link), kein {@code blockquote}/{@code
      * code}/{@code pre} und keine Bilder - der Text landet unveraendert im
-     * Kunden-PDF und auf der oeffentlichen Freigabe-Seite. Ueberschriften sind
-     * nicht dabei: Das Projekt deaktiviert das Heading-Feature im Editor
-     * (siehe {@code TiptapEditor.tsx}, {@code StarterKit.configure({ heading:
-     * false })}), es gibt also nichts zu erlauben.
+     * Kunden-PDF und auf der oeffentlichen Freigabe-Seite. Ueberschriften,
+     * Blockquotes, Code und Trennlinien sind nicht dabei: Das Projekt
+     * deaktiviert diese Features im Editor (siehe {@code TiptapEditor.tsx},
+     * {@code StarterKit.configure({ heading/blockquote/codeBlock/code/
+     * horizontalRule: false })}) - der Editor kann sie nicht erzeugen, die
+     * Safelist muss sie also auch nicht erlauben. Sanitisiert wird trotzdem:
+     * Der Endpoint wird auch vom Backfill-Skript und potenziell von Hand
+     * beschickt.
      */
     private static final Safelist BESCHREIBUNG_SAFELIST = new Safelist()
             .addTags("p", "br", "strong", "b", "em", "i", "u", "s", "ul", "ol", "li", "span")

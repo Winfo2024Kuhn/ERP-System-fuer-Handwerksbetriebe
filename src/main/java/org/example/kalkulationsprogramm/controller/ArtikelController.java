@@ -353,7 +353,11 @@ public class ArtikelController {
             @RequestBody ArtikelDokumenttexteRequest request) {
         try {
             Artikel aktualisiert = artikelService.aktualisiereDokumenttexte(id, request);
-            return ResponseEntity.ok(toDto(aktualisiert, null));
+            // mappeArtikelZuDto statt toDto: toDto uebernimmt den Preis nur als
+            // Durchreiche-Parameter - mit null antwortete der Endpoint fuer
+            // jeden Artikel mit preisHinweis=KEIN_PREIS und leerer
+            // Lieferantenliste, egal wie viele Preise gepflegt sind.
+            return ResponseEntity.ok(mappeArtikelZuDto(aktualisiert, null));
         }
         catch (IllegalArgumentException e) {
             // Unzulaessige Eingabe (Grenzwerte, Aufschlag ausserhalb des Bereichs).

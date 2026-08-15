@@ -487,8 +487,17 @@ export function ArtikelSuche({
                                         className="group hover:bg-slate-50 transition-colors cursor-pointer"
                                         onClick={() => oeffneArtikel(artikel)}
                                         tabIndex={0}
-                                        role="link"
-                                        aria-label={`Details zu ${artikelBezeichnung(artikel)} öffnen`}
+                                        // Mit onZeilenKlick ist die Zeile kein Link mehr: Sie
+                                        // navigiert nirgendwohin, sondern schaltet die Auswahl
+                                        // um. role und Ansage muessen dazu passen, sonst
+                                        // verspricht der Screenreader eine Detailseite, die der
+                                        // Klick nie oeffnet. "an- oder abwaehlen" statt nur
+                                        // "auswaehlen", damit sich das Label von der Checkbox
+                                        // in der Zeilenaktion unterscheidet.
+                                        role={onZeilenKlick ? "button" : "link"}
+                                        aria-label={onZeilenKlick
+                                            ? `${artikelBezeichnung(artikel)} an- oder abwählen`
+                                            : `Details zu ${artikelBezeichnung(artikel)} öffnen`}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter' || e.key === ' ') {
                                                 e.preventDefault();

@@ -1,7 +1,11 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.math.BigDecimal;
+
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.ArtikelPreisHinweis;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
@@ -23,6 +27,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -81,6 +86,44 @@ class ArtikelDokumenttexteControllerTest {
                                  "verkaufsaufschlagProzent":40.00}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.kurzbeschreibung").value("Rundrohr 42,4 Lager"));
+    }
+
+    @Test
+    void antwortetNachDemSpeichernMitDerVollenPreisSicht() throws Exception {
+        // Regression: Frueher antwortete der Endpoint ueber toDto(artikel, null)
+        // - fuer JEDEN Artikel stand preisHinweis=KEIN_PREIS, eine leere
+        // Lieferantenliste und anzahlLieferanten=0 in der Antwort, egal wie
+        // viele Preise gepflegt sind. Die Detailseite kaschierte das nur durch
+        // einen Re-Fetch.
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(3L);
+        lieferant.setLieferantenname("Muster Stahlhandel");
+
+        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
+        preis.setLieferant(lieferant);
+        preis.setPreis(new BigDecimal("5.75"));
+
+        Artikel gespeichert = new Artikel();
+        gespeichert.setId(7L);
+        gespeichert.getArtikelpreis().add(preis);
+        when(artikelService.aktualisiereDokumenttexte(eq(7L), any())).thenReturn(gespeichert);
+
+        // Nur der mappeArtikelZuDto-Weg reicht den guenstigsten
+        // Lieferantenpreis in die Vorschlagsrechnung - toDto(artikel, null)
+        // bliebe beim KEIN_PREIS-Default aus dem setUp haengen.
+        when(artikelPositionsPreisService.berechne(any(), same(preis)))
+                .thenReturn(new ArtikelPositionsPreisService.ArtikelPositionsVorschlag(
+                        "lfm", new BigDecimal("5.75"), ArtikelPreisHinweis.OK));
+
+        mockMvc.perform(patch("/api/artikel/7/dokumenttexte")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"kurzbeschreibung\":\"Handlauf-Rohr Lager\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.preisHinweis").value("OK"))
+                .andExpect(jsonPath("$.positionsEinzelpreis").value(5.75))
+                .andExpect(jsonPath("$.anzahlLieferanten").value(1))
+                .andExpect(jsonPath("$.guenstigsterPreis").value(5.75))
+                .andExpect(jsonPath("$.lieferantenpreise[0].lieferantName").value("Muster Stahlhandel"));
     }
 
     @Test

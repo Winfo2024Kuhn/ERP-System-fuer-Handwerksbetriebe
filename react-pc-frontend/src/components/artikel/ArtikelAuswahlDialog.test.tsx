@@ -262,6 +262,49 @@ describe('ArtikelAuswahlDialog', () => {
         await waitFor(() => expect(onSchliessen).toHaveBeenCalled());
     });
 
+    it('schaltet die Auswahl per Zeilenklick um, statt aus dem Fenster heraus zu navigieren', async () => {
+        // Regression: Ohne onZeilenKlick fiel ArtikelSuche auf
+        // navigate('/artikel/...') zurueck - der Klick irgendwo auf die Zeile
+        // (ausserhalb der Checkbox-Zelle) warf den Dokument-Editor samt
+        // ungespeicherter Arbeit weg.
+        const onUebernehmen = vi.fn();
+        render(
+            <ArtikelAuswahlDialog offen onSchliessen={() => {}} onUebernehmen={onUebernehmen} />,
+            { wrapper: MemoryRouter },
+        );
+
+        const zeile = await screen.findByRole('button', { name: 'T-Stahl an- oder abwählen' });
+        await userEvent.click(zeile);
+        expect(screen.getByLabelText('T-Stahl auswählen')).toBeChecked();
+
+        // Der zweite Klick waehlt wieder ab - Zeile und Checkbox meinen dasselbe.
+        await userEvent.click(zeile);
+        expect(screen.getByLabelText('T-Stahl auswählen')).not.toBeChecked();
+    });
+
+    it('Escape im Lieferanten-Fenster schließt nur dieses, nicht den ganzen Dialog', async () => {
+        // Regression: Der Escape-Zuhoerer des Dialogs haengt an window und warf
+        // frueher auch dann das ganze Fenster (samt angehakter Artikel) weg,
+        // wenn der Bediener nur den Lieferanten-Picker schliessen wollte.
+        const onSchliessen = vi.fn();
+        render(
+            <ArtikelAuswahlDialog offen onSchliessen={onSchliessen} onUebernehmen={() => {}} />,
+            { wrapper: MemoryRouter },
+        );
+
+        await userEvent.click(await screen.findByLabelText('T-Stahl auswählen'));
+        await userEvent.click(screen.getByText('Alle Lieferanten'));
+        expect(await screen.findByRole('heading', { name: 'Lieferant auswählen' })).toBeInTheDocument();
+
+        await userEvent.keyboard('{Escape}');
+
+        await waitFor(() =>
+            expect(screen.queryByRole('heading', { name: 'Lieferant auswählen' })).not.toBeInTheDocument());
+        expect(onSchliessen).not.toHaveBeenCalled();
+        // Die Auswahl hat das Untermodal ueberlebt.
+        expect(screen.getByLabelText('T-Stahl auswählen')).toBeChecked();
+    });
+
     // ------------------------------------------------------------------
     // Bedienbarkeit ohne Maus
     // ------------------------------------------------------------------

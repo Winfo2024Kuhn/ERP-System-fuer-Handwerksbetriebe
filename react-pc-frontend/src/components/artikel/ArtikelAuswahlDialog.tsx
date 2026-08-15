@@ -286,7 +286,13 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-4">
-                <ArtikelSuche urlSync={false} seitenGroesse={20} zeilenAktion={zeilenAktion} />
+                {/* onZeilenKlick ist Pflicht, kein Komfort: Ohne ihn faellt
+                    ArtikelSuche auf navigate('/artikel/...') zurueck und der
+                    Zeilenklick wirft den Dokument-Editor samt ungespeicherter
+                    Arbeit weg. Im Auswahlfenster bedeutet der Klick auf die
+                    Zeile dasselbe wie die Checkbox: an- bzw. abwaehlen. */}
+                <ArtikelSuche urlSync={false} seitenGroesse={20}
+                              zeilenAktion={zeilenAktion} onZeilenKlick={umschalten} />
             </div>
 
             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200">

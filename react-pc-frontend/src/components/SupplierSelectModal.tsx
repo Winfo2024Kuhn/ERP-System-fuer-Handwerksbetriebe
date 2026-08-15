@@ -24,6 +24,21 @@ export const SupplierSelectModal: React.FC<SupplierSelectModalProps> = ({ onSele
     const [loading, setLoading] = useState(false);
     const [passendeRollen, setPassendeRollen] = useState<LieferantRolle[]>([]);
 
+    // Escape schliesst NUR dieses Fenster. Capture-Phase plus stopPropagation,
+    // damit das Event nie beim Escape-Zuhoerer eines darunterliegenden Dialogs
+    // ankommt (ArtikelAuswahlDialog haengt an window): Sonst wirft ein Escape
+    // im Lieferanten-Picker das ganze Material-Auswahlfenster samt angehakter
+    // Artikel weg.
+    useEffect(() => {
+        const beiTaste = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            e.stopPropagation();
+            onClose();
+        };
+        window.addEventListener('keydown', beiTaste, true);
+        return () => window.removeEventListener('keydown', beiTaste, true);
+    }, [onClose]);
+
     useEffect(() => {
         const fetchSuppliers = async () => {
             setLoading(true);

@@ -147,7 +147,9 @@ describe('ArtikelSuche', () => {
         const onZeilenKlick = vi.fn();
         zeigeSuche(<ArtikelSuche onZeilenKlick={onZeilenKlick} />);
 
-        const zeile = await screen.findByRole('link', { name: /Details zu T-Stahl öffnen/i });
+        // Mit onZeilenKlick ist die Zeile ein Button ("an- oder abwaehlen"),
+        // kein Link mehr - sie navigiert ja nirgendwohin.
+        const zeile = await screen.findByRole('button', { name: /T-Stahl an- oder abwählen/i });
         await userEvent.click(zeile.querySelector('td:last-child') as HTMLElement);
 
         expect(onZeilenKlick).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
@@ -177,7 +179,9 @@ describe('ArtikelSuche', () => {
         const onZeilenKlick = vi.fn();
         zeigeSuche(<ArtikelSuche onZeilenKlick={onZeilenKlick} />);
 
-        await userEvent.click(await screen.findByRole('link', { name: /Details zu T-Stahl öffnen/i }));
+        // Die Zeile kuendigt jetzt auch an, was der Klick tut - nicht mehr die
+        // Detailseite, die er gerade nicht oeffnet.
+        await userEvent.click(await screen.findByRole('button', { name: /T-Stahl an- oder abwählen/i }));
 
         expect(onZeilenKlick).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
         expect(aktuelleAdresse).toBe('/');

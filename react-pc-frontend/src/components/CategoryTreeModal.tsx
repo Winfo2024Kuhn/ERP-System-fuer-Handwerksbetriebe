@@ -129,6 +129,20 @@ export const CategoryTreeModal: React.FC<CategoryTreeModalProps> = ({
     const [selectedRollen, setSelectedRollen] = useState<LieferantRolle[]>([]);
     const [savingRollen, setSavingRollen] = useState(false);
 
+    // Escape schliesst NUR dieses Fenster. Capture-Phase plus stopPropagation,
+    // damit das Event nie beim Escape-Zuhoerer eines darunterliegenden Dialogs
+    // ankommt (ArtikelAuswahlDialog haengt an window) — gleiches Muster wie im
+    // SupplierSelectModal.
+    useEffect(() => {
+        const beiTaste = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            e.stopPropagation();
+            onClose();
+        };
+        window.addEventListener('keydown', beiTaste, true);
+        return () => window.removeEventListener('keydown', beiTaste, true);
+    }, [onClose]);
+
     const selectedParentLabel = useMemo(() => {
         if (!selectedNode) return 'Hauptkategorie';
         return `Unter „${selectedNode.bezeichnung}“`;
