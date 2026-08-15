@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelPreisHinweis;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.Fertigungszustand;
 import org.example.kalkulationsprogramm.domain.Herstellverfahren;
@@ -16,6 +17,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
+import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
 import org.example.kalkulationsprogramm.service.ArtikelServiceContract;
 import org.example.kalkulationsprogramm.service.KategorieService;
 import static org.hamcrest.Matchers.hasSize;
@@ -61,9 +63,18 @@ class ArtikelControllerTest {
     @MockBean
     private KategorieService kategorieService;
 
+    @MockBean
+    private ArtikelPositionsPreisService artikelPositionsPreisService;
+
     @BeforeEach
     void setUp() {
         when(kategorieService.findeKategorieUndUnterkategorieIds(any())).thenReturn(List.of());
+        // Neutraler Default, damit bestehende Tests den Preisvorschlag nicht
+        // extra stubben muessen - siehe ArtikelSuchePreisvorschlagTest fuer den
+        // tatsaechlich berechneten Vorschlag.
+        when(artikelPositionsPreisService.berechne(any(), any()))
+                .thenReturn(new ArtikelPositionsPreisService.ArtikelPositionsVorschlag(
+                        "Stk", null, ArtikelPreisHinweis.KEIN_PREIS));
     }
 
     @Test

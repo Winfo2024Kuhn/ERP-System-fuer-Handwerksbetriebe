@@ -1,6 +1,7 @@
-import { Trash2, Clock, BarChart3, ChevronRight } from 'lucide-react';
+import { Trash2, Clock, BarChart3, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { TiptapEditor } from '../TiptapEditor';
+import { hatKundentext } from '../artikel/kundentext';
 import { cn } from '../../lib/utils';
 import { formatCurrency, serviceLineTotal } from './helpers';
 import type { DocBlock, EditorInstance } from './types';
@@ -54,6 +55,16 @@ export function ServiceBlock({
 }: ServiceBlockProps) {
     const total = serviceLineTotal(block);
     const hasDiscount = (block.discount ?? 0) > 0;
+
+    /**
+     * Materialposition ohne Text fuer den Kunden. Der PDF-Druck faellt dann auf
+     * den Titel zurueck (RechnungPdfService:881-889) — und der Titel ist bei
+     * Material die Kurzbeschreibung aus den Stammdaten, also Innensicht. Deshalb
+     * bekommt genau dieser Fall einen sichtbaren Hinweis, der auch zugeklappt zu
+     * sehen ist. Bei Leistungen bleibt der Notnagel unbeanstandet: Dort ist der
+     * Titel ein vom Bediener geschriebener Satz.
+     */
+    const kundentextFehlt = block.artikelId != null && !hatKundentext(block.description);
 
     const [collapsed, setCollapsed] = useState(defaultCollapsed);
     const [zeitprognose, setZeitprognose] = useState<ZeitprognoseDto | null>(null);
@@ -150,6 +161,15 @@ export function ServiceBlock({
                             block.optional && "italic text-slate-500"
                         )}
                     />
+                    {kundentextFehlt && (
+                        <p className="mt-0.5 flex items-start gap-1 text-[11px] text-amber-700">
+                            <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                            <span>
+                                Kein Text für den Kunden — bitte unten eintragen, sonst steht dieser
+                                Kurztext auf dem Angebot.
+                            </span>
+                        </p>
+                    )}
                 </div>
 
                 {/* Zugeklappt: Summe direkt in der Kopfzeile */}

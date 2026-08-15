@@ -22,6 +22,7 @@ import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Profilform;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDetailDto;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumenttexteRequest;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ExterneNummerDto;
@@ -30,6 +31,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
+import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
 import org.example.kalkulationsprogramm.service.ArtikelServiceContract;
 import org.example.kalkulationsprogramm.service.KategorieService;
 import org.springframework.data.domain.Page;
@@ -40,6 +42,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -77,6 +80,7 @@ public class ArtikelController {
     private final LieferantenRepository lieferantenRepository;
     private final KategorieService kategorieService;
     private final WerkstoffRepository werkstoffRepository;
+    private final ArtikelPositionsPreisService artikelPositionsPreisService;
 
     @PostMapping
     @Transactional
@@ -300,6 +304,22 @@ public class ArtikelController {
             dto.setWerkstoffId(artikel.getWerkstoff().getId());
             dto.setWerkstoffName(artikel.getWerkstoff().getName());
         }
+        dto.setKurzbeschreibung(artikel.getKurzbeschreibung());
+        dto.setBeschreibung(artikel.getBeschreibung());
+        dto.setVerkaufsaufschlagProzent(artikel.getVerkaufsaufschlagProzent());
+
+        // Derselbe Preis, der oben in der Preisspalte steht - nicht irgendeiner.
+        // mappeArtikelZuDto hat ihn unter Beruecksichtigung des
+        // Lieferantenfilters ermittelt und reicht ihn hier durch. Wuerde der
+        // Service stattdessen selbst ueber Artikel.getGuenstigsterPreis() gehen,
+        // rechnete der Vorschlag mit dem Einkaufspreis eines gerade abgewaehlten
+        // Lieferanten - immer dem guenstigsten, also mit zu kleiner Marge auf
+        // einem verbindlichen Angebot.
+        ArtikelPositionsPreisService.ArtikelPositionsVorschlag vorschlag =
+                artikelPositionsPreisService.berechne(artikel, preis);
+        dto.setPositionsEinheit(vorschlag.einheit());
+        dto.setPositionsEinzelpreis(vorschlag.einzelpreis());
+        dto.setPreisHinweis(vorschlag.hinweis().name());
         return dto;
     }
 
@@ -312,6 +332,37 @@ public class ArtikelController {
         }
         artikelService.fuegeExterneNummerHinzu(artikelId, lieferant, dto.getNummer());
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Pflegt die Felder, mit denen der Artikel als Position in einem
+     * Kundendokument auftauchen kann: Kurzbeschreibung (Innensicht),
+     * Beschreibung (Kundentext) und Verkaufsaufschlag.
+     *
+     * <p>Bedient zwei Aufrufer: die Detailseite im Frontend und das
+     * Backfill-Skript unter {@code scripts/artikel_dokumenttexte_backfill.py}.
+     *
+     * <p>Unbekannte ID meldet der Service ueber {@code NotFoundException}, die
+     * dank {@code @ResponseStatus(HttpStatus.NOT_FOUND)} von Spring automatisch
+     * in 404 uebersetzt wird - ohne dass dieser Controller sie faengt.
+     */
+    @PatchMapping("/{id}/dokumenttexte")
+    @Transactional
+    public ResponseEntity<ArtikelResponseDto> aktualisiereDokumenttexte(
+            @PathVariable Long id,
+            @RequestBody ArtikelDokumenttexteRequest request) {
+        try {
+            Artikel aktualisiert = artikelService.aktualisiereDokumenttexte(id, request);
+            // mappeArtikelZuDto statt toDto: toDto uebernimmt den Preis nur als
+            // Durchreiche-Parameter - mit null antwortete der Endpoint fuer
+            // jeden Artikel mit preisHinweis=KEIN_PREIS und leerer
+            // Lieferantenliste, egal wie viele Preise gepflegt sind.
+            return ResponseEntity.ok(mappeArtikelZuDto(aktualisiert, null));
+        }
+        catch (IllegalArgumentException e) {
+            // Unzulaessige Eingabe (Grenzwerte, Aufschlag ausserhalb des Bereichs).
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     /**

@@ -18,8 +18,12 @@ public class ArtikelInProjektResponseDto {
     private BigDecimal meter;
     private BigDecimal kilogramm;
     private BigDecimal preisProStueck;
+    /** Was die Position insgesamt kostet - Einzelpreis mal Menge. */
+    private BigDecimal gesamtpreis;
     private LocalDate hinzugefuegtAm;
     private boolean bestellt;
+    /** Aus dem eigenen Lager entnommen - nur diese Positionen sind Materialkosten. */
+    private boolean ausLager;
     private LocalDate bestelltAm;
     private String kommentar;
     private String lieferantName;

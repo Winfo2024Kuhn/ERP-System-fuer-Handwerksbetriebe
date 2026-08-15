@@ -1027,9 +1027,13 @@ ProjektManagementService {
                 }
                 aip.setPreisProStueck(preisProEinheit);
                 aip.setHinzugefuegtAm(java.time.LocalDate.now());
+                // Lagerware muss nicht mehr beschafft werden und faellt damit
+                // aus der offenen Bestellliste heraus. Der Bestellzeitpunkt
+                // bleibt leer - bestellt wurde sie nie.
                 boolean ausLager = Boolean.TRUE.equals(auswahl.getAusLager());
+                aip.setAusLager(ausLager);
                 aip.setBestellt(ausLager);
-                aip.setBestelltAm(ausLager ? LocalDate.now() : null);
+                aip.setBestelltAm(null);
                 aip.setKommentar(auswahl.getKommentar());
                 // Zuschnitt-Daten nur zulassen, wenn Wurzelkategorie 64/65
                 if (darfSchnittbildVerwenden(artikel)) {

@@ -369,6 +369,20 @@ export interface Artikel {
   verzinkungsgeeignet?: boolean;
   pulverbeschichtungsgeeignet?: boolean;
   beschichtungshinweis?: string;
+
+  // Angebotsfelder - was der Kunde auf Angebot/Rechnung liest
+  /** Innensicht: hilft beim Wiederfinden im DocumentEditor, steht nicht auf dem Kundendokument. */
+  kurzbeschreibung?: string;
+  /** Rich-Text-HTML, das der Kunde auf PDF und Freigabe-Seite liest. */
+  beschreibung?: string;
+  /** Aufschlag auf den Einkaufspreis in Prozent. */
+  verkaufsaufschlagProzent?: number;
+  /** Einheit der Dokumentposition: lfm, m², kg oder Stk. */
+  positionsEinheit?: string;
+  /** Vorgeschlagener Einzelpreis inklusive Aufschlag. */
+  positionsEinzelpreis?: number;
+  /** OK | KEIN_AUFSCHLAG | KEIN_PREIS | KEIN_GEWICHT */
+  preisHinweis?: 'OK' | 'KEIN_AUFSCHLAG' | 'KEIN_PREIS' | 'KEIN_GEWICHT';
 }
 
 /** Ein Lieferant mit seiner Artikelnummer und seinem aktuellen Preis. */
@@ -706,9 +720,18 @@ export interface ArtikelInProjekt {
   meter?: number;
   kilogramm?: number;
   einzelpreis?: number;
+  /** Was die Position insgesamt kostet - Einzelpreis mal Menge. */
   gesamtpreis?: number;
   preisProStueck?: number;
   lieferantName?: string;
+  /**
+   * Aus dem eigenen Lager entnommen. Nur diese Positionen zaehlen als
+   * Materialkosten; bestellte Ware kommt spaeter per Lieferantenrechnung
+   * herein und wuerde sonst doppelt in der Nachkalkulation stehen.
+   */
+  ausLager?: boolean;
+  /** false heisst "muss noch bestellt werden" - siehe offene Bestellliste. */
+  bestellt?: boolean;
 }
 
 export interface ProjektDetail extends Projekt {

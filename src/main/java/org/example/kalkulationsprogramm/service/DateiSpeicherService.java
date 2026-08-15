@@ -1263,6 +1263,12 @@ public class DateiSpeicherService {
                 continue;
             }
 
+            // Nur fertige Arbeit zählt: Laufende Projekte verzerren den Vergleich,
+            // weil ihre Rechnungen noch unvollständig sind.
+            if (!projekt.isAbgeschlossen()) {
+                continue;
+            }
+
             Kunde kunde = projekt.getKundenId();
             if (kunde == null) {
                 continue;
@@ -1277,7 +1283,7 @@ public class DateiSpeicherService {
 
             // Add revenue
             if (doc.getBruttoBetrag() != null) {
-                aggregation.umsatz += doc.getBruttoBetrag().doubleValue();
+                aggregation.umsatzBrutto += doc.getBruttoBetrag().doubleValue();
             }
 
             // Track unique projects and calculate profit
@@ -1290,13 +1296,14 @@ public class DateiSpeicherService {
 
         // Return top 10 customers by revenue
         return kundenMap.values().stream()
-                .sorted(java.util.Comparator.comparingDouble((CustomerAggregation c) -> c.umsatz).reversed())
+                .sorted(java.util.Comparator.comparingDouble((CustomerAggregation c) -> c.umsatzBrutto).reversed())
                 .limit(10)
                 .map(c -> {
                     org.example.kalkulationsprogramm.dto.Projekt.TopKundeDto dto = new org.example.kalkulationsprogramm.dto.Projekt.TopKundeDto();
                     dto.setKundenId(c.kundenId);
                     dto.setKundenName(c.kundenName);
-                    dto.setUmsatz(c.umsatz);
+                    dto.setUmsatzBrutto(c.umsatzBrutto);
+                    dto.setUmsatzNetto(rechneBruttoZuNetto(c.umsatzBrutto));
                     dto.setProjektAnzahl(c.projektAnzahl);
                     dto.setGewinn(c.gewinn);
                     return dto;
@@ -1304,10 +1311,24 @@ public class DateiSpeicherService {
                 .toList();
     }
 
+    /**
+     * Rechnet einen Bruttobetrag auf netto zurück. Zu den Rechnungen ist kein
+     * Nettobetrag gespeichert, deshalb wird mit dem Regelsatz gerechnet – demselben,
+     * mit dem {@code DokumentGeneratorController} die Rechnungen erzeugt.
+     */
+    private static double rechneBruttoZuNetto(double brutto) {
+        return java.math.BigDecimal.valueOf(brutto)
+                .divide(REGEL_STEUERSATZ_FAKTOR, 2, java.math.RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    /** Brutto = Netto × 1,19 (19 % Umsatzsteuer). */
+    private static final java.math.BigDecimal REGEL_STEUERSATZ_FAKTOR = new java.math.BigDecimal("1.19");
+
     private static class CustomerAggregation {
         private final Long kundenId;
         private final String kundenName;
-        private double umsatz;
+        private double umsatzBrutto;
         private long projektAnzahl;
         private double gewinn;
         private final java.util.Set<Long> projektIds = new java.util.HashSet<>();

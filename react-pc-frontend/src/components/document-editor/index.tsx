@@ -75,6 +75,7 @@ import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, block
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
+import { ArtikelAuswahlDialog, type ArtikelAuswahl } from '../artikel/ArtikelAuswahlDialog';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
 import { ClosureBlock } from './ClosureBlock';
@@ -292,6 +293,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [showTextbausteinPicker, setShowTextbausteinPicker] = useState(false);
     const [showLeistungPicker, setShowLeistungPicker] = useState(false);
     const [showStundensatzPicker, setShowStundensatzPicker] = useState(false);
+    // Vollbild-Auswahlfenster fuer Material aus den Artikel-Stammdaten.
+    // Wird UNCONDITIONAL gemountet (siehe Rendering weiter unten) - der Dialog
+    // setzt seine eigene Auswahl beim Uebergang false -> true selbst zurueck.
+    const [materialDialogOffen, setMaterialDialogOffen] = useState(false);
     // Auswahl-Dialog "Was hinzufuegen?" (Leistung / Stundensatz / Textbaustein),
     // ausgeloest ueber das "+"-Symbol unter einer Karte oder im Bauabschnitt.
     const [showAddTypeDialog, setShowAddTypeDialog] = useState(false);
@@ -1700,6 +1705,36 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         setBlocks(prev => applyInsert(prev, newBlock, anchor));
     };
 
+    /**
+     * Uebernimmt die Auswahl aus dem Materialfenster als SERVICE-Bloecke.
+     *
+     * Bewusst NICHT ueber addBlock: addBlock fragt bei leistungId+kategorieId
+     * nach der Projektkategorie zurueck (siehe oben) - fuer Material gibt es
+     * diese Rueckfrage nicht. Ausserdem koennte addBlock nur einen Block pro
+     * Aufruf einfuegen; bei mehreren ausgewaehlten Artikeln wuerde ein
+     * wiederholter Aufruf jedes Mal auf einem veralteten blocks-State rechnen
+     * und die Positionsnummern durcheinanderbringen. Deshalb werden alle
+     * Bloecke in einem einzigen Zustandswechsel eingefuegt.
+     */
+    const uebernehmeMaterial = (auswahl: ArtikelAuswahl[]) => {
+        if (isLocked || auswahl.length === 0) return;
+        const neueBloecke: DocBlock[] = auswahl.map((a) => ({
+            id: crypto.randomUUID(),
+            type: 'SERVICE',
+            title: a.titel,
+            description: a.beschreibungHtml,
+            quantity: a.menge,
+            unit: a.einheit,
+            price: a.einzelpreis,
+            fontSize: 10,
+            fett: false,
+            optional: false,
+            artikelId: a.artikelId,
+        }));
+        setBlocks(prev => insertBlocksBeforeClosure(prev, neueBloecke));
+        setMaterialDialogOffen(false);
+    };
+
     const handleKategorieBestaetigt = async (kategorieId: number) => {
         if (!pendingLeistungInsert || !projektId) return;
         const finalBlock = { ...pendingLeistungInsert.block, kategorieId };
@@ -2817,6 +2852,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     pendingAnchorRef.current = DEFAULT_ANCHOR;
                     setShowStundensatzPicker(true);
                 }}
+                onOpenMaterialPicker={() => setMaterialDialogOffen(true)}
                 onAddSeparator={() => {
                     pendingAnchorRef.current = DEFAULT_ANCHOR;
                     addBlock('SEPARATOR');
@@ -3259,6 +3295,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setDraftSendMode(false);
                     lastSendWasDraftRef.current = false;
                 }}
+            />
+
+            {/* Material-Auswahl aus den Artikel-Stammdaten. Unconditional gemountet
+                (siehe materialDialogOffen weiter oben). */}
+            <ArtikelAuswahlDialog
+                offen={materialDialogOffen}
+                onSchliessen={() => setMaterialDialogOffen(false)}
+                onUebernehmen={uebernehmeMaterial}
             />
         </div>
     );

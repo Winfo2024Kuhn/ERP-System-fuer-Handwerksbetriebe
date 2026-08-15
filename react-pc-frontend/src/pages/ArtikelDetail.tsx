@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
     ArrowLeft, Minus, Package, RefreshCw, Save, ShieldCheck, ShieldX,
@@ -10,7 +10,9 @@ import { Label } from "../components/ui/label";
 import { PageLayout } from "../components/layout/PageLayout";
 import { SupplierSelectModal } from "../components/SupplierSelectModal";
 import { useToast } from "../components/ui/toast";
-import type { ArtikelDetail as ArtikelDetailData, ArtikelPreisstand } from "../types";
+import { TiptapEditor } from "../components/TiptapEditor";
+import { preisHinweisText, type PreisHinweis } from "../components/artikel/preisHinweis";
+import type { Artikel, ArtikelDetail as ArtikelDetailData, ArtikelPreisstand } from "../types";
 
 const formatCurrency = (val?: number) =>
     val === undefined || val === null
@@ -24,6 +26,22 @@ const formatZahl = (val?: number, nachkomma = 3) =>
     val === undefined || val === null
         ? "—"
         : new Intl.NumberFormat("de-DE", { maximumFractionDigits: nachkomma }).format(val);
+
+/**
+ * Ein Rich-Text ohne sichtbaren Inhalt gilt als leer und wird als `null`
+ * gesendet - sonst bleibt ein geleertes Beschreibungsfeld "gepflegt", weil
+ * Tiptap beim Leeren typischerweise "<p></p>" liefert statt eines leeren
+ * Strings. Zaehlt nicht als Inhalt: Tags, "&nbsp;" (als Entity oder echtes
+ * Zeichen) und gewoehnliche Leerzeichen.
+ */
+function richtextOderNull(html: string): string | null {
+    const sichtbarerText = html
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/\u00a0/g, " ")
+        .trim();
+    return sichtbarerText === "" ? null : html;
+}
 
 /**
  * Detailseite eines Artikels.
@@ -69,6 +87,12 @@ export default function ArtikelDetail() {
     });
     const [speichert, setSpeichert] = useState(false);
 
+    // Angebotsfelder
+    const [kurzbeschreibung, setKurzbeschreibung] = useState("");
+    const [beschreibung, setBeschreibung] = useState("");
+    const [aufschlag, setAufschlag] = useState<string>("");
+    const [speichern, setSpeichern] = useState(false);
+
     const laden = useCallback(async () => {
         if (!id) return;
         setLoading(true);
@@ -92,7 +116,32 @@ export default function ArtikelDetail() {
 
     useEffect(() => { laden(); }, [laden]);
 
+    /**
+     * Merkt sich, fuer welche Artikel-ID die Angebotsfelder zuletzt aus den
+     * Serverdaten vorbelegt wurden. `daten` wechselt nicht nur beim
+     * Erstladen - auch "Aktualisieren" und ein gespeicherter Lieferantenpreis
+     * loesen `laden()` erneut aus. Ohne diese Bremse wuerde jedes Neuladen
+     * eine noch ungespeicherte Eingabe kommentarlos verwerfen.
+     */
+    const vorbelegteArtikelId = useRef<number | null>(null);
+
+    // Beim ersten Laden eines Artikels die Angebotsfelder vorbelegen -
+    // danach nicht mehr, damit ungespeicherte Eingaben ein Neuladen ueberleben.
+    useEffect(() => {
+        if (!daten?.artikel) return;
+        if (vorbelegteArtikelId.current === daten.artikel.id) return;
+        vorbelegteArtikelId.current = daten.artikel.id;
+        setKurzbeschreibung(daten.artikel.kurzbeschreibung ?? "");
+        setBeschreibung(daten.artikel.beschreibung ?? "");
+        setAufschlag(
+            daten.artikel.verkaufsaufschlagProzent == null
+                ? ""
+                : String(daten.artikel.verkaufsaufschlagProzent),
+        );
+    }, [daten]);
+
     const artikel = daten?.artikel;
+    const hinweis = (daten?.artikel.preisHinweis ?? "KEIN_PREIS") as PreisHinweis;
 
     const preisSpeichern = async () => {
         if (!id || !neuerPreis.lieferantId) {
@@ -127,6 +176,44 @@ export default function ArtikelDetail() {
             toast.error("Der Preis konnte nicht gespeichert werden.");
         } finally {
             setSpeichert(false);
+        }
+    };
+
+    const speichereAngebotsfelder = async () => {
+        if (!id) return;
+        setSpeichern(true);
+        try {
+            const res = await fetch(`/api/artikel/${encodeURIComponent(id)}/dokumenttexte`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    kurzbeschreibung: kurzbeschreibung || null,
+                    beschreibung: richtextOderNull(beschreibung),
+                    verkaufsaufschlagProzent: aufschlag === "" ? null : Number(aufschlag),
+                }),
+            });
+            if (!res.ok) throw new Error("Speichern fehlgeschlagen");
+            // Die Antwort ist der frisch gespeicherte Artikel - das ist der
+            // Server-Stand, mit dem die Felder jetzt uebereinstimmen sollen.
+            // Ein Ueberschreiben ist hier richtig: Der Bediener hat genau das
+            // ausgeloest. Die ID bleibt gleich, darum wuerde der Vorbelege-
+            // Effekt oben sonst nicht erneut greifen.
+            const aktualisiert: Artikel = await res.json();
+            vorbelegteArtikelId.current = aktualisiert.id;
+            setKurzbeschreibung(aktualisiert.kurzbeschreibung ?? "");
+            setBeschreibung(aktualisiert.beschreibung ?? "");
+            setAufschlag(
+                aktualisiert.verkaufsaufschlagProzent == null
+                    ? ""
+                    : String(aktualisiert.verkaufsaufschlagProzent),
+            );
+            toast.success("Die Angebotsfelder sind aktualisiert.");
+            await laden();
+        } catch (err) {
+            console.error(err);
+            toast.error("Die Angebotsfelder konnten nicht gespeichert werden.");
+        } finally {
+            setSpeichern(false);
         }
     };
 
@@ -219,6 +306,75 @@ export default function ArtikelDetail() {
                 {artikel.beschichtungshinweis && (
                     <p className="text-sm text-slate-600 mt-3">{artikel.beschichtungshinweis}</p>
                 )}
+            </section>
+
+            {/* ============ Für Angebote und Rechnungen ============ */}
+            <section className="bg-white border border-slate-200 rounded-lg p-5">
+                <h2 className="text-lg font-semibold text-slate-900 mb-1">Für Angebote und Rechnungen</h2>
+                <p className="text-sm text-slate-500 mb-4">
+                    Was der Kunde sieht, wenn dieses Material in einem Angebot steht.
+                </p>
+
+                <div className="space-y-4">
+                    <div className="space-y-1.5">
+                        <Label htmlFor="kurzbeschreibung">Kurzbeschreibung</Label>
+                        <Input
+                            id="kurzbeschreibung"
+                            value={kurzbeschreibung}
+                            onChange={(e) => setKurzbeschreibung(e.target.value)}
+                            maxLength={255}
+                            placeholder="z.B. T-Stahl 40x40 Lager"
+                        />
+                        <p className="text-xs text-slate-400">Nur für dich — steht nicht auf dem Angebot.</p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <Label>Beschreibung</Label>
+                        <TiptapEditor value={beschreibung} onChange={setBeschreibung} />
+                        <p className="text-xs text-slate-400">
+                            Das liest der Kunde auf Angebot, Rechnung und Freigabe-Seite.
+                        </p>
+                    </div>
+
+                    <div className="space-y-1.5 max-w-xs">
+                        <Label htmlFor="aufschlag">Aufschlag auf den Einkaufspreis</Label>
+                        <div className="relative">
+                            <Input
+                                id="aufschlag"
+                                type="number"
+                                min={0}
+                                max={999.99}
+                                step={0.01}
+                                value={aufschlag}
+                                onChange={(e) => setAufschlag(e.target.value)}
+                                className="pr-8"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
+                        </div>
+                    </div>
+
+                    {hinweis === "OK" ? (
+                        <p className="text-sm text-slate-600">
+                            So steht es im Angebot:{" "}
+                            <span className="font-semibold text-slate-900">
+                                1 {daten.artikel.positionsEinheit} à {formatCurrency(daten.artikel.positionsEinzelpreis)}
+                            </span>
+                        </p>
+                    ) : (
+                        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                            {preisHinweisText[hinweis]}
+                        </p>
+                    )}
+
+                    <Button
+                        className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                        size="sm"
+                        onClick={speichereAngebotsfelder}
+                        disabled={speichern}
+                    >
+                        <Save className="w-4 h-4" aria-hidden="true" /> Angebotsfelder speichern
+                    </Button>
+                </div>
             </section>
 
             {/* ============ Wer liefert das? ============ */}

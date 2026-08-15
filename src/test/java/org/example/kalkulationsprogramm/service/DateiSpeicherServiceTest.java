@@ -961,4 +961,78 @@ class DateiSpeicherServiceTest {
         assertTrue(projekt.isAbgeschlossen());
         verify(setup.projektRepository).save(projekt);
     }
+
+    /** Baut eine bezahlte Rechnung samt Projekt und Kunde für die Top-Kunden-Auswertung. */
+    private ProjektGeschaeftsdokument rechnung(long projektId, String kundenName, boolean abgeschlossen,
+            String brutto) {
+        org.example.kalkulationsprogramm.domain.Kunde kunde = new org.example.kalkulationsprogramm.domain.Kunde();
+        kunde.setId(projektId);
+        kunde.setName(kundenName);
+
+        Projekt projekt = new Projekt();
+        projekt.setId(projektId);
+        projekt.setKundenId(kunde);
+        projekt.setAbgeschlossen(abgeschlossen);
+        projekt.setBruttoPreis(new BigDecimal(brutto));
+
+        ProjektGeschaeftsdokument doc = new ProjektGeschaeftsdokument();
+        doc.setProjekt(projekt);
+        doc.setBezahlt(true);
+        doc.setRechnungsdatum(LocalDate.of(2026, 3, 15));
+        doc.setBruttoBetrag(new BigDecimal(brutto));
+        return doc;
+    }
+
+    @Test
+    void topKundenZaehltNurAbgeschlosseneProjekte() throws IOException {
+        ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
+        DateiSpeicherService service = createService(Files.createTempDirectory("topkunden"), "", dokRepo);
+
+        when(dokRepo.findGeschaeftsdokumenteByRechnungsdatumBetween(any(), any()))
+                .thenReturn(List.of(
+                        rechnung(1L, "Max Mustermann", true, "1190.00"),
+                        rechnung(2L, "Erika Musterfrau", false, "5950.00")));
+
+        var topKunden = service.holeUmsatzStatistiken(2026, null).getTopKunden();
+
+        assertEquals(1, topKunden.size());
+        assertEquals("Max Mustermann", topKunden.get(0).getKundenName());
+    }
+
+    @Test
+    void topKundenLiefertBruttoUndNettoSumme() throws IOException {
+        ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
+        DateiSpeicherService service = createService(Files.createTempDirectory("topkunden-netto"), "", dokRepo);
+
+        when(dokRepo.findGeschaeftsdokumenteByRechnungsdatumBetween(any(), any()))
+                .thenReturn(List.of(rechnung(1L, "Max Mustermann", true, "1190.00")));
+
+        var kunde = service.holeUmsatzStatistiken(2026, null).getTopKunden().get(0);
+
+        assertEquals(1190.00, kunde.getUmsatzBrutto(), 0.001);
+        // 1190 brutto entspricht bei 19 % Umsatzsteuer genau 1000 netto
+        assertEquals(1000.00, kunde.getUmsatzNetto(), 0.001);
+    }
+
+    @Test
+    void topKundenSummiertMehrereRechnungenDesselbenKunden() throws IOException {
+        ProjektDokumentRepository dokRepo = mock(ProjektDokumentRepository.class);
+        DateiSpeicherService service = createService(Files.createTempDirectory("topkunden-summe"), "", dokRepo);
+
+        ProjektGeschaeftsdokument ersteRechnung = rechnung(1L, "Max Mustermann", true, "1190.00");
+        ProjektGeschaeftsdokument zweiteRechnung = rechnung(1L, "Max Mustermann", true, "2380.00");
+        // Beide Rechnungen gehören zum selben Projekt desselben Kunden
+        zweiteRechnung.setProjekt(ersteRechnung.getProjekt());
+
+        when(dokRepo.findGeschaeftsdokumenteByRechnungsdatumBetween(any(), any()))
+                .thenReturn(List.of(ersteRechnung, zweiteRechnung));
+
+        var topKunden = service.holeUmsatzStatistiken(2026, null).getTopKunden();
+
+        assertEquals(1, topKunden.size());
+        assertEquals(3570.00, topKunden.get(0).getUmsatzBrutto(), 0.001);
+        assertEquals(3000.00, topKunden.get(0).getUmsatzNetto(), 0.001);
+        // Ein Projekt, auch wenn zwei Rechnungen dazu existieren
+        assertEquals(1, topKunden.get(0).getProjektAnzahl());
+    }
 }

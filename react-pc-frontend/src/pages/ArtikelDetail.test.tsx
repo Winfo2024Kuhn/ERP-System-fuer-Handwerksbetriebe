@@ -1,9 +1,20 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import ArtikelDetail from './ArtikelDetail';
 import { ToastProvider } from '../components/ui/toast';
+
+// Der echte Tiptap-Editor braucht Browser-APIs, die jsdom nicht bereitstellt
+// (z. B. document.createRange). Fuer diese Seite reicht ein steuerbarer Stub -
+// ein Textfeld, ueber das Tests den HTML-Inhalt direkt setzen koennen, ohne
+// den echten Rich-Text-Editor zu benoetigen.
+vi.mock('../components/TiptapEditor', () => ({
+    TiptapEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
+        <textarea data-testid="tiptap" value={value} onChange={(e) => onChange(e.target.value)} />
+    ),
+}));
 
 /**
  * Testdaten mit Dummy-Lieferanten (DSGVO: keine echten Firmennamen).
@@ -88,6 +99,45 @@ function renderAusListeHeraus(listenAdresse: string, vonListe = true) {
             </MemoryRouter>
         </ToastProvider>,
     );
+}
+
+/** Wrapper fuer render(ui, { wrapper: Wrapper }) - stellt Route/Params/Toast bereit. */
+function Wrapper({ children }: { children: ReactNode }) {
+    return (
+        <ToastProvider>
+            <MemoryRouter initialEntries={['/artikel/7']}>
+                <Routes>
+                    <Route path="/artikel/:id" element={children} />
+                </Routes>
+            </MemoryRouter>
+        </ToastProvider>
+    );
+}
+
+/**
+ * Fetch-Mock, der die uebergebene Detail-Antwort fuer GET liefert. PATCH auf
+ * .../dokumenttexte wird wie beim echten Endpunkt beantwortet: Der Server
+ * gibt den vollstaendig aktualisierten Artikel zurueck (Rumpf ueber die
+ * unveraenderten Felder gemergt), nicht nur ein leeres Objekt - sonst liesse
+ * sich das "Felder zeigen nach dem Speichern den Server-Stand"-Verhalten gar
+ * nicht sinnvoll testen.
+ */
+let fetchMock: ReturnType<typeof vi.fn>;
+
+function mockFetchDetail(antwort: {
+    artikel: Record<string, unknown>;
+    lieferanten: unknown[];
+    preisverlauf: unknown[];
+}) {
+    fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') {
+            const gesendet = JSON.parse(String(options.body));
+            const aktualisiert = { ...antwort.artikel, ...gesendet };
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(aktualisiert) });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(antwort) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
 }
 
 describe('ArtikelDetail', () => {
@@ -204,5 +254,216 @@ describe('ArtikelDetail', () => {
         await user.click(await screen.findByRole('button', { name: 'Zurück' }));
 
         expect(await screen.findByText('Liste')).toBeInTheDocument();
+    });
+
+    it('zeigt den Abschnitt für Angebote mit den gepflegten Werten', async () => {
+        mockFetchDetail({
+            artikel: {
+                id: 7,
+                produktname: 'T-Stahl',
+                kurzbeschreibung: 'T-Stahl 40x40 Lager',
+                beschreibung: '<p>T-Stahl 40 x 40 x 5 mm</p>',
+                verkaufsaufschlagProzent: 40,
+                positionsEinheit: 'lfm',
+                positionsEinzelpreis: 8.4,
+                preisHinweis: 'OK',
+            },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        expect(await screen.findByText('Für Angebote und Rechnungen')).toBeInTheDocument();
+
+        // Der Abschnitt steht schon, waehrend die Eingabefelder noch leer sind:
+        // ArtikelDetail rendert zuerst mit den geladenen `daten` und belegt die
+        // Angebotsfelder erst in einem Folge-Effekt vor. Zwischen beiden Renders
+        // liegt ein Commit mit sichtbarer Ueberschrift und leerem Feld - genau
+        // den erwischt ein synchrones getBy hier unter Last. Deshalb auf den
+        // Wert warten statt ihn sofort zu lesen (gleiche Zusicherung).
+        await waitFor(() =>
+            expect(screen.getByLabelText('Kurzbeschreibung')).toHaveValue('T-Stahl 40x40 Lager'));
+        // Aufschlag und Beschreibung setzt derselbe Effekt im selben Batch -
+        // ist die Kurzbeschreibung da, sind sie es auch.
+        expect(screen.getByLabelText('Aufschlag auf den Einkaufspreis')).toHaveValue(40);
+        expect(screen.getByText(/8,40/)).toBeInTheDocument();
+    });
+
+    it('warnt, wenn kein Aufschlag gepflegt ist', async () => {
+        mockFetchDetail({
+            artikel: {
+                id: 8,
+                produktname: 'Rundrohr',
+                positionsEinheit: 'lfm',
+                positionsEinzelpreis: 6,
+                preisHinweis: 'KEIN_AUFSCHLAG',
+            },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        expect(await screen.findByText(/Kein Aufschlag hinterlegt/)).toBeInTheDocument();
+    });
+
+    it('speichert die Angebotsfelder über den PATCH-Endpunkt', async () => {
+        mockFetchDetail({
+            artikel: { id: 7, produktname: 'T-Stahl', preisHinweis: 'KEIN_AUFSCHLAG' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        await userEvent.type(await screen.findByLabelText('Kurzbeschreibung'), 'T-Stahl 40x40 Lager');
+        await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
+
+        await waitFor(() => {
+            expect(fetchMock).toHaveBeenCalledWith(
+                '/api/artikel/7/dokumenttexte',
+                expect.objectContaining({ method: 'PATCH' }),
+            );
+        });
+    });
+
+    it('sendet gepflegte Angebotsfelder mit ihren tatsächlichen Werten', async () => {
+        mockFetchDetail({
+            artikel: { id: 7, produktname: 'T-Stahl', preisHinweis: 'KEIN_AUFSCHLAG' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        await userEvent.type(await screen.findByLabelText('Kurzbeschreibung'), 'T-Stahl 40x40 Lager');
+        fireEvent.change(screen.getByTestId('tiptap'), { target: { value: '<p>T-Stahl 40 x 40 x 5 mm</p>' } });
+        fireEvent.change(screen.getByLabelText('Aufschlag auf den Einkaufspreis'), { target: { value: '40' } });
+
+        await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+        const patchAufruf = fetchMock.mock.calls.find(([, options]) => options?.method === 'PATCH');
+        const gesendet = JSON.parse(String(patchAufruf?.[1]?.body));
+        expect(gesendet).toEqual({
+            kurzbeschreibung: 'T-Stahl 40x40 Lager',
+            beschreibung: '<p>T-Stahl 40 x 40 x 5 mm</p>',
+            verkaufsaufschlagProzent: 40,
+        });
+    });
+
+    it('sendet ein geleertes Beschreibungsfeld als null, nicht als leeren Absatz', async () => {
+        mockFetchDetail({
+            artikel: { id: 7, produktname: 'T-Stahl', beschreibung: '<p>Alter Text</p>', preisHinweis: 'KEIN_AUFSCHLAG' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        // Tiptap liefert beim Leeren typischerweise einen leeren Absatz statt
+        // eines leeren Strings.
+        const editor = await screen.findByTestId('tiptap');
+        // Das Feld existiert schon, bevor der Vorbelege-Effekt gelaufen ist.
+        // Wer jetzt schreibt, dessen Eingabe wird gleich darauf vom Server-Stand
+        // ueberschrieben - dann ginge '<p>Alter Text</p>' statt null ans Backend.
+        // Also erst den vorbelegten Stand abwarten.
+        await waitFor(() => expect(editor).toHaveValue('<p>Alter Text</p>'));
+        fireEvent.change(editor, { target: { value: '<p>&nbsp;</p>' } });
+
+        await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+        const patchAufruf = fetchMock.mock.calls.find(([, options]) => options?.method === 'PATCH');
+        const gesendet = JSON.parse(String(patchAufruf?.[1]?.body));
+        expect(gesendet.beschreibung).toBeNull();
+    });
+
+    it('behält eine getippte Kurzbeschreibung, wenn die Artikeldaten neu laden', async () => {
+        mockFetchDetail({
+            artikel: { id: 7, produktname: 'T-Stahl', preisHinweis: 'KEIN_AUFSCHLAG' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        await userEvent.type(await screen.findByLabelText('Kurzbeschreibung'), 'T-Stahl 40x40 Lager');
+
+        // Simuliert ein Neuladen der Artikeldaten, wie es z. B. nach dem
+        // Nachtragen eines Lieferantenpreises passiert - der
+        // "Aktualisieren"-Knopf ruft dieselbe laden()-Funktion auf.
+        await userEvent.click(screen.getByRole('button', { name: 'Aktualisieren' }));
+
+        await waitFor(() => {
+            const getAufrufe = fetchMock.mock.calls.filter(([, options]) => options?.method === undefined);
+            expect(getAufrufe.length).toBeGreaterThanOrEqual(2);
+        });
+
+        expect(await screen.findByLabelText('Kurzbeschreibung')).toHaveValue('T-Stahl 40x40 Lager');
+    });
+
+    it('übernimmt nach dem Speichern den vom Server bestätigten Stand', async () => {
+        const patchAntwort = {
+            id: 7,
+            produktname: 'T-Stahl',
+            kurzbeschreibung: 'T-Stahl 40x40 Lager (Server)',
+            preisHinweis: 'KEIN_AUFSCHLAG',
+        };
+        fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+            if (options?.method === 'PATCH') {
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(patchAntwort) });
+            }
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: () => Promise.resolve({
+                    artikel: { id: 7, produktname: 'T-Stahl', preisHinweis: 'KEIN_AUFSCHLAG' },
+                    lieferanten: [],
+                    preisverlauf: [],
+                }),
+            });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        await userEvent.type(await screen.findByLabelText('Kurzbeschreibung'), 'T-Stahl 40x40 Lager');
+        await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
+
+        // Das Feld übernimmt den Wert aus der PATCH-Antwort - nicht bloß das,
+        // was zuvor eingetippt wurde. Bestätigt, dass tatsächlich die Antwort
+        // des Servers verwendet wird, auch wenn sie (z. B. durch serverseitige
+        // Normalisierung) vom eingetippten Text abweicht.
+        expect(await screen.findByLabelText('Kurzbeschreibung')).toHaveValue('T-Stahl 40x40 Lager (Server)');
+    });
+
+    it('sendet ein mit einer echten nbsp-Zeichenfolge geleertes Beschreibungsfeld ebenfalls als null', async () => {
+        mockFetchDetail({
+            artikel: { id: 7, produktname: 'T-Stahl', beschreibung: '<p>Alter Text</p>', preisHinweis: 'KEIN_AUFSCHLAG' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        // Anders als die Entity "&nbsp;" oben: hier steckt das echte
+        // Unicode-Zeichen U+00A0 im HTML, wie es manche Editoren erzeugen.
+        const editor = await screen.findByTestId('tiptap');
+        // Gleiches Rennen wie oben: erst den vorbelegten Server-Stand abwarten,
+        // sonst ueberschreibt der Vorbelege-Effekt die Leerung wieder.
+        await waitFor(() => expect(editor).toHaveValue('<p>Alter Text</p>'));
+        fireEvent.change(editor, { target: { value: '<p> </p>' } });
+
+        await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+        const patchAufruf = fetchMock.mock.calls.find(([, options]) => options?.method === 'PATCH');
+        const gesendet = JSON.parse(String(patchAufruf?.[1]?.body));
+        expect(gesendet.beschreibung).toBeNull();
     });
 });

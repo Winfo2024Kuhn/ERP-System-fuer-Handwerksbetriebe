@@ -572,6 +572,17 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
         extensions: [
             StarterKit.configure({
                 heading: false,
+                // Diese Formate bietet die Toolbar nirgends an - sie waren nur
+                // ueber Markdown-Tippregeln erreichbar ("> ", "```", "`x`",
+                // "---"). Die Beschreibungs-Safelist im Backend
+                // (ArtikelService.BESCHREIBUNG_SAFELIST) und der PDF-Druck
+                // kennen sie nicht: Der Nutzer haette seine Struktur beim
+                // Speichern kommentarlos verloren. Was der Editor nicht
+                // erzeugen kann, muss auch niemand still wegsanitisieren.
+                blockquote: false,
+                codeBlock: false,
+                code: false,
+                horizontalRule: false,
             }),
             Underline,
             TextStyle,

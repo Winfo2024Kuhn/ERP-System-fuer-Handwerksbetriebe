@@ -36,6 +36,13 @@ export interface DocBlock {
     /** ID der Produktkategorie (von Leistung.kategorie) */
     kategorieId?: number;
     /**
+     * ID des Artikels aus den Stammdaten, aus dem diese Position entstanden ist.
+     * Reine Herkunftsangabe: Preis und Text stehen fest im Block, damit ein
+     * bereits verschicktes Angebot sich nicht rueckwirkend aendert, wenn jemand
+     * den Artikel oder seinen Aufschlag anpasst.
+     */
+    artikelId?: number;
+    /**
      * Markiert TEXT-Bloecke, die automatisch aus den
      * "Standard-Texte"-Defaults der Vorlage eingefuegt wurden.
      * Beim Wechsel des Dokumenttyps werden diese ersetzt; manuell
