@@ -20,6 +20,18 @@ public class ZugferdDaten {
     private String anrede;
     private String kundennummer;
     private String geschaeftsdokumentart; // Rechnung, Anfrage, Auftragsbestätigung
+
+    /**
+     * Der rohe UNTDID-1001-Code aus der XML, ungedeutet.
+     *
+     * <p>{@link #geschaeftsdokumentart} faellt auf "Rechnung" zurueck, wenn weder
+     * Dateiname noch TypeCode etwas hergeben - fuer die Einsortierung in der
+     * Dokumentliste ist das eine brauchbare Annahme. Wo aus dem Dokumenttyp
+     * Kalkulationsdaten werden, darf nicht geraten werden; dort zaehlt dieser
+     * Code, und {@code null} heisst dann schlicht "nicht ausgewiesen".
+     */
+    private String typeCode;
+
     private Long referenzDokumentId;
     private String mahnstufe;
 

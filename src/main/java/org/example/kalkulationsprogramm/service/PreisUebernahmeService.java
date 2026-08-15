@@ -183,6 +183,16 @@ public class PreisUebernahmeService {
 
         BigDecimal neuerPreis = rechnungspreis.divide(rechnungsbasis.menge(), PREIS_SKALA, RoundingMode.HALF_UP);
 
+        if (neuerPreis.signum() == 0) {
+            // Die Preisspalte fuehrt zwei Nachkommastellen. Ein Cent-Artikel je 100
+            // Stueck rutscht dabei auf 0,00 - das ist ein Rundungsartefakt, kein
+            // Einkaufspreis, und wuerde einen gueltigen Bestandspreis zerstoeren.
+            log.warn("Artikel {} bei Lieferant {}: {} EUR je {} ergibt gerundet 0,00 EUR - "
+                            + "Preis nicht uebernommen",
+                    nummer, lieferant.getLieferantenname(), rechnungspreis, position.preiseinheit());
+            return false;
+        }
+
         if (bisher.getPreis() != null && bisher.getPreis().compareTo(neuerPreis) == 0) {
             // Dieselbe Rechnung wird bei jeder Neuanalyse erneut gelesen. Ohne diese
             // Bremse wuechse der Preisverlauf mit lauter identischen Staenden zu.

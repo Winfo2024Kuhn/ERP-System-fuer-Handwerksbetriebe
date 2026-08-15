@@ -416,6 +416,74 @@ class ZugferdExtractorServiceTest {
             assertThat(positionen.getFirst().getMengeneinheit()).isEqualTo("TNE");
         }
 
+        /**
+         * CII schreibt den Brutto-Block vor den Netto-Block. Ein freies Suchmuster
+         * fuer die Mengenbasis wuerde deshalb den Netto-Preis mit der Brutto-Basis
+         * paaren - beim Tonnenpreis waere das Faktor 1000 daneben.
+         */
+        @Test
+        void nimmtDieMengenbasisAusDemNettoBlock() {
+            String xml = """
+                    <rsm:CrossIndustryInvoice>
+                      <ram:IncludedSupplyChainTradeLineItem>
+                        <ram:SpecifiedTradeProduct>
+                          <ram:SellerAssignedID>S235-500</ram:SellerAssignedID>
+                        </ram:SpecifiedTradeProduct>
+                        <ram:SpecifiedLineTradeAgreement>
+                          <ram:GrossPriceProductTradePrice>
+                            <ram:ChargeAmount>1.45</ram:ChargeAmount>
+                            <ram:BasisQuantity unitCode="KGM">1</ram:BasisQuantity>
+                          </ram:GrossPriceProductTradePrice>
+                          <ram:NetPriceProductTradePrice>
+                            <ram:ChargeAmount>1250.00</ram:ChargeAmount>
+                            <ram:BasisQuantity unitCode="KGM">1000</ram:BasisQuantity>
+                          </ram:NetPriceProductTradePrice>
+                        </ram:SpecifiedLineTradeAgreement>
+                      </ram:IncludedSupplyChainTradeLineItem>
+                    </rsm:CrossIndustryInvoice>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).hasSize(1);
+            assertThat(positionen.getFirst().getEinzelpreis()).isEqualByComparingTo("1250.00");
+            // Nicht "1 KGM" aus dem Brutto-Block.
+            assertThat(positionen.getFirst().getPreiseinheit()).isEqualTo("1000 KGM");
+        }
+
+        /**
+         * Netto-Block ohne eigene Mengenbasis: dann darf die Brutto-Basis auch nicht
+         * ersatzweise herhalten, sonst passen Preis und Basis wieder nicht zusammen.
+         */
+        @Test
+        void nimmtKeineBruttoBasisWennDerNettoBlockKeineNennt() {
+            String xml = """
+                    <rsm:CrossIndustryInvoice>
+                      <ram:IncludedSupplyChainTradeLineItem>
+                        <ram:SpecifiedTradeProduct>
+                          <ram:SellerAssignedID>S235-600</ram:SellerAssignedID>
+                        </ram:SpecifiedTradeProduct>
+                        <ram:SpecifiedLineTradeAgreement>
+                          <ram:GrossPriceProductTradePrice>
+                            <ram:ChargeAmount>1500.00</ram:ChargeAmount>
+                            <ram:BasisQuantity unitCode="KGM">1000</ram:BasisQuantity>
+                          </ram:GrossPriceProductTradePrice>
+                          <ram:NetPriceProductTradePrice>
+                            <ram:ChargeAmount>1.25</ram:ChargeAmount>
+                          </ram:NetPriceProductTradePrice>
+                        </ram:SpecifiedLineTradeAgreement>
+                      </ram:IncludedSupplyChainTradeLineItem>
+                    </rsm:CrossIndustryInvoice>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).hasSize(1);
+            assertThat(positionen.getFirst().getEinzelpreis()).isEqualByComparingTo("1.25");
+            // 1,25 EUR/kg durch 1000 zu teilen waere der Fehlgriff.
+            assertThat(positionen.getFirst().getPreiseinheit()).isNull();
+        }
+
         @Test
         void liefertLeereListeOhneXml() {
             assertThat(service.extractLineItems(null)).isEmpty();

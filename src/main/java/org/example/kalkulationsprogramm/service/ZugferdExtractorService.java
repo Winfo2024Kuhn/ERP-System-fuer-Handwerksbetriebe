@@ -151,6 +151,7 @@ public class ZugferdExtractorService {
                 String typeCode = extractFromXml(rawXml,
                         "TypeCode>([^<]+)</");
                 if (typeCode != null) {
+                    data.setTypeCode(typeCode.trim());
                     String erkannteArt = mapTypeCodeToGeschaeftsdokumentart(typeCode.trim());
                     if (erkannteArt != null) {
                         data.setGeschaeftsdokumentart(erkannteArt);
@@ -355,14 +356,21 @@ public class ZugferdExtractorService {
 
                 // Preiseinheit (BasisQuantity). Im Netto-Block verankert: CII fuehrt
                 // GrossPriceProductTradePrice VOR NetPriceProductTradePrice, ein freies
-                // Muster wuerde also den Netto-Preis mit der Brutto-Basis paaren.
+                // Muster wuerde also den Netto-Preis mit der Brutto-Basis paaren - im
+                // Tonnenfall Faktor 1000 daneben.
+                //
+                // Das freie Muster als Rueckfallebene greift deshalb nur, wenn die
+                // Position gar keinen Netto-Block hat. Dann gehoeren Preis und Basis
+                // wieder zusammen. Haette sie einen, aber ohne BasisQuantity, waere die
+                // Rueckfallebene genau der Fehlgriff, den die Verankerung verhindert.
+                boolean hatNettoBlock = itemXml.contains("NetPriceProductTradePrice");
                 setzePreiseinheit(pos,
-                        extractFromXml(itemXml,
-                                "NetPriceProductTradePrice>.*?BasisQuantity[^>]*>([0-9.,]+)</",
-                                "BasisQuantity[^>]*>([0-9.,]+)</"),
-                        extractFromXml(itemXml,
-                                "NetPriceProductTradePrice>.*?BasisQuantity[^>]*unitCode=\"([^\"]+)\"",
-                                "BasisQuantity[^>]*unitCode=\"([^\"]+)\""));
+                        extractFromXml(itemXml, hatNettoBlock
+                                ? new String[] { "NetPriceProductTradePrice>.*?BasisQuantity[^>]*>([0-9.,]+)</" }
+                                : new String[] { "BasisQuantity[^>]*>([0-9.,]+)</" }),
+                        extractFromXml(itemXml, hatNettoBlock
+                                ? new String[] { "NetPriceProductTradePrice>.*?BasisQuantity[^>]*unitCode=\"([^\"]+)\"" }
+                                : new String[] { "BasisQuantity[^>]*unitCode=\"([^\"]+)\"" }));
 
                 uebernimmWennArtikelnummerVorhanden(positionen, pos);
             } catch (Exception e) {

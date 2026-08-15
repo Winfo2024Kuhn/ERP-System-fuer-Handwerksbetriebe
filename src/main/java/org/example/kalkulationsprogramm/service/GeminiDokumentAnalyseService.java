@@ -1236,10 +1236,16 @@ public class GeminiDokumentAnalyseService {
                 }
             }
 
-            // Artikelpositionen verarbeiten und Preise aktualisieren
+            // Artikelpositionen verarbeiten und Preise aktualisieren.
+            //
+            // Bewusst nicht gd.getDetectedTyp(): der stammt aus
+            // zugferd.getGeschaeftsdokumentart(), und das faellt auf "Rechnung"
+            // zurueck, sobald der Dateiname nichts hergibt. Ein ZUGFeRD-Lieferavis
+            // namens "Avis_4711.pdf" wuerde darueber Preise schreiben. Massgeblich
+            // ist allein der TypeCode, den die Datei selbst ausweist.
             if (dokument != null) {
                 verarbeiteStrukturiertePositionen(zugferd.getArtikelPositionen(), dokument.getLieferant(),
-                        gd.getDetectedTyp(), gd.getDokumentDatum());
+                        ausgewiesenerTyp(zugferd.getTypeCode()), gd.getDokumentDatum());
             }
 
             return gd;
@@ -2548,25 +2554,41 @@ public class GeminiDokumentAnalyseService {
     }
 
     /**
-     * Dokumenttyp, den die XML selbst ausweist (UNTDID 1001) - ohne Annahmen.
+     * Dokumenttyp, den die Rechnungsdatei selbst ausweist (UNTDID 1001) - ohne
+     * Annahmen.
      *
      * <p>Bewusst getrennt von der Typ-Erkennung fuer die Anzeige: die darf im
-     * Zweifel "Rechnung" raten, damit der Beleg in der Liste einsortiert ist. Fuer
-     * die Preisuebernahme waere dasselbe Raten gefaehrlich, weil daraus
-     * Kalkulationsdaten werden.
+     * Zweifel "Rechnung" raten - aus dem Dateinamen oder als Vorgabe -, damit der
+     * Beleg in der Dokumentliste einsortiert ist. Fuer die Preisuebernahme waere
+     * dasselbe Raten gefaehrlich, weil daraus Kalkulationsdaten werden. Was hier
+     * nicht ausdruecklich in der Datei steht, ergibt {@code null} und damit keinen
+     * Preis.
      *
-     * @return der ausgewiesene Typ, oder {@code null} wenn die XML keinen nennt
+     * <p>Deckt alle gebraeuchlichen Rechnungsarten ab, nicht nur 380: Sammel- und
+     * Abschlagsrechnungen sind bei Stahlhaendlern und am Bau die Regel.
+     *
+     * <p><b>Achtung, weicht bewusst von
+     * {@code ZugferdExtractorService.mapTypeCodeToGeschaeftsdokumentart} ab:</b>
+     * dort steht 351 = Angebot. Laut UNTDID 1001 ist 351 aber "Despatch advice",
+     * also ein Lieferavis; Angebot ist 310. Die dortige Zuordnung wirkt nur auf
+     * die Anzeige und bleibt deshalb unangetastet - hier wuerde sie ein
+     * Lieferdokument Preise schreiben lassen.
+     *
+     * @return der ausgewiesene Typ, oder {@code null} wenn die Datei keinen nennt
      */
     private LieferantDokumentTyp ausgewiesenerTyp(String typeCode) {
         if (typeCode == null) {
             return null;
         }
         return switch (typeCode.trim()) {
-            case "380", "384", "389" -> LieferantDokumentTyp.RECHNUNG;
+            // 380 Rechnung, 384 korrigiert, 389 Eigenrechnung, 385 Sammelrechnung,
+            // 386 Vorauszahlung, 326 Teilrechnung, 875-877 Bau-Abschlagsrechnungen
+            case "380", "384", "389", "385", "386", "326", "875", "876", "877" ->
+                    LieferantDokumentTyp.RECHNUNG;
             case "381" -> LieferantDokumentTyp.GUTSCHRIFT;
-            case "351" -> LieferantDokumentTyp.ANGEBOT;
+            case "310" -> LieferantDokumentTyp.ANGEBOT;
             case "231" -> LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG;
-            case "261", "270" -> LieferantDokumentTyp.LIEFERSCHEIN;
+            case "351", "261", "270" -> LieferantDokumentTyp.LIEFERSCHEIN;
             default -> null;
         };
     }

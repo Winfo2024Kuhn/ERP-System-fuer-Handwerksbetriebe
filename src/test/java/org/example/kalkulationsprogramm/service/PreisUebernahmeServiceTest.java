@@ -18,11 +18,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Deckt vor allem den Fall ab, an dem die Preisuebernahme aus Eingangsrechnungen
@@ -363,6 +368,69 @@ class PreisUebernahmeServiceTest {
 
         assertEquals(1, ergebnis.uebersprungen());
         assertPreis("10.00", artikel, lieferant);
+    }
+
+    @Test
+    void aufNullGerundeterPreisZerstoertDenBestandNicht() {
+        Lieferanten lieferant = lieferant("Musterlieferant Centartikel");
+        Artikel artikel = artikelMitPreis(lieferant, "CENT-1", Verrechnungseinheit.STUECK, "0.01");
+
+        // 0,40 EUR je 100 Stueck sind 0,004 je Stueck - die Preisspalte fuehrt aber
+        // nur zwei Nachkommastellen. Die 0,00 darf den gueltigen Preis nicht ersetzen.
+        var ergebnis = uebernimm(lieferant, position("CENT-1", "0.40", "100 C62", "C62"));
+
+        assertEquals(0, ergebnis.uebernommen());
+        assertEquals(1, ergebnis.uebersprungen());
+        assertPreis("0.01", artikel, lieferant);
+    }
+
+    @Test
+    void mehrerePositionenWerdenEinzelnBewertet() {
+        Lieferanten lieferant = lieferant("Musterlieferant Sammelrechnung");
+        Artikel erster = artikelMitPreis(lieferant, "SAM-1", Verrechnungseinheit.STUECK, "10.00");
+        Artikel zweiter = artikelMitPreis(lieferant, "SAM-2", Verrechnungseinheit.STUECK, "20.00");
+
+        // Die mittlere Position ist unbrauchbar (Artikelnummer nicht hinterlegt) -
+        // die beiden anderen muessen trotzdem durchkommen.
+        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, new Date(),
+                List.of(position("SAM-1", "11.00", "1 C62", "C62"),
+                        position("GIBTS-NICHT", "5.00", "1 C62", "C62"),
+                        position("SAM-2", "21.00", "1 C62", "C62")));
+
+        assertEquals(2, ergebnis.uebernommen());
+        assertEquals(1, ergebnis.uebersprungen());
+        assertPreis("11.00", erster, lieferant);
+        assertPreis("21.00", zweiter, lieferant);
+    }
+
+    /**
+     * Der Datenbankzugriff wird hier absichtlich zum Stolpern gebracht: eine
+     * Position, die eine Ausnahme ausloest, darf die uebrigen Positionen derselben
+     * Rechnung nicht mitreissen.
+     */
+    @Test
+    void ausnahmeBeiEinerPositionStopptDieUebrigenNicht() {
+        Lieferanten lieferant = lieferant("Musterlieferant Stolperstein");
+
+        // Freies Fixture statt DB-Entity: die Klasse laeuft ohne Transaktion, ein
+        // gelesener Preisstand wuerde beim Zugriff auf den Artikel lazy nachladen.
+        Artikel artikel = new Artikel();
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        LieferantenArtikelPreise vorhanden = preisstand(artikel, lieferant, "OK-1", "10.00");
+
+        LieferantenArtikelPreiseRepository stolpernd = mock(LieferantenArtikelPreiseRepository.class);
+        when(stolpernd.findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(eq("KRACH"), any()))
+                .thenThrow(new IllegalStateException("Verbindung weggebrochen"));
+        when(stolpernd.findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(eq("OK-1"), any()))
+                .thenReturn(Optional.of(vorhanden));
+
+        var ergebnis = new PreisUebernahmeService(stolpernd).uebernehmePreise(
+                lieferant, PreisQuelle.RECHNUNG, new Date(),
+                List.of(position("KRACH", "9.00", "1 C62", "C62"),
+                        position("OK-1", "12.00", "1 C62", "C62")));
+
+        assertEquals(1, ergebnis.uebernommen());
+        assertEquals(1, ergebnis.uebersprungen());
     }
 
     @Test
