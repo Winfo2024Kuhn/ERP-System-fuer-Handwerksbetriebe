@@ -37,6 +37,11 @@ build/
 /attachments
 /signatures
 
+# Lokale Lieferanten-PDFs und daraus erzeugte Import-Artefakte (nicht committen)
+/downloads/lieferant-2-dokumente/
+/downloads/lieferant-2-pdf-text/
+/downloads/beetz-artikel-import/
+
 ### Logs & Crash Dumps ###
 /logs/
 hs_err_pid*.log
