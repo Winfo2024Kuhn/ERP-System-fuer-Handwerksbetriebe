@@ -163,6 +163,44 @@ class ProjektManagementServiceTest {
         assertEquals(0, gespeicherter.getKilogramm().compareTo(new BigDecimal("6")));
     }
 
+    /**
+     * V361 (analog zu V359 auf lieferanten_artikel_preise): Ein Kleinteil-Preis
+     * wie 0,0183 EUR je Stueck (1,83 EUR je 100 Schrauben) darf beim Uebernehmen
+     * in die Projektposition nicht auf 0,02 EUR gerundet werden - das waeren
+     * 9 % Aufschlag auf jede Kalkulation, in der solche Teile vorkommen.
+     */
+    @Test
+    void preisMitVierNachkommastellenWirdBeimUebernehmenInProjektpositionNichtGerundet() {
+        Projekt projekt = new Projekt();
+        projekt.setArtikelInProjekt(new ArrayList<>());
+        when(projektRepository.findById(1L)).thenReturn(Optional.of(projekt));
+        when(projektRepository.save(any(Projekt.class))).thenAnswer(i -> i.getArgument(0));
+        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
+
+        Artikel artikel = new Artikel();
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        artikel.setArtikelpreis(new ArrayList<>());
+        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
+        preis.setArtikel(artikel);
+        preis.setPreis(new BigDecimal("0.0183"));
+        preis.setPreisAenderungsdatum(new java.util.Date());
+        artikel.getArtikelpreis().add(preis);
+        when(artikelRepository.findById(3L)).thenReturn(Optional.of(artikel));
+
+        ArtikelMengeDto dto = new ArtikelMengeDto();
+        dto.setArtikelId(3L);
+        dto.setEinheit("STUECK");
+        dto.setStueckzahl(100);
+
+        service.fuegeArtikelMaterialkosten(1L, List.of(dto));
+
+        ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
+        verify(projektRepository).save(captor.capture());
+        ArtikelInProjekt gespeicherter = captor.getValue().getArtikelInProjekt().getFirst();
+        assertEquals(0, new BigDecimal("0.0183").compareTo(gespeicherter.getPreisProStueck()),
+                "0,0183 EUR je Stueck duerfen nicht auf 0,02 EUR gerundet werden");
+    }
+
     @Test
     void derivesMeterFromPiecesUsingPackagingUnit() {
         Projekt projekt = new Projekt();

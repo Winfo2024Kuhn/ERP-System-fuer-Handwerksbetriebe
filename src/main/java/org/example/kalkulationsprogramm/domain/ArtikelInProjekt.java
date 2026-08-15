@@ -35,7 +35,18 @@ public class ArtikelInProjekt {
     @Column(precision = 19, scale = 2)
     private BigDecimal kilogramm;
 
-    @Column(precision = 19, scale = 2)
+    /**
+     * Preis je Verrechnungseinheit bzw. eingefrorene Gesamtsumme - siehe
+     * {@link org.example.kalkulationsprogramm.mapper.ProjektMapper} fuer die
+     * beiden Bedeutungen dieses Felds.
+     *
+     * <p>Seit Migration V361 auf vier Nachkommastellen (vorher zwei), analog zu
+     * V359 fuer {@code LieferantenArtikelPreise.preis}: Kleinteile wie Schrauben
+     * kosten teils nur 0,0183 EUR je Stueck, und mit zwei Nachkommastellen
+     * rundete die Datenbank das auf 0,02 EUR - 9 % Aufschlag auf jede
+     * Kalkulation mit solchen Teilen.
+     */
+    @Column(precision = 19, scale = 4)
     private BigDecimal preisProStueck;
 
     @Column(nullable = false)
