@@ -110,13 +110,13 @@ public class ArtikelDokumentService {
                 .orElseThrow(() -> new NotFoundException("Diesen Artikel gibt es nicht."));
 
         if (typ == null) {
-            throw new IllegalArgumentException("Bitte einen Dokumenttyp waehlen.");
+            throw new IllegalArgumentException("Bitte einen Dokumenttyp wählen.");
         }
         if (datei == null || datei.isEmpty()) {
-            throw new IllegalArgumentException("Es wurde keine Datei ausgewaehlt.");
+            throw new IllegalArgumentException("Es wurde keine Datei ausgewählt.");
         }
         if (datei.getSize() > MAX_DATEIGROESSE_BYTES) {
-            throw new IllegalArgumentException("Die Datei ist zu gross. Erlaubt sind hoechstens 10 MB.");
+            throw new IllegalArgumentException("Die Datei ist zu groß. Erlaubt sind höchstens 10 MB.");
         }
 
         String originalDateiname = bereinigeUndPruefeDateiname(datei.getOriginalFilename());
@@ -126,7 +126,7 @@ public class ArtikelDokumentService {
         Files.createDirectories(artikelDir);
         Path targetPath = artikelDir.resolve(storedFilename).normalize();
         if (!targetPath.startsWith(artikelDir)) {
-            throw new IllegalArgumentException("Der Dateiname ist nicht zulaessig.");
+            throw new IllegalArgumentException("Der Dateiname ist nicht zulässig.");
         }
 
         // Vorhandenes Vorschaubild merken, aber erst nach dem erfolgreichen
@@ -309,13 +309,13 @@ public class ArtikelDokumentService {
         }
         String bereinigt = StringUtils.cleanPath(originalFilename.trim());
         if (bereinigt.contains("..") || bereinigt.contains("/") || bereinigt.contains("\\")) {
-            throw new IllegalArgumentException("Dieser Dateiname ist nicht zulaessig.");
+            throw new IllegalArgumentException("Dieser Dateiname ist nicht zulässig.");
         }
 
         String endung = ermittleEndung(bereinigt);
         if (!ERLAUBTE_ENDUNGEN.contains(endung)) {
             throw new IllegalArgumentException(
-                    "Dieser Dateityp wird nicht unterstuetzt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF.");
+                    "Dieser Dateityp wird nicht unterstützt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF.");
         }
         return bereinigt;
     }

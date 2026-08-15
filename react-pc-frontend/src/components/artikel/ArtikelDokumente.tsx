@@ -200,18 +200,37 @@ export function ArtikelDokumente({ artikelId }: ArtikelDokumenteProps) {
                     {/* ---- Vorschaubild ---- */}
                     <div>
                         {vorschaubild ? (
-                            <button
-                                type="button"
-                                onClick={() => setVollbild({ url: vorschaubild.url, name: vorschaubild.originalDateiname })}
-                                className="block w-full aspect-square rounded-lg border border-slate-200 overflow-hidden bg-slate-50 hover:opacity-90 transition-opacity"
-                                title="Bild groß anzeigen"
-                            >
-                                <ThumbnailImage
-                                    src={vorschaubild.url}
-                                    alt={`Vorschaubild: ${vorschaubild.originalDateiname}`}
-                                    className="object-contain"
-                                />
-                            </button>
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setVollbild({ url: vorschaubild.url, name: vorschaubild.originalDateiname })}
+                                    className="block w-full aspect-square rounded-lg border border-slate-200 overflow-hidden bg-slate-50 hover:opacity-90 transition-opacity"
+                                    title="Bild groß anzeigen"
+                                >
+                                    <ThumbnailImage
+                                        src={vorschaubild.url}
+                                        alt={`Vorschaubild: ${vorschaubild.originalDateiname}`}
+                                        className="object-contain"
+                                    />
+                                </button>
+                                {/* Klein und am Rand, damit "Bild ersetzen" darunter die naheliegende
+                                    Handlung bleibt - Loeschen soll nicht danach aussehen wie die
+                                    gleichrangige Alternative dazu. */}
+                                <button
+                                    type="button"
+                                    onClick={() => loeschen(vorschaubild)}
+                                    disabled={loeschtId === vorschaubild.id}
+                                    title="Bild löschen"
+                                    aria-label="Vorschaubild löschen"
+                                    className="absolute top-1.5 right-1.5 p-1.5 bg-white/90 backdrop-blur-sm text-slate-400
+                                        hover:text-rose-600 hover:bg-white rounded-full shadow-sm border border-slate-200
+                                        disabled:opacity-50 transition-colors"
+                                >
+                                    {loeschtId === vorschaubild.id
+                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                                        : <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />}
+                                </button>
+                            </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center gap-2 w-full aspect-square rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 text-center px-3">
                                 <ImageIcon className="w-8 h-8 text-slate-300" aria-hidden="true" />

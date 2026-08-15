@@ -113,7 +113,7 @@ class ArtikelDokumenteControllerTest {
         void verboteneEndung_antwortetMit400UndMeldungImBody() throws Exception {
             given(artikelDokumentService.ladeHoch(eq(7L), any(), eq(ArtikelDokumentTyp.SONSTIGES), any()))
                     .willThrow(new IllegalArgumentException(
-                            "Dieser Dateityp wird nicht unterstuetzt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF."));
+                            "Dieser Dateityp wird nicht unterstützt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF."));
 
             MockMultipartFile datei = new MockMultipartFile(
                     "datei", "schadcode.exe", "application/octet-stream", "x".getBytes());
@@ -123,14 +123,14 @@ class ArtikelDokumenteControllerTest {
                             .file(teilfeld("typ", "SONSTIGES")))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.message").value(
-                            "Dieser Dateityp wird nicht unterstuetzt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF."));
+                            "Dieser Dateityp wird nicht unterstützt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF."));
         }
 
         @Test
         @DisplayName("Zu grosse Datei: 400 mit der Handwerker-deutschen Meldung des Service im Antwortkoerper")
         void zuGrosseDatei_antwortetMit400UndMeldungImBody() throws Exception {
             given(artikelDokumentService.ladeHoch(eq(7L), any(), eq(ArtikelDokumentTyp.DATENBLATT), any()))
-                    .willThrow(new IllegalArgumentException("Die Datei ist zu gross. Erlaubt sind hoechstens 10 MB."));
+                    .willThrow(new IllegalArgumentException("Die Datei ist zu groß. Erlaubt sind höchstens 10 MB."));
 
             MockMultipartFile datei = new MockMultipartFile(
                     "datei", "riesig.pdf", "application/pdf", "x".getBytes());
@@ -139,7 +139,7 @@ class ArtikelDokumenteControllerTest {
                             .file(datei)
                             .file(teilfeld("typ", "DATENBLATT")))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value("Die Datei ist zu gross. Erlaubt sind hoechstens 10 MB."));
+                    .andExpect(jsonPath("$.message").value("Die Datei ist zu groß. Erlaubt sind höchstens 10 MB."));
         }
 
         @Test

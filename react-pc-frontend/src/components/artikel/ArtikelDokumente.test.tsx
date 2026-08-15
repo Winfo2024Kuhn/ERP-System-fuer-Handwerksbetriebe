@@ -154,7 +154,7 @@ describe('ArtikelDokumente', () => {
                 ok: false,
                 status: 400,
                 json: () => Promise.resolve({
-                    message: 'Dieser Dateityp wird nicht unterstuetzt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF.',
+                    message: 'Dieser Dateityp wird nicht unterstützt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF.',
                 }),
             }),
         });
@@ -170,9 +170,9 @@ describe('ArtikelDokumente', () => {
         await user.upload(screen.getByLabelText('Datei auswählen'), datei);
         await user.click(screen.getByRole('button', { name: /^Hochladen$/ }));
 
-        // Exakt die Server-Meldung - kein eigener Text, kein Statuscode.
+        // Exakt die Server-Meldung mit echten Umlauten - kein eigener Text, kein Statuscode.
         expect(await screen.findByText(
-            'Dieser Dateityp wird nicht unterstuetzt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF.',
+            'Dieser Dateityp wird nicht unterstützt. Erlaubt sind PDF, PNG, JPG, JPEG, WEBP und GIF.',
         )).toBeInTheDocument();
     });
 
@@ -221,6 +221,40 @@ describe('ArtikelDokumente', () => {
         });
         expect(await screen.findByText('Die Datei ist gelöscht.')).toBeInTheDocument();
         expect(screen.queryByText('zulassung.pdf')).not.toBeInTheDocument();
+    });
+
+    it('fragt vor dem Löschen des Vorschaubilds nach und leert die Anzeige erst nach Bestätigung', async () => {
+        const fetchMock = mockFetch([VORSCHAUBILD]);
+        const user = userEvent.setup();
+        renderSektion();
+
+        await screen.findByRole('button', { name: /Bild ersetzen/ });
+        await user.click(screen.getByRole('button', { name: 'Vorschaubild löschen' }));
+
+        const dialog = await screen.findByText('Datei löschen?');
+        expect(dialog).toBeInTheDocument();
+        expect(screen.getByText(/handlaufhalter\.jpg.*wirklich löschen/)).toBeInTheDocument();
+
+        // Abbrechen: das Bild bleibt hinterlegt.
+        await user.click(screen.getByText('Abbrechen'));
+        expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'DELETE')).toBe(false);
+        expect(screen.getByRole('button', { name: /Bild ersetzen/ })).toBeInTheDocument();
+
+        // Erneut löschen, diesmal bestätigen.
+        await user.click(screen.getByRole('button', { name: 'Vorschaubild löschen' }));
+        await user.click(await screen.findByText('Ja, löschen'));
+
+        await waitFor(() => {
+            expect(fetchMock).toHaveBeenCalledWith(
+                '/api/artikel/dokumente/1',
+                expect.objectContaining({ method: 'DELETE' }),
+            );
+        });
+        expect(await screen.findByText('Die Datei ist gelöscht.')).toBeInTheDocument();
+        // Zurueck in den leeren Zustand - ohne dass die Seite neu geladen werden muss.
+        expect(await screen.findByText('Noch kein Bild hinterlegt')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Bild hochladen$/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Vorschaubild löschen' })).not.toBeInTheDocument();
     });
 
     it('zeigt die Serverfehlermeldung an, wenn das Löschen fehlschlägt', async () => {
