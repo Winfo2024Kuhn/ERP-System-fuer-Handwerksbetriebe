@@ -165,6 +165,91 @@ describe('ArtikelAuswahlDialog', () => {
         expect(await screen.findAllByText('kein Kundentext')).toHaveLength(2);
     });
 
+    // ------------------------------------------------------------------
+    // Menge: 0 und negative Werte duerfen nie in eine Position wandern
+    // ------------------------------------------------------------------
+
+    it('sperrt Übernehmen, solange das Mengenfeld leer ist', async () => {
+        // Ein geleertes Zahlenfeld liefert Number('') === 0 - daraus wuerde eine
+        // Position mit Zeilensumme 0.
+        render(
+            <ArtikelAuswahlDialog offen onSchliessen={() => {}} onUebernehmen={() => {}} />,
+            { wrapper: MemoryRouter },
+        );
+
+        await userEvent.click(await screen.findByLabelText('T-Stahl auswählen'));
+        await userEvent.clear(screen.getByLabelText('Menge für T-Stahl'));
+
+        expect(screen.getByRole('button', { name: /Übernehmen/ })).toBeDisabled();
+        expect(screen.getByText(/Menge größer 0/)).toBeInTheDocument();
+    });
+
+    it('sperrt Übernehmen bei einer negativen Menge', async () => {
+        render(
+            <ArtikelAuswahlDialog offen onSchliessen={() => {}} onUebernehmen={() => {}} />,
+            { wrapper: MemoryRouter },
+        );
+
+        await userEvent.click(await screen.findByLabelText('T-Stahl auswählen'));
+        const feld = screen.getByLabelText('Menge für T-Stahl');
+        await userEvent.clear(feld);
+        await userEvent.type(feld, '-5');
+
+        // Ohne diese Zusicherung koennte der Test auch dann gruen sein, wenn das
+        // Feld gar keine -5 angenommen haette und schlicht leer waere.
+        expect(feld).toHaveValue(-5);
+        expect(screen.getByRole('button', { name: /Übernehmen/ })).toBeDisabled();
+    });
+
+    it('behält den letzten gültigen Wert, wenn zwischendurch nichts Gültiges dasteht', async () => {
+        const onUebernehmen = vi.fn();
+        render(
+            <ArtikelAuswahlDialog offen onSchliessen={() => {}} onUebernehmen={onUebernehmen} />,
+            { wrapper: MemoryRouter },
+        );
+
+        await userEvent.click(await screen.findByLabelText('T-Stahl auswählen'));
+        const feld = screen.getByLabelText('Menge für T-Stahl');
+        await userEvent.clear(feld);
+        await userEvent.type(feld, '7');
+        await userEvent.clear(feld);
+        await userEvent.type(feld, '3');
+        await userEvent.click(screen.getByRole('button', { name: /Übernehmen/ }));
+
+        expect(onUebernehmen.mock.calls[0][0][0].menge).toBe(3);
+    });
+
+    it('gibt Übernehmen wieder frei, sobald eine gültige Menge dasteht', async () => {
+        const onUebernehmen = vi.fn();
+        render(
+            <ArtikelAuswahlDialog offen onSchliessen={() => {}} onUebernehmen={onUebernehmen} />,
+            { wrapper: MemoryRouter },
+        );
+
+        await userEvent.click(await screen.findByLabelText('T-Stahl auswählen'));
+        const feld = screen.getByLabelText('Menge für T-Stahl');
+        await userEvent.clear(feld);
+        expect(screen.getByRole('button', { name: /Übernehmen/ })).toBeDisabled();
+
+        await userEvent.type(feld, '2.5');
+        await userEvent.click(screen.getByRole('button', { name: /Übernehmen/ }));
+
+        expect(onUebernehmen.mock.calls[0][0][0].menge).toBe(2.5);
+    });
+
+    it('lässt eine ungültige Menge in einer anderen Zeile das Übernehmen blockieren', async () => {
+        render(
+            <ArtikelAuswahlDialog offen onSchliessen={() => {}} onUebernehmen={() => {}} />,
+            { wrapper: MemoryRouter },
+        );
+
+        await userEvent.click(await screen.findByLabelText('T-Stahl auswählen'));
+        await userEvent.click(screen.getByLabelText('Vierkantrohr auswählen'));
+        await userEvent.clear(screen.getByLabelText('Menge für Vierkantrohr'));
+
+        expect(screen.getByRole('button', { name: /Übernehmen/ })).toBeDisabled();
+    });
+
     it('schließt mit Escape', async () => {
         const onSchliessen = vi.fn();
         render(

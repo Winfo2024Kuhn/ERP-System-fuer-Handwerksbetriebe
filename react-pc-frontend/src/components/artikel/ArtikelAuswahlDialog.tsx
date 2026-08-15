@@ -7,6 +7,7 @@ import { baueKundentext, hatKundentext, kundentextFuerPosition } from './kundent
 import { preisHinweisKurz, type PreisHinweis } from './preisHinweis';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { cn } from '../../lib/utils';
 import type { Artikel } from '../../types';
 
 export interface ArtikelAuswahl {
@@ -55,6 +56,12 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
     // die Auswahl weg, sobald der Bediener den Filter aendert und der Treffer
     // aus der Liste faellt.
     const [gemerkt, setGemerkt] = useState<Map<number, Artikel>>(new Map());
+    // Was im Mengenfeld steht, solange der Bediener tippt — auch dann, wenn es
+    // (noch) keine gueltige Zahl ist. Ohne diesen Zwischenschritt liesse sich
+    // das Feld gar nicht leeren: Die Anzeige kaeme direkt aus `gewaehlt`, der
+    // letzte gueltige Wert spraenge sofort zurueck und aus "12" wuerde beim
+    // Korrigieren "112".
+    const [mengenText, setMengenText] = useState<Map<number, string>>(new Map());
 
     useEffect(() => {
         if (!offen) return;
@@ -76,6 +83,7 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
         if (offen) {
             setGewaehlt(new Map());
             setGemerkt(new Map());
+            setMengenText(new Map());
         }
     }
 
@@ -88,13 +96,48 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
             else naechste.set(artikel.id, 1);
             return naechste;
         });
+        // Eine frisch angehakte Zeile faengt bei 1 an, auch wenn vorher schon
+        // etwas im Feld stand.
+        setMengenText((prev) => {
+            const naechste = new Map(prev);
+            naechste.delete(artikel.id);
+            return naechste;
+        });
         setGemerkt((prev) => new Map(prev).set(artikel.id, artikel));
     };
 
-    const setzeMenge = (artikelId: number, menge: number) =>
-        setGewaehlt((prev) => new Map(prev).set(artikelId, menge));
+    /**
+     * Uebernimmt die Eingabe des Mengenfelds. In die Auswahl wandert nur eine
+     * echte Zahl groesser 0; alles andere laesst den letzten gueltigen Wert
+     * stehen.
+     *
+     * Das ist kein Schoenheitsfehler: Ein geleertes Feld liefert
+     * `Number('') === 0`, und eine Position mit Menge 0 haette eine Zeilensumme
+     * von 0 — eine negative Menge sogar eine negative Zeilensumme im Angebot.
+     * Das `min` am Feld ist nur ein Browser-Hinweis und haelt davon nichts auf.
+     */
+    const setzeMenge = (artikelId: number, eingabe: string) => {
+        setMengenText((prev) => new Map(prev).set(artikelId, eingabe));
+        const wert = Number(eingabe);
+        if (!Number.isFinite(wert) || wert <= 0) return;
+        setGewaehlt((prev) => new Map(prev).set(artikelId, wert));
+    };
+
+    /** Zeigt das Feld einer gewaehlten Zeile gerade keine brauchbare Menge? */
+    const mengeUngueltig = (artikelId: number): boolean => {
+        const eingabe = mengenText.get(artikelId);
+        if (eingabe === undefined) return false;
+        const wert = Number(eingabe);
+        return !Number.isFinite(wert) || wert <= 0;
+    };
+
+    const mengenLuecke = [...gewaehlt.keys()].some(mengeUngueltig);
 
     const uebernehmen = () => {
+        // Zweiter Riegel neben setzeMenge: Der Knopf ist in diesem Fall zwar
+        // gesperrt, aber eine Position mit Menge 0 im Angebot waere teuer genug,
+        // um sie nicht von einem disabled-Attribut allein abhaengig zu machen.
+        if (mengenLuecke) return;
         const auswahl = [...gewaehlt.entries()]
             .map(([artikelId, menge]) => {
                 const artikel = gemerkt.get(artikelId);
@@ -123,12 +166,16 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
                 />
                 <Input
                     type="number"
-                    min={0}
+                    min={0.01}
                     step={0.01}
-                    value={gewaehlt.get(artikel.id) ?? 1}
-                    onChange={(e) => setzeMenge(artikel.id, Number(e.target.value))}
+                    value={mengenText.get(artikel.id) ?? String(gewaehlt.get(artikel.id) ?? 1)}
+                    onChange={(e) => setzeMenge(artikel.id, e.target.value)}
                     aria-label={`Menge für ${artikel.produktname}`}
-                    className="w-20 h-8 text-sm"
+                    aria-invalid={ausgewaehlt && mengeUngueltig(artikel.id)}
+                    className={cn(
+                        'w-20 h-8 text-sm',
+                        ausgewaehlt && mengeUngueltig(artikel.id) && 'border-amber-400 bg-amber-50',
+                    )}
                     disabled={!ausgewaehlt}
                 />
                 <span className="text-xs text-slate-500 w-8">{artikel.positionsEinheit}</span>
@@ -175,7 +222,12 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
 
             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200">
                 <span className="text-sm text-slate-500">{gewaehlt.size} ausgewählt</span>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-3">
+                    {mengenLuecke && (
+                        <span className="text-xs text-amber-700">
+                            Bitte überall eine Menge größer 0 eintragen.
+                        </span>
+                    )}
                     <Button variant="outline" size="sm"
                             className="border-rose-300 text-rose-700 hover:bg-rose-50"
                             onClick={onSchliessen}>
@@ -184,7 +236,7 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
                     <Button size="sm"
                             className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                             onClick={uebernehmen}
-                            disabled={gewaehlt.size === 0}>
+                            disabled={gewaehlt.size === 0 || mengenLuecke}>
                         Übernehmen
                     </Button>
                 </div>
