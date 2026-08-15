@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.domain.Werkstoff;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
+import org.example.kalkulationsprogramm.service.ArtikelDokumentService;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
 import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
@@ -65,6 +66,9 @@ class ArtikelControllerTest {
 
     @MockBean
     private ArtikelPositionsPreisService artikelPositionsPreisService;
+
+    @MockBean
+    private ArtikelDokumentService artikelDokumentService;
 
     @BeforeEach
     void setUp() {

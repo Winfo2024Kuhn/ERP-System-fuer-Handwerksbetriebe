@@ -108,5 +108,12 @@ public class ArtikelResponseDto {
     private boolean pulverbeschichtungsgeeignet;
     /** Erklaerung, warum eine Beschichtung geht oder nicht. */
     private String beschichtungshinweis;
+
+    /**
+     * URL des Vorschaubilds, {@code null} wenn keins hinterlegt ist. Wird in
+     * der Suche gebuendelt fuer die ganze Trefferseite geladen (kein N+1) und
+     * in der Detailansicht einzeln - siehe {@code ArtikelController}.
+     */
+    private String vorschaubildUrl;
 }
 

@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
+import org.example.kalkulationsprogramm.service.ArtikelDokumentService;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
 import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
@@ -64,6 +65,9 @@ class ArtikelSuchePreisvorschlagTest {
 
     @MockBean
     private KategorieService kategorieService;
+
+    @MockBean
+    private ArtikelDokumentService artikelDokumentService;
 
     /**
      * Haengt einen aktuellen Preis eines Lieferanten an den Artikel.

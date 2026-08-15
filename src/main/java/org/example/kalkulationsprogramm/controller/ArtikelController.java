@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -13,6 +14,7 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelDokumentTyp;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.Fertigungszustand;
 import org.example.kalkulationsprogramm.domain.Herstellverfahren;
@@ -22,6 +24,7 @@ import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Profilform;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDetailDto;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumentDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumenttexteRequest;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelSearchResponseDto;
@@ -29,18 +32,24 @@ import org.example.kalkulationsprogramm.dto.Artikel.ExterneNummerDto;
 import org.example.kalkulationsprogramm.dto.Artikel.LieferantPreisDto;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
+import org.example.kalkulationsprogramm.service.ArtikelDokumentService;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
 import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
 import org.example.kalkulationsprogramm.service.ArtikelServiceContract;
 import org.example.kalkulationsprogramm.service.KategorieService;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -48,6 +57,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -81,6 +91,7 @@ public class ArtikelController {
     private final KategorieService kategorieService;
     private final WerkstoffRepository werkstoffRepository;
     private final ArtikelPositionsPreisService artikelPositionsPreisService;
+    private final ArtikelDokumentService artikelDokumentService;
 
     @PostMapping
     @Transactional
@@ -209,6 +220,12 @@ public class ArtikelController {
                     Comparator.nullsLast(Comparator.naturalOrder()));
             daten.sort("desc".equalsIgnoreCase(direction) ? nachPreis.reversed() : nachPreis);
         }
+
+        // Vorschaubilder fuer die ganze Trefferseite in einem Rutsch laden,
+        // statt je Zeile einzeln nachzuschlagen (N+1).
+        Map<Long, String> vorschaubildUrls = artikelDokumentService.ladeVorschaubildUrls(
+                daten.stream().map(ArtikelResponseDto::getId).toList());
+        daten.forEach(dto -> dto.setVorschaubildUrl(vorschaubildUrls.get(dto.getId())));
 
         ArtikelSearchResponseDto response = new ArtikelSearchResponseDto();
         response.setArtikel(daten);
@@ -379,6 +396,7 @@ public class ArtikelController {
 
         ArtikelDetailDto dto = new ArtikelDetailDto();
         dto.setArtikel(mappeArtikelZuDto(artikel, null));
+        dto.getArtikel().setVorschaubildUrl(artikelDokumentService.ladeVorschaubildUrl(id));
 
         List<LieferantenArtikelPreise> aktuelle = artikel.getArtikelpreis().stream()
                 .filter(LieferantenArtikelPreise::isAktuell)
@@ -434,6 +452,62 @@ public class ArtikelController {
                 .collect(Collectors.toCollection(ArrayList::new)));
 
         return ResponseEntity.ok(dto);
+    }
+
+    /**
+     * Laedt ein Vorschaubild oder Zusatzdokument (Zulassung, Zeichnung,
+     * Datenblatt, Montageanleitung, Sonstiges) zu einem Artikel hoch.
+     *
+     * <p>Alle Pruefungen (Endungs-Whitelist, Path-Traversal, Groessenlimit,
+     * Ersetzen eines vorhandenen Vorschaubilds) uebernimmt der
+     * {@link ArtikelDokumentService} - dieser Endpoint nimmt nur entgegen und
+     * antwortet.
+     */
+    @PostMapping(value = "/{id}/dokumente", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ArtikelDokumentDto> ladeDokumentHoch(
+            @PathVariable Long id,
+            @RequestPart("datei") MultipartFile datei,
+            @RequestPart("typ") String typ,
+            @RequestPart(value = "beschreibung", required = false) String beschreibung) {
+        ArtikelDokumentTyp dokumentTyp;
+        try {
+            dokumentTyp = ArtikelDokumentTyp.valueOf(typ.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            ArtikelDokumentDto ergebnis = artikelDokumentService.ladeHoch(id, datei, dokumentTyp, beschreibung);
+            return ResponseEntity.status(HttpStatus.CREATED).body(ergebnis);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /** Alle Dokumente eines Artikels, inklusive Vorschaubild. */
+    @GetMapping("/{id}/dokumente")
+    @Transactional(readOnly = true)
+    public ResponseEntity<List<ArtikelDokumentDto>> listeDokumente(@PathVariable Long id) {
+        return ResponseEntity.ok(artikelDokumentService.listeDokumente(id));
+    }
+
+    /** Liefert die Datei eines Artikel-Dokuments mit passendem Content-Type aus. */
+    @GetMapping("/dokumente/{dokumentId}/datei")
+    @Transactional(readOnly = true)
+    public ResponseEntity<Resource> ladeDokumentDatei(@PathVariable Long dokumentId) {
+        ArtikelDokumentService.ArtikelDokumentDatei datei = artikelDokumentService.ladeDatei(dokumentId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(datei.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + datei.originalDateiname() + "\"")
+                .body(datei.resource());
+    }
+
+    /** Loescht ein Artikel-Dokument - Datenbankeintrag und Datei. */
+    @DeleteMapping("/dokumente/{dokumentId}")
+    public ResponseEntity<Void> loescheDokument(@PathVariable Long dokumentId) {
+        artikelDokumentService.loescheDokument(dokumentId);
+        return ResponseEntity.noContent().build();
     }
 
     /**

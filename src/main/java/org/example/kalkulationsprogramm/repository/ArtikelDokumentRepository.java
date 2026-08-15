@@ -13,4 +13,10 @@ public interface ArtikelDokumentRepository extends JpaRepository<ArtikelDokument
     List<ArtikelDokument> findByArtikelIdOrderBySortierungAscIdAsc(Long artikelId);
 
     Optional<ArtikelDokument> findFirstByArtikelIdAndTyp(Long artikelId, ArtikelDokumentTyp typ);
+
+    /**
+     * Vorschaubilder mehrerer Artikel in einem Rutsch - Grundlage fuer die
+     * Trefferliste, die sonst je Zeile eine eigene Abfrage bräuchte (N+1).
+     */
+    List<ArtikelDokument> findByArtikelIdInAndTyp(List<Long> artikelIds, ArtikelDokumentTyp typ);
 }

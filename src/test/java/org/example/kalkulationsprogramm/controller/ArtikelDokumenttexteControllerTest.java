@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
+import org.example.kalkulationsprogramm.service.ArtikelDokumentService;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
 import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
@@ -60,6 +61,9 @@ class ArtikelDokumenttexteControllerTest {
 
     @MockBean
     private ArtikelPositionsPreisService artikelPositionsPreisService;
+
+    @MockBean
+    private ArtikelDokumentService artikelDokumentService;
 
     @BeforeEach
     void setUp() {
