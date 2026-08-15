@@ -88,8 +88,14 @@ class ZugferdExtractorServiceTest {
         }
 
         @Test
-        void mapptTypeCode351ZuAngebot() {
-            assertThat(service.mapTypeCodeToGeschaeftsdokumentart("351")).isEqualTo("Angebot");
+        void mapptTypeCode351ZuLieferschein() {
+            // 351 = Despatch advice (Lieferavis), nicht Angebot - siehe UNTDID 1001.
+            assertThat(service.mapTypeCodeToGeschaeftsdokumentart("351")).isEqualTo("Lieferschein");
+        }
+
+        @Test
+        void mapptTypeCode310ZuAngebot() {
+            assertThat(service.mapTypeCodeToGeschaeftsdokumentart("310")).isEqualTo("Angebot");
         }
 
         @Test

@@ -7,6 +7,8 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.UntdidCodeliste;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.mustangproject.ZUGFeRD.ZUGFeRDImporter;
 import org.springframework.stereotype.Service;
@@ -248,20 +250,33 @@ public class ZugferdExtractorService {
     /**
      * Mappt ZUGFeRD TypeCode (UNTDID 1001) auf Geschäftsdokumentart.
      * Gängige Codes: 380=Rechnung, 381=Gutschrift, 384=Korrigierte Rechnung,
-     * 389=Eigenrechnung, 261=Lieferschein, 351=Angebot, 231=Auftragsbestätigung.
+     * 389=Eigenrechnung, 261/270/351=Lieferschein, 310=Angebot, 231=Auftragsbestätigung.
      */
     String mapTypeCodeToGeschaeftsdokumentart(String typeCode) {
-        if (typeCode == null) return null;
-        return switch (typeCode.trim()) {
-            case "380", "384", "389" -> "Rechnung";
-            case "381" -> "Gutschrift";
-            case "351" -> "Angebot";
-            case "231" -> "Auftragsbestätigung";
-            case "261", "270" -> "Lieferschein";
-            default -> {
-                log.debug("Unbekannter ZUGFeRD TypeCode: {}", typeCode);
-                yield null;
-            }
+        LieferantDokumentTyp typ = UntdidCodeliste.typFuer(typeCode);
+        String erkannteArt = zuAnzeigetext(typ);
+        if (erkannteArt == null) {
+            log.debug("Unbekannter ZUGFeRD TypeCode: {}", typeCode);
+        }
+        return erkannteArt;
+    }
+
+    /**
+     * Uebersetzt den Dokumenttyp der Codeliste in den Anzeigetext fuer die
+     * Dokumentliste. {@link LieferantDokumentTyp} selbst fuehrt keinen
+     * Anzeigenamen.
+     */
+    private String zuAnzeigetext(LieferantDokumentTyp typ) {
+        if (typ == null) {
+            return null;
+        }
+        return switch (typ) {
+            case RECHNUNG -> "Rechnung";
+            case GUTSCHRIFT -> "Gutschrift";
+            case ANGEBOT -> "Angebot";
+            case AUFTRAGSBESTAETIGUNG -> "Auftragsbestätigung";
+            case LIEFERSCHEIN -> "Lieferschein";
+            default -> null;
         };
     }
 

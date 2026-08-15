@@ -25,6 +25,7 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.PreisQuelle;
+import org.example.kalkulationsprogramm.domain.UntdidCodeliste;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
@@ -2567,30 +2568,10 @@ public class GeminiDokumentAnalyseService {
      * <p>Deckt alle gebraeuchlichen Rechnungsarten ab, nicht nur 380: Sammel- und
      * Abschlagsrechnungen sind bei Stahlhaendlern und am Bau die Regel.
      *
-     * <p><b>Achtung, weicht bewusst von
-     * {@code ZugferdExtractorService.mapTypeCodeToGeschaeftsdokumentart} ab:</b>
-     * dort steht 351 = Angebot. Laut UNTDID 1001 ist 351 aber "Despatch advice",
-     * also ein Lieferavis; Angebot ist 310. Die dortige Zuordnung wirkt nur auf
-     * die Anzeige und bleibt deshalb unangetastet - hier wuerde sie ein
-     * Lieferdokument Preise schreiben lassen.
-     *
      * @return der ausgewiesene Typ, oder {@code null} wenn die Datei keinen nennt
      */
     private LieferantDokumentTyp ausgewiesenerTyp(String typeCode) {
-        if (typeCode == null) {
-            return null;
-        }
-        return switch (typeCode.trim()) {
-            // 380 Rechnung, 384 korrigiert, 389 Eigenrechnung, 385 Sammelrechnung,
-            // 386 Vorauszahlung, 326 Teilrechnung, 875-877 Bau-Abschlagsrechnungen
-            case "380", "384", "389", "385", "386", "326", "875", "876", "877" ->
-                    LieferantDokumentTyp.RECHNUNG;
-            case "381" -> LieferantDokumentTyp.GUTSCHRIFT;
-            case "310" -> LieferantDokumentTyp.ANGEBOT;
-            case "231" -> LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG;
-            case "351", "261", "270" -> LieferantDokumentTyp.LIEFERSCHEIN;
-            default -> null;
-        };
+        return UntdidCodeliste.typFuer(typeCode);
     }
 
     /**
