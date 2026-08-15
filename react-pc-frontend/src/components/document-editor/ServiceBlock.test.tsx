@@ -118,3 +118,38 @@ describe('ServiceBlock Wahlpositions-Menue', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 });
+
+describe('ServiceBlock Hinweis auf fehlenden Kundentext', () => {
+    // Der PDF-Druck faellt ohne Beschreibung auf den Titel zurueck
+    // (RechnungPdfService:881-889). Bei Material ist der Titel die
+    // Kurzbeschreibung aus den Stammdaten - reine Innensicht, die nie auf ein
+    // Kundendokument darf. Deshalb muss der Bediener es im Editor sehen.
+    const material: DocBlock = { ...block, artikelId: 7, description: '' };
+
+    it('weist eine Materialposition ohne Kundentext aus', () => {
+        render(<ServiceBlock {...props} block={material} />);
+
+        expect(screen.getByText(/Kein Text für den Kunden/)).toBeInTheDocument();
+    });
+
+    it('wertet einen leeren Rich-Text-Rest wie gar keinen Text', () => {
+        render(<ServiceBlock {...props} block={{ ...material, description: '<p></p>' }} />);
+
+        expect(screen.getByText(/Kein Text für den Kunden/)).toBeInTheDocument();
+    });
+
+    it('schweigt, sobald ein Kundentext da ist', () => {
+        render(<ServiceBlock {...props}
+            block={{ ...material, description: '<p>T-Stahl 40 x 40 x 5 mm, verzinkt</p>' }} />);
+
+        expect(screen.queryByText(/Kein Text für den Kunden/)).not.toBeInTheDocument();
+    });
+
+    it('laesst eine Leistung ohne Beschreibung in Ruhe', () => {
+        // Dort ist der Titel ein vom Bediener geschriebener Satz - der Notnagel
+        // im PDF ist fuer Leistungen ausdruecklich richtig.
+        render(<ServiceBlock {...props} block={{ ...block, description: '' }} />);
+
+        expect(screen.queryByText(/Kein Text für den Kunden/)).not.toBeInTheDocument();
+    });
+});

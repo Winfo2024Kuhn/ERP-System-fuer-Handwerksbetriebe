@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 
 import { ArtikelSuche } from './ArtikelSuche';
 import { formatCurrency } from './formatCurrency';
+import { baueKundentext, hatKundentext, kundentextFuerPosition } from './kundentext';
 import { preisHinweisKurz, type PreisHinweis } from './preisHinweis';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -34,7 +35,11 @@ const zuAuswahl = (artikel: Artikel, menge: number): ArtikelAuswahl => ({
     // eine namenlose Position im Editor.
     titel: artikel.kurzbeschreibung?.trim()
         || [artikel.produktname, artikel.abmessung].filter(Boolean).join(' '),
-    beschreibungHtml: artikel.beschreibung ?? '',
+    // Der Kundentext entscheidet, was auf dem Angebot steht. Waere er leer,
+    // druckt der Notnagel in RechnungPdfService:881-889 ersatzweise den Titel —
+    // also die Innensicht, die den Kunden nichts angeht. Deshalb wird er
+    // notfalls aus den Stammdaten gebaut (siehe kundentext.ts).
+    beschreibungHtml: kundentextFuerPosition(artikel),
     menge,
     einheit: artikel.positionsEinheit ?? 'Stk',
     // Kein ermittelbarer Preis wird zu 0. Der Bediener sieht die Null im Editor
@@ -102,6 +107,11 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
     const zeilenAktion = (artikel: Artikel) => {
         const ausgewaehlt = gewaehlt.has(artikel.id);
         const hinweis = (artikel.preisHinweis ?? 'KEIN_PREIS') as PreisHinweis;
+        // Fehlender Kundentext gehoert VOR das Uebernehmen, nicht danach: Er ist
+        // das Einzige, was der Kunde spaeter liest. Der Hinweis steht im selben
+        // Stil wie die Preis-Hinweise, damit die Zeile nicht zwei Sprachen spricht.
+        const kundentextFehlt = !hatKundentext(artikel.beschreibung);
+        const ersatztext = kundentextFehlt ? baueKundentext(artikel) : '';
         return (
             <div className="flex items-center gap-3">
                 <input
@@ -129,6 +139,16 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
                 ) : (
                     <span className="text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 text-[10px]">
                         {preisHinweisKurz[hinweis]}
+                    </span>
+                )}
+                {kundentextFehlt && (
+                    <span
+                        className="text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 text-[10px]"
+                        title={ersatztext
+                            ? `Beim Übernehmen wird daraus: „${ersatztext.replace(/<[^>]*>/g, '')}“`
+                            : 'Lässt sich aus den Stammdaten nicht erzeugen — bitte im Editor selbst schreiben.'}
+                    >
+                        kein Kundentext
                     </span>
                 )}
             </div>

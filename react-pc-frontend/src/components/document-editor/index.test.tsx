@@ -311,7 +311,10 @@ describe('DocumentEditor – Material einfügen', () => {
         expect(material).toMatchObject({
             type: 'SERVICE',
             title: 'Vierkantrohr 40 x 40 x 2',
-            description: '',
+            // Ohne gepflegten Kundentext baut das Auswahlfenster einen aus den
+            // Stammdaten - sonst druckte das PDF ersatzweise den title, also die
+            // Innensicht (siehe kundentext.ts).
+            description: '<p>Vierkantrohr, 40 x 40 x 2 mm</p>',
             unit: 'lfm',
             price: 0,
             artikelId: 8,

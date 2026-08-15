@@ -45,6 +45,33 @@ class ArtikelPositionDurchlaufTest {
                "quantity":12,"unit":"lfm","price":8.40,"artikelId":7,"optional":false}
             ]}""";
 
+    /**
+     * Derselbe Block ohne Kundentext. Genau so sieht eine Materialposition aus,
+     * deren Artikel keine gepflegte Beschreibung hat und aus dessen Stammdaten
+     * sich auch keine bauen liess (z.B. Produktname "RO 42,4X2,0" ohne
+     * Profilform).
+     *
+     * <p>Dieser Pfad war ueber die gesamte Kette ungetestet - und genau darin
+     * sass der Fehler: {@code RechnungPdfService} (Zeile 793 und 881-889) prueft
+     * {@code beschreibungHtml().isBlank()} und druckt bei leerem Text
+     * ersatzweise {@code beschreibung()}, also den Titel. Bei einer Leistung ist
+     * das richtig; bei Material ist der Titel die Kurzbeschreibung aus den
+     * Stammdaten - reine Innensicht, die nie auf ein Kundendokument darf.
+     *
+     * <p>Der Test schreibt fest, was in diesem Fall geschieht. Er ist bewusst
+     * keine Erfolgsmeldung, sondern eine Warnlampe: Solange er gruen ist, ist
+     * belegt, dass eine leere description den Titel ins PDF holt - deshalb muss
+     * das Auswahlfenster ihn fuellen oder den Bediener sichtbar darauf stossen
+     * (siehe {@code react-pc-frontend/src/components/artikel/kundentext.ts}).
+     */
+    private static final String POSITIONEN_JSON_OHNE_KUNDENTEXT = """
+            {"blocks":[
+              {"id":"b1","type":"TEXT","content":"<p>Sehr geehrter Herr Mustermann,</p>","fontSize":10},
+              {"id":"b2","type":"SERVICE","title":"T-Stahl 40x40 Lager",
+               "description":"",
+               "quantity":12,"unit":"lfm","price":8.40,"artikelId":7,"optional":false}
+            ]}""";
+
     @Mock private AusgangsGeschaeftsDokumentRepository dokumentRepository;
     @Mock private AusgangsGeschaeftsDokumentCounterRepository counterRepository;
     @Mock private ProjektRepository projektRepository;
@@ -146,5 +173,52 @@ class ArtikelPositionDurchlaufTest {
         // Kurztext. Das PDF druckt ihn seit 48dd24a nicht mehr - die Website darf
         // ihn deshalb ebenfalls nicht anzeigen (siehe Website-Agenten-Prompt).
         assertThat(material.getBezeichnung()).isEqualTo("T-Stahl 40x40 Lager");
+    }
+
+    // ------------------------------------------------------------------
+    // Leere description - der Pfad, in dem der Fehler sass
+    // ------------------------------------------------------------------
+
+    @Test
+    void ohneKundentextGreiftDerPdfNotnagelUndDruecktDenKurztextAufsPapier() {
+        ContentBlockDto block =
+                AutoAuftragsbestaetigungVersandService.parsePositionenJsonZuContentBlocks(
+                                POSITIONEN_JSON_OHNE_KUNDENTEXT).stream()
+                        .filter(b -> "SERVICE".equals(b.type()))
+                        .findFirst().orElseThrow();
+
+        // Das ist woertlich die Bedingung aus RechnungPdfService:793.
+        boolean hatKundentext = block.beschreibungHtml() != null && !block.beschreibungHtml().isBlank();
+        assertThat(hatKundentext).isFalse();
+
+        // Und das steht dann in der Bezeichnungsspalte des PDF: der Kurztext.
+        assertThat(block.beschreibung()).isEqualTo("T-Stahl 40x40 Lager");
+    }
+
+    @Test
+    void ohneKundentextStehtAufDerFreigabeSeiteEbenfallsNurDerKurztext() {
+        FreigabePositionDto material = service.baueKundenPositionen(POSITIONEN_JSON_OHNE_KUNDENTEXT).stream()
+                .filter(p -> "SERVICE".equals(p.getTyp()))
+                .findFirst().orElseThrow();
+
+        assertThat(material.getBeschreibungHtml()).isNullOrEmpty();
+        assertThat(material.getBezeichnung()).isEqualTo("T-Stahl 40x40 Lager");
+    }
+
+    @Test
+    void ohneKundentextRechnetDiePositionUnveraendertWeiter() {
+        // Der fehlende Text ist ein Darstellungsproblem, kein Rechenproblem -
+        // Menge, Einheit und Summe muessen davon unberuehrt bleiben.
+        ContentBlockDto block =
+                AutoAuftragsbestaetigungVersandService.parsePositionenJsonZuContentBlocks(
+                                POSITIONEN_JSON_OHNE_KUNDENTEXT).stream()
+                        .filter(b -> "SERVICE".equals(b.type()))
+                        .findFirst().orElseThrow();
+
+        assertThat(block.menge()).isEqualByComparingTo("12");
+        assertThat(block.einheit()).isEqualTo("lfm");
+        assertThat(block.gesamt()).isEqualByComparingTo("100.80");
+        assertThat(AutoAuftragsbestaetigungVersandService.summiereNettoAusJson(
+                POSITIONEN_JSON_OHNE_KUNDENTEXT)).isEqualByComparingTo("100.80");
     }
 }
