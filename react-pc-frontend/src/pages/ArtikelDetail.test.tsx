@@ -53,7 +53,7 @@ const detailAntwort = {
         {
             preisId: 11, lieferantId: 2, lieferantName: 'Beispiel Metall GmbH',
             externeArtikelnummer: 'B-2000', preis: 12.5, preisDatum: '2026-07-15T00:00:00Z',
-            quelle: { name: 'ANGEBOT_EMAIL', anzeigename: 'Aus Angebots-Mail uebernommen' },
+            quelle: { name: 'ANGEBOT_EMAIL', anzeigename: 'Aus einem Angebot uebernommen' },
             guenstigster: false, aufschlagProzent: 25,
         },
     ],

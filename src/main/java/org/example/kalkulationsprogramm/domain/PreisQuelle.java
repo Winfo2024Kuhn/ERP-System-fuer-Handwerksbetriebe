@@ -8,16 +8,22 @@ import lombok.Getter;
  * Woher ein Lieferantenpreis stammt.
  *
  * <p>Wichtig fuer die Preishistorie: ein von Hand eingetragener Preis nach einem
- * Telefonat hat eine andere Verlaesslichkeit als ein automatisch aus einer
- * Angebots-Mail uebernommener. In der Verlaufsanzeige wird die Quelle mit
- * ausgewiesen, damit nachvollziehbar bleibt, worauf eine Kalkulation beruht.
+ * Telefonat hat eine andere Verlaesslichkeit als ein automatisch aus einem Angebot
+ * uebernommener. In der Verlaufsanzeige wird die Quelle mit ausgewiesen, damit
+ * nachvollziehbar bleibt, worauf eine Kalkulation beruht.
  */
 @Getter
 @JsonFormat(shape = JsonFormat.Shape.OBJECT)
 public enum PreisQuelle {
 
     MANUELL("Von Hand eingetragen"),
-    ANGEBOT_EMAIL("Aus Angebots-Mail uebernommen"),
+    /**
+     * Der Enum-Wert heisst weiterhin ANGEBOT_EMAIL (native ENUM-Spalte, ein neuer
+     * Wert braeuchte eine Migration). Der Anzeigetext ist bewusst allgemeiner
+     * gefasst: Preise aus einem hochgeladenen Angebots-PDF tragen dieselbe Quelle,
+     * "Angebots-Mail" waere dort falsch.
+     */
+    ANGEBOT_EMAIL("Aus einem Angebot uebernommen"),
     CSV_IMPORT("Aus Preisliste importiert"),
     RECHNUNG("Aus einer Rechnung uebernommen"),
     SYSTEM("Vom System angelegt"),

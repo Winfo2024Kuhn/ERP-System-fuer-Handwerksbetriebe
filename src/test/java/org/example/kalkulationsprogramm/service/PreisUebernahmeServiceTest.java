@@ -26,7 +26,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -432,8 +431,14 @@ class PreisUebernahmeServiceTest {
 
     /**
      * Der Datenbankzugriff wird hier absichtlich zum Stolpern gebracht: eine
-     * Position, die eine Ausnahme ausloest, darf die uebrigen Positionen derselben
-     * Rechnung nicht mitreissen.
+     * Position, die beim Speichern eine Ausnahme ausloest, darf die uebrigen
+     * Positionen derselben Rechnung nicht mitreissen.
+     *
+     * <p>Seit die Preisstaende in einer Sammelabfrage geladen werden, kann nicht
+     * mehr das Nachschlagen selbst je Position stolpern - das laeuft nur noch
+     * einmal fuer die ganze Rechnung. Stattdessen simuliert dieser Test einen
+     * Fehler beim Schreiben (z.B. eine abgerissene Verbindung), der weiterhin je
+     * Position auftritt.
      */
     @Test
     void ausnahmeBeiEinerPositionStopptDieUebrigenNicht() {
@@ -443,13 +448,14 @@ class PreisUebernahmeServiceTest {
         // gelesener Preisstand wuerde beim Zugriff auf den Artikel lazy nachladen.
         Artikel artikel = new Artikel();
         artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
-        LieferantenArtikelPreise vorhanden = preisstand(artikel, lieferant, "OK-1", "10.00");
+        LieferantenArtikelPreise stolpernderStand = preisstand(artikel, lieferant, "KRACH", "5.00");
+        LieferantenArtikelPreise okStand = preisstand(artikel, lieferant, "OK-1", "10.00");
 
         LieferantenArtikelPreiseRepository stolpernd = mock(LieferantenArtikelPreiseRepository.class);
-        when(stolpernd.findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(eq("KRACH"), any()))
+        when(stolpernd.findByLieferant_IdAndAktuellTrueAndExterneArtikelnummerIn(any(), any()))
+                .thenReturn(List.of(stolpernderStand, okStand));
+        when(stolpernd.save(stolpernderStand))
                 .thenThrow(new IllegalStateException("Verbindung weggebrochen"));
-        when(stolpernd.findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(eq("OK-1"), any()))
-                .thenReturn(Optional.of(vorhanden));
 
         var ergebnis = new PreisUebernahmeService(stolpernd).uebernehmePreise(
                 lieferant, PreisQuelle.RECHNUNG, new Date(), null,

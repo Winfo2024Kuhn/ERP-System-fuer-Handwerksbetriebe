@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,6 +28,25 @@ public interface LieferantenArtikelPreiseRepository
     /** Der derzeit gueltige Eintrag zu einer Lieferanten-Artikelnummer. */
     Optional<LieferantenArtikelPreise> findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(
             String externeArtikelnummer, Long lieferantId);
+
+    /**
+     * Die derzeit gueltigen Eintraege zu mehreren Lieferanten-Artikelnummern in
+     * einem Rutsch - fuer die Preisuebernahme aus einer Rechnung mit vielen
+     * Positionen, die sonst eine Anfrage je Position braeuchte.
+     *
+     * <p>Spring Data unterstuetzt {@code IgnoreCase} nicht zusammen mit {@code In},
+     * deshalb hier {@code UPPER(...)} im JPQL statt einer abgeleiteten
+     * Methodensignatur. Der Aufrufer muss {@code externeArtikelnummern} bereits in
+     * Grossschreibung uebergeben.
+     */
+    @Query("""
+            SELECT p FROM LieferantenArtikelPreise p
+            WHERE p.lieferant.id = :lieferantId AND p.aktuell = true
+            AND UPPER(p.externeArtikelnummer) IN :externeArtikelnummern
+            """)
+    List<LieferantenArtikelPreise> findByLieferant_IdAndAktuellTrueAndExterneArtikelnummerIn(
+            @Param("lieferantId") Long lieferantId,
+            @Param("externeArtikelnummern") Collection<String> externeArtikelnummern);
 
     /** Alle derzeit gueltigen Preise eines Artikels, guenstigster zuerst. */
     @Query("""

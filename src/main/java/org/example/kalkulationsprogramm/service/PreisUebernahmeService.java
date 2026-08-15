@@ -8,7 +8,6 @@ import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
-import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,11 +17,16 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Uebernimmt Preise aus den Positionen eines Lieferantendokuments in die
@@ -166,11 +170,13 @@ public class PreisUebernahmeService {
             return new Ergebnis(0, positionen.size());
         }
 
+        Map<String, List<LieferantenArtikelPreise>> bestand = ladeAktuelleStaende(positionen, lieferant);
+
         int uebernommen = 0;
         int uebersprungen = 0;
         for (Position position : positionen) {
             try {
-                if (uebernehmeEine(lieferant, quelle, dokumentDatum, belegnummer, position)) {
+                if (uebernehmeEine(lieferant, quelle, dokumentDatum, belegnummer, position, bestand)) {
                     uebernommen++;
                 } else {
                     uebersprungen++;
@@ -190,7 +196,8 @@ public class PreisUebernahmeService {
 
     /** @return true, wenn ein neuer Preisstand geschrieben wurde. */
     private boolean uebernehmeEine(Lieferanten lieferant, PreisQuelle quelle, Date stand,
-                                   String belegnummer, Position position) {
+                                   String belegnummer, Position position,
+                                   Map<String, List<LieferantenArtikelPreise>> bestand) {
         String nummer = position.externeArtikelnummer() == null ? "" : position.externeArtikelnummer().trim();
         if (nummer.isEmpty()) {
             log.debug("Position ohne Artikelnummer - keine Zuordnung moeglich");
@@ -205,7 +212,7 @@ public class PreisUebernahmeService {
             return false;
         }
 
-        Optional<LieferantenArtikelPreise> bisherOpt = ladeAktuellenStand(nummer, lieferant);
+        Optional<LieferantenArtikelPreise> bisherOpt = ermittleAktuellenStand(nummer, lieferant, bestand);
         if (bisherOpt.isEmpty()) {
             return false;
         }
@@ -282,27 +289,57 @@ public class PreisUebernahmeService {
     }
 
     /**
-     * Holt den derzeit gueltigen Preisstand.
+     * Laedt die aktuellen Preisstaende aller in den Positionen genannten
+     * Artikelnummern in einem Rutsch.
+     *
+     * <p>Vorher schlug jede Position einzeln nach - bei einer 50-Positionen-Rechnung
+     * 50 Datenbank-Roundtrips. Der Schluessel ist grossgeschrieben, weil die
+     * Zuordnung wie zuvor gross-/kleinschreibungsunabhaengig sein muss (siehe
+     * {@link LieferantenArtikelPreiseRepository#findByLieferant_IdAndAktuellTrueAndExterneArtikelnummerIn}).
+     */
+    private Map<String, List<LieferantenArtikelPreise>> ladeAktuelleStaende(List<Position> positionen,
+                                                                             Lieferanten lieferant) {
+        Set<String> nummernGross = positionen.stream()
+                .map(Position::externeArtikelnummer)
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(nummer -> !nummer.isEmpty())
+                .map(nummer -> nummer.toUpperCase(Locale.ROOT))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (nummernGross.isEmpty()) {
+            return Map.of();
+        }
+
+        List<LieferantenArtikelPreise> treffer = artikelPreiseRepository
+                .findByLieferant_IdAndAktuellTrueAndExterneArtikelnummerIn(lieferant.getId(), nummernGross);
+        return treffer.stream()
+                .collect(Collectors.groupingBy(p -> p.getExterneArtikelnummer().toUpperCase(Locale.ROOT)));
+    }
+
+    /**
+     * Liest den derzeit gueltigen Preisstand einer Position aus der vorab
+     * geladenen Map.
      *
      * <p>Auf {@code aktuell} liegt kein Unique-Constraint. Altdaten koennen daher
      * mehrere aktuelle Staende je Artikelnummer tragen - das darf die Analyse
-     * nicht mit einer Exception abbrechen.
+     * nicht mit einer Exception abbrechen, sondern nur diese eine Position
+     * ueberspringen.
      */
-    private Optional<LieferantenArtikelPreise> ladeAktuellenStand(String nummer, Lieferanten lieferant) {
-        try {
-            Optional<LieferantenArtikelPreise> treffer = artikelPreiseRepository
-                    .findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(nummer, lieferant.getId());
-            if (treffer.isEmpty()) {
-                log.debug("Artikelnummer {} ist bei Lieferant {} nicht hinterlegt",
-                        nummer, lieferant.getLieferantenname());
-            }
-            return treffer;
-        } catch (IncorrectResultSizeDataAccessException e) {
+    private Optional<LieferantenArtikelPreise> ermittleAktuellenStand(String nummer, Lieferanten lieferant,
+                                                                       Map<String, List<LieferantenArtikelPreise>> bestand) {
+        List<LieferantenArtikelPreise> treffer = bestand.getOrDefault(nummer.toUpperCase(Locale.ROOT), List.of());
+        if (treffer.isEmpty()) {
+            log.debug("Artikelnummer {} ist bei Lieferant {} nicht hinterlegt",
+                    nummer, lieferant.getLieferantenname());
+            return Optional.empty();
+        }
+        if (treffer.size() > 1) {
             log.warn("Artikelnummer {} hat bei Lieferant {} mehrere aktuelle Preisstaende - "
                             + "Preis nicht uebernommen, Stammdaten pruefen",
                     nummer, lieferant.getLieferantenname());
             return Optional.empty();
         }
+        return Optional.of(treffer.get(0));
     }
 
     /**
