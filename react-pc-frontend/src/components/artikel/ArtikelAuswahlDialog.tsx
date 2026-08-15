@@ -14,7 +14,11 @@ export interface ArtikelAuswahl {
     artikelId: number;
     /** Innensicht — wird zum Block-title. Faellt auf Produktname + Abmessung zurueck. */
     titel: string;
-    /** Kundentext — wird zur Block-description. Leer, wenn nicht gepflegt. */
+    /**
+     * Kundentext — wird zur Block-description. Gepflegter Text am Artikel,
+     * sonst ein aus den Stammdaten gebauter; leer nur, wenn beides fehlt.
+     * Siehe `kundentext.ts`.
+     */
     beschreibungHtml: string;
     menge: number;
     einheit: string;
