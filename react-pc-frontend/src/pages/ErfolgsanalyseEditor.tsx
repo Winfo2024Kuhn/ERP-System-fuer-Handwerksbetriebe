@@ -18,6 +18,7 @@ import {
     Package,
     Phone,
     RefreshCw,
+    Search,
     Send,
     TrendingUp,
     Users,
@@ -28,6 +29,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
+import { LieferantenDetailsModal } from '../components/LieferantenDetailsModal';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -119,7 +121,10 @@ interface OrtHeatmapDto {
 interface TopKundeDto {
     kundenName: string;
     kundennummer?: string;
-    umsatz: number;
+    /** Rechnungssumme inkl. Umsatzsteuer, nur aus fertigen Projekten. */
+    umsatzBrutto: number;
+    /** Rechnungssumme ohne Umsatzsteuer, nur aus fertigen Projekten. */
+    umsatzNetto: number;
     projektAnzahl: number;
     gewinn: number;
 }
@@ -390,7 +395,7 @@ function YearPicker({ value, onChange, minYear = 2015, maxYear = new Date().getF
     );
 }
 
-type KundenSortField = 'kundenName' | 'umsatz' | 'projektAnzahl' | 'gewinn';
+type KundenSortField = 'kundenName' | 'umsatzBrutto' | 'umsatzNetto' | 'projektAnzahl' | 'gewinn';
 type SortDirection = 'asc' | 'desc';
 
 export default function ErfolgsanalyseEditor() {
@@ -399,7 +404,7 @@ export default function ErfolgsanalyseEditor() {
     const [monat, setMonat] = useState('');
 
     // Sorting State for Top 10 Kunden
-    const [kundenSortField, setKundenSortField] = useState<KundenSortField>('umsatz');
+    const [kundenSortField, setKundenSortField] = useState<KundenSortField>('umsatzBrutto');
     const [kundenSortDir, setKundenSortDir] = useState<SortDirection>('desc');
 
     // Data State
@@ -411,9 +416,18 @@ export default function ErfolgsanalyseEditor() {
     const [websiteAnalytics, setWebsiteAnalytics] = useState<WebsiteAnalyticsSnapshotDto | null>(null);
     const [kostenstellenVergleich, setKostenstellenVergleich] = useState<KostenstelleVergleich[]>([]);
 
+    // Lieferanten-Details: vollständige Liste inkl. der Plätze hinter den Top 10.
+    // Der markierte Lieferant wird über seinen Platz geführt, nicht über den Namen –
+    // im Bestand gibt es Lieferanten-Dubletten mit identischem Namen.
+    const [lieferantenDetailsOffen, setLieferantenDetailsOffen] = useState(false);
+    const [hervorgehobenerRang, setHervorgehobenerRang] = useState<number | null>(null);
+
     // Lade Daten
     const loadData = useCallback(async () => {
         setLoading(true);
+        // Mit neuen Daten gilt eine neue Rangfolge – die alte Markierung würde
+        // auf einen anderen Lieferanten zeigen.
+        setHervorgehobenerRang(null);
         try {
             const params = new URLSearchParams({ jahr: jahr.toString() });
             if (monat) params.append('monat', monat);
@@ -713,6 +727,23 @@ export default function ErfolgsanalyseEditor() {
         };
     }, [lieferantenkostenJahre]);
 
+    const zeitraumLabel = useMemo(() => {
+        const monatsName = MONATE.find(m => m.value === monat)?.label;
+        return monat && monatsName ? `${monatsName} ${jahr}` : `${jahr}`;
+    }, [monat, jahr]);
+
+    // Stabile Referenz, damit der Escape-Listener im Modal nicht bei jedem Render neu hängt.
+    const schliesseLieferantenDetails = useCallback(() => setLieferantenDetailsOffen(false), []);
+
+    // Ein aus der Detail-Liste gewählter Lieferant wird nur dann als Extra-Balken
+    // angehängt, wenn er nicht ohnehin schon unter den Top 10 steht.
+    const zusatzLieferant = useMemo(() => {
+        if (hervorgehobenerRang === null || hervorgehobenerRang <= 10) return null;
+        const treffer = lieferantPerformance[hervorgehobenerRang - 1];
+        if (!treffer) return null;
+        return { ...treffer, rang: hervorgehobenerRang };
+    }, [hervorgehobenerRang, lieferantPerformance]);
+
     // Lieferanten Performance Chart Data (pro Lieferant)
     const lieferantPerfChartData = useMemo(() => {
         if (!lieferantPerformance || lieferantPerformance.length === 0) return null;
@@ -720,19 +751,42 @@ export default function ErfolgsanalyseEditor() {
         // Zeige nur Top 10 Lieferanten nach Umsatz
         const top10 = lieferantPerformance.slice(0, 10);
 
-        return {
-            labels: top10.map(d => d.name),
-            datasets: [
-                {
+        if (!zusatzLieferant) {
+            return {
+                labels: top10.map(d => d.name),
+                datasets: [{
                     label: 'Gesamtkosten (Netto €)',
-                    data: top10.map(d => d.netto),
+                    data: top10.map<number | null>(d => d.netto),
                     backgroundColor: 'rgba(225, 29, 72, 0.8)',
                     borderColor: 'rgba(225, 29, 72, 1)',
                     borderWidth: 1,
-                }
+                }],
+            };
+        }
+
+        // Eigener Datensatz statt nur andere Farbe: So erklärt die Legende den Balken,
+        // und die Information hängt nicht allein am Farbton.
+        const luecke = Array<number | null>(top10.length).fill(null);
+        return {
+            labels: [...top10.map(d => d.name), zusatzLieferant.name],
+            datasets: [
+                {
+                    label: 'Gesamtkosten (Netto €)',
+                    data: [...top10.map<number | null>(d => d.netto), null],
+                    backgroundColor: 'rgba(225, 29, 72, 0.8)',
+                    borderColor: 'rgba(225, 29, 72, 1)',
+                    borderWidth: 1,
+                },
+                {
+                    label: `${zusatzLieferant.name} (Platz ${zusatzLieferant.rang})`,
+                    data: [...luecke, zusatzLieferant.netto],
+                    backgroundColor: 'rgba(71, 85, 105, 0.85)',
+                    borderColor: 'rgba(30, 41, 59, 1)',
+                    borderWidth: 2,
+                },
             ],
         };
-    }, [lieferantPerformance]);
+    }, [lieferantPerformance, zusatzLieferant]);
 
     // Website-Funnel Bar-Chart
     const websiteFunnelChartData = useMemo(() => {
@@ -774,7 +828,8 @@ export default function ErfolgsanalyseEditor() {
             let valB: number | string = 0;
             switch (kundenSortField) {
                 case 'kundenName': valA = a.kundenName.toLowerCase(); valB = b.kundenName.toLowerCase(); break;
-                case 'umsatz': valA = a.umsatz; valB = b.umsatz; break;
+                case 'umsatzBrutto': valA = a.umsatzBrutto; valB = b.umsatzBrutto; break;
+                case 'umsatzNetto': valA = a.umsatzNetto; valB = b.umsatzNetto; break;
                 case 'projektAnzahl': valA = a.projektAnzahl; valB = b.projektAnzahl; break;
                 case 'gewinn': valA = a.gewinn; valB = b.gewinn; break;
             }
@@ -959,9 +1014,14 @@ export default function ErfolgsanalyseEditor() {
                         {/* 1. Top 10 Kunden */}
                         {sortedTopKunden.length > 0 && (
                             <Card className="p-6 border-0 shadow-sm rounded-xl overflow-hidden">
-                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
-                                    <Users className="w-5 h-5 text-rose-600" />
-                                    <h3 className="text-lg font-bold text-slate-900">Top 10 Kunden ({jahr})</h3>
+                                <div className="mb-4 pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-3">
+                                        <Users className="w-5 h-5 text-rose-600" />
+                                        <h3 className="text-lg font-bold text-slate-900">Top 10 Kunden ({zeitraumLabel})</h3>
+                                    </div>
+                                    <p className="text-sm text-slate-500 mt-1 ml-8">
+                                        Zusammengerechnet aus fertigen Projekten – laufende Projekte zählen erst mit, wenn sie beendet sind.
+                                    </p>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full">
@@ -976,9 +1036,15 @@ export default function ErfolgsanalyseEditor() {
                                                 </th>
                                                 <th
                                                     className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
-                                                    onClick={() => toggleKundenSort('umsatz')}
+                                                    onClick={() => toggleKundenSort('umsatzBrutto')}
                                                 >
-                                                    <span className="inline-flex items-center gap-1 justify-end">Umsatz <SortIcon field="umsatz" /></span>
+                                                    <span className="inline-flex items-center gap-1 justify-end">Brutto <SortIcon field="umsatzBrutto" /></span>
+                                                </th>
+                                                <th
+                                                    className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
+                                                    onClick={() => toggleKundenSort('umsatzNetto')}
+                                                >
+                                                    <span className="inline-flex items-center gap-1 justify-end">Netto <SortIcon field="umsatzNetto" /></span>
                                                 </th>
                                                 <th
                                                     className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
@@ -1008,8 +1074,9 @@ export default function ErfolgsanalyseEditor() {
                                                         </span>
                                                     </td>
                                                     <td className="py-3 px-4 font-medium text-slate-900">{kunde.kundenName}</td>
-                                                    <td className="py-3 px-4 text-right text-slate-700">{formatCurrency(kunde.umsatz)}</td>
-                                                    <td className="py-3 px-4 text-right text-slate-600">{kunde.projektAnzahl}</td>
+                                                    <td className="py-3 px-4 text-right text-slate-700 tabular-nums">{formatCurrency(kunde.umsatzBrutto)}</td>
+                                                    <td className="py-3 px-4 text-right text-slate-700 tabular-nums">{formatCurrency(kunde.umsatzNetto)}</td>
+                                                    <td className="py-3 px-4 text-right text-slate-600 tabular-nums">{kunde.projektAnzahl}</td>
                                                     <td className={`py-3 px-4 text-right font-semibold ${kunde.gewinn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(kunde.gewinn)}</td>
                                                 </tr>
                                             ))}
@@ -1120,9 +1187,22 @@ export default function ErfolgsanalyseEditor() {
 
                             {/* Top Lieferanten Bar */}
                             <Card className="p-6 border-0 shadow-sm rounded-xl">
-                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
-                                    <BarChart3 className="w-5 h-5 text-violet-600" />
-                                    <h2 className="text-lg font-bold text-slate-900">Top 10 Lieferanten</h2>
+                                <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-3">
+                                        <BarChart3 className="w-5 h-5 text-rose-600" />
+                                        <h2 className="text-lg font-bold text-slate-900">
+                                            {zusatzLieferant ? 'Top 10 Lieferanten + 1' : 'Top 10 Lieferanten'}
+                                        </h2>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setLieferantenDetailsOffen(true)}
+                                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    >
+                                        <Search className="w-4 h-4 mr-1.5" />
+                                        Details
+                                    </Button>
                                 </div>
                                 <div className="h-[350px] w-full relative">
                                     {lieferantPerfChartData ? (
@@ -1131,7 +1211,14 @@ export default function ErfolgsanalyseEditor() {
                                             data={lieferantPerfChartData}
                                             options={{
                                                 ...barChartOptions,
-                                                maintainAspectRatio: false
+                                                maintainAspectRatio: false,
+                                                plugins: {
+                                                    ...barChartOptions.plugins,
+                                                    // Sobald ein zusätzlicher Lieferant dazukommt, erklärt die Legende die beiden
+                                                    // Balkenarten. Sie steht oben, weil die schrägen Lieferantennamen unten
+                                                    // den ganzen Platz brauchen.
+                                                    legend: { display: !!zusatzLieferant, position: 'top' as const },
+                                                },
                                             }}
                                         />
                                     ) : (
@@ -1453,6 +1540,15 @@ export default function ErfolgsanalyseEditor() {
 
                 </>
             )}
+
+            <LieferantenDetailsModal
+                isOpen={lieferantenDetailsOffen}
+                onClose={schliesseLieferantenDetails}
+                lieferanten={lieferantPerformance}
+                zeitraum={zeitraumLabel}
+                hervorgehobenerRang={hervorgehobenerRang}
+                onHervorheben={setHervorgehobenerRang}
+            />
         </PageLayout>
     );
 }

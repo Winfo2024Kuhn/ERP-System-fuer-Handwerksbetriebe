@@ -84,6 +84,16 @@ export function LieferantSearchModal({
         };
     }, [searchTerm, isOpen, loadLieferanten]);
 
+    // Fluchtweg per Tastatur – ohne den bliebe nur der Klick auf das X.
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
     const handleSelect = (l: LieferantSuchErgebnis) => {
         onSelect(l);
         setSearchTerm('');
