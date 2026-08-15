@@ -275,7 +275,17 @@ describe('ArtikelDetail', () => {
         render(<ArtikelDetail />, { wrapper: Wrapper });
 
         expect(await screen.findByText('Für Angebote und Rechnungen')).toBeInTheDocument();
-        expect(screen.getByLabelText('Kurzbeschreibung')).toHaveValue('T-Stahl 40x40 Lager');
+
+        // Der Abschnitt steht schon, waehrend die Eingabefelder noch leer sind:
+        // ArtikelDetail rendert zuerst mit den geladenen `daten` und belegt die
+        // Angebotsfelder erst in einem Folge-Effekt vor. Zwischen beiden Renders
+        // liegt ein Commit mit sichtbarer Ueberschrift und leerem Feld - genau
+        // den erwischt ein synchrones getBy hier unter Last. Deshalb auf den
+        // Wert warten statt ihn sofort zu lesen (gleiche Zusicherung).
+        await waitFor(() =>
+            expect(screen.getByLabelText('Kurzbeschreibung')).toHaveValue('T-Stahl 40x40 Lager'));
+        // Aufschlag und Beschreibung setzt derselbe Effekt im selben Batch -
+        // ist die Kurzbeschreibung da, sind sie es auch.
         expect(screen.getByLabelText('Aufschlag auf den Einkaufspreis')).toHaveValue(40);
         expect(screen.getByText(/8,40/)).toBeInTheDocument();
     });
@@ -356,6 +366,11 @@ describe('ArtikelDetail', () => {
         // Tiptap liefert beim Leeren typischerweise einen leeren Absatz statt
         // eines leeren Strings.
         const editor = await screen.findByTestId('tiptap');
+        // Das Feld existiert schon, bevor der Vorbelege-Effekt gelaufen ist.
+        // Wer jetzt schreibt, dessen Eingabe wird gleich darauf vom Server-Stand
+        // ueberschrieben - dann ginge '<p>Alter Text</p>' statt null ans Backend.
+        // Also erst den vorbelegten Stand abwarten.
+        await waitFor(() => expect(editor).toHaveValue('<p>Alter Text</p>'));
         fireEvent.change(editor, { target: { value: '<p>&nbsp;</p>' } });
 
         await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
@@ -438,6 +453,9 @@ describe('ArtikelDetail', () => {
         // Anders als die Entity "&nbsp;" oben: hier steckt das echte
         // Unicode-Zeichen U+00A0 im HTML, wie es manche Editoren erzeugen.
         const editor = await screen.findByTestId('tiptap');
+        // Gleiches Rennen wie oben: erst den vorbelegten Server-Stand abwarten,
+        // sonst ueberschreibt der Vorbelege-Effekt die Leerung wieder.
+        await waitFor(() => expect(editor).toHaveValue('<p>Alter Text</p>'));
         fireEvent.change(editor, { target: { value: '<p> </p>' } });
 
         await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
