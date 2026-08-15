@@ -401,6 +401,92 @@ class LieferantDokumentControllerTest {
             mockMvc.perform(get("/api/lieferant-dokumente/6/download"))
                     .andExpect(status().isNotFound());
         }
+
+        /**
+         * probeContentType leitet den Typ aus der Endung der gespeicherten Datei ab
+         * und wuerde bei einer .svg "image/svg+xml" liefern - inline und same-origin
+         * ausgeliefert waere das gespeichertes XSS (SVG darf <script> enthalten).
+         * Deshalb ist SVG bewusst nicht auf der Inline-Whitelist: attachment statt
+         * inline und octet-stream statt image/svg+xml erzwingen.
+         */
+        @Test
+        @DisplayName("SVG-Datei wird nicht inline, sondern als attachment mit octet-stream ausgeliefert")
+        void svgDatei_wirdAlsAttachmentMitOctetStreamAusgeliefert(@TempDir Path workDir) throws Exception {
+            Path uploadDir = workDir.resolve("uploads");
+            Path belegeDir = uploadDir.resolve("belege");
+            Files.createDirectories(belegeDir);
+            Files.write(belegeDir.resolve("bild.svg"), "<svg onload=\"alert(1)\"></svg>".getBytes());
+
+            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(7L);
+            dokument.setOriginalDateiname("bild.svg");
+            dokument.setGespeicherterDateiname("belege/bild.svg");
+            given(dokumentRepository.findById(7L)).willReturn(Optional.of(dokument));
+
+            mockMvc.perform(get("/api/lieferant-dokumente/7/download"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "application/octet-stream"))
+                    .andExpect(header().stringValues("Content-Disposition",
+                            org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.startsWith("attachment;"))))
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        }
+
+        @Test
+        @DisplayName("PDF-Datei wird inline mit application/pdf ausgeliefert, inkl. nosniff-Header")
+        void pdfDatei_wirdInlineMitApplicationPdfAusgeliefert(@TempDir Path workDir) throws Exception {
+            Path uploadDir = workDir.resolve("uploads");
+            Path belegeDir = uploadDir.resolve("belege");
+            Files.createDirectories(belegeDir);
+            Files.write(belegeDir.resolve("rechnung.pdf"), "%PDF-1.4 stub".getBytes());
+
+            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(8L);
+            dokument.setOriginalDateiname("rechnung.pdf");
+            dokument.setGespeicherterDateiname("belege/rechnung.pdf");
+            given(dokumentRepository.findById(8L)).willReturn(Optional.of(dokument));
+
+            mockMvc.perform(get("/api/lieferant-dokumente/8/download"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "application/pdf"))
+                    .andExpect(header().stringValues("Content-Disposition",
+                            org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.startsWith("inline;"))))
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        }
+
+        /**
+         * Frueher wurde der Content-Disposition-Header per String-Konkatenation
+         * gebaut ("inline; filename=\"" + filename + "\""). Ein Anfuehrungszeichen
+         * im Dateinamen konnte so aus dem filename-Attribut ausbrechen und ein
+         * zusaetzliches Header-Attribut einschleusen. Der ContentDisposition-Builder
+         * kodiert stattdessen RFC-5987-konform ueber filename*=.
+         */
+        @Test
+        @DisplayName("Dateiname mit Anfuehrungszeichen bricht nicht aus dem filename-Attribut aus")
+        void dateinameMitAnfuehrungszeichen_kannNichtAusbrechen(@TempDir Path workDir) throws Exception {
+            Path uploadDir = workDir.resolve("uploads");
+            Path belegeDir = uploadDir.resolve("belege");
+            Files.createDirectories(belegeDir);
+            Files.write(belegeDir.resolve("scan.pdf"), "%PDF-1.4 stub".getBytes());
+
+            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(9L);
+            dokument.setOriginalDateiname("a\";x=\"b.pdf");
+            dokument.setGespeicherterDateiname("belege/scan.pdf");
+            given(dokumentRepository.findById(9L)).willReturn(Optional.of(dokument));
+
+            // Tatsaechliches Verhalten von ContentDisposition.builder() lokal verifiziert
+            // (nicht geraten) - identisch zum Befund in ArtikelDokumenteControllerTest.
+            mockMvc.perform(get("/api/lieferant-dokumente/9/download"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Disposition",
+                            "inline; filename=\"=?UTF-8?Q?a\";x=3D\"b.pdf?=\"; filename*=UTF-8''a%22%3Bx%3D%22b.pdf"));
+        }
     }
 
     @Nested

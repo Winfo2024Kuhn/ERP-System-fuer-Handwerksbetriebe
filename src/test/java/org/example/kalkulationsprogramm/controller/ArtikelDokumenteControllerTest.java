@@ -214,10 +214,14 @@ class ArtikelDokumenteControllerTest {
                     new ByteArrayResource("PDF-Inhalt".getBytes()), "plan.pdf", "application/pdf", true);
             given(artikelDokumentService.ladeDatei(10L)).willReturn(datei);
 
+            // Spring's ContentDisposition.builder() liefert bei einem reinen ASCII-Namen sowohl
+            // das klassische filename= (RFC-2047-kodiert, fuer aeltere Clients) als auch das
+            // RFC-5987-konforme filename*=UTF-8''... - lokal verifiziert, nicht geraten.
             mockMvc.perform(get("/api/artikel/dokumente/10/datei"))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Content-Type", "application/pdf"))
-                    .andExpect(header().string("Content-Disposition", "inline; filename=\"plan.pdf\""))
+                    .andExpect(header().string("Content-Disposition",
+                            "inline; filename=\"=?UTF-8?Q?plan.pdf?=\"; filename*=UTF-8''plan.pdf"))
                     .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                     .andExpect(content().bytes("PDF-Inhalt".getBytes()));
         }
@@ -234,8 +238,42 @@ class ArtikelDokumenteControllerTest {
 
             mockMvc.perform(get("/api/artikel/dokumente/11/datei"))
                     .andExpect(status().isOk())
-                    .andExpect(header().string("Content-Disposition", "attachment; filename=\"geschmuggelt.html\""))
+                    .andExpect(header().string("Content-Disposition",
+                            "attachment; filename=\"=?UTF-8?Q?geschmuggelt.html?=\"; filename*=UTF-8''geschmuggelt.html"))
                     .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        }
+
+        @Test
+        @DisplayName("Dateiname mit eingebettetem Anfuehrungszeichen: RFC-5987-Name (filename*=) ist "
+                + "korrekt prozent-kodiert und von modernen Clients bevorzugt - keine neue Kopfzeile")
+        void dateinameMitAnfuehrungszeichen_rfc5987NameKorrektKodiert() throws Exception {
+            var datei = new ArtikelDokumentService.ArtikelDokumentDatei(
+                    new ByteArrayResource("Inhalt".getBytes()), "a\";x=\"b.pdf", "application/pdf", true);
+            given(artikelDokumentService.ladeDatei(12L)).willReturn(datei);
+
+            // Tatsaechliches Verhalten von ContentDisposition.builder() lokal verifiziert (nicht
+            // geraten): Das legacy filename= (RFC-2047-Q-Encoding, fuer sehr alte Clients) laesst
+            // das eingebettete Anfuehrungszeichen unveraendert stehen - das ist Spring-eigenes
+            // Verhalten, identisch zu BelegController#downloadDatei. Sicherheitsrelevant ist das
+            // nicht: es entsteht keine zusaetzliche Kopfzeile (kein CR/LF, siehe naechster Test),
+            // und alle RFC-6266-konformen Clients nutzen bevorzugt filename*=, das hier korrekt
+            // RFC-5987-prozent-kodiert ist.
+            mockMvc.perform(get("/api/artikel/dokumente/12/datei"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Disposition",
+                            "inline; filename=\"=?UTF-8?Q?a\";x=3D\"b.pdf?=\"; filename*=UTF-8''a%22%3Bx%3D%22b.pdf"));
+        }
+
+        @Test
+        @DisplayName("Dateiname mit CR/LF kann keinen zusaetzlichen Response-Header mehr einschleusen")
+        void dateinameMitCrLf_schleustKeinenHeaderEin() throws Exception {
+            var datei = new ArtikelDokumentService.ArtikelDokumentDatei(
+                    new ByteArrayResource("Inhalt".getBytes()), "a\r\nX-Evil: 1.pdf", "application/pdf", true);
+            given(artikelDokumentService.ladeDatei(13L)).willReturn(datei);
+
+            mockMvc.perform(get("/api/artikel/dokumente/13/datei"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().doesNotExist("X-Evil"));
         }
 
         @Test

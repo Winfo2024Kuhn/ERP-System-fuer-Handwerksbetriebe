@@ -2,11 +2,13 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
@@ -25,6 +27,7 @@ import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -721,15 +724,35 @@ public class LieferantDokumentController {
 
         try {
             byte[] bytes = Files.readAllBytes(filePath);
-            String filename = dokument.getEffektiverDateiname();
-            String contentType = Files.probeContentType(filePath);
-            if (contentType == null) {
-                contentType = "application/octet-stream";
-            }
+            String filename = dokument.getEffektiverDateiname() != null
+                    ? dokument.getEffektiverDateiname() : ("dokument-" + dokumentId);
+
+            // probeContentType leitet den Typ aus der Endung der gespeicherten Datei ab.
+            // Eine .svg oder .html wuerde inline und same-origin ausgeliefert gespeichertes
+            // XSS ermoeglichen - deshalb Whitelist erlaubter MIME-Types fuer Inline-Auslieferung
+            // (analog BelegController#downloadDatei). SVG ist bewusst nicht dabei. Alles
+            // ausserhalb der Whitelist wird als attachment + octet-stream + nosniff ausgeliefert.
+            String probedType = Files.probeContentType(filePath);
+            String mime = probedType != null ? probedType.toLowerCase(Locale.ROOT) : null;
+            boolean inlineSicher = mime != null && (
+                    mime.equals("image/jpeg") || mime.equals("image/jpg")
+                 || mime.equals("image/png")  || mime.equals("image/webp")
+                 || mime.equals("image/heic") || mime.equals("image/heif")
+                 || mime.equals("application/pdf"));
+
+            String contentType = inlineSicher ? mime : "application/octet-stream";
+            // ContentDisposition.builder kodiert den Dateinamen RFC-5987-konform (filename*=UTF-8''...)
+            // und schuetzt so vor Header-Injection ueber CR/LF oder Anfuehrungszeichen im Dateinamen.
+            ContentDisposition disposition = (inlineSicher
+                    ? ContentDisposition.inline()
+                    : ContentDisposition.attachment())
+                    .filename(filename, StandardCharsets.UTF_8)
+                    .build();
 
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
+                    .header("X-Content-Type-Options", "nosniff")
                     .body(bytes);
         } catch (IOException e) {
             log.error("Fehler beim Lesen der Datei für Dokument {}: {}", dokumentId, e.getMessage());

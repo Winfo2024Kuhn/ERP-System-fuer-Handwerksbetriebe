@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -43,6 +44,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -510,17 +512,25 @@ public class ArtikelController {
      * dessen Javadoc fuer die Begruendung (Direktweg an der Anwendung vorbei,
      * siehe SCRAPING_ARTIKEL_CSV.md). {@code X-Content-Type-Options: nosniff}
      * verhindert zusaetzlich, dass der Browser den gelieferten Content-Type bei
-     * Bedarf selbst "korrigiert" (Content-Sniffing).
+     * Bedarf selbst "korrigiert" (Content-Sniffing). {@code datei.contentType()}
+     * stammt nicht vom Client, sondern aus {@code ArtikelDokumentService.ermittleContentType(endung)},
+     * einem {@code switch} ueber eine Sechs-Endungen-Whitelist - {@link MediaType#parseMediaType}
+     * bekommt hier also nie einen manipulierbaren Wert und kann nicht werfen.
      */
     @GetMapping("/dokumente/{dokumentId}/datei")
     @Transactional(readOnly = true)
     public ResponseEntity<Resource> ladeDokumentDatei(@PathVariable Long dokumentId) {
         ArtikelDokumentService.ArtikelDokumentDatei datei = artikelDokumentService.ladeDatei(dokumentId);
-        String disposition = (datei.istBildOderPdf() ? "inline" : "attachment")
-                + "; filename=\"" + datei.originalDateiname() + "\"";
+        // ContentDisposition.builder kodiert den Dateinamen RFC-5987-konform (filename*=UTF-8''...)
+        // und schuetzt so vor Header-Injection ueber CR/LF oder Anfuehrungszeichen im Originalnamen.
+        ContentDisposition disposition = (datei.istBildOderPdf()
+                ? ContentDisposition.inline()
+                : ContentDisposition.attachment())
+                .filename(datei.originalDateiname(), StandardCharsets.UTF_8)
+                .build();
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(datei.contentType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                 .header("X-Content-Type-Options", "nosniff")
                 .body(datei.resource());
     }
