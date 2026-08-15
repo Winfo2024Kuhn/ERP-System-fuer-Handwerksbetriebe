@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -64,6 +65,34 @@ class ArtikelSuchePreisvorschlagTest {
     @MockBean
     private KategorieService kategorieService;
 
+    /**
+     * Haengt einen aktuellen Preis eines Lieferanten an den Artikel.
+     *
+     * <p>Der Lieferant ist Pflicht, nicht Beiwerk: {@code mappeArtikelZuDto}
+     * blendet Preiszeilen ohne Lieferant aus der Anzeige aus - und damit auch
+     * aus dem Preisvorschlag. Dummy-Namen (DSGVO).
+     */
+    private static void mitPreis(Artikel artikel, String betrag, long lieferantId, String lieferantName) {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(lieferantId);
+        lieferant.setLieferantenname(lieferantName);
+        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
+        preis.setArtikel(artikel);
+        preis.setLieferant(lieferant);
+        preis.setPreis(new BigDecimal(betrag));
+        preis.setAktuell(true);
+        artikel.getArtikelpreis().add(preis);
+    }
+
+    /** Preiszeile ohne Lieferant - kommt im Bestand vor und darf nichts bestimmen. */
+    private static void mitPreisOhneLieferant(Artikel artikel, String betrag) {
+        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
+        preis.setArtikel(artikel);
+        preis.setPreis(new BigDecimal(betrag));
+        preis.setAktuell(true);
+        artikel.getArtikelpreis().add(preis);
+    }
+
     @Test
     void liefertPreisvorschlagUndTexteJeTreffer() throws Exception {
         ArtikelWerkstoffe traeger = new ArtikelWerkstoffe();
@@ -74,11 +103,7 @@ class ArtikelSuchePreisvorschlagTest {
         traeger.setVerrechnungseinheit(Verrechnungseinheit.KILOGRAMM);
         traeger.setMasse(new BigDecimal("2.0000"));
         traeger.setVerkaufsaufschlagProzent(new BigDecimal("40.00"));
-        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
-        preis.setArtikel(traeger);
-        preis.setPreis(new BigDecimal("3.00"));
-        preis.setAktuell(true);
-        traeger.getArtikelpreis().add(preis);
+        mitPreis(traeger, "3.00", 1L, "Musterstahl GmbH");
 
         when(artikelService.suche(any(), any()))
                 .thenReturn(new PageImpl<>(List.of(traeger)));
@@ -97,11 +122,7 @@ class ArtikelSuchePreisvorschlagTest {
         rohr.setId(8L);
         rohr.setProduktname("Rundrohr");
         rohr.setVerrechnungseinheit(Verrechnungseinheit.LAUFENDE_METER);
-        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
-        preis.setArtikel(rohr);
-        preis.setPreis(new BigDecimal("6.00"));
-        preis.setAktuell(true);
-        rohr.getArtikelpreis().add(preis);
+        mitPreis(rohr, "6.00", 1L, "Musterstahl GmbH");
 
         when(artikelService.suche(any(), any())).thenReturn(new PageImpl<>(List.of(rohr)));
 
@@ -122,6 +143,76 @@ class ArtikelSuchePreisvorschlagTest {
 
         mockMvc.perform(get("/api/artikel").param("q", "Vierkant"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.artikel[0].positionsEinzelpreis").doesNotExist())
+                .andExpect(jsonPath("$.artikel[0].preisHinweis").value("KEIN_PREIS"));
+    }
+
+    // ------------------------------------------------------------------
+    // Der Vorschlag muss demselben Preis folgen wie die Anzeige
+    // ------------------------------------------------------------------
+
+    @Test
+    void rechnetMitDemGefiltertenLieferantenpreisUndNichtMitDemGuenstigsten() throws Exception {
+        // Zwei Lieferanten, der eine deutlich billiger. Gefiltert wird auf den
+        // teureren - dann darf der Vorschlag nicht heimlich mit dem billigeren
+        // rechnen: Auf einem verbindlichen Angebot waere die Marge sonst zu
+        // niedrig angesetzt.
+        Artikel rohr = new Artikel();
+        rohr.setId(10L);
+        rohr.setProduktname("Rundrohr");
+        rohr.setVerrechnungseinheit(Verrechnungseinheit.LAUFENDE_METER);
+        rohr.setVerkaufsaufschlagProzent(new BigDecimal("50.00"));
+        mitPreis(rohr, "4.00", 1L, "Musterstahl GmbH");
+        mitPreis(rohr, "10.00", 2L, "Beispiel Metall KG");
+
+        when(artikelService.suche(any(), any())).thenReturn(new PageImpl<>(List.of(rohr)));
+
+        mockMvc.perform(get("/api/artikel").param("lieferant", "Beispiel Metall KG"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.artikel[0].guenstigsterLieferantName").value("Beispiel Metall KG"))
+                .andExpect(jsonPath("$.artikel[0].guenstigsterPreis").value(10.00))
+                // 10,00 + 50 % = 15,00 - nicht 4,00 + 50 % = 6,00.
+                .andExpect(jsonPath("$.artikel[0].positionsEinzelpreis").value(15.00))
+                .andExpect(jsonPath("$.artikel[0].preisHinweis").value("OK"));
+    }
+
+    @Test
+    void ignoriertPreiszeilenOhneLieferantenGenausoWieDieAnzeige() throws Exception {
+        // Die Spalte "Bester Preis" blendet Preiszeilen ohne Lieferant aus. Der
+        // Vorschlag muss dasselbe tun, sonst stehen zwei verschiedene Zahlen
+        // nebeneinander in derselben Zeile.
+        Artikel rohr = new Artikel();
+        rohr.setId(11L);
+        rohr.setProduktname("Rundrohr");
+        rohr.setVerrechnungseinheit(Verrechnungseinheit.LAUFENDE_METER);
+        rohr.setVerkaufsaufschlagProzent(BigDecimal.ZERO);
+        mitPreisOhneLieferant(rohr, "2.00");
+        mitPreis(rohr, "9.00", 1L, "Musterstahl GmbH");
+
+        when(artikelService.suche(any(), any())).thenReturn(new PageImpl<>(List.of(rohr)));
+
+        mockMvc.perform(get("/api/artikel").param("q", "Rundrohr"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.artikel[0].guenstigsterPreis").value(9.00))
+                .andExpect(jsonPath("$.artikel[0].positionsEinzelpreis").value(9.00));
+    }
+
+    @Test
+    void laesstDenPreisLeerWennDerGefilterteLieferantKeinenHat() throws Exception {
+        // Greift der Filter auf keine Preiszeile, zeigt die Spalte nichts an -
+        // dann darf auch kein Vorschlag aus einem anderen Lieferanten entstehen.
+        Artikel rohr = new Artikel();
+        rohr.setId(12L);
+        rohr.setProduktname("Rundrohr");
+        rohr.setVerrechnungseinheit(Verrechnungseinheit.LAUFENDE_METER);
+        rohr.setVerkaufsaufschlagProzent(new BigDecimal("50.00"));
+        mitPreis(rohr, "4.00", 1L, "Musterstahl GmbH");
+
+        when(artikelService.suche(any(), any())).thenReturn(new PageImpl<>(List.of(rohr)));
+
+        mockMvc.perform(get("/api/artikel").param("lieferant", "Beispiel Metall KG"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.artikel[0].guenstigsterPreis").doesNotExist())
                 .andExpect(jsonPath("$.artikel[0].positionsEinzelpreis").doesNotExist())
                 .andExpect(jsonPath("$.artikel[0].preisHinweis").value("KEIN_PREIS"));
     }

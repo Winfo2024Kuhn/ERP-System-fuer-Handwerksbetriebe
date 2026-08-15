@@ -149,4 +149,83 @@ class ArtikelPositionsPreisServiceTest {
 
         assertThat(service.berechne(unbekannt).einheit()).isEqualTo("Stk");
     }
+
+    // ------------------------------------------------------------------
+    // Ueberladung mit bereits ermitteltem Preis
+    // ------------------------------------------------------------------
+
+    /** Loser Preisstand, so wie ihn der Controller nach dem Filtern in der Hand haelt. */
+    private static LieferantenArtikelPreise preisstand(String preis) {
+        LieferantenArtikelPreise p = new LieferantenArtikelPreise();
+        p.setPreis(new BigDecimal(preis));
+        p.setAktuell(true);
+        return p;
+    }
+
+    @Test
+    void nimmtDenUebergebenenPreisUndNichtDenGuenstigstenAmArtikel() {
+        // Der Artikel traegt einen viel billigeren Preisstand. Uebergibt der
+        // Aufrufer einen anderen, gilt seiner - er kennt den Lieferantenfilter,
+        // der Service nicht.
+        Artikel rohr = new Artikel();
+        rohr.setVerrechnungseinheit(Verrechnungseinheit.LAUFENDE_METER);
+        rohr.setVerkaufsaufschlagProzent(new BigDecimal("50.00"));
+        mitPreis(rohr, "4.00");
+
+        var vorschlag = service.berechne(rohr, preisstand("10.00"));
+
+        assertThat(vorschlag.einzelpreis()).isEqualByComparingTo("15.00");
+        assertThat(vorschlag.hinweis()).isEqualTo(ArtikelPreisHinweis.OK);
+    }
+
+    @Test
+    void ohneUebergebenenPreisBleibtDerVorschlagLeerTrotzPreisAmArtikel() {
+        // Der Aufrufer sagt damit: "Fuer diese Zeile gibt es keinen gueltigen
+        // Preis" - etwa weil der gefilterte Lieferant keinen hinterlegt hat.
+        // Ein stiller Rueckgriff auf einen anderen Lieferanten waere genau der
+        // Fehler, den die Ueberladung verhindert.
+        Artikel rohr = new Artikel();
+        rohr.setVerrechnungseinheit(Verrechnungseinheit.LAUFENDE_METER);
+        rohr.setVerkaufsaufschlagProzent(new BigDecimal("50.00"));
+        mitPreis(rohr, "4.00");
+
+        var vorschlag = service.berechne(rohr, null);
+
+        assertThat(vorschlag.einzelpreis()).isNull();
+        assertThat(vorschlag.einheit()).isEqualTo("lfm");
+        assertThat(vorschlag.hinweis()).isEqualTo(ArtikelPreisHinweis.KEIN_PREIS);
+    }
+
+    @Test
+    void rechnetDenUebergebenenKilopreisGenausoUeber() {
+        ArtikelWerkstoffe traeger = new ArtikelWerkstoffe();
+        traeger.setVerrechnungseinheit(Verrechnungseinheit.KILOGRAMM);
+        traeger.setMasse(new BigDecimal("2.0000"));
+        traeger.setVerkaufsaufschlagProzent(BigDecimal.ZERO);
+
+        var vorschlag = service.berechne(traeger, preisstand("3.00"));
+
+        assertThat(vorschlag.einheit()).isEqualTo("lfm");
+        assertThat(vorschlag.einzelpreis()).isEqualByComparingTo("6.00");
+    }
+
+    @Test
+    void derEinstiegOhnePreiskontextNimmtWeiterhinDenGuenstigstenAmArtikel() {
+        Artikel rohr = new Artikel();
+        rohr.setVerrechnungseinheit(Verrechnungseinheit.LAUFENDE_METER);
+        rohr.setVerkaufsaufschlagProzent(BigDecimal.ZERO);
+        mitPreis(rohr, "9.00");
+        mitPreis(rohr, "4.00");
+
+        assertThat(service.berechne(rohr).einzelpreis()).isEqualByComparingTo("4.00");
+    }
+
+    @Test
+    void vertraegtEinenNullArtikelAuchMitPreis() {
+        var vorschlag = service.berechne(null, preisstand("4.00"));
+
+        assertThat(vorschlag.einheit()).isEqualTo("Stk");
+        assertThat(vorschlag.einzelpreis()).isNull();
+        assertThat(vorschlag.hinweis()).isEqualTo(ArtikelPreisHinweis.KEIN_PREIS);
+    }
 }

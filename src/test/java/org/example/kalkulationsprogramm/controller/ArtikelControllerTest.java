@@ -72,7 +72,7 @@ class ArtikelControllerTest {
         // Neutraler Default, damit bestehende Tests den Preisvorschlag nicht
         // extra stubben muessen - siehe ArtikelSuchePreisvorschlagTest fuer den
         // tatsaechlich berechneten Vorschlag.
-        when(artikelPositionsPreisService.berechne(any()))
+        when(artikelPositionsPreisService.berechne(any(), any()))
                 .thenReturn(new ArtikelPositionsPreisService.ArtikelPositionsVorschlag(
                         "Stk", null, ArtikelPreisHinweis.KEIN_PREIS));
     }

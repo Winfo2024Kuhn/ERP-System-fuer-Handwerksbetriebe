@@ -308,8 +308,15 @@ public class ArtikelController {
         dto.setBeschreibung(artikel.getBeschreibung());
         dto.setVerkaufsaufschlagProzent(artikel.getVerkaufsaufschlagProzent());
 
+        // Derselbe Preis, der oben in der Preisspalte steht - nicht irgendeiner.
+        // mappeArtikelZuDto hat ihn unter Beruecksichtigung des
+        // Lieferantenfilters ermittelt und reicht ihn hier durch. Wuerde der
+        // Service stattdessen selbst ueber Artikel.getGuenstigsterPreis() gehen,
+        // rechnete der Vorschlag mit dem Einkaufspreis eines gerade abgewaehlten
+        // Lieferanten - immer dem guenstigsten, also mit zu kleiner Marge auf
+        // einem verbindlichen Angebot.
         ArtikelPositionsPreisService.ArtikelPositionsVorschlag vorschlag =
-                artikelPositionsPreisService.berechne(artikel);
+                artikelPositionsPreisService.berechne(artikel, preis);
         dto.setPositionsEinheit(vorschlag.einheit());
         dto.setPositionsEinzelpreis(vorschlag.einzelpreis());
         dto.setPreisHinweis(vorschlag.hinweis().name());

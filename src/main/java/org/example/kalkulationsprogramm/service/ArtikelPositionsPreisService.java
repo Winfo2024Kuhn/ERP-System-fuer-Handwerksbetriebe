@@ -33,15 +33,42 @@ public class ArtikelPositionsPreisService {
     /** Vorschlag fuer eine Dokumentposition. {@code einzelpreis} ist {@code null}, wenn er nicht ermittelbar war. */
     public record ArtikelPositionsVorschlag(String einheit, BigDecimal einzelpreis, ArtikelPreisHinweis hinweis) {}
 
+    /**
+     * Vorschlag ohne Preiskontext: Grundlage ist der guenstigste aktuelle
+     * Lieferantenpreis ueber alle Lieferanten.
+     *
+     * <p>Fuer Aufrufer, die selbst nicht wissen, welcher Preis gilt. Wer den
+     * massgeblichen Preis bereits ermittelt hat - etwa weil nach einem
+     * Lieferanten gefiltert wurde -, nimmt
+     * {@link #berechne(Artikel, LieferantenArtikelPreise)}.
+     */
     public ArtikelPositionsVorschlag berechne(Artikel artikel) {
+        return berechne(artikel, artikel == null
+                ? null
+                : artikel.getGuenstigsterPreis().orElse(null));
+    }
+
+    /**
+     * Vorschlag auf Basis eines bereits ermittelten Preises.
+     *
+     * <p>Der Aufrufer bestimmt, welcher Preis gilt - und nur der. Das ist keine
+     * Bequemlichkeit, sondern der Kern: Filtert die Suche nach einem
+     * Lieferanten, darf der Vorschlag nicht heimlich den (immer guenstigeren)
+     * Preis eines abgewaehlten Lieferanten heranziehen. Sonst wird die Marge auf
+     * einem verbindlichen Angebot zu niedrig angesetzt. Dasselbe gilt fuer
+     * Preiszeilen ohne Lieferant: Wer sie aus der Anzeige ausschliesst, muss sie
+     * auch aus dem Vorschlag ausschliessen.
+     *
+     * @param preis der massgebliche Preis, oder {@code null}, wenn es fuer
+     *              diese Zeile keinen gibt - dann {@link ArtikelPreisHinweis#KEIN_PREIS}
+     */
+    public ArtikelPositionsVorschlag berechne(Artikel artikel, LieferantenArtikelPreise preis) {
         if (artikel == null) {
             return new ArtikelPositionsVorschlag("Stk", null, ArtikelPreisHinweis.KEIN_PREIS);
         }
 
         Verrechnungseinheit einheit = artikel.getVerrechnungseinheit();
-        BigDecimal einkauf = artikel.getGuenstigsterPreis()
-                .map(LieferantenArtikelPreise::getPreis)
-                .orElse(null);
+        BigDecimal einkauf = preis != null ? preis.getPreis() : null;
 
         // Ohne Preis ist jede Umrechnung gegenstandslos. Die Einheit bestimmen
         // wir trotzdem, damit die Position mit der richtigen Einheit einsteigt
