@@ -78,12 +78,21 @@ def fuer_csv(text) -> str:
 # wird "verzinktem Stahl (DX51D+Z)", damit der Satz
 # "... aus <Werkstoff>" lesbar bleibt.
 # Unbekannte Werkstoffe behalten unveraendert ihren technischen Namen.
+#
+# "1.4404" und "1.4541" kamen NICHT aus V337 - die Tabelle hat beide Codes
+# (Norm EN 10088-3, wie 1.4301/1.4571), aber ohne anzeigename. Sie fielen beim
+# Testlauf gegen echte Bestandsdaten auf: 425 Artikel (220 + 205) haetten sonst
+# unuebersetzt "... aus 1.4404" auf dem Kundendokument gestanden. Beides sind
+# austenitische Chromnickelstaehle wie 1.4301/1.4571, deshalb dieselbe
+# Schreibweise "Edelstahl <Code>".
 WERKSTOFF_KLARTEXT = {
     "S235JR": "Baustahl S235JR",
     "S355J2": "Baustahl S355J2",
     "Stahl": "Baustahl",
     "1.4301": "Edelstahl 1.4301",
     "1.4571": "Edelstahl 1.4571",
+    "1.4404": "Edelstahl 1.4404",
+    "1.4541": "Edelstahl 1.4541",
     "Edelstahl": "Edelstahl",
     "EN AW-6060": "Aluminium EN AW-6060",
     "EN AW-5754": "Aluminium EN AW-5754",
@@ -180,6 +189,20 @@ def werkstoff_fuer_kunden(artikel: dict):
     return WERKSTOFF_KLARTEXT.get(name, name)
 
 
+def werkstoff_steckt_schon_im_namen(artikel: dict, text: str) -> bool:
+    """Steht das Werkstoffwort schon im Produktnamen? Sonst wird aus
+    'Allzweckduebel Kunststoff' der Satz 'Allzweckduebel Kunststoff aus
+    Kunststoff' - beim echten Bestand real aufgetreten (Kunststoff-Duebel,
+    Kunststoffdistanzscheiben). Vergleich ueber den rohen Werkstoffnamen aus
+    den Stammdaten (bei Beschlaegen meist schon ein Klartextwort wie
+    'Kunststoff' oder 'Stahl'), nicht ueber die uebersetzte Anzeige - genau wie
+    beim bestehenden Abmessungs-Abgleich ein einfacher Teilstring-Vergleich."""
+    roh = (artikel.get("werkstoffName") or "").strip()
+    if not roh or not text:
+        return False
+    return roh.lower() in text.lower()
+
+
 def fertigungsmerkmale(artikel: dict) -> list:
     merkmale = []
     if enum_name(artikel.get("herstellverfahren")) in VERFAHREN_FUER_KUNDEN:
@@ -211,7 +234,7 @@ def baue_kurzbeschreibung(artikel: dict):
         teile.append(abmessung)
 
     werkstoff = (artikel.get("werkstoffName") or "").strip()
-    if werkstoff:
+    if werkstoff and not werkstoff_steckt_schon_im_namen(artikel, produktname):
         teile.append(werkstoff)
 
     if not teile:
@@ -250,7 +273,7 @@ def baue_beschreibung(artikel: dict):
     if not produktname or not traegt_sich_selbst(produktname):
         return None
     satz = produktname
-    if werkstoff:
+    if werkstoff and not werkstoff_steckt_schon_im_namen(artikel, produktname):
         satz += f" aus {werkstoff}"
     if abmessung and normalisiert(abmessung) not in normalisiert(produktname):
         satz += f", {abmessung}"

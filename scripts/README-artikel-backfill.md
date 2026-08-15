@@ -52,7 +52,9 @@ Erst nach Durchsicht der CSV:
   machen wuerden - alle uebrigen Verfahren sind der Normalfall und entfallen.
 - Rueckfallebene (z.B. Beschlaege): Der Produktname traegt den Text, sofern er
   mit einem echten Wort beginnt (`Tuerschliesser TS 3000`), ergaenzt um
-  Werkstoff und Abmessung, falls vorhanden.
+  Werkstoff und Abmessung, falls vorhanden - aber nur, wenn der Werkstoff nicht
+  schon im Produktnamen steht (`Allzweckduebel Kunststoff` bekommt kein
+  zweites "aus Kunststoff").
 - Fehlt eine Angabe, entfaellt sie ersatzlos - es wird nichts erfunden.
 - Reicht es nicht fuer einen brauchbaren Text, wird der Artikel uebersprungen
   und in der CSV protokolliert.
