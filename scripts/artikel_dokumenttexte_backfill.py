@@ -14,6 +14,12 @@ Profiltyp auseinanderdriften.
 Ohne --apply wird nichts geschrieben. Standard ist ein Trockenlauf, der nur
 eine CSV mit allen geplanten Aenderungen erzeugt.
 
+Mit --limit N hoert das Skript nach N tatsaechlich verarbeiteten Artikeln auf.
+Der erste scharfe Lauf gehoert klein gefahren (--apply --limit 5): Faellt etwa
+das XSRF-Cookie anders aus als erwartet, sind das fuenf Fehlermeldungen statt
+knapp zehntausend. Ein spaeterer Lauf ohne --limit macht dort weiter, denn
+bereits gefuellte Artikel werden uebersprungen.
+
 Der Verkaufsaufschlag wird bewusst NIE mitgesendet: Der Endpunkt arbeitet als
 echtes Teil-Update (was nicht im Rumpf steht, bleibt unangetastet), und der
 Aufschlag ist eine kaufmaennische Entscheidung, die aus Stammdaten nicht
@@ -398,9 +404,18 @@ def main() -> int:
                              "unsichtbar nachgefragt.")
     parser.add_argument("--apply", action="store_true",
                         help="Tatsaechlich schreiben. Ohne dieses Flag nur Trockenlauf.")
+    parser.add_argument("--limit", type=int, default=None, metavar="N",
+                        help="Nach N tatsaechlich verarbeiteten Artikeln aufhoeren. "
+                             "Gezaehlt wird, was geschrieben bzw. geplant wurde - "
+                             "uebersprungene Artikel zaehlen nicht mit. Empfohlen fuer "
+                             "den ersten scharfen Lauf: --apply --limit 5.")
     parser.add_argument("--protokoll", default="artikel_backfill.csv",
                         help="Pfad der CSV mit allen geplanten Aenderungen")
     args = parser.parse_args()
+
+    if args.limit is not None and args.limit < 1:
+        print("--limit braucht eine Zahl groesser 0.", file=sys.stderr)
+        return 2
 
     client = ErpClient(args.url)
 
@@ -421,6 +436,10 @@ def main() -> int:
             return 2
 
     gesetzt = uebersprungen_gepflegt = uebersprungen_duerftig = fehler = 0
+    # Hat --limit den Lauf beendet, oder war der Bestand zu Ende? Der
+    # Unterschied gehoert in die Zusammenfassung: Sonst haelt man einen
+    # abgebrochenen Lauf fuer einen vollstaendigen.
+    limit_erreicht = False
 
     with open(args.protokoll, "w", newline="", encoding="utf-8-sig") as datei:
         schreiber = csv.writer(datei, delimiter=";")
@@ -480,6 +499,16 @@ def main() -> int:
                                         "geplant",
                                         alte_kurz, alte_beschreibung,
                                         kurz, beschreibung])
+
+                # Gezaehlt wird, was das Skript angefasst hat - Geschriebenes
+                # und Fehlgeschlagenes. Uebersprungene Artikel zaehlen bewusst
+                # nicht mit: Sonst waere "--limit 5" beim ersten scharfen Lauf
+                # womoeglich nach fuenf bereits gepflegten Artikeln zu Ende,
+                # ohne dass ein einziger Schreibvorgang stattgefunden haette -
+                # und genau den will man ja pruefen.
+                if args.limit is not None and (gesetzt + fehler) >= args.limit:
+                    limit_erreicht = True
+                    break
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
                 print(f"Zugriff verweigert (HTTP {e.code}). Login noetig: "
@@ -499,6 +528,10 @@ def main() -> int:
     print(f"{gesetzt} {modus}")
     print(f"{uebersprungen_gepflegt} uebersprungen, weil schon gepflegt")
     print(f"{uebersprungen_duerftig} uebersprungen, weil zu wenig Daten")
+    if limit_erreicht:
+        print(f"Bei --limit {args.limit} gestoppt - der Bestand ist NICHT "
+              f"vollstaendig durch. Denselben Aufruf ohne --limit wiederholen; "
+              f"schon gefuellte Artikel werden dabei uebersprungen.")
     if fehler:
         print(f"{fehler} Fehler - siehe Protokoll und Ausgabe oben", file=sys.stderr)
     print(f"Protokoll: {args.protokoll}")

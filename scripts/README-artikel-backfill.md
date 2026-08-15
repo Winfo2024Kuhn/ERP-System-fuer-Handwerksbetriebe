@@ -6,6 +6,19 @@ Bestandsartikel, bei denen beide Felder noch leer sind.
 
 Es braucht nur Python 3 (Standardbibliothek, keine Pakete).
 
+## Wann das laufen muss
+
+**Vor der Freigabe des Material-Knopfs im Dokument-Editor.** Der Knopf fuegt
+Artikel als Position in Angebote und Rechnungen ein; der Kunde liest dabei die
+`beschreibung` des Artikels. Ist sie leer, hat der Editor nur noch die
+Stammdaten, aus denen er einen Ersatzsatz baut
+(`react-pc-frontend/src/components/artikel/kundentext.ts`) -- und wo selbst das
+nicht reicht, geht die Position ganz ohne Kundentext raus und der Bediener muss
+ihn von Hand schreiben.
+
+Das gilt genauso beim Aufsetzen einer neuen Instanz wie heute: erst Artikel
+importieren, dann diesen Backfill fahren, dann den Material-Knopf freigeben.
+
 ## Anmeldung
 
 `/api/artikel` verlangt einen angemeldeten Benutzer. Benutzer angeben,
@@ -36,9 +49,26 @@ Diese Datei durchsehen, bevor es weitergeht. Anderer Ablageort:
 
 ## Schreiben
 
-Erst nach Durchsicht der CSV:
+Erst nach Durchsicht der CSV -- und der **erste** scharfe Lauf klein:
+
+    python scripts/artikel_dokumenttexte_backfill.py --url http://localhost:8080 --benutzer meinname --apply --limit 5
+
+`--limit N` hoert nach N tatsaechlich verarbeiteten Artikeln auf. Uebersprungene
+zaehlen nicht mit -- sonst waere das Limit womoeglich nach fuenf laengst
+gepflegten Artikeln aufgebraucht, ohne dass ein einziger Schreibvorgang
+stattgefunden haette. Genau der ist aber der Punkt: Der Schreibweg (Login,
+CSRF-Token, PATCH) laeuft beim ersten scharfen Aufruf zum allerersten Mal.
+Faellt dabei etwas anders aus als erwartet, sind das fuenf Fehlermeldungen
+statt knapp zehntausend.
+
+Die fuenf Artikel danach im ERP anschauen. Passt es, den Rest ohne `--limit`
+nachziehen:
 
     python scripts/artikel_dokumenttexte_backfill.py --url http://localhost:8080 --benutzer meinname --apply
+
+Das ist gefahrlos wiederholbar: Artikel, die schon einen Text haben, werden
+uebersprungen. Ein mit `--limit` abgebrochener Lauf sagt das am Ende auch
+ausdruecklich, damit er nicht fuer einen vollstaendigen gehalten wird.
 
 ## Wie die Texte entstehen
 
