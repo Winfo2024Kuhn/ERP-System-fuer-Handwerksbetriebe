@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -259,5 +260,80 @@ describe('ArtikelAuswahlDialog', () => {
 
         await userEvent.keyboard('{Escape}');
         await waitFor(() => expect(onSchliessen).toHaveBeenCalled());
+    });
+
+    // ------------------------------------------------------------------
+    // Bedienbarkeit ohne Maus
+    // ------------------------------------------------------------------
+
+    describe('Tastatur und Screenreader', () => {
+        /** Knopf + Fenster, wie im DocumentEditor - fuer den Rueckgabe-Fokus. */
+        function Buehne() {
+            const [offen, setOffen] = useState(false);
+            return (
+                <MemoryRouter>
+                    <button onClick={() => setOffen(true)}>Material</button>
+                    <ArtikelAuswahlDialog
+                        offen={offen}
+                        onSchliessen={() => setOffen(false)}
+                        onUebernehmen={() => setOffen(false)}
+                    />
+                </MemoryRouter>
+            );
+        }
+
+        it('meldet sich als Dialog mit Überschrift an', () => {
+            render(
+                <ArtikelAuswahlDialog offen onSchliessen={() => {}} onUebernehmen={() => {}} />,
+                { wrapper: MemoryRouter },
+            );
+
+            const dialog = screen.getByRole('dialog', { name: 'Material auswählen' });
+            expect(dialog).toHaveAttribute('aria-modal', 'true');
+        });
+
+        it('setzt den Fokus beim Öffnen ins Suchfeld', async () => {
+            render(<Buehne />);
+
+            await userEvent.click(screen.getByRole('button', { name: 'Material' }));
+
+            await waitFor(() =>
+                expect(document.activeElement).toBe(screen.getByLabelText('Freitext')));
+        });
+
+        it('lässt Tab nicht aus dem Fenster heraus', async () => {
+            render(
+                <ArtikelAuswahlDialog offen onSchliessen={() => {}} onUebernehmen={() => {}} />,
+                { wrapper: MemoryRouter },
+            );
+            await screen.findByLabelText('T-Stahl auswählen');
+
+            const dialog = screen.getByRole('dialog');
+            const bedienbar = Array.from(dialog.querySelectorAll<HTMLElement>(
+                'a[href], button:not([disabled]), input:not([disabled]), '
+                + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+            const erstes = bedienbar[0];
+            const letztes = bedienbar[bedienbar.length - 1];
+
+            letztes.focus();
+            await userEvent.tab();
+            expect(document.activeElement).toBe(erstes);
+
+            await userEvent.tab({ shift: true });
+            expect(document.activeElement).toBe(letztes);
+        });
+
+        it('gibt den Fokus beim Schließen an den auslösenden Knopf zurück', async () => {
+            render(<Buehne />);
+            const knopf = screen.getByRole('button', { name: 'Material' });
+
+            await userEvent.click(knopf);
+            await waitFor(() =>
+                expect(document.activeElement).toBe(screen.getByLabelText('Freitext')));
+
+            await userEvent.keyboard('{Escape}');
+
+            await waitFor(() => expect(document.activeElement).toBe(knopf));
+        });
     });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 
 import { ArtikelSuche } from './ArtikelSuche';
@@ -21,6 +21,21 @@ export interface ArtikelAuswahl {
     /** 0, wenn kein Preis ermittelbar war — der Bediener traegt ihn im Editor nach. */
     einzelpreis: number;
 }
+
+/**
+ * Was im Fenster per Tab erreichbar ist — Grundlage der Fokus-Falle. Wortgleich
+ * zu `FOKUSSIERBAR` in `components/kasse/KassenbuchAbschlussLeiste.tsx`; das
+ * Repo loest Modals dort schon so, und ein Fenster soll sich nicht anders
+ * verhalten, nur weil es woanders steht.
+ */
+const FOKUSSIERBAR = 'a[href], button:not([disabled]), input:not([disabled]), '
+    + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Das Suchfeld der {@link ArtikelSuche}. Es ist der erste sinnvolle Halt beim
+ * Oeffnen — dort faengt jede Auswahl an, nicht beim Schliessen-Kreuz.
+ */
+const SUCHFELD = '#filter-q';
 
 export interface ArtikelAuswahlDialogProps {
     offen: boolean;
@@ -63,9 +78,50 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
     // Korrigieren "112".
     const [mengenText, setMengenText] = useState<Map<number, string>>(new Map());
 
+    const rahmen = useRef<HTMLDivElement>(null);
+
+    /**
+     * Fokus beim Oeffnen ins Fenster holen und beim Schliessen dorthin
+     * zurueckgeben, wo er herkam.
+     *
+     * Ohne das bleibt der Fokus auf dem Material-Knopf, den das Fenster gerade
+     * verdeckt: Die erste Tab-Taste wandert dann in den Editor dahinter statt in
+     * die Suche — und ohne Maus kommt man ueberhaupt nicht herein.
+     */
     useEffect(() => {
         if (!offen) return;
-        const beiTaste = (e: KeyboardEvent) => { if (e.key === 'Escape') onSchliessen(); };
+        const vorher = document.activeElement as HTMLElement | null;
+        const ziel = rahmen.current?.querySelector<HTMLElement>(SUCHFELD)
+            ?? rahmen.current?.querySelector<HTMLElement>(FOKUSSIERBAR)
+            ?? rahmen.current;
+        ziel?.focus();
+        return () => vorher?.focus?.();
+    }, [offen]);
+
+    /**
+     * Fluchtweg und Fokus-Falle. Escape muss auch greifen, wenn der Fokus auf
+     * `document.body` liegt, deshalb haengt der Zuhoerer am Fenster und nicht am
+     * Rahmen-Div — dasselbe Muster wie in `AlternativGruppeDialog`.
+     */
+    useEffect(() => {
+        if (!offen) return;
+        const beiTaste = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') { onSchliessen(); return; }
+            if (e.key !== 'Tab' || !rahmen.current) return;
+
+            const elemente = Array.from(rahmen.current.querySelectorAll<HTMLElement>(FOKUSSIERBAR));
+            if (elemente.length === 0) return;
+            const erstes = elemente[0];
+            const letztes = elemente[elemente.length - 1];
+
+            if (e.shiftKey && document.activeElement === erstes) {
+                e.preventDefault();
+                letztes.focus();
+            } else if (!e.shiftKey && document.activeElement === letztes) {
+                e.preventDefault();
+                erstes.focus();
+            }
+        };
         window.addEventListener('keydown', beiTaste);
         return () => window.removeEventListener('keydown', beiTaste);
     }, [offen, onSchliessen]);
@@ -203,10 +259,19 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
     };
 
     return (
-        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+        <div
+            ref={rahmen}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="material-auswahl-titel"
+            tabIndex={-1}
+            className="fixed inset-0 z-50 bg-white flex flex-col outline-none"
+        >
             <div className="flex items-start justify-between px-6 py-4 border-b border-slate-200">
                 <div>
-                    <h2 className="text-xl font-bold text-slate-900">Material auswählen</h2>
+                    <h2 id="material-auswahl-titel" className="text-xl font-bold text-slate-900">
+                        Material auswählen
+                    </h2>
                     <p className="text-sm text-slate-500 mt-0.5">
                         Suche wie in der Materialverwaltung — Menge eintragen, übernehmen.
                     </p>
