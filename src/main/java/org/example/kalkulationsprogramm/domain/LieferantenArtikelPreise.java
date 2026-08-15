@@ -51,7 +51,15 @@ public class LieferantenArtikelPreise {
     /** Fachlicher Stand des Preises, z.B. das Datum der Angebots-Mail. */
     private Date preisAenderungsdatum;
 
-    @Column(precision = 19, scale = 2)
+    /**
+     * Preis je <b>einer</b> Verrechnungseinheit - je Stueck, je Kilogramm, je Meter.
+     *
+     * <p>Vier Nachkommastellen, weil Kleinteile je 100 Stueck angeboten werden:
+     * 1,83 EUR je 100 Schrauben sind 0,0183 EUR je Stueck. Mit zwei Stellen
+     * rundete die Datenbank das auf 0,02 EUR - 9 % Aufschlag - und guenstigere
+     * Artikel fielen ganz auf 0,00 EUR. Siehe Migration V359.
+     */
+    @Column(precision = 19, scale = 4)
     private BigDecimal preis;
 
     /**

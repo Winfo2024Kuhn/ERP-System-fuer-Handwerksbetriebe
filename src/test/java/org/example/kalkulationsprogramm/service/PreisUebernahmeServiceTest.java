@@ -185,9 +185,28 @@ class PreisUebernahmeServiceTest {
 
         // Rechnung nennt 1,83 EUR je 100 Stueck. Gespeichert wird der Stueckpreis -
         // die Kalkulation multipliziert ihn spaeter mit der Stueckzahl.
+        //
+        // Bis V359 fuehrte die Preisspalte nur zwei Nachkommastellen und machte
+        // daraus 0,02 EUR: 9 % zu viel auf jede Schraube.
         uebernimm(lieferant, position("SCHR-100", "1.83", "100 C62", "C62"));
 
-        assertPreis("0.02", artikel, lieferant);
+        assertPreis("0.0183", artikel, lieferant);
+    }
+
+    @Test
+    void centPreisJeHundertStueckWirdNichtMehrVerworfen() {
+        Lieferanten lieferant = lieferant("Musterlieferant Scheiben");
+        Artikel artikel = artikelMitPreis(lieferant, "SCHEIBE-100", Verrechnungseinheit.STUECK, "0.01", "100");
+
+        // 0,40 EUR je 100 Stueck sind 0,004 je Stueck. Mit zwei Nachkommastellen
+        // wurde daraus 0,00 - die Uebernahme musste die Position deshalb verwerfen,
+        // um den Bestandspreis nicht zu zerstoeren. Mit vier Stellen kommt der Preis
+        // an, wie er auf der Rechnung steht.
+        var ergebnis = uebernimm(lieferant, position("SCHEIBE-100", "0.40", "100 C62", "C62"));
+
+        assertEquals(1, ergebnis.uebernommen());
+        assertEquals(0, ergebnis.uebersprungen());
+        assertPreis("0.0040", artikel, lieferant);
     }
 
     @Test
@@ -375,9 +394,11 @@ class PreisUebernahmeServiceTest {
         Lieferanten lieferant = lieferant("Musterlieferant Centartikel");
         Artikel artikel = artikelMitPreis(lieferant, "CENT-1", Verrechnungseinheit.STUECK, "0.01");
 
-        // 0,40 EUR je 100 Stueck sind 0,004 je Stueck - die Preisspalte fuehrt aber
-        // nur zwei Nachkommastellen. Die 0,00 darf den gueltigen Preis nicht ersetzen.
-        var ergebnis = uebernimm(lieferant, position("CENT-1", "0.40", "100 C62", "C62"));
+        // 0,04 EUR je 1000 Stueck sind 0,00004 je Stueck - das faellt selbst bei vier
+        // Nachkommastellen auf 0,00. Ein solcher Wert ist ein Rundungsartefakt und
+        // darf den gueltigen Bestandspreis nicht ersetzen. Die Bremse bleibt also
+        // noetig, sie greift seit V359 nur noch bei echten Nullwerten.
+        var ergebnis = uebernimm(lieferant, position("CENT-1", "0.04", "1000 C62", "C62"));
 
         assertEquals(0, ergebnis.uebernommen());
         assertEquals(1, ergebnis.uebersprungen());

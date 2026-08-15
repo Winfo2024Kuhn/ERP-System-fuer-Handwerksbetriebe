@@ -161,6 +161,33 @@ class ArtikelImportServiceTest {
     }
 
     @Test
+    void testImportiereCsv_HundertStueckStaffelWirdMitVierNachkommastellenGespeichert() {
+        // Schrauben werden je 100 Stueck angeboten. Gespeichert wird der Preis je
+        // einem Stueck: 1,83 / 100 = 0,0183 EUR. Der Import teilt schon immer mit
+        // vier Stellen - erst seit V359 fuehrt auch die Datenbankspalte so viele,
+        // vorher landete der Wert als 0,02 EUR (9 % zu viel) im Bestand.
+        String csvContent = "externeArtikelnummer;preis;preiseinheit\n321;1,83;100";
+        MockMultipartFile file = new MockMultipartFile("file", "test.csv", "text/csv", csvContent.getBytes());
+        Map<String, String> mapping = new HashMap<>();
+        mapping.put("externeArtikelnummer", "externeArtikelnummer");
+        mapping.put("preis", "preis");
+        mapping.put("preiseinheit", "preiseinheit");
+
+        Lieferanten lieferant = lieferantMitId(1L);
+        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(artikelRepository.findByExterneArtikelnummerAndLieferantId("321", 1L)).thenReturn(Optional.empty());
+
+        artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
+
+        verify(artikelRepository).save(artikelCaptor.capture());
+        Artikel gespeichert = artikelCaptor.getValue();
+        assertEquals("100", gespeichert.getPreiseinheit());
+        LieferantenArtikelPreise p = gespeichert.getArtikelpreis().getFirst();
+        assertEquals(0, new BigDecimal("0.0183").compareTo(p.getPreis()),
+                "1,83 EUR je 100 Stueck muessen als 0,0183 EUR je Stueck ankommen, nicht als 0,02 EUR");
+    }
+
+    @Test
     void testImportiereCsv_GleicheArtikelnummerBeiZweiLieferantenErzeugtGetrennteArtikel() {
         String csvContentA = "externeArtikelnummer;preis\n999;12,00";
         String csvContentB = "externeArtikelnummer;preis\n999;15,00";

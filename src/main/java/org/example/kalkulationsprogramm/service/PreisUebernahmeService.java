@@ -56,8 +56,14 @@ import java.util.regex.Pattern;
 @AllArgsConstructor
 public class PreisUebernahmeService {
 
-    /** Nachkommastellen der Spalte {@code lieferanten_artikel_preise.preis}. */
-    private static final int PREIS_SKALA = 2;
+    /**
+     * Nachkommastellen der Spalte {@code lieferanten_artikel_preise.preis}.
+     *
+     * <p>Vier, seit Migration V359. Mit zweien rutschte "1,83 EUR je 100 Schrauben"
+     * auf 0,02 EUR je Stueck statt 0,0183 - ein Aufschlag von 9 % auf jede
+     * Kalkulation mit Kleinteilen.
+     */
+    private static final int PREIS_SKALA = 4;
 
     private static final BigDecimal TAUSEND = BigDecimal.valueOf(1000);
 
@@ -184,9 +190,11 @@ public class PreisUebernahmeService {
         BigDecimal neuerPreis = rechnungspreis.divide(rechnungsbasis.menge(), PREIS_SKALA, RoundingMode.HALF_UP);
 
         if (neuerPreis.signum() == 0) {
-            // Die Preisspalte fuehrt zwei Nachkommastellen. Ein Cent-Artikel je 100
-            // Stueck rutscht dabei auf 0,00 - das ist ein Rundungsartefakt, kein
-            // Einkaufspreis, und wuerde einen gueltigen Bestandspreis zerstoeren.
+            // Die Preisspalte fuehrt vier Nachkommastellen. Was danach immer noch auf
+            // 0,00 faellt, ist ein Rundungsartefakt und kein Einkaufspreis - es wuerde
+            // einen gueltigen Bestandspreis zerstoeren. Seit V359 faengt die Bremse nur
+            // noch solche echten Nullwerte ab; Cent-Artikel je 100 Stueck kommen jetzt
+            // als 0,0183 durch, statt hier haengen zu bleiben.
             log.warn("Artikel {} bei Lieferant {}: {} EUR je {} ergibt gerundet 0,00 EUR - "
                             + "Preis nicht uebernommen",
                     nummer, lieferant.getLieferantenname(), rechnungspreis, position.preiseinheit());
