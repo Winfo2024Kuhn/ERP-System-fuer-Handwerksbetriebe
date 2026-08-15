@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -332,11 +332,26 @@ describe('ArtikelSuche', () => {
         zeigeSuche(<ArtikelSuche />);
 
         const bild = await screen.findByAltText('T-Stahl');
-        act(() => {
-            bild.dispatchEvent(new Event('error'));
-        });
+        fireEvent.error(bild);
 
         expect(screen.queryByAltText('T-Stahl')).not.toBeInTheDocument();
         expect(screen.getByTitle('T-Stahl')).toBeInTheDocument();
+    });
+
+    // jsdom rechnet kein echtes Layout - eine tatsaechliche Pixelhoehe laesst
+    // sich hier nicht messen (dafuer ist der fuer den naechsten Task ohnehin
+    // geplante Browser-Check zustaendig). Diese Zusicherung haelt wenigstens
+    // die Bauart fest, aus der sich die 44 px rechnerisch ergeben: 40x40-px-Box
+    // (h-10) in einer Zelle mit py-0.5 (2 + 40 + 2 = 44 px, wie px-4 py-3 mit
+    // einzeiligem text-sm-Text daneben: 12 + 20 + 12 = 44 px). Aendert jemand
+    // versehentlich die Zellen- oder Boxgroesse, schlaegt dieser Test an.
+    it('haelt Bildzelle und Box auf der Groesse, die rechnerisch die Zeilenhoehe der Textzellen ergibt', async () => {
+        zeigeSuche(<ArtikelSuche />);
+
+        const platzhalter = await screen.findByRole('img', { name: 'Kein Vorschaubild für T-Stahl' });
+        const zelle = platzhalter.closest('td');
+
+        expect(zelle).toHaveClass('py-0.5');
+        expect(platzhalter).toHaveClass('h-10', 'w-10');
     });
 });

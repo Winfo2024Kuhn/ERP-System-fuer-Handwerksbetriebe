@@ -332,9 +332,10 @@ export interface Artikel {
   /**
    * Pfad auf den Datei-Endpunkt des hinterlegten Produktbilds - fertig
    * aufgebaut vom Backend, hier nicht selbst zusammensetzen. Bei nahezu
-   * allen Bestandsartikeln (noch) nicht gepflegt, dann `undefined`.
+   * allen Bestandsartikeln (noch) nicht gepflegt - das Backend liefert dann
+   * ausdruecklich `null`, nicht nur ein fehlendes Feld.
    */
-  vorschaubildUrl?: string;
+  vorschaubildUrl?: string | null;
   verpackungseinheit?: number;
   preiseinheit?: string;
   verrechnungseinheit?: string | { name: string; anzeigename?: string };

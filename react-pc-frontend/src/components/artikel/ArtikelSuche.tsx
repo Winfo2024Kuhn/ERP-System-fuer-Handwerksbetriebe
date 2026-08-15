@@ -621,12 +621,16 @@ export function ArtikelSuche({
                                         }}
                                     >
                                         {/* Zukaufteile wie Handlaufhalter oder Rosetten erkennt der
-                                            Handwerker am Bild, nicht an der Artikelnummer. Feste 40x40
-                                            px-Box, damit die Spalte die Zeilenhoehe nicht aufreisst -
-                                            bei fast allen Bestandsartikeln fehlt das Bild (noch), dann
-                                            steht hier ein dezenter Platzhalter statt einer leeren Zelle
-                                            oder dem kaputten Browser-Bildsymbol. */}
-                                        <td className="px-2 py-1.5">
+                                            Handwerker am Bild, nicht an der Artikelnummer. Feste
+                                            40x40-px-Box; bei fast allen Bestandsartikeln fehlt das
+                                            Bild (noch), dann steht hier ein dezenter Platzhalter statt
+                                            einer leeren Zelle oder dem kaputten Browser-Bildsymbol.
+                                            py-0.5 statt der sonst ueblichen py-3: 2 + 40 + 2 = 44 px,
+                                            exakt die Hoehe, die eine einzeilige Textzelle nebenan schon
+                                            mitbringt (px-4 py-3 mit text-sm/20px Zeilenhoehe:
+                                            12+20+12 = 44 px) - die neue Spalte laesst die Zeile also
+                                            nicht wachsen. */}
+                                        <td className="px-2 py-0.5">
                                             {artikel.vorschaubildUrl ? (
                                                 <div className="w-10 h-10 shrink-0 rounded overflow-hidden border border-slate-200">
                                                     <ThumbnailImage
