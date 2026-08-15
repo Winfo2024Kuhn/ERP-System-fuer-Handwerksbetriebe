@@ -37,7 +37,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel } from "../types";
+import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel, ArtikelInProjekt } from "../types";
 import { canCreateEinfacheRechnung, istRechnungAmVorgaengerGesperrt, hatAktiveAuftragsbestaetigung } from "../lib/abrechnungsverlauf";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
 import { DetailLayout } from "../components/DetailLayout";
@@ -64,6 +64,8 @@ import { ZuordnungModal } from '../components/ZuordnungModal';
 import { DokumentLoeschenDialog } from '../components/dokument/DokumentLoeschenDialog';
 import { DokumentVerlaufDrawer } from '../components/dokument/DokumentVerlaufDrawer';
 import { AnfrageSearchModal } from '../components/AnfrageSearchModal';
+import { ArtikelSuche } from '../components/artikel/ArtikelSuche';
+import { artikelBezeichnung } from '../components/artikel/artikelBezeichnung';
 
 interface Supplier {
     id: number;
@@ -250,23 +252,23 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [showLagerArtikelModal, setShowLagerArtikelModal] = useState(false);
     const [newMaterial, setNewMaterial] = useState<{ beschreibung: string, betrag: string, lieferantId?: string, rechnungsnummer: string }>({ beschreibung: '', betrag: '', rechnungsnummer: '' });
     const [savingMaterial, setSavingMaterial] = useState(false);
-    const [lagerArtikel, setLagerArtikel] = useState<Artikel[]>([]);
-    const [loadingLagerArtikel, setLoadingLagerArtikel] = useState(false);
     const [savingLagerArtikel, setSavingLagerArtikel] = useState(false);
-    const [lagerArtikelError, setLagerArtikelError] = useState<string | null>(null);
-    const [lagerArtikelSearch, setLagerArtikelSearch] = useState('');
-    const [lagerArtikelPage, setLagerArtikelPage] = useState(0);
-    const [lagerArtikelGesamt, setLagerArtikelGesamt] = useState(0);
-    const [selectedLagerArtikelKeys, setSelectedLagerArtikelKeys] = useState<Set<string>>(new Set());
-    const [selectedLagerArtikelData, setSelectedLagerArtikelData] = useState<Record<string, Artikel>>({});
-    const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<string, string>>({});
-    const [lagerArtikelBeschaffung, setLagerArtikelBeschaffung] = useState<Record<string, 'lager' | 'bestellen'>>({});
+    // Id der Position, die gerade entfernt wird - sperrt genau ihren Knopf.
+    const [loeschendeArtikelId, setLoeschendeArtikelId] = useState<number | null>(null);
+    // Die Auswahl haengt an der Artikel-Id. Die Trefferliste zeigt eine Zeile je
+    // Artikel (mit dem guenstigsten Anbieter darin) - ein zusammengesetzter
+    // Schluessel aus Artikel und Lieferant haette hier nichts mehr zu unterscheiden.
+    const [selectedLagerArtikelKeys, setSelectedLagerArtikelKeys] = useState<Set<number>>(new Set());
+    // Die vollen Artikeldaten der angehakten Zeilen. Ohne diese Kopie waere die
+    // Auswahl verloren, sobald ein Filter den Treffer aus der Liste draengt.
+    const [selectedLagerArtikelData, setSelectedLagerArtikelData] = useState<Record<number, Artikel>>({});
+    const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<number, string>>({});
+    const [lagerArtikelBeschaffung, setLagerArtikelBeschaffung] = useState<Record<number, 'lager' | 'bestellen'>>({});
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [showSupplierPicker, setShowSupplierPicker] = useState(false);
     const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
 
     const [showDokumentTypDialog, setShowDokumentTypDialog] = useState(false);
-    const lagerArtikelFetchSeq = useRef(0);
 
     // Rechnungserstellung Dialog State
     const [showRechnungDialog, setShowRechnungDialog] = useState(false);
@@ -757,21 +759,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         return new Date(dateStr).toLocaleDateString('de-DE');
     };
 
-    const getLagerArtikelKey = (artikel: Artikel) => `${artikel.id}-${artikel.lieferantId ?? 'none'}`;
-
     const getVerrechnungseinheitName = (einheit?: Artikel['verrechnungseinheit']) => {
         if (!einheit) return 'STUECK';
         return typeof einheit === 'string' ? einheit : einheit.name;
-    };
-
-    const getVerrechnungseinheitLabel = (einheit?: Artikel['verrechnungseinheit']) => {
-        if (!einheit) return 'Stück';
-        if (typeof einheit === 'object') return einheit.anzeigename || einheit.name;
-        if (einheit === 'STUECK') return 'Stück';
-        if (einheit === 'LAUFENDE_METER') return 'Laufende Meter';
-        if (einheit === 'QUADRATMETER') return 'Quadratmeter';
-        if (einheit === 'KILOGRAMM') return 'Kilogramm';
-        return einheit;
     };
 
     const mapEinheitForBackend = (einheit?: Artikel['verrechnungseinheit']) => {
@@ -785,163 +775,84 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         setSelectedLagerArtikelData({});
         setLagerArtikelMengen({});
         setLagerArtikelBeschaffung({});
-        setLagerArtikelSearch('');
-        setLagerArtikelPage(0);
-        setLagerArtikelGesamt(0);
-        setLagerArtikelError(null);
     };
 
-    const loadLagerArtikel = useCallback(async ({ page, query }: { page: number; query: string }) => {
-        const fetchId = ++lagerArtikelFetchSeq.current;
+    /**
+     * Haengt einen Artikel an die Auswahl oder loest ihn wieder.
+     *
+     * Neu angehakt startet er mit Menge 1 und "aus Lager" - das ist der Fall,
+     * den der Bediener am haeufigsten meint. Beides laesst sich in der Zeile
+     * sofort aendern.
+     */
+    const handleToggleLagerArtikel = (artikel: Artikel) => {
+        const key = artikel.id;
+        const abwaehlen = selectedLagerArtikelKeys.has(key);
 
-        setLoadingLagerArtikel(true);
-
-        setLagerArtikelError(null);
-        try {
-            const params = new URLSearchParams();
-            params.set('page', String(page));
-            params.set('size', String(LAGER_ARTIKEL_PAGE_SIZE));
-            params.set('sort', 'produktname');
-            params.set('dir', 'asc');
-            params.set('nurMitLieferantenpreis', 'true');
-            if (query) {
-                params.set('q', query);
-            }
-
-            const res = await fetch(`/api/artikel?${params.toString()}`);
-            if (!res.ok) throw new Error('Artikel konnten nicht geladen werden');
-
-            const data = await res.json();
-            if (fetchId !== lagerArtikelFetchSeq.current) {
-                return;
-            }
-
-            const list: Artikel[] = Array.isArray(data?.artikel) ? data.artikel : [];
-            setLagerArtikel(list);
-
-            const gesamt = typeof data?.gesamt === 'number' ? data.gesamt : 0;
-            const aktuelleSeite = typeof data?.seite === 'number' ? data.seite : page;
-
-            setLagerArtikelPage(aktuelleSeite);
-            setLagerArtikelGesamt(gesamt);
-        } catch (error) {
-            console.error('Fehler beim Laden der Lagerartikel:', error);
-            setLagerArtikel([]);
-            setLagerArtikelGesamt(0);
-            setLagerArtikelError('Lagerartikel konnten nicht geladen werden.');
-        } finally {
-            if (fetchId === lagerArtikelFetchSeq.current) {
-                setLoadingLagerArtikel(false);
-            }
-        }
-    }, []);
-
-    useEffect(() => {
-        if (!showLagerArtikelModal) return;
-        setLagerArtikelPage(0);
-    }, [showLagerArtikelModal, lagerArtikelSearch]);
-
-    useEffect(() => {
-        if (!showLagerArtikelModal) return;
-        const query = lagerArtikelSearch.trim();
-        const timer = setTimeout(() => {
-            loadLagerArtikel({ page: lagerArtikelPage, query });
-        }, 300);
-
-        return () => clearTimeout(timer);
-    }, [showLagerArtikelModal, lagerArtikelSearch, lagerArtikelPage, loadLagerArtikel]);
-
-    const lagerArtikelTotalPages = Math.max(1, Math.ceil(lagerArtikelGesamt / LAGER_ARTIKEL_PAGE_SIZE));
-
-    const lagerArtikelStatusText = useMemo(() => {
-        if (loadingLagerArtikel) return 'Artikel werden geladen...';
-        if (lagerArtikelGesamt === 0) return 'Keine Artikel gefunden.';
-
-        const start = lagerArtikelPage * LAGER_ARTIKEL_PAGE_SIZE + 1;
-        const end = Math.min(start + lagerArtikel.length - 1, lagerArtikelGesamt);
-        return `Zeige ${start}-${end} von ${lagerArtikelGesamt} Artikeln`;
-    }, [loadingLagerArtikel, lagerArtikelGesamt, lagerArtikelPage, lagerArtikel.length]);
-
-    const handleToggleLagerArtikel = (artikel: Artikel, checked: boolean) => {
-        const key = getLagerArtikelKey(artikel);
         setSelectedLagerArtikelKeys(prev => {
             const next = new Set(prev);
-            if (checked) {
-                next.add(key);
-            } else {
-                next.delete(key);
-            }
+            if (abwaehlen) next.delete(key);
+            else next.add(key);
             return next;
         });
 
-        if (checked) {
-            setLagerArtikelMengen(prev => {
-                if (prev[key]) return prev;
-                return { ...prev, [key]: '1' };
-            });
-            setSelectedLagerArtikelData(prev => ({ ...prev, [key]: artikel }));
-            setLagerArtikelBeschaffung(prev => {
-                if (prev[key]) return prev;
-                return { ...prev, [key]: 'lager' };
-            });
-        } else {
+        if (abwaehlen) {
             setSelectedLagerArtikelData(prev => {
-                if (!prev[key]) return prev;
                 const next = { ...prev };
                 delete next[key];
                 return next;
             });
             setLagerArtikelBeschaffung(prev => {
-                if (!prev[key]) return prev;
                 const next = { ...prev };
                 delete next[key];
                 return next;
             });
+            return;
         }
+
+        setSelectedLagerArtikelData(prev => ({ ...prev, [key]: artikel }));
+        // Eine frisch angehakte Zeile faengt wieder bei 1 an, auch wenn vorher
+        // schon etwas im Mengenfeld stand.
+        setLagerArtikelMengen(prev => ({ ...prev, [key]: '1' }));
+        setLagerArtikelBeschaffung(prev => ({ ...prev, [key]: 'lager' }));
     };
 
+    /**
+     * Uebernimmt die Eingabe des Mengenfelds. Der getippte Text bleibt stehen,
+     * auch wenn er (noch) keine gueltige Zahl ist - sonst liesse sich das Feld
+     * gar nicht leeren und aus "12" wuerde beim Korrigieren "112". Die Auswahl
+     * selbst bleibt davon unberuehrt; ueber sie entscheidet allein die Checkbox.
+     */
     const handleLagerMengeChange = (artikel: Artikel, value: string) => {
-        const key = getLagerArtikelKey(artikel);
-        setLagerArtikelMengen(prev => ({ ...prev, [key]: value }));
-
-        const parsed = parseFloat(value.replace(',', '.'));
-        setSelectedLagerArtikelKeys(prev => {
-            const next = new Set(prev);
-            if (!Number.isNaN(parsed) && parsed > 0) {
-                next.add(key);
-            } else {
-                next.delete(key);
-            }
-            return next;
-        });
-
-        setSelectedLagerArtikelData(prev => {
-            const next = { ...prev };
-            if (!Number.isNaN(parsed) && parsed > 0) {
-                next[key] = artikel;
-            } else {
-                delete next[key];
-            }
-            return next;
-        });
-
-        setLagerArtikelBeschaffung(prev => {
-            if (!Number.isNaN(parsed) && parsed > 0) {
-                if (prev[key]) return prev;
-                return { ...prev, [key]: 'lager' };
-            }
-            if (!prev[key]) return prev;
-            const next = { ...prev };
-            delete next[key];
-            return next;
-        });
+        setLagerArtikelMengen(prev => ({ ...prev, [artikel.id]: value }));
     };
 
-    const handleLagerBeschaffungChange = (artikel: Artikel, value: string) => {
-        const key = getLagerArtikelKey(artikel);
-        const beschaffung = value === 'bestellen' ? 'bestellen' : 'lager';
-        setLagerArtikelBeschaffung(prev => ({ ...prev, [key]: beschaffung }));
+    const handleLagerBeschaffungChange = (artikel: Artikel, beschaffung: 'lager' | 'bestellen') => {
+        setLagerArtikelBeschaffung(prev => ({ ...prev, [artikel.id]: beschaffung }));
     };
+
+    /** Menge einer gewaehlten Zeile als Zahl - NaN, solange die Eingabe unbrauchbar ist. */
+    const getLagerMenge = (artikelId: number) =>
+        parseFloat((lagerArtikelMengen[artikelId] ?? '1').replace(',', '.'));
+
+    /**
+     * Stueckware laesst sich nicht teilen. Das Backend schneidet eine
+     * Bruchzahl mit `intValue()` ab - aus "0,5 Stück" wuerde dort eine
+     * Position mit 0 Stück und 0 EUR. Meterware und Kilogramm duerfen dagegen
+     * krumm sein.
+     */
+    const istStueckware = (artikel?: Artikel) =>
+        !!artikel && getVerrechnungseinheitName(artikel.verrechnungseinheit) === 'STUECK';
+
+    /** Zeigt eine gewaehlte Zeile gerade keine brauchbare Menge? */
+    const lagerMengeUngueltig = (artikelId: number) => {
+        const menge = getLagerMenge(artikelId);
+        if (!Number.isFinite(menge) || menge <= 0) return true;
+        return istStueckware(selectedLagerArtikelData[artikelId]) && !Number.isInteger(menge);
+    };
+
+    // Der Knopf bleibt gesperrt, solange irgendwo eine Menge fehlt: Eine
+    // Position mit Menge 0 wuerde als Materialkosten von 0 EUR im Projekt landen.
+    const lagerMengenLuecke = Array.from(selectedLagerArtikelKeys).some(lagerMengeUngueltig);
 
     const handleSaveLagerArtikel = async () => {
         if (selectedLagerArtikelKeys.size === 0) {
@@ -953,13 +864,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             .map((key) => {
                 const artikel = selectedLagerArtikelData[key];
                 if (!artikel) return null;
-                const rawMenge = (lagerArtikelMengen[key] || '1').replace(',', '.');
-                const menge = parseFloat(rawMenge);
                 return {
                     artikelId: artikel.id,
+                    // Lieferant und Preis stammen vom guenstigsten Anbieter - genau
+                    // dem, der in der Trefferliste danebensteht.
                     lieferantId: artikel.lieferantId,
                     preis: artikel.preis,
-                    menge,
+                    menge: getLagerMenge(key),
                     einheit: mapEinheitForBackend(artikel.verrechnungseinheit),
                     ausLager: (lagerArtikelBeschaffung[key] ?? 'lager') === 'lager',
                 };
@@ -997,6 +908,39 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             toast.error('Fehler beim Hinzufügen von Artikeln.');
         } finally {
             setSavingLagerArtikel(false);
+        }
+    };
+
+    /**
+     * Entfernt eine Lagerposition wieder aus dem Projekt.
+     *
+     * Mit Rueckfrage, weil der Schritt die Nachkalkulation aendert und es
+     * kein Rueckgaengig gibt - der Artikel muesste ueber das Auswahlfenster
+     * neu herausgesucht werden.
+     */
+    const handleDeleteLagerArtikel = async (artikel: ArtikelInProjekt) => {
+        const name = artikel.produktname || artikel.beschreibung || 'Artikel';
+        const bestaetigt = await confirmDialog({
+            title: 'Artikel entfernen',
+            message: `„${name}“ aus dem Projekt entfernen?`,
+            variant: 'danger',
+            confirmLabel: 'Entfernen',
+        });
+        if (!bestaetigt) return;
+
+        setLoeschendeArtikelId(artikel.id);
+        try {
+            const res = await fetch(`/api/projekte/${projekt.id}/materialkosten/artikel/${artikel.id}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) throw new Error('Artikel konnte nicht entfernt werden');
+            toast.success(`${name} entfernt.`);
+            await onRefresh();
+        } catch (error) {
+            console.error('Fehler beim Entfernen des Artikels:', error);
+            toast.error('Artikel konnte nicht entfernt werden.');
+        } finally {
+            setLoeschendeArtikelId(null);
         }
     };
 
@@ -1050,9 +994,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         return projekt.materialkosten.reduce((sum, m) => sum + (m.betrag ?? 0), 0);
     }, [projekt.materialkosten]);
 
+    // Nur Ware aus dem eigenen Lager ist bereits bezahlt und zaehlt sofort.
+    // Bestellte Ware kommt spaeter ueber die Lieferantenrechnung ins Projekt
+    // (siehe eingangsrechnungenSum) - beides zu zaehlen hiesse doppelt zaehlen.
     const artikelkosten = useMemo(() => {
         if (!projekt.artikel) return 0;
-        return projekt.artikel.reduce((sum, a) => sum + (a.gesamtpreis || 0), 0);
+        return projekt.artikel
+            .filter(a => a.ausLager)
+            .reduce((sum, a) => sum + (a.gesamtpreis ?? a.preisProStueck ?? 0), 0);
     }, [projekt.artikel]);
 
     // Eingangsrechnungen-Summe (zugeordnete Lieferantenrechnungen)
@@ -1617,8 +1566,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Artikel aus Lager</h4>
                         {projekt.artikel && projekt.artikel.length > 0 ? (
                             projekt.artikel.map((a) => (
-                                <div key={a.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-100">
-                                    <div>
+                                <div key={a.id} className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-100">
+                                    <div className="min-w-0">
                                         <p className="font-medium text-slate-900">{a.produktname || a.beschreibung || 'Artikel'}</p>
                                         <p className="text-xs text-slate-500 mt-0.5">
                                             {a.externeArtikelnummer ? `Nr. ${a.externeArtikelnummer} · ` : ''}
@@ -1626,7 +1575,31 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             {a.stueckzahl ? `${a.stueckzahl} Stück` : a.meter ? `${a.meter} m` : a.kilogramm ? `${a.kilogramm} kg` : '-'}
                                         </p>
                                     </div>
-                                    <p className="font-semibold text-slate-900">{formatCurrency(a.preisProStueck ?? a.gesamtpreis ?? 0)}</p>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        {/* Bestellte Ware steht mit in der Liste, zaehlt aber nicht in
+                                            die Materialkosten - sie kommt erst mit der Lieferantenrechnung.
+                                            Der blasse Preis sagt das schon, der Vermerk daneben sagt warum. */}
+                                        {a.ausLager ? (
+                                            <p className="font-semibold text-slate-900">{formatCurrency(a.gesamtpreis ?? a.preisProStueck ?? 0)}</p>
+                                        ) : (
+                                            <>
+                                                <span className="text-[11px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                                                    kommt per Rechnung
+                                                </span>
+                                                <p className="font-semibold text-slate-400">{formatCurrency(a.gesamtpreis ?? a.preisProStueck ?? 0)}</p>
+                                            </>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteLagerArtikel(a)}
+                                            disabled={loeschendeArtikelId === a.id}
+                                            aria-label={`${a.produktname || 'Artikel'} aus dem Projekt entfernen`}
+                                            title="Aus dem Projekt entfernen"
+                                            className="p-2 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </div>
                             ))
                         ) : (
@@ -3022,146 +2995,118 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     <DialogHeader>
                         <DialogTitle>Artikel aus Lager hinzufügen</DialogTitle>
                         <p className="text-sm text-slate-500">
-                            Wählen Sie einen oder mehrere Artikel mit hinterlegtem Lieferantenpreis und legen Sie pro Artikel fest, ob er aus Lager kommt oder bestellt werden muss.
+                            Suchen wie in der Materialverwaltung — Menge eintragen und festlegen, ob der Artikel aus dem Lager kommt oder bestellt werden muss.
                         </p>
                     </DialogHeader>
 
-                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                        <div className="relative flex-1">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                            <Input
-                                placeholder="Artikel, Nummer, Lieferant oder Werkstoff suchen..."
-                                className="pl-9"
-                                value={lagerArtikelSearch}
-                                onChange={(e) => setLagerArtikelSearch(e.target.value)}
-                            />
-                        </div>
-                        <Button
-                            variant="outline"
-                            onClick={() => loadLagerArtikel({ page: lagerArtikelPage, query: lagerArtikelSearch.trim() })}
-                            disabled={loadingLagerArtikel || savingLagerArtikel}
-                        >
-                            <RefreshCw className={cn('w-4 h-4 mr-2', loadingLagerArtikel && 'animate-spin')} /> Neu laden
-                        </Button>
-                    </div>
+                    {/* Dieselbe Suche wie in der Materialverwaltung statt eines
+                        zweiten, magereren Suchfelds: Wer hier einen Artikel sucht,
+                        kennt die Filter nach Lieferant, Kategorie, Werkstoff und
+                        Ausfuehrung schon von dort.
 
-                    <div className="text-xs text-slate-500">{lagerArtikelStatusText}</div>
+                        onZeilenKlick ist Pflicht, kein Komfort: Ohne ihn faellt
+                        ArtikelSuche auf navigate('/artikel/...') zurueck - der
+                        Klick auf eine Zeile wuerde das Projekt verlassen. Hier
+                        bedeutet er dasselbe wie die Checkbox: an- bzw. abwaehlen.
 
-                    {lagerArtikelError && (
-                        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                            {lagerArtikelError}
-                        </div>
-                    )}
-
-                    <div className="flex-1 min-h-0 border border-slate-200 rounded-lg overflow-hidden">
-                        <div className="h-full overflow-auto">
-                            <table className="min-w-full text-sm">
-                                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[90px]">Auswahl</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Artikel</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Lieferant</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Einheit</th>
-                                        <th className="px-3 py-2 text-right font-medium text-slate-600">Preis</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[140px]">Menge</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[190px]">Bezug</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {lagerArtikel.map((artikel) => {
-                                        const key = getLagerArtikelKey(artikel);
-                                        const checked = selectedLagerArtikelKeys.has(key);
-                                        const beschaffung = lagerArtikelBeschaffung[key] || 'lager';
-                                        return (
-                                            <tr key={key} className={cn('border-b border-slate-100', checked && 'bg-rose-50/50')}>
-                                                <td className="px-3 py-2 align-top">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={checked}
-                                                        onChange={(e) => handleToggleLagerArtikel(artikel, e.target.checked)}
-                                                        title={`Artikel ${artikel.produktname || ''} auswählen`}
-                                                        aria-label={`Artikel ${artikel.produktname || ''} auswählen`}
-                                                        className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2 align-top">
-                                                    <div className="font-medium text-slate-900">{artikel.produktname || '-'}</div>
-                                                    <div className="text-xs text-slate-500 mt-0.5">
-                                                        {artikel.externeArtikelnummer ? `Nr. ${artikel.externeArtikelnummer}` : 'Ohne Artikelnummer'}
-                                                        {artikel.werkstoffName ? ` · ${artikel.werkstoffName}` : ''}
-                                                    </div>
-                                                    {artikel.produkttext && (
-                                                        <div className="text-xs text-slate-400 mt-1 line-clamp-2">{artikel.produkttext}</div>
+                        nurMitLieferantenpreis, weil die Auswahl als Materialkosten
+                        gebucht wird - dazu braucht es Lieferant und Preis. */}
+                    {/* Kein eigenes Scrollen: Die Suche laedt ueber
+                        seitenGroesseAusHoehe nur so viele Treffer, wie ganz in
+                        die Liste passen - eine halb abgeschnittene letzte Zeile
+                        gibt es damit nicht mehr. */}
+                    <div className="flex-1 min-h-0 flex flex-col gap-4">
+                        <ArtikelSuche
+                            urlSync={false}
+                            seitenGroesse={LAGER_ARTIKEL_PAGE_SIZE}
+                            seitenGroesseAusHoehe
+                            nurMitLieferantenpreis
+                            onZeilenKlick={handleToggleLagerArtikel}
+                            zeilenGedrueckt={(artikel) => selectedLagerArtikelKeys.has(artikel.id)}
+                            zeilenAktion={(artikel) => {
+                                const key = artikel.id;
+                                const checked = selectedLagerArtikelKeys.has(key);
+                                const beschaffung = lagerArtikelBeschaffung[key] ?? 'lager';
+                                const mengeFehlt = checked && lagerMengeUngueltig(key);
+                                // Dieselbe Bezeichnung, die in der Zeile steht - sonst
+                                // sagt der Screenreader "100x100x4 auswählen", wo
+                                // sichtbar "Quadratrohr 100 x 100 x 4" steht.
+                                const name = artikelBezeichnung(artikel);
+                                return (
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => handleToggleLagerArtikel(artikel)}
+                                            aria-label={`${name} auswählen`}
+                                            className="h-4 w-4 accent-rose-600"
+                                        />
+                                        {/* Die Einheit steht schon in der Preisspalte
+                                            ("11,80 € / Laufende Meter") - hier waere sie
+                                            nur eine zweite, abgeschnittene Kopie. */}
+                                        <Input
+                                            type="number"
+                                            min={istStueckware(artikel) ? '1' : '0.01'}
+                                            step={istStueckware(artikel) ? '1' : '0.01'}
+                                            value={lagerArtikelMengen[key] ?? ''}
+                                            onChange={(e) => handleLagerMengeChange(artikel, e.target.value)}
+                                            aria-label={`Menge für ${name}`}
+                                            aria-invalid={mengeFehlt}
+                                            aria-describedby={mengeFehlt ? 'lager-mengen-hinweis' : undefined}
+                                            disabled={!checked}
+                                            placeholder="1"
+                                            className={cn('w-20 h-8 text-sm', mengeFehlt && 'border-amber-400 bg-amber-50')}
+                                        />
+                                        {/* Umschalter statt Auswahlliste: Es gibt genau zwei
+                                            Faelle, und ein aufklappendes Menue in jeder der
+                                            15 Zeilen waere ein Klick mehr fuer dieselbe
+                                            Entscheidung. Gleiche Bauart wie die
+                                            Oberflaechen-Schalter in der Suche darueber. */}
+                                        <div className="flex rounded-lg border border-slate-300 overflow-hidden" role="group"
+                                             aria-label={`Bezug für ${name}`}>
+                                            {([
+                                                { wert: 'lager', text: 'Lager' },
+                                                { wert: 'bestellen', text: 'Bestellen' },
+                                            ] as const).map(({ wert, text }) => (
+                                                <button
+                                                    key={wert}
+                                                    type="button"
+                                                    aria-pressed={checked && beschaffung === wert}
+                                                    disabled={!checked}
+                                                    onClick={() => handleLagerBeschaffungChange(artikel, wert)}
+                                                    className={cn(
+                                                        'px-3 py-1.5 min-h-[32px] text-xs transition-colors',
+                                                        !checked && 'opacity-50 cursor-not-allowed text-slate-400',
+                                                        checked && beschaffung === wert
+                                                            ? 'bg-rose-600 text-white'
+                                                            : checked && 'text-slate-700 hover:bg-slate-50',
                                                     )}
-                                                </td>
-                                                <td className="px-3 py-2 align-top text-slate-700">{artikel.lieferantenname || '-'}</td>
-                                                <td className="px-3 py-2 align-top text-slate-700">{getVerrechnungseinheitLabel(artikel.verrechnungseinheit)}</td>
-                                                <td className="px-3 py-2 align-top text-right font-medium text-slate-900">{formatCurrency(artikel.preis)}</td>
-                                                <td className="px-3 py-2 align-top">
-                                                    <Input
-                                                        type="number"
-                                                        min="0.01"
-                                                        step="0.01"
-                                                        value={lagerArtikelMengen[key] || ''}
-                                                        onChange={(e) => handleLagerMengeChange(artikel, e.target.value)}
-                                                        placeholder="z.B. 5"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2 align-top">
-                                                    <Select
-                                                        value={beschaffung}
-                                                        onChange={(value) => handleLagerBeschaffungChange(artikel, value)}
-                                                        disabled={!checked}
-                                                        options={[
-                                                            { value: 'lager', label: 'Aus Lager' },
-                                                            { value: 'bestellen', label: 'Bestellen' },
-                                                        ]}
-                                                        placeholder="Bezug wählen"
-                                                    />
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-
-                            {!loadingLagerArtikel && lagerArtikel.length === 0 && (
-                                <div className="text-center text-slate-500 py-10">
-                                    Keine Artikel mit Lieferantenpreis gefunden.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs text-slate-500">Seite {lagerArtikelPage + 1} von {lagerArtikelTotalPages}</p>
-                        <div className="flex gap-2 justify-end">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={loadingLagerArtikel || lagerArtikelPage === 0}
-                                onClick={() => setLagerArtikelPage((p) => Math.max(0, p - 1))}
-                            >
-                                <ChevronLeft className="w-4 h-4 mr-1" /> zurück
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={loadingLagerArtikel || lagerArtikelPage >= lagerArtikelTotalPages - 1}
-                                onClick={() => setLagerArtikelPage((p) => p + 1)}
-                            >
-                                Weiter <ChevronRight className="w-4 h-4 ml-1" />
-                            </Button>
-                        </div>
+                                                >
+                                                    {text}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            }}
+                        />
                     </div>
 
                     <DialogFooter>
+                        <div className="flex-1 text-sm text-slate-500">
+                            {selectedLagerArtikelKeys.size} ausgewählt
+                            {lagerMengenLuecke && (
+                                <span id="lager-mengen-hinweis" role="alert" className="ml-3 text-xs text-amber-700">
+                                    Bitte überall eine Menge größer 0 eintragen — Stückware nur in ganzen Stück.
+                                </span>
+                            )}
+                        </div>
                         <Button variant="outline" onClick={() => setShowLagerArtikelModal(false)} disabled={savingLagerArtikel}>
                             Abbrechen
                         </Button>
                         <Button
                             onClick={handleSaveLagerArtikel}
-                            disabled={savingLagerArtikel || selectedLagerArtikelKeys.size === 0}
+                            disabled={savingLagerArtikel || selectedLagerArtikelKeys.size === 0 || lagerMengenLuecke}
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
                             {savingLagerArtikel ? 'Übernehme...' : `Abschließen (${selectedLagerArtikelKeys.size})`}

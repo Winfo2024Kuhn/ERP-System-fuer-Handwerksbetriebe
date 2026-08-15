@@ -720,9 +720,18 @@ export interface ArtikelInProjekt {
   meter?: number;
   kilogramm?: number;
   einzelpreis?: number;
+  /** Was die Position insgesamt kostet - Einzelpreis mal Menge. */
   gesamtpreis?: number;
   preisProStueck?: number;
   lieferantName?: string;
+  /**
+   * Aus dem eigenen Lager entnommen. Nur diese Positionen zaehlen als
+   * Materialkosten; bestellte Ware kommt spaeter per Lieferantenrechnung
+   * herein und wuerde sonst doppelt in der Nachkalkulation stehen.
+   */
+  ausLager?: boolean;
+  /** false heisst "muss noch bestellt werden" - siehe offene Bestellliste. */
+  bestellt?: boolean;
 }
 
 export interface ProjektDetail extends Projekt {

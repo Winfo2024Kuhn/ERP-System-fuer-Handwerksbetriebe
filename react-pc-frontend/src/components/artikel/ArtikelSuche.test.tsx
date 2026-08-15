@@ -84,6 +84,59 @@ describe('ArtikelSuche', () => {
         });
     });
 
+    // Ohne den Parameter stehen auch Artikel ohne Preis in der Liste. Fuer die
+    // Materialkosten im Projekt waeren die unbrauchbar: Ohne Lieferant und
+    // Preis laesst sich die Position nicht buchen.
+    it('fragt ohne nurMitLieferantenpreis alle Artikel ab', async () => {
+        zeigeSuche(<ArtikelSuche />);
+
+        await waitFor(() => expect(fetch).toHaveBeenCalled());
+        expect(letzterListenRequest().get('nurMitLieferantenpreis')).toBeNull();
+    });
+
+    it('grenzt auf Artikel mit Lieferantenpreis ein, wenn gefordert', async () => {
+        zeigeSuche(<ArtikelSuche nurMitLieferantenpreis />);
+
+        await waitFor(() => expect(fetch).toHaveBeenCalled());
+        expect(letzterListenRequest().get('nurMitLieferantenpreis')).toBe('true');
+    });
+
+    // Die Zeile meldet sich als Schalter ("an- oder abwaehlen"). Ein Schalter,
+    // der seinen Zustand verschweigt, laesst Screenreader-Nutzer nach dem
+    // Klick im Unklaren, ob die Position nun drin ist oder nicht.
+    it('sagt an, ob die Zeile ausgewaehlt ist', async () => {
+        zeigeSuche(
+            <ArtikelSuche
+                onZeilenKlick={() => {}}
+                zeilenGedrueckt={(a) => a.id === 7}
+            />,
+        );
+
+        const zeile = await screen.findByRole('button', { name: /T-Stahl an- oder abwählen/ });
+        expect(zeile).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('meldet eine nicht gewaehlte Zeile als nicht gedrueckt', async () => {
+        zeigeSuche(
+            <ArtikelSuche
+                onZeilenKlick={() => {}}
+                zeilenGedrueckt={() => false}
+            />,
+        );
+
+        const zeile = await screen.findByRole('button', { name: /T-Stahl an- oder abwählen/ });
+        expect(zeile).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    // Ohne Auswahl-Betrieb ist die Zeile ein Link auf die Detailseite - ein
+    // aria-pressed waere dort schlicht falsch.
+    it('setzt ohne Auswahl-Betrieb kein aria-pressed', async () => {
+        zeigeSuche(<ArtikelSuche />);
+
+        const zeile = await screen.findByRole('link', { name: /Details zu T-Stahl öffnen/ });
+        expect(zeile).not.toHaveAttribute('aria-pressed');
+    });
+
     it('rendert die uebergebene Zeilenaktion statt der Standardzeile', async () => {
         zeigeSuche(<ArtikelSuche zeilenAktion={(a) => <button>Übernehmen {a.produktname}</button>} />);
 

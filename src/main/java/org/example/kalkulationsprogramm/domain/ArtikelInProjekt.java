@@ -41,8 +41,24 @@ public class ArtikelInProjekt {
     @Column(nullable = false)
     private LocalDate hinzugefuegtAm;
 
+    /**
+     * Steuert die offene Bestellliste: false heisst "muss noch bestellt
+     * werden" ({@code findByBestelltFalse}), true heisst erledigt - entweder
+     * weil der Einkaeufer die Bestellung abgehakt hat oder weil die Ware aus
+     * dem eigenen Lager kam.
+     */
     @Column(nullable = false)
     private boolean bestellt = false;
+
+    /**
+     * Kam die Ware aus dem eigenen Lager statt von einer Bestellung?
+     *
+     * Nur diese Positionen zaehlen sofort als Materialkosten des Projekts.
+     * Bestellte Ware kommt spaeter ueber die Lieferantenrechnung herein und
+     * wuerde sonst doppelt in der Nachkalkulation stehen.
+     */
+    @Column(nullable = false)
+    private boolean ausLager = false;
 
     String anschnittWinkelLinks;
     String anschnittWinkelRechts;

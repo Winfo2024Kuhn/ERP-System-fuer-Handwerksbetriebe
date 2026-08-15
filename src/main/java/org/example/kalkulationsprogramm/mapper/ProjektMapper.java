@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.mapper;
 
 import lombok.AllArgsConstructor;
+import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektResponseDto;
@@ -108,29 +109,17 @@ public class ProjektMapper {
                         if (aip.getArtikel() != null && aip.getArtikel().getWerkstoff() != null) {
                             aDto.setWerkstoffName(aip.getArtikel().getWerkstoff().getName());
                         }
+                        BigDecimal menge = ermittleMenge(aip);
                         BigDecimal preisProStueck = aip.getPreisProStueck();
                         if (!aip.isBestellt() && aip.getLieferantenArtikelPreis() != null
                                 && aip.getLieferantenArtikelPreis().getPreis() != null) {
-                            BigDecimal lieferantenPreis = aip.getLieferantenArtikelPreis().getPreis();
-                            BigDecimal menge = BigDecimal.ZERO;
-                            if (aip.getArtikel() != null && aip.getArtikel().getVerrechnungseinheit() != null) {
-                                switch (aip.getArtikel().getVerrechnungseinheit()) {
-                                    case STUECK -> menge = aip.getStueckzahl() != null
-                                            ? BigDecimal.valueOf(aip.getStueckzahl())
-                                            : BigDecimal.ZERO;
-                                    case LAUFENDE_METER, QUADRATMETER -> menge = aip.getMeter() != null
-                                            ? aip.getMeter()
-                                            : BigDecimal.ZERO;
-                                    case KILOGRAMM -> menge = aip.getKilogramm() != null
-                                            ? aip.getKilogramm()
-                                            : BigDecimal.ZERO;
-                                }
-                            }
-                            preisProStueck = lieferantenPreis.multiply(menge);
+                            preisProStueck = aip.getLieferantenArtikelPreis().getPreis().multiply(menge);
                         }
                         aDto.setPreisProStueck(preisProStueck);
+                        aDto.setGesamtpreis(ermittleGesamtpreis(aip, menge));
                         aDto.setHinzugefuegtAm(aip.getHinzugefuegtAm());
                         aDto.setBestellt(aip.isBestellt());
+                        aDto.setAusLager(aip.isAusLager());
                         aDto.setBestelltAm(aip.getBestelltAm());
                         aDto.setKommentar(aip.getKommentar());
                         aDto.setSchnittForm(aip.getSchnittForm());
@@ -214,6 +203,66 @@ public class ProjektMapper {
         dto.setAbgeschlossen(projekt.isAbgeschlossen());
 
         return dto;
+    }
+
+    /**
+     * Die Menge der Position in ihrer Verrechnungseinheit - Stueck, Meter
+     * oder Kilogramm, je nachdem, wie der Artikel abgerechnet wird.
+     */
+    private BigDecimal ermittleMenge(ArtikelInProjekt aip) {
+        if (aip.getArtikel() == null || aip.getArtikel().getVerrechnungseinheit() == null) {
+            return BigDecimal.ZERO;
+        }
+        return switch (aip.getArtikel().getVerrechnungseinheit()) {
+            case STUECK -> aip.getStueckzahl() != null
+                    ? BigDecimal.valueOf(aip.getStueckzahl())
+                    : BigDecimal.ZERO;
+            case LAUFENDE_METER, QUADRATMETER -> aip.getMeter() != null
+                    ? aip.getMeter()
+                    : BigDecimal.ZERO;
+            case KILOGRAMM -> aip.getKilogramm() != null
+                    ? aip.getKilogramm()
+                    : BigDecimal.ZERO;
+        };
+    }
+
+    /**
+     * Was die Position insgesamt kostet.
+     *
+     * <p>Der Knackpunkt ist {@code preisProStueck}: Das Feld traegt je nach
+     * Herkunft zwei verschiedene Bedeutungen.
+     *
+     * <ul>
+     *   <li>Hakt der Einkaeufer eine Bestellung ab, rechnet
+     *       {@code BestellungService.setBestellt} die Summe aus und schreibt
+     *       sie dort hinein - der Wert ist dann bereits der Gesamtpreis und
+     *       darf nicht noch einmal mit der Menge multipliziert werden.</li>
+     *   <li>Ueber {@code fuegeArtikelMaterialkosten} angelegte Positionen
+     *       (Lagerware und offene Bedarfe) tragen dort den Preis je Einheit.</li>
+     * </ul>
+     *
+     * <p>Unterschieden wird an {@code bestellt}/{@code ausLager}, nicht am
+     * haengenden Preisstand: V339 hat den Preisbezug nachtraeglich auch an
+     * laengst abgehakte Bestellungen zurueckgehaengt, deren
+     * {@code preisProStueck} trotzdem die eingefrorene Summe blieb.
+     */
+    private BigDecimal ermittleGesamtpreis(ArtikelInProjekt aip, BigDecimal menge) {
+        // Abgehakte Bestellung - die Summe steht fest. Lagerware laeuft nie
+        // ueber diesen Weg, sie ist nur deshalb "bestellt", damit sie aus der
+        // offenen Bestellliste faellt.
+        if (aip.isBestellt() && !aip.isAusLager()) {
+            return aip.getPreisProStueck();
+        }
+
+        // Sonst je Einheit: Der aktuelle Preisstand hat Vorrang, weil er auch
+        // Preisaenderungen nach dem Anlegen abbildet. Faellt er weg - etwa
+        // weil er beim Speichern nicht mehr als aktuell galt - bleibt der
+        // beim Anlegen festgehaltene Einzelpreis.
+        BigDecimal jeEinheit = aip.getLieferantenArtikelPreis() != null
+                && aip.getLieferantenArtikelPreis().getPreis() != null
+                ? aip.getLieferantenArtikelPreis().getPreis()
+                : aip.getPreisProStueck();
+        return jeEinheit != null ? jeEinheit.multiply(menge) : null;
     }
 
 }

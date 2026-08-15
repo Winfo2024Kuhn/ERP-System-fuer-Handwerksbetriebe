@@ -11,10 +11,18 @@ import { SupplierSelectModal } from "../SupplierSelectModal";
 import { CategoryTreeModal } from "../CategoryTreeModal";
 // Waehrungsformatierung liegt nebenan, damit das Auswahlfenster sie mitbenutzen kann.
 import { formatCurrency } from "./formatCurrency";
+import { artikelBezeichnung } from "./artikelBezeichnung";
 
 /** Seitengroesse der Artikelverwaltung - Standard, solange nichts anderes gefordert ist. */
 const STANDARD_SEITENGROESSE = 12;
 const SORT_STANDARD = "produktname";
+
+/**
+ * So viele Zeilen werden bei `seitenGroesseAusHoehe` mindestens geladen, auch
+ * wenn rechnerisch weniger hineinpassen. Ein Fenster, das gar keine Treffer
+ * mehr zeigt, waere unbrauchbar - dann lieber einmal scrollen.
+ */
+const MIN_ZEILEN_AUS_HOEHE = 3;
 
 /** Auswahlmoeglichkeit eines technischen Merkmals samt Klartext und Erklaerung. */
 interface Merkmalsoption {
@@ -80,19 +88,6 @@ const urlAusFilter = (
 // Helpers
 const formatKg = (val?: number) => val ? new Intl.NumberFormat('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(val) : '';
 
-/**
- * Klartext-Bezeichnung fuer die Liste. Der Produktname enthaelt oft nur das Mass
- * ("0,75 mm") - erst die Form davor sagt dem Anwender, was er vor sich hat:
- * "Blech 0,75 mm". Steht die Form schon im Namen, wird sie nicht doppelt gesetzt.
- */
-const artikelBezeichnung = (artikel: Artikel) => {
-    const form = artikel.profilform?.anzeigename;
-    const mass = artikel.abmessung || artikel.produktname;
-    if (!form) return artikel.produktname;
-    if (mass && mass.toLowerCase().includes(form.toLowerCase())) return mass;
-    return mass ? `${form} ${mass}` : form;
-};
-
 /** Verrechnungseinheit kommt je nach Endpunkt als Text oder als Objekt. */
 const einheitText = (einheit?: string | { name: string; anzeigename?: string }) => {
     if (!einheit) return '';
@@ -112,8 +107,37 @@ export interface ArtikelSucheProps {
     zeilenAktion?: (artikel: Artikel) => React.ReactNode;
     /** Klick auf eine Zeile. Fehlt er, navigiert die Zeile zur Detailseite. */
     onZeilenKlick?: (artikel: Artikel) => void;
+    /**
+     * Ist diese Zeile gerade ausgewaehlt? Nur zusammen mit
+     * {@link ArtikelSucheProps.onZeilenKlick} sinnvoll.
+     *
+     * Ohne die Auskunft ist die Zeile ein Schalter, der seinen Zustand
+     * verschweigt: Der Screenreader sagt "an- oder abwaehlen", nennt aber nie
+     * das Ergebnis, und optisch unterscheidet sich eine gewaehlte Zeile nur
+     * durch das Haekchen am rechten Rand.
+     */
+    zeilenGedrueckt?: (artikel: Artikel) => boolean;
     /** Seitengroesse. Standard 12 wie bisher in der Artikelverwaltung. */
     seitenGroesse?: number;
+    /**
+     * Statt einer festen Seitengroesse nur so viele Treffer laden, wie
+     * vollstaendig in die Liste passen.
+     *
+     * Gedacht fuer Fenster mit fester Hoehe: Dort ist die Seite dahinter nicht
+     * scrollbar, und eine feste Seitengroesse schneidet die letzte Zeile mitten
+     * durch. Der Rest bleibt ueber "Weiter" erreichbar. Auf einer normalen Seite
+     * waere das falsch - die waechst einfach mit.
+     */
+    seitenGroesseAusHoehe?: boolean;
+    /**
+     * Nur Artikel zeigen, hinter denen ein Lieferantenpreis steht.
+     *
+     * Fuer die Artikelverwaltung waere das falsch - dort soll auch auffallen,
+     * wo noch ein Preis fehlt. Wer die Auswahl dagegen als Einkauf weiterreicht
+     * (Materialkosten im Projekt), braucht Lieferant und Preis zwingend: Ohne
+     * sie liesse sich die Position gar nicht buchen.
+     */
+    nurMitLieferantenpreis?: boolean;
     /** Meldet den Ladezustand nach aussen - fuer den Spinner im Aktualisieren-Knopf der Seite. */
     onLadezustand?: (laedt: boolean) => void;
     /** Zugriff auf {@link ArtikelSucheHandle}. */
@@ -126,7 +150,10 @@ export function ArtikelSuche({
     urlSync = false,
     zeilenAktion,
     onZeilenKlick,
+    zeilenGedrueckt,
     seitenGroesse = STANDARD_SEITENGROESSE,
+    seitenGroesseAusHoehe = false,
+    nurMitLieferantenpreis = false,
     onLadezustand,
     ref,
 }: ArtikelSucheProps) {
@@ -181,6 +208,20 @@ export function ArtikelSuche({
             .catch(err => console.error("Fehler beim Laden der Filteroptionen", err));
     }, []);
 
+    // Passt die Seitengroesse an die verfuegbare Hoehe an (seitenGroesseAusHoehe).
+    const listenRahmen = useRef<HTMLDivElement>(null);
+    const [hoehenSeitenGroesse, setHoehenSeitenGroesse] = useState<number | null>(null);
+    // Die bisher hoechste beobachtete Zeile. Bewusst nur wachsend: Eine Seite
+    // ohne zweizeilige Angaben ("+1 weiterer") hat niedrigere Zeilen - wuerde
+    // die Rechnung darauf zurueckfallen, passten scheinbar mehr Treffer, die
+    // naechste Seite waere wieder zu hoch, und die Liste pendelte endlos
+    // zwischen zwei Seitengroessen.
+    const groessteZeile = useRef(0);
+
+    const effektiveSeitenGroesse = seitenGroesseAusHoehe
+        ? (hoehenSeitenGroesse ?? seitenGroesse)
+        : seitenGroesse;
+
     // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen in den Filterfeldern
     // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte Antwort
     // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
@@ -194,9 +235,10 @@ export function ArtikelSuche({
         try {
             const params = new URLSearchParams();
             params.set("page", String(page));
-            params.set("size", String(seitenGroesse));
+            params.set("size", String(effektiveSeitenGroesse));
             params.set("sort", sortColumn);
             params.set("dir", sortDirection);
+            if (nurMitLieferantenpreis) params.set("nurMitLieferantenpreis", "true");
 
             if (filters.q) params.set("q", filters.q);
             if (filters.lieferant) params.set("lieferant", filters.lieferant);
@@ -226,11 +268,44 @@ export function ArtikelSuche({
                 setErsteAntwortDa(true);
             }
         }
-    }, [page, filters, sortColumn, sortDirection, seitenGroesse]);
+    }, [page, filters, sortColumn, sortDirection, effektiveSeitenGroesse, nurMitLieferantenpreis]);
 
     useEffect(() => {
         loadArtikel();
     }, [loadArtikel]);
+
+    /**
+     * Misst, wie viele Zeilen ganz in die Liste passen.
+     *
+     * Laeuft nach jedem Laden und bei jeder Groessenaenderung des Rahmens. Der
+     * Rahmen nimmt in dieser Betriebsart den ganzen verbleibenden Platz ein
+     * (`flex-1` weiter unten) - seine Hoehe haengt also nicht daran, wie viele
+     * Zeilen gerade drinstehen. Ohne das wuerde jede Messung die naechste
+     * verkleinern, bis nichts mehr uebrig ist.
+     */
+    useEffect(() => {
+        if (!seitenGroesseAusHoehe) return;
+        const rahmen = listenRahmen.current;
+        if (!rahmen) return;
+
+        const messen = () => {
+            const zeilen = Array.from(rahmen.querySelectorAll("tbody tr"));
+            if (zeilen.length === 0) return;
+            const hoechste = Math.max(...zeilen.map((z) => z.getBoundingClientRect().height));
+            if (hoechste <= 0) return;
+            groessteZeile.current = Math.max(groessteZeile.current, hoechste);
+
+            const kopf = rahmen.querySelector("thead")?.getBoundingClientRect().height ?? 0;
+            const platz = rahmen.clientHeight - kopf;
+            const passend = Math.max(MIN_ZEILEN_AUS_HOEHE, Math.floor(platz / groessteZeile.current));
+            setHoehenSeitenGroesse((vorher) => (vorher === passend ? vorher : passend));
+        };
+
+        messen();
+        const beobachter = new ResizeObserver(messen);
+        beobachter.observe(rahmen);
+        return () => beobachter.disconnect();
+    }, [seitenGroesseAusHoehe, artikelList]);
 
     // Der Aktualisieren-Knopf steht in der Kopfzeile der Seite, die Liste eine Ebene
     // tiefer - deshalb die Fernbedienung nach aussen.
@@ -285,7 +360,7 @@ export function ArtikelSuche({
         setPage(0);
     };
 
-    const totalPages = Math.max(1, Math.ceil(total / seitenGroesse));
+    const totalPages = Math.max(1, Math.ceil(total / effektiveSeitenGroesse));
 
     // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
     // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
@@ -301,10 +376,10 @@ export function ArtikelSuche({
     const statusText = useMemo(() => {
         if (loading) return 'Artikel werden geladen...';
         if (total === 0) return 'Keine Artikel gefunden.';
-        const start = page * seitenGroesse + 1;
+        const start = page * effektiveSeitenGroesse + 1;
         const end = Math.min(start + artikelList.length - 1, total);
         return `Zeige ${start}-${end} von ${total} Artikeln`;
-    }, [loading, total, page, artikelList.length, seitenGroesse]);
+    }, [loading, total, page, artikelList.length, effektiveSeitenGroesse]);
 
     // Vermerkt, dass die Detailseite aus der Liste heraus geoeffnet wurde. Ihr
     // Zurueck-Button geht dann einen Schritt in der History zurueck - und landet
@@ -326,8 +401,13 @@ export function ArtikelSuche({
 
     return (
         <>
-            {/* Filter */}
-            <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100">
+            {/* Filter. In einem Fenster fester Hoehe darf die Filterbox nicht
+                schrumpfen - sonst nimmt sie der Liste den Platz weg, den diese
+                gerade ausmisst. */}
+            <div className={cn(
+                "bg-white p-6 rounded-2xl shadow-lg border border-slate-100",
+                seitenGroesseAusHoehe && "shrink-0",
+            )}>
                 <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <div>
                         <Label htmlFor="filter-q" className="text-sm font-medium text-gray-700">Freitext</Label>
@@ -453,7 +533,12 @@ export function ArtikelSuche({
                         <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Filter zurücksetzen</button>
                     </div>
                 </form>
-                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {seitenGroesse} Einträge auf einmal geladen.</p>
+                {/* Im Fenster fester Hoehe waere der Satz irrefuehrend: Dort
+                    richtet sich die Zahl nach dem Platz, nicht nach der
+                    Performance - und der Platz fehlt dann der Liste. */}
+                {!seitenGroesseAusHoehe && (
+                    <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {effektiveSeitenGroesse} Einträge auf einmal geladen.</p>
+                )}
             </div>
 
             {/* Grid Content */}
@@ -465,8 +550,19 @@ export function ArtikelSuche({
                     Keine Artikel gefunden.
                 </div>
             ) : (
-                <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
-                    <div className="overflow-x-auto">
+                // Der Rahmen nimmt im Fenster den ganzen verbleibenden Platz ein
+                // (flex-1) - das ist die Bezugsgroesse, an der die Seitengroesse
+                // ausgemessen wird. `overflow-hidden` beschneidet sonst nur die
+                // runden Ecken; hier wuerde es die letzte Zeile spurlos
+                // abschneiden, deshalb in dieser Betriebsart `overflow-auto`.
+                <div
+                    ref={listenRahmen}
+                    className={cn(
+                        "bg-white rounded-2xl shadow-lg border border-slate-100",
+                        seitenGroesseAusHoehe ? "flex-1 min-h-0 overflow-auto" : "overflow-hidden",
+                    )}
+                >
+                    <div className={cn(!seitenGroesseAusHoehe && "overflow-x-auto")}>
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                 <tr>
@@ -484,7 +580,14 @@ export function ArtikelSuche({
                                 {artikelList.map((artikel) => (
                                     <tr
                                         key={artikel.id}
-                                        className="group hover:bg-slate-50 transition-colors cursor-pointer"
+                                        className={cn(
+                                            "group transition-colors cursor-pointer",
+                                            // Eine gewaehlte Zeile hebt sich ab - sonst erkennt
+                                            // man sie nur am Haekchen ganz rechts.
+                                            zeilenGedrueckt?.(artikel)
+                                                ? "bg-rose-50 hover:bg-rose-100"
+                                                : "hover:bg-slate-50",
+                                        )}
                                         onClick={() => oeffneArtikel(artikel)}
                                         tabIndex={0}
                                         // Mit onZeilenKlick ist die Zeile kein Link mehr: Sie
@@ -495,6 +598,11 @@ export function ArtikelSuche({
                                         // "auswaehlen", damit sich das Label von der Checkbox
                                         // in der Zeilenaktion unterscheidet.
                                         role={onZeilenKlick ? "button" : "link"}
+                                        // Ein Schalter muss seinen Zustand nennen, nicht nur
+                                        // seine Wirkung.
+                                        aria-pressed={onZeilenKlick && zeilenGedrueckt
+                                            ? zeilenGedrueckt(artikel)
+                                            : undefined}
                                         aria-label={onZeilenKlick
                                             ? `${artikelBezeichnung(artikel)} an- oder abwählen`
                                             : `Details zu ${artikelBezeichnung(artikel)} öffnen`}
@@ -584,8 +692,12 @@ export function ArtikelSuche({
                 </div>
             )}
 
-            {/* Pagination */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            {/* Pagination - im Fenster fester Hoehe der Weg zu den uebrigen
+                Treffern, darf also auf keinen Fall mitschrumpfen. */}
+            <div className={cn(
+                "flex flex-col md:flex-row md:items-center justify-between gap-3",
+                seitenGroesseAusHoehe && "shrink-0",
+            )}>
                 <p className="text-sm text-gray-600">{statusText}</p>
                 <div className="flex gap-2 justify-end">
                     <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>

@@ -14,7 +14,7 @@ describe('hatKundentext', () => {
         expect(hatKundentext('<p>Rundrohr 42,4 x 2 mm</p>')).toBe(true);
     });
 
-    // '<p> </p>' ist der Rest, den ein echter Editor beim Leeren
+    // '<p>U+00A0</p>' ist der Rest, den ein echter Editor beim Leeren
     // hinterlaesst (rohes U+00A0 statt der Entity). Er muss hier genauso als
     // leer gelten wie in richtextOderNull (ArtikelDetail.tsx) — sonst gilt
     // derselbe Artikel auf der Detailseite als leer, im Auswahlfenster aber
