@@ -248,4 +248,20 @@ public class Artikel
         }
         return werkstoff != null ? werkstoff.getWerkstoffnorm() : null;
     }
+
+    /** Vorschaubild und Zusatzdokumente (Zulassungen, Zeichnungen, Datenblaetter, ...). */
+    @OneToMany(mappedBy = "artikel", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ArtikelDokument> dokumente = new ArrayList<>();
+
+    /**
+     * Das Vorschaubild des Artikels, sofern gepflegt. Kein eigenes Feld,
+     * sondern das {@link ArtikelDokument} mit {@code typ == VORSCHAUBILD} -
+     * hoechstens eines je Artikel, durchgesetzt vom Service.
+     */
+    @Transient
+    public Optional<ArtikelDokument> getVorschaubild() {
+        return dokumente.stream()
+                .filter(d -> d.getTyp() == ArtikelDokumentTyp.VORSCHAUBILD)
+                .findFirst();
+    }
 }
