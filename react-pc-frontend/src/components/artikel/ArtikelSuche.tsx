@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Package, ChevronLeft, ChevronRight, X, Search, Folder } from "lucide-react";
+import { Package, ChevronLeft, ChevronRight, X, Search, Folder, ImageOff } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select } from "../ui/select-custom";
+import { ThumbnailImage } from "../ui/ThumbnailImage";
 import { cn } from "../../lib/utils";
 import type { Artikel } from "../../types";
 import { SupplierSelectModal } from "../SupplierSelectModal";
@@ -566,6 +567,12 @@ export function ArtikelSuche({
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                 <tr>
+                                    {/* Nur ein Erkennungsmerkmal, keine Kennzahl - hier gibt es
+                                        nichts zu sortieren. Die Beschriftung bleibt fuer Screenreader
+                                        erhalten, ohne die schmale Spalte optisch zu belasten. */}
+                                    <th className="px-2 py-3 w-12" scope="col">
+                                        <span className="sr-only">Vorschaubild</span>
+                                    </th>
                                     <SortableHeader label="Artikel-Nr." column="produktname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="Bezeichnung" column="produktname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="Werkstoff" column="werkstoffName" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
@@ -613,6 +620,31 @@ export function ArtikelSuche({
                                             }
                                         }}
                                     >
+                                        {/* Zukaufteile wie Handlaufhalter oder Rosetten erkennt der
+                                            Handwerker am Bild, nicht an der Artikelnummer. Feste 40x40
+                                            px-Box, damit die Spalte die Zeilenhoehe nicht aufreisst -
+                                            bei fast allen Bestandsartikeln fehlt das Bild (noch), dann
+                                            steht hier ein dezenter Platzhalter statt einer leeren Zelle
+                                            oder dem kaputten Browser-Bildsymbol. */}
+                                        <td className="px-2 py-1.5">
+                                            {artikel.vorschaubildUrl ? (
+                                                <div className="w-10 h-10 shrink-0 rounded overflow-hidden border border-slate-200">
+                                                    <ThumbnailImage
+                                                        src={artikel.vorschaubildUrl}
+                                                        alt={artikel.produktname}
+                                                        className="object-cover"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div
+                                                    className="w-10 h-10 shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center"
+                                                    role="img"
+                                                    aria-label={`Kein Vorschaubild für ${artikel.produktname}`}
+                                                >
+                                                    <ImageOff className="w-4 h-4 text-slate-300" aria-hidden="true" />
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="px-4 py-3 font-mono text-xs text-slate-600">{artikel.artikelnummer || '-'}</td>
                                         <td className="px-4 py-3">
                                             <div

@@ -284,4 +284,59 @@ describe('ArtikelSuche', () => {
         expect(formatCurrency(8.4)).toBe(new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(8.4));
         expect(formatCurrency()).toBe(new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(0));
     });
+
+    // ------------------------------------------------------------------
+    // Vorschaubild in der Trefferliste
+    // ------------------------------------------------------------------
+
+    it('rendert bei hinterlegtem Vorschaubild ein Bild mit dem Produktnamen als Alt-Text', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            if (url.includes('/filteroptionen') || url.includes('/werkstoffe')) return filteroptionen();
+            return antwort([{
+                id: 7, produktname: 'T-Stahl', abmessung: '40 x 40 x 5', positionsEinheit: 'lfm',
+                vorschaubildUrl: '/api/artikel/7/vorschaubild',
+            }]);
+        }));
+
+        zeigeSuche(<ArtikelSuche />);
+
+        const bild = await screen.findByAltText('T-Stahl');
+        expect(bild.tagName).toBe('IMG');
+        expect(bild).toHaveAttribute('src', '/api/artikel/7/vorschaubild');
+    });
+
+    // Der Normalfall bei Bestandsartikeln: kein Vorschaubild gepflegt. Eine
+    // leere Zelle oder das kaputte Browser-Bildsymbol waeren hier fehl am
+    // Platz - der Platzhalter darf aber auch kein <img> sein, sonst würde ein
+    // 404 auf eine erfundene URL sichtbar.
+    it('zeigt ohne Vorschaubild einen Platzhalter statt eines Bildes', async () => {
+        zeigeSuche(<ArtikelSuche />);
+
+        await screen.findByText('T-Stahl');
+
+        expect(screen.queryByRole('img', { name: 'T-Stahl' })).not.toBeInTheDocument();
+        expect(screen.getByRole('img', { name: 'Kein Vorschaubild für T-Stahl' })).toBeInTheDocument();
+    });
+
+    // Ein 404 auf die Bild-URL darf den Platzhalter nicht mit dem kaputten
+    // Browser-Bildsymbol verwechseln - ThumbnailImage faengt das ab.
+    it('faellt bei einem fehlerhaften Bildlink auf den Platzhalter zurueck', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            if (url.includes('/filteroptionen') || url.includes('/werkstoffe')) return filteroptionen();
+            return antwort([{
+                id: 7, produktname: 'T-Stahl', abmessung: '40 x 40 x 5', positionsEinheit: 'lfm',
+                vorschaubildUrl: '/api/artikel/7/vorschaubild',
+            }]);
+        }));
+
+        zeigeSuche(<ArtikelSuche />);
+
+        const bild = await screen.findByAltText('T-Stahl');
+        act(() => {
+            bild.dispatchEvent(new Event('error'));
+        });
+
+        expect(screen.queryByAltText('T-Stahl')).not.toBeInTheDocument();
+        expect(screen.getByTitle('T-Stahl')).toBeInTheDocument();
+    });
 });
