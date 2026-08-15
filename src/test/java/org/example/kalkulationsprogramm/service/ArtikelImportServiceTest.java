@@ -129,10 +129,10 @@ class ArtikelImportServiceTest {
         mapping.put("preis", "preis");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("Feldmann")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("456", 1L)).thenReturn(Optional.empty());
 
-        artikelImportService.importiereCsv(file, "Feldmann", mapping, null, false);
+        artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
 
         verify(artikelRepository).save(artikelCaptor.capture());
         LieferantenArtikelPreise p = artikelCaptor.getValue().getArtikelpreis().getFirst();
@@ -149,10 +149,10 @@ class ArtikelImportServiceTest {
         mapping.put("preis", "preis");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("Feldmann")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("789", 1L)).thenReturn(Optional.empty());
 
-        artikelImportService.importiereCsv(file, "Feldmann", mapping, null, false);
+        artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
 
         verify(artikelRepository).save(artikelCaptor.capture());
         LieferantenArtikelPreise p = artikelCaptor.getValue().getArtikelpreis().getFirst();
@@ -179,7 +179,20 @@ class ArtikelImportServiceTest {
         MockMultipartFile fileA = new MockMultipartFile("file", "a.csv", "text/csv", csvContentA.getBytes());
         MockMultipartFile fileB = new MockMultipartFile("file", "b.csv", "text/csv", csvContentB.getBytes());
 
+        ArgumentCaptor<Artikel> ersterAufrufCaptor = ArgumentCaptor.forClass(Artikel.class);
         artikelImportService.importiereCsv(fileA, "LieferantA", mapping, null, false);
+        verify(artikelRepository, times(1)).save(ersterAufrufCaptor.capture());
+        Artikel artikelVonLieferantA = ersterAufrufCaptor.getValue();
+
+        // Regressionsschutz: Die alte, lieferantenuebergreifende Methode liefert absichtlich
+        // den bereits angelegten Artikel von Lieferant A zurueck. Faellt importiereCsv
+        // (versehentlich) wieder auf findByExterneArtikelnummer() zurueck, wuerde Lieferant B
+        // exakt diesen Artikel wiederverwenden statt einen eigenen anzulegen - der
+        // assertNotSame weiter unten schlaegt dann fehl. lenient(), weil der reparierte Code
+        // diese alte Methode gar nicht mehr aufruft.
+        lenient().when(artikelRepository.findByExterneArtikelnummer("999"))
+                .thenReturn(Optional.of(artikelVonLieferantA));
+
         artikelImportService.importiereCsv(fileB, "LieferantB", mapping, null, false);
 
         verify(artikelRepository, times(2)).save(artikelCaptor.capture());
@@ -202,10 +215,19 @@ class ArtikelImportServiceTest {
         mapping.put("preis", "preis");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("Feldmann")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("123", 1L)).thenReturn(Optional.empty());
 
-        ImportAnalysisResult result = artikelImportService.analyzeImport(file, "Feldmann", mapping);
+        // Regressionsschutz: Der Artikel existiert bereits, aber nur bei einem ANDEREN
+        // Lieferanten. Die alte, lieferantenuebergreifende Methode wuerde ihn faelschlich
+        // als "existierend" zaehlen - genau das darf analyzeImport nicht mehr tun. lenient(),
+        // weil der reparierte Code diese alte Methode gar nicht mehr aufruft.
+        Artikel artikelEinesAnderenLieferanten = new Artikel();
+        artikelEinesAnderenLieferanten.setArtikelpreis(new ArrayList<>());
+        lenient().when(artikelRepository.findByExterneArtikelnummer("123"))
+                .thenReturn(Optional.of(artikelEinesAnderenLieferanten));
+
+        ImportAnalysisResult result = artikelImportService.analyzeImport(file, "TestLieferant", mapping);
 
         assertEquals(1, result.getNewCount());
         assertEquals(0, result.getExistingCount());

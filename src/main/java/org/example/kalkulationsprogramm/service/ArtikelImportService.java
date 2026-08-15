@@ -215,7 +215,8 @@ public class ArtikelImportService {
                     // Vorgabe ist "aus": ohne ausdrueckliche Anforderung landet der CSV-Wert
                     // unveraendert in der Datenbank. Die Korrektur war urspruenglich fuer
                     // Stahl-Kilopreise (0,50-10,00 EUR) gedacht und verfaelscht Stueckpreise
-                    // (z.B. Feldmann-Zukaufteile) stillschweigend, wenn man sie ungefragt anwendet.
+                    // (z.B. zugekaufte Einzelteile eines Lieferanten) stillschweigend, wenn
+                    // man sie ungefragt anwendet.
                     if (preiskorrekturAnwenden) {
                         BigDecimal ausgangswert = preis;
                         BigDecimal korrigiert = normalizePreis(preis);
