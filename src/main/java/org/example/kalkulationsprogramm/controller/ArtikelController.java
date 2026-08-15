@@ -121,10 +121,12 @@ public class ArtikelController {
     public ResponseEntity<Void> importiere(@RequestParam("file") MultipartFile file,
             @RequestParam("lieferant") String lieferant,
             @RequestParam(value = "kategorieId", required = false) Long kategorieId,
+            @RequestParam(value = "preiskorrekturAnwenden", required = false, defaultValue = "false") boolean preiskorrekturAnwenden,
             @RequestParam Map<String, String> spaltenZuordnung) {
         spaltenZuordnung.remove("lieferant");
         spaltenZuordnung.remove("kategorieId");
-        artikelImportService.importiereCsv(file, lieferant, spaltenZuordnung, kategorieId);
+        spaltenZuordnung.remove("preiskorrekturAnwenden");
+        artikelImportService.importiereCsv(file, lieferant, spaltenZuordnung, kategorieId, preiskorrekturAnwenden);
         return ResponseEntity.ok().build();
     }
 

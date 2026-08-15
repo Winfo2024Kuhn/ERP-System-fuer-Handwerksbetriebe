@@ -96,6 +96,10 @@ public class ArtikelImportService {
                     headerIndex.put(norm, i);
                 }
 
+                Long lieferantIdFuerAbgleich = lieferantenRepository.findByLieferantenname(lieferantenName)
+                        .map(Lieferanten::getId)
+                        .orElse(null);
+
                 String line;
                 while ((line = reader.readLine()) != null) {
                     String[] values = line.split(";");
@@ -105,7 +109,11 @@ public class ArtikelImportService {
                         continue;
                     }
 
-                    boolean exists = artikelRepository.findByExterneArtikelnummer(externeNr).isPresent();
+                    // Noch kein Lieferant mit diesem Namen angelegt -> beim tatsaechlichen
+                    // Import kann es fuer diesen Lieferanten keine bestehenden Artikel geben.
+                    boolean exists = lieferantIdFuerAbgleich != null
+                            && artikelRepository.findByExterneArtikelnummerAndLieferantId(externeNr, lieferantIdFuerAbgleich)
+                                    .isPresent();
                     if (exists) {
                         result.setExistingCount(result.getExistingCount() + 1);
                     } else {
@@ -125,7 +133,7 @@ public class ArtikelImportService {
 
     @Transactional
     public void importiereCsv(MultipartFile file, String lieferantenName, Map<String, String> spaltenZuordnung,
-            Long defaultKategorieId) {
+            Long defaultKategorieId, boolean preiskorrekturAnwenden) {
         // Ursprünglichen Lieferantennamen unverändert lassen (Umlaute bleiben erhalten)
         try {
             byte[] bytes = file.getBytes();
@@ -169,7 +177,9 @@ public class ArtikelImportService {
                     }
 
                     boolean isNew = false;
-                    Artikel artikel = artikelRepository.findByExterneArtikelnummer(externeNr).orElse(null);
+                    Artikel artikel = artikelRepository
+                            .findByExterneArtikelnummerAndLieferantId(externeNr, lieferant.getId())
+                            .orElse(null);
                     if (artikel == null) {
                         artikel = new Artikel();
                         isNew = true;
@@ -192,6 +202,8 @@ public class ArtikelImportService {
 
                     BigDecimal preis = parseBigDecimal(preisStr);
                     if (preis == null) {
+                        log.warn("Preis fuer Artikel {} konnte nicht gelesen werden (Rohwert '{}') - Zeile wird uebersprungen",
+                                externeNr, preisStr);
                         continue;
                     }
 
@@ -200,10 +212,23 @@ public class ArtikelImportService {
                         preis = preis.divide(einheit, 4, java.math.RoundingMode.HALF_UP);
                     }
 
-                    preis = normalizePreis(preis);
-                    if (preis == null) {
-                        log.warn("Preis fuer Artikel {} liegt außerhalb des erwarteten Bereichs", externeNr);
-                        continue;
+                    // Vorgabe ist "aus": ohne ausdrueckliche Anforderung landet der CSV-Wert
+                    // unveraendert in der Datenbank. Die Korrektur war urspruenglich fuer
+                    // Stahl-Kilopreise (0,50-10,00 EUR) gedacht und verfaelscht Stueckpreise
+                    // (z.B. Feldmann-Zukaufteile) stillschweigend, wenn man sie ungefragt anwendet.
+                    if (preiskorrekturAnwenden) {
+                        BigDecimal ausgangswert = preis;
+                        BigDecimal korrigiert = normalizePreis(preis);
+                        if (korrigiert == null) {
+                            log.warn(
+                                    "Preis fuer Artikel {} liegt außerhalb des erwarteten Bereichs (Ausgangswert {}) und wurde verworfen",
+                                    externeNr, ausgangswert);
+                            continue;
+                        }
+                        if (korrigiert.compareTo(ausgangswert) != 0) {
+                            log.info("Preis fuer Artikel {} korrigiert: {} -> {}", externeNr, ausgangswert, korrigiert);
+                        }
+                        preis = korrigiert;
                     }
 
                     final Artikel currentArtikel = artikel;
