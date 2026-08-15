@@ -30,7 +30,9 @@ import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,9 +61,9 @@ public class GeminiDokumentAnalyseService {
     private final LieferantenRepository lieferantenRepository;
     private final LieferantDokumentRepository dokumentRepository;
     private final ZugferdExtractorService zugferdExtractorService;
-    private final PreisUebernahmeService preisUebernahmeService;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final SystemSettingsService systemSettingsService;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -1026,15 +1028,17 @@ public class GeminiDokumentAnalyseService {
                         freshDokument.getId());
                 geschaeftsdaten = analysierePerKi(freshDokument, dateiPfad);
 
-                // Preise aus der KI-Auswertung uebernehmen. Erst hier liegen
-                // Artikelpositionen und Lieferant gleichzeitig vor.
+                // Preise aus der KI-Auswertung vormerken. Erst hier liegen
+                // Artikelpositionen und Lieferant gleichzeitig vor. Geschrieben
+                // werden sie nach dem Commit dieser Transaktion.
                 if (geschaeftsdaten != null && geschaeftsdaten.getAiRawJson() != null) {
                     try {
                         verarbeiteArtikelPositionen(
                                 objectMapper.readTree(geschaeftsdaten.getAiRawJson()),
                                 freshDokument.getLieferant(),
                                 geschaeftsdaten.getDetectedTyp(),
-                                geschaeftsdaten.getDokumentDatum());
+                                geschaeftsdaten.getDokumentDatum(),
+                                geschaeftsdaten.getDokumentNummer());
                     } catch (Exception e) {
                         log.warn("Preisuebernahme aus KI-Analyse fehlgeschlagen für Dokument {}: {}",
                                 freshDokument.getId(), e.getMessage());
@@ -1246,7 +1250,8 @@ public class GeminiDokumentAnalyseService {
             // ist allein der TypeCode, den die Datei selbst ausweist.
             if (dokument != null) {
                 verarbeiteStrukturiertePositionen(zugferd.getArtikelPositionen(), dokument.getLieferant(),
-                        ausgewiesenerTyp(zugferd.getTypeCode()), gd.getDokumentDatum());
+                        ausgewiesenerTyp(zugferd.getTypeCode()), gd.getDokumentDatum(),
+                        gd.getDokumentNummer());
             }
 
             return gd;
@@ -1377,7 +1382,8 @@ public class GeminiDokumentAnalyseService {
             // preisQuelleFuer aussperren soll.
             if (dokument != null) {
                 verarbeiteStrukturiertePositionen(zugferdExtractorService.extractLineItems(xmlContent),
-                        dokument.getLieferant(), ausgewiesenerTyp(typeCode), gd.getDokumentDatum());
+                        dokument.getLieferant(), ausgewiesenerTyp(typeCode), gd.getDokumentDatum(),
+                        gd.getDokumentNummer());
             }
 
             return gd;
@@ -2446,7 +2452,7 @@ public class GeminiDokumentAnalyseService {
      * Rechnungen haben deshalb nie einen Preis aktualisiert.
      */
     private void verarbeiteArtikelPositionen(JsonNode json, Lieferanten lieferant, LieferantDokumentTyp typ,
-            LocalDate dokumentDatum) {
+            LocalDate dokumentDatum, String belegnummer) {
         if (lieferant == null || json == null || !json.has("artikelPositionen")) {
             return;
         }
@@ -2468,7 +2474,7 @@ public class GeminiDokumentAnalyseService {
                     textOderNull(pos, "mengeneinheit")));
         }
 
-        preisUebernahmeService.uebernehmePreise(lieferant, quelle, alsDatum(dokumentDatum), ausgelesen);
+        meldePreisuebernahmeAn(lieferant, quelle, dokumentDatum, belegnummer, ausgelesen);
     }
 
     private String textOderNull(JsonNode pos, String feld) {
@@ -2498,7 +2504,7 @@ public class GeminiDokumentAnalyseService {
      */
     private void verarbeiteStrukturiertePositionen(
             List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen,
-            Lieferanten lieferant, LieferantDokumentTyp typ, LocalDate dokumentDatum) {
+            Lieferanten lieferant, LieferantDokumentTyp typ, LocalDate dokumentDatum, String belegnummer) {
         if (lieferant == null || positionen == null || positionen.isEmpty()) {
             return;
         }
@@ -2515,7 +2521,37 @@ public class GeminiDokumentAnalyseService {
                         pos.getMengeneinheit()))
                 .toList();
 
-        preisUebernahmeService.uebernehmePreise(lieferant, quelle, alsDatum(dokumentDatum), ausgelesen);
+        meldePreisuebernahmeAn(lieferant, quelle, dokumentDatum, belegnummer, ausgelesen);
+    }
+
+    /**
+     * Meldet die Preisuebernahme an - ausgefuehrt wird sie erst, wenn die Analyse
+     * committet ist.
+     *
+     * <p>Frueher rief diese Klasse den {@code PreisUebernahmeService} direkt auf,
+     * der dafuer mit {@code REQUIRES_NEW} eine zweite Transaktion oeffnete. Das
+     * hatte zwei Haken: Rollte die Analyse anschliessend zurueck, blieb ein
+     * Preisstand fuer einen Beleg stehen, den es in der Datenbank nie gab. Und jedes
+     * Dokument belegte zwei Datenbankverbindungen gleichzeitig - bei einer
+     * Stapel-Neuanalyse wurde der Pool eng. Das Event greift erst nach dem Commit,
+     * also nur fuer Belege, die tatsaechlich gespeichert sind.
+     *
+     * <p><b>Zugestellt wird nur mit laufender Transaktion.</b> Ohne sie verwirft
+     * Spring das Event stillschweigend ({@code fallbackExecution} bleibt aus - eine
+     * Preisuebernahme ohne den zugehoerigen Beleg waere genau das, was dieser Umbau
+     * abstellt). Beide Wege in die Analyse bringen eine mit: {@code analysiereDokument}
+     * ist transaktional, ebenso {@code reanalysiereDokumentById} fuer die
+     * Stapelverarbeitung.
+     */
+    private void meldePreisuebernahmeAn(Lieferanten lieferant, PreisQuelle quelle, LocalDate dokumentDatum,
+            String belegnummer, List<PreisUebernahmeService.Position> positionen) {
+        // Der Lieferant haengt als Lazy-Proxy am Dokument. Der Empfaenger arbeitet
+        // nach dem Commit in einer neuen Transaktion - dort waere der Proxy
+        // abgehaengt und der erste Zugriff auf den Namen wuerde abbrechen. Also
+        // hier aufloesen, solange die Analyse-Transaktion noch laeuft.
+        Hibernate.initialize(lieferant);
+        eventPublisher.publishEvent(new PreisUebernahmeEvent(
+                lieferant, quelle, alsDatum(dokumentDatum), belegnummer, positionen));
     }
 
     /**

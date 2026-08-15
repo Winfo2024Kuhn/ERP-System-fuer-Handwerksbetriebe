@@ -21,14 +21,13 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.Mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -39,9 +38,9 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private LieferantDokumentRepository dokumentRepository;
     @Mock private ZugferdExtractorService zugferdExtractorService;
-    @Mock private PreisUebernahmeService preisUebernahmeService;
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @Mock private SystemSettingsService systemSettingsService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private GeminiDokumentAnalyseService service;
 
@@ -52,9 +51,9 @@ class GeminiDokumentAnalyseServiceTest {
                 lieferantenRepository,
                 dokumentRepository,
                 zugferdExtractorService,
-                preisUebernahmeService,
                 lieferantGeschaeftsdokumentRepository,
-                systemSettingsService
+                systemSettingsService,
+                eventPublisher
         );
     }
 
@@ -707,7 +706,12 @@ class GeminiDokumentAnalyseServiceTest {
     /**
      * Der KI-Pfad hat lange gar keine Preise aktualisiert - der Aufruf war
      * auskommentiert. Diese Tests halten fest, dass die Positionen jetzt
-     * tatsaechlich bei der Preisuebernahme ankommen, und zwar unveraendert.
+     * tatsaechlich bei der Preisuebernahme angemeldet werden, und zwar
+     * unveraendert.
+     *
+     * <p>Angemeldet, nicht geschrieben: Die Analyse veroeffentlicht nur noch ein
+     * {@link PreisUebernahmeEvent}. Ausgefuehrt wird es erst nach dem Commit -
+     * geprueft wird hier also der Inhalt der Meldung.
      */
     @Nested
     class PreisuebernahmeAusKiAnalyse {
@@ -726,16 +730,13 @@ class GeminiDokumentAnalyseServiceTest {
                     ]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null);
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null, null);
 
-            @SuppressWarnings("unchecked")
-            ArgumentCaptor<java.util.List<PreisUebernahmeService.Position>> captor =
-                    ArgumentCaptor.forClass(java.util.List.class);
-            verify(preisUebernahmeService).uebernehmePreise(eq(lieferant), eq(PreisQuelle.RECHNUNG),
-                    any(), captor.capture());
-
-            assertThat(captor.getValue()).hasSize(1);
-            PreisUebernahmeService.Position position = captor.getValue().getFirst();
+            PreisUebernahmeEvent event = gemeldetesEvent();
+            assertThat(event.lieferant()).isSameAs(lieferant);
+            assertThat(event.quelle()).isEqualTo(PreisQuelle.RECHNUNG);
+            assertThat(event.positionen()).hasSize(1);
+            PreisUebernahmeService.Position position = event.positionen().getFirst();
             assertThat(position.externeArtikelnummer()).isEqualTo("HLH-42");
             // Komma-Dezimaltrennzeichen aus dem deutschen PDF muss ankommen.
             assertThat(position.einzelpreis()).isEqualByComparingTo("62.00");
@@ -752,15 +753,33 @@ class GeminiDokumentAnalyseServiceTest {
                     """;
 
             invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG,
-                    java.time.LocalDate.of(2026, 3, 14));
+                    java.time.LocalDate.of(2026, 3, 14), null);
 
-            ArgumentCaptor<java.util.Date> datum = ArgumentCaptor.forClass(java.util.Date.class);
-            verify(preisUebernahmeService).uebernehmePreise(any(), any(), datum.capture(), any());
+            java.util.Date datum = gemeldetesEvent().dokumentDatum();
 
-            assertThat(datum.getValue()).isNotNull();
-            assertThat(datum.getValue().toInstant()
+            assertThat(datum).isNotNull();
+            assertThat(datum.toInstant()
                     .atZone(java.time.ZoneId.systemDefault()).toLocalDate())
                     .isEqualTo(java.time.LocalDate.of(2026, 3, 14));
+        }
+
+        /**
+         * Ohne Belegnummer laesst sich spaeter nicht mehr sagen, aus welcher
+         * Rechnung ein Preis stammt.
+         */
+        @Test
+        void reichtDieBelegnummerWeiter() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setLieferantenname("Musterlieferant");
+
+            String json = """
+                    {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
+                    """;
+
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null,
+                    "RE-2026-0815");
+
+            assertThat(gemeldetesEvent().belegnummer()).isEqualTo("RE-2026-0815");
         }
 
         @Test
@@ -772,15 +791,11 @@ class GeminiDokumentAnalyseServiceTest {
                     {"artikelPositionen": [{"externeArtikelnummer": "X-1", "einzelpreis": 18.50}]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null);
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null, null);
 
-            @SuppressWarnings("unchecked")
-            ArgumentCaptor<java.util.List<PreisUebernahmeService.Position>> captor =
-                    ArgumentCaptor.forClass(java.util.List.class);
-            verify(preisUebernahmeService).uebernehmePreise(any(), any(), any(), captor.capture());
-
-            assertThat(captor.getValue().getFirst().preiseinheit()).isNull();
-            assertThat(captor.getValue().getFirst().mengeneinheit()).isNull();
+            PreisUebernahmeEvent event = gemeldetesEvent();
+            assertThat(event.positionen().getFirst().preiseinheit()).isNull();
+            assertThat(event.positionen().getFirst().mengeneinheit()).isNull();
         }
 
         @Test
@@ -792,9 +807,9 @@ class GeminiDokumentAnalyseServiceTest {
                     {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.ANGEBOT, null);
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.ANGEBOT, null, null);
 
-            verify(preisUebernahmeService).uebernehmePreise(any(), eq(PreisQuelle.ANGEBOT_EMAIL), any(), any());
+            assertThat(gemeldetesEvent().quelle()).isEqualTo(PreisQuelle.ANGEBOT_EMAIL);
         }
 
         /**
@@ -811,9 +826,9 @@ class GeminiDokumentAnalyseServiceTest {
                     {"artikelPositionen": [{"externeArtikelnummer": "KAT-1", "einzelpreis": 99.00}]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.SONSTIG, null);
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.SONSTIG, null, null);
 
-            verifyNoInteractions(preisUebernahmeService);
+            verifyNoInteractions(eventPublisher);
         }
 
         /**
@@ -829,9 +844,9 @@ class GeminiDokumentAnalyseServiceTest {
                     {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, lieferant, null, null);
+            invokeVerarbeiteArtikelPositionen(json, lieferant, null, null, null);
 
-            verifyNoInteractions(preisUebernahmeService);
+            verifyNoInteractions(eventPublisher);
         }
 
         /** Eine Gutschrift nennt den erstatteten Betrag, nicht den Einkaufspreis. */
@@ -844,9 +859,9 @@ class GeminiDokumentAnalyseServiceTest {
                     {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 4.00}]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.GUTSCHRIFT, null);
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.GUTSCHRIFT, null, null);
 
-            verifyNoInteractions(preisUebernahmeService);
+            verifyNoInteractions(eventPublisher);
         }
 
         /** Ein Lieferschein fuehrt Listen- statt Nettopreise. */
@@ -859,9 +874,9 @@ class GeminiDokumentAnalyseServiceTest {
                     {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.LIEFERSCHEIN, null);
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.LIEFERSCHEIN, null, null);
 
-            verifyNoInteractions(preisUebernahmeService);
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
@@ -870,9 +885,9 @@ class GeminiDokumentAnalyseServiceTest {
                     {"artikelPositionen": [{"externeArtikelnummer": "A-1", "einzelpreis": 10.00}]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, null, LieferantDokumentTyp.RECHNUNG, null);
+            invokeVerarbeiteArtikelPositionen(json, null, LieferantDokumentTyp.RECHNUNG, null, null);
 
-            verifyNoInteractions(preisUebernahmeService);
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
@@ -887,17 +902,13 @@ class GeminiDokumentAnalyseServiceTest {
                     ]}
                     """;
 
-            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null);
-
-            @SuppressWarnings("unchecked")
-            ArgumentCaptor<java.util.List<PreisUebernahmeService.Position>> captor =
-                    ArgumentCaptor.forClass(java.util.List.class);
-            verify(preisUebernahmeService).uebernehmePreise(any(), any(), any(), captor.capture());
+            invokeVerarbeiteArtikelPositionen(json, lieferant, LieferantDokumentTyp.RECHNUNG, null, null);
 
             // Aussortiert wird erst im PreisUebernahmeService - hier darf nichts knallen.
-            assertThat(captor.getValue()).hasSize(2);
-            assertThat(captor.getValue().getFirst().externeArtikelnummer()).isNull();
-            assertThat(captor.getValue().getFirst().einzelpreis()).isNull();
+            var positionen = gemeldetesEvent().positionen();
+            assertThat(positionen).hasSize(2);
+            assertThat(positionen.getFirst().externeArtikelnummer()).isNull();
+            assertThat(positionen.getFirst().einzelpreis()).isNull();
         }
 
         @Test
@@ -906,18 +917,27 @@ class GeminiDokumentAnalyseServiceTest {
             lieferant.setLieferantenname("Musterlieferant");
 
             invokeVerarbeiteArtikelPositionen("{\"dokumentTyp\": \"RECHNUNG\"}", lieferant,
-                    LieferantDokumentTyp.RECHNUNG, null);
+                    LieferantDokumentTyp.RECHNUNG, null, null);
 
-            verifyNoInteractions(preisUebernahmeService);
+            verifyNoInteractions(eventPublisher);
         }
 
         private void invokeVerarbeiteArtikelPositionen(String json, Lieferanten lieferant,
-                LieferantDokumentTyp typ, java.time.LocalDate dokumentDatum) throws Exception {
+                LieferantDokumentTyp typ, java.time.LocalDate dokumentDatum, String belegnummer)
+                throws Exception {
             Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
                     "verarbeiteArtikelPositionen", com.fasterxml.jackson.databind.JsonNode.class,
-                    Lieferanten.class, LieferantDokumentTyp.class, java.time.LocalDate.class);
+                    Lieferanten.class, LieferantDokumentTyp.class, java.time.LocalDate.class,
+                    String.class);
             method.setAccessible(true);
-            method.invoke(service, echterMapper.readTree(json), lieferant, typ, dokumentDatum);
+            method.invoke(service, echterMapper.readTree(json), lieferant, typ, dokumentDatum, belegnummer);
+        }
+
+        /** Das einzige veroeffentlichte Event - alles andere waere ein Fehler. */
+        private PreisUebernahmeEvent gemeldetesEvent() {
+            ArgumentCaptor<PreisUebernahmeEvent> captor = ArgumentCaptor.forClass(PreisUebernahmeEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            return captor.getValue();
         }
     }
 

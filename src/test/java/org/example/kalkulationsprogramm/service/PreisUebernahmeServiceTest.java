@@ -20,13 +20,18 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -35,10 +40,11 @@ import static org.mockito.Mockito.when;
  * Kilopreis-Korridor verfaelscht oder kommentarlos verworfen.
  *
  * <p>Die Klasse laeuft bewusst <b>ohne</b> die sonst uebliche Rollback-Transaktion
- * von {@code @DataJpaTest}: {@code uebernehmePreise} oeffnet mit
- * {@code REQUIRES_NEW} eine eigene Transaktion und wuerde die noch nicht
- * committeten Testdaten sonst gar nicht sehen. Jeder Test legt dafuer eigene
- * Lieferanten und Artikelnummern an, damit sie sich nicht in die Quere kommen.
+ * von {@code @DataJpaTest}: {@code uebernehmePreise} schreibt in der Transaktion
+ * des Aufrufers, und im Betrieb ist das die eigene Transaktion des Listeners nach
+ * dem Commit der Analyse. Ohne Rollback-Klammer entspricht der Test dieser Lage -
+ * jeder Test legt dafuer eigene Lieferanten und Artikelnummern an, damit sie sich
+ * nicht in die Quere kommen.
  */
 @DataJpaTest
 @Import(PreisUebernahmeService.class)
@@ -252,9 +258,9 @@ class PreisUebernahmeServiceTest {
         Date heute = new Date();
         Date vorEinemJahr = new Date(heute.getTime() - 365L * 24 * 60 * 60 * 1000);
 
-        preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, heute,
+        preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, heute, null,
                 List.of(position("R-1", "12.00", "1 C62", "C62")));
-        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, vorEinemJahr,
+        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, vorEinemJahr, null,
                 List.of(position("R-1", "8.00", "1 C62", "C62")));
 
         assertEquals(0, ergebnis.uebernommen());
@@ -270,7 +276,7 @@ class PreisUebernahmeServiceTest {
         // Ohne Belegdatum ist nicht entscheidbar, ob dieser Beleg neuer ist als der
         // gespeicherte Stand. Ersatzweise "jetzt" anzunehmen wuerde die
         // Stapel-Neuanalyse wieder kippen.
-        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, null,
+        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, null, null,
                 List.of(position("O-1", "12.00", "1 C62", "C62")));
 
         assertEquals(0, ergebnis.uebernommen());
@@ -284,7 +290,7 @@ class PreisUebernahmeServiceTest {
         Artikel artikel = artikelMitPreis(lieferant, "D-1", Verrechnungseinheit.STUECK, "10.00");
         Date belegdatum = new Date(new Date().getTime() - 7L * 24 * 60 * 60 * 1000);
 
-        preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, belegdatum,
+        preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, belegdatum, null,
                 List.of(position("D-1", "11.00", "1 C62", "C62")));
 
         LieferantenArtikelPreise aktuell = artikelPreiseRepository
@@ -413,7 +419,7 @@ class PreisUebernahmeServiceTest {
 
         // Die mittlere Position ist unbrauchbar (Artikelnummer nicht hinterlegt) -
         // die beiden anderen muessen trotzdem durchkommen.
-        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, new Date(),
+        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, new Date(), null,
                 List.of(position("SAM-1", "11.00", "1 C62", "C62"),
                         position("GIBTS-NICHT", "5.00", "1 C62", "C62"),
                         position("SAM-2", "21.00", "1 C62", "C62")));
@@ -446,7 +452,7 @@ class PreisUebernahmeServiceTest {
                 .thenReturn(Optional.of(vorhanden));
 
         var ergebnis = new PreisUebernahmeService(stolpernd).uebernehmePreise(
-                lieferant, PreisQuelle.RECHNUNG, new Date(),
+                lieferant, PreisQuelle.RECHNUNG, new Date(), null,
                 List.of(position("KRACH", "9.00", "1 C62", "C62"),
                         position("OK-1", "12.00", "1 C62", "C62")));
 
@@ -467,7 +473,7 @@ class PreisUebernahmeServiceTest {
 
     @Test
     void ohneLieferantPassiertNichts() {
-        var ergebnis = preisUebernahmeService.uebernehmePreise(null, PreisQuelle.RECHNUNG, null,
+        var ergebnis = preisUebernahmeService.uebernehmePreise(null, PreisQuelle.RECHNUNG, null, null,
                 List.of(position("X", "1.00", "1 C62", "C62")));
 
         assertEquals(0, ergebnis.uebernommen());
@@ -478,7 +484,8 @@ class PreisUebernahmeServiceTest {
     void leereListeIstKeinFehler() {
         Lieferanten lieferant = lieferant("Musterlieferant Ohne Positionen");
 
-        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, null, List.of());
+        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, null, null,
+                List.of());
 
         assertEquals(0, ergebnis.uebernommen());
         assertEquals(0, ergebnis.uebersprungen());
@@ -490,9 +497,9 @@ class PreisUebernahmeServiceTest {
         Artikel artikel = artikelMitPreis(lieferant, "E-1", Verrechnungseinheit.STUECK, "10.00");
 
         Date frueher = new Date(new Date().getTime() - 60_000);
-        preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, frueher,
+        preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, frueher, null,
                 List.of(position("E-1", "11.00", "1 C62", "C62")));
-        preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, new Date(),
+        preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, new Date(), null,
                 List.of(position("E-1", "12.00", "1 C62", "C62")));
 
         List<LieferantenArtikelPreise> verlauf = artikelPreiseRepository.findeVerlauf(artikel.getId());
@@ -500,6 +507,90 @@ class PreisUebernahmeServiceTest {
         assertEquals(1, verlauf.stream().filter(LieferantenArtikelPreise::isAktuell).count());
         assertFalse(verlauf.stream().filter(LieferantenArtikelPreise::isAktuell)
                 .anyMatch(p -> new BigDecimal("12.00").compareTo(p.getPreis()) != 0));
+    }
+
+    // ------------------------------------------------------------------
+    // Belegnummer: woher kommt dieser Preis?
+    // ------------------------------------------------------------------
+
+    @Test
+    void belegnummerStehtAlsNotizAmNeuenPreisstand() {
+        Lieferanten lieferant = lieferant("Musterlieferant Belegnummer");
+        Artikel artikel = artikelMitPreis(lieferant, "B-1", Verrechnungseinheit.STUECK, "10.00");
+
+        uebernimm(lieferant, "RE-2026-0815", position("B-1", "12.00", "1 C62", "C62"));
+
+        assertEquals("Beleg RE-2026-0815", aktuellerStand(artikel, lieferant).getNotiz());
+    }
+
+    @Test
+    void ohneBelegnummerBleibtDieNotizLeer() {
+        Lieferanten lieferant = lieferant("Musterlieferant Ohne Belegnummer");
+        Artikel artikel = artikelMitPreis(lieferant, "B-2", Verrechnungseinheit.STUECK, "10.00");
+
+        // Ein Beleg ohne lesbare Nummer ist keine Seltenheit. "Beleg null" in der
+        // Historie waere schlechter als gar keine Notiz.
+        uebernimm(lieferant, null, position("B-2", "12.00", "1 C62", "C62"));
+
+        assertNull(aktuellerStand(artikel, lieferant).getNotiz());
+    }
+
+    @Test
+    void ueberlangeBelegnummerSprengtDieNotizspalteNicht() {
+        Lieferanten lieferant = lieferant("Musterlieferant Lange Nummer");
+        Artikel artikel = artikelMitPreis(lieferant, "B-3", Verrechnungseinheit.STUECK, "10.00");
+
+        // Die Nummer kommt aus einer KI-Auswertung - sie kann alles sein. Die Spalte
+        // fasst 255 Zeichen, laenger darf die Notiz nicht werden.
+        uebernimm(lieferant, "X".repeat(400), position("B-3", "12.00", "1 C62", "C62"));
+
+        String notiz = aktuellerStand(artikel, lieferant).getNotiz();
+        assertEquals(255, notiz.length());
+        assertTrue(notiz.startsWith("Beleg XXX"));
+    }
+
+    // ------------------------------------------------------------------
+    // Erst der Commit der Analyse, dann die Preise
+    // ------------------------------------------------------------------
+
+    @Test
+    void listenerReichtDieEventfelderDurch() {
+        PreisUebernahmeService dienst = spy(new PreisUebernahmeService(
+                mock(LieferantenArtikelPreiseRepository.class)));
+        doReturn(new PreisUebernahmeService.Ergebnis(1, 0)).when(dienst)
+                .uebernehmePreise(any(), any(), any(), any(), any());
+
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setLieferantenname("Musterlieferant Event");
+        Date belegdatum = new Date();
+        List<PreisUebernahmeService.Position> positionen =
+                List.of(position("EV-1", "12.00", "1 C62", "C62"));
+
+        dienst.beiDokumentAnalyse(new PreisUebernahmeEvent(lieferant, PreisQuelle.ANGEBOT_EMAIL,
+                belegdatum, "AN-2026-007", positionen));
+
+        verify(dienst).uebernehmePreise(lieferant, PreisQuelle.ANGEBOT_EMAIL, belegdatum,
+                "AN-2026-007", positionen);
+    }
+
+    /**
+     * Der Listener laeuft nach dem Commit der Analyse - dort gibt es niemanden
+     * mehr, der eine Ausnahme sinnvoll behandeln koennte. Sie darf deshalb nicht
+     * nach aussen durchschlagen.
+     */
+    @Test
+    void ausnahmeImListenerSchlaegtNichtNachAussenDurch() {
+        PreisUebernahmeService dienst = spy(new PreisUebernahmeService(
+                mock(LieferantenArtikelPreiseRepository.class)));
+        doThrow(new IllegalStateException("Verbindung weggebrochen")).when(dienst)
+                .uebernehmePreise(any(), any(), any(), any(), any());
+
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setLieferantenname("Musterlieferant Absturz");
+        PreisUebernahmeEvent event = new PreisUebernahmeEvent(lieferant, PreisQuelle.RECHNUNG,
+                new Date(), "RE-2026-0099", List.of(position("EV-2", "12.00", "1 C62", "C62")));
+
+        assertDoesNotThrow(() -> dienst.beiDokumentAnalyse(event));
     }
 
     // ------------------------------------------------------------------
@@ -569,8 +660,13 @@ class PreisUebernahmeServiceTest {
 
     private PreisUebernahmeService.Ergebnis uebernimm(Lieferanten lieferant,
                                                       PreisUebernahmeService.Position position) {
+        return uebernimm(lieferant, null, position);
+    }
+
+    private PreisUebernahmeService.Ergebnis uebernimm(Lieferanten lieferant, String belegnummer,
+                                                      PreisUebernahmeService.Position position) {
         return preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, new Date(),
-                List.of(position));
+                belegnummer, List.of(position));
     }
 
     private PreisUebernahmeService.Position position(String nummer, String preis,
@@ -611,10 +707,14 @@ class PreisUebernahmeServiceTest {
         return stand;
     }
 
-    private void assertPreis(String erwartet, Artikel artikel, Lieferanten lieferant) {
-        BigDecimal ist = artikelPreiseRepository
+    private LieferantenArtikelPreise aktuellerStand(Artikel artikel, Lieferanten lieferant) {
+        return artikelPreiseRepository
                 .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), lieferant.getId())
-                .orElseThrow().getPreis();
+                .orElseThrow();
+    }
+
+    private void assertPreis(String erwartet, Artikel artikel, Lieferanten lieferant) {
+        BigDecimal ist = aktuellerStand(artikel, lieferant).getPreis();
         assertEquals(0, new BigDecimal(erwartet).compareTo(ist),
                 () -> "erwartet " + erwartet + " EUR, war " + ist + " EUR");
     }

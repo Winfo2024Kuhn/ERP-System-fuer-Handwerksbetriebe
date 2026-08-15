@@ -12,6 +12,8 @@ import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -67,6 +69,9 @@ public class PreisUebernahmeService {
 
     private static final BigDecimal TAUSEND = BigDecimal.valueOf(1000);
 
+    /** Laenge der Spalte {@code lieferanten_artikel_preise.notiz}. */
+    private static final int NOTIZ_MAX_LAENGE = 255;
+
     /** Trennt eine fuehrende Mengenangabe vom Einheitenkuerzel: "1000 KGM" -&gt; 1000 + "kgm". */
     private static final Pattern MENGE_UND_EINHEIT = Pattern.compile("^([0-9]+(?:[.,][0-9]+)?)\\s*(.*)$");
 
@@ -92,24 +97,62 @@ public class PreisUebernahmeService {
     }
 
     /**
+     * Uebernimmt die Preise, sobald die Dokumentanalyse committet ist.
+     *
+     * <p>Vorher rief die Analyse diesen Dienst mitten in ihrem Lauf direkt auf, in
+     * einer zweiten Transaktion nebenher. Rollte die Analyse danach zurueck, stand
+     * im Preisverlauf ein Stand fuer einen Beleg, den es in der Datenbank gar nicht
+     * gibt; ausserdem hielt jedes Dokument zwei Datenbankverbindungen gleichzeitig,
+     * was bei einer Stapel-Neuanalyse den Verbindungspool eng werden liess. Nach
+     * dem Commit gibt es beide Probleme nicht mehr.
+     *
+     * <p>{@code REQUIRES_NEW} ist hier noetig, weil zu diesem Zeitpunkt keine
+     * Transaktion mehr laeuft, von der die Schreibzugriffe erben koennten.
+     *
+     * <p>Eine Ausnahme bleibt hier und landet im Log: Nach dem Commit ist der
+     * Aufrufer laengst fertig, es gibt niemanden mehr, der sie sinnvoll behandeln
+     * koennte. Was bis dahin geschrieben wurde, bleibt bestehen - genau wie
+     * {@link #uebernehmePreise} eine unbrauchbare Position nicht die ganze Rechnung
+     * kosten laesst.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void beiDokumentAnalyse(PreisUebernahmeEvent event) {
+        if (event == null) {
+            return;
+        }
+        try {
+            uebernehmePreise(event.lieferant(), event.quelle(), event.dokumentDatum(),
+                    event.belegnummer(), event.positionen());
+        } catch (RuntimeException e) {
+            log.error("Preisuebernahme nach der Dokumentanalyse fehlgeschlagen (Beleg {}): {}",
+                    event.belegnummer(), e.toString(), e);
+        }
+    }
+
+    /**
      * Schreibt fuer jede zuordenbare Position einen neuen Preisstand.
      *
-     * <p>Laeuft bewusst in einer <b>eigenen</b> Transaktion. Die Preisuebernahme
-     * haengt fachlich nicht an der Dokumentanalyse: Geht sie schief, soll die
-     * Analyse trotzdem gespeichert werden. Ohne {@code REQUIRES_NEW} wuerde eine
-     * Exception hier die umgebende Analyse-Transaktion auf rollback-only setzen -
-     * der aufrufende {@code catch} sieht davon nichts, aber der spaetere Commit
-     * scheitert und die komplette Analyse waere verloren.
+     * <p>Laeuft in der Transaktion des Aufrufers. Aus der Dokumentanalyse heraus
+     * wird sie nicht mehr unmittelbar gerufen - dort meldet ein
+     * {@link PreisUebernahmeEvent} den Bedarf nur an, und {@link #beiDokumentAnalyse}
+     * bringt nach dem Commit die eigene Transaktion mit. Frueher sass die
+     * Propagation {@code REQUIRES_NEW} deshalb hier, damit ein Fehler in der
+     * Preisuebernahme die Analyse nicht mitreisst. Das erledigt jetzt die
+     * Reihenfolge: Wenn hier ueberhaupt etwas passiert, ist die Analyse bereits
+     * gespeichert.
      *
      * @param lieferant      Absender des Dokuments; ohne ihn ist keine Zuordnung moeglich
      * @param quelle         Herkunft des Preises, macht ihn in der Historie nachvollziehbar
      * @param dokumentDatum  fachliches Datum des Belegs; aeltere Belege ueberschreiben
      *                       einen juengeren Preisstand nicht. {@code null} = unbekannt
+     * @param belegnummer    Nummer des Belegs; landet als Notiz am neuen Preisstand.
+     *                       {@code null}, wenn das Dokument keine ausweist
      * @param positionen     die ausgelesenen Rechnungspositionen
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Ergebnis uebernehmePreise(Lieferanten lieferant, PreisQuelle quelle,
-                                     Date dokumentDatum, List<Position> positionen) {
+    @Transactional
+    public Ergebnis uebernehmePreise(Lieferanten lieferant, PreisQuelle quelle, Date dokumentDatum,
+                                     String belegnummer, List<Position> positionen) {
         if (lieferant == null || lieferant.getId() == null || positionen == null || positionen.isEmpty()) {
             return new Ergebnis(0, 0);
         }
@@ -127,7 +170,7 @@ public class PreisUebernahmeService {
         int uebersprungen = 0;
         for (Position position : positionen) {
             try {
-                if (uebernehmeEine(lieferant, quelle, dokumentDatum, position)) {
+                if (uebernehmeEine(lieferant, quelle, dokumentDatum, belegnummer, position)) {
                     uebernommen++;
                 } else {
                     uebersprungen++;
@@ -146,7 +189,8 @@ public class PreisUebernahmeService {
     }
 
     /** @return true, wenn ein neuer Preisstand geschrieben wurde. */
-    private boolean uebernehmeEine(Lieferanten lieferant, PreisQuelle quelle, Date stand, Position position) {
+    private boolean uebernehmeEine(Lieferanten lieferant, PreisQuelle quelle, Date stand,
+                                   String belegnummer, Position position) {
         String nummer = position.externeArtikelnummer() == null ? "" : position.externeArtikelnummer().trim();
         if (nummer.isEmpty()) {
             log.debug("Position ohne Artikelnummer - keine Zuordnung moeglich");
@@ -210,6 +254,7 @@ public class PreisUebernahmeService {
 
         LieferantenArtikelPreise neuerStand = bisher.neuerPreisstand(neuerPreis, quelle);
         neuerStand.setPreisAenderungsdatum(stand);
+        neuerStand.setNotiz(belegnotiz(belegnummer));
         artikelPreiseRepository.save(bisher);
         artikelPreiseRepository.save(neuerStand);
 
@@ -218,6 +263,22 @@ public class PreisUebernahmeService {
                 nummer, lieferant.getLieferantenname(), bisher.getPreis(), neuerPreis, quelle, stand,
                 rechnungspreis, position.preiseinheit());
         return true;
+    }
+
+    /**
+     * Haelt am Preisstand fest, aus welchem Beleg er stammt.
+     *
+     * <p>Ohne die Nummer bleibt die Notiz leer statt einen nichtssagenden Platzhalter
+     * zu fuehren - "Beleg null" waere in der Preishistorie schlicht falsch.
+     *
+     * @return die Notiz, oder {@code null} wenn keine Belegnummer vorliegt
+     */
+    private static String belegnotiz(String belegnummer) {
+        if (belegnummer == null || belegnummer.isBlank()) {
+            return null;
+        }
+        String notiz = "Beleg " + belegnummer.trim();
+        return notiz.length() > NOTIZ_MAX_LAENGE ? notiz.substring(0, NOTIZ_MAX_LAENGE) : notiz;
     }
 
     /**
