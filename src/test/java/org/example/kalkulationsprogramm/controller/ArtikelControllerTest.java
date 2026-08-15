@@ -24,6 +24,7 @@ import org.example.kalkulationsprogramm.service.KategorieService;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -192,6 +193,25 @@ class ArtikelControllerTest {
     }
 
     @Test
+    @DisplayName("Die Trefferliste reicht das Vorschaubild aus ArtikelDokumentService durch")
+    void liefertVorschaubildUrlInDerTrefferliste() throws Exception {
+        // Regression: Ein @MockBean liefert ohne Stubbing per Mockito-Default
+        // eine leere Map - ein geloeschtes daten.forEach(...setVorschaubildUrl)
+        // im Controller waere damit fuer JEDEN bestehenden Test unsichtbar
+        // gruen geblieben. Dieser Test stubbt bewusst eine gefuellte Map.
+        Artikel artikel = new Artikel();
+        artikel.setId(42L);
+        mockArtikelSuche(List.of(artikel));
+
+        when(artikelDokumentService.ladeVorschaubildUrls(List.of(42L)))
+                .thenReturn(java.util.Map.of(42L, "/api/artikel/dokumente/7/datei"));
+
+        mockMvc.perform(get("/api/artikel"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.artikel[0].vorschaubildUrl").value("/api/artikel/dokumente/7/datei"));
+    }
+
+    @Test
     void returnsProduktlinienWithoutLieferant1() throws Exception {
         when(artikelService.findeProduktlinienOhneLieferant(1L)).thenReturn(List.of("DIN A", "din B", "DIN A"));
 
@@ -345,6 +365,18 @@ class ArtikelControllerTest {
                 .andExpect(jsonPath("$.lieferanten[1].aufschlagProzent").value(25.0))
                 // Der Verlauf enthaelt auch den abgeloesten Preisstand.
                 .andExpect(jsonPath("$.preisverlauf", hasSize(3)));
+    }
+
+    @Test
+    @DisplayName("Die Detailantwort reicht das Vorschaubild aus ArtikelDokumentService durch")
+    void detailseiteLiefertVorschaubildUrl() throws Exception {
+        Artikel artikel = artikelMitPreisen(31L, preis(1L, "Guenstig GmbH", "10.00", true));
+        when(artikelService.findeById(31L)).thenReturn(java.util.Optional.of(artikel));
+        when(artikelDokumentService.ladeVorschaubildUrl(31L)).thenReturn("/api/artikel/dokumente/9/datei");
+
+        mockMvc.perform(get("/api/artikel/31/detail"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.artikel.vorschaubildUrl").value("/api/artikel/dokumente/9/datei"));
     }
 
     @Test

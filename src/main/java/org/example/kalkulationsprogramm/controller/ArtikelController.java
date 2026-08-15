@@ -501,18 +501,40 @@ public class ArtikelController {
         return ResponseEntity.ok(artikelDokumentService.listeDokumente(id));
     }
 
-    /** Liefert die Datei eines Artikel-Dokuments mit passendem Content-Type aus. */
+    /**
+     * Liefert die Datei eines Artikel-Dokuments mit passendem Content-Type aus.
+     *
+     * <p>Endungs-Whitelist, Content-Type-Ableitung und Inline/Attachment-
+     * Entscheidung uebernimmt {@link ArtikelDokumentService#ladeDatei} - siehe
+     * dessen Javadoc fuer die Begruendung (Direktweg an der Anwendung vorbei,
+     * siehe SCRAPING_ARTIKEL_CSV.md). {@code X-Content-Type-Options: nosniff}
+     * verhindert zusaetzlich, dass der Browser den gelieferten Content-Type bei
+     * Bedarf selbst "korrigiert" (Content-Sniffing).
+     */
     @GetMapping("/dokumente/{dokumentId}/datei")
     @Transactional(readOnly = true)
     public ResponseEntity<Resource> ladeDokumentDatei(@PathVariable Long dokumentId) {
         ArtikelDokumentService.ArtikelDokumentDatei datei = artikelDokumentService.ladeDatei(dokumentId);
+        String disposition = (datei.istBildOderPdf() ? "inline" : "attachment")
+                + "; filename=\"" + datei.originalDateiname() + "\"";
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(datei.contentType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + datei.originalDateiname() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .header("X-Content-Type-Options", "nosniff")
                 .body(datei.resource());
     }
 
-    /** Loescht ein Artikel-Dokument - Datenbankeintrag und Datei. */
+    /**
+     * Loescht ein Artikel-Dokument - Datenbankeintrag und Datei.
+     *
+     * <p>Bewusst ohne Admin-Schranke, anders als {@code DELETE
+     * /api/lieferant-dokumente/**} in {@code SecurityConfig} (dort "irreversible
+     * Admin-Aktion"). Artikeldokumente sind Stammdatenpflege: Wer ein Bild oder
+     * eine Zulassung hochladen darf, muss einen Fehlgriff auch selbst korrigieren
+     * koennen - sonst braucht der Handwerker fuer ein falsch hochgeladenes Foto
+     * den Chef. Lieferantendokumente sind dagegen Belege mit GoBD-Bezug, deshalb
+     * gilt dort die Admin-Schranke. Der Unterschied ist Absicht, kein Versehen.
+     */
     @DeleteMapping("/dokumente/{dokumentId}")
     public ResponseEntity<Void> loescheDokument(@PathVariable Long dokumentId) {
         artikelDokumentService.loescheDokument(dokumentId);

@@ -58,6 +58,9 @@ public class ArtikelDokumentService {
     /** Erlaubte Endungen - alles andere wird abgelehnt, auch exe/bat/js/sh. */
     private static final Set<String> ERLAUBTE_ENDUNGEN = Set.of("pdf", "png", "jpg", "jpeg", "webp", "gif");
 
+    /** Bild-Endungen innerhalb der Whitelist - der Rest (aktuell nur PDF) gilt separat als "kein Bild". */
+    private static final Set<String> BILD_ENDUNGEN = Set.of("png", "jpg", "jpeg", "webp", "gif");
+
     private final ArtikelDokumentRepository dokumentRepository;
     private final ArtikelRepository artikelRepository;
 
@@ -163,7 +166,18 @@ public class ArtikelDokumentService {
     /**
      * Laedt die physische Datei zu einem Dokument fuer die Auslieferung.
      *
-     * @throws NotFoundException wenn das Dokument oder die Datei nicht existiert
+     * <p>Wiederholt bewusst dieselbe Endungs-Whitelist wie {@link #ladeHoch}: Die
+     * Datenbankzeile und die Datei koennen auch an der Anwendung vorbei entstehen
+     * (siehe {@code SCRAPING_ARTIKEL_CSV.md}, Direktweg per SQL/Skript). Ohne diese
+     * zweite Pruefung wuerde eine so abgelegte {@code .html} oder {@code .svg} ueber
+     * {@code Files.probeContentType} als {@code text/html} bzw. {@code image/svg+xml}
+     * ausgeliefert - inline und same-origin mit der Oberflaeche, also gespeichertes
+     * XSS. Deshalb kommt der Content-Type hier ausschliesslich aus der Whitelist
+     * (nicht aus {@code probeContentType}), und alles ausser Bild/PDF liefert der
+     * Controller als {@code attachment} statt {@code inline} aus.
+     *
+     * @throws NotFoundException wenn das Dokument, die Datei oder ihre Endung
+     *         nicht (mehr) zulaessig ist
      */
     @Transactional(readOnly = true)
     public ArtikelDokumentDatei ladeDatei(Long dokumentId) {
@@ -176,10 +190,16 @@ public class ArtikelDokumentService {
             throw new NotFoundException("Diese Datei gibt es nicht mehr.");
         }
 
+        String endung = ermittleEndung(dokument.getOriginalDateiname());
+        if (!ERLAUBTE_ENDUNGEN.contains(endung)) {
+            throw new NotFoundException("Diese Datei gibt es nicht mehr.");
+        }
+
         try {
             Resource resource = new UrlResource(filePath.toUri());
-            String contentType = ermittleContentType(filePath, dokument.getOriginalDateiname());
-            return new ArtikelDokumentDatei(resource, dokument.getOriginalDateiname(), contentType);
+            String contentType = ermittleContentType(endung);
+            boolean istBildOderPdf = BILD_ENDUNGEN.contains(endung) || "pdf".equals(endung);
+            return new ArtikelDokumentDatei(resource, dokument.getOriginalDateiname(), contentType, istBildOderPdf);
         } catch (java.net.MalformedURLException e) {
             throw new NotFoundException("Diese Datei gibt es nicht mehr.");
         }
@@ -328,17 +348,14 @@ public class ArtikelDokumentService {
         return dateiname.substring(punkt + 1).toLowerCase(Locale.ROOT);
     }
 
-    /** Content-Type anhand des Dateisystems, sonst anhand der (bereits geprueften) Endung. */
-    private String ermittleContentType(Path filePath, String originalDateiname) {
-        try {
-            String probed = Files.probeContentType(filePath);
-            if (probed != null) {
-                return probed;
-            }
-        } catch (IOException ignored) {
-            // Fallback ueber die Endung unten
-        }
-        return switch (ermittleEndung(originalDateiname)) {
+    /**
+     * Content-Type ausschliesslich aus der Endungs-Whitelist abgeleitet -
+     * niemals aus {@link Files#probeContentType}. Der Aufrufer garantiert per
+     * {@code ERLAUBTE_ENDUNGEN.contains(endung)}, dass hier nur eine der sechs
+     * erlaubten Endungen ankommt; der default-Zweig ist ein reiner Sicherheitsnetz.
+     */
+    private String ermittleContentType(String endung) {
+        return switch (endung) {
             case "pdf" -> MediaType.APPLICATION_PDF_VALUE;
             case "png" -> MediaType.IMAGE_PNG_VALUE;
             case "jpg", "jpeg" -> MediaType.IMAGE_JPEG_VALUE;
@@ -348,7 +365,14 @@ public class ArtikelDokumentService {
         };
     }
 
-    /** Transportiert Datei-Ressource, Originalname und Content-Type an den Controller. */
-    public record ArtikelDokumentDatei(Resource resource, String originalDateiname, String contentType) {
+    /**
+     * Transportiert Datei-Ressource, Originalname, Content-Type und die
+     * Inline/Attachment-Entscheidung an den Controller. {@code istBildOderPdf}
+     * steuert dort den {@code Content-Disposition}-Header: nur Bilder und PDFs
+     * duerfen inline im Browser gezeigt werden, alles andere wird als
+     * attachment ausgeliefert.
+     */
+    public record ArtikelDokumentDatei(Resource resource, String originalDateiname, String contentType,
+            boolean istBildOderPdf) {
     }
 }

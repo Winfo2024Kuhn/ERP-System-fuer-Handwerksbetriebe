@@ -383,6 +383,54 @@ class ArtikelDokumentServiceTest {
             assertThat(ergebnis.originalDateiname()).isEqualTo("plan.pdf");
             assertThat(ergebnis.contentType()).isEqualTo("application/pdf");
             assertThat(ergebnis.resource().exists()).isTrue();
+            assertThat(ergebnis.istBildOderPdf()).isTrue();
+        }
+
+        @Test
+        @DisplayName("Bild-Endung liefert istBildOderPdf=true")
+        void bildEndungIstInlineSicher(@TempDir Path tempDir) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+
+            Path artikelDir = tempDir.resolve("artikel").resolve("1");
+            Files.createDirectories(artikelDir);
+            Files.writeString(artikelDir.resolve("uuid_foto.png"), "PNG-Inhalt");
+
+            ArtikelDokument dokument = new ArtikelDokument();
+            dokument.setId(11L);
+            dokument.setArtikel(artikel(1L));
+            dokument.setOriginalDateiname("foto.png");
+            dokument.setGespeicherterDateiname("uuid_foto.png");
+            given(dokumentRepository.findById(11L)).willReturn(Optional.of(dokument));
+
+            ArtikelDokumentService.ArtikelDokumentDatei ergebnis = service.ladeDatei(11L);
+
+            assertThat(ergebnis.contentType()).isEqualTo("image/png");
+            assertThat(ergebnis.istBildOderPdf()).isTrue();
+        }
+
+        @Test
+        @DisplayName("Eine Datei mit unerlaubter Endung auf der Platte (Direktweg an der Anwendung "
+                + "vorbei, siehe SCRAPING_ARTIKEL_CSV.md) wird nicht ausgeliefert - kein inline mit "
+                + "eigenem Content-Type wie text/html oder image/svg+xml")
+        void lehntUnerlaubteEndungBeiAuslieferungAb(@TempDir Path tempDir) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+
+            // Datei liegt direkt auf der Platte, ohne den Umweg ueber ladeHoch() -
+            // simuliert genau den SQL/Skript-Direktweg, der die Upload-Pruefungen
+            // nie durchlaeuft.
+            Path artikelDir = tempDir.resolve("artikel").resolve("1");
+            Files.createDirectories(artikelDir);
+            Files.writeString(artikelDir.resolve("uuid_geschmuggelt.html"), "<script>alert(1)</script>");
+
+            ArtikelDokument dokument = new ArtikelDokument();
+            dokument.setId(12L);
+            dokument.setArtikel(artikel(1L));
+            dokument.setOriginalDateiname("geschmuggelt.html");
+            dokument.setGespeicherterDateiname("uuid_geschmuggelt.html");
+            given(dokumentRepository.findById(12L)).willReturn(Optional.of(dokument));
+
+            assertThatThrownBy(() -> service.ladeDatei(12L))
+                    .isInstanceOf(NotFoundException.class);
         }
     }
 

@@ -55,7 +55,7 @@ materialnummer;nettopreis;produktname;produktlinie;werkstoff;preiseinheit;packgr
 
 | Spalte | Pflicht | Typ | Max. | Zielspalte | Inhalt |
 | --- | --- | --- | --- | --- | --- |
-| `materialnummer` | **ja** | Text | 255 | `lieferanten_artikel_preise.externe_artikelnummer` | Feldmanns Artikelnummer, **1:1 wie auf der Seite**. Keine Präfixe, keine Umformatierung. **Nicht** zu verwechseln mit der internen, betriebseigenen `artikel.artikelnummer` — die vergibt allein das ERP (Abschnitt 4). Dient als Schlüssel — ohne sie wird die Zeile verworfen. |
+| `materialnummer` | **ja** | Text | 255 | `lieferanten_artikel_preise.externe_artikelnummer` | Feldmanns Artikelnummer, **1:1 wie auf der Seite**. Keine Präfixe, keine Umformatierung. **Nicht** zu verwechseln mit der internen, betriebseigenen `artikel.artikelnummer` — die vergibt das Ladeskript nach einem festen Schema (Abschnitt 4). Dient als Schlüssel — ohne sie wird die Zeile verworfen. |
 | `nettopreis` | **ja** | Dezimalzahl | — | `lieferanten_artikel_preise.preis` | Netto-**Stückpreis** in Euro. Ohne Währungszeichen, ohne Tausendertrenner. Komma oder Punkt als Dezimalzeichen. `18,50` oder `18.50`. **`1.250,00` ist falsch** → `1250,00`. Landet unverändert in der Spalte — es gibt keinen Importer mehr, der ihn prüft oder korrigiert (Abschnitt 9). Ohne gültigen Preis ist die Zeile für uns wertlos — weglassen (Abschnitt 6). |
 | `produktname` | ja | Text | 255 | `artikel.produktname` | Bezeichnung wie im Shop, z.B. `Handlaufhalter gerade M8`. Das ist der Name, den der Handwerker in der Suche sieht — genauer: der über `suchtext` gefunden wird (siehe unten). |
 | `produktlinie` | nein | Text | 255 | `artikel.produktlinie` | Feldmann-Serie oder Produktgruppe, z.B. `Glasklemmen` oder `Serie 2000`. Nutzen wir zum Gruppieren. |
@@ -160,9 +160,16 @@ Spalte dafür in der CSV wird ignoriert oder richtet Schaden an:
 
 - **Lieferant** (`lieferanten_artikel_preise.lieferant_id`) — wird beim Einspielen fest
   vorgegeben, nicht aus der CSV gelesen.
-- **Interne Artikelnummer** (`artikel.artikelnummer`) — die eindeutige, betriebseigene Nummer
-  vergibt das ERP selbst. Verwechsle sie nicht mit `materialnummer` (Feldmanns Nummer, siehe
-  Abschnitt 2).
+- **Interne Artikelnummer** (`artikel.artikelnummer`) — auf dem Direktweg läuft kein
+  Anwendungscode, der sie wie beim regulären Anlegen im ERP automatisch vergeben könnte, und es
+  gibt dafür keinen Trigger. **Das Ladeskript vergibt sie deshalb selbst**, nach dem festen
+  Schema `FM-<materialnummer>`, z.B. `FM-12345` — eindeutig, direkt aus der Quelle ableitbar und
+  kollisionsfrei zum Werkstoff-Schema aus V348 (Form-Maß-Muster wie `ST-RR-042.4-2.0`). Diese
+  vergebene Nummer fließt zusammen mit `produktname`, `produkttext` und `produktlinie` in den
+  `suchtext` ein (siehe unten) — ohne sie fände die Suche den Artikel nicht über seine Nummer,
+  und die Trefferliste zeigte statt der Nummer ein `-`. Verwechsle sie nicht mit
+  `materialnummer` (Feldmanns Nummer, siehe Abschnitt 2) — die lieferst du, die interne Nummer
+  vergibt das Ladeskript.
 - **Kategorie** (`artikel.kategorie_id`) — wird beim Einspielen gewählt und nur bei neuen
   Artikeln gesetzt.
 - **`system_stammdaten`** — wird beim Laden fest auf `0` gesetzt.

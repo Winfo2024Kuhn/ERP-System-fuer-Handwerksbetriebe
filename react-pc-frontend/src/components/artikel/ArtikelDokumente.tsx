@@ -87,7 +87,14 @@ export function ArtikelDokumente({ artikelId }: ArtikelDokumenteProps) {
         } finally {
             setLoading(false);
         }
-    }, [artikelId, toast]);
+        // toast bewusst nicht in den Abhaengigkeiten: useToast() liefert bei jedem
+        // Render des ToastProvider ein neues Objekt (nur die inneren Callbacks sind
+        // memoisiert). Mit toast in den Deps wuerde JEDER Toast irgendwo in der App
+        // dieses laden() neu erzeugen und ueber useEffect(laden) einen erneuten Ladevorgang
+        // (Skeleton-Flackern) ausloesen - siehe ArtikelDetail.tsx, das aus demselben
+        // Grund nur an [id] haengt.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [artikelId]);
 
     useEffect(() => { laden(); }, [laden]);
 

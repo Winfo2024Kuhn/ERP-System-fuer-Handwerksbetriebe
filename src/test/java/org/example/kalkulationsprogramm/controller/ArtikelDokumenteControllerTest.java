@@ -208,17 +208,34 @@ class ArtikelDokumenteControllerTest {
     class DateiAuslieferung {
 
         @Test
-        @DisplayName("Liefert die Datei mit korrektem Content-Type und Content-Disposition aus")
+        @DisplayName("Liefert Bild/PDF mit korrektem Content-Type inline aus, inkl. nosniff-Header")
         void liefertDateiMitKorrektemContentType() throws Exception {
             var datei = new ArtikelDokumentService.ArtikelDokumentDatei(
-                    new ByteArrayResource("PDF-Inhalt".getBytes()), "plan.pdf", "application/pdf");
+                    new ByteArrayResource("PDF-Inhalt".getBytes()), "plan.pdf", "application/pdf", true);
             given(artikelDokumentService.ladeDatei(10L)).willReturn(datei);
 
             mockMvc.perform(get("/api/artikel/dokumente/10/datei"))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Content-Type", "application/pdf"))
                     .andExpect(header().string("Content-Disposition", "inline; filename=\"plan.pdf\""))
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                     .andExpect(content().bytes("PDF-Inhalt".getBytes()));
+        }
+
+        @Test
+        @DisplayName("Alles ausser Bild/PDF liefert der Service als attachment - nicht inline mit "
+                + "eigenem Content-Type. Deckt den Direktweg ab (siehe SCRAPING_ARTIKEL_CSV.md), bei dem "
+                + "eine .html oder .svg an der Upload-Whitelist vorbei ins Verzeichnis gelangen koennte")
+        void nichtBildOderPdf_wirdAlsAttachmentAusgeliefert() throws Exception {
+            var datei = new ArtikelDokumentService.ArtikelDokumentDatei(
+                    new ByteArrayResource("<script>alert(1)</script>".getBytes()),
+                    "geschmuggelt.html", "application/octet-stream", false);
+            given(artikelDokumentService.ladeDatei(11L)).willReturn(datei);
+
+            mockMvc.perform(get("/api/artikel/dokumente/11/datei"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Disposition", "attachment; filename=\"geschmuggelt.html\""))
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"));
         }
 
         @Test
