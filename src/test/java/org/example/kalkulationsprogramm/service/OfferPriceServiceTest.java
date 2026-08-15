@@ -100,6 +100,107 @@ class OfferPriceServiceTest {
     }
 
     @Test
+    void unveraenderterPreisLegtKeinenNeuenStandAn() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setLieferantenname("Musterlieferant GmbH");
+        lieferant.getKundenEmails().add("musterlieferant@example.com");
+        lieferantenRepository.save(lieferant);
+
+        Artikel artikel = new Artikel();
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
+        preis.setArtikel(artikel);
+        preis.setLieferant(lieferant);
+        preis.setExterneArtikelnummer("MUSTER-001");
+        preis.setPreis(new BigDecimal("5.00"));
+        preis.setPreisAenderungsdatum(new Date(0));
+        artikel.getArtikelpreis().add(preis);
+        artikelRepository.save(artikel);
+
+        // Angebot, Auftragsbestaetigung und Rechnung nennen zur selben Sache oft
+        // denselben Preis - hier kommt die Angebots-Mail mit unverändertem Betrag.
+        OfferItem item = new OfferItem("MUSTER-001", "ST", new BigDecimal("5.00"), null, "Muster-Artikel");
+        Date now = new Date();
+        PriceUpdateResult result = offerPriceService.updatePrices(lieferant, now, List.of(item));
+
+        LieferantenArtikelPreise unchanged = lieferantenArtikelPreiseRepository
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), lieferant.getId()).orElseThrow();
+        assertEquals(new BigDecimal("5.00"), unchanged.getPreis());
+        assertEquals(new Date(0), unchanged.getPreisAenderungsdatum());
+        assertTrue(result.unmatched().isEmpty());
+        assertTrue(result.updated().isEmpty());
+        assertEquals(1, result.skipped().size());
+        assertEquals(1, artikelRepository.findById(artikel.getId()).orElseThrow().getArtikelpreis().size());
+    }
+
+    @Test
+    void unveraenderterPreisInAndererSkalaLegtKeinenNeuenStandAn() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setLieferantenname("Musterlieferant GmbH");
+        lieferant.getKundenEmails().add("musterlieferant2@example.com");
+        lieferantenRepository.save(lieferant);
+
+        Artikel artikel = new Artikel();
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
+        preis.setArtikel(artikel);
+        preis.setLieferant(lieferant);
+        preis.setExterneArtikelnummer("MUSTER-002");
+        // Bestand liegt noch mit zwei Nachkommastellen vor (vor Migration V359).
+        preis.setPreis(new BigDecimal("5.00"));
+        preis.setPreisAenderungsdatum(new Date(0));
+        artikel.getArtikelpreis().add(preis);
+        artikelRepository.save(artikel);
+
+        // Die Mail liefert denselben Betrag, aber mit vier Nachkommastellen -
+        // equals() wuerde das faelschlich als Aenderung werten, compareTo() nicht.
+        OfferItem item = new OfferItem("MUSTER-002", "ST", new BigDecimal("5.0000"), null, "Muster-Artikel");
+        Date now = new Date();
+        PriceUpdateResult result = offerPriceService.updatePrices(lieferant, now, List.of(item));
+
+        LieferantenArtikelPreise unchanged = lieferantenArtikelPreiseRepository
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), lieferant.getId()).orElseThrow();
+        assertEquals(0, unchanged.getPreis().compareTo(new BigDecimal("5.00")));
+        assertEquals(new Date(0), unchanged.getPreisAenderungsdatum());
+        assertTrue(result.unmatched().isEmpty());
+        assertTrue(result.updated().isEmpty());
+        assertEquals(1, result.skipped().size());
+        assertEquals(1, artikelRepository.findById(artikel.getId()).orElseThrow().getArtikelpreis().size());
+    }
+
+    @Test
+    void geaenderterPreisLegtWeiterhinNeuenStandAn() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setLieferantenname("Musterlieferant GmbH");
+        lieferant.getKundenEmails().add("musterlieferant3@example.com");
+        lieferantenRepository.save(lieferant);
+
+        Artikel artikel = new Artikel();
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
+        preis.setArtikel(artikel);
+        preis.setLieferant(lieferant);
+        preis.setExterneArtikelnummer("MUSTER-003");
+        preis.setPreis(new BigDecimal("5.00"));
+        preis.setPreisAenderungsdatum(new Date(0));
+        artikel.getArtikelpreis().add(preis);
+        artikelRepository.save(artikel);
+
+        OfferItem item = new OfferItem("MUSTER-003", "ST", new BigDecimal("6.50"), null, "Muster-Artikel");
+        Date now = new Date();
+        PriceUpdateResult result = offerPriceService.updatePrices(lieferant, now, List.of(item));
+
+        LieferantenArtikelPreise updated = lieferantenArtikelPreiseRepository
+                .findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikel.getId(), lieferant.getId()).orElseThrow();
+        assertEquals(new BigDecimal("6.50"), updated.getPreis());
+        assertEquals(now, updated.getPreisAenderungsdatum());
+        assertTrue(result.unmatched().isEmpty());
+        assertTrue(result.skipped().isEmpty());
+        assertEquals(1, result.updated().size());
+        assertEquals(2, artikelRepository.findById(artikel.getId()).orElseThrow().getArtikelpreis().size());
+    }
+
+    @Test
     void forceOverridesOlderMail() {
         Lieferanten lieferant = new Lieferanten();
         lieferant.setLieferantenname("SupplierForce");

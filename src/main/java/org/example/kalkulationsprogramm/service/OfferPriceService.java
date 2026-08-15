@@ -74,52 +74,66 @@ public class OfferPriceService {
                         .findFirst()
                         .ifPresentOrElse(preis -> {
                             if (force || preis.getPreisAenderungsdatum() == null || mailDate.after(preis.getPreisAenderungsdatum())) {
-                                // Neuen Preisstand anlegen statt den bisherigen zu
-                                // ueberschreiben - der alte Stand bleibt im Verlauf sichtbar.
-                                LieferantenArtikelPreise neuerStand =
-                                        preis.neuerPreisstand(finalPrice, PreisQuelle.ANGEBOT_EMAIL);
-                                neuerStand.setPreisAenderungsdatum(mailDate);
-                                artikel.getArtikelpreis().add(neuerStand);
-                                priceSet.set(true);
-                                try {
-                                    artikelRepository.save(artikel);
-                                    savedFlag.set(true);
-                                    if (artikel.getId() != null && lieferant.getId() != null) {
-                                        List<ArtikelInProjekt> projektArtikel = artikelInProjektRepository
-                                                .findByArtikel_IdAndLieferant_IdAndBestelltFalse(artikel.getId(),
-                                                        lieferant.getId());
-                                        for (ArtikelInProjekt aip : projektArtikel) {
-                                            BigDecimal p = finalPrice;
-                                            if (p != null && aip.getArtikel() != null &&
-                                                    aip.getArtikel().getVerrechnungseinheit() != null) {
-                                                Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
-                                                switch (ve) {
-                                                    case KILOGRAMM -> {
-                                                        if (aip.getKilogramm() != null) {
-                                                            p = p.multiply(aip.getKilogramm());
+                                if (finalPrice != null && preis.getPreis() != null
+                                        && preis.getPreis().compareTo(finalPrice) == 0) {
+                                    // Angebot, Auftragsbestaetigung und Rechnung tragen zur selben
+                                    // Sache oft denselben Preis - der Verlauf soll davon nur einen
+                                    // Eintrag bekommen, nicht drei. Vergleich per compareTo statt
+                                    // equals: die Preisspalte fuehrt seit Migration V359 vier
+                                    // Nachkommastellen, aeltere Staende liegen noch mit zwei vor
+                                    // (5.00 vs. 5.0000 waeren mit equals faelschlich "verschieden").
+                                    // force hebelt nur die Datumspruefung aus, nicht diese Bremse -
+                                    // ein Preis, der sich nicht vom aktuellen Stand unterscheidet,
+                                    // ist auch erzwungen kein neues Preisereignis.
+                                    skippedFlag.set(true);
+                                } else {
+                                    // Neuen Preisstand anlegen statt den bisherigen zu
+                                    // ueberschreiben - der alte Stand bleibt im Verlauf sichtbar.
+                                    LieferantenArtikelPreise neuerStand =
+                                            preis.neuerPreisstand(finalPrice, PreisQuelle.ANGEBOT_EMAIL);
+                                    neuerStand.setPreisAenderungsdatum(mailDate);
+                                    artikel.getArtikelpreis().add(neuerStand);
+                                    priceSet.set(true);
+                                    try {
+                                        artikelRepository.save(artikel);
+                                        savedFlag.set(true);
+                                        if (artikel.getId() != null && lieferant.getId() != null) {
+                                            List<ArtikelInProjekt> projektArtikel = artikelInProjektRepository
+                                                    .findByArtikel_IdAndLieferant_IdAndBestelltFalse(artikel.getId(),
+                                                            lieferant.getId());
+                                            for (ArtikelInProjekt aip : projektArtikel) {
+                                                BigDecimal p = finalPrice;
+                                                if (p != null && aip.getArtikel() != null &&
+                                                        aip.getArtikel().getVerrechnungseinheit() != null) {
+                                                    Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
+                                                    switch (ve) {
+                                                        case KILOGRAMM -> {
+                                                            if (aip.getKilogramm() != null) {
+                                                                p = p.multiply(aip.getKilogramm());
+                                                            }
+                                                        }
+                                                        case LAUFENDE_METER, QUADRATMETER -> {
+                                                            if (aip.getMeter() != null) {
+                                                                p = p.multiply(aip.getMeter());
+                                                            }
+                                                        }
+                                                        case STUECK -> {
+                                                            if (aip.getStueckzahl() != null) {
+                                                                p = p.multiply(BigDecimal.valueOf(aip.getStueckzahl()));
+                                                            }
                                                         }
                                                     }
-                                                    case LAUFENDE_METER, QUADRATMETER -> {
-                                                        if (aip.getMeter() != null) {
-                                                            p = p.multiply(aip.getMeter());
-                                                        }
-                                                    }
-                                                    case STUECK -> {
-                                                        if (aip.getStueckzahl() != null) {
-                                                            p = p.multiply(BigDecimal.valueOf(aip.getStueckzahl()));
-                                                        }
-                                                    }
+                                                    aip.setPreisProStueck(p);
                                                 }
-                                                aip.setPreisProStueck(p);
+                                            }
+                                            if (!projektArtikel.isEmpty()) {
+                                                artikelInProjektRepository.saveAll(projektArtikel);
                                             }
                                         }
-                                        if (!projektArtikel.isEmpty()) {
-                                            artikelInProjektRepository.saveAll(projektArtikel);
-                                        }
+                                    } catch (DataIntegrityViolationException e) {
+                                        log.warn("[OfferPriceService] Duplicate article {} for supplier {}", code, lieferant.getLieferantenname());
+                                        unmatched.add(finalItem);
                                     }
-                                } catch (DataIntegrityViolationException e) {
-                                    log.warn("[OfferPriceService] Duplicate article {} for supplier {}", code, lieferant.getLieferantenname());
-                                    unmatched.add(finalItem);
                                 }
                             } else {
                                 skippedFlag.set(true);
