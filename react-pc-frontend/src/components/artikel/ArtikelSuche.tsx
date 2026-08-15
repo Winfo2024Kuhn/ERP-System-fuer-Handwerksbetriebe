@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Package, ChevronLeft, ChevronRight, X, Search, Folder, ImageOff } from "lucide-react";
+import { Package, ChevronLeft, ChevronRight, X, Search, Folder, Hammer } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -632,20 +633,32 @@ export function ArtikelSuche({
                                             nicht wachsen. */}
                                         <td className="px-2 py-0.5">
                                             {artikel.vorschaubildUrl ? (
-                                                <div className="w-10 h-10 shrink-0 rounded overflow-hidden border border-slate-200">
+                                                // Nur hier, wo wirklich ein Bild haengt, bekommt das
+                                                // Thumbnail eine Hover-/Fokus-Vorschau - der Platzhalter
+                                                // (Normalfall) bleibt bewusst ohne, siehe
+                                                // VorschaubildHoverVorschau weiter unten.
+                                                <VorschaubildHoverVorschau
+                                                    src={artikel.vorschaubildUrl}
+                                                    alt={artikel.produktname}
+                                                >
                                                     <ThumbnailImage
                                                         src={artikel.vorschaubildUrl}
                                                         alt={artikel.produktname}
                                                         className="object-cover"
                                                     />
-                                                </div>
+                                                </VorschaubildHoverVorschau>
                                             ) : (
                                                 <div
                                                     className="w-10 h-10 shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center"
                                                     role="img"
                                                     aria-label={`Kein Vorschaubild für ${artikel.produktname}`}
                                                 >
-                                                    <ImageOff className="w-4 h-4 text-slate-300" aria-hidden="true" />
+                                                    {/* Hammer statt durchgestrichenem Bild: "kein Bild
+                                                        hinterlegt" ist bei fast jedem Bestandsartikel der
+                                                        Normalfall, kein Fehlerzustand - und diese Software
+                                                        ist ein Werkzeugkasten fuer Handwerker, kein
+                                                        Foto-Verwaltungsprogramm. */}
+                                                    <Hammer className="w-4 h-4 text-slate-300" aria-hidden="true" />
                                                 </div>
                                             )}
                                         </td>
@@ -782,5 +795,129 @@ function SortableHeader({ label, column, currentSort, direction, onSort, classNa
                 </span>
             </div>
         </th>
+    );
+}
+
+/** Kantenlaenge der vergroesserten Bildvorschau (Punkt 5 im Anforderungstext: "rund 240x240 px"). */
+const VORSCHAU_GROESSE_PX = 240;
+/** Abstand zwischen Thumbnail und Vorschau, bzw. Sicherheitsabstand zum Fensterrand. */
+const VORSCHAU_ABSTAND_PX = 8;
+/** Wartezeit vor dem Einblenden, damit schnelles Ueberfahren der Liste nicht staendig etwas aufblitzen laesst. */
+const VORSCHAU_VERZOEGERUNG_MS = 200;
+
+/**
+ * Vergroessert ein 40x40-px-Thumbnail bei Hover oder Tastaturfokus auf rund
+ * 240x240 px.
+ *
+ * Grund: Auf 40 px erkennt man die Bauform eines Zukaufteils (Handlaufhalter,
+ * Glasklemme, Rosette) nicht - erst in der Vergroesserung. Eine breitere Spalte
+ * haette denselben Effekt, wuerde die Liste aber dauerhaft aufblaehen; die
+ * Vorschau kostet nur im Moment des Hovers Platz.
+ *
+ * Haengt per Portal an `document.body` und positioniert sich `fixed` - dasselbe
+ * Muster wie `WahlpositionMenu` und `AddressAutocomplete` in diesem Projekt.
+ * Die Tabelle steckt in einem ueberlaufenden Rahmen (`overflow-hidden` bzw.
+ * `overflow-auto`, siehe Listen-Rahmen weiter oben) - inline gerendert wuerde
+ * die Vorschau dort abgeschnitten, sobald sie ueber dessen Rand hinausragt.
+ * Die Position wird zusaetzlich an den Viewport geklemmt, damit sie weder am
+ * rechten Rand noch (in der letzten Zeile) unten aus dem Fenster laeuft.
+ */
+function VorschaubildHoverVorschau({ src, alt, children }: { src: string; alt: string; children: React.ReactNode }) {
+    const [offen, setOffen] = useState(false);
+    const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
+    const timerRef = useRef<number | null>(null);
+
+    const timerAbbrechen = () => {
+        if (timerRef.current !== null) {
+            window.clearTimeout(timerRef.current);
+            timerRef.current = null;
+        }
+    };
+
+    const schliessen = useCallback(() => {
+        timerAbbrechen();
+        setOffen(false);
+    }, []);
+
+    const verzoegertOeffnen = () => {
+        timerAbbrechen();
+        timerRef.current = window.setTimeout(() => {
+            const rect = triggerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+
+            // Bevorzugt rechts neben dem Thumbnail, vertikal daran zentriert.
+            // Passt das nicht (rechter Rand), stattdessen links davon zeigen.
+            const passtRechts = rect.right + VORSCHAU_ABSTAND_PX + VORSCHAU_GROESSE_PX <= window.innerWidth;
+            let left = passtRechts
+                ? rect.right + VORSCHAU_ABSTAND_PX
+                : rect.left - VORSCHAU_ABSTAND_PX - VORSCHAU_GROESSE_PX;
+            let top = rect.top + rect.height / 2 - VORSCHAU_GROESSE_PX / 2;
+
+            // Letzte Sicherung fuer beide Achsen: Selbst wenn weder rechts noch
+            // links Platz ist (sehr schmales Fenster) oder die Zeile ganz unten
+            // steht, bleibt die Vorschau innerhalb des sichtbaren Bereichs.
+            left = Math.max(VORSCHAU_ABSTAND_PX, Math.min(left, window.innerWidth - VORSCHAU_GROESSE_PX - VORSCHAU_ABSTAND_PX));
+            top = Math.max(VORSCHAU_ABSTAND_PX, Math.min(top, window.innerHeight - VORSCHAU_GROESSE_PX - VORSCHAU_ABSTAND_PX));
+
+            setPosition({ top, left });
+            setOffen(true);
+        }, VORSCHAU_VERZOEGERUNG_MS);
+    };
+
+    // Scrollt oder resized der Nutzer waehrend die Vorschau offen ist, wandert
+    // der Ausloeser unter der fixed positionierten Box weg - dann lieber
+    // schliessen als an falscher Stelle stehenbleiben. `true` (Capture-Phase)
+    // faengt auch das Scrollen innerer Container ab (z.B. das Auswahlfenster
+    // im Dokument-Editor): Scroll-Events bubbeln zwar nicht, kommen in der
+    // Capture-Phase aber trotzdem am window an.
+    useEffect(() => {
+        if (!offen) return;
+        window.addEventListener('scroll', schliessen, true);
+        window.addEventListener('resize', schliessen);
+        return () => {
+            window.removeEventListener('scroll', schliessen, true);
+            window.removeEventListener('resize', schliessen);
+        };
+    }, [offen, schliessen]);
+
+    // Timer nicht ueberleben lassen, wenn die Zeile (z.B. durch einen
+    // Filterwechsel) verschwindet, waehrend er noch laeuft.
+    useEffect(() => () => timerAbbrechen(), []);
+
+    return (
+        <div
+            ref={triggerRef}
+            tabIndex={0}
+            aria-label={alt}
+            onMouseEnter={verzoegertOeffnen}
+            onMouseLeave={schliessen}
+            onFocus={verzoegertOeffnen}
+            onBlur={schliessen}
+            onKeyDown={(e) => { if (e.key === 'Escape') schliessen(); }}
+            className="w-10 h-10 shrink-0 rounded overflow-hidden border border-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40"
+        >
+            {children}
+            {offen && position && createPortal(
+                // aria-hidden: Der Bildinhalt ist bereits ueber das Thumbnail
+                // (aria-label auf dem Ausloeser oben) fuer Screenreader
+                // erreichbar - die Vergroesserung ist eine rein visuelle Hilfe
+                // fuer sehende Tastatur- und Maus-Nutzer, keine neue Information.
+                <div
+                    aria-hidden="true"
+                    style={{
+                        position: 'fixed',
+                        top: position.top,
+                        left: position.left,
+                        width: VORSCHAU_GROESSE_PX,
+                        height: VORSCHAU_GROESSE_PX,
+                    }}
+                    className="z-[999] pointer-events-none rounded-xl border border-slate-200 bg-white p-2 shadow-xl"
+                >
+                    <img src={src} alt="" className="w-full h-full object-contain" />
+                </div>,
+                document.body,
+            )}
+        </div>
     );
 }

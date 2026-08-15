@@ -354,4 +354,99 @@ describe('ArtikelSuche', () => {
         expect(zelle).toHaveClass('py-0.5');
         expect(platzhalter).toHaveClass('h-10', 'w-10');
     });
+
+    // ------------------------------------------------------------------
+    // Vergroesserte Vorschau bei Hover/Fokus
+    // ------------------------------------------------------------------
+
+    const MIT_BILD = () => vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        if (url.includes('/filteroptionen') || url.includes('/werkstoffe')) return filteroptionen();
+        return antwort([{
+            id: 7, produktname: 'T-Stahl', abmessung: '40 x 40 x 5', positionsEinheit: 'lfm',
+            vorschaubildUrl: '/api/artikel/7/vorschaubild',
+        }]);
+    }));
+
+    it('zeigt bei Hover auf ein Thumbnail mit Bild eine vergroesserte Vorschau und blendet sie beim Verlassen wieder aus', async () => {
+        MIT_BILD();
+        zeigeSuche(<ArtikelSuche />);
+
+        // Der Ausloeser traegt aria-label=Produktname - so findet sich das
+        // Element, an dem Hover/Fokus haengen, unabhaengig vom verschachtelten
+        // <img> darin.
+        const ausloeser = await screen.findByLabelText('T-Stahl');
+        expect(document.querySelectorAll('img')).toHaveLength(1);
+
+        fireEvent.mouseEnter(ausloeser);
+        // Erscheint erst nach der Verzoegerung, nicht synchron mit dem Hover.
+        expect(document.querySelectorAll('img')).toHaveLength(1);
+
+        await waitFor(() => expect(document.querySelectorAll('img')).toHaveLength(2), { timeout: 1000 });
+        const vorschau = document.querySelectorAll('img')[1];
+        expect(vorschau).toHaveAttribute('src', '/api/artikel/7/vorschaubild');
+
+        fireEvent.mouseLeave(ausloeser);
+        await waitFor(() => expect(document.querySelectorAll('img')).toHaveLength(1));
+    });
+
+    it('zeigt die Vorschau auch bei Tastaturfokus und blendet sie beim Verlassen des Fokus aus', async () => {
+        MIT_BILD();
+        zeigeSuche(<ArtikelSuche />);
+
+        const ausloeser = await screen.findByLabelText('T-Stahl');
+        fireEvent.focus(ausloeser);
+
+        await waitFor(() => expect(document.querySelectorAll('img')).toHaveLength(2), { timeout: 1000 });
+
+        fireEvent.blur(ausloeser);
+        await waitFor(() => expect(document.querySelectorAll('img')).toHaveLength(1));
+    });
+
+    // Kein Bild hinterlegt ist der Normalfall bei fast allen Bestandsartikeln.
+    // Ohne diese Zusicherung koennte ein Hover ueber den Platzhalter
+    // versehentlich etwas aufklappen, das beim Ueberfahren der Liste staendig
+    // aufblitzt.
+    it('bietet fuer den Platzhalter ohne Bild keinen Hover-Ausloeser', async () => {
+        zeigeSuche(<ArtikelSuche />);
+
+        await screen.findByText('T-Stahl');
+
+        expect(screen.queryByLabelText('T-Stahl')).not.toBeInTheDocument();
+    });
+
+    // Der Fall, an dem Hover-Vorschauen ueblicherweise scheitern: eine Zeile
+    // ganz unten rechts im Fenster. getBoundingClientRect liefert in jsdom ohne
+    // echtes Layout nur Nullen - hier gezielt auf eine Position nahe dem
+    // rechten/unteren Fensterrand gestellt, um die Klemm-Logik zu pruefen.
+    it('haelt die Vorschau am rechten und unteren Fensterrand innerhalb des Viewports', async () => {
+        MIT_BILD();
+        const urspruenglicheBreite = window.innerWidth;
+        const urspruenglicheHoehe = window.innerHeight;
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 });
+        const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+            top: 580, bottom: 596, left: 780, right: 796, width: 16, height: 16, x: 780, y: 580,
+            toJSON: () => ({}),
+        });
+
+        try {
+            zeigeSuche(<ArtikelSuche />);
+            const ausloeser = await screen.findByLabelText('T-Stahl');
+            fireEvent.mouseEnter(ausloeser);
+
+            await waitFor(() => expect(document.querySelectorAll('img')).toHaveLength(2), { timeout: 1000 });
+            const box = document.querySelectorAll('img')[1].parentElement as HTMLElement;
+
+            const top = parseFloat(box.style.top);
+            const left = parseFloat(box.style.left);
+            expect(top).toBeGreaterThanOrEqual(0);
+            expect(left).toBeGreaterThanOrEqual(0);
+            expect(top + 240).toBeLessThanOrEqual(600);
+            expect(left + 240).toBeLessThanOrEqual(800);
+        } finally {
+            rectSpy.mockRestore();
+            Object.defineProperty(window, 'innerWidth', { configurable: true, value: urspruenglicheBreite });
+            Object.defineProperty(window, 'innerHeight', { configurable: true, value: urspruenglicheHoehe });
+        }
+    });
 });
