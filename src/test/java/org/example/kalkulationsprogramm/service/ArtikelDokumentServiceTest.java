@@ -213,7 +213,9 @@ class ArtikelDokumentServiceTest {
             ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
 
             Artikel artikel = artikel(5L);
-            given(artikelRepository.findById(5L)).willReturn(Optional.of(artikel));
+            // Vorschaubild-Uploads sperren den Artikel-Datensatz (findByIdForUpdate),
+            // nicht das gewoehnliche findById - siehe ladeHoch-Javadoc.
+            given(artikelRepository.findByIdForUpdate(5L)).willReturn(Optional.of(artikel));
 
             // Vorhandenes Vorschaubild samt physischer Datei anlegen.
             Path artikelDir = tempDir.resolve("artikel").resolve("5");
@@ -258,6 +260,43 @@ class ArtikelDokumentServiceTest {
 
             assertThatThrownBy(() -> service.ladeHoch(1L, datei, null, null))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("Auch der allererste Vorschaubild-Upload eines Artikels sperrt den Artikel-Datensatz")
+        void erstesVorschaubildSperrtDenArtikelDatensatz(@TempDir Path tempDir) throws IOException {
+            // Regression: Wuerde hier das gewoehnliche findById genutzt statt
+            // findByIdForUpdate, koennten zwei gleichzeitige Erst-Uploads (noch
+            // kein vorhandenes Vorschaubild zum Sperren) je eine eigene
+            // VORSCHAUBILD-Zeile anlegen - genau die Race, die der Lock verhindert.
+            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+
+            given(artikelRepository.findByIdForUpdate(6L)).willReturn(Optional.of(artikel(6L)));
+            given(dokumentRepository.findFirstByArtikelIdAndTyp(6L, ArtikelDokumentTyp.VORSCHAUBILD))
+                    .willReturn(Optional.empty());
+            given(dokumentRepository.save(any(ArtikelDokument.class))).willAnswer(inv -> inv.getArgument(0));
+
+            MockMultipartFile erstesBild = new MockMultipartFile(
+                    "datei", "erstesbild.png", "image/png", "bild".getBytes());
+
+            service.ladeHoch(6L, erstesBild, ArtikelDokumentTyp.VORSCHAUBILD, null);
+
+            verify(artikelRepository).findByIdForUpdate(6L);
+            verify(artikelRepository, never()).findById(6L);
+        }
+
+        @Test
+        @DisplayName("Uploads ohne Vorschaubild-Typ sperren den Artikel nicht (kein unnoetiges Serialisieren)")
+        void nichtVorschaubildUploadsSperrenDenArtikelNicht(@TempDir Path tempDir) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+            given(artikelRepository.findById(1L)).willReturn(Optional.of(artikel(1L)));
+            given(dokumentRepository.save(any(ArtikelDokument.class))).willAnswer(inv -> inv.getArgument(0));
+
+            MockMultipartFile datei = new MockMultipartFile("datei", "plan.pdf", "application/pdf", "x".getBytes());
+
+            service.ladeHoch(1L, datei, ArtikelDokumentTyp.DATENBLATT, null);
+
+            verify(artikelRepository, never()).findByIdForUpdate(any());
         }
     }
 
@@ -420,6 +459,34 @@ class ArtikelDokumentServiceTest {
             assertThat(ergebnis).doesNotContainKey(30L);
             // Genau ein Aufruf fuer die ganze Seite - nicht einer je Artikel.
             verify(dokumentRepository, times(1)).findByArtikelIdInAndTyp(anyList(), any());
+        }
+
+        @Test
+        @DisplayName("Zwei VORSCHAUBILD-Zeilen am selben Artikel lassen die Suche nicht mit 500 scheitern - der juengere Eintrag gewinnt")
+        void duplikatVorschaubildLaesstDieSucheNichtAbstuerzen() {
+            // Regression: Collectors.toMap ohne Merge-Function wirft
+            // IllegalStateException bei doppeltem Key - das haette FRUEHER die
+            // GESAMTE Artikelsuche mit 500 abgeschossen, nicht nur den
+            // betroffenen Artikel.
+            ArtikelDokument aelterePreview = new ArtikelDokument();
+            aelterePreview.setId(1L);
+            aelterePreview.setArtikel(artikel(10L));
+            aelterePreview.setTyp(ArtikelDokumentTyp.VORSCHAUBILD);
+            aelterePreview.setErstelltAm(java.time.LocalDateTime.of(2026, 8, 1, 10, 0));
+
+            ArtikelDokument juengerePreview = new ArtikelDokument();
+            juengerePreview.setId(2L);
+            juengerePreview.setArtikel(artikel(10L));
+            juengerePreview.setTyp(ArtikelDokumentTyp.VORSCHAUBILD);
+            juengerePreview.setErstelltAm(java.time.LocalDateTime.of(2026, 8, 2, 10, 0));
+
+            given(dokumentRepository.findByArtikelIdInAndTyp(List.of(10L), ArtikelDokumentTyp.VORSCHAUBILD))
+                    .willReturn(List.of(aelterePreview, juengerePreview));
+
+            Map<Long, String> ergebnis = service.ladeVorschaubildUrls(List.of(10L));
+
+            assertThat(ergebnis).hasSize(1);
+            assertThat(ergebnis.get(10L)).isEqualTo("/api/artikel/dokumente/2/datei");
         }
     }
 }

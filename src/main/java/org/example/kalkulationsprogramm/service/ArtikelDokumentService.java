@@ -5,12 +5,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
@@ -82,6 +84,18 @@ public class ArtikelDokumentService {
      * ersetzt das neue das alte - alter Datenbankeintrag und alte Datei werden
      * entfernt, nachdem die neue Datei sicher geschrieben ist.
      *
+     * <p><b>Nebenlaeufigkeit:</b> Ein DB-Constraint fuer "hoechstens ein
+     * Vorschaubild je Artikel" gibt es bewusst nicht (siehe Klassen-Javadoc).
+     * Ohne Sperre koennten zwei gleichzeitige Vorschaubild-Uploads (Doppelklick,
+     * zwei Tabs, Retry) beide die "existiert schon eins?"-Pruefung mit "nein"
+     * beantworten und je eine eigene VORSCHAUBILD-Zeile anlegen. Deshalb wird
+     * fuer {@code typ == VORSCHAUBILD} der Artikel-Datensatz selbst per
+     * PESSIMISTIC_WRITE gesperrt ({@link ArtikelRepository#findByIdForUpdate}) -
+     * er existiert garantiert schon, anders als das noch nicht vorhandene
+     * Vorschaubild-Dokument, auf das sich nicht sperren liesse. Andere
+     * Dokumenttypen sperren nicht, damit parallele Uploads verschiedener
+     * Unterlagen zum selben Artikel nicht unnoetig serialisiert werden.
+     *
      * @throws NotFoundException wenn die Artikel-ID unbekannt ist
      * @throws IllegalArgumentException bei fehlender Datei, verbotener Endung,
      *         Path-Traversal-Versuch oder Ueberschreitung des Groessenlimits
@@ -89,7 +103,10 @@ public class ArtikelDokumentService {
     @Transactional
     public ArtikelDokumentDto ladeHoch(Long artikelId, MultipartFile datei, ArtikelDokumentTyp typ,
             String beschreibung) throws IOException {
-        Artikel artikel = artikelRepository.findById(artikelId)
+        boolean istVorschaubild = typ == ArtikelDokumentTyp.VORSCHAUBILD;
+        Artikel artikel = (istVorschaubild
+                ? artikelRepository.findByIdForUpdate(artikelId)
+                : artikelRepository.findById(artikelId))
                 .orElseThrow(() -> new NotFoundException("Diesen Artikel gibt es nicht."));
 
         if (typ == null) {
@@ -114,8 +131,10 @@ public class ArtikelDokumentService {
 
         // Vorhandenes Vorschaubild merken, aber erst nach dem erfolgreichen
         // Schreiben der neuen Datei entfernen - sonst waere bei einem
-        // Schreibfehler weder das alte noch das neue Bild mehr vorhanden.
-        Optional<ArtikelDokument> vorhandenesVorschaubild = typ == ArtikelDokumentTyp.VORSCHAUBILD
+        // Schreibfehler weder das alte noch das neue Bild mehr vorhanden. Der
+        // Artikel-Lock oben haelt diese Pruefung und das spaetere Ersetzen
+        // gegenueber einem zweiten, gleichzeitigen Vorschaubild-Upload atomar.
+        Optional<ArtikelDokument> vorhandenesVorschaubild = istVorschaubild
                 ? dokumentRepository.findFirstByArtikelIdAndTyp(artikelId, ArtikelDokumentTyp.VORSCHAUBILD)
                 : Optional.empty();
 
@@ -182,6 +201,11 @@ public class ArtikelDokumentService {
      * Vorschaubild-URLs mehrerer Artikel in einem Rutsch - fuer die
      * Trefferliste, die sonst je Zeile eine eigene Abfrage bräuchte (N+1).
      *
+     * <p>Faellt trotz der Sperre in {@link #ladeHoch} einmal doch eine zweite
+     * VORSCHAUBILD-Zeile fuer denselben Artikel an (z.B. Altdaten), gewinnt der
+     * juengere Eintrag ({@link #juengeresVorschaubild}) - die Suche darf
+     * dadurch niemals mit 500 scheitern.
+     *
      * @return Map von Artikel-ID auf die URL seines Vorschaubilds; Artikel ohne
      *         Vorschaubild fehlen in der Map (kein Eintrag statt {@code null}-Wert)
      */
@@ -190,8 +214,30 @@ public class ArtikelDokumentService {
         if (artikelIds == null || artikelIds.isEmpty()) {
             return Map.of();
         }
-        return dokumentRepository.findByArtikelIdInAndTyp(artikelIds, ArtikelDokumentTyp.VORSCHAUBILD).stream()
-                .collect(Collectors.toMap(d -> d.getArtikel().getId(), this::baueDateiUrl));
+        Map<Long, ArtikelDokument> neuestesJeArtikel = dokumentRepository
+                .findByArtikelIdInAndTyp(artikelIds, ArtikelDokumentTyp.VORSCHAUBILD).stream()
+                .collect(Collectors.toMap(d -> d.getArtikel().getId(), Function.identity(),
+                        this::juengeresVorschaubild));
+
+        Map<Long, String> ergebnis = new HashMap<>();
+        neuestesJeArtikel.forEach((artikelId, dokument) -> ergebnis.put(artikelId, baueDateiUrl(dokument)));
+        return ergebnis;
+    }
+
+    /**
+     * Merge-Function fuer den seltenen Fall zweier VORSCHAUBILD-Zeilen am
+     * selben Artikel. Es gewinnt der juengere Eintrag (spaeteres
+     * {@code erstelltAm}) - der aeltere ist ohnehin ein Artefakt, das beim
+     * naechsten Ersetzen verschwindet.
+     */
+    private ArtikelDokument juengeresVorschaubild(ArtikelDokument a, ArtikelDokument b) {
+        if (a.getErstelltAm() == null) {
+            return b;
+        }
+        if (b.getErstelltAm() == null) {
+            return a;
+        }
+        return a.getErstelltAm().isAfter(b.getErstelltAm()) ? a : b;
     }
 
     /** Vorschaubild-URL eines einzelnen Artikels, {@code null} wenn keins hinterlegt. */

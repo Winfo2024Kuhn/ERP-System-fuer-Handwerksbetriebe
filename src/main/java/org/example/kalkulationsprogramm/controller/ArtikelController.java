@@ -66,7 +66,9 @@ import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/artikel")
 @AllArgsConstructor
@@ -461,10 +463,13 @@ public class ArtikelController {
      * <p>Alle Pruefungen (Endungs-Whitelist, Path-Traversal, Groessenlimit,
      * Ersetzen eines vorhandenen Vorschaubilds) uebernimmt der
      * {@link ArtikelDokumentService} - dieser Endpoint nimmt nur entgegen und
-     * antwortet.
+     * antwortet. Die Handwerker-deutschen Meldungen aus dem Service (z.B. "Die
+     * Datei ist zu gross...") werden im Antwortkoerper mitgegeben, damit das
+     * Frontend sie unveraendert anzeigen kann - Format wie an anderer Stelle im
+     * Projekt ueblich ({@code Map.of("message", ...)}, siehe z.B. BelegController).
      */
     @PostMapping(value = "/{id}/dokumente", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ArtikelDokumentDto> ladeDokumentHoch(
+    public ResponseEntity<?> ladeDokumentHoch(
             @PathVariable Long id,
             @RequestPart("datei") MultipartFile datei,
             @RequestPart("typ") String typ,
@@ -473,15 +478,17 @@ public class ArtikelController {
         try {
             dokumentTyp = ArtikelDokumentTyp.valueOf(typ.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", "Unbekannter Dokumenttyp: " + typ));
         }
         try {
             ArtikelDokumentDto ergebnis = artikelDokumentService.ladeHoch(id, datei, dokumentTyp, beschreibung);
             return ResponseEntity.status(HttpStatus.CREATED).body(ergebnis);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         } catch (IOException e) {
-            return ResponseEntity.internalServerError().build();
+            log.error("Datei-Upload fuer Artikel {} fehlgeschlagen", id, e);
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("message", "Die Datei konnte nicht gespeichert werden."));
         }
     }
 
