@@ -2,9 +2,13 @@ package org.example.kalkulationsprogramm.service;
 
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
@@ -16,13 +20,16 @@ import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import org.mockito.Mock;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -938,6 +945,200 @@ class GeminiDokumentAnalyseServiceTest {
             ArgumentCaptor<PreisUebernahmeEvent> captor = ArgumentCaptor.forClass(PreisUebernahmeEvent.class);
             verify(eventPublisher).publishEvent(captor.capture());
             return captor.getValue();
+        }
+    }
+
+    /**
+     * Die Tests oben belegen nur, dass die private Mapper-Methode
+     * {@code verarbeiteArtikelPositionen} bei passenden Eingaben ein Event
+     * baut. Was noch fehlte: der Beweis, dass die oeffentliche Einstiegsmethode
+     * {@code analysiereDokument()} diese Methode nach einer echten KI-Analyse
+     * ueberhaupt aufruft - die Verdrahtung selbst.
+     *
+     * <p>Dafuer laeuft hier der komplette Weg: {@code analysiereDokument()} ->
+     * ZUGFeRD-Versuch (schlaegt fuer die Test-Dummy-Datei erwartungsgemaess
+     * fehl) -> KI-Fallback -> {@code rufGeminiApi} (mit gemocktem
+     * {@code httpClient}) -> {@code mapJsonToData} ->
+     * {@code verarbeiteArtikelPositionen} -> {@code eventPublisher.publishEvent}.
+     *
+     * <p>Der {@code httpClient} ist inline gebaut und kein Konstruktor-Parameter
+     * - deshalb per Reflection ersetzt, genau wie in
+     * {@code BelegKiAnalyseServiceTest} (dortiges {@code setField}-Muster).
+     * Der {@code objectMapper} IST ein Konstruktor-Parameter; damit der volle
+     * JSON-Roundtrip (Request bauen, Gemini-Antwort parsen, Positionen mappen)
+     * tatsaechlich laeuft statt an einem unbestueckten Mock zu scheitern,
+     * bekommt der Service hier eine eigene Instanz mit einem echten
+     * {@link ObjectMapper} statt des klassenweiten Mock-Feldes.
+     */
+    @Nested
+    class AnalysiereDokumentStoesstPreisuebernahmeAn {
+
+        private static final String DATEINAME = "muster-dokument.pdf";
+
+        private GeminiDokumentAnalyseService serviceMitEchtemMapper;
+        private HttpClient httpClientMock;
+        private Path tempUploadRoot;
+
+        @BeforeEach
+        void baueServiceMitGemocktemHttpClientAuf() throws Exception {
+            serviceMitEchtemMapper = new GeminiDokumentAnalyseService(
+                    new ObjectMapper(),
+                    lieferantenRepository,
+                    dokumentRepository,
+                    zugferdExtractorService,
+                    lieferantGeschaeftsdokumentRepository,
+                    systemSettingsService,
+                    eventPublisher);
+
+            httpClientMock = mock(HttpClient.class);
+            setField(serviceMitEchtemMapper, "httpClient", httpClientMock);
+
+            // Eigenes Upload-Verzeichnis pro Test, damit nichts im echten
+            // uploads/-Ordner landet (Sperrzone fuer Commits, siehe CLAUDE.md).
+            tempUploadRoot = Files.createTempDirectory("gemini-analyse-test-uploads");
+            Files.createDirectories(tempUploadRoot.resolve("attachments"));
+            Files.write(tempUploadRoot.resolve("attachments").resolve(DATEINAME),
+                    "%PDF-1.4 Dummy-Inhalt fuer den Test".getBytes());
+            setField(serviceMitEchtemMapper, "uploadPath", tempUploadRoot.toString());
+        }
+
+        @AfterEach
+        void raeumeTempVerzeichnisAuf() throws Exception {
+            if (tempUploadRoot == null) {
+                return;
+            }
+            try (var dateien = Files.walk(tempUploadRoot)) {
+                dateien.sorted(java.util.Comparator.reverseOrder()).forEach(pfad -> pfad.toFile().delete());
+            }
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName(
+                "RECHNUNG mit Artikelpositionen -> PreisUebernahmeEvent wird nach der KI-Analyse veroeffentlicht")
+        void rechnungMitArtikelpositionen_veroeffentlichtPreisUebernahmeEvent() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(1L);
+            lieferant.setLieferantenname("Musterlieferant GmbH");
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(501L);
+            dokument.setLieferant(lieferant);
+            dokument.setOriginalDateiname(DATEINAME);
+            dokument.setGespeicherterDateiname(DATEINAME);
+
+            String analyseJson = """
+                    {
+                      "dokumentTyp": "RECHNUNG",
+                      "istGeschaeftsdokument": true,
+                      "dokumentNummer": "RE-2026-0815",
+                      "dokumentDatum": "2026-03-14",
+                      "betragBrutto": 119.00,
+                      "confidence": 0.95,
+                      "artikelPositionen": [
+                        {
+                          "externeArtikelnummer": "MUSTER-001",
+                          "einzelpreis": 62.00,
+                          "preiseinheit": "Stück",
+                          "mengeneinheit": "Stück"
+                        }
+                      ]
+                    }
+                    """;
+            stelleKiAntwortBereit(dokument, analyseJson);
+
+            serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            ArgumentCaptor<PreisUebernahmeEvent> captor = ArgumentCaptor.forClass(PreisUebernahmeEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            PreisUebernahmeEvent event = captor.getValue();
+
+            assertThat(event.lieferant()).isSameAs(lieferant);
+            assertThat(event.quelle()).isEqualTo(PreisQuelle.RECHNUNG);
+            assertThat(event.belegnummer()).isEqualTo("RE-2026-0815");
+            assertThat(event.positionen()).hasSize(1);
+            PreisUebernahmeService.Position position = event.positionen().getFirst();
+            assertThat(position.externeArtikelnummer()).isEqualTo("MUSTER-001");
+            assertThat(position.einzelpreis()).isEqualByComparingTo("62.00");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName(
+                "LIEFERSCHEIN -> analysiereDokument() veroeffentlicht KEIN PreisUebernahmeEvent")
+        void lieferschein_veroeffentlichtKeinEvent() throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(2L);
+            lieferant.setLieferantenname("Musterlieferant GmbH");
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(502L);
+            dokument.setLieferant(lieferant);
+            dokument.setOriginalDateiname(DATEINAME);
+            dokument.setGespeicherterDateiname(DATEINAME);
+
+            String analyseJson = """
+                    {
+                      "dokumentTyp": "LIEFERSCHEIN",
+                      "istGeschaeftsdokument": true,
+                      "dokumentNummer": "LS-2026-0815",
+                      "dokumentDatum": "2026-03-14",
+                      "confidence": 0.9,
+                      "artikelPositionen": [
+                        {
+                          "externeArtikelnummer": "MUSTER-001",
+                          "einzelpreis": 62.00,
+                          "preiseinheit": "Stück",
+                          "mengeneinheit": "Stück"
+                        }
+                      ]
+                    }
+                    """;
+            stelleKiAntwortBereit(dokument, analyseJson);
+
+            serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            verifyNoInteractions(eventPublisher);
+        }
+
+        /**
+         * Stellt Repository- und API-Antworten so bereit, dass
+         * {@code analysiereDokument()} den KI-Zweig durchlaeuft: kein
+         * ZUGFeRD/XML-Treffer (Dummy-Datei), Gemini-API antwortet mit
+         * {@code analyseJson}.
+         */
+        private void stelleKiAntwortBereit(LieferantDokument dokument, String analyseJson) throws Exception {
+            when(dokumentRepository.findById(dokument.getId())).thenReturn(Optional.of(dokument));
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+            when(dokumentRepository.saveAndFlush(any(LieferantDokument.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(lieferantGeschaeftsdokumentRepository.saveAndFlush(any(LieferantGeschaeftsdokument.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            String antwortEnvelope = baueGeminiAntwortEnvelope(analyseJson);
+            @SuppressWarnings("unchecked")
+            HttpResponse<String> httpResponse = mock(HttpResponse.class);
+            when(httpResponse.statusCode()).thenReturn(200);
+            when(httpResponse.body()).thenReturn(antwortEnvelope);
+            when(httpClientMock.<String>send(any(HttpRequest.class), any())).thenReturn(httpResponse);
+        }
+
+        /**
+         * Baut die Huelle, in der Gemini seine Antwort verpackt (candidates ->
+         * content -> parts -> text), mit {@code analyseJsonText} als Inhalt des
+         * text-Feldes - unabhaengig vom (gemockten) {@code objectMapper} der
+         * Service-Instanz.
+         */
+        private String baueGeminiAntwortEnvelope(String analyseJsonText) throws Exception {
+            ObjectMapper baumapper = new ObjectMapper();
+            var envelope = baumapper.createObjectNode();
+            var content = envelope.putArray("candidates").addObject().putObject("content");
+            content.putArray("parts").addObject().put("text", analyseJsonText);
+            return baumapper.writeValueAsString(envelope);
+        }
+
+        private void setField(Object target, String feldName, Object wert) throws Exception {
+            var feld = GeminiDokumentAnalyseService.class.getDeclaredField(feldName);
+            feld.setAccessible(true);
+            feld.set(target, wert);
         }
     }
 
