@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -403,11 +404,10 @@ class LieferantDokumentControllerTest {
         }
 
         /**
-         * probeContentType leitet den Typ aus der Endung der gespeicherten Datei ab
-         * und wuerde bei einer .svg "image/svg+xml" liefern - inline und same-origin
-         * ausgeliefert waere das gespeichertes XSS (SVG darf <script> enthalten).
-         * Deshalb ist SVG bewusst nicht auf der Inline-Whitelist: attachment statt
-         * inline und octet-stream statt image/svg+xml erzwingen.
+         * Eine .svg inline und same-origin ausgeliefert waere gespeichertes XSS
+         * (SVG darf &lt;script&gt; enthalten). Deshalb ist SVG bewusst nicht auf der
+         * Inline-Whitelist: attachment statt inline und octet-stream statt
+         * image/svg+xml erzwingen.
          */
         @Test
         @DisplayName("SVG-Datei wird nicht inline, sondern als attachment mit octet-stream ausgeliefert")
@@ -454,6 +454,73 @@ class LieferantDokumentControllerTest {
                     .andExpect(header().string("Content-Type", "application/pdf"))
                     .andExpect(header().stringValues("Content-Disposition",
                             org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.startsWith("inline;"))))
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        }
+
+        /**
+         * Der MIME-Typ kommt aus den eigenen Daten, nicht aus
+         * {@code Files.probeContentType}: Das fragt unter Windows die Registry und
+         * unter Linux /etc/mime.types und liefert null, wenn dort nichts steht -
+         * dann faellt jedes PDF aus der Whitelist und die Vorschau bricht weg, je
+         * nach Maschine. Hier traegt der Anhang den Typ, der Dateiname gaebe nichts
+         * her.
+         */
+        @Test
+        @DisplayName("MIME-Typ des E-Mail-Anhangs entscheidet, auch ohne Dateiendung")
+        void mimeTypAusDemAnhang_entscheidetUeberInline(@TempDir Path workDir) throws Exception {
+            Path uploadDir = workDir.resolve("uploads");
+            Path belegeDir = uploadDir.resolve("belege");
+            Files.createDirectories(belegeDir);
+            Files.write(belegeDir.resolve("anhang.dat"), "%PDF-1.4 stub".getBytes());
+
+            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+
+            EmailAttachment anhang = new EmailAttachment();
+            anhang.setOriginalFilename("Rechnung Mai");
+            anhang.setStoredFilename("belege/anhang.dat");
+            anhang.setMimeType("application/pdf");
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(10L);
+            dokument.setAttachment(anhang);
+            given(dokumentRepository.findById(10L)).willReturn(Optional.of(dokument));
+
+            mockMvc.perform(get("/api/lieferant-dokumente/10/download"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "application/pdf"))
+                    .andExpect(header().stringValues("Content-Disposition",
+                            org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.startsWith("inline;"))));
+        }
+
+        /**
+         * Der Typ am Anhang stammt aus einer fremden E-Mail. Er muss dieselbe
+         * Whitelist passieren wie ein aus der Endung abgeleiteter Typ.
+         */
+        @Test
+        @DisplayName("SVG-Typ am E-Mail-Anhang wird ebenfalls als attachment ausgeliefert")
+        void svgTypAmAnhang_wirdAlsAttachmentAusgeliefert(@TempDir Path workDir) throws Exception {
+            Path uploadDir = workDir.resolve("uploads");
+            Path belegeDir = uploadDir.resolve("belege");
+            Files.createDirectories(belegeDir);
+            Files.write(belegeDir.resolve("anhang2.dat"), "<svg onload=\"alert(1)\"></svg>".getBytes());
+
+            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+
+            EmailAttachment anhang = new EmailAttachment();
+            anhang.setOriginalFilename("logo.svg");
+            anhang.setStoredFilename("belege/anhang2.dat");
+            anhang.setMimeType("image/svg+xml");
+
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(11L);
+            dokument.setAttachment(anhang);
+            given(dokumentRepository.findById(11L)).willReturn(Optional.of(dokument));
+
+            mockMvc.perform(get("/api/lieferant-dokumente/11/download"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "application/octet-stream"))
+                    .andExpect(header().stringValues("Content-Disposition",
+                            org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.startsWith("attachment;"))))
                     .andExpect(header().string("X-Content-Type-Options", "nosniff"));
         }
 

@@ -13,6 +13,7 @@ import java.util.Map;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
@@ -30,6 +31,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
@@ -727,13 +729,13 @@ public class LieferantDokumentController {
             String filename = dokument.getEffektiverDateiname() != null
                     ? dokument.getEffektiverDateiname() : ("dokument-" + dokumentId);
 
-            // probeContentType leitet den Typ aus der Endung der gespeicherten Datei ab.
-            // Eine .svg oder .html wuerde inline und same-origin ausgeliefert gespeichertes
-            // XSS ermoeglichen - deshalb Whitelist erlaubter MIME-Types fuer Inline-Auslieferung
-            // (analog BelegController#downloadDatei). SVG ist bewusst nicht dabei. Alles
-            // ausserhalb der Whitelist wird als attachment + octet-stream + nosniff ausgeliefert.
-            String probedType = Files.probeContentType(filePath);
-            String mime = probedType != null ? probedType.toLowerCase(Locale.ROOT) : null;
+            // Eine .svg oder .html wuerde inline und same-origin ausgeliefert
+            // gespeichertes XSS ermoeglichen - deshalb Whitelist erlaubter MIME-Types
+            // fuer die Inline-Auslieferung (analog BelegController#downloadDatei, der
+            // den Typ ebenfalls aus den eigenen Daten nimmt). SVG ist bewusst nicht
+            // dabei. Alles ausserhalb der Whitelist geht als attachment +
+            // octet-stream + nosniff raus.
+            String mime = ermittleMimeTyp(dokument, filename);
             boolean inlineSicher = mime != null && (
                     mime.equals("image/jpeg") || mime.equals("image/jpg")
                  || mime.equals("image/png")  || mime.equals("image/webp")
@@ -758,6 +760,64 @@ public class LieferantDokumentController {
             log.error("Fehler beim Lesen der Datei für Dokument {}: {}", dokumentId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    /**
+     * Bestimmt den MIME-Typ eines Dokuments aus den eigenen Daten.
+     *
+     * <p>Bewusst <b>nicht</b> ueber {@link Files#probeContentType}: Das fragt unter
+     * Windows die Registry und unter Linux {@code /etc/mime.types}. Fehlt dort der
+     * Eintrag, kommt {@code null} zurueck - dann faellt jedes PDF und jedes Bild
+     * aus der Inline-Whitelist und die Vorschau im ERP bricht weg, je nachdem, auf
+     * welcher Maschine die Anwendung laeuft.
+     *
+     * <p>Erste Quelle ist der beim Empfang gespeicherte Typ des E-Mail-Anhangs.
+     * Fehlt er - etwa bei manuell hochgeladenen Dateien -, entscheidet die
+     * Dateiendung, wie in {@code ArtikelDokumentService.ermittleContentType}.
+     *
+     * <p>Der Wert stammt aus einer fremden E-Mail und ist damit nicht
+     * vertrauenswuerdig. Gefaehrlich wird er dadurch nicht: Er muss die Whitelist
+     * unten passieren, und mit {@code nosniff} zeigt der Browser die Datei genau
+     * als den angegebenen Typ an - eine als PDF deklarierte SVG-Datei wird also
+     * nicht als Markup ausgefuehrt, sondern gar nicht dargestellt.
+     *
+     * @return der MIME-Typ in Kleinschreibung, oder {@code null} wenn unbekannt
+     */
+    private String ermittleMimeTyp(LieferantDokument dokument, String dateiname) {
+        EmailAttachment anhang = dokument.getAttachment();
+        String gespeichert = anhang != null ? anhang.getMimeType() : null;
+        if (gespeichert != null && !gespeichert.isBlank()) {
+            // "application/pdf; charset=binary" - Parameter abschneiden, sonst
+            // trifft kein Whitelist-Eintrag.
+            int semikolon = gespeichert.indexOf(';');
+            String typ = (semikolon < 0 ? gespeichert : gespeichert.substring(0, semikolon)).trim();
+            if (!typ.isEmpty()) {
+                return typ.toLowerCase(Locale.ROOT);
+            }
+        }
+        return ausEndung(dateiname);
+    }
+
+    /** MIME-Typ aus der Dateiendung; {@code null}, wenn die Endung nichts hergibt. */
+    private static String ausEndung(String dateiname) {
+        if (dateiname == null) {
+            return null;
+        }
+        int punkt = dateiname.lastIndexOf('.');
+        if (punkt < 0 || punkt == dateiname.length() - 1) {
+            return null;
+        }
+        return switch (dateiname.substring(punkt + 1).toLowerCase(Locale.ROOT)) {
+            case "pdf" -> MediaType.APPLICATION_PDF_VALUE;
+            case "png" -> MediaType.IMAGE_PNG_VALUE;
+            case "jpg", "jpeg" -> MediaType.IMAGE_JPEG_VALUE;
+            case "webp" -> "image/webp";
+            case "heic" -> "image/heic";
+            case "heif" -> "image/heif";
+            // Alles andere - auch .svg und .html - faellt aus der Whitelist und
+            // wird als Download ausgeliefert.
+            default -> null;
+        };
     }
 
     private Path resolveDokumentPath(LieferantDokument dokument) {
