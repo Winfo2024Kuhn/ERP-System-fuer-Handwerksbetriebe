@@ -430,6 +430,54 @@ class PreisUebernahmeServiceTest {
     }
 
     /**
+     * Dieselbe Artikelnummer zweimal auf einem Beleg ist Alltag: Teillieferung,
+     * oder dieselbe Schraubenkiste steht zweimal auf der Rechnung. Weder der
+     * ZUGFeRD- noch der KI-Weg fasst solche Zeilen vorher zusammen.
+     *
+     * <p>Der Bestand wird einmal vor der Schleife geladen. Wurde er nach dem
+     * Schreiben nicht fortgeschrieben, sah die zweite Position den eben
+     * entwerteten Stand, verglich gegen den alten Preis und legte einen zweiten
+     * Satz mit {@code aktuell = true} an. Der Artikel fiel danach in jeder
+     * weiteren Uebernahme in den Zweig "mehrere aktuelle Preisstaende", und
+     * {@code findByArtikel_IdAndLieferant_IdAndAktuellTrue} lief an anderer
+     * Stelle in eine {@code IncorrectResultSizeDataAccessException}.
+     */
+    @Test
+    void dieselbeArtikelnummerZweimalLaesstGenauEinenStandAktuell() {
+        Lieferanten lieferant = lieferant("Musterlieferant Teillieferung");
+        Artikel artikel = artikelMitPreis(lieferant, "DOPP-1", Verrechnungseinheit.STUECK, "10.00");
+
+        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, new Date(), null,
+                List.of(position("DOPP-1", "11.00", "1 C62", "C62"),
+                        position("DOPP-1", "12.00", "1 C62", "C62")));
+
+        assertEquals(2, ergebnis.uebernommen());
+        List<LieferantenArtikelPreise> verlauf = artikelPreiseRepository.findeVerlauf(artikel.getId());
+        assertEquals(1, verlauf.stream().filter(LieferantenArtikelPreise::isAktuell).count(),
+                "Ein Beleg darf nie zwei gueltige Preisstaende hinterlassen");
+        // Innerhalb eines Belegs gilt die letzte Position: Beide tragen dasselbe
+        // Belegdatum, eine Reihenfolge nach Datum gibt es also nicht.
+        assertPreis("12.00", artikel, lieferant);
+    }
+
+    @Test
+    void dieselbeArtikelnummerMitGleichemPreisLegtNurEinenStandAn() {
+        Lieferanten lieferant = lieferant("Musterlieferant Doppelzeile");
+        Artikel artikel = artikelMitPreis(lieferant, "DOPP-2", Verrechnungseinheit.STUECK, "10.00");
+
+        var ergebnis = preisUebernahmeService.uebernehmePreise(lieferant, PreisQuelle.RECHNUNG, new Date(), null,
+                List.of(position("DOPP-2", "11.00", "1 C62", "C62"),
+                        position("DOPP-2", "11.00", "1 C62", "C62")));
+
+        // Die zweite Zeile nennt denselben Preis wie die erste - sie ist kein
+        // neues Preisereignis und darf den Verlauf nicht verdoppeln.
+        assertEquals(1, ergebnis.uebernommen());
+        assertEquals(1, ergebnis.uebersprungen());
+        assertEquals(2, artikelPreiseRepository.findeVerlauf(artikel.getId()).size());
+        assertPreis("11.00", artikel, lieferant);
+    }
+
+    /**
      * Der Datenbankzugriff wird hier absichtlich zum Stolpern gebracht: eine
      * Position, die beim Speichern eine Ausnahme ausloest, darf die uebrigen
      * Positionen derselben Rechnung nicht mitreissen.

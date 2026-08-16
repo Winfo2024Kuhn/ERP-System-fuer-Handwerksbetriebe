@@ -17,6 +17,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -170,13 +172,18 @@ public class PreisUebernahmeService {
             return new Ergebnis(0, positionen.size());
         }
 
+        // Veraenderlich: Jede geschriebene Position ersetzt hier ihren eigenen
+        // Eintrag, damit die naechste Position mit derselben Artikelnummer den
+        // gerade entstandenen Stand sieht und nicht den ueberholten.
         Map<String, List<LieferantenArtikelPreise>> bestand = ladeAktuelleStaende(positionen, lieferant);
+        // Artikelnummern, fuer die dieser Lauf bereits einen Stand geschrieben hat.
+        Set<String> ausDiesemLauf = new HashSet<>();
 
         int uebernommen = 0;
         int uebersprungen = 0;
         for (Position position : positionen) {
             try {
-                if (uebernehmeEine(lieferant, quelle, dokumentDatum, belegnummer, position, bestand)) {
+                if (uebernehmeEine(lieferant, quelle, dokumentDatum, belegnummer, position, bestand, ausDiesemLauf)) {
                     uebernommen++;
                 } else {
                     uebersprungen++;
@@ -194,10 +201,16 @@ public class PreisUebernahmeService {
         return new Ergebnis(uebernommen, uebersprungen);
     }
 
-    /** @return true, wenn ein neuer Preisstand geschrieben wurde. */
+    /**
+     * @param bestand       aktueller Preisstand je Artikelnummer; wird nach jedem
+     *                      Schreiben fortgeschrieben
+     * @param ausDiesemLauf Artikelnummern, die dieser Lauf schon angefasst hat
+     * @return true, wenn ein neuer Preisstand geschrieben wurde
+     */
     private boolean uebernehmeEine(Lieferanten lieferant, PreisQuelle quelle, Date stand,
                                    String belegnummer, Position position,
-                                   Map<String, List<LieferantenArtikelPreise>> bestand) {
+                                   Map<String, List<LieferantenArtikelPreise>> bestand,
+                                   Set<String> ausDiesemLauf) {
         String nummer = position.externeArtikelnummer() == null ? "" : position.externeArtikelnummer().trim();
         if (nummer.isEmpty()) {
             log.debug("Position ohne Artikelnummer - keine Zuordnung moeglich");
@@ -212,13 +225,20 @@ public class PreisUebernahmeService {
             return false;
         }
 
+        String schluessel = schluessel(nummer);
         Optional<LieferantenArtikelPreise> bisherOpt = ermittleAktuellenStand(nummer, lieferant, bestand);
         if (bisherOpt.isEmpty()) {
             return false;
         }
         LieferantenArtikelPreise bisher = bisherOpt.get();
 
-        if (bisher.getPreisAenderungsdatum() != null && !stand.after(bisher.getPreisAenderungsdatum())) {
+        // Steht der bisherige Stand aus diesem Lauf, traegt er zwangslaeufig das
+        // Datum dieses Belegs - der Vergleich unten wuerde jede weitere Position
+        // derselben Artikelnummer verwerfen. Innerhalb eines Belegs gilt deshalb
+        // die letzte Position, nicht die erste.
+        boolean schonGeschrieben = ausDiesemLauf.contains(schluessel);
+        if (!schonGeschrieben
+                && bisher.getPreisAenderungsdatum() != null && !stand.after(bisher.getPreisAenderungsdatum())) {
             // Die Stapel-Neuanalyse laeuft von der neuesten zur aeltesten Rechnung.
             // Ohne diesen Vergleich wuerde am Ende die aelteste gewinnen.
             log.debug("Artikel {}: Beleg vom {} ist nicht juenger als der Preisstand vom {}",
@@ -265,6 +285,16 @@ public class PreisUebernahmeService {
         artikelPreiseRepository.save(bisher);
         artikelPreiseRepository.save(neuerStand);
 
+        // Ohne diese Fortschreibung saehe eine zweite Position mit derselben
+        // Artikelnummer weiterhin den eben entwerteten Stand: Sie wuerde gegen den
+        // alten Preis vergleichen und einen zweiten Satz mit aktuell = true anlegen.
+        // Der Artikel faellt danach dauerhaft in den Zweig "mehrere aktuelle
+        // Preisstaende". Doppelte Positionen sind Alltag - Teillieferung, dieselbe
+        // Schraubenkiste zweimal auf dem Beleg -, und keiner der Auslesewege fasst
+        // sie vorher zusammen.
+        bestand.put(schluessel, List.of(neuerStand));
+        ausDiesemLauf.add(schluessel);
+
         log.info("Artikel {} bei Lieferant {}: Preis {} -> {} EUR (Quelle {}, Beleg vom {}, "
                         + "Rechnungsangabe {} je {})",
                 nummer, lieferant.getLieferantenname(), bisher.getPreis(), neuerPreis, quelle, stand,
@@ -289,13 +319,27 @@ public class PreisUebernahmeService {
     }
 
     /**
+     * Schluessel des Bestands: die Artikelnummer in Grossschreibung.
+     *
+     * <p>Die Zuordnung muss gross-/kleinschreibungsunabhaengig bleiben, deshalb
+     * derselbe Schluessel beim Laden, Nachschlagen und Fortschreiben - und
+     * derselbe, den die Sammelabfrage per {@code UPPER(...)} bildet (siehe
+     * {@link LieferantenArtikelPreiseRepository#findByLieferant_IdAndAktuellTrueAndExterneArtikelnummerIn}).
+     */
+    private static String schluessel(String artikelnummer) {
+        return artikelnummer.toUpperCase(Locale.ROOT);
+    }
+
+    /**
      * Laedt die aktuellen Preisstaende aller in den Positionen genannten
      * Artikelnummern in einem Rutsch.
      *
      * <p>Vorher schlug jede Position einzeln nach - bei einer 50-Positionen-Rechnung
-     * 50 Datenbank-Roundtrips. Der Schluessel ist grossgeschrieben, weil die
-     * Zuordnung wie zuvor gross-/kleinschreibungsunabhaengig sein muss (siehe
-     * {@link LieferantenArtikelPreiseRepository#findByLieferant_IdAndAktuellTrueAndExterneArtikelnummerIn}).
+     * 50 Datenbank-Roundtrips.
+     *
+     * <p>Die zurueckgegebene Map ist <b>veraenderlich</b>: Die Uebernahme schreibt
+     * dort jeden neuen Stand hinein, damit eine weitere Position mit derselben
+     * Artikelnummer nicht gegen den ueberholten Stand rechnet.
      */
     private Map<String, List<LieferantenArtikelPreise>> ladeAktuelleStaende(List<Position> positionen,
                                                                              Lieferanten lieferant) {
@@ -304,16 +348,17 @@ public class PreisUebernahmeService {
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(nummer -> !nummer.isEmpty())
-                .map(nummer -> nummer.toUpperCase(Locale.ROOT))
+                .map(PreisUebernahmeService::schluessel)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         if (nummernGross.isEmpty()) {
-            return Map.of();
+            return new HashMap<>();
         }
 
         List<LieferantenArtikelPreise> treffer = artikelPreiseRepository
                 .findByLieferant_IdAndAktuellTrueAndExterneArtikelnummerIn(lieferant.getId(), nummernGross);
         return treffer.stream()
-                .collect(Collectors.groupingBy(p -> p.getExterneArtikelnummer().toUpperCase(Locale.ROOT)));
+                .collect(Collectors.groupingBy(p -> schluessel(p.getExterneArtikelnummer()),
+                        HashMap::new, Collectors.toList()));
     }
 
     /**
@@ -327,7 +372,7 @@ public class PreisUebernahmeService {
      */
     private Optional<LieferantenArtikelPreise> ermittleAktuellenStand(String nummer, Lieferanten lieferant,
                                                                        Map<String, List<LieferantenArtikelPreise>> bestand) {
-        List<LieferantenArtikelPreise> treffer = bestand.getOrDefault(nummer.toUpperCase(Locale.ROOT), List.of());
+        List<LieferantenArtikelPreise> treffer = bestand.getOrDefault(schluessel(nummer), List.of());
         if (treffer.isEmpty()) {
             log.debug("Artikelnummer {} ist bei Lieferant {} nicht hinterlegt",
                     nummer, lieferant.getLieferantenname());
