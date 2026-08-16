@@ -21,6 +21,14 @@
 --
 -- Idempotent: Mehrfach-Ausfuehrung unschaedlich - liegt die Skala schon bei 4
 -- oder hoeher, passiert nichts.
+--
+-- Betriebshinweis: Eine geaenderte DECIMAL-Praezision kann MySQL nicht in-place
+-- umbauen, es faellt auf ALGORITHM=COPY zurueck. Die Tabelle wird also unter
+-- einem Metadata-Lock vollstaendig neu geschrieben und ist waehrenddessen fuer
+-- Schreibzugriffe gesperrt; die Anwendung startet erst, wenn Flyway durch ist.
+-- Bei lieferanten_artikel_preise (rund 10.000 gueltige Staende plus Historie)
+-- sind das Sekunden. Auf einem deutlich groesseren Bestand gehoert dafuer ein
+-- Wartungsfenster eingeplant.
 
 -- Die Spalte steht im Index ix_lap_artikel_aktuell (artikel_id, aktuell, preis).
 -- MySQL baut den Index beim MODIFY selbst neu auf; ein Drop/Create von Hand

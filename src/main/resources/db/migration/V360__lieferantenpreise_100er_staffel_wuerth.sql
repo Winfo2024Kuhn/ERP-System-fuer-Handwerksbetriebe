@@ -49,10 +49,15 @@
 --       Zwei-Stellen-Grenze weggerundet wurden; die holt diese Migration nicht
 --       zurueck, dafuer fehlt der Ausgangswert.
 --
--- ACHTUNG: Diese 973 sind ueber ALLE Lieferanten gezaehlt. Mit der
--- Wuerth-Einschraenkung faellt die tatsaechlich angefasste Zahl kleiner aus.
--- Wie viel kleiner, ist nicht vermessen - die Backup-Tabelle sagt es hinterher
--- exakt.
+-- Nachgemessen am 16.08.2026, diesmal mit der Wuerth-Einschraenkung dieser
+-- Migration: Sie trifft exakt dieselben 973 Zeilen - Minimum 0,10 EUR, Maximum
+-- 1,83 EUR, und genau ein Lieferant faellt in die Namensbedingung ("Wuerth").
+-- Die ungefilterte Abfrage ueber alle Lieferanten liefert dieselbe Menge: Kein
+-- anderer Lieferant fuehrt Artikel mit preiseinheit = '100' und einem Preis ab
+-- 0,10 EUR. Die Einschraenkung kostet hier also nichts, sie sichert nur gegen
+-- kuenftige Bestaende ab. Auch die Luecke zwischen den beiden Gruppen besteht
+-- innerhalb des Wuerth-Bestands - sie ist kein Artefakt daraus, dass mehrere
+-- Lieferanten zusammen gezaehlt wurden.
 --
 -- ---------------------------------------------------------------------------
 -- Die Schwelle 0,10 EUR - und was sie kostet
@@ -74,6 +79,19 @@
 --
 -- Alle drei Bedingungen gelten UND-verknuepft: Lieferant ist Wuerth, der Artikel
 -- traegt preiseinheit = '100', und der Preis liegt bei mindestens 0,10 EUR.
+--
+-- ---------------------------------------------------------------------------
+-- Nur der gueltige Stand, nicht die Historie
+-- ---------------------------------------------------------------------------
+-- Angefasst wird ausschliesslich p.aktuell = 1. Aeltere Preisstaende derselben
+-- Artikel behalten ihre je-100-Werte. Sie sind das Protokoll dessen, was damals
+-- in der Spalte stand; ohne den zugehoerigen Beleg laesst sich fuer jede
+-- einzelne alte Zeile ohnehin nicht entscheiden, ob sie je 100 oder je 1
+-- gemeint war.
+--
+-- Sichtbare Folge: Die Verlaufsanzeige eines betroffenen Artikels zeigt an
+-- dieser Stelle einen Sprung um den Faktor 100 nach unten. Das ist kein
+-- Preisrutsch beim Lieferanten, sondern der Wechsel der Bezugsgroesse.
 --
 -- ---------------------------------------------------------------------------
 -- Rueckfahrkarte

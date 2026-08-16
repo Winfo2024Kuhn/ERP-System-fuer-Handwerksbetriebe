@@ -24,6 +24,13 @@
 --
 -- Idempotent: Mehrfach-Ausfuehrung unschaedlich - liegt die Skala schon bei 4
 -- oder hoeher, passiert nichts.
+--
+-- Betriebshinweis: Eine geaenderte DECIMAL-Praezision kann MySQL nicht in-place
+-- umbauen, es faellt auf ALGORITHM=COPY zurueck. artikel_in_projekt wird also
+-- unter einem Metadata-Lock vollstaendig neu geschrieben und ist waehrenddessen
+-- fuer Schreibzugriffe gesperrt; die Anwendung startet erst, wenn Flyway durch
+-- ist. Die Tabelle waechst mit jeder Projektposition - je laenger sie im
+-- Betrieb ist, desto eher gehoert dafuer ein Wartungsfenster eingeplant.
 
 SET @skala := (SELECT numeric_scale FROM information_schema.columns
     WHERE table_schema = DATABASE()
