@@ -2529,12 +2529,12 @@ public class GeminiDokumentAnalyseService {
      * committet ist.
      *
      * <p>Frueher rief diese Klasse den {@code PreisUebernahmeService} direkt auf,
-     * der dafuer mit {@code REQUIRES_NEW} eine zweite Transaktion oeffnete. Das
-     * hatte zwei Haken: Rollte die Analyse anschliessend zurueck, blieb ein
-     * Preisstand fuer einen Beleg stehen, den es in der Datenbank nie gab. Und jedes
-     * Dokument belegte zwei Datenbankverbindungen gleichzeitig - bei einer
-     * Stapel-Neuanalyse wurde der Pool eng. Das Event greift erst nach dem Commit,
-     * also nur fuer Belege, die tatsaechlich gespeichert sind.
+     * der dafuer mit {@code REQUIRES_NEW} eine zweite Transaktion mitten in der
+     * laufenden Analyse oeffnete. Rollte die Analyse anschliessend zurueck, blieb
+     * ein Preisstand fuer einen Beleg stehen, den es in der Datenbank nie gab. Das
+     * Event greift erst nach dem Commit, also nur fuer Belege, die tatsaechlich
+     * gespeichert sind - und die zweite Verbindung wird erst gebraucht, wenn die
+     * Analyse mit ihrer Arbeit fertig ist.
      *
      * <p><b>Zugestellt wird nur mit laufender Transaktion.</b> Ohne sie verwirft
      * Spring das Event stillschweigend ({@code fallbackExecution} bleibt aus - eine

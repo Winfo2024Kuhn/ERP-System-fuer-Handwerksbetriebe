@@ -11,8 +11,6 @@ import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepos
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -103,37 +101,25 @@ public class PreisUebernahmeService {
     }
 
     /**
-     * Uebernimmt die Preise, sobald die Dokumentanalyse committet ist.
+     * Uebernimmt die Preise in einer eigenen Transaktion - der Einstieg fuer den
+     * {@link PreisUebernahmeEventListener} nach dem Commit der Dokumentanalyse.
      *
-     * <p>Vorher rief die Analyse diesen Dienst mitten in ihrem Lauf direkt auf, in
-     * einer zweiten Transaktion nebenher. Rollte die Analyse danach zurueck, stand
-     * im Preisverlauf ein Stand fuer einen Beleg, den es in der Datenbank gar nicht
-     * gibt; ausserdem hielt jedes Dokument zwei Datenbankverbindungen gleichzeitig,
-     * was bei einer Stapel-Neuanalyse den Verbindungspool eng werden liess. Nach
-     * dem Commit gibt es beide Probleme nicht mehr.
+     * <p>{@code REQUIRES_NEW} ist noetig, weil in der Phase {@code AFTER_COMMIT}
+     * keine Transaktion mehr laeuft, von der die Schreibzugriffe erben koennten.
+     * Die aeussere ist committet; ihre Verbindung wird erst in
+     * {@code afterCompletion} freigegeben, es sind also fuer einen kurzen Moment
+     * zwei Verbindungen gebunden - nicht mehr als vorher, aber auch nicht weniger.
      *
-     * <p>{@code REQUIRES_NEW} ist hier noetig, weil zu diesem Zeitpunkt keine
-     * Transaktion mehr laeuft, von der die Schreibzugriffe erben koennten.
-     *
-     * <p>Eine Ausnahme bleibt hier und landet im Log: Nach dem Commit ist der
-     * Aufrufer laengst fertig, es gibt niemanden mehr, der sie sinnvoll behandeln
-     * koennte. Was bis dahin geschrieben wurde, bleibt bestehen - genau wie
-     * {@link #uebernehmePreise} eine unbrauchbare Position nicht die ganze Rechnung
-     * kosten laesst.
+     * <p>Der Aufruf muss ueber die Bean-Grenze kommen, sonst greift der
+     * Transaktions-Proxy nicht. Deshalb liegt der Listener in einer eigenen
+     * Klasse; die Begruendung steht dort.
      */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void beiDokumentAnalyse(PreisUebernahmeEvent event) {
-        if (event == null) {
-            return;
-        }
-        try {
-            uebernehmePreise(event.lieferant(), event.quelle(), event.dokumentDatum(),
-                    event.belegnummer(), event.positionen());
-        } catch (RuntimeException e) {
-            log.error("Preisuebernahme nach der Dokumentanalyse fehlgeschlagen (Beleg {}): {}",
-                    event.belegnummer(), e.toString(), e);
-        }
+    public Ergebnis uebernehmePreiseInNeuerTransaktion(Lieferanten lieferant, PreisQuelle quelle, Date dokumentDatum,
+                                                       String belegnummer, List<Position> positionen) {
+        // Selbstaufruf ohne Proxy, aber ohne Folgen: uebernehmePreise traegt
+        // REQUIRED und wuerde ohnehin genau diese Transaktion mitbenutzen.
+        return uebernehmePreise(lieferant, quelle, dokumentDatum, belegnummer, positionen);
     }
 
     /**
@@ -141,12 +127,13 @@ public class PreisUebernahmeService {
      *
      * <p>Laeuft in der Transaktion des Aufrufers. Aus der Dokumentanalyse heraus
      * wird sie nicht mehr unmittelbar gerufen - dort meldet ein
-     * {@link PreisUebernahmeEvent} den Bedarf nur an, und {@link #beiDokumentAnalyse}
-     * bringt nach dem Commit die eigene Transaktion mit. Frueher sass die
-     * Propagation {@code REQUIRES_NEW} deshalb hier, damit ein Fehler in der
-     * Preisuebernahme die Analyse nicht mitreisst. Das erledigt jetzt die
-     * Reihenfolge: Wenn hier ueberhaupt etwas passiert, ist die Analyse bereits
-     * gespeichert.
+     * {@link PreisUebernahmeEvent} den Bedarf nur an, und der
+     * {@link PreisUebernahmeEventListener} bringt nach dem Commit ueber
+     * {@link #uebernehmePreiseInNeuerTransaktion} die eigene Transaktion mit.
+     * Frueher sass die Propagation {@code REQUIRES_NEW} deshalb hier, damit ein
+     * Fehler in der Preisuebernahme die Analyse nicht mitreisst. Das erledigt
+     * jetzt die Reihenfolge: Wenn hier ueberhaupt etwas passiert, ist die Analyse
+     * bereits gespeichert.
      *
      * @param lieferant      Absender des Dokuments; ohne ihn ist keine Zuordnung moeglich
      * @param quelle         Herkunft des Preises, macht ihn in der Historie nachvollziehbar

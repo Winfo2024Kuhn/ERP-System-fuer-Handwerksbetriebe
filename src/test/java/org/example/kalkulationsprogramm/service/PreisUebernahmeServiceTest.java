@@ -18,19 +18,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
-import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -601,50 +595,6 @@ class PreisUebernahmeServiceTest {
         String notiz = aktuellerStand(artikel, lieferant).getNotiz();
         assertEquals(255, notiz.length());
         assertTrue(notiz.startsWith("Beleg XXX"));
-    }
-
-    // ------------------------------------------------------------------
-    // Erst der Commit der Analyse, dann die Preise
-    // ------------------------------------------------------------------
-
-    @Test
-    void listenerReichtDieEventfelderDurch() {
-        PreisUebernahmeService dienst = spy(new PreisUebernahmeService(
-                mock(LieferantenArtikelPreiseRepository.class)));
-        doReturn(new PreisUebernahmeService.Ergebnis(1, 0)).when(dienst)
-                .uebernehmePreise(any(), any(), any(), any(), any());
-
-        Lieferanten lieferant = new Lieferanten();
-        lieferant.setLieferantenname("Musterlieferant Event");
-        Date belegdatum = new Date();
-        List<PreisUebernahmeService.Position> positionen =
-                List.of(position("EV-1", "12.00", "1 C62", "C62"));
-
-        dienst.beiDokumentAnalyse(new PreisUebernahmeEvent(lieferant, PreisQuelle.ANGEBOT_EMAIL,
-                belegdatum, "AN-2026-007", positionen));
-
-        verify(dienst).uebernehmePreise(lieferant, PreisQuelle.ANGEBOT_EMAIL, belegdatum,
-                "AN-2026-007", positionen);
-    }
-
-    /**
-     * Der Listener laeuft nach dem Commit der Analyse - dort gibt es niemanden
-     * mehr, der eine Ausnahme sinnvoll behandeln koennte. Sie darf deshalb nicht
-     * nach aussen durchschlagen.
-     */
-    @Test
-    void ausnahmeImListenerSchlaegtNichtNachAussenDurch() {
-        PreisUebernahmeService dienst = spy(new PreisUebernahmeService(
-                mock(LieferantenArtikelPreiseRepository.class)));
-        doThrow(new IllegalStateException("Verbindung weggebrochen")).when(dienst)
-                .uebernehmePreise(any(), any(), any(), any(), any());
-
-        Lieferanten lieferant = new Lieferanten();
-        lieferant.setLieferantenname("Musterlieferant Absturz");
-        PreisUebernahmeEvent event = new PreisUebernahmeEvent(lieferant, PreisQuelle.RECHNUNG,
-                new Date(), "RE-2026-0099", List.of(position("EV-2", "12.00", "1 C62", "C62")));
-
-        assertDoesNotThrow(() -> dienst.beiDokumentAnalyse(event));
     }
 
     // ------------------------------------------------------------------
