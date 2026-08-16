@@ -63,7 +63,6 @@ public class OfferPriceService {
             OfferItem finalItem = item;
             BigDecimal finalPrice = price;
 
-            AtomicBoolean priceSet = new AtomicBoolean(false);
             AtomicBoolean skippedFlag = new AtomicBoolean(false);
             AtomicBoolean savedFlag = new AtomicBoolean(false);
 
@@ -93,7 +92,6 @@ public class OfferPriceService {
                                             preis.neuerPreisstand(finalPrice, PreisQuelle.ANGEBOT_EMAIL);
                                     neuerStand.setPreisAenderungsdatum(mailDate);
                                     artikel.getArtikelpreis().add(neuerStand);
-                                    priceSet.set(true);
                                     try {
                                         artikelRepository.save(artikel);
                                         savedFlag.set(true);
