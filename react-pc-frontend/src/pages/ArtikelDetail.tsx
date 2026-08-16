@@ -13,12 +13,14 @@ import { useToast } from "../components/ui/toast";
 import { TiptapEditor } from "../components/TiptapEditor";
 import { preisHinweisText, type PreisHinweis } from "../components/artikel/preisHinweis";
 import { ArtikelDokumente } from "../components/artikel/ArtikelDokumente";
+// Dieselbe Waehrungsformatierung wie in der Trefferliste - inklusive der
+// zusaetzlichen Nachkommastellen bei Kleinstpreisen (Schrauben, Muttern).
+import { formatCurrency as formatEuro } from "../components/artikel/formatCurrency";
 import type { Artikel, ArtikelDetail as ArtikelDetailData, ArtikelPreisstand } from "../types";
 
+/** Wie in der Liste - nur steht hier ein Strich, wo gar kein Preis gepflegt ist. */
 const formatCurrency = (val?: number) =>
-    val === undefined || val === null
-        ? "—"
-        : new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(val);
+    val === undefined || val === null ? "—" : formatEuro(val);
 
 const formatDate = (dateStr?: string) =>
     dateStr ? new Date(dateStr).toLocaleDateString("de-DE") : "—";
@@ -604,7 +606,10 @@ function Preisverlauf({ staende }: { staende: ArtikelPreisstand[] }) {
     const yMin = Math.max(0, pMin - pSpanne * 0.15);
     const yMax = pMax + pSpanne * 0.15;
 
-    const B = 720, H = 240, padL = 64, padR = 16, padT = 16, padB = 36;
+    // padL traegt die Preisbeschriftung der Achse. Sie ist bei Kleinstpreisen
+    // deutlich breiter ("0,0043 €" statt "0,00 €"), deshalb der Zuschlag -
+    // sonst laeuft die Beschriftung links aus dem Diagramm heraus.
+    const B = 720, H = 240, padL = 84, padR = 16, padT = 16, padB = 36;
     const x = (t: number) => tMax === tMin
         ? padL + (B - padL - padR) / 2
         : padL + ((t - tMin) / (tMax - tMin)) * (B - padL - padR);
@@ -628,9 +633,9 @@ function Preisverlauf({ staende }: { staende: ArtikelPreisstand[] }) {
                                 <line x1={padL} y1={py} x2={B - padR} y2={py} stroke="#e2e8f0" strokeWidth="1" />
                                 <text x={padL - 8} y={py + 4} textAnchor="end"
                                     className="fill-slate-500" style={{ fontSize: 11 }}>
-                                    {new Intl.NumberFormat("de-DE", {
-                                        style: "currency", currency: "EUR", maximumFractionDigits: 2,
-                                    }).format(wert)}
+                                    {/* Bei Kleinstpreisen stuenden hier sonst fuenfmal
+                                        "0,00 EUR" untereinander - die Achse waere blind. */}
+                                    {formatCurrency(wert)}
                                 </text>
                             </g>
                         );
