@@ -187,6 +187,84 @@ class ArtikelImportServiceTest {
                 "1,83 EUR je 100 Stueck muessen als 0,0183 EUR je Stueck ankommen, nicht als 0,02 EUR");
     }
 
+    /**
+     * Der Katalog wird regelmaessig neu eingelesen. Steht in der Datei derselbe
+     * Preis wie in der Datenbank, darf daraus kein Eintrag im Preisverlauf werden -
+     * in die Historie gehoeren nur echte Preisaenderungen.
+     *
+     * <p>Frueher verglich der Import per {@code equals}, und das bezieht die Skala
+     * mit ein: {@code parseBigDecimal("1,83")} liefert zwei Nachkommastellen, seit
+     * Migration V359 liest Hibernate die Spalte als {@code DECIMAL(19,4)} und damit
+     * als {@code 1.8300} zurueck. Jeder Reimport legte so fuer jeden der rund 9.900
+     * Artikel eine Dublette an.
+     */
+    @Test
+    void testImportiereCsv_ZweiterImportMitGleichemPreisLegtKeinenZweitenPreisstandAn() {
+        String csvContent = "externeArtikelnummer;preis\n321;1,83";
+        Map<String, String> mapping = new HashMap<>();
+        mapping.put("externeArtikelnummer", "externeArtikelnummer");
+        mapping.put("preis", "preis");
+
+        Lieferanten lieferant = lieferantMitId(1L);
+        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(artikelRepository.findByExterneArtikelnummerAndLieferantId("321", 1L)).thenReturn(Optional.empty());
+
+        artikelImportService.importiereCsv(
+                new MockMultipartFile("file", "katalog.csv", "text/csv", csvContent.getBytes()),
+                "TestLieferant", mapping, null, false);
+
+        verify(artikelRepository).save(artikelCaptor.capture());
+        Artikel bestand = artikelCaptor.getValue();
+        assertEquals(1, bestand.getArtikelpreis().size());
+
+        // So kommt der Wert nach dem Speichern aus der Datenbank zurueck: dieselbe
+        // Zahl, aber mit der Skala der Spalte.
+        bestand.getArtikelpreis().getFirst().setPreis(new BigDecimal("1.8300"));
+        when(artikelRepository.findByExterneArtikelnummerAndLieferantId("321", 1L))
+                .thenReturn(Optional.of(bestand));
+
+        artikelImportService.importiereCsv(
+                new MockMultipartFile("file", "katalog.csv", "text/csv", csvContent.getBytes()),
+                "TestLieferant", mapping, null, false);
+
+        assertEquals(1, bestand.getArtikelpreis().size(),
+                "Ein unveraenderter Preis darf keinen zweiten Preisstand anlegen");
+        assertTrue(bestand.getArtikelpreis().getFirst().isAktuell());
+    }
+
+    @Test
+    void testImportiereCsv_GeaenderterPreisSchiebtDenAltenStandInDieHistorie() {
+        Map<String, String> mapping = new HashMap<>();
+        mapping.put("externeArtikelnummer", "externeArtikelnummer");
+        mapping.put("preis", "preis");
+
+        Lieferanten lieferant = lieferantMitId(1L);
+        Artikel bestand = new Artikel();
+        bestand.setArtikelpreis(new ArrayList<>());
+        LieferantenArtikelPreise alt = new LieferantenArtikelPreise();
+        alt.setArtikel(bestand);
+        alt.setLieferant(lieferant);
+        alt.setExterneArtikelnummer("321");
+        alt.setPreis(new BigDecimal("1.8300"));
+        bestand.getArtikelpreis().add(alt);
+
+        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(artikelRepository.findByExterneArtikelnummerAndLieferantId("321", 1L))
+                .thenReturn(Optional.of(bestand));
+
+        artikelImportService.importiereCsv(
+                new MockMultipartFile("file", "katalog.csv", "text/csv",
+                        "externeArtikelnummer;preis\n321;1,95".getBytes()),
+                "TestLieferant", mapping, null, false);
+
+        assertEquals(2, bestand.getArtikelpreis().size(),
+                "Eine echte Preisaenderung gehoert in den Verlauf");
+        assertFalse(alt.isAktuell(), "Der bisherige Stand ist nicht mehr der gueltige");
+        LieferantenArtikelPreise neu = bestand.getArtikelpreis().get(1);
+        assertTrue(neu.isAktuell());
+        assertEquals(0, new BigDecimal("1.95").compareTo(neu.getPreis()));
+    }
+
     @Test
     void testImportiereCsv_GleicheArtikelnummerBeiZweiLieferantenErzeugtGetrennteArtikel() {
         String csvContentA = "externeArtikelnummer;preis\n999;12,00";

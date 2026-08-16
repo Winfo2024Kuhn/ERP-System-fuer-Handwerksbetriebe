@@ -247,9 +247,19 @@ public class ArtikelImportService {
                         lap.setLieferant(lieferant);
                         lap.setQuelle(PreisQuelle.CSV_IMPORT);
                         currentArtikel.getArtikelpreis().add(lap);
-                    } else if (preis != null && !preis.equals(lap.getPreis())) {
+                    } else if (lap.getPreis() == null || lap.getPreis().compareTo(preis) != 0) {
                         // Preis hat sich geaendert: bisherigen Stand in die Historie
                         // schieben und einen neuen anlegen.
+                        //
+                        // Vergleich per compareTo statt equals: equals bezieht die
+                        // Skala mit ein. parseBigDecimal("1,83") liefert zwei
+                        // Nachkommastellen, seit Migration V359 liest Hibernate die
+                        // Spalte aber als DECIMAL(19,4) und damit als 1.8300 zurueck -
+                        // fuer equals zwei verschiedene Zahlen. Jeder erneute Import
+                        // derselben Datei haette so fuer jeden der rund 9.900 Artikel
+                        // eine Dublette in den Preisverlauf geschrieben, obwohl sich
+                        // nichts geaendert hat. Genauso machen es OfferPriceService
+                        // und PreisUebernahmeService.
                         LieferantenArtikelPreise nachfolger = lap.neuerPreisstand(preis, PreisQuelle.CSV_IMPORT);
                         currentArtikel.getArtikelpreis().add(nachfolger);
                         lap = nachfolger;
