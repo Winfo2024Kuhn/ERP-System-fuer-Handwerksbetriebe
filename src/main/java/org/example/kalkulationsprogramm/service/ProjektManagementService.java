@@ -1314,6 +1314,7 @@ ProjektManagementService {
             String kundenummer,
             String auftragsnummer,
             LocalDate datum,
+            Integer jahr,
             Boolean bezahlt,
             Boolean abgeschlossen,
             int page,
@@ -1359,6 +1360,13 @@ ProjektManagementService {
             if (datum != null) {
                 predicates.add(criteriaBuilder.equal(root.get("abschlussdatum"), datum));
             }
+            // Jahresfilter auf dem Anlegedatum. Achtung: Das ist nicht zwingend das Jahr
+            // aus der Auftragsnummer – Anlegedatum und Nummern-Vorschlag sind getrennt
+            // setzbar, und Bestandsdaten stammen aus dem Alt-Import.
+            if (jahr != null) {
+                predicates.add(criteriaBuilder.between(root.get("anlegedatum"),
+                        LocalDate.of(jahr, 1, 1), LocalDate.of(jahr, 12, 31)));
+            }
             if (bezahlt != null) {
                 predicates.add(criteriaBuilder.equal(root.get("bezahlt"), bezahlt));
             }
@@ -1376,6 +1384,12 @@ ProjektManagementService {
                 .map(this::mappeFuerListe)
                 .collect(Collectors.toList());
         return new PageImpl<>(projekte, pageRequest, result.getTotalElements());
+    }
+
+    /** Alle Jahre mit angelegten Projekten – füllt das Jahres-Dropdown der Projektsuche. */
+    public List<Integer> verfuegbareAnlegeJahre() {
+        List<Integer> jahre = projektRepository.findDistinctAnlegedatumJahre();
+        return jahre != null ? jahre : List.of();
     }
 
     /**

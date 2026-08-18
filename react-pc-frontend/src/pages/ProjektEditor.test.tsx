@@ -39,6 +39,9 @@ function mockFetch() {
         if (url.startsWith('/api/projekte/freigabe-status')) {
             return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
         }
+        if (url.startsWith('/api/projekte/jahre')) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve([2026, 2025]) });
+        }
         return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
     });
 }
@@ -123,6 +126,44 @@ describe('ProjektEditor – Projektliste', () => {
             expect(projektlistenAufrufe(fetchMock).some(url => url.includes('abgeschlossen=false'))).toBe(true);
         });
     });
+
+    it('filtert über das Jahres-Dropdown auf das gewählte Anlegejahr', async () => {
+        const user = userEvent.setup();
+        renderProjektEditor();
+
+        await waitFor(() => expect(screen.getByText('Dachsanierung Musterweg')).toBeInTheDocument());
+
+        // Das Jahres-Dropdown zeigt als Platzhalter "Alle Jahre" und wird aus
+        // /api/projekte/jahre befüllt (im Mock: 2026 und 2025).
+        await user.click(screen.getByText('Alle Jahre'));
+        const dropdown = await screen.findByRole('listbox');
+        await user.click(within(dropdown).getByRole('option', { name: '2025' }));
+
+        await waitFor(() => {
+            expect(projektlistenAufrufe(fetchMock).some(url => url.includes('jahr=2025'))).toBe(true);
+        });
+    });
+
+    it('setzt den Jahresfilter beim Zurücksetzen wieder auf alle Jahre', async () => {
+        const user = userEvent.setup();
+        renderProjektEditor();
+
+        await waitFor(() => expect(screen.getByText('Dachsanierung Musterweg')).toBeInTheDocument());
+
+        await user.click(screen.getByText('Alle Jahre'));
+        const dropdown = await screen.findByRole('listbox');
+        await user.click(within(dropdown).getByRole('option', { name: '2025' }));
+        await waitFor(() => {
+            expect(projektlistenAufrufe(fetchMock).some(url => url.includes('jahr=2025'))).toBe(true);
+        });
+
+        await user.click(screen.getByRole('button', { name: /Filter zurücksetzen/i }));
+
+        await waitFor(() => {
+            const alle = projektlistenAufrufe(fetchMock);
+            expect(alle[alle.length - 1]).not.toContain('jahr=');
+        });
+    });
 });
 
 describe('ProjektEditor – Pagination', () => {
@@ -161,6 +202,7 @@ describe('ProjektEditor – Pagination', () => {
             if (typeof url !== 'string') return antwort({});
             if (url.startsWith('/api/last-accessed/')) return antwort({});
             if (url.startsWith('/api/projekte/freigabe-status')) return antwort({});
+            if (url.startsWith('/api/projekte/jahre')) return antwort([2026]);
             if (url.startsWith('/api/projekte?')) {
                 const params = new URLSearchParams(url.substring(url.indexOf('?') + 1));
                 const seite = Number(params.get('page') ?? 0);

@@ -132,6 +132,22 @@ class ProjektManagementServiceTest {
     }
 
     @Test
+    void verfuegbareAnlegeJahreReichtDieJahreAusDemRepositoryDurch() {
+        when(projektRepository.findDistinctAnlegedatumJahre()).thenReturn(List.of(2026, 2025, 2024));
+
+        assertEquals(List.of(2026, 2025, 2024), service.verfuegbareAnlegeJahre());
+    }
+
+    @Test
+    void verfuegbareAnlegeJahreLiefertLeereListeStattNull() {
+        // Absicherung des null-Fallbacks: Das Jahres-Dropdown im Frontend erwartet
+        // immer eine Liste, nie null.
+        when(projektRepository.findDistinctAnlegedatumJahre()).thenReturn(null);
+
+        assertEquals(List.of(), service.verfuegbareAnlegeJahre());
+    }
+
+    @Test
     void calculatesPricePerMeterForKgArticle() {
         Projekt projekt = new Projekt();
         projekt.setArtikelInProjekt(new ArrayList<>());

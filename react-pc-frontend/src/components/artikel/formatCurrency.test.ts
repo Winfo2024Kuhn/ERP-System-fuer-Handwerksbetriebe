@@ -5,7 +5,7 @@ import { formatCurrency, nachkommastellenFuerPreis } from "./formatCurrency";
  * Intl setzt zwischen Zahl und Waehrungszeichen ein schmales geschuetztes
  * Leerzeichen (U+00A0). Fuer die Erwartungen unten stoert das nur.
  */
-const ohneSonderleerzeichen = (text: string) => text.replace(/ /g, " ");
+const ohneSonderleerzeichen = (text: string) => text.replace(/\u00A0/g, " ");
 
 describe("nachkommastellenFuerPreis", () => {
     it("laesst gewoehnliche Preise bei Cent-Genauigkeit", () => {

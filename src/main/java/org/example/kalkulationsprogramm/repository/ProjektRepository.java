@@ -115,6 +115,15 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
 
         List<Projekt> findByAnlegedatumBetween(LocalDate start, LocalDate ende);
 
+        /** Alle Jahre, in denen Projekte angelegt wurden – für den Jahresfilter der Projektsuche. */
+        @Query("""
+                        SELECT DISTINCT function('YEAR', p.anlegedatum)
+                        FROM Projekt p
+                        WHERE p.anlegedatum IS NOT NULL
+                        ORDER BY function('YEAR', p.anlegedatum) DESC
+                        """)
+        List<Integer> findDistinctAnlegedatumJahre();
+
         interface IdEmailOnly {
                 Long getId();
 
