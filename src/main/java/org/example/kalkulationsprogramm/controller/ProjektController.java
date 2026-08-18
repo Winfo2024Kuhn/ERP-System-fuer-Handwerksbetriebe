@@ -79,13 +79,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.multipart.MultipartFile;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
 
 @RestController
 @RequestMapping("/api/projekte")
 @AllArgsConstructor
+@Validated
 public class ProjektController {
     private static final int MAX_PAGE_SIZE = 50;
 
@@ -1087,6 +1091,9 @@ public class ProjektController {
             @RequestParam(required = false) String kundennummer,
             @RequestParam(required = false) String auftragsnummer,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate datum,
+            // Range-Guard: ein Jahr wie 2000000000 wuerde erst in LocalDate.of() als
+            // DateTimeException (HTTP 500) knallen. 1900 laesst Luft fuer Altdaten-Importe.
+            @RequestParam(required = false) @Min(1900) @Max(2100) Integer jahr,
             @RequestParam(required = false) Boolean bezahlt,
             @RequestParam(required = false) Boolean abgeschlossen,
             @RequestParam(value = "page", defaultValue = "0") int page,
@@ -1101,6 +1108,7 @@ public class ProjektController {
                 kundennummer,
                 auftragsnummer,
                 datum,
+                jahr,
                 bezahlt,
                 abgeschlossen,
                 pageIndex,
@@ -1111,6 +1119,12 @@ public class ProjektController {
         response.setSeite(projekte.getNumber());
         response.setSeitenGroesse(projekte.getSize());
         return ResponseEntity.ok(response);
+    }
+
+    /** Alle Jahre mit angelegten Projekten – für das Jahres-Dropdown der Projektsuche. */
+    @GetMapping("/jahre")
+    public List<Integer> verfuegbareJahre() {
+        return projektManagementService.verfuegbareAnlegeJahre();
     }
 
     /** Liste aller Projekte, die noch nicht auf "Beendet" gesetzt sind – wird im Browser als Vorschau angezeigt. */
@@ -1157,7 +1171,7 @@ public class ProjektController {
             return ResponseEntity.ok(List.of());
         }
         Page<ProjektResponseDto> projekte = projektManagementService.findeProjekteMitFilter(
-                q.trim(), null, null, null, null, null, null, null, 0, 10);
+                q.trim(), null, null, null, null, null, null, null, null, 0, 10);
         List<ProjektSucheDto> results = projekte.getContent().stream()
                 .map(p -> new ProjektSucheDto(p.getId(), p.getBauvorhaben(), p.getAuftragsnummer(), p.getKunde(), p.isAbgeschlossen()))
                 .toList();

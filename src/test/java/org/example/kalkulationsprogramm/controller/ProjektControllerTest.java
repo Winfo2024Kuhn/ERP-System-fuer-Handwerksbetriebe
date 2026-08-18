@@ -117,6 +117,7 @@ class ProjektControllerTest {
                                 isNull(),
                                 isNull(),
                                 isNull(),
+                                isNull(),
                                 eq(0),
                                 eq(50))).thenReturn(page);
 
@@ -138,6 +139,7 @@ class ProjektControllerTest {
                                 isNull(),
                                 isNull(),
                                 isNull(),
+                                isNull(),
                                 eq(0),
                                 eq(50));
         }
@@ -146,7 +148,8 @@ class ProjektControllerTest {
         void getAlleProjekte_filtersInArbeitByAbgeschlossenStatus() throws Exception {
                 Page<ProjektResponseDto> page = new PageImpl<>(List.of(), PageRequest.of(0, 50), 0);
                 when(projektManagementService.findeProjekteMitFilter(
-                                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(false), eq(0), eq(50)))
+                                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
+                                eq(false), eq(0), eq(50)))
                                 .thenReturn(page);
 
                 mockMvc.perform(get("/api/projekte").param("abgeschlossen", "false"))
@@ -154,7 +157,56 @@ class ProjektControllerTest {
                                 .andExpect(jsonPath("$.gesamt").value(0));
 
                 verify(projektManagementService).findeProjekteMitFilter(
-                                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(false), eq(0), eq(50));
+                                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
+                                eq(false), eq(0), eq(50));
+        }
+
+        @Test
+        void getAlleProjekte_reichtDenJahresfilterAnDenServiceDurch() throws Exception {
+                Page<ProjektResponseDto> page = new PageImpl<>(List.of(), PageRequest.of(0, 50), 0);
+                when(projektManagementService.findeProjekteMitFilter(
+                                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(2025), isNull(),
+                                isNull(), eq(0), eq(50)))
+                                .thenReturn(page);
+
+                mockMvc.perform(get("/api/projekte").param("jahr", "2025"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.gesamt").value(0));
+
+                verify(projektManagementService).findeProjekteMitFilter(
+                                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(2025), isNull(),
+                                isNull(), eq(0), eq(50));
+        }
+
+        @Test
+        void getAlleProjekte_lehntUnbrauchbaresJahrAb() throws Exception {
+                // Kein gültiges Integer-Jahr (z.B. SQL-Injection-Versuch) → 400 statt 500.
+                mockMvc.perform(get("/api/projekte").param("jahr", "'; DROP TABLE projekt; --"))
+                                .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void getAlleProjekte_lehntJahreAusserhalbDesGueltigenBereichsAb() throws Exception {
+                // 2000000000 wäre ein gültiges Integer, würde aber ohne @Min/@Max erst in
+                // LocalDate.of() als DateTimeException (HTTP 500) hochgehen. Negative Werte
+                // und 0 sind ebenfalls kein sinnvolles Anlegejahr.
+                for (String jahr : List.of("2000000000", "-1", "0", "1899", "2101")) {
+                        mockMvc.perform(get("/api/projekte").param("jahr", jahr))
+                                        .andExpect(status().isBadRequest());
+                }
+        }
+
+        @Test
+        void verfuegbareJahre_liefertDieJahreAbsteigend() throws Exception {
+                when(projektManagementService.verfuegbareAnlegeJahre()).thenReturn(List.of(2026, 2025, 2024));
+
+                mockMvc.perform(get("/api/projekte/jahre"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$[0]").value(2026))
+                                .andExpect(jsonPath("$[1]").value(2025))
+                                .andExpect(jsonPath("$[2]").value(2024));
+
+                verify(projektManagementService).verfuegbareAnlegeJahre();
         }
 
         @Test

@@ -3545,7 +3545,18 @@ export default function ProjektEditor() {
         q: "",
         kunde: "",
         status: "", // "in-arbeit", "abgeschlossen", ""
+        jahr: "",
     });
+
+    // Jahre mit angelegten Projekten fürs Jahres-Dropdown – gleiche Mechanik wie
+    // auf der Anfragen-Seite (/api/anfragen/jahre).
+    const [verfuegbareJahre, setVerfuegbareJahre] = useState<number[]>([]);
+    useEffect(() => {
+        fetch('/api/projekte/jahre')
+            .then(res => (res.ok ? res.json() : []))
+            .then(data => setVerfuegbareJahre(Array.isArray(data) ? data : []))
+            .catch(() => setVerfuegbareJahre([]));
+    }, []);
 
     // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen in den Filterfeldern
     // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte Antwort
@@ -3565,6 +3576,7 @@ export default function ProjektEditor() {
             if (filters.kunde) params.set("kunde", filters.kunde);
             if (filters.status === 'in-arbeit') params.set("abgeschlossen", "false");
             if (filters.status === 'abgeschlossen') params.set("abgeschlossen", "true");
+            if (filters.jahr) params.set("jahr", filters.jahr);
 
             const [res, lastAccessed] = await Promise.all([
                 fetch(`/api/projekte?${params.toString()}`),
@@ -3677,7 +3689,7 @@ export default function ProjektEditor() {
     };
 
     const handleResetFilters = () => {
-        setFilters({ q: "", kunde: "", status: "" });
+        setFilters({ q: "", kunde: "", status: "", jahr: "" });
         setPage(0);
     };
 
@@ -3838,7 +3850,7 @@ export default function ProjektEditor() {
         >
             {/* Filter - volle Breite */}
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100">
-                <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Freitext</label>
                         <input
@@ -3871,6 +3883,22 @@ export default function ProjektEditor() {
                             value={filters.status}
                             onChange={(val) => handleFilterChange("status", val)}
                             placeholder="Alle"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Jahr</label>
+                        <Select
+                            className="mt-1"
+                            options={[
+                                { value: "", label: "Alle Jahre" },
+                                ...verfuegbareJahre.map(jahr => ({
+                                    value: String(jahr),
+                                    label: String(jahr)
+                                }))
+                            ]}
+                            value={filters.jahr}
+                            onChange={(val) => handleFilterChange("jahr", val)}
+                            placeholder="Alle Jahre"
                         />
                     </div>
                     <div className="flex items-end gap-3">
