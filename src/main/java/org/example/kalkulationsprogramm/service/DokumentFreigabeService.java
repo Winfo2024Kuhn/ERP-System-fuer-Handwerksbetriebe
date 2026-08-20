@@ -1000,10 +1000,11 @@ public class DokumentFreigabeService
         // AnfrageFunnelService) — das darf die bereits gespeicherte Annahme nie
         // kippen. versendeNachAnnahme laedt AB + Freigabe frisch, weil die
         // Entities dieses Requests nach dem Commit detached sind. Empfaenger
-        // ist die Adresse aus der Freigabe — an die ging auch das Angebot.
+        // kommt bevorzugt aus der Freigabe, sonst aus der Kundentabelle
+        // (siehe ermittleAutoVersandEmpfaenger).
         if (ab != null)
         {
-            String empfaenger = freigabe.getKundeEmail();
+            String empfaenger = ermittleAutoVersandEmpfaenger(freigabe, ab);
             if (empfaenger != null && !empfaenger.isBlank()
                     && TransactionSynchronizationManager.isSynchronizationActive())
             {
@@ -1055,7 +1056,48 @@ public class DokumentFreigabeService
                 }
                 catch (Exception ignored) { /* Versand-Fehler werden im Service geloggt */ }
             }
+            else
+            {
+                // Weder die Freigabe noch die Kundentabelle (Fallback, siehe
+                // ermittleAutoVersandEmpfaenger) liefern eine Adresse. Die AB existiert
+                // bereits (siehe oben) und bleibt ohne manuelles Zutun unversendet liegen —
+                // das muss sichtbar sein, sonst faellt es erst auf, wenn der Kunde nach der
+                // AB fragt (Issue: Auto-AB-Versand ohne jedes Log verschwunden, weil weder
+                // Freigabe noch Kunde eine E-Mail-Adresse hatten).
+                log.warn("Auto-AB-Versand übersprungen: keine Adresse in Freigabe UND Kunde "
+                        + "hinterlegt für AB {}", ab.getDokumentNummer());
+            }
         }
+    }
+
+    /**
+     * Ermittelt die Empfänger-Adresse für den automatischen AB-Versand. Bevorzugt die in der
+     * Freigabe hinterlegte Adresse. Die stammt aus dem "An:"-Feld, das beim Öffnen des
+     * Versand-Dialogs mit der zu diesem Zeitpunkt in Anfrage/Projekt/Kunde hinterlegten Adresse
+     * vorbelegt wird ({@link #erstelleFreigabeBlockFuerDokument} übernimmt diesen Wert 1:1) —
+     * wurde dort keine Adresse eingetragen (weil Anfrage/Projekt/Kunde beim Versand keine E-Mail
+     * hatten), bleibt die Freigabe leer. Fällt in diesem Fall auf den am Dokument verknüpften
+     * Kunden zurück (jedes AusgangsGeschaeftsDokument hat einen, siehe
+     * {@link AusgangsGeschaeftsDokument#getKunde()} — "Adresse kommt immer aus Kunde, nicht aus
+     * Projekt/Anfrage"), damit die bereits erzeugte AB nicht lautlos ohne Versand liegen bleibt.
+     * Deckt nicht den Fall ab, dass der Anwender den Vorschlag im Dialog manuell auf eine andere
+     * Adresse geändert hat — die landet nirgends in der Freigabe (siehe Warnung im Review).
+     */
+    private String ermittleAutoVersandEmpfaenger(DokumentFreigabe freigabe, AusgangsGeschaeftsDokument ab)
+    {
+        String empfaenger = freigabe.getKundeEmail();
+        if (empfaenger != null && !empfaenger.isBlank())
+        {
+            return empfaenger;
+        }
+        if (ab.getKunde() != null && ab.getKunde().getKundenEmails() != null)
+        {
+            return ab.getKunde().getKundenEmails().stream()
+                    .filter(e -> e != null && !e.isBlank())
+                    .findFirst()
+                    .orElse(null);
+        }
+        return null;
     }
 
     /**
