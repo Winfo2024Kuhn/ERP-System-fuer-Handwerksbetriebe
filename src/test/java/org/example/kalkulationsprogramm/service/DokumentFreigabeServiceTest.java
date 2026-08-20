@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.domain.FreigabeQuellTyp;
 import org.example.kalkulationsprogramm.domain.FreigabeStatus;
+import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -552,6 +553,110 @@ class DokumentFreigabeServiceTest {
 
         verify(autoAuftragsbestaetigungVersandService).versendeNachAnnahme(
                 eq(777L), eq("max@example.de"), eq("uuid-async-ab"));
+    }
+
+    /**
+     * Regression (Produktivfall 19.08.2026): Anfrage/Projekt/Kunde hatten beim Versenden des
+     * Angebots keine E-Mail hinterlegt, das "An:"-Feld im Versand-Dialog blieb leer und damit
+     * auch freigabe.kundeEmail (siehe erstelleFreigabeBlockFuerDokument). Der Auto-AB-Versand
+     * lief bisher lautlos ins Leere — kein Log, keine Mail. Die Kundentabelle liefert hier den
+     * Fallback: jedes AusgangsGeschaeftsDokument hat einen Kunden (Rechnungsadresse).
+     *
+     * <p>Akzeptanz-E-Mail (vom Kunden im Freigabe-Formular eingetippt, client-geliefert) und
+     * Kunden-Stammdaten-Adresse sind bewusst UNTERSCHIEDLICH: {@link #akzeptiere} darf niemals
+     * die client-gelieferte Adresse als Versand-Empfänger nutzen (das wäre "beliebige Adresse
+     * per Freigabe-Link"), sondern ausschließlich die serverseitige Kundentabelle.</p>
+     */
+    @Test
+    void akzeptiere_ohneKundeEmailAnDerFreigabe_faelltAufKundentabelleZurueck() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-ohne-freigabe-email");
+        pending.setKundeEmail(null); // Anfrage/Projekt/Kunde hatten beim Versand keine E-Mail
+        when(repository.findByUuid("uuid-ohne-freigabe-email")).thenReturn(Optional.of(pending));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Kunde kunde = new Kunde();
+        kunde.setId(9L);
+        kunde.setKundenEmails(List.of("stammdaten@example.de"));
+
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angebot.setKunde(kunde);
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+        when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setId(778L);
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setKunde(kunde);
+        when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(ab);
+
+        org.mockito.Mockito.doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            // "klick@example.de" ist die vom Kunden im Freigabe-Formular eingetippte Adresse —
+            // die darf NICHT im Versand landen, nur "stammdaten@example.de" aus der Kundentabelle.
+            service.akzeptiere("uuid-ohne-freigabe-email", "1.2.3.4", "UA", "klick@example.de",
+                    "Max", "Mustermann", "Max Mustermann", null);
+
+            for (org.springframework.transaction.support.TransactionSynchronization sync
+                    : org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(autoAuftragsbestaetigungVersandService).versendeNachAnnahme(
+                eq(778L), eq("stammdaten@example.de"), eq("uuid-ohne-freigabe-email"));
+    }
+
+    /**
+     * Gegenstück zum Fallback-Test oben: Liefert AUCH die Kundentabelle keine Adresse (kein
+     * Kunde verknüpft oder Kunde ohne E-Mail), muss der Versand ausbleiben — aber sichtbar
+     * (siehe log.warn in erzeugeAutoAuftragsbestaetigungWennAngebot), statt wie vor dem Fix
+     * komplett unbemerkt zu verschwinden.
+     */
+    @Test
+    void akzeptiere_ohneKundeEmailUndOhneKunde_versendetNichtUndWirftNicht() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-ganz-ohne-email");
+        pending.setKundeEmail(null);
+        when(repository.findByUuid("uuid-ganz-ohne-email")).thenReturn(Optional.of(pending));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        // Kein Kunde verknuepft — Extremfall, den es laut Fachlichkeit eigentlich nicht geben
+        // sollte (Kunde ist bei Anfrage/Projekt Pflicht), aber ermittleAutoVersandEmpfaenger
+        // muss auch dann ohne NPE sauber "keine Adresse" liefern.
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+        when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setId(779L);
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setDokumentNummer("AB-2026-0001");
+        when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(ab);
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.akzeptiere("uuid-ganz-ohne-email", "1.2.3.4", "UA", "klick@example.de",
+                    "Max", "Mustermann", "Max Mustermann", null);
+
+            for (org.springframework.transaction.support.TransactionSynchronization sync
+                    : org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(autoAuftragsbestaetigungVersandService, org.mockito.Mockito.never())
+                .versendeNachAnnahme(any(), any(), any());
+        verify(taskExecutor, org.mockito.Mockito.never()).execute(any());
     }
 
     /**
