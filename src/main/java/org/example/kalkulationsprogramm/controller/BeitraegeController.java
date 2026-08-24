@@ -1,6 +1,9 @@
 package org.example.kalkulationsprogramm.controller;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.Beitraege.BeitragDetailDto;
@@ -40,8 +43,10 @@ import java.util.Map;
  * <p>Läuft unter der bestehenden {@code apiFilterChain}
  * ({@code @Order(3)}, {@code securityMatcher("/api/**")} in
  * {@code SecurityConfig}) — Session-Auth + CSRF via {@code X-XSRF-TOKEN}
- * ist damit automatisch aktiv. Die admin-only-Einschränkung selbst kommt
- * erst mit Task B5 hinzu.
+ * ist damit automatisch aktiv. Zusätzlich ist der gesamte Pfad
+ * {@code /api/beitraege/**} in {@code SecurityConfig} auf die Rolle ADMIN
+ * beschränkt ({@code SecurityConfig.java:224}), die admin-only-Einschränkung
+ * ist also bereits aktiv.
  */
 @Slf4j
 @RestController
@@ -76,7 +81,7 @@ public class BeitraegeController {
     }
 
     @PostMapping("/{id}/status")
-    public ResponseEntity<?> status(@PathVariable long id, @RequestBody StatusRequest request) {
+    public ResponseEntity<?> status(@PathVariable long id, @Valid @RequestBody StatusRequest request) {
         BeitragDetailDto beitrag = beitraegeWebsiteClient.statusSetzen(id, request.status());
         return ResponseEntity.ok(beitrag);
     }
@@ -95,13 +100,13 @@ public class BeitraegeController {
 
     @PatchMapping("/{id}/bilder/{imageId}")
     public ResponseEntity<?> altText(@PathVariable long id, @PathVariable long imageId,
-                                      @RequestBody AltTextRequest request) {
+                                      @Valid @RequestBody AltTextRequest request) {
         BeitragDetailDto beitrag = beitraegeWebsiteClient.altTextAktualisieren(id, imageId, request.altText());
         return ResponseEntity.ok(beitrag);
     }
 
     @PostMapping("/{id}/titelbild")
-    public ResponseEntity<?> titelbild(@PathVariable long id, @RequestBody TitelbildRequest request) {
+    public ResponseEntity<?> titelbild(@PathVariable long id, @Valid @RequestBody TitelbildRequest request) {
         BeitragDetailDto beitrag = beitraegeWebsiteClient.titelbildSetzen(id, request.imageId());
         return ResponseEntity.ok(beitrag);
     }
@@ -121,9 +126,10 @@ public class BeitraegeController {
                 "message", "Website nicht erreichbar oder hat einen Fehler gemeldet."));
     }
 
-    public record StatusRequest(String status) {}
+    public record StatusRequest(
+            @NotBlank @Pattern(regexp = "draft|published") String status) {}
 
-    public record TitelbildRequest(long imageId) {}
+    public record TitelbildRequest(@Positive long imageId) {}
 
-    public record AltTextRequest(String altText) {}
+    public record AltTextRequest(@NotBlank String altText) {}
 }
