@@ -422,4 +422,90 @@ class BeitraegeWebsiteClientTest {
 
         verify(mockHttpClient, never()).send(any(), any());
     }
+
+    @Test
+    void httpWebsiteUrl_wirdAbgelehntOhneHttpAufruf() throws Exception {
+        mitWebsiteUrl("http://bauschlosserei-kuhn.de");
+
+        assertThatThrownBy(() -> client.listeAlle())
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("https");
+
+        verify(mockHttpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void httpLocalhostWebsiteUrl_wirdAlsAusnahmeAkzeptiert() throws Exception {
+        mitWebsiteUrl("http://localhost:4321");
+        stelleAntwortBereit(200, "{\"posts\": []}");
+
+        client.listeAlle();
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), any());
+        assertThat(captor.getValue().uri().toString())
+                .isEqualTo("http://localhost:4321/api/internal/beitraege/");
+    }
+
+    @Test
+    void http127001WebsiteUrl_wirdAlsAusnahmeAkzeptiert() throws Exception {
+        mitWebsiteUrl("http://127.0.0.1:4321");
+        stelleAntwortBereit(200, "{\"posts\": []}");
+
+        client.listeAlle();
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), any());
+        assertThat(captor.getValue().uri().toString())
+                .isEqualTo("http://127.0.0.1:4321/api/internal/beitraege/");
+    }
+
+    @Test
+    void websiteUrlOhneSchema_fuehrtZuBeitraegeWebsiteExceptionStattExceptionDurchbruch() throws Exception {
+        mitWebsiteUrl("www.bauschlosserei-kuhn.de");
+
+        assertThatThrownBy(() -> client.listeAlle())
+                .isInstanceOf(BeitraegeWebsiteException.class);
+
+        verify(mockHttpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void websiteUrlMitUngueltigerSyntax_fuehrtZuBeitraegeWebsiteExceptionStattExceptionDurchbruch() throws Exception {
+        mitWebsiteUrl("https://bad url mit leerzeichen.de");
+
+        assertThatThrownBy(() -> client.listeAlle())
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Ungültige Website-URL");
+
+        verify(mockHttpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void leererApiToken_fuehrtZuExceptionOhneHttpAufruf() throws Exception {
+        // Kein mitWebsiteUrl(...): pruefeApiToken() wirft, bevor ermittleBaseUrl()
+        // die Firmenstammdaten überhaupt abfragt.
+        BeitraegeWebsiteClient clientOhneToken =
+                new BeitraegeWebsiteClient(new ObjectMapper(), mockFirmeninformationService, mockHttpClient, "   ");
+
+        assertThatThrownBy(() -> clientOhneToken.listeAlle())
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Kein API-Token für die Website-Anbindung konfiguriert.");
+
+        verify(mockHttpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void bildHinzufuegen_unzulaessigerContentType_wirdAbgelehntOhneHttpAufruf() throws Exception {
+        // Kein mitWebsiteUrl(...): die Content-Type-Prüfung in multipartBody() läuft
+        // vor uri()/ermittleBaseUrl() und fragt die Firmenstammdaten daher nie ab.
+        MockMultipartFile datei = new MockMultipartFile(
+                "bild", "schaedlich.svg", "image/svg+xml", "<svg></svg>".getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> client.bildHinzufuegen(7L, datei))
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Nicht unterstützter Bildtyp");
+
+        verify(mockHttpClient, never()).send(any(), any());
+    }
 }

@@ -49,6 +49,16 @@ public class BeitraegeWebsiteClient {
 
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
 
+    /**
+     * Content-Types, die an die Website weitergereicht werden dürfen. Deckt
+     * sich mit der Whitelist der Website selbst (siehe {@code anfrage.ts},
+     * {@code ALLOWED_TYPES}), damit ein clientseitig manipulierter oder
+     * schlicht falscher {@code Content-Type} nicht ungefiltert im
+     * multipart-Header landet.
+     */
+    private static final List<String> ERLAUBTE_BILD_CONTENT_TYPES =
+            List.of("image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif");
+
     private final ObjectMapper objectMapper;
     private final FirmeninformationService firmeninformationService;
     private final HttpClient httpClient;
@@ -170,16 +180,60 @@ public class BeitraegeWebsiteClient {
      * Konstruktor, siehe Klassenkommentar). Ein etwaiger abschließender Slash
      * am hinterlegten Wert wird entfernt, damit beim Anhängen des Pfads kein
      * doppelter Slash entsteht.
+     *
+     * <p>{@code Firmeninformation.website} ist ein reines Freitextfeld ohne
+     * Format-Zwang. Diese Verbindung läuft bewusst NICHT über VPN, sondern
+     * über das offene Internet zur Website, daher wird hier zwingend
+     * {@code https} verlangt (Ausnahme {@code http://localhost} bzw.
+     * {@code http://127.0.0.1} für die lokale Entwicklung) &mdash; sonst
+     * ginge der Bearer-Token im Klartext über die Leitung. Eine Website-URL
+     * ohne Schema (z. B. {@code www.beispiel.de}) oder mit fehlerhafter
+     * Syntax wird ebenfalls hier abgefangen, statt als unbehandelte
+     * {@link IllegalArgumentException} erst beim späteren Aufbau des
+     * {@link HttpRequest} durchzuschlagen.
      */
     private String ermittleBaseUrl() {
         String website = firmeninformationService.getFirmeninformation().getWebsite();
         if (website == null || website.isBlank()) {
             throw new BeitraegeWebsiteException("Keine Website-URL in den Firmendaten hinterlegt.");
         }
-        return website.endsWith("/") ? website.substring(0, website.length() - 1) : website;
+        String basisUrl = website.endsWith("/") ? website.substring(0, website.length() - 1) : website;
+
+        String scheme;
+        String host;
+        try {
+            URI parsed = URI.create(basisUrl);
+            scheme = parsed.getScheme();
+            host = parsed.getHost();
+        } catch (IllegalArgumentException e) {
+            throw new BeitraegeWebsiteException("Ungültige Website-URL in den Firmendaten hinterlegt: " + website, e);
+        }
+
+        boolean istLokalesHttp = "http".equals(scheme)
+                && ("localhost".equals(host) || "127.0.0.1".equals(host));
+        if (!"https".equals(scheme) && !istLokalesHttp) {
+            throw new BeitraegeWebsiteException(
+                    "Website-URL muss https verwenden (oder http://localhost für lokale Entwicklung).");
+        }
+
+        return basisUrl;
+    }
+
+    /**
+     * Wirft eine {@link BeitraegeWebsiteException}, wenn kein API-Token
+     * konfiguriert ist. Ohne diese Prüfung würde ein Request mit leerem
+     * {@code Authorization: Bearer }-Header verschickt, den die Website mit
+     * 401 quittiert &mdash; für den ERP-Nutzer nur schwer von einer
+     * tatsächlich nicht erreichbaren Website zu unterscheiden.
+     */
+    private void pruefeApiToken() {
+        if (apiToken == null || apiToken.isBlank()) {
+            throw new BeitraegeWebsiteException("Kein API-Token für die Website-Anbindung konfiguriert.");
+        }
     }
 
     private URI uri(String path) {
+        pruefeApiToken();
         return URI.create(ermittleBaseUrl() + path);
     }
 
@@ -237,11 +291,21 @@ public class BeitraegeWebsiteClient {
      * {@link HttpClient} keinen eingebauten Multipart-BodyPublisher mitbringt.
      * Das Dateifeld muss {@code bild} heißen, so erwartet es die
      * Website-Route {@code [id]/bilder/index.ts}.
+     *
+     * <p>Dateiname und Content-Type stammen aus dem hochgeladenen
+     * {@link MultipartFile} und damit letztlich vom Client. Der Dateiname
+     * wird deshalb von Zeichen befreit, mit denen sich aus dem
+     * {@code Content-Disposition}-Header ausbrechen ließe, und der
+     * Content-Type gegen eine feste Whitelist geprüft, bevor beides in die
+     * Header-Zeilen eingebaut wird.
      */
     private byte[] multipartBody(String boundary, MultipartFile bild) throws IOException {
         String zeilenumbruch = "\r\n";
-        String dateiname = bild.getOriginalFilename() != null ? bild.getOriginalFilename() : "bild";
+        String dateiname = sanitisiereDateiname(bild.getOriginalFilename());
         String contentType = bild.getContentType() != null ? bild.getContentType() : "application/octet-stream";
+        if (!ERLAUBTE_BILD_CONTENT_TYPES.contains(contentType)) {
+            throw new BeitraegeWebsiteException("Nicht unterstützter Bildtyp: " + contentType);
+        }
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         out.write(("--" + boundary + zeilenumbruch).getBytes(StandardCharsets.UTF_8));
@@ -252,5 +316,18 @@ public class BeitraegeWebsiteClient {
         out.write(zeilenumbruch.getBytes(StandardCharsets.UTF_8));
         out.write(("--" + boundary + "--" + zeilenumbruch).getBytes(StandardCharsets.UTF_8));
         return out.toByteArray();
+    }
+
+    /**
+     * Entfernt aus einem Dateinamen die Zeichen, mit denen sich aus dem
+     * {@code Content-Disposition}-Header ausbrechen ließe (Anführungszeichen,
+     * Backslash, Carriage-Return, Newline). Fehlt der Dateiname, wird ein
+     * fester Fallback-Name verwendet.
+     */
+    private static String sanitisiereDateiname(String dateiname) {
+        if (dateiname == null || dateiname.isBlank()) {
+            return "bild";
+        }
+        return dateiname.replaceAll("[\"\\\\\r\n]", "_");
     }
 }
