@@ -177,6 +177,36 @@ class BeitraegeWebsiteClientTest {
     }
 
     @Test
+    void aktualisieren_sendetPatchMitJsonBodyUndAbschliessendemSlash() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        String json = """
+                {"post": {"id": 4, "slug": "geaendert", "title": "Geaendert", "excerpt": "E2",
+                 "status": "draft", "publishedAt": null, "coverImagePath": null,
+                 "content": "C2", "images": []}}
+                """;
+        stelleAntwortBereit(200, json);
+
+        BeitragUpsertRequest req = new BeitragUpsertRequest();
+        req.setTitle("Geaendert");
+        req.setExcerpt("E2");
+        req.setContent("C2");
+
+        BeitragDetailDto result = client.aktualisieren(4L, req);
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), any());
+        HttpRequest request = captor.getValue();
+
+        assertThat(request.method()).isEqualTo("PATCH");
+        assertThat(request.uri().toString()).isEqualTo(BASE_URL + "/api/internal/beitraege/4/");
+        String bodyText = eingesammelterBodyText(request);
+        assertThat(bodyText).contains("\"title\":\"Geaendert\"");
+        assertThat(bodyText).contains("\"excerpt\":\"E2\"");
+        assertThat(bodyText).contains("\"content\":\"C2\"");
+        assertThat(result.getId()).isEqualTo(4L);
+    }
+
+    @Test
     void statusSetzen_bautKorrektenPfadMitSlash() throws Exception {
         mitWebsiteUrl(BASE_URL);
         String json = """
@@ -193,6 +223,27 @@ class BeitraegeWebsiteClientTest {
         assertThat(captor.getValue().uri().toString())
                 .isEqualTo(BASE_URL + "/api/internal/beitraege/3/status/");
         assertThat(captor.getValue().method()).isEqualTo("POST");
+    }
+
+    @Test
+    void titelbildSetzen_sendetPostMitImageIdBodyUndKorrektemPfad() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        String json = """
+                {"post": {"id": 6, "slug": "t", "title": "T", "excerpt": "E",
+                 "status": "draft", "publishedAt": null, "coverImagePath": "/uploads/y.jpg",
+                 "content": "C", "images": []}}
+                """;
+        stelleAntwortBereit(200, json);
+
+        client.titelbildSetzen(6L, 42L);
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), any());
+        HttpRequest request = captor.getValue();
+
+        assertThat(request.method()).isEqualTo("POST");
+        assertThat(request.uri().toString()).isEqualTo(BASE_URL + "/api/internal/beitraege/6/titelbild/");
+        assertThat(eingesammelterBodyText(request)).isEqualTo("{\"imageId\":42}");
     }
 
     @Test
@@ -253,6 +304,47 @@ class BeitraegeWebsiteClientTest {
             }
         });
         return bodyText.get();
+    }
+
+    @Test
+    void bildLoeschen_sendetDeleteMitKorrektemPfad() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        String json = """
+                {"post": {"id": 8, "slug": "d", "title": "T", "excerpt": "E",
+                 "status": "draft", "publishedAt": null, "coverImagePath": null,
+                 "content": "C", "images": []}}
+                """;
+        stelleAntwortBereit(200, json);
+
+        client.bildLoeschen(8L, 15L);
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), any());
+        HttpRequest request = captor.getValue();
+
+        assertThat(request.method()).isEqualTo("DELETE");
+        assertThat(request.uri().toString()).isEqualTo(BASE_URL + "/api/internal/beitraege/8/bilder/15/");
+    }
+
+    @Test
+    void altTextAktualisieren_sendetPatchMitAltTextBodyUndKorrektemPfad() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        String json = """
+                {"post": {"id": 10, "slug": "a", "title": "T", "excerpt": "E",
+                 "status": "draft", "publishedAt": null, "coverImagePath": null,
+                 "content": "C", "images": []}}
+                """;
+        stelleAntwortBereit(200, json);
+
+        client.altTextAktualisieren(10L, 20L, "Neuer Alt-Text");
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), any());
+        HttpRequest request = captor.getValue();
+
+        assertThat(request.method()).isEqualTo("PATCH");
+        assertThat(request.uri().toString()).isEqualTo(BASE_URL + "/api/internal/beitraege/10/bilder/20/");
+        assertThat(eingesammelterBodyText(request)).isEqualTo("{\"altText\":\"Neuer Alt-Text\"}");
     }
 
     @Test
