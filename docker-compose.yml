@@ -43,7 +43,7 @@ services:
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:-CHANGE_ME_DB_PW}
       APP_ADMIN_USER: ${APP_ADMIN_USER:-Marvin}
       APP_ADMIN_PASS: ${APP_ADMIN_PASS:-123456}
-      WEBSITE_BASE_URL: ${WEBSITE_BASE_URL:-https://bauschlosserei-kuhn.de}
+      WEBSITE_BASE_URL: ${WEBSITE_BASE_URL:-}
       WEBSITE_BEITRAEGE_API_TOKEN: ${WEBSITE_BEITRAEGE_API_TOKEN:-}
     volumes:
       - app_uploads:/app/uploads
