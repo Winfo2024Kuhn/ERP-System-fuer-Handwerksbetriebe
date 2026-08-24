@@ -218,6 +218,10 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/api/lieferant-dokumente/**").hasRole("ADMIN")
                 // Projekt-Wartungsaktionen schreiben ueber den gesamten Bestand - nur Admin.
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                // Beiträge-Modul pusht direkt in den öffentlichen Website-Auftritt. MVP-mäßig
+                // nur Admin. TODO: später über Abteilung.darfBeitraegeVeroeffentlichen granularer
+                // steuern, analog zu darfFreigabeAnnahmePushen (siehe AbteilungBerechtigungController).
+                .requestMatchers("/api/beitraege/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form
