@@ -94,6 +94,22 @@ class BeitraegeWebsiteClientTest {
         return response;
     }
 
+    /**
+     * Wie {@link #byteAntwort}, aber ohne Stub auf {@code body()}: wird die
+     * Antwort wegen eines abgelehnten Content-Type verworfen, liest
+     * {@code holeBild} den Body erst gar nicht mehr. Ein Stub auf
+     * {@code body()} waere dort ein "UnnecessaryStubbingException".
+     */
+    @SuppressWarnings("unchecked")
+    private HttpResponse<byte[]> byteAntwortOhneBodyStub(int statusCode, String contentType) {
+        HttpResponse<byte[]> response = mock(HttpResponse.class);
+        when(response.statusCode()).thenReturn(statusCode);
+        java.net.http.HttpHeaders headers = java.net.http.HttpHeaders.of(
+                java.util.Map.of("Content-Type", List.of(contentType)), (a, b) -> true);
+        when(response.headers()).thenReturn(headers);
+        return response;
+    }
+
     private void stelleAntwortBereit(int statusCode, String body) throws Exception {
         HttpResponse<String> response = antwort(statusCode, body);
         when(mockHttpClient.<String>send(any(HttpRequest.class), any())).thenReturn(response);
@@ -618,5 +634,87 @@ class BeitraegeWebsiteClientTest {
         // Kein mitWebsiteUrl(...): siehe dateinameMitPfadwechselWirdAbgelehnt.
         assertThatThrownBy(() -> client.holeBild("  "))
                 .isInstanceOf(BeitraegeWebsiteException.class);
+    }
+
+    // --- Befund 1: Dateiendung und Content-Type der Bild-Antwort ---
+
+    @Test
+    void dateinameMitExeEndungWirdAbgelehnt() {
+        // Kein mitWebsiteUrl(...): siehe dateinameMitPfadwechselWirdAbgelehnt.
+        assertThatThrownBy(() -> client.holeBild("shell.exe"))
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Dateiname");
+    }
+
+    @Test
+    void dateinameMitJsEndungWirdAbgelehnt() {
+        // Kein mitWebsiteUrl(...): siehe dateinameMitPfadwechselWirdAbgelehnt.
+        assertThatThrownBy(() -> client.holeBild("boese.js"))
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Dateiname");
+    }
+
+    @Test
+    void dateinameOhneBildendungWirdAbgelehnt() {
+        // Kein mitWebsiteUrl(...): siehe dateinameMitPfadwechselWirdAbgelehnt.
+        assertThatThrownBy(() -> client.holeBild("datei_ohne_endung"))
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Dateiname");
+    }
+
+    @Test
+    void dateinameMitGrossgeschriebenerBildendungWirdAkzeptiert() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        HttpResponse<byte[]> response = byteAntwort(200, new byte[]{9}, "image/jpeg");
+        when(mockHttpClient.<byte[]>send(any(), any())).thenReturn(response);
+
+        BeitraegeWebsiteClient.BildAntwort bild = client.holeBild("FOTO.JPG");
+
+        assertThat(bild.daten()).containsExactly(9);
+    }
+
+    @Test
+    void holeBild_contentTypeMitParameterWirdAnhandDesTeilsVorDemSemikolonGeprueft() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        HttpResponse<byte[]> response = byteAntwort(200, new byte[]{1}, "image/webp; charset=binary");
+        when(mockHttpClient.<byte[]>send(any(), any())).thenReturn(response);
+
+        BeitraegeWebsiteClient.BildAntwort bild = client.holeBild("abc123.webp");
+
+        assertThat(bild.contentType()).isEqualTo("image/webp; charset=binary");
+        assertThat(bild.daten()).containsExactly(1);
+    }
+
+    @Test
+    void holeBild_contentTypeGrossschreibungWirdAkzeptiert() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        HttpResponse<byte[]> response = byteAntwort(200, new byte[]{2}, "IMAGE/WEBP");
+        when(mockHttpClient.<byte[]>send(any(), any())).thenReturn(response);
+
+        BeitraegeWebsiteClient.BildAntwort bild = client.holeBild("abc123.webp");
+
+        assertThat(bild.daten()).containsExactly(2);
+    }
+
+    @Test
+    void holeBild_htmlContentType_wirdAbgelehnt() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        HttpResponse<byte[]> response = byteAntwortOhneBodyStub(200, "text/html");
+        when(mockHttpClient.<byte[]>send(any(), any())).thenReturn(response);
+
+        assertThatThrownBy(() -> client.holeBild("abc123.webp"))
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Bildtyp");
+    }
+
+    @Test
+    void holeBild_javascriptContentType_wirdAbgelehnt() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        HttpResponse<byte[]> response = byteAntwortOhneBodyStub(200, "application/javascript");
+        when(mockHttpClient.<byte[]>send(any(), any())).thenReturn(response);
+
+        assertThatThrownBy(() -> client.holeBild("abc123.webp"))
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Bildtyp");
     }
 }

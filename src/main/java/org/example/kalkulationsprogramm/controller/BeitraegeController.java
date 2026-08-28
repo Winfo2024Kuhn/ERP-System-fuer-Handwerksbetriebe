@@ -115,13 +115,30 @@ public class BeitraegeController {
      * Reicht ein Beitragsbild der Website durch. Der Browser des Arbeitsplatzes
      * erreicht die Website nicht zwingend selbst, deshalb laeuft die Anzeige
      * ueber das ERP.
+     *
+     * <p>{@link BeitraegeWebsiteClient#holeBild} prueft den Content-Type der
+     * Website-Antwort bereits gegen eine feste Bild-Whitelist; der try/catch
+     * hier faengt zusaetzlich einen von {@link MediaType#parseMediaType} nicht
+     * parsbaren Header ab und meldet ihn als 502 statt als 500. {@code
+     * X-Content-Type-Options: nosniff} verhindert, dass der Browser selbst am
+     * Content-Type "schnueffelt". {@code cachePrivate()} statt {@code
+     * cachePublic()}, weil der Pfad auf Rolle ADMIN beschraenkt ist und kein
+     * Shared Cache die Antwort vorhalten darf.
      */
     @GetMapping("/bild/{dateiname:.+}")
     public ResponseEntity<byte[]> bild(@PathVariable String dateiname) {
         BeitraegeWebsiteClient.BildAntwort bild = beitraegeWebsiteClient.holeBild(dateiname);
+        MediaType contentType;
+        try {
+            contentType = MediaType.parseMediaType(bild.contentType());
+        } catch (IllegalArgumentException e) {
+            throw new BeitraegeWebsiteException(
+                    "Website lieferte einen ungültigen Content-Type für das Bild: " + bild.contentType(), e);
+        }
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(bild.contentType()))
-                .cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofHours(1)).cachePublic())
+                .contentType(contentType)
+                .header("X-Content-Type-Options", "nosniff")
+                .cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofHours(1)).cachePrivate())
                 .body(bild.daten());
     }
 

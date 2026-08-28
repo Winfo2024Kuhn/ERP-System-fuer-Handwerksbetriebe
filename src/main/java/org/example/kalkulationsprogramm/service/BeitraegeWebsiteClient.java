@@ -21,6 +21,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -184,12 +185,16 @@ public class BeitraegeWebsiteClient {
 
     /**
      * Erlaubte Dateinamen fuer Beitragsbilder. Die Website vergibt sie selbst
-     * als UUID plus Endung; hier wird nur sichergestellt, dass kein Pfadwechsel
-     * darin steckt. Ohne diese Pruefung koennte ein manipulierter Name aus dem
-     * Upload-Verzeichnis ausbrechen (Path Traversal).
+     * als UUID plus Endung; hier wird sichergestellt, dass kein Pfadwechsel
+     * darin steckt (Path Traversal) und dass nur Bilddateiendungen
+     * durchgelassen werden. Ohne die Endungspruefung koennte unter
+     * {@code /uploads/aktuelles/} eine HTML- oder JS-Datei angefragt und ueber
+     * {@link #holeBild} an den Aufrufer weitergereicht werden.
      */
     private static final java.util.regex.Pattern ERLAUBTER_DATEINAME =
-            java.util.regex.Pattern.compile("^[A-Za-z0-9._-]{1,120}$");
+            java.util.regex.Pattern.compile(
+                    "^(?=.{1,120}$)[A-Za-z0-9._-]+\\.(?:webp|jpg|jpeg|png|gif)$",
+                    java.util.regex.Pattern.CASE_INSENSITIVE);
 
     /**
      * Holt ein Beitragsbild von der Website und reicht es unveraendert weiter.
@@ -226,7 +231,30 @@ public class BeitraegeWebsiteClient {
         }
 
         String contentType = response.headers().firstValue("Content-Type").orElse("image/webp");
+        if (!istErlaubterBildContentType(contentType)) {
+            throw new BeitraegeWebsiteException(
+                    "Website lieferte einen nicht unterstützten Bildtyp: " + contentType);
+        }
         return new BildAntwort(response.body(), contentType);
+    }
+
+    /**
+     * Prueft den von der Website gelieferten Content-Type gegen
+     * {@link #ERLAUBTE_BILD_CONTENT_TYPES}. Der Header kann Parameter tragen
+     * (z. B. {@code image/webp; charset=binary}), deshalb wird nur der Teil
+     * vor einem etwaigen Semikolon verglichen, getrimmt und kleingeschrieben.
+     *
+     * <p>Ohne diese Pruefung koennte eine unter {@code /uploads/aktuelles/}
+     * liegende HTML- oder JS-Datei unveraendert als z. B. {@code text/html}
+     * durchgereicht werden. Der Browser wuerde sie dann unter der eigenen
+     * ERP-Adresse ausfuehren &mdash; gespeichertes XSS im ERP-Kontext.
+     */
+    private static boolean istErlaubterBildContentType(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String basisTyp = contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return ERLAUBTE_BILD_CONTENT_TYPES.contains(basisTyp);
     }
 
     // --- Hilfsmethoden ---
