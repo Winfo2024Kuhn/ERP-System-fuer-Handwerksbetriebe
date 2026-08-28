@@ -15,15 +15,6 @@
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\check-doc-read.ps1\""
           }
         ]
-      },
-      {
-        "matcher": "Grep|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\graphify-research-reminder.ps1\""
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -42,15 +33,6 @@
           {
             "type": "command",
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\mark-design-skill-used.ps1\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\mark-graphify-used.ps1\""
           }
         ]
       }

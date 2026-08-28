@@ -4,25 +4,28 @@
 
 **Bevor du Grep/Glob/Read-für-Suche/find/ls für Codebase-Fragen nutzt, MUSST du graphify aufrufen.**
 
-Das ist keine Empfehlung — der Hook `.claude/hooks/graphify-research-reminder.ps1` matcht auf `Grep|Glob` und reißt dich darauf zurück, falls du es vergisst.
+Das ist keine Empfehlung — der offizielle graphify-Hook-Guard in `.claude/settings.json` hängt an `Bash|Grep` (Hinweis) und `Read|Glob` (Strict-Modus: blockt den **ersten** Roh-Read pro Session, bis einmal `query`/`path`/`explain` gelaufen ist). Der Gate hängt an einem Zeitstempel, den graphify selbst schreibt (`graphify-out/cache/last_query_stamp`, TTL 30 min) — er feuert höchstens einmal pro Session und kann dich nie festsetzen. Abschalten mit `GRAPHIFY_HOOK_STRICT=0`.
+
+**Aufruf:** graphify ist bewusst **nicht** systemweit installiert, sondern projektlokal in `.graphify-venv/`. Nutze den Wrapper im Projektroot — `./graphify …` (Bash) bzw. `.\graphify.cmd …` (PowerShell). Ein blankes `graphify` findet die Shell nicht.
 
 | Frage-Typ | Pflicht-Befehl ZUERST |
 | --- | --- |
-| "Wo ist X?" / "Was ruft X auf?" | `graphify query "wo wird X verwendet"` |
-| "Wie hängen A und B zusammen?" | `graphify path "A" "B"` |
-| "Was ist Konzept Y?" | `graphify explain "Y"` |
+| "Wo ist X?" / "Was ruft X auf?" | `./graphify query "wo wird X verwendet"` |
+| "Wie hängen A und B zusammen?" | `./graphify path "A" "B"` |
+| "Was ist Konzept Y?" | `./graphify explain "Y"` |
+| "Was bricht, wenn ich X ändere?" | `./graphify affected "X"` |
 | Breiter Architektur-Überblick | `graphify-out/wiki/index.md` lesen |
 | Sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
 
 **Ausnahmen** (Grep/Glob direkt erlaubt):
 
 - Du kennst den exakten Dateipfad → `Read` direkt.
-- Du suchst nach einem konkreten Symbol-String, von dem du sicher bist, dass graphify es nicht hat (z.B. Strings in Migrations, Property-Keys).
+- Du suchst nach einem konkreten String-Literal, das der Graph nicht als Symbol führt (z.B. Property-Keys, Werte innerhalb von Migrationen). Die Flyway-Migrationen selbst sind im Graphen — Tabellen und Funktionen findest du per `query`.
 - graphify hat die Frage schon beantwortet und du brauchst nur das letzte Detail.
 
-**Nach Code-Änderungen:** `graphify update .` — **einmal am Ende der Aufgabe**, nicht nach jedem einzelnen Edit.
+**Nach Code-Änderungen:** `./graphify update .` — **einmal am Ende der Aufgabe**, nicht nach jedem einzelnen Edit.
 
-Der Lauf kostet zwar keine API-Credits (AST-only), aber ca. **2 Minuten Laufzeit** (16-MB-Graph komplett neu schreiben). Früher hing das als PostToolUse-Hook an jedem Edit/Write und hat jeden Edit um ~126 s verzögert — deshalb ist der Hook entfernt. Der Graph ist nach einem Lauf am Aufgabenende genauso aktuell wie nach zwanzig Zwischenläufen.
+Der Lauf kostet keine API-Credits (AST-only). Die Extraktion ist gecacht und läuft nur über geänderte Dateien, aber der 32-MB-Graph wird danach **komplett** neu geschrieben — das ist der teure Teil und passiert bei jedem Lauf. Früher hing das als PostToolUse-Hook an jedem Edit/Write und hat jeden Edit um ~126 s verzögert; deshalb ist der Hook entfernt und bleibt es. Der Graph ist nach einem Lauf am Aufgabenende genauso aktuell wie nach zwanzig Zwischenläufen.
 
 ---
 

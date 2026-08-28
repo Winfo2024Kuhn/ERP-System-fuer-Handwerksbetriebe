@@ -4,23 +4,26 @@
 
 **Bevor du Grep/Glob/Read-für-Suche/find/ls für Codebase-Fragen nutzt, MUSST du graphify aufrufen.**
 
-Das ist keine Empfehlung — der Hook `.claude/hooks/graphify-research-reminder.ps1` matcht auf `Grep|Glob` und reißt dich darauf zurück, falls du es vergisst.
+Das ist keine Empfehlung — der offizielle graphify-Hook-Guard in `.claude/settings.json` hängt an `Bash|Grep` und `Read|Glob` und weist dich darauf zurück, falls du es vergisst.
+
+**Aufruf:** graphify ist bewusst **nicht** systemweit installiert, sondern projektlokal in `.graphify-venv/`. Nutze den Wrapper im Projektroot — `./graphify …` (Bash) bzw. `.\graphify.cmd …` (PowerShell). Ein blankes `graphify` findet die Shell nicht.
 
 | Frage-Typ | Pflicht-Befehl ZUERST |
 | --- | --- |
-| "Wo ist X?" / "Was ruft X auf?" | `graphify query "wo wird X verwendet"` |
-| "Wie hängen A und B zusammen?" | `graphify path "A" "B"` |
-| "Was ist Konzept Y?" | `graphify explain "Y"` |
+| "Wo ist X?" / "Was ruft X auf?" | `./graphify query "wo wird X verwendet"` |
+| "Wie hängen A und B zusammen?" | `./graphify path "A" "B"` |
+| "Was ist Konzept Y?" | `./graphify explain "Y"` |
+| "Was bricht, wenn ich X ändere?" | `./graphify affected "X"` |
 | Breiter Architektur-Überblick | `graphify-out/wiki/index.md` lesen |
 | Sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
 
 **Ausnahmen** (Grep/Glob direkt erlaubt):
 
 - Du kennst den exakten Dateipfad → `Read` direkt.
-- Du suchst nach einem konkreten Symbol-String, von dem du sicher bist, dass graphify es nicht hat (z.B. Strings in Migrations, Property-Keys).
+- Du suchst nach einem konkreten String-Literal, das der Graph nicht als Symbol führt (z.B. Property-Keys, Werte innerhalb von Migrationen). Die Flyway-Migrationen selbst sind im Graphen — Tabellen und Funktionen findest du per `query`.
 - graphify hat die Frage schon beantwortet und du brauchst nur das letzte Detail.
 
-**Nach Code-Änderungen:** `graphify update .` (AST-only, gratis, hält den Graph aktuell).
+**Nach Code-Änderungen:** `./graphify update .` (AST-only, gratis, hält den Graph aktuell).
 
 ---
 

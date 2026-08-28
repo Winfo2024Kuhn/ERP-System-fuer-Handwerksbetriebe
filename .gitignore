@@ -79,16 +79,27 @@ package-lock.json
 **/graphify-out/cache/
 **/graphify-out/manifest.json
 **/graphify-out/.graphify_*
+# graph.html ist eine aus graph.json abgeleitete Visualisierung (~800 KB, wird
+# bei jedem Lauf komplett neu geschrieben) -> kein Mehrwert in der Historie.
+**/graphify-out/graph.html
+# Datierte Sicherungskopien, die graphify vor einem Rebuild anlegt (je ~31 MB).
+**/graphify-out/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
 # Sub-Project-Graphen (z.B. in react-pc-frontend/, react-zeiterfassung/) werden
 # komplett ignoriert — Quelle der Wahrheit ist der Root-Graph.
 react-pc-frontend/graphify-out/
 react-zeiterfassung/graphify-out/
 # Lokale Graphify-Installation (projekt-eigenes venv, nicht systemweit).
 # Maschinenspezifisch -> nie committen. Neu anlegen:
-#   py -3 -m venv .graphify-venv && .graphify-venv/Scripts/python -m pip install graphifyy
+#   py -3 -m venv .graphify-venv
+#   .graphify-venv/Scripts/python -m pip install "graphifyy[sql]"
+#   ./graphify install --project --strict
+# Das [sql]-Extra ist Pflicht, sonst bleiben die Flyway-Migrationen unter
+# src/main/resources/db/migration/ komplett aus dem Graphen.
 .graphify-venv/
-graphify.cmd
-graphify
+# Fuehrender Slash = nur im Repo-Root. Ohne ihn wuerde "graphify" auf jeder
+# Ebene matchen und u.a. .claude/skills/graphify/ mitverschlucken.
+/graphify.cmd
+/graphify
 .claude/settings.json.graphify-bak
 .claude/settings.local.json
 
