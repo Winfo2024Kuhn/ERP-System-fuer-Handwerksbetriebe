@@ -89,6 +89,7 @@ react-zeiterfassung/graphify-out/
 .graphify-venv/
 graphify.cmd
 graphify
+.claude/settings.json.graphify-bak
 .claude/settings.local.json
 
 
