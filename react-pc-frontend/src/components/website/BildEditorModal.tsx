@@ -45,6 +45,11 @@ export function BildEditorModal({
 
     // Beim Oeffnen den mitgegebenen Stand uebernehmen.
     useEffect(() => {
+        // Bewusst synchron im Effekt: "bearbeitung" ist veraenderlicher
+        // Editier-Zustand des Nutzers und kein aus den Props ableitbarer Wert,
+        // darum wird er hier beim Oeffnen bzw. bei neuem startBearbeitung
+        // gezielt zurueckgesetzt statt abgeleitet.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (offen) setBearbeitung(startBearbeitung ?? STANDARD_BEARBEITUNG);
     }, [offen, startBearbeitung]);
 

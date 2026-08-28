@@ -32,6 +32,11 @@ export function SchrittBilder({ projektId, auswahl, onAuswahlAendern }: SchrittB
 
     useEffect(() => {
         let abgebrochen = false;
+        // Bewusst synchron im Effekt: setzt "laedt" beim Wechsel von projektId
+        // zurueck auf true, damit sofort der Spinner statt der Bilder des alten
+        // Projekts erscheint (der Aufruf beim allerersten Rendern ist wirkungslos,
+        // da laedt dann schon true ist).
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLaedt(true);
         ladeProjektBilder(projektId)
             .then(gefunden => { if (!abgebrochen) setBilder(gefunden); })
