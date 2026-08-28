@@ -3,8 +3,21 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebsiteEditor } from './WebsiteEditor';
 
+// Dieser Test deckt nur den Wechsel zwischen den zwei Reitern ab, nicht das
+// Verhalten der Tab-Inhalte selbst -- das testet InsightsTab.test.tsx bereits
+// vollstaendig (inklusive des echten Leerzustands bei 204 ohne Inhalt). Ein
+// generischer Fetch-Stub muesste sonst fuer jeden Endpunkt jedes Tabs exakt
+// das reale Antwortformat nachbilden; genau daran ist dieser Test zuvor
+// gescheitert (leeres Array statt 204 fuer /website-analytics/latest hat
+// einen Fehler im Insights-Tab verdeckt statt ihn zu zeigen). Deshalb wird
+// InsightsTab hier durch einen Platzhalter ersetzt.
+vi.mock('../components/website/InsightsTab', () => ({
+    InsightsTab: () => <div data-testid="insights-tab-platzhalter" />,
+}));
+
 beforeEach(() => {
-    // Die Tab-Inhalte laden spaeter selbst nach; hier genuegt eine leere Antwort.
+    // Fuer den Beitraege-Tab genuegt eine leere Liste als Antwort auf jede
+    // Anfrage; der Insights-Tab ist oben gemockt und fragt hier nichts ab.
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
         ok: true, status: 200, json: () => Promise.resolve([]),
     })));

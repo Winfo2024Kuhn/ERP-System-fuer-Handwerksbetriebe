@@ -108,6 +108,19 @@ describe('InsightsTab', () => {
         expect(await screen.findByText(/Noch keine Zahlen von der Website/)).toBeInTheDocument();
     });
 
+    it('zeigt den Leerzustand auch bei einer unvollstaendigen Antwort', async () => {
+        // Das Backend liefert entweder 204 oder einen vollstaendigen Schnappschuss,
+        // ein halber ist eigentlich unmoeglich. Die Pruefung in InsightsTab faengt
+        // ihn trotzdem ab, damit eine kaputte Antwort keinen Absturz ausloest.
+        // Ohne diesen Test waere diese Zeile durch nichts festgenagelt.
+        fetchMock = antworteMit({ snapshotDate: '2026-08-27' }, []);
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<InsightsTab />);
+
+        expect(await screen.findByText(/Noch keine Zahlen von der Website/)).toBeInTheDocument();
+    });
+
     it('meldet einen Fehlschlag, statt leer zu bleiben', async () => {
         vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
             ok: false, status: 500, json: () => Promise.resolve({ message: 'Kaputt.' }),
