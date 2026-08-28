@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import DOMPurify from 'dompurify';
 import {
     klartextZuHtml,
     leiteKurzbeschreibungAb,
@@ -89,5 +90,33 @@ describe('bereinigeBeitragsHtml', () => {
     it('entfernt Ereignis-Attribute', () => {
         expect(bereinigeBeitragsHtml('<p onclick="alert(1)">Text</p>'))
             .toBe('<p>Text</p>');
+    });
+
+    it('entfernt style an allem ausser span', () => {
+        expect(bereinigeBeitragsHtml('<p style="color:#500010">Text</p>'))
+            .toBe('<p>Text</p>');
+    });
+
+    it('entfernt Farben, die die Website nicht annimmt', () => {
+        // Die Website laesst nur #hex und rgb() durch, kein Farbwort.
+        expect(bereinigeBeitragsHtml('<span style="color: red">Text</span>'))
+            .not.toContain('color');
+    });
+
+    it('entfernt Schriftgroessen ohne Einheit', () => {
+        expect(bereinigeBeitragsHtml('<span style="font-size: xx-large">Text</span>'))
+            .not.toContain('font-size');
+    });
+
+    it('behaelt eine gueltige Hex-Farbe am span', () => {
+        expect(bereinigeBeitragsHtml('<span style="color: #500010">Text</span>'))
+            .toContain('#500010');
+    });
+
+    it('laesst die E-Mail-Signaturen unberuehrt', () => {
+        // Gegenprobe auf den globalen Hook: der Standard-Import von DOMPurify
+        // darf von unserem Hook nichts mitbekommen.
+        expect(DOMPurify.sanitize('<p style="color:red">Signatur</p>'))
+            .toContain('style');
     });
 });

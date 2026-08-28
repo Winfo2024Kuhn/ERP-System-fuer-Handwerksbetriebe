@@ -1,4 +1,4 @@
-import DOMPurify from 'dompurify';
+import createDOMPurify from 'dompurify';
 
 /**
  * Genau die Tags, die die Website in sanitizePostContent zulaesst
@@ -9,6 +9,75 @@ export const ERLAUBTE_TAGS = ['p', 'br', 'b', 'strong', 'i', 'em', 'ul', 'ol', '
 
 /** Nur span darf ein style tragen, und dort nur Farbe und Schriftgroesse. */
 const ERLAUBTE_ATTRIBUTE = ['style'];
+
+/**
+ * Dieselben drei Ausdruecke, mit denen die Website ein span-style prueft
+ * (molecular-mercury/src/lib/richtext.ts:11-13, wortgleich uebernommen).
+ * DOMPurify kennt ALLOWED_ATTR nur global, nicht pro Tag - deshalb reicht
+ * die Konfiguration allein nicht, um "style nur an span, und dort nur
+ * Farbe/Schriftgroesse" durchzusetzen. Der afterSanitizeAttributes-Hook
+ * weiter unten prueft jede Deklaration gegen genau diese Ausdruecke.
+ */
+const HEX_COLOR = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/;
+const RGB_COLOR = /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/;
+const FONT_SIZE = /^\d{1,3}(\.\d+)?(px|rem|em|%)$/;
+
+function istErlaubteStyleDeklaration(eigenschaft: string, wert: string): boolean {
+    if (eigenschaft === 'color') return HEX_COLOR.test(wert) || RGB_COLOR.test(wert);
+    if (eigenschaft === 'font-size') return FONT_SIZE.test(wert);
+    return false;
+}
+
+/**
+ * Filtert das style-Attribut eines einzelnen Elements. An allem ausser span
+ * fliegt style komplett raus. An span bleibt nur, was gegen die drei
+ * Ausdruecke oben besteht - alles andere (Farbworte, Einheiten-lose Groessen,
+ * fremde Eigenschaften wie position/width) wird verworfen.
+ */
+function bereinigeStyleAttribut(element: Element): void {
+    if (element.tagName.toLowerCase() !== 'span') {
+        element.removeAttribute('style');
+        return;
+    }
+
+    const roh = element.getAttribute('style');
+    if (!roh) return;
+
+    const behalten = roh
+        .split(';')
+        .map(deklaration => deklaration.trim())
+        .filter(Boolean)
+        .filter(deklaration => {
+            const trennstelle = deklaration.indexOf(':');
+            if (trennstelle === -1) return false;
+            const eigenschaft = deklaration.slice(0, trennstelle).trim().toLowerCase();
+            const wert = deklaration.slice(trennstelle + 1).trim();
+            return istErlaubteStyleDeklaration(eigenschaft, wert);
+        });
+
+    if (behalten.length === 0) {
+        element.removeAttribute('style');
+    } else {
+        element.setAttribute('style', `${behalten.join('; ')};`);
+    }
+}
+
+/**
+ * Eigene DOMPurify-Instanz nur fuer Beitrags-HTML, bewusst nicht der
+ * geteilte Standard-Import. DOMPurify.addHook wirkt auf die Instanz, an der
+ * er haengt - `components/EmailSettings.tsx` sanitisiert E-Mail-Signaturen
+ * ueber genau denselben Standard-Import (`import DOMPurify from 'dompurify'`
+ * liefert ueberall dasselbe Singleton-Objekt). Ein Hook auf diesem Singleton
+ * wuerde dort also die Signaturen mitbeschneiden. `createDOMPurify(window)`
+ * (der Default-Export ist zugleich die Factory) erzeugt dagegen eine frische,
+ * isolierte Instanz mit eigenem Hook-Zustand.
+ */
+const beitragsDomPurify = createDOMPurify(window);
+beitragsDomPurify.addHook('afterSanitizeAttributes', node => {
+    if (node.hasAttribute('style')) {
+        bereinigeStyleAttribut(node);
+    }
+});
 
 function maskiere(text: string): string {
     return text
@@ -71,10 +140,11 @@ export function leiteKurzbeschreibungAb(html: string, maxLaenge = STANDARD_LAENG
 /**
  * Bereinigt Beitrags-HTML vor der Anzeige. Zweite Absicherung neben der
  * Bereinigung auf der Website: was hier durchkaeme, wuerde dort ohnehin
- * verworfen, aber die Vorschau soll zeigen, was tatsaechlich erscheint.
+ * verworfen, aber die Vorschau soll zeigen, was tatsaechlich erscheint -
+ * inklusive der verschaerften style-Regel (siehe Hook oben).
  */
 export function bereinigeBeitragsHtml(html: string): string {
-    return DOMPurify.sanitize(html, {
+    return beitragsDomPurify.sanitize(html, {
         ALLOWED_TAGS: ERLAUBTE_TAGS,
         ALLOWED_ATTR: ERLAUBTE_ATTRIBUTE,
     });
