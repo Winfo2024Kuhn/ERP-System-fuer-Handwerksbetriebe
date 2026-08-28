@@ -22,7 +22,12 @@ import {
 import type { BeitragDetail, BeitragSummary } from './typen';
 
 export interface BeitraegeTabProps {
-    /** Task 14 haengt hier den Assistenten ein. */
+    /**
+     * Task 16 haengt hier den Assistenten ein. Absichtlich weiterhin
+     * optional: WebsiteEditor uebergibt die echte Funktion, andere
+     * Einbettungen (und Tests) duerfen den Knopf ungenutzt lassen -- dann
+     * bleibt er sichtbar gesperrt, siehe neuerBeitragGesperrt unten.
+     */
     onNeuerBeitrag?: () => void;
     /** Hochzaehlen laesst die Liste neu laden, z.B. nach dem Assistenten. */
     neuLadenSignal?: number;

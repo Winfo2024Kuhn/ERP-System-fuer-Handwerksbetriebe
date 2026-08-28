@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BarChart3, FileText } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { BeitraegeTab } from '../components/website/BeitraegeTab';
+import { BeitragAssistent } from '../components/website/BeitragAssistent';
 import { InsightsTab } from '../components/website/InsightsTab';
 import { cn } from '../lib/utils';
 
@@ -13,9 +14,17 @@ type Tab = 'beitraege' | 'insights';
  *
  * Startet auf "Beitrag erstellen", weil das die taegliche Arbeit ist.
  * Die Zahlen schaut man sich seltener an.
+ *
+ * Der Assistent fuer neue Beitraege haengt hier und nicht in BeitraegeTab,
+ * weil BeitraegeTab den Knopf bewusst gesperrt haelt, solange kein
+ * onNeuerBeitrag uebergeben wird (siehe BeitraegeTab.test.tsx). Diese Seite
+ * liefert die echte Funktion und zaehlt neuLadenSignal hoch, damit die
+ * Liste nach dem Assistenten neu laedt.
  */
 export function WebsiteEditor() {
     const [aktiverTab, setAktiverTab] = useState<Tab>('beitraege');
+    const [assistentOffen, setAssistentOffen] = useState(false);
+    const [neuLadenSignal, setNeuLadenSignal] = useState(0);
 
     return (
         <div className="p-6 max-w-[1600px] mx-auto">
@@ -42,7 +51,10 @@ export function WebsiteEditor() {
 
             {aktiverTab === 'beitraege' && (
                 <div data-testid="tab-beitraege">
-                    <BeitraegeTab />
+                    <BeitraegeTab
+                        onNeuerBeitrag={() => setAssistentOffen(true)}
+                        neuLadenSignal={neuLadenSignal}
+                    />
                 </div>
             )}
             {aktiverTab === 'insights' && (
@@ -50,6 +62,15 @@ export function WebsiteEditor() {
                     <InsightsTab />
                 </div>
             )}
+
+            <BeitragAssistent
+                offen={assistentOffen}
+                onAbbrechen={() => setAssistentOffen(false)}
+                onFertig={() => {
+                    setAssistentOffen(false);
+                    setNeuLadenSignal(n => n + 1);
+                }}
+            />
         </div>
     );
 }
