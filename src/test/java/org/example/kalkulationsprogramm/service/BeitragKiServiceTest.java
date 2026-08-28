@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
@@ -18,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -75,6 +77,26 @@ class BeitragKiServiceTest {
               {"type":"TEXT","content":"Zahlbar innerhalb 14 Tagen"}
             ]}""";
 
+    /**
+     * SECTION_HEADER-Bloecke tragen ihre Leistungen im Feld "children"
+     * (react-pc-frontend/src/components/document-editor/types.ts:24), nicht
+     * auf oberster Ebene von "blocks". Zwei Bauabschnitte mit insgesamt drei
+     * Leistungen, wie im Pruefbefund.
+     */
+    private static final String VERSCHACHTELTE_POSITIONEN = """
+            {"blocks":[
+              {"type":"SECTION_HEADER","sectionLabel":"Bauabschnitt 1 Stahlbau","children":[
+                {"type":"SERVICE","title":"Tragwerk montieren","description":"Stahltraeger einbauen",
+                 "quantity":1,"unit":"psch","price":12000.50,"discount":5}
+              ]},
+              {"type":"SECTION_HEADER","sectionLabel":"Bauabschnitt 2 Gelaender","children":[
+                {"type":"SERVICE","title":"Handlauf schleifen","description":"Edelstahl poliert",
+                 "quantity":8,"unit":"m","price":640.00},
+                {"type":"SERVICE","title":"Pfosten setzen","description":"Verzinkter Stahl",
+                 "quantity":6,"unit":"Stk","price":180.00}
+              ]}
+            ]}""";
+
     private ProjektNotiz notiz(String text, boolean privat) {
         ProjektNotiz n = new ProjektNotiz();
         n.setNotiz(text);
@@ -102,6 +124,43 @@ class BeitragKiServiceTest {
         assertThat(prompt).contains("Schiebetor");
         assertThat(prompt).contains("Feuerverzinkt");
         assertThat(prompt).contains("Stk");
+    }
+
+    @Test
+    void leistungenUnterBauabschnittenTauchenImPromptAuf() {
+        when(projektRepository.findById(1L)).thenReturn(Optional.of(projektMitKunde()));
+        when(dokumentRepository.findByProjektIdOrderByDatumDesc(1L))
+                .thenReturn(List.of(dokument(AusgangsGeschaeftsDokumentTyp.ANGEBOT, VERSCHACHTELTE_POSITIONEN)));
+        when(notizRepository.findByProjektIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
+
+        String prompt = promptFuerProjekt();
+
+        assertThat(prompt).contains("Bauabschnitt 1 Stahlbau");
+        assertThat(prompt).contains("Bauabschnitt 2 Gelaender");
+        // Die drei Leistungen unter den Bauabschnitten duerfen nicht mehr
+        // spurlos verschwinden.
+        assertThat(prompt).contains("Tragwerk montieren");
+        assertThat(prompt).contains("Handlauf schleifen");
+        assertThat(prompt).contains("Pfosten setzen");
+    }
+
+    @Test
+    void preiseDerVerschachteltenLeistungenTauchenNichtImPromptAuf() {
+        when(projektRepository.findById(1L)).thenReturn(Optional.of(projektMitKunde()));
+        when(dokumentRepository.findByProjektIdOrderByDatumDesc(1L))
+                .thenReturn(List.of(dokument(AusgangsGeschaeftsDokumentTyp.ANGEBOT, VERSCHACHTELTE_POSITIONEN)));
+        when(notizRepository.findByProjektIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
+
+        String prompt = promptFuerProjekt();
+
+        assertThat(prompt).doesNotContain("12000");
+        assertThat(prompt).doesNotContain("640");
+        assertThat(prompt).doesNotContain("180");
+        assertThat(prompt).doesNotContain("discount");
+        // Titel, Beschreibung, Menge und Einheit bleiben erlaubt.
+        assertThat(prompt).contains("Tragwerk montieren");
+        assertThat(prompt).contains("Stahltraeger einbauen");
+        assertThat(prompt).contains("psch");
     }
 
     @Test
@@ -191,5 +250,50 @@ class BeitragKiServiceTest {
         assertThat(vorbild).doesNotContain(":");
         assertThat(vorbild).doesNotContain("—");
         assertThat(vorbild).doesNotContain(" - ");
+    }
+
+    @Test
+    void chatverlaufStehtVorDerAktuellenRundeImRequest() {
+        when(projektRepository.findById(1L)).thenReturn(Optional.of(projektMitKunde()));
+        when(dokumentRepository.findByProjektIdOrderByDatumDesc(1L)).thenReturn(List.of());
+        when(notizRepository.findByProjektIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
+
+        List<BeitragKiAnfrage.ChatNachricht> verlauf = List.of(
+                new BeitragKiAnfrage.ChatNachricht("user", "Erster Wunsch"),
+                new BeitragKiAnfrage.ChatNachricht("model", "Erste Antwort"));
+        BeitragKiAnfrage anfrage = new BeitragKiAnfrage(1L, verlauf, null, null);
+
+        JsonNode contents = service.baueKoerper(anfrage, List.of()).path("contents");
+
+        assertThat(contents.size()).isEqualTo(3);
+        assertThat(contents.get(0).path("role").asText()).isEqualTo("user");
+        assertThat(contents.get(0).path("parts").get(0).path("text").asText()).isEqualTo("Erster Wunsch");
+        assertThat(contents.get(1).path("role").asText()).isEqualTo("model");
+        assertThat(contents.get(1).path("parts").get(0).path("text").asText()).isEqualTo("Erste Antwort");
+        // Die aktuelle Runde (Sachkontext plus Auftrag) steht als letztes,
+        // sonst liest das Modell die eigene Antwort vor der Frage.
+        assertThat(contents.get(2).path("role").asText()).isEqualTo("user");
+        assertThat(contents.get(2).path("parts").get(0).path("text").asText()).contains("Hallentor Neubau");
+    }
+
+    @Test
+    void beimKuerzenBleibenDieNeuestenNachrichtenErhalten() {
+        when(projektRepository.findById(1L)).thenReturn(Optional.of(projektMitKunde()));
+        when(dokumentRepository.findByProjektIdOrderByDatumDesc(1L)).thenReturn(List.of());
+        when(notizRepository.findByProjektIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
+
+        // 25 Nachrichten, chronologisch. MAX_VERLAUF ist 20, es muessen also
+        // die LETZTEN 20 (Nachricht 6 bis 25) uebrig bleiben, nicht die ersten 20.
+        List<BeitragKiAnfrage.ChatNachricht> verlauf = IntStream.rangeClosed(1, 25)
+                .mapToObj(i -> new BeitragKiAnfrage.ChatNachricht("user", "Nachricht " + i))
+                .toList();
+        BeitragKiAnfrage anfrage = new BeitragKiAnfrage(1L, verlauf, null, null);
+
+        JsonNode contents = service.baueKoerper(anfrage, List.of()).path("contents");
+
+        // 20 Verlauf-Eintraege plus 1 aktuelle Runde.
+        assertThat(contents.size()).isEqualTo(21);
+        assertThat(contents.get(0).path("parts").get(0).path("text").asText()).isEqualTo("Nachricht 6");
+        assertThat(contents.get(19).path("parts").get(0).path("text").asText()).isEqualTo("Nachricht 25");
     }
 }

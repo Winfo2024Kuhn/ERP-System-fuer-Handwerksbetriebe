@@ -137,7 +137,13 @@ public class BeitragKiService {
                 .orElseThrow(() -> new IllegalArgumentException("Projekt nicht gefunden: " + projektId));
 
         StringBuilder sb = new StringBuilder();
-        // Bewusst NUR das Bauvorhaben. Kunde und Anschrift bleiben draussen.
+        // ACHTUNG: bauvorhaben ist ein Freitextfeld und kann Kundennamen oder
+        // Anschriften enthalten (z.B. "Musterbau GmbH, Musterweg 5, 12345
+        // Musterstadt - Hallentor"). Es wird hier NICHT gefiltert oder
+        // geprueft. Die Absicherung liegt allein bei der Systemanweisung
+        // (SYSTEM_ANWEISUNG, verbietet Kunden-/Firmennamen und Anschriften)
+        // und der Sichtpruefung durch den Menschen vor dem Veroeffentlichen.
+        // Bekanntes, im Plan akzeptiertes Restrisiko.
         sb.append("Bauvorhaben: ").append(sicher(projekt.getBauvorhaben())).append("\n\n");
 
         String leistungen = leseLeistungen(projektId);
@@ -180,26 +186,46 @@ public class BeitragKiService {
 
         StringBuilder sb = new StringBuilder();
         for (JsonNode block : wurzel.path("blocks")) {
-            String typ = block.path("type").asText();
-            if ("SECTION_HEADER".equals(typ)) {
-                sb.append("\n").append(sicher(block.path("sectionLabel").asText())).append("\n");
-            } else if ("SERVICE".equals(typ)) {
-                sb.append("- ").append(sicher(block.path("title").asText()));
-                String menge = block.path("quantity").isMissingNode() ? "" : block.path("quantity").asText();
-                String einheit = sicher(block.path("unit").asText());
-                if (!menge.isBlank() && !einheit.isBlank()) {
-                    sb.append(" (").append(menge).append(" ").append(einheit).append(")");
-                }
-                String beschreibung = sicher(block.path("description").asText());
-                if (!beschreibung.isBlank()) {
-                    sb.append(". ").append(beschreibung);
-                }
-                sb.append("\n");
-            }
-            // TEXT-, CLOSURE-, SUBTOTAL- und SEPARATOR-Bloecke enthalten
-            // Zahlungsbedingungen und Summen. Die gehen niemanden etwas an.
+            schreibeBlock(sb, block);
         }
         return sb.toString();
+    }
+
+    /**
+     * Schreibt einen einzelnen Block in den Leistungstext. SECTION_HEADER-
+     * Bloecke (Bauabschnitte) tragen ihre Leistungen NICHT auf oberster Ebene
+     * von "blocks", sondern im Feld "children" (siehe
+     * react-pc-frontend/src/components/document-editor/types.ts,
+     * {@code DocBlock.children}). Ohne diesen rekursiven Abstieg verschwinden
+     * bei jedem Angebot mit Bauabschnitten alle Leistungen darunter spurlos
+     * aus dem KI-Kontext, uebrig bleiben nur die Ueberschriften.
+     *
+     * <p>Preise, Rabatte und Betraege werden hier fuer Kinder GENAUSO wenig
+     * gelesen wie auf oberster Ebene. Nur Titel, Beschreibung, Menge und
+     * Einheit duerfen in den Text.
+     */
+    private void schreibeBlock(StringBuilder sb, JsonNode block) {
+        String typ = block.path("type").asText();
+        if ("SECTION_HEADER".equals(typ)) {
+            sb.append("\n").append(sicher(block.path("sectionLabel").asText())).append("\n");
+            for (JsonNode kind : block.path("children")) {
+                schreibeBlock(sb, kind);
+            }
+        } else if ("SERVICE".equals(typ)) {
+            sb.append("- ").append(sicher(block.path("title").asText()));
+            String menge = block.path("quantity").isMissingNode() ? "" : block.path("quantity").asText();
+            String einheit = sicher(block.path("unit").asText());
+            if (!menge.isBlank() && !einheit.isBlank()) {
+                sb.append(" (").append(menge).append(" ").append(einheit).append(")");
+            }
+            String beschreibung = sicher(block.path("description").asText());
+            if (!beschreibung.isBlank()) {
+                sb.append(". ").append(beschreibung);
+            }
+            sb.append("\n");
+        }
+        // TEXT-, CLOSURE-, SUBTOTAL- und SEPARATOR-Bloecke enthalten
+        // Zahlungsbedingungen und Summen. Die gehen niemanden etwas an.
     }
 
     @SafeVarargs
@@ -236,6 +262,21 @@ public class BeitragKiService {
             throw new IllegalStateException("Kein Gemini-Schluessel hinterlegt.");
         }
 
+        return sendeUndLies(baueKoerper(anfrage, bilder), apiKey);
+    }
+
+    /**
+     * Baut den Request-Koerper fuer Gemini. Sichtbar fuer den Test, weil hier
+     * feststeht, in welcher Reihenfolge Chatverlauf und aktueller Auftrag
+     * beim Modell ankommen.
+     *
+     * <p>Der bisherige Chat steht IMMER vor der aktuellen Runde. Stuende er
+     * danach, laese das Modell die eigene Antwort vor der Frage. Beim Kuerzen
+     * bleiben die LETZTEN {@value #MAX_VERLAUF} Eintraege erhalten, nicht die
+     * ersten, sonst fliegen bei einem langen Chat genau die neuesten (und
+     * damit wichtigsten) Nachrichten raus.
+     */
+    ObjectNode baueKoerper(BeitragKiAnfrage anfrage, List<MultipartFile> bilder) {
         ObjectNode koerper = objectMapper.createObjectNode();
 
         ObjectNode systemAnweisung = koerper.putObject("system_instruction");
@@ -243,10 +284,22 @@ public class BeitragKiService {
 
         ArrayNode contents = koerper.putArray("contents");
 
-        // Erste Runde des Gespraechs: Sachkontext plus Bilder plus Auftrag.
-        ObjectNode erste = contents.addObject();
-        erste.put("role", "user");
-        ArrayNode teile = erste.putArray("parts");
+        // Bisheriger Chat zuerst und in chronologischer Reihenfolge, sonst
+        // liest das Modell die Antwort vor der Frage.
+        List<BeitragKiAnfrage.ChatNachricht> verlauf = anfrage.verlaufOderLeer();
+        List<BeitragKiAnfrage.ChatNachricht> beschnitten = verlauf.size() > MAX_VERLAUF
+                ? verlauf.subList(verlauf.size() - MAX_VERLAUF, verlauf.size())
+                : verlauf;
+        beschnitten.forEach(nachricht -> {
+            ObjectNode eintrag = contents.addObject();
+            eintrag.put("role", "model".equals(nachricht.rolle()) ? "model" : "user");
+            eintrag.putArray("parts").addObject().put("text", sicher(nachricht.text()));
+        });
+
+        // Aktuelle Runde, immer als letztes: Sachkontext plus Bilder plus Auftrag.
+        ObjectNode aktuelle = contents.addObject();
+        aktuelle.put("role", "user");
+        ArrayNode teile = aktuelle.putArray("parts");
         teile.addObject().put("text", baueKontext(anfrage.projektId()));
 
         List<MultipartFile> verwendbar = bilder == null ? List.of()
@@ -272,13 +325,6 @@ public class BeitragKiService {
                     + "Titel: " + sicher(anfrage.aktuellerTitel()) + "\n\n" + aktuellerText);
         }
 
-        // Bisheriger Chat.
-        anfrage.verlaufOderLeer().stream().limit(MAX_VERLAUF).forEach(nachricht -> {
-            ObjectNode eintrag = contents.addObject();
-            eintrag.put("role", "model".equals(nachricht.rolle()) ? "model" : "user");
-            eintrag.putArray("parts").addObject().put("text", sicher(nachricht.text()));
-        });
-
         // Feste Antwortform, damit kein Parsen von Freitext noetig ist.
         ObjectNode konfiguration = koerper.putObject("generationConfig");
         konfiguration.put("responseMimeType", "application/json");
@@ -295,7 +341,7 @@ public class BeitragKiService {
         pflicht.add("text");
         pflicht.add("antwort");
 
-        return sendeUndLies(koerper, apiKey);
+        return koerper;
     }
 
     private BeitragKiEntwurf sendeUndLies(ObjectNode koerper, String apiKey) {
