@@ -42,6 +42,18 @@ describe('berechneAusgabeMasse', () => {
         expect(berechneAusgabeMasse(quelle, gedreht, 1600).breite).toBe(1200);
     });
 
+    it('laesst bei 90 Grad die Ausgabebreite bewusst ueber maxBreite, nur die Pixelzahl bleibt gleich', () => {
+        // Nachbedingung aus dem Kommentar an der Funktion: maxBreite begrenzt
+        // nur die Breite vor der Drehung. Nach dem Tausch bei 90/270 Grad
+        // kann die Ausgabebreite darueber liegen. Das ist gewollt, damit der
+        // Verkleinerungsfaktor nicht von der Drehung abhaengt.
+        const hochformat = { breite: 1600, hoehe: 4000 };
+        const gedreht: Bildbearbeitung = { ...STANDARD_BEARBEITUNG, drehung: 90 };
+
+        expect(berechneAusgabeMasse(hochformat, gedreht, 1024))
+            .toEqual({ breite: 2560, hoehe: 1024 });
+    });
+
     it('laesst 180 Grad die Masse unveraendert', () => {
         const gedreht: Bildbearbeitung = { ...STANDARD_BEARBEITUNG, drehung: 180 };
 

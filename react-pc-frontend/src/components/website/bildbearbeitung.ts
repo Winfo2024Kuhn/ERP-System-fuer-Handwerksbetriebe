@@ -46,6 +46,13 @@ interface Masse {
  * damit er unabhaengig davon ist, ob anschliessend gedreht wird. Bei 90 und
  * 270 Grad tauschen Breite und Hoehe danach. Kleine Bilder werden nie
  * vergroessert, das braechte nur Unschaerfe.
+ *
+ * Nachbedingung: maxBreite begrenzt die Breite nur VOR der Drehung. Bei 90
+ * und 270 Grad tauschen Breite und Hoehe danach die Plaetze, deshalb kann
+ * die zurueckgegebene Breite groesser als maxBreite sein (Beispiel: Quelle
+ * 1600x4000 mit maxBreite=1024 ergibt bei 90 Grad 2560x1024). Die Pixelzahl
+ * bleibt dabei gleich, nur ihre Aufteilung auf Breite und Hoehe tauscht -
+ * das ist gewollt, siehe Absatz oben.
  */
 export function berechneAusgabeMasse(
     quelle: Masse,
