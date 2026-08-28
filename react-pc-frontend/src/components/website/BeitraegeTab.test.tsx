@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ConfirmProvider } from '../ui/confirm-dialog';
 import { ToastProvider } from '../ui/toast';
-import { BeitraegeTab } from './BeitraegeTab';
+import { BeitraegeTab, type BeitraegeTabProps } from './BeitraegeTab';
 
 vi.mock('./BeitragRichtextEditor', () => ({
     BeitragRichtextEditor: ({ html, onChange }: { html: string; onChange: (h: string) => void }) => (
@@ -60,14 +60,26 @@ function serverMit(overrides: Record<string, unknown> = {}) {
  * (Speichern/Fehler) ueber Context-Hooks. Im echten Programm stellt App.tsx
  * beide global bereit, hier deshalb von Hand.
  */
-function zeige() {
-    return render(
+function baum(props: Partial<BeitraegeTabProps> = {}) {
+    return (
         <ConfirmProvider>
             <ToastProvider>
-                <BeitraegeTab />
+                <BeitraegeTab {...props} />
             </ToastProvider>
         </ConfirmProvider>
     );
+}
+
+function zeige(props: Partial<BeitraegeTabProps> = {}) {
+    return render(baum(props));
+}
+
+/** Zaehlt, wie oft die Liste per GET neu vom Server geholt wurde. */
+function anzahlListenAbrufe() {
+    return fetchMock.mock.calls.filter(
+        (c: unknown[]) => c[0] === '/api/beitraege'
+            && ((c[1] as RequestInit | undefined)?.method ?? 'GET') === 'GET'
+    ).length;
 }
 
 describe('BeitraegeTab', () => {
@@ -197,5 +209,38 @@ describe('BeitraegeTab', () => {
         zeige();
 
         expect(await screen.findByText(/Noch kein Beitrag angelegt/i)).toBeInTheDocument();
+    });
+
+    it('sperrt den Knopf "Neuer Beitrag", solange keine Funktion dafür übergeben wurde', async () => {
+        zeige();
+
+        const knopf = await screen.findByRole('button', { name: 'Neuer Beitrag' });
+        expect(knopf).toBeDisabled();
+        expect(knopf).toHaveAttribute('title', 'Diese Funktion ist noch nicht fertig.');
+    });
+
+    it('lässt den Knopf "Neuer Beitrag" klicken und ruft onNeuerBeitrag auf, wenn er übergeben wurde', async () => {
+        const user = userEvent.setup();
+        const onNeuerBeitrag = vi.fn();
+        zeige({ onNeuerBeitrag });
+
+        const knopf = await screen.findByRole('button', { name: 'Neuer Beitrag' });
+        expect(knopf).not.toBeDisabled();
+
+        await user.click(knopf);
+
+        expect(onNeuerBeitrag).toHaveBeenCalledTimes(1);
+    });
+
+    it('lädt die Liste neu, wenn neuLadenSignal hochgezählt wird', async () => {
+        const { rerender } = zeige({ neuLadenSignal: 0 });
+        await screen.findByText('Neues Tor');
+        const rufeVorher = anzahlListenAbrufe();
+
+        rerender(baum({ neuLadenSignal: 1 }));
+
+        await waitFor(() => {
+            expect(anzahlListenAbrufe()).toBeGreaterThan(rufeVorher);
+        });
     });
 });

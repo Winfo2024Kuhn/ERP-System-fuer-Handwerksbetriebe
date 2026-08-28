@@ -156,6 +156,10 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
         }
     };
 
+    // Der Assistent hinter dem Knopf kommt erst in einer späteren Aufgabe.
+    // Bis dahin lieber sichtbar sperren statt eines Knopfs, der ins Leere geht.
+    const neuerBeitragGesperrt = !onNeuerBeitrag;
+
     if (fehler && liste.length === 0) {
         return (
             <div className="flex flex-col items-start gap-3 p-4 bg-rose-50 border border-rose-200 rounded-lg text-rose-800">
@@ -178,7 +182,11 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                     <Button
                         size="sm"
                         onClick={onNeuerBeitrag}
-                        className="w-full bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                        disabled={neuerBeitragGesperrt}
+                        title={neuerBeitragGesperrt ? 'Diese Funktion ist noch nicht fertig.' : undefined}
+                        className={`w-full ${neuerBeitragGesperrt
+                            ? 'bg-slate-100 text-slate-400 border border-slate-200'
+                            : 'bg-rose-600 text-white border border-rose-600 hover:bg-rose-700'}`}
                     >
                         <Plus className="w-4 h-4" />
                         Neuer Beitrag
@@ -325,7 +333,7 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                                     className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                                 />
                                 <p className="text-xs text-slate-400 mt-1">
-                                    Steht als Anrisstext auf der Übersichtsseite. {kurzbeschreibung.length} Zeichen.
+                                    Das ist der kurze Text, der auf der Übersichtsseite unter dem Titel steht. {kurzbeschreibung.length} Zeichen.
                                 </p>
                             </div>
 
