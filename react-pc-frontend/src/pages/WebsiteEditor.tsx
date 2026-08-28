@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BarChart3, FileText } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
+import { BeitraegeTab } from '../components/website/BeitraegeTab';
 import { InsightsTab } from '../components/website/InsightsTab';
 import { cn } from '../lib/utils';
 
@@ -41,7 +42,7 @@ export function WebsiteEditor() {
 
             {aktiverTab === 'beitraege' && (
                 <div data-testid="tab-beitraege">
-                    {/* Task 10 setzt hier <BeitraegeTab /> ein. */}
+                    <BeitraegeTab />
                 </div>
             )}
             {aktiverTab === 'insights' && (
