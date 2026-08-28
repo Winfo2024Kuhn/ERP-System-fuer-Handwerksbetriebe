@@ -11,7 +11,7 @@ export interface BeitragVorschauProps {
 }
 
 const MONATE = [
-    'Januar', 'Februar', 'Maerz', 'April', 'Mai', 'Juni',
+    'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
     'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
 ];
 
@@ -44,7 +44,7 @@ export function BeitragVorschau({ titel, textHtml, bildUrls, veroeffentlichtAm }
                 </nav>
 
                 <p className="text-xs tracking-[0.15em] uppercase text-stone-400 mb-3">
-                    {veroeffentlichtAm ? monatUndJahr(veroeffentlichtAm) : 'Noch nicht veroeffentlicht'}
+                    {veroeffentlichtAm ? monatUndJahr(veroeffentlichtAm) : 'Noch nicht veröffentlicht'}
                 </p>
 
                 <h1 className="text-4xl sm:text-5xl font-light text-stone-800 mb-6 leading-[1.1]">

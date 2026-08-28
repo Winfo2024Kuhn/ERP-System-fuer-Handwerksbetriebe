@@ -37,7 +37,7 @@ describe('BeitragRichtextEditor', () => {
 
         expect(screen.getByRole('button', { name: 'Fett' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Kursiv' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Aufzaehlung' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Aufzählung' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Nummerierte Liste' })).toBeInTheDocument();
         // Ueberschriften und Ausrichtung wirft die Website weg, also gibt es sie hier nicht.
         expect(screen.queryByRole('button', { name: /Ueberschrift/ })).not.toBeInTheDocument();

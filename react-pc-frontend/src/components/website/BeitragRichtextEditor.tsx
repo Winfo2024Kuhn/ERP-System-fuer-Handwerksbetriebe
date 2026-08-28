@@ -81,7 +81,7 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
                 <span className="w-px h-5 bg-slate-300 mx-1" />
 
                 <Werkzeug
-                    label="Aufzaehlung"
+                    label="Aufzählung"
                     aktiv={editor.isActive('bulletList')}
                     onClick={() => editor.chain().focus().toggleBulletList().run()}
                 >
@@ -114,7 +114,7 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
 
                 <span className="flex-1" />
 
-                <Werkzeug label="Rueckgaengig" onClick={() => editor.chain().focus().undo().run()}>
+                <Werkzeug label="Rückgängig" onClick={() => editor.chain().focus().undo().run()}>
                     <Undo className="w-4 h-4" />
                 </Werkzeug>
                 <Werkzeug label="Wiederholen" onClick={() => editor.chain().focus().redo().run()}>

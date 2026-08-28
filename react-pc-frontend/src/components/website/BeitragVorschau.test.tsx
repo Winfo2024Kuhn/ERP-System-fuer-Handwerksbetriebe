@@ -27,7 +27,7 @@ describe('BeitragVorschau', () => {
     it('sagt deutlich, wenn der Beitrag noch nicht veroeffentlicht ist', () => {
         render(<BeitragVorschau {...standard} />);
 
-        expect(screen.getByText('Noch nicht veroeffentlicht')).toBeInTheDocument();
+        expect(screen.getByText('Noch nicht veröffentlicht')).toBeInTheDocument();
     });
 
     it('zeigt Monat und Jahr, sobald ein Datum da ist', () => {
