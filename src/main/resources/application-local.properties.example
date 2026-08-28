@@ -34,3 +34,20 @@ spring.datasource.password=DEIN_DB_PASSWORT
 #vendor.amazon.client-id=DEIN_CLIENT_ID
 #vendor.amazon.client-secret=DEIN_CLIENT_SECRET
 #vendor.amazon.refresh-token=DEIN_REFRESH_TOKEN
+
+# ========== Website-Beitraege (Bereich "Aktuelles" auf der Firmen-Website) ==========
+# Gemeinsames Passwort zwischen ERP und Website. Du erfindest es selbst, z.B.
+# auf dem Website-Server mit "uuidgen" oder "openssl rand -base64 32".
+# Derselbe Wert muss auf dem Website-Server in deren .env unter
+# BEITRAEGE_API_TOKEN stehen, sonst antwortet die Website mit "nicht autorisiert".
+#
+# Warum ueberhaupt ein Passwort, wenn beide Server ueber Tailscale verbunden sind:
+# Die Website muss oeffentlich erreichbar sein, sonst kann sie niemand aufrufen.
+# Ihre interne Schnittstelle laeuft auf demselben Port wie die oeffentliche Seite.
+# Ohne dieses Passwort koennte jeder im Internet Beitraege veroeffentlichen.
+#website.beitraege.api-token=DEIN_GEMEINSAMES_PASSWORT
+
+# Adresse der Website fuer die Beitraege-Schnittstelle. Muss https sein.
+# Nur noetig, wenn sie von der Website in den Firmendaten abweicht - dort steht
+# die oeffentliche Adresse, die auch auf Belegexporte gedruckt wird.
+#website.beitraege.base-url=https://deine-firmen-website.de
