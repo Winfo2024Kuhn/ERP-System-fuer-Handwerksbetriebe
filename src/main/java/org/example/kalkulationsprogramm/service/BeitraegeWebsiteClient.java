@@ -29,13 +29,14 @@ import java.util.UUID;
  * pflegt das ERP die "Aktuelles"-Beiträge der Website (anlegen, bearbeiten,
  * veröffentlichen, Bilder verwalten).
  *
- * <p>Die Basis-URL kommt NICHT aus einer Property, sondern aus den
- * Firmenstammdaten ({@link FirmeninformationService#getFirmeninformation()}).
- * Sie wird bei JEDEM Aufruf frisch ermittelt, nicht im Konstruktor gecacht,
- * damit ein Admin die Website-URL über die Firma-Seite ändern kann, ohne
- * dass das ERP neu gestartet werden muss. Ist kein Wert hinterlegt, wirft der
- * Client eine {@link BeitraegeWebsiteException}, bevor ein HTTP-Call versucht
- * wird.
+ * <p>Die Basis-URL kommt vorrangig aus der Property
+ * {@code website.beitraege.base-url}. Ist sie leer, greift der Rückfall auf
+ * die Firmenstammdaten ({@link FirmeninformationService#getFirmeninformation()}).
+ * Der Firmendaten-Fall wird bei JEDEM Aufruf frisch ermittelt, nicht im
+ * Konstruktor gecacht, damit ein Admin die Website-URL über die Firma-Seite
+ * ändern kann, ohne dass das ERP neu gestartet werden muss. Ist kein Wert
+ * hinterlegt, wirft der Client eine {@link BeitraegeWebsiteException}, bevor
+ * ein HTTP-Call versucht wird.
  *
  * <p>Jede URL wird von vornherein mit abschließendem Slash gebaut, weil die
  * Website mit {@code trailingSlash: 'always'} konfiguriert ist. Ein
@@ -62,14 +63,17 @@ public class BeitraegeWebsiteClient {
     private final ObjectMapper objectMapper;
     private final FirmeninformationService firmeninformationService;
     private final HttpClient httpClient;
+    private final String baseUrlProperty;
     private final String apiToken;
 
     @Autowired
     public BeitraegeWebsiteClient(ObjectMapper objectMapper,
                                    FirmeninformationService firmeninformationService,
+                                   @Value("${website.beitraege.base-url:}") String baseUrlProperty,
                                    @Value("${website.beitraege.api-token:}") String apiToken) {
         this.objectMapper = objectMapper;
         this.firmeninformationService = firmeninformationService;
+        this.baseUrlProperty = baseUrlProperty;
         this.apiToken = apiToken;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(15))
@@ -80,10 +84,12 @@ public class BeitraegeWebsiteClient {
     BeitraegeWebsiteClient(ObjectMapper objectMapper,
                             FirmeninformationService firmeninformationService,
                             HttpClient httpClient,
+                            String baseUrlProperty,
                             String apiToken) {
         this.objectMapper = objectMapper;
         this.firmeninformationService = firmeninformationService;
         this.httpClient = httpClient;
+        this.baseUrlProperty = baseUrlProperty;
         this.apiToken = apiToken;
     }
 
@@ -176,26 +182,38 @@ public class BeitraegeWebsiteClient {
     // --- Hilfsmethoden ---
 
     /**
-     * Ermittelt die Basis-URL frisch aus den Firmenstammdaten (kein Caching im
-     * Konstruktor, siehe Klassenkommentar). Ein etwaiger abschließender Slash
-     * am hinterlegten Wert wird entfernt, damit beim Anhängen des Pfads kein
-     * doppelter Slash entsteht.
+     * Ermittelt die Basis-URL der Beitraege-API.
      *
-     * <p>{@code Firmeninformation.website} ist ein reines Freitextfeld ohne
-     * Format-Zwang. Diese Verbindung läuft bewusst NICHT über VPN, sondern
-     * über das offene Internet zur Website, daher wird hier zwingend
-     * {@code https} verlangt (Ausnahme {@code http://localhost} bzw.
-     * {@code http://127.0.0.1} für die lokale Entwicklung) &mdash; sonst
-     * ginge der Bearer-Token im Klartext über die Leitung. Eine Website-URL
-     * ohne Schema (z. B. {@code www.beispiel.de}) oder mit fehlerhafter
-     * Syntax wird ebenfalls hier abgefangen, statt als unbehandelte
-     * {@link IllegalArgumentException} erst beim späteren Aufbau des
-     * {@link HttpRequest} durchzuschlagen.
+     * <p>Vorrang hat die Property {@code website.beitraege.base-url}. Sie ist
+     * das Gegenstueck zum {@code ERP_BASE_URL} der Website und zeigt in der
+     * Regel auf deren Tailscale-Adresse. Ist sie leer, greift der Rueckfall
+     * auf {@code Firmeninformation.website}.
+     *
+     * <p>Die Trennung ist noetig, weil {@code Firmeninformation.website} auch
+     * als oeffentliche Firmenadresse auf PDF-Exporte gedruckt wird
+     * ({@code BelegeKasseExportPdfService}). Dort darf keine interne Adresse
+     * stehen.
+     *
+     * <p>Ein etwaiger abschliessender Slash wird entfernt, damit beim Anhaengen
+     * des Pfads kein doppelter Slash entsteht. Verlangt wird zwingend
+     * {@code https} (Ausnahme {@code http://localhost} bzw.
+     * {@code http://127.0.0.1} fuer die lokale Entwicklung) - sonst ginge der
+     * Bearer-Token im Klartext ueber die Leitung. Tailscale liefert ueber
+     * MagicDNS echtes HTTPS, die Pruefung steht der VPN-Strecke also nicht im Weg.
+     *
+     * <p>Eine Website-URL ohne Schema (z. B. {@code www.beispiel.de}) oder mit
+     * fehlerhafter Syntax wird ebenfalls hier abgefangen, statt als
+     * unbehandelte {@link IllegalArgumentException} erst beim späteren Aufbau
+     * des {@link HttpRequest} durchzuschlagen.
      */
     private String ermittleBaseUrl() {
-        String website = firmeninformationService.getFirmeninformation().getWebsite();
+        String website = (baseUrlProperty != null && !baseUrlProperty.isBlank())
+                ? baseUrlProperty
+                : firmeninformationService.getFirmeninformation().getWebsite();
         if (website == null || website.isBlank()) {
-            throw new BeitraegeWebsiteException("Keine Website-URL in den Firmendaten hinterlegt.");
+            throw new BeitraegeWebsiteException(
+                    "Keine Website-Adresse hinterlegt. Entweder website.beitraege.base-url setzen "
+                    + "oder die Website in den Firmendaten eintragen.");
         }
         String basisUrl = website.endsWith("/") ? website.substring(0, website.length() - 1) : website;
 

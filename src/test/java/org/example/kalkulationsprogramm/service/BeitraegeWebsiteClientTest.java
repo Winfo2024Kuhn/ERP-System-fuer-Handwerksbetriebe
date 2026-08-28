@@ -40,13 +40,22 @@ class BeitraegeWebsiteClientTest {
     private HttpClient mockHttpClient;
     private FirmeninformationService mockFirmeninformationService;
     private BeitraegeWebsiteClient client;
+    private String baseUrlProperty;
 
     @BeforeEach
     void setUp() {
         mockHttpClient = mock(HttpClient.class);
         mockFirmeninformationService = mock(FirmeninformationService.class);
+        baseUrlProperty = "";
         client = new BeitraegeWebsiteClient(
-                new ObjectMapper(), mockFirmeninformationService, mockHttpClient, API_TOKEN);
+                new ObjectMapper(), mockFirmeninformationService, mockHttpClient,
+                baseUrlProperty, API_TOKEN);
+    }
+
+    /** Baut den Client mit gesetzter Property neu, weil sie im Konstruktor landet. */
+    private void mitBaseUrlProperty(String wert) {
+        client = new BeitraegeWebsiteClient(
+                new ObjectMapper(), mockFirmeninformationService, mockHttpClient, wert, API_TOKEN);
     }
 
     /**
@@ -407,7 +416,7 @@ class BeitraegeWebsiteClientTest {
 
         assertThatThrownBy(() -> client.listeAlle())
                 .isInstanceOf(BeitraegeWebsiteException.class)
-                .hasMessageContaining("Keine Website-URL in den Firmendaten hinterlegt.");
+                .hasMessageContaining("Keine Website-Adresse hinterlegt.");
 
         verify(mockHttpClient, never()).send(any(), any());
     }
@@ -418,7 +427,7 @@ class BeitraegeWebsiteClientTest {
 
         assertThatThrownBy(() -> client.hole(1L))
                 .isInstanceOf(BeitraegeWebsiteException.class)
-                .hasMessageContaining("Keine Website-URL in den Firmendaten hinterlegt.");
+                .hasMessageContaining("Keine Website-Adresse hinterlegt.");
 
         verify(mockHttpClient, never()).send(any(), any());
     }
@@ -486,7 +495,8 @@ class BeitraegeWebsiteClientTest {
         // Kein mitWebsiteUrl(...): pruefeApiToken() wirft, bevor ermittleBaseUrl()
         // die Firmenstammdaten überhaupt abfragt.
         BeitraegeWebsiteClient clientOhneToken =
-                new BeitraegeWebsiteClient(new ObjectMapper(), mockFirmeninformationService, mockHttpClient, "   ");
+                new BeitraegeWebsiteClient(new ObjectMapper(), mockFirmeninformationService, mockHttpClient,
+                        baseUrlProperty, "   ");
 
         assertThatThrownBy(() -> clientOhneToken.listeAlle())
                 .isInstanceOf(BeitraegeWebsiteException.class)
@@ -507,5 +517,55 @@ class BeitraegeWebsiteClientTest {
                 .hasMessageContaining("Nicht unterstützter Bildtyp");
 
         verify(mockHttpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void propertyStichtDieFirmendaten() throws Exception {
+        mitBaseUrlProperty("https://kuhn-web.tail7cd296.ts.net");
+        stelleAntwortBereit(200, "{\"posts\":[]}");
+
+        client.listeAlle();
+
+        ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(anfrage.capture(), any());
+        assertThat(anfrage.getValue().uri().toString())
+                .isEqualTo("https://kuhn-web.tail7cd296.ts.net/api/internal/beitraege/");
+        // Die Firmendaten duerfen gar nicht erst abgefragt werden.
+        verify(mockFirmeninformationService, never()).getFirmeninformation();
+    }
+
+    @Test
+    void ohnePropertyGreiftDerRueckfallAufDieFirmendaten() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        stelleAntwortBereit(200, "{\"posts\":[]}");
+
+        client.listeAlle();
+
+        ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(anfrage.capture(), any());
+        assertThat(anfrage.getValue().uri().toString())
+                .isEqualTo(BASE_URL + "/api/internal/beitraege/");
+    }
+
+    @Test
+    void auchDiePropertyMussHttpsSein() {
+        mitBaseUrlProperty("http://kuhn-web.tail7cd296.ts.net");
+
+        assertThatThrownBy(() -> client.listeAlle())
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("https");
+    }
+
+    @Test
+    void abschliessenderSlashInDerPropertyErzeugtKeinenDoppeltenSlash() throws Exception {
+        mitBaseUrlProperty("https://kuhn-web.tail7cd296.ts.net/");
+        stelleAntwortBereit(200, "{\"posts\":[]}");
+
+        client.listeAlle();
+
+        ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(anfrage.capture(), any());
+        assertThat(anfrage.getValue().uri().toString())
+                .doesNotContain("//api/internal");
     }
 }
