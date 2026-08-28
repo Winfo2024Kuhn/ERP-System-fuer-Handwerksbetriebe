@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
-    FileText, Gem, Home, Layers, List, Mail, MailPlus, Package, Settings,
+    FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
     Calendar, CalendarDays, Plane, Shield, Receipt, Wallet
 } from 'lucide-react';
@@ -160,12 +160,18 @@ const NAVIGATION: NavCategory[] = [
                     { name: 'Erfolgsanalyse', href: '/analyse', icon: BarChart3 },
                     { name: 'Kostenstellen', href: '/kostenstellen', icon: Wallet },
                 ]
+            },
+            {
+                label: 'Website',
+                items: [
+                    { name: 'Neuigkeiten', href: '/website', icon: Globe },
+                ]
             }
         ]
     }
 ];
 
-const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer']);
+const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer', '/website']);
 
 
 export function RibbonNavigation() {
