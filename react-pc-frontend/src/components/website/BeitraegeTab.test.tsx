@@ -19,11 +19,16 @@ vi.mock('./BeitragRichtextEditor', () => ({
 // (ProjektSearchModal, SchrittBilder, bildRendern) und bekommen hier nur
 // einfache Stellvertreter -- genau wie in BeitragAssistent.test.tsx, das
 // dieselben Bausteine fuer den Assistenten verwendet.
+// Bildet den echten ProjektSearchModal nach: handleSelect ruft dort erst
+// onSelect und direkt danach onClose auf. Fehlt das onClose hier, bleibt
+// unbemerkt, dass der Dialog sich beim Waehlen selbst schliesst.
 vi.mock('../ProjektSearchModal', () => ({
-    ProjektSearchModal: ({ isOpen, onSelect }: {
-        isOpen: boolean; onSelect: (p: { id: number; bauvorhaben: string }) => void;
+    ProjektSearchModal: ({ isOpen, onSelect, onClose }: {
+        isOpen: boolean;
+        onSelect: (p: { id: number; bauvorhaben: string }) => void;
+        onClose: () => void;
     }) => isOpen ? (
-        <button onClick={() => onSelect({ id: 5, bauvorhaben: 'Balkonanlage' })}>
+        <button onClick={() => { onSelect({ id: 5, bauvorhaben: 'Balkonanlage' }); onClose(); }}>
             Projekt wählen
         </button>
     ) : null,
@@ -349,6 +354,25 @@ describe('BeitraegeTab', () => {
         expect(screen.getByLabelText('Bildbeschreibung für Bild 2 von 2')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Bild 1 von 2 löschen' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Bild 2 von 2 löschen' })).toBeInTheDocument();
+    });
+
+    // Frueher stand hier fuer jeden Beitrag mit Titelbild nur ein graues
+    // Sinnbild. Der Handwerker erkennt seine Baustelle aber am Foto viel
+    // schneller als am Titel.
+    it('zeigt das Titelbild eines Beitrags in der Liste', async () => {
+        zeige();
+
+        const bild = await screen.findByAltText('Titelbild von Geländer montiert');
+        // Geht ueber die Durchreiche des ERP, nicht direkt zur Website.
+        expect(bild).toHaveAttribute('src', '/api/beitraege/bild/g.webp');
+        expect(bild).toHaveAttribute('loading', 'lazy');
+    });
+
+    it('zeigt kein Bild bei einem Beitrag ohne Titelbild', async () => {
+        zeige();
+
+        await screen.findByText('Neues Tor');
+        expect(screen.queryByAltText('Titelbild von Neues Tor')).not.toBeInTheDocument();
     });
 
     it('warnt, statt eine geleerte Bildbeschreibung stumm zu verwerfen', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     AlertTriangle, Eye, FileText, Globe, Image as ImageIcon, Loader2,
     Pencil, Plus, Star, Trash2, X,
@@ -76,6 +76,10 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
     const [bildAuswahl, setBildAuswahl] = useState<GewaehltesBild[]>([]);
     const [bilderWerdenHochgeladen, setBilderWerdenHochgeladen] = useState(false);
     const [bildFortschritt, setBildFortschritt] = useState<string | null>(null);
+    // ProjektSearchModal ruft nach onSelect immer auch onClose auf. Ohne diese
+    // Merkung wuerde bildDialogSchliessen das gerade gewaehlte Projekt sofort
+    // wieder verwerfen und der Dialog ginge beim Auswaehlen einfach zu.
+    const bildProjektGewaehlt = useRef(false);
 
     const ladeListe = useCallback(async () => {
         setLaedtListe(true);
@@ -190,6 +194,7 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
     };
 
     const bildDialogSchliessen = () => {
+        bildProjektGewaehlt.current = false;
         setBildSchritt(null);
         setBildProjekt(null);
         setBildAuswahl([]);
@@ -292,11 +297,14 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                             className={`w-full flex items-start gap-3 p-3 text-left transition-colors
                                 ${gewaehlt?.id === beitrag.id ? 'bg-rose-50' : 'hover:bg-slate-50'}`}
                         >
-                            <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                {beitrag.coverImagePath
-                                    ? <ImageIcon className="w-5 h-5 text-slate-400" />
-                                    : <FileText className="w-5 h-5 text-slate-400" />}
-                            </div>
+                            {/* key auf den Pfad: bekommt derselbe Beitrag spaeter ein
+                                anderes Titelbild, startet die Kachel frisch statt einen
+                                alten Ladefehler weiterzuschleppen. */}
+                            <Vorschaubild
+                                key={beitrag.coverImagePath ?? 'ohne-bild'}
+                                pfad={beitrag.coverImagePath}
+                                titel={beitrag.title}
+                            />
                             <div className="min-w-0 flex-1">
                                 <p className="font-medium text-slate-900 truncate">{beitrag.title}</p>
                                 <div className="flex items-center gap-2 mt-1">
@@ -496,8 +504,9 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
 
             <ProjektSearchModal
                 isOpen={bildSchritt === 'projekt'}
-                onClose={bildDialogSchliessen}
+                onClose={() => { if (!bildProjektGewaehlt.current) bildDialogSchliessen(); }}
                 onSelect={projekt => {
+                    bildProjektGewaehlt.current = true;
                     setBildProjekt(projekt as Projekt);
                     setBildAuswahl([]);
                     setBildSchritt('bilder');
@@ -571,6 +580,39 @@ function StatusChip({ status }: { status: 'draft' | 'published' }) {
         <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">Veröffentlicht</span>
     ) : (
         <span className="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">Entwurf</span>
+    );
+}
+
+/**
+ * Titelbild eines Beitrags in der Liste links.
+ *
+ * Zeigt das echte Bild statt eines Platzhalter-Symbols -- ein Handwerker
+ * erkennt seine Baustelle am Foto schneller als am Titel (Recognition rather
+ * than recall). Faellt die Durchreiche zur Website aus oder hat der Beitrag
+ * noch kein Titelbild, bleibt das Symbol als Rueckfallebene stehen.
+ *
+ * Die Kachel behaelt in jedem Fall ihre 48x48 px, damit die Liste beim
+ * Nachladen der Bilder nicht springt.
+ */
+function Vorschaubild({ pfad, titel }: { pfad: string | null; titel: string }) {
+    const [ladefehler, setLadefehler] = useState(false);
+
+    return (
+        <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+            {pfad && !ladefehler ? (
+                <img
+                    src={bildAdresse(pfad)}
+                    alt={`Titelbild von ${titel}`}
+                    loading="lazy"
+                    onError={() => setLadefehler(true)}
+                    className="w-full h-full object-cover"
+                />
+            ) : pfad ? (
+                <ImageIcon className="w-5 h-5 text-slate-400" />
+            ) : (
+                <FileText className="w-5 h-5 text-slate-400" />
+            )}
+        </div>
     );
 }
 

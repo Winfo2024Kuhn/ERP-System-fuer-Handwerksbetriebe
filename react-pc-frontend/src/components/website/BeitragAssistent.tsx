@@ -55,6 +55,13 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
     // zweites Mal automatisch und ueberschriebe von Hand geschriebenen Text.
     // Deshalb bleibt sie im Baum und wird nur per hidden-Attribut versteckt.
     const textJeGezeigt = useRef(false);
+    // ProjektSearchModal ruft in handleSelect erst onSelect und direkt danach
+    // onClose auf. Ohne diese Unterscheidung landete auch das erfolgreiche
+    // Waehlen eines Projekts bei onAbbrechen -- der Assistent schloss sich
+    // dabei sofort wieder und "Neuer Beitrag" sah aus, als tue der Knopf nichts.
+    // Ein Ref statt State, weil onSelect und onClose im selben Klick nacheinander
+    // laufen: ein setState waere hier noch nicht sichtbar.
+    const projektGewaehlt = useRef(false);
 
     // Zuruecksetzen, sobald der Assistent neu geoeffnet wird.
     useEffect(() => {
@@ -69,6 +76,7 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
             setFortschritt(null);
             setBeitragId(null);
             textJeGezeigt.current = false;
+            projektGewaehlt.current = false;
         }
     }, [offen]);
 
@@ -209,8 +217,9 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
 
                 <ProjektSearchModal
                     isOpen={schritt === 'projekt'}
-                    onClose={onAbbrechen}
+                    onClose={() => { if (!projektGewaehlt.current) onAbbrechen(); }}
                     onSelect={(gewaehlt) => {
+                        projektGewaehlt.current = true;
                         setProjekt(gewaehlt as Projekt);
                         setSchritt('bilder');
                     }}

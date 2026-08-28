@@ -337,7 +337,16 @@ export function RibbonNavigation() {
                 </div>
 
                 {/* Toggle Button */}
-                <Button variant="ghost" size="sm" onClick={toggleRibbon} className="ml-2 text-slate-400">
+                {/* Nur ein Symbol, deshalb braucht der Knopf einen Namen fuer
+                    Screenreader -- sonst liest er sich als "Schaltflaeche". */}
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleRibbon}
+                    aria-label={isExpanded ? 'Menüleiste einklappen' : 'Menüleiste ausklappen'}
+                    aria-expanded={isExpanded}
+                    className="ml-2 text-slate-400"
+                >
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </Button>
             </div>
