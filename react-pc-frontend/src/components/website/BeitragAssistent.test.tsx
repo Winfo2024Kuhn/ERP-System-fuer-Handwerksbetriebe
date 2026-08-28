@@ -193,6 +193,111 @@ describe('BeitragAssistent', () => {
         expect(bilderRufe).toBe(1);
     });
 
+    it('entfernt nach einem Teilabbruch die Speicher-Knöpfe, damit ein zweiter Klick keinen zweiten Beitrag anlegt', async () => {
+        const user = userEvent.setup();
+        let beitraegePosts = 0;
+        vi.stubGlobal('fetch', vi.fn((url: string, opt?: RequestInit) => {
+            if (url === '/api/beitraege' && opt?.method === 'POST') {
+                beitraegePosts += 1;
+                return Promise.resolve({
+                    ok: true, status: 201, json: () => Promise.resolve({ id: 42, images: [], status: 'draft' }),
+                });
+            }
+            if (url === '/api/beitraege/42/bilder') {
+                return Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({ message: 'weg' }) });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: 42, images: [] }) });
+        }));
+
+        render(<BeitragAssistent offen onAbbrechen={vi.fn()} onFertig={vi.fn()} />);
+        await durchlaufen(user);
+        await user.click(screen.getByRole('button', { name: 'Als Entwurf speichern' }));
+        await screen.findByText(/als Entwurf angelegt/i);
+
+        expect(beitraegePosts).toBe(1);
+
+        // Die eigentliche Absicherung: es gibt nach dem Teilabbruch gar
+        // keinen Knopf mehr, mit dem sich legeBeitragAn ein zweites Mal
+        // ausloesen liesse -- ein zweiter Klick ist damit unmoeglich.
+        expect(screen.queryByRole('button', { name: 'Als Entwurf speichern' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Veröffentlichen' })).not.toBeInTheDocument();
+        expect(beitraegePosts).toBe(1);
+    });
+
+    it('bietet nach einem Teilabbruch einen Knopf zum Weitermachen im Editor, der keinen zweiten Beitrag anlegt', async () => {
+        const user = userEvent.setup();
+        const onFertig = vi.fn();
+        const onAbbrechen = vi.fn();
+        let beitraegePosts = 0;
+        vi.stubGlobal('fetch', vi.fn((url: string, opt?: RequestInit) => {
+            if (url === '/api/beitraege' && opt?.method === 'POST') {
+                beitraegePosts += 1;
+                return Promise.resolve({
+                    ok: true, status: 201, json: () => Promise.resolve({ id: 42, images: [], status: 'draft' }),
+                });
+            }
+            if (url === '/api/beitraege/42/bilder') {
+                return Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({ message: 'weg' }) });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: 42, images: [] }) });
+        }));
+
+        render(<BeitragAssistent offen onAbbrechen={onAbbrechen} onFertig={onFertig} />);
+        await durchlaufen(user);
+        await user.click(screen.getByRole('button', { name: 'Als Entwurf speichern' }));
+        await screen.findByText(/als Entwurf angelegt/i);
+
+        await user.click(screen.getByRole('button', { name: 'Im Editor weitermachen' }));
+
+        // Der Knopf schliesst wie ein Erfolg (onFertig), damit die
+        // Beitragsliste den bereits angelegten Entwurf neu laedt -- er darf
+        // dabei aber keinesfalls noch einmal legeBeitragAn ausloesen.
+        expect(onFertig).toHaveBeenCalledWith(42);
+        expect(onAbbrechen).not.toHaveBeenCalled();
+        expect(beitraegePosts).toBe(1);
+    });
+
+    it('laedt die Liste auch neu, wenn der Nutzer nach einem Teilabbruch mit dem X schließt', async () => {
+        const user = userEvent.setup();
+        const onFertig = vi.fn();
+        const onAbbrechen = vi.fn();
+        vi.stubGlobal('fetch', vi.fn((url: string, opt?: RequestInit) => {
+            if (url === '/api/beitraege' && opt?.method === 'POST') {
+                return Promise.resolve({
+                    ok: true, status: 201, json: () => Promise.resolve({ id: 42, images: [], status: 'draft' }),
+                });
+            }
+            if (url === '/api/beitraege/42/bilder') {
+                return Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({ message: 'weg' }) });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: 42, images: [] }) });
+        }));
+
+        render(<BeitragAssistent offen onAbbrechen={onAbbrechen} onFertig={onFertig} />);
+        await durchlaufen(user);
+        await user.click(screen.getByRole('button', { name: 'Als Entwurf speichern' }));
+        await screen.findByText(/als Entwurf angelegt/i);
+
+        await user.click(screen.getByRole('button', { name: 'Assistent schließen' }));
+
+        // Bug war: onAbbrechen zaehlt in WebsiteEditor nichts hoch, die Liste
+        // blieb ohne den neuen Entwurf. Deshalb muss hier onFertig laufen.
+        expect(onFertig).toHaveBeenCalledWith(42);
+        expect(onAbbrechen).not.toHaveBeenCalled();
+    });
+
+    it('schließt normal über das X, solange noch kein Beitrag angelegt wurde', async () => {
+        const user = userEvent.setup();
+        const onFertig = vi.fn();
+        const onAbbrechen = vi.fn();
+        render(<BeitragAssistent offen onAbbrechen={onAbbrechen} onFertig={onFertig} />);
+
+        await user.click(screen.getByRole('button', { name: 'Assistent schließen' }));
+
+        expect(onAbbrechen).toHaveBeenCalledTimes(1);
+        expect(onFertig).not.toHaveBeenCalled();
+    });
+
     it('speichert nicht ohne Titel und Text', async () => {
         const user = userEvent.setup();
         render(<BeitragAssistent offen onAbbrechen={vi.fn()} onFertig={vi.fn()} />);

@@ -20,6 +20,12 @@ type Tab = 'beitraege' | 'insights';
  * onNeuerBeitrag uebergeben wird (siehe BeitraegeTab.test.tsx). Diese Seite
  * liefert die echte Funktion und zaehlt neuLadenSignal hoch, damit die
  * Liste nach dem Assistenten neu laedt.
+ *
+ * onFertig laeuft nicht nur bei vollem Erfolg, sondern auch, wenn der
+ * Nutzer den Assistenten nach einem Teilabbruch schliesst (Bild-Upload
+ * abgebrochen, Beitrag aber schon als Entwurf angelegt) -- siehe
+ * BeitragAssistent.tsx. Sonst bliebe der neue Entwurf in der Liste
+ * unsichtbar und der Nutzer legt ihn versehentlich doppelt an.
  */
 export function WebsiteEditor() {
     const [aktiverTab, setAktiverTab] = useState<Tab>('beitraege');

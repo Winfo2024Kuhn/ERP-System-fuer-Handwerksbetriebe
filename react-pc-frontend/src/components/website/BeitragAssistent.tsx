@@ -41,6 +41,12 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
     const [speichert, setSpeichert] = useState(false);
     const [fortschritt, setFortschritt] = useState<string | null>(null);
     const [teilfehler, setTeilfehler] = useState<string | null>(null);
+    // Muss im Zustand der Komponente leben, nicht in einer lokalen Variable
+    // von speichern(): bricht der Bilder-Upload ab, werden die Speicher-
+    // Knoepfe kurz wieder anklickbar. Ein zweiter Klick darf dann NICHT noch
+    // einmal legeBeitragAn aufrufen, sonst entsteht ein zweiter Beitrag auf
+    // der Website -- und die kann einen Beitrag bewusst nicht loeschen.
+    const [beitragId, setBeitragId] = useState<number | null>(null);
     // Haelt SchrittText dauerhaft eingehaengt, sobald der Textschritt einmal
     // erreicht wurde. SchrittText traegt intern einen useRef, der den
     // automatischen ersten KI-Lauf nur einmal ausloesen soll; ein useRef wird
@@ -61,6 +67,7 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
             setKiBilder([]);
             setTeilfehler(null);
             setFortschritt(null);
+            setBeitragId(null);
             textJeGezeigt.current = false;
         }
     }, [offen]);
@@ -79,10 +86,15 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
     }, []);
 
     const speichern = async (veroeffentlichen: boolean) => {
-        if (!projekt) return;
+        // beitragId aus dem Zustand: existiert schon einer (Teilabbruch bei
+        // einem frueheren Versuch), bricht dieser Aufruf sofort ab, statt
+        // ueber legeBeitragAn einen zweiten Beitrag anzulegen. Die Knoepfe
+        // sind in diesem Fall zwar schon ausgeblendet (siehe istTeilabbruch
+        // unten), diese Sperre bleibt aber als zweite Absicherung stehen.
+        if (!projekt || beitragId !== null) return;
         setSpeichert(true);
         setTeilfehler(null);
-        let beitragId: number | null = null;
+        let angelegteId: number | null = null;
         let uebertragen = 0;
 
         try {
@@ -92,7 +104,10 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                 excerpt: stand.kurzbeschreibung.trim(),
                 content: stand.textHtml,
             });
-            beitragId = angelegt.id;
+            angelegteId = angelegt.id;
+            // Sofort in den Zustand spiegeln: von hier an ueberlebt die
+            // Kennung auch einen Abbruch weiter unten im Bilder-Upload.
+            setBeitragId(angelegteId);
 
             // Nacheinander, nicht parallel: die Website rechnet jedes Bild um.
             let letzterStand = angelegt;
@@ -100,33 +115,35 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                 setFortschritt(`Bild ${i + 1} von ${auswahl.length} wird übertragen...`);
                 const eintrag = auswahl[i];
                 const blob = await rendereBlob(eintrag.bild.url, eintrag.bearbeitung, MAX_BREITE_UPLOAD);
-                letzterStand = await ladeBildHoch(beitragId, blob, eintrag.bild.originalDateiname);
+                letzterStand = await ladeBildHoch(angelegteId, blob, eintrag.bild.originalDateiname);
                 uebertragen += 1;
 
                 // Alt-Text braucht einen zweiten Aufruf, weil der Upload ihn
                 // nicht mitschickt (BeitraegeWebsiteClient.bildHinzufuegen).
                 const neuestes = letzterStand.images.at(-1);
                 if (neuestes && stand.titel.trim()) {
-                    letzterStand = await setzeAltText(beitragId, neuestes.id, stand.titel.trim());
+                    letzterStand = await setzeAltText(angelegteId, neuestes.id, stand.titel.trim());
                 }
             }
 
             const titelbild = letzterStand.images[0];
             if (titelbild) {
                 setFortschritt('Titelbild wird gesetzt...');
-                await setzeTitelbild(beitragId, titelbild.id);
+                await setzeTitelbild(angelegteId, titelbild.id);
             }
 
             if (veroeffentlichen) {
                 setFortschritt('Beitrag wird veröffentlicht...');
-                await setzeStatus(beitragId, 'published');
+                await setzeStatus(angelegteId, 'published');
             }
 
-            onFertig(beitragId);
+            onFertig(angelegteId);
         } catch (e) {
-            if (beitragId !== null) {
-                // Kein Zuruecksetzen: die Website-API kann einen Beitrag
-                // bewusst nicht loeschen. Also ehrlich sagen, was steht.
+            if (angelegteId !== null) {
+                // Kein Zuruecksetzen von beitragId: die Website-API kann
+                // einen Beitrag bewusst nicht loeschen. Also ehrlich sagen,
+                // was steht, und die Kennung fuer den Rest der Sitzung
+                // gesperrt halten (siehe istTeilabbruch weiter unten).
                 setTeilfehler(
                     `Der Beitrag wurde als Entwurf angelegt, aber nicht alles ging durch. `
                     + `${uebertragen} von ${auswahl.length} ${auswahl.length === 1 ? 'Bild' : 'Bildern'} `
@@ -147,6 +164,22 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
 
     const kannSpeichern = Boolean(
         stand.titel.trim() && stand.kurzbeschreibung.trim() && stand.textHtml.trim());
+    // Beitrag steht schon (als Entwurf) auf der Website, aber nicht alles
+    // ging durch. Ab hier sind beide Speicher-Knoepfe tabu -- siehe speichern().
+    const istTeilabbruch = beitragId !== null && teilfehler !== null;
+
+    // Schliesst den Assistenten so oder so. Nach einem Teilabbruch aber wie
+    // bei Erfolg ueber onFertig, egal ob per X oben oder per Knopf unten:
+    // sonst laedt die Beitragsliste nicht neu, der neue Entwurf bleibt
+    // unsichtbar, und der Nutzer legt ihn im Glauben, nichts sei passiert,
+    // versehentlich noch einmal an.
+    const schliessen = () => {
+        if (beitragId !== null && teilfehler !== null) {
+            onFertig(beitragId);
+        } else {
+            onAbbrechen();
+        }
+    };
 
     return (
         <div className="fixed inset-0 bg-white z-[65] flex flex-col">
@@ -159,7 +192,7 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                 </div>
                 <div className="flex items-center gap-4">
                     <Schrittleiste aktiv={schritt} />
-                    <button onClick={onAbbrechen} aria-label="Assistent schließen"
+                    <button onClick={schliessen} aria-label="Assistent schließen"
                         className="p-1.5 hover:bg-slate-100 rounded-full">
                         <X className="w-5 h-5 text-slate-500" />
                     </button>
@@ -236,53 +269,68 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
             </div>
 
             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200">
-                <Button
-                    size="sm"
-                    disabled={schritt === 'projekt' || speichert}
-                    onClick={() => setSchritt(schritt === 'text' ? 'weg' : 'bilder')}
-                    className="border border-slate-300 text-slate-600 hover:bg-slate-100"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    Zurück
-                </Button>
-
-                {fortschritt && (
-                    <span className="flex items-center gap-2 text-sm text-slate-500">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        {fortschritt}
-                    </span>
-                )}
-
-                {schritt === 'bilder' && (
-                    <Button
-                        size="sm"
-                        onClick={() => { void bereiteKiBilderVor(auswahl); setSchritt('weg'); }}
-                        className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-                    >
-                        Weiter
-                        <ArrowRight className="w-4 h-4" />
-                    </Button>
-                )}
-
-                {schritt === 'text' && (
-                    <div className="flex gap-2">
+                {istTeilabbruch ? (
+                    <div className="flex w-full justify-end">
                         <Button
                             size="sm"
-                            disabled={!kannSpeichern || speichert}
-                            onClick={() => void speichern(false)}
-                            className="border border-rose-300 text-rose-700 hover:bg-rose-50"
-                        >
-                            Als Entwurf speichern
-                        </Button>
-                        <Button
-                            size="sm"
-                            disabled={!kannSpeichern || speichert}
-                            onClick={() => void speichern(true)}
+                            onClick={schliessen}
                             className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                         >
-                            Veröffentlichen
+                            Im Editor weitermachen
+                            <ArrowRight className="w-4 h-4" />
                         </Button>
                     </div>
+                ) : (
+                    <>
+                        <Button
+                            size="sm"
+                            disabled={schritt === 'projekt' || speichert}
+                            onClick={() => setSchritt(schritt === 'text' ? 'weg' : 'bilder')}
+                            className="border border-slate-300 text-slate-600 hover:bg-slate-100"
+                        >
+                            <ArrowLeft className="w-4 h-4" />
+                            Zurück
+                        </Button>
+
+                        {fortschritt && (
+                            <span className="flex items-center gap-2 text-sm text-slate-500">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {fortschritt}
+                            </span>
+                        )}
+
+                        {schritt === 'bilder' && (
+                            <Button
+                                size="sm"
+                                onClick={() => { void bereiteKiBilderVor(auswahl); setSchritt('weg'); }}
+                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                            >
+                                Weiter
+                                <ArrowRight className="w-4 h-4" />
+                            </Button>
+                        )}
+
+                        {schritt === 'text' && (
+                            <div className="flex gap-2">
+                                <Button
+                                    size="sm"
+                                    disabled={!kannSpeichern || speichert}
+                                    onClick={() => void speichern(false)}
+                                    className="border border-rose-300 text-rose-700 hover:bg-rose-50"
+                                >
+                                    Als Entwurf speichern
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    disabled={!kannSpeichern || speichert}
+                                    onClick={() => void speichern(true)}
+                                    className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                                >
+                                    Veröffentlichen
+                                </Button>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
         </div>
