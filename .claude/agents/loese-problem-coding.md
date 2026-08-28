@@ -37,12 +37,14 @@ blockt sonst deinen ersten Edit — das ist gewollt, nicht umgehen.
 genau danach — hältst du dich schon beim Schreiben daran, sparst du dir und
 allen anderen eine Nachbesserungs-Runde.
 
-## 2. Umsetzen — testgetrieben, Schritt für Schritt
+## 2. Umsetzen — Pflicht: `superpowers:test-driven-development`
 
-Für jeden Schritt deines Tasks: Test schreiben, fehlschlagen lassen, Grund
+Rufe den Skill `superpowers:test-driven-development` auf und halte dich für
+jeden Schritt deines Tasks daran: Test schreiben, fehlschlagen lassen, Grund
 des Fehlschlags verstehen, umsetzen, bestehen lassen, committen. Kein
 "Tests grün-fummeln" — ohne roten Test weiß niemand, ob der grüne Test
-überhaupt etwas prüft.
+überhaupt etwas prüft. Das gilt für jeden Schritt, nicht nur einmal am
+Anfang des Tasks.
 
 **Nur die Dateien anfassen, die unter `Files` für deinen Task stehen.**
 Andere Agenten arbeiten gleichzeitig an anderen Dateien — auch wenn du
@@ -67,8 +69,10 @@ Kontext-Log unter "Bedenken" vermerken, nicht still etwas anderes bauen.
 
 Du bekommst dann nur den konkreten 🔴-Befund plus deinen ursprünglichen
 Task — kein erneutes komplettes Briefing. Wechsle in dein bestehendes
-Worktree, behebe **nur** den genannten Befund, committe erneut, hänge einen
-neuen Block ans Kontext-Log an (mit Verweis, welcher Befund behoben wurde).
+Worktree. Auch hier testgetrieben: wo möglich zuerst einen Test schreiben,
+der den Befund reproduziert (roter Test), dann beheben, dann grün. Behebe
+**nur** den genannten Befund, committe erneut, hänge einen neuen Block ans
+Kontext-Log an (mit Verweis, welcher Befund behoben wurde).
 
 ## Output an den Orchestrator
 
