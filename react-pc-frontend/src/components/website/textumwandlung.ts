@@ -113,6 +113,63 @@ export function klartextZuHtml(text: string): string {
         .join('');
 }
 
+const BLOCK_MUSTER = /<p[^>]*>([\s\S]*?)<\/p>|<(?:ul|ol)[^>]*>([\s\S]*?)<\/(?:ul|ol)>/gi;
+const LISTENPUNKT_MUSTER = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+
+/**
+ * Raeumt den Inhalt eines einzelnen Absatz- oder Listenpunkt-Blocks auf:
+ * br wird zum Zeilenumbruch, alle uebrigen Tags (b, strong, i, em, span,
+ * ein verschachteltes p in einem li, ...) fallen weg, ihr Text bleibt.
+ *
+ * Die Tags muessen VOR den Entitaeten verschwinden: solange &lt; und &gt;
+ * noch als Entitaet dastehen, sind es keine echten spitzen Klammern und das
+ * Tag-Muster fasst sie nicht an. Erst danach werden sie zurueckgewandelt -
+ * sonst wuerde ein vom Modell maskiertes "<script>" hier zu einem echten Tag
+ * und im naechsten Schritt gleich wieder verschwinden.
+ *
+ * &amp; wird zuletzt entpackt: ein durch &amp; entstandenes "&" darf nicht
+ * zusammen mit direkt folgendem Text erneut wie eine Entitaet aussehen
+ * (aus dem maskierten "&amp;lt;" wuerde sonst faelschlich "<" statt "&lt;").
+ */
+function wandleInlineInhaltZurueck(html: string): string {
+    return html
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+}
+
+/**
+ * Wandelt Beitrags-HTML zurueck in Klartext - das Gegenstueck zu
+ * klartextZuHtml. Jeder <p>-Block wird ein eigener Absatz (Leerzeile
+ * dazwischen), br darin ein einzelner Zeilenumbruch. <ul> und <ol> werden zu
+ * Zeilen mit fuehrendem "- ", eine pro <li>; die Listen-Tags selbst
+ * verschwinden als "uebriger Tag" wie alle anderen.
+ *
+ * Wird gebraucht, weil an die KI Klartext geht, nicht HTML (siehe
+ * SchrittText.tsx): das Backend-DTO dokumentiert das Feld als Klartext, und
+ * die Systemanweisung sagt der KI ausdruecklich, keine HTML-Tags zu
+ * verwenden. Schickte man stattdessen das rohe <p>...</p> aus dem Editor,
+ * koennte sich das Modell am Eingabeformat statt an der Anweisung
+ * orientieren und HTML zurueckliefern - klartextZuHtml wuerde das dann
+ * maskieren, und im Beitrag stuende fuer den Leser sichtbar "&lt;p&gt;".
+ */
+export function htmlZuKlartext(html: string): string {
+    const bloecke = [...html.matchAll(BLOCK_MUSTER)].map(treffer => {
+        const [, pInhalt, listeInhalt] = treffer;
+        if (listeInhalt !== undefined) {
+            return [...listeInhalt.matchAll(LISTENPUNKT_MUSTER)]
+                .map(li => `- ${wandleInlineInhaltZurueck(li[1]).trim()}`)
+                .join('\n');
+        }
+        return wandleInlineInhaltZurueck(pInhalt).trim();
+    });
+
+    return bloecke.filter(Boolean).join('\n\n');
+}
+
 const STANDARD_LAENGE = 160;
 
 /**

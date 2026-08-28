@@ -4,7 +4,7 @@ import { Button } from '../../ui/button';
 import { BeitragRichtextEditor } from '../BeitragRichtextEditor';
 import { BeitragVorschau } from '../BeitragVorschau';
 import { erzeugeBeitragsvorschlag } from '../api';
-import { klartextZuHtml, leiteKurzbeschreibungAb } from '../textumwandlung';
+import { htmlZuKlartext, klartextZuHtml, leiteKurzbeschreibungAb } from '../textumwandlung';
 import type { ChatNachricht } from '../typen';
 
 export interface TextStand {
@@ -54,7 +54,11 @@ export function SchrittText({
                     projektId,
                     verlauf: nachricht ? [...bisher, { rolle: 'user', text: nachricht }] : bisher,
                     aktuellerTitel: stand.titel,
-                    aktuellerText: stand.textHtml,
+                    // Klartext, nicht das rohe HTML aus dem Editor: die KI
+                    // erwartet laut Systemanweisung kein HTML. Schickte man
+                    // <p>...</p> roh mit, koennte sich das Modell am
+                    // Eingabeformat orientieren und selbst HTML zurueckgeben.
+                    aktuellerText: htmlZuKlartext(stand.textHtml),
                 },
                 kiBilder,
             );
@@ -72,6 +76,7 @@ export function SchrittText({
         } catch {
             setFehler('Die KI konnte gerade keinen Vorschlag erstellen. Der Text bleibt unverändert.');
             setVorherigerStand(null);
+            setEingabe(nachricht);
         } finally {
             setLaeuft(false);
         }
@@ -203,16 +208,15 @@ export function SchrittText({
                 </div>
                 <div>
                     <span className="block text-sm font-medium text-slate-700 mb-1">Text</span>
-                    {/* BeitragRichtextEditor kennt kein eigenes disabled-Prop (TipTap
-                        contentEditable). Waehrend eines Laufs wird deshalb von aussen
-                        gesperrt: optisch gedimmt und fuer die Maus unerreichbar. */}
-                    <div
-                        aria-disabled={laeuft}
-                        className={laeuft ? 'pointer-events-none opacity-60' : undefined}
-                    >
+                    {/* Die Sperre waehrend eines Laufs macht jetzt der Editor selbst
+                        (TipTap-editable-Option, sperrt auch die Werkzeugleiste und ist
+                        per Tastatur nicht zu umgehen). Der Wrapper bleibt nur fuer die
+                        optische Dimmung stehen. */}
+                    <div className={laeuft ? 'opacity-60' : undefined}>
                         <BeitragRichtextEditor
                             html={stand.textHtml}
                             onChange={html => onStandAendern({ ...stand, textHtml: html })}
+                            editable={!laeuft}
                         />
                     </div>
                 </div>

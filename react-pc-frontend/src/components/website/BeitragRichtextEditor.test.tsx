@@ -64,4 +64,41 @@ describe('BeitragRichtextEditor', () => {
         expect(screen.getByText('Zweiter')).toBeInTheDocument();
         expect(screen.queryByText('Erster')).not.toBeInTheDocument();
     });
+
+    it('nimmt bei editable={false} keine Eingabe an und meldet nichts nach oben', async () => {
+        const user = userEvent.setup();
+        const onChange = vi.fn();
+        render(<BeitragRichtextEditor html="<p>Start</p>" onChange={onChange} editable={false} />);
+
+        await user.click(screen.getByText('Start'));
+        await user.keyboard('!');
+
+        expect(onChange).not.toHaveBeenCalled();
+        expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    it('sperrt die Werkzeugleiste bei editable={false}', () => {
+        render(<BeitragRichtextEditor html="<p>Start</p>" onChange={() => {}} editable={false} />);
+
+        expect(screen.getByRole('button', { name: 'Fett' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Kursiv' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Aufzählung' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Nummerierte Liste' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Rückgängig' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Wiederholen' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Standard' })).toBeDisabled();
+    });
+
+    it('erlaubt Eingabe wieder, wenn editable von false auf true wechselt', async () => {
+        const user = userEvent.setup();
+        const onChange = vi.fn();
+        const { rerender } = render(
+            <BeitragRichtextEditor html="<p>Start</p>" onChange={onChange} editable={false} />);
+
+        rerender(<BeitragRichtextEditor html="<p>Start</p>" onChange={onChange} editable />);
+        await user.click(screen.getByText('Start'));
+        await user.keyboard('!');
+
+        expect(onChange).toHaveBeenCalled();
+    });
 });

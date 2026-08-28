@@ -4,8 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SchrittText } from './SchrittText';
 
 vi.mock('../BeitragRichtextEditor', () => ({
-    BeitragRichtextEditor: ({ html, onChange }: { html: string; onChange: (h: string) => void }) => (
-        <textarea aria-label="Text" value={html} onChange={e => onChange(e.target.value)} />
+    BeitragRichtextEditor: ({ html, onChange, editable = true }: {
+        html: string; onChange: (h: string) => void; editable?: boolean;
+    }) => (
+        <textarea aria-label="Text" value={html} disabled={!editable} onChange={e => onChange(e.target.value)} />
     ),
 }));
 
@@ -94,6 +96,22 @@ describe('SchrittText', () => {
         });
     });
 
+    it('schickt beim Nachprompten Klartext statt HTML an die KI', async () => {
+        const user = userEvent.setup();
+        zeige(false, { titel: 'Von Hand', kurzbeschreibung: 'x', textHtml: '<p>Erster</p><p>Zweiter</p>' });
+
+        await user.type(screen.getByPlaceholderText(/Was soll geändert werden/), 'kuerzer bitte');
+        await user.click(screen.getByRole('button', { name: 'Senden' }));
+
+        await waitFor(async () => {
+            const daten = fetchMock.mock.calls[0][1].body as FormData;
+            const teil = daten.get('anfrage') as unknown as { text: () => Promise<string> };
+            const anfrage = JSON.parse(await teil.text());
+            expect(anfrage.aktuellerText).not.toContain('<p>');
+            expect(anfrage.aktuellerText).toBe('Erster\n\nZweiter');
+        });
+    });
+
     it('macht die letzte KI-Änderung rückgängig', async () => {
         const user = userEvent.setup();
         const vorher = { titel: 'Alt', kurzbeschreibung: 'Alt', textHtml: '<p>Alt</p>' };
@@ -124,6 +142,20 @@ describe('SchrittText', () => {
         expect(onStandAendern).not.toHaveBeenCalled();
     });
 
+    it('gibt die Eingabe bei einem Fehlschlag ins Feld zurück, statt sie zu verlieren', async () => {
+        const user = userEvent.setup();
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+            ok: false, status: 502, json: () => Promise.resolve({ message: 'kaputt' }),
+        })));
+        zeige(false);
+
+        await user.type(screen.getByPlaceholderText(/Was soll geändert werden/), 'kuerzer bitte');
+        await user.click(screen.getByRole('button', { name: 'Senden' }));
+
+        await screen.findByText(/konnte gerade keinen Vorschlag/i);
+        expect(screen.getByPlaceholderText(/Was soll geändert werden/)).toHaveValue('kuerzer bitte');
+    });
+
     it('sperrt Titel, Kurzbeschreibung, Text und Chat, während ein Lauf läuft', async () => {
         const user = userEvent.setup();
         let freigeben: (() => void) | undefined;
@@ -139,7 +171,7 @@ describe('SchrittText', () => {
         await waitFor(() => {
             expect(screen.getByDisplayValue('Stand')).toBeDisabled();
             expect(screen.getByLabelText('Kurzbeschreibung')).toBeDisabled();
-            expect(screen.getByLabelText('Text').parentElement).toHaveAttribute('aria-disabled', 'true');
+            expect(screen.getByLabelText('Text')).toBeDisabled();
             expect(screen.getByPlaceholderText(/Was soll geändert werden/)).toBeDisabled();
             expect(screen.getByRole('button', { name: 'Senden' })).toBeDisabled();
         });

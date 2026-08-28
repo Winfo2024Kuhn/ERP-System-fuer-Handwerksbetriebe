@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import DOMPurify from 'dompurify';
 import {
     klartextZuHtml,
+    htmlZuKlartext,
     leiteKurzbeschreibungAb,
     bereinigeBeitragsHtml,
 } from './textumwandlung';
@@ -31,6 +32,67 @@ describe('klartextZuHtml', () => {
 
     it('liefert bei leerem Text einen leeren String', () => {
         expect(klartextZuHtml('   ')).toBe('');
+    });
+});
+
+describe('htmlZuKlartext', () => {
+    it('macht aus mehreren Absaetzen Text mit Leerzeile dazwischen', () => {
+        const text = htmlZuKlartext('<p>Erster Absatz.</p><p>Zweiter Absatz.</p>');
+
+        expect(text).toBe('Erster Absatz.\n\nZweiter Absatz.');
+    });
+
+    it('macht aus einem br einen einzelnen Zeilenumbruch', () => {
+        expect(htmlZuKlartext('<p>Zeile eins<br>Zeile zwei</p>')).toBe('Zeile eins\nZeile zwei');
+    });
+
+    it('macht aus li-Elementen Zeilen mit fuehrendem "- "', () => {
+        const text = htmlZuKlartext('<ul><li>Tor gesetzt</li><li>Gelaender montiert</li></ul>');
+
+        expect(text).toBe('- Tor gesetzt\n- Gelaender montiert');
+    });
+
+    it('behandelt eine nummerierte Liste wie eine Aufzaehlung', () => {
+        expect(htmlZuKlartext('<ol><li>Erstens</li><li>Zweitens</li></ol>'))
+            .toBe('- Erstens\n- Zweitens');
+    });
+
+    it('entfernt uebrige Auszeichnungs-Tags, behaelt aber deren Text', () => {
+        const text = htmlZuKlartext(
+            '<p>Ein <strong>fester</strong> <em>Rahmen</em> aus <span style="color:#500010">Stahl</span></p>');
+
+        expect(text).toBe('Ein fester Rahmen aus Stahl');
+    });
+
+    it('wandelt Entitaeten zurueck', () => {
+        expect(htmlZuKlartext('<p>Winkel&nbsp;&lt;90&gt; und Dach&amp;Wand</p>'))
+            .toBe('Winkel <90> und Dach&Wand');
+    });
+
+    it('ueberspringt leere Absaetze', () => {
+        expect(htmlZuKlartext('<p>Text</p><p></p>')).toBe('Text');
+    });
+
+    it('liefert bei leerem HTML einen leeren String', () => {
+        expect(htmlZuKlartext('')).toBe('');
+    });
+
+    it('ist die Umkehrung von klartextZuHtml bei einfachen Absaetzen', () => {
+        const original = 'Erster Absatz.\n\nZweiter Absatz.';
+
+        expect(htmlZuKlartext(klartextZuHtml(original))).toBe(original);
+    });
+
+    it('ist die Umkehrung von klartextZuHtml bei einer Aufzaehlung', () => {
+        const original = 'Wir haben gemacht:\n\n- Tor gesetzt\n- Gelaender montiert';
+
+        expect(htmlZuKlartext(klartextZuHtml(original))).toBe(original);
+    });
+
+    it('ist die Umkehrung von klartextZuHtml bei maskierten spitzen Klammern', () => {
+        const original = '<script>alert(1)</script>';
+
+        expect(htmlZuKlartext(klartextZuHtml(original))).toBe(original);
     });
 });
 

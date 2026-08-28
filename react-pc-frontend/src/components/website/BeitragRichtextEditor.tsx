@@ -8,6 +8,8 @@ import { Bold, Italic, List, ListOrdered, Palette, Redo, Undo } from 'lucide-rea
 export interface BeitragRichtextEditorProps {
     html: string;
     onChange: (html: string) => void;
+    /** Sperrt Editor und Werkzeugleiste komplett, wenn false. Default true. */
+    editable?: boolean;
 }
 
 /** Farben, die zum Auftritt der Website passen. */
@@ -26,7 +28,7 @@ const FARBEN = [
  * Codebloecke und Trennlinien sind deshalb abgeschaltet - sie wuerden beim
  * Speichern stillschweigend verschwinden.
  */
-export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorProps) {
+export function BeitragRichtextEditor({ html, onChange, editable = true }: BeitragRichtextEditorProps) {
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
@@ -41,6 +43,7 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
             Color,
         ],
         content: html,
+        editable,
         onUpdate: ({ editor: e }) => onChange(e.getHTML()),
         editorProps: {
             attributes: {
@@ -58,6 +61,18 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
         }
     }, [html, editor]);
 
+    // Die editable-Option von useEditor wirkt nur beim Erzeugen der Instanz.
+    // Eine spaetere Aenderung der Prop muss ueber setEditable nachgezogen
+    // werden, sonst bliebe ein einmal erstellter Editor fuer immer in dem
+    // Zustand, in dem er gestartet ist - z.B. dauerhaft gesperrt, wenn ein
+    // KI-Lauf beim Erzeugen bereits lief. emitUpdate: false, weil das
+    // Sperren/Entsperren von aussen kommt und kein eigener onChange-Aufruf
+    // nach oben sein soll (setEditable emittiert sonst standardmaessig ein
+    // Update, selbst ohne inhaltliche Aenderung).
+    useEffect(() => {
+        editor?.setEditable(editable, false);
+    }, [editable, editor]);
+
     if (!editor) return null;
 
     return (
@@ -66,6 +81,7 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
                 <Werkzeug
                     label="Fett"
                     aktiv={editor.isActive('bold')}
+                    disabled={!editable}
                     onClick={() => editor.chain().focus().toggleBold().run()}
                 >
                     <Bold className="w-4 h-4" />
@@ -73,6 +89,7 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
                 <Werkzeug
                     label="Kursiv"
                     aktiv={editor.isActive('italic')}
+                    disabled={!editable}
                     onClick={() => editor.chain().focus().toggleItalic().run()}
                 >
                     <Italic className="w-4 h-4" />
@@ -83,6 +100,7 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
                 <Werkzeug
                     label="Aufzählung"
                     aktiv={editor.isActive('bulletList')}
+                    disabled={!editable}
                     onClick={() => editor.chain().focus().toggleBulletList().run()}
                 >
                     <List className="w-4 h-4" />
@@ -90,6 +108,7 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
                 <Werkzeug
                     label="Nummerierte Liste"
                     aktiv={editor.isActive('orderedList')}
+                    disabled={!editable}
                     onClick={() => editor.chain().focus().toggleOrderedList().run()}
                 >
                     <ListOrdered className="w-4 h-4" />
@@ -105,8 +124,9 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
                             type="button"
                             aria-label={farbe.name}
                             title={farbe.name}
+                            disabled={!editable}
                             onClick={() => editor.chain().focus().setColor(farbe.wert).run()}
-                            className="w-5 h-5 rounded-full border border-slate-300"
+                            className="w-5 h-5 rounded-full border border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ backgroundColor: farbe.wert }}
                         />
                     ))}
@@ -114,10 +134,10 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
 
                 <span className="flex-1" />
 
-                <Werkzeug label="Rückgängig" onClick={() => editor.chain().focus().undo().run()}>
+                <Werkzeug label="Rückgängig" disabled={!editable} onClick={() => editor.chain().focus().undo().run()}>
                     <Undo className="w-4 h-4" />
                 </Werkzeug>
-                <Werkzeug label="Wiederholen" onClick={() => editor.chain().focus().redo().run()}>
+                <Werkzeug label="Wiederholen" disabled={!editable} onClick={() => editor.chain().focus().redo().run()}>
                     <Redo className="w-4 h-4" />
                 </Werkzeug>
             </div>
@@ -127,9 +147,10 @@ export function BeitragRichtextEditor({ html, onChange }: BeitragRichtextEditorP
     );
 }
 
-function Werkzeug({ label, aktiv, onClick, children }: {
+function Werkzeug({ label, aktiv, disabled, onClick, children }: {
     label: string;
     aktiv?: boolean;
+    disabled?: boolean;
     onClick: () => void;
     children: React.ReactNode;
 }) {
@@ -138,8 +159,9 @@ function Werkzeug({ label, aktiv, onClick, children }: {
             type="button"
             aria-label={label}
             title={label}
+            disabled={disabled}
             onClick={onClick}
-            className={`p-1.5 rounded transition-colors
+            className={`p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent
                 ${aktiv ? 'bg-rose-100 text-rose-700' : 'text-slate-600 hover:bg-slate-200'}`}
         >
             {children}
