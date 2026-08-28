@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
     AlertTriangle, Eye, FileText, Globe, Image as ImageIcon, Loader2,
-    Pencil, Plus, Star, Trash2,
+    Pencil, Plus, Star, Trash2, X,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useConfirm } from '../ui/confirm-dialog';
 import { useToast } from '../ui/toast';
+import { ProjektSearchModal } from '../ProjektSearchModal';
 import { BeitragVorschau } from './BeitragVorschau';
 import { BeitragRichtextEditor } from './BeitragRichtextEditor';
 import { leiteKurzbeschreibungAb } from './textumwandlung';
+import { SchrittBilder, type GewaehltesBild } from './schritte/SchrittBilder';
+import { rendereBlob } from './bildRendern';
+import { MAX_BREITE_UPLOAD } from './bildbearbeitung';
 import {
     WebsiteApiFehler,
     aktualisiereBeitrag,
     ladeBeitrag,
     ladeBeitraege,
+    ladeBildHoch,
     loescheBild,
     setzeAltText,
     setzeStatus,
@@ -31,6 +36,16 @@ export interface BeitraegeTabProps {
     onNeuerBeitrag?: () => void;
     /** Hochzaehlen laesst die Liste neu laden, z.B. nach dem Assistenten. */
     neuLadenSignal?: number;
+}
+
+/**
+ * Nur die Felder, die der Bild-Dialog unten braucht. Ein Beitrag speichert
+ * selbst keinen Projektbezug (BeitragDetailDto hat kein Projektfeld), darum
+ * fragt der Dialog bei jedem Bild erneut ueber ProjektSearchModal danach.
+ */
+interface Projekt {
+    id: number;
+    bauvorhaben: string;
 }
 
 /**
@@ -52,6 +67,15 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
     const [laedtListe, setLaedtListe] = useState(true);
     const [speichert, setSpeichert] = useState(false);
     const [fehler, setFehler] = useState<string | null>(null);
+
+    // Bild-hinzufuegen-Dialog: erst Projekt suchen (ein Beitrag speichert
+    // keinen Projektbezug), dann Bilder aus dessen Bautagebuch und
+    // Projektdokumenten auswaehlen und bearbeiten, wie im Assistenten.
+    const [bildSchritt, setBildSchritt] = useState<'projekt' | 'bilder' | null>(null);
+    const [bildProjekt, setBildProjekt] = useState<Projekt | null>(null);
+    const [bildAuswahl, setBildAuswahl] = useState<GewaehltesBild[]>([]);
+    const [bilderWerdenHochgeladen, setBilderWerdenHochgeladen] = useState(false);
+    const [bildFortschritt, setBildFortschritt] = useState<string | null>(null);
 
     const ladeListe = useCallback(async () => {
         setLaedtListe(true);
@@ -153,11 +177,65 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
     };
 
     const altTextSpeichern = async (bildId: number, wert: string) => {
-        if (!gewaehlt || !wert.trim()) return;
+        if (!gewaehlt) return;
+        if (!wert.trim()) {
+            toast.error('Die Bildbeschreibung darf nicht leer sein.');
+            return;
+        }
         try {
             uebernehmen(await setzeAltText(gewaehlt.id, bildId, wert.trim()));
         } catch (e) {
             toast.error(fehlertext(e));
+        }
+    };
+
+    const bildDialogSchliessen = () => {
+        setBildSchritt(null);
+        setBildProjekt(null);
+        setBildAuswahl([]);
+        setBildFortschritt(null);
+    };
+
+    /**
+     * Laedt die ausgewaehlten Bilder nacheinander hoch, genau wie der
+     * Assistent (BeitragAssistent.speichern): die Website rechnet jedes Bild
+     * einzeln um, parallel liefe hier also nichts schneller.
+     *
+     * Bricht die Uebertragung mittendrin ab, bleiben die schon hochgeladenen
+     * Bilder im Beitrag -- die Ansicht wird sofort aktualisiert --, und nur
+     * die restlichen bleiben im Dialog ausgewaehlt, damit ein zweiter Versuch
+     * sie nicht doppelt hochlaedt.
+     */
+    const bilderHochladen = async () => {
+        if (!gewaehlt || bildAuswahl.length === 0) return;
+        setBilderWerdenHochgeladen(true);
+        let letzterStand = gewaehlt;
+        let uebertragen = 0;
+        try {
+            for (let i = 0; i < bildAuswahl.length; i++) {
+                setBildFortschritt(`Bild ${i + 1} von ${bildAuswahl.length} wird hochgeladen...`);
+                const eintrag = bildAuswahl[i];
+                const blob = await rendereBlob(eintrag.bild.url, eintrag.bearbeitung, MAX_BREITE_UPLOAD);
+                letzterStand = await ladeBildHoch(gewaehlt.id, blob, eintrag.bild.originalDateiname);
+                uebertragen += 1;
+            }
+            uebernehmen(letzterStand);
+            toast.success(uebertragen === 1 ? 'Bild hinzugefügt.' : `${uebertragen} Bilder hinzugefügt.`);
+            bildDialogSchliessen();
+        } catch (e) {
+            if (uebertragen > 0) {
+                uebernehmen(letzterStand);
+                setBildAuswahl(vorher => vorher.slice(uebertragen));
+                toast.error(
+                    `${uebertragen} von ${bildAuswahl.length} Bildern `
+                    + `${uebertragen === 1 ? 'wurde' : 'wurden'} hinzugefügt, `
+                    + `danach brach die Übertragung ab. ${fehlertext(e)}`);
+            } else {
+                toast.error(fehlertext(e));
+            }
+        } finally {
+            setBilderWerdenHochgeladen(false);
+            setBildFortschritt(null);
         }
     };
 
@@ -348,14 +426,24 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                             </div>
 
                             <div>
-                                <span className="block text-sm font-medium text-slate-700 mb-2">
-                                    Bilder ({gewaehlt.images.length})
-                                </span>
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                    <span className="block text-sm font-medium text-slate-700">
+                                        Bilder ({gewaehlt.images.length})
+                                    </span>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setBildSchritt('projekt')}
+                                        className="border border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        Bild hinzufügen
+                                    </Button>
+                                </div>
                                 {gewaehlt.images.length === 0 ? (
                                     <p className="text-sm text-slate-400">Dieser Beitrag hat noch keine Bilder.</p>
                                 ) : (
                                     <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
-                                        {gewaehlt.images.map(bild => (
+                                        {gewaehlt.images.map((bild, index) => (
                                             <div key={bild.id} className="border border-slate-200 rounded-lg overflow-hidden">
                                                 <img
                                                     src={bildAdresse(bild.path)}
@@ -365,7 +453,7 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                                                 <div className="p-2 space-y-2">
                                                     <input
                                                         type="text"
-                                                        aria-label={`Alt-Text Bild ${bild.id}`}
+                                                        aria-label={`Bildbeschreibung für Bild ${index + 1} von ${gewaehlt.images.length}`}
                                                         defaultValue={bild.altText ?? ''}
                                                         placeholder="Was ist zu sehen?"
                                                         onBlur={e => void altTextSpeichern(bild.id, e.target.value)}
@@ -388,7 +476,7 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                                                         </button>
                                                         <button
                                                             type="button"
-                                                            aria-label={`Bild ${bild.id} löschen`}
+                                                            aria-label={`Bild ${index + 1} von ${gewaehlt.images.length} löschen`}
                                                             onClick={() => void bildLoeschen(bild.id)}
                                                             className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
                                                         >
@@ -403,6 +491,75 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                             </div>
                         </>
                     )}
+                </div>
+            )}
+
+            <ProjektSearchModal
+                isOpen={bildSchritt === 'projekt'}
+                onClose={bildDialogSchliessen}
+                onSelect={projekt => {
+                    setBildProjekt(projekt as Projekt);
+                    setBildAuswahl([]);
+                    setBildSchritt('bilder');
+                }}
+            />
+
+            {bildSchritt === 'bilder' && bildProjekt && (
+                <div className="fixed inset-0 bg-black/60 z-[65] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                            <div>
+                                <p className="text-sm font-semibold text-rose-600 uppercase tracking-wide">Bild hinzufügen</p>
+                                <h2 className="text-lg font-bold text-slate-900">{bildProjekt.bauvorhaben}</h2>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={bildDialogSchliessen}
+                                disabled={bilderWerdenHochgeladen}
+                                aria-label="Bildauswahl schließen"
+                                title="Schließen"
+                                className="p-1.5 hover:bg-slate-100 rounded-full"
+                            >
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4">
+                            <SchrittBilder
+                                projektId={bildProjekt.id}
+                                auswahl={bildAuswahl}
+                                onAuswahlAendern={setBildAuswahl}
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 p-4 border-t border-slate-200">
+                            <Button
+                                size="sm"
+                                disabled={bilderWerdenHochgeladen}
+                                onClick={bildDialogSchliessen}
+                                className="border border-slate-300 text-slate-600 hover:bg-slate-100"
+                            >
+                                Abbrechen
+                            </Button>
+
+                            {bildFortschritt && (
+                                <span className="flex items-center gap-2 text-sm text-slate-500">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    {bildFortschritt}
+                                </span>
+                            )}
+
+                            <Button
+                                size="sm"
+                                disabled={bildAuswahl.length === 0 || bilderWerdenHochgeladen}
+                                onClick={() => void bilderHochladen()}
+                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                            >
+                                {bilderWerdenHochgeladen && <Loader2 className="w-4 h-4 animate-spin" />}
+                                Hinzufügen{bildAuswahl.length > 0 ? ` (${bildAuswahl.length})` : ''}
+                            </Button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
@@ -434,5 +591,5 @@ function fehlertext(e: unknown): string {
         }
         return e.message;
     }
-    return 'Unbekannter Fehler.';
+    return e instanceof Error ? e.message : 'Unbekannter Fehler.';
 }

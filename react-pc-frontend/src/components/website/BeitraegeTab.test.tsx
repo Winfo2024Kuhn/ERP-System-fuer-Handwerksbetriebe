@@ -15,6 +15,40 @@ vi.mock('./BeitragRichtextEditor', () => ({
     ),
 }));
 
+// Die drei Bausteine des Bild-hinzufuegen-Dialogs sind schon einzeln getestet
+// (ProjektSearchModal, SchrittBilder, bildRendern) und bekommen hier nur
+// einfache Stellvertreter -- genau wie in BeitragAssistent.test.tsx, das
+// dieselben Bausteine fuer den Assistenten verwendet.
+vi.mock('../ProjektSearchModal', () => ({
+    ProjektSearchModal: ({ isOpen, onSelect }: {
+        isOpen: boolean; onSelect: (p: { id: number; bauvorhaben: string }) => void;
+    }) => isOpen ? (
+        <button onClick={() => onSelect({ id: 5, bauvorhaben: 'Balkonanlage' })}>
+            Projekt wählen
+        </button>
+    ) : null,
+}));
+
+vi.mock('./schritte/SchrittBilder', () => ({
+    SchrittBilder: ({ onAuswahlAendern }: { onAuswahlAendern: (a: unknown[]) => void }) => (
+        <button onClick={() => onAuswahlAendern([{
+            bild: {
+                schluessel: 'notiz-1', quelle: 'bautagebuch',
+                url: '/api/dokumente/tor.jpg', thumbnailUrl: '/api/dokumente/tor.jpg/thumbnail',
+                originalDateiname: 'tor.jpg', datum: null, hinweis: null,
+            },
+            bearbeitung: { zuschnitt: null, drehung: 0, spiegelnX: false, spiegelnY: false, helligkeit: 100, kontrast: 100 },
+        }])}>
+            Bild wählen
+        </button>
+    ),
+}));
+
+// Das Rendern eines Bildes braucht Canvas, das jsdom nicht hat.
+vi.mock('./bildRendern', () => ({
+    rendereBlob: vi.fn(() => Promise.resolve(new Blob(['x'], { type: 'image/jpeg' }))),
+}));
+
 const liste = [
     {
         id: 1, slug: 'neues-tor', title: 'Neues Tor', excerpt: 'Kurz.',
@@ -33,6 +67,12 @@ const detail = {
         { id: 10, postId: 1, path: 'a.webp', altText: 'Tor', sortOrder: 0, isCover: true },
         { id: 11, postId: 1, path: 'b.webp', altText: null, sortOrder: 1, isCover: false },
     ],
+};
+
+/** Antwort nach einem erfolgreichen Bild-Upload: ein drittes Bild kommt dazu. */
+const detailMitDrittemBild = {
+    ...detail,
+    images: [...detail.images, { id: 12, postId: 1, path: 'c.webp', altText: null, sortOrder: 2, isCover: false }],
 };
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -242,5 +282,88 @@ describe('BeitraegeTab', () => {
         await waitFor(() => {
             expect(anzahlListenAbrufe()).toBeGreaterThan(rufeVorher);
         });
+    });
+
+    it('öffnet über "Bild hinzufügen" zuerst die Projektsuche', async () => {
+        const user = userEvent.setup();
+        zeige();
+        await user.click(await screen.findByText('Neues Tor'));
+        await screen.findByDisplayValue('Neues Tor');
+
+        await user.click(screen.getByRole('button', { name: 'Bild hinzufügen' }));
+
+        expect(screen.getByRole('button', { name: 'Projekt wählen' })).toBeInTheDocument();
+    });
+
+    it('lädt ein ausgewähltes Bild hoch und zeigt den aufgefrischten Beitrag', async () => {
+        const user = userEvent.setup();
+        fetchMock = serverMit({
+            'POST /api/beitraege/1/bilder': {
+                ok: true, status: 201, json: () => Promise.resolve(detailMitDrittemBild),
+            },
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        zeige();
+        await user.click(await screen.findByText('Neues Tor'));
+        await screen.findByDisplayValue('Neues Tor');
+
+        await user.click(screen.getByRole('button', { name: 'Bild hinzufügen' }));
+        await user.click(screen.getByRole('button', { name: 'Projekt wählen' }));
+        await user.click(await screen.findByRole('button', { name: 'Bild wählen' }));
+        await user.click(await screen.findByRole('button', { name: /^Hinzufügen/ }));
+
+        await waitFor(() => {
+            const ruf = fetchMock.mock.calls.find(
+                (c: unknown[]) => (c[0] as string) === '/api/beitraege/1/bilder'
+                    && (c[1] as RequestInit)?.method === 'POST');
+            expect(ruf).toBeDefined();
+        });
+        expect(await screen.findByText('Bilder (3)')).toBeInTheDocument();
+        // Der Dialog schließt sich nach dem Erfolg wieder von selbst.
+        expect(screen.queryByRole('button', { name: 'Projekt wählen' })).not.toBeInTheDocument();
+    });
+
+    it('bricht die Bildauswahl ab, ohne etwas hochzuladen', async () => {
+        const user = userEvent.setup();
+        zeige();
+        await user.click(await screen.findByText('Neues Tor'));
+        await screen.findByDisplayValue('Neues Tor');
+
+        await user.click(screen.getByRole('button', { name: 'Bild hinzufügen' }));
+        await user.click(screen.getByRole('button', { name: 'Projekt wählen' }));
+        await user.click(await screen.findByRole('button', { name: 'Bild wählen' }));
+        await user.click(screen.getByRole('button', { name: 'Abbrechen' }));
+
+        expect(screen.queryByRole('button', { name: 'Projekt wählen' })).not.toBeInTheDocument();
+        expect(fetchMock.mock.calls.some(
+            (c: unknown[]) => (c[0] as string) === '/api/beitraege/1/bilder')).toBe(false);
+    });
+
+    it('beschriftet die Bildfelder verständlich statt mit roher Datenbank-Kennung', async () => {
+        const user = userEvent.setup();
+        zeige();
+        await user.click(await screen.findByText('Neues Tor'));
+        await screen.findByDisplayValue('Neues Tor');
+
+        expect(screen.getByLabelText('Bildbeschreibung für Bild 1 von 2')).toBeInTheDocument();
+        expect(screen.getByLabelText('Bildbeschreibung für Bild 2 von 2')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Bild 1 von 2 löschen' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Bild 2 von 2 löschen' })).toBeInTheDocument();
+    });
+
+    it('warnt, statt eine geleerte Bildbeschreibung stumm zu verwerfen', async () => {
+        const user = userEvent.setup();
+        zeige();
+        await user.click(await screen.findByText('Neues Tor'));
+        await screen.findByDisplayValue('Neues Tor');
+
+        const feld = screen.getByLabelText('Bildbeschreibung für Bild 1 von 2');
+        await user.clear(feld);
+        await user.tab();
+
+        expect(await screen.findByText('Die Bildbeschreibung darf nicht leer sein.')).toBeInTheDocument();
+        expect(fetchMock.mock.calls.some((c: unknown[]) =>
+            (c[0] as string) === '/api/beitraege/1/bilder/10'
+            && (c[1] as RequestInit)?.method === 'PATCH')).toBe(false);
     });
 });
