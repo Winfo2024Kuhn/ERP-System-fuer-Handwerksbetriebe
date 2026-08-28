@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BarChart3, FileText } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
+import { cn } from '../lib/utils';
 
 type Tab = 'beitraege' | 'insights';
 
@@ -19,10 +20,10 @@ export function WebsiteEditor() {
             <PageHeader
                 category="Website"
                 title="NEUIGKEITEN"
-                description="Beitraege fuer den Bereich Aktuelles auf der Firmen-Website pflegen."
+                description="Beiträge für den Bereich Aktuelles auf der Firmen-Website pflegen."
             />
 
-            <div className="flex gap-2 border-b border-slate-200 mb-6">
+            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
                 <TabKnopf
                     aktiv={aktiverTab === 'beitraege'}
                     onClick={() => setAktiverTab('beitraege')}
@@ -39,7 +40,7 @@ export function WebsiteEditor() {
 
             {aktiverTab === 'beitraege' && (
                 <div data-testid="tab-beitraege">
-                    {/* Task 9 setzt hier <BeitraegeTab /> ein. */}
+                    {/* Task 10 setzt hier <BeitraegeTab /> ein. */}
                 </div>
             )}
             {aktiverTab === 'insights' && (
@@ -57,14 +58,18 @@ function TabKnopf({ aktiv, onClick, icon, label }: {
     icon: React.ReactNode;
     label: string;
 }) {
+    // Gleiches Muster wie die Tabs in AnfrageEditor.tsx, damit sich die
+    // Seiten im Programm nicht unterschiedlich anfuehlen.
     return (
         <button
             onClick={onClick}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors
-                ${aktiv
-                    ? 'border-rose-600 text-rose-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
+            aria-current={aktiv ? 'page' : undefined}
+            className={cn(
+                'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap cursor-pointer',
+                aktiv
+                    ? 'bg-rose-50 text-rose-700 border-b-2 border-rose-600'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            )}
         >
             {icon}
             {label}

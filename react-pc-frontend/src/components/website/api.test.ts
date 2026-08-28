@@ -4,6 +4,7 @@ import {
     ladeBeitraege,
     ladeAnalyticsAktuell,
     ladeBildHoch,
+    ladeProjektBilder,
 } from './api';
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -72,5 +73,152 @@ describe('website/api', () => {
         expect(daten.get('bild')).toBeInstanceOf(Blob);
         // Kein Content-Type von Hand setzen, sonst fehlt die multipart-boundary.
         expect(optionen.headers).toBeUndefined();
+    });
+});
+
+/**
+ * ladeProjektBilder ist die einzige Funktion dieser Datei mit echter Logik.
+ * Stimmt das Zusammenfuehren der zwei Quellen nicht, faellt das erst im
+ * Assistenten auf und sieht dort wie ein Fehler der Oberflaeche aus.
+ * DSGVO: nur Dummy-Daten.
+ */
+describe('ladeProjektBilder', () => {
+    // Eigene Aufraeumung: das afterEach des Blocks darueber gilt hier nicht.
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    const notizen = [
+        {
+            notiz: 'Tor am Montag montiert',
+            erstelltAm: '2026-08-20T10:00:00',
+            bilder: [{
+                id: 1,
+                originalDateiname: 'tor.jpg',
+                url: '/api/dokumente/tor.jpg',
+                thumbnailUrl: '/api/dokumente/tor.jpg/thumbnail',
+                erstelltAm: '2026-08-20T10:00:00',
+            }],
+        },
+        // Notiz ohne Bilder darf nicht stoeren.
+        { notiz: 'Nur Text', erstelltAm: '2026-08-21T08:00:00', bilder: [] },
+    ];
+
+    const dokumente = [
+        {
+            id: 7, originalDateiname: 'plan.pdf', dateityp: 'application/pdf',
+            url: '/api/dokumente/plan.pdf', thumbnailUrl: '',
+            dokumentGruppe: 'PLANUNGSDOKUMENTE', uploadDatum: '2026-08-01',
+        },
+        {
+            id: 8, originalDateiname: 'halle.jpg', dateityp: 'image/jpeg',
+            url: '/api/dokumente/halle.jpg', thumbnailUrl: '/api/dokumente/halle.jpg/thumbnail',
+            dokumentGruppe: 'BILDER', uploadDatum: '2026-08-02',
+        },
+    ];
+
+    function serverMitBeidenQuellen() {
+        return vi.fn((url: string) => Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve(url.includes('/notizen') ? notizen : dokumente),
+        }));
+    }
+
+    it('fuehrt Bautagebuch und Projektdokumente zu einer Liste zusammen', async () => {
+        vi.stubGlobal('fetch', serverMitBeidenQuellen());
+
+        const bilder = await ladeProjektBilder(1);
+
+        expect(bilder).toHaveLength(2);
+        // Bautagebuch zuerst, dort liegen die Baustellenfotos.
+        expect(bilder[0].quelle).toBe('bautagebuch');
+        expect(bilder[1].quelle).toBe('dokument');
+    });
+
+    it('vergibt eindeutige Schluessel je Quelle', async () => {
+        vi.stubGlobal('fetch', serverMitBeidenQuellen());
+
+        const bilder = await ladeProjektBilder(1);
+
+        expect(bilder[0].schluessel).toBe('notiz-1');
+        expect(bilder[1].schluessel).toBe('dokument-8');
+    });
+
+    it('nimmt aus den Dokumenten nur die Gruppe BILDER auf', async () => {
+        vi.stubGlobal('fetch', serverMitBeidenQuellen());
+
+        const bilder = await ladeProjektBilder(1);
+
+        expect(bilder.map(b => b.originalDateiname)).not.toContain('plan.pdf');
+    });
+
+    it('haengt den Anfang des Notiztexts als Hinweis an', async () => {
+        vi.stubGlobal('fetch', serverMitBeidenQuellen());
+
+        const bilder = await ladeProjektBilder(1);
+
+        expect(bilder[0].hinweis).toBe('Tor am Montag montiert');
+        // Projektdokumente haben keinen Notiztext.
+        expect(bilder[1].hinweis).toBeNull();
+    });
+
+    it('kuerzt einen langen Notiztext auf 120 Zeichen', async () => {
+        const langeNotiz = [{
+            notiz: 'a'.repeat(200),
+            erstelltAm: '2026-08-20T10:00:00',
+            bilder: [{
+                id: 1, originalDateiname: 'x.jpg',
+                url: '/u', thumbnailUrl: '/t', erstelltAm: '2026-08-20T10:00:00',
+            }],
+        }];
+        vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve(url.includes('/notizen') ? langeNotiz : []),
+        })));
+
+        const bilder = await ladeProjektBilder(1);
+
+        expect(bilder[0].hinweis).toHaveLength(120);
+    });
+
+    it('kommt mit einer Notiz ohne bilder-Feld zurecht', async () => {
+        const ohneFeld = [{ notiz: 'Nur Text', erstelltAm: '2026-08-20T10:00:00' }];
+        vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve(url.includes('/notizen') ? ohneFeld : []),
+        })));
+
+        await expect(ladeProjektBilder(1)).resolves.toEqual([]);
+    });
+
+    it('faellt beim Datum auf den Zeitstempel der Notiz zurueck', async () => {
+        const ohneBilddatum = [{
+            notiz: 'Ohne Bilddatum',
+            erstelltAm: '2026-08-20T10:00:00',
+            bilder: [{
+                id: 2, originalDateiname: 'y.jpg',
+                url: '/u', thumbnailUrl: '/t', erstelltAm: null,
+            }],
+        }];
+        vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve(url.includes('/notizen') ? ohneBilddatum : []),
+        })));
+
+        const bilder = await ladeProjektBilder(1);
+
+        expect(bilder[0].datum).toBe('2026-08-20T10:00:00');
+    });
+
+    it('meldet einen Fehlschlag einer der beiden Quellen weiter', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(
+            url.includes('/notizen')
+                ? { ok: true, status: 200, json: () => Promise.resolve([]) }
+                : { ok: false, status: 500, json: () => Promise.resolve({ message: 'kaputt' }) },
+        )));
+
+        await expect(ladeProjektBilder(1)).rejects.toBeInstanceOf(WebsiteApiFehler);
     });
 });

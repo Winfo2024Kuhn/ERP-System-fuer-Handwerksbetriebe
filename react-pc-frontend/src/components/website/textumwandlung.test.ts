@@ -74,10 +74,16 @@ describe('bereinigeBeitragsHtml', () => {
             .toBe('<p>Text</p>');
     });
 
-    it('behaelt Farbe und Schriftgroesse an span', () => {
+    it('behaelt Farbe an span', () => {
         const html = '<span style="color: #500010;">rot</span>';
 
         expect(bereinigeBeitragsHtml(html)).toContain('color');
+    });
+
+    it('behaelt Schriftgroesse an span', () => {
+        const html = '<span style="font-size: 18px;">gross</span>';
+
+        expect(bereinigeBeitragsHtml(html)).toContain('font-size');
     });
 
     it('entfernt Ereignis-Attribute', () => {
