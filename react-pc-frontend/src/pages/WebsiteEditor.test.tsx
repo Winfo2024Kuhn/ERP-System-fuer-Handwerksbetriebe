@@ -4,20 +4,32 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebsiteEditor } from './WebsiteEditor';
 
 // Dieser Test deckt nur den Wechsel zwischen den zwei Reitern ab, nicht das
-// Verhalten der Tab-Inhalte selbst -- das testet InsightsTab.test.tsx bereits
-// vollstaendig (inklusive des echten Leerzustands bei 204 ohne Inhalt). Ein
-// generischer Fetch-Stub muesste sonst fuer jeden Endpunkt jedes Tabs exakt
-// das reale Antwortformat nachbilden; genau daran ist dieser Test zuvor
-// gescheitert (leeres Array statt 204 fuer /website-analytics/latest hat
-// einen Fehler im Insights-Tab verdeckt statt ihn zu zeigen). Deshalb wird
-// InsightsTab hier durch einen Platzhalter ersetzt.
+// Verhalten der Tab-Inhalte selbst -- dafuer gibt es InsightsTab.test.tsx und
+// BeitraegeTab.test.tsx, die beide vollstaendig sind.
+//
+// Beide Tabs werden deshalb durch Platzhalter ersetzt, aus zwei Gruenden:
+//
+// Erstens muesste ein generischer Fetch-Stub sonst fuer jeden Endpunkt jedes
+// Tabs exakt das reale Antwortformat nachbilden. Genau daran ist dieser Test
+// schon einmal gescheitert: ein leeres Array statt 204 fuer
+// /website-analytics/latest hat einen Fehler im Insights-Tab verdeckt statt
+// ihn zu zeigen.
+//
+// Zweitens braeuchten die echten Tabs hier ihre Rahmen-Komponenten
+// (ConfirmProvider, ToastProvider), die im Programm nur App.tsx an der Wurzel
+// liefert. Die hier nachzubauen hiesse, die halbe Anwendung zu montieren, um
+// zwei Knoepfe zu pruefen.
 vi.mock('../components/website/InsightsTab', () => ({
     InsightsTab: () => <div data-testid="insights-tab-platzhalter" />,
 }));
 
+vi.mock('../components/website/BeitraegeTab', () => ({
+    BeitraegeTab: () => <div data-testid="beitraege-tab-platzhalter" />,
+}));
+
 beforeEach(() => {
-    // Fuer den Beitraege-Tab genuegt eine leere Liste als Antwort auf jede
-    // Anfrage; der Insights-Tab ist oben gemockt und fragt hier nichts ab.
+    // Beide Tabs sind gemockt und fragen hier nichts ab. Der Stub steht nur,
+    // damit ein unerwarteter Aufruf nicht als echter Netzwerkzugriff endet.
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
         ok: true, status: 200, json: () => Promise.resolve([]),
     })));
