@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { formatCurrency } from './helpers';
+import { formatCurrency, rabattBetrag as berechneRabattBetrag } from './helpers';
 import { Calendar, User, Hash, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -32,7 +32,9 @@ interface SummenFooterProps {
 
 export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, kundennummer, projektnummer, betreff, isLocked, onDatumChange, globalRabatt, istRestbetrag, zahlungsziel, zahlungszielDatum, onZahlungszielChange }: SummenFooterProps) {
     const hasGlobalRabatt = (globalRabatt ?? 0) > 0;
-    const rabattBetrag = hasGlobalRabatt ? nettosumme * (globalRabatt! / 100) : 0;
+    // Zentrale Rundung wie im PDF und beim Speichern — sonst zeigt der Footer einen
+    // anderen Cent-Betrag als das versendete Dokument.
+    const rabattBetrag = berechneRabattBetrag(nettosumme, globalRabatt);
     const nettoNachRabatt = nettosumme - rabattBetrag;
     const mwstBetrag = nettoNachRabatt * 0.19;
     const bruttosumme = nettoNachRabatt + mwstBetrag;

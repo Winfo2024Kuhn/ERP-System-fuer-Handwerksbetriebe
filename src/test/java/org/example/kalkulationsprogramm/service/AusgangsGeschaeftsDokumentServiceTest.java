@@ -22,9 +22,11 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentCounter;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
+import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Leistung;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
+import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
@@ -179,6 +181,447 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(service.sammleOptionaleAlternativIds(merged)).isEmpty();
             // a1 ist als feste Position enthalten, a2 wurde entfernt.
             assertThat(merged).contains("a1").doesNotContain("a2");
+        }
+    }
+
+    /**
+     * Regressions-Bug (2026-08-28): Der Fallback aus positionenJson hat weder den
+     * Positions-Rabatt (block.discount) noch den Dokument-Pauschalrabatt
+     * (globalRabatt) beruecksichtigt und lieferte damit einen hoeheren Betrag als
+     * Editor und PDF anzeigen.
+     *
+     * DSGVO: ausschliesslich Dummy-Daten.
+     */
+    @Nested
+    class NettoAusPositionenJson {
+
+        @Test
+        void zieht_dokument_pauschalrabatt_ab() {
+            String json = """
+                    {"blocks":[
+                      {"id":"s1","type":"SERVICE","title":"Geländer","quantity":1,"price":3412.20}
+                    ],"globalRabatt":3}
+                    """;
+            // 3412,20 − 3% = 3309,834 → 3309,83
+            assertThat(service.berechneNettoAusPositionenJson(json))
+                    .isEqualByComparingTo("3309.83");
+        }
+
+        @Test
+        void beruecksichtigt_positions_rabatt() {
+            String json = """
+                    {"blocks":[
+                      {"id":"s1","type":"SERVICE","title":"Montage","quantity":3,"price":20,"discount":10}
+                    ],"globalRabatt":0}
+                    """;
+            // 3*20 = 60 − 10% = 54,00
+            assertThat(service.berechneNettoAusPositionenJson(json))
+                    .isEqualByComparingTo("54.00");
+        }
+
+        @Test
+        void kombiniert_positions_und_pauschalrabatt_auch_in_abschnitten() {
+            String json = """
+                    {"blocks":[
+                      {"id":"sec1","type":"SECTION_HEADER","sectionLabel":"Abschnitt 1","children":[
+                         {"id":"s1","type":"SERVICE","title":"Montage","quantity":1,"price":1000,"discount":10}
+                      ]}
+                    ],"globalRabatt":5}
+                    """;
+            // 1000 − 10% = 900 ; 900 − 5% = 855,00
+            assertThat(service.berechneNettoAusPositionenJson(json))
+                    .isEqualByComparingTo("855.00");
+        }
+
+        @Test
+        void ohne_rabatt_bleibt_summe_unveraendert() {
+            String json = """
+                    {"blocks":[
+                      {"id":"s1","type":"SERVICE","title":"Tür","quantity":2,"price":100}
+                    ]}
+                    """;
+            assertThat(service.berechneNettoAusPositionenJson(json))
+                    .isEqualByComparingTo("200.00");
+        }
+
+        @Test
+        void legacy_array_format_ohne_wrapper_funktioniert_weiter() {
+            String json = """
+                    [{"id":"s1","type":"SERVICE","title":"Tür","quantity":2,"price":100,"discount":25}]
+                    """;
+            // 200 − 25% = 150,00 ; kein Wrapper → kein globalRabatt
+            assertThat(service.berechneNettoAusPositionenJson(json))
+                    .isEqualByComparingTo("150.00");
+        }
+
+        @Test
+        void unplausible_rabattwerte_kappen_bei_100_prozent() {
+            String json = """
+                    {"blocks":[
+                      {"id":"s1","type":"SERVICE","title":"Tür","quantity":1,"price":500}
+                    ],"globalRabatt":150}
+                    """;
+            assertThat(service.berechneNettoAusPositionenJson(json))
+                    .isEqualByComparingTo("0.00");
+        }
+
+        @Test
+        void zaehlt_optionale_und_alternativ_positionen_nicht_mit() {
+            // Gegenstueck zu helpers.test.ts "ignoriert optionale und Alternativ-Positionen".
+            // Ohne diesen Filter schreibt der Korrekturlauf Angebote mit Wahlpositionen
+            // auf einen zu hohen Betrag um — schreibend, auf festgeschriebenen Belegen.
+            String json = """
+                    {"blocks":[
+                      {"id":"s1","type":"SERVICE","title":"Geländer","quantity":1,"price":1000},
+                      {"id":"a1","type":"SERVICE","title":"Extra-Schloss","quantity":1,"price":500,"optional":true},
+                      {"id":"sec","type":"SECTION_HEADER","children":[
+                         {"id":"a2","type":"SERVICE","title":"Premium-Beschlag","quantity":1,"price":700,"optional":true}
+                      ]}
+                    ],"globalRabatt":10}
+                    """;
+            // Nur die feste Position zaehlt: 1000 − 10% = 900,00
+            assertThat(service.berechneNettoAusPositionenJson(json))
+                    .isEqualByComparingTo("900.00");
+        }
+
+        @Test
+        void rundet_den_pauschalrabatt_wie_das_frontend() {
+            // Halb-Cent-Faelle, an denen eine Float-Rechnung im Frontend abweichen wuerde.
+            String json = """
+                    {"blocks":[{"id":"s1","type":"SERVICE","quantity":1,"price":4.10}],"globalRabatt":15}
+                    """;
+            assertThat(service.berechneNettoAusPositionenJson(json)).isEqualByComparingTo("3.48");
+
+            String json2 = """
+                    {"blocks":[{"id":"s1","type":"SERVICE","quantity":1,"price":2.30}],"globalRabatt":25}
+                    """;
+            assertThat(service.berechneNettoAusPositionenJson(json2)).isEqualByComparingTo("1.72");
+        }
+
+        @Test
+        void rundet_jede_zeile_wie_das_frontend() {
+            // 10,10 mit 5% Positionsrabatt = 9,595 -> 9,60. Das Frontend rundet in
+            // serviceLineTotal identisch; ohne Zeilenrundung liefen beide auseinander
+            // (Double 9.594999... -> 9,59) und der Korrekturlauf haette korrekte,
+            // festgeschriebene Belege umgeschrieben.
+            String json = """
+                    {"blocks":[{"id":"s1","type":"SERVICE","quantity":1,"price":10.10,"discount":5}]}
+                    """;
+            assertThat(service.berechneNettoAusPositionenJson(json)).isEqualByComparingTo("9.60");
+        }
+
+        @Test
+        void trifft_rabattsaetze_mit_drei_nachkommastellen() {
+            // 1,005 % -> Faktor 0,9899 (divide(100, 4, HALF_UP)). Im Frontend darf das
+            // nicht ueber `rabatt * 100` im Double laufen: 1.005 * 100 ergibt dort
+            // 100.49999999999999 und rundet ab -> Faktor 0,9900 -> 1,00 EUR Differenz.
+            String json = """
+                    {"blocks":[{"id":"s1","type":"SERVICE","quantity":1,"price":10000.00,"discount":1.005}]}
+                    """;
+            assertThat(service.berechneNettoAusPositionenJson(json)).isEqualByComparingTo("9899.00");
+
+            String json2 = """
+                    {"blocks":[{"id":"s1","type":"SERVICE","quantity":1,"price":899.90,"discount":0.145}]}
+                    """;
+            assertThat(service.berechneNettoAusPositionenJson(json2)).isEqualByComparingTo("898.55");
+        }
+
+        @Test
+        void ungueltiges_json_liefert_null() {
+            assertThat(service.berechneNettoAusPositionenJson("kein json")).isNull();
+        }
+    }
+
+    /**
+     * Korrekturlauf fuer Altbestaende: Dokumente, die vor dem Rabatt-Fix gespeichert
+     * wurden, tragen einen betragNetto ohne Pauschalrabatt. Der Lauf rechnet ihn aus
+     * positionenJson nach.
+     *
+     * DSGVO: ausschliesslich Dummy-Daten.
+     */
+    @Nested
+    class RabattBetraegeKorrigieren {
+
+        private AusgangsGeschaeftsDokument dokument(AusgangsGeschaeftsDokumentTyp typ,
+                                                    String nummer,
+                                                    String positionenJson,
+                                                    String betragNetto) {
+            AusgangsGeschaeftsDokument d = new AusgangsGeschaeftsDokument();
+            d.setId(1L);
+            d.setTyp(typ);
+            d.setDokumentNummer(nummer);
+            d.setPositionenJson(positionenJson);
+            d.setBetragNetto(betragNetto != null ? new BigDecimal(betragNetto) : null);
+            d.setMwstSatz(new BigDecimal("0.19"));
+            // Bewusst ohne Projekt: dann entfaellt die Projektpreis-Neuberechnung und
+            // der Test bleibt auf den Korrekturlauf fokussiert.
+            return d;
+        }
+
+        /** 3412,20 minus 3% Pauschalrabatt = 3309,83 netto -> 3938,70 brutto. */
+        private static final String JSON_MIT_PAUSCHALRABATT = """
+                {"blocks":[
+                  {"id":"s1","type":"SERVICE","title":"Geländer","quantity":1,"price":3412.20}
+                ],"globalRabatt":3}
+                """;
+
+        private static final String JSON_OHNE_RABATT = """
+                {"blocks":[
+                  {"id":"s1","type":"SERVICE","title":"Tür","quantity":2,"price":100}
+                ]}
+                """;
+
+        @Test
+        void rechnetPauschalrabattNachUndSchreibtAudit() {
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-2026/08/00032",
+                            JSON_MIT_PAUSCHALRABATT, "3412.20");
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findGeschaeftsdokumenteByDokumentid("RE-2026/08/00032"))
+                    .thenReturn(List.of());
+
+            var ergebnis = service.korrigiereRabattBetraege(null, "127.0.0.1");
+
+            assertThat(ergebnis.geprueft()).isEqualTo(1);
+            assertThat(ergebnis.korrigiert()).isEqualTo(1);
+            assertThat(d.getBetragNetto()).isEqualByComparingTo("3309.83");
+            assertThat(d.getBetragBrutto()).isEqualByComparingTo("3938.70");
+            verify(auditService).protokolliereAenderung(eq(d), eq(null), any(), eq("127.0.0.1"));
+        }
+
+        @Test
+        void schreibtDenAusloesendenBenutzerInDenAuditEintrag() {
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-1",
+                            JSON_MIT_PAUSCHALRABATT, "3412.20");
+            FrontendUserProfile admin = new FrontendUserProfile();
+            admin.setId(42L);
+
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findGeschaeftsdokumenteByDokumentid("RE-1"))
+                    .thenReturn(List.of());
+            when(frontendUserProfileRepository.findById(42L)).thenReturn(Optional.of(admin));
+
+            service.korrigiereRabattBetraege(42L, "10.0.0.5");
+
+            // GoBD: Bei einer Aenderung an festgeschriebenen Belegen ist das "wer"
+            // der wichtigste Teil des Eintrags — nicht "system".
+            verify(auditService).protokolliereAenderung(eq(d), eq(admin), any(), eq("10.0.0.5"));
+        }
+
+        @Test
+        void ziehtDenOffenenPostenNach() {
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-2026/08/00032",
+                            JSON_MIT_PAUSCHALRABATT, "3412.20");
+            ProjektGeschaeftsdokument posten = new ProjektGeschaeftsdokument();
+            posten.setBruttoBetrag(new BigDecimal("4060.52"));
+
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findGeschaeftsdokumenteByDokumentid("RE-2026/08/00032"))
+                    .thenReturn(List.of(posten));
+
+            service.korrigiereRabattBetraege(null, null);
+
+            // Der Offene-Posten-Eintrag traegt eine eigene Kopie des Bruttobetrags.
+            assertThat(posten.getBruttoBetrag()).isEqualByComparingTo("3938.70");
+            verify(projektDokumentRepository).save(posten);
+        }
+
+        @Test
+        void laesstDokumenteOhneRabattUnangetastet() {
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-1", JSON_OHNE_RABATT, "999.00");
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+
+            var ergebnis = service.korrigiereRabattBetraege(null, null);
+
+            assertThat(ergebnis.geprueft()).isZero();
+            assertThat(ergebnis.korrigiert()).isZero();
+            assertThat(d.getBetragNetto()).isEqualByComparingTo("999.00");
+            verify(dokumentRepository, never()).save(any());
+            verifyNoInteractions(auditService);
+        }
+
+        @Test
+        void istIdempotent_zweiterLaufKorrigiertNichtsMehr() {
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-1",
+                            JSON_MIT_PAUSCHALRABATT, "3309.83");
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+
+            var ergebnis = service.korrigiereRabattBetraege(null, null);
+
+            assertThat(ergebnis.geprueft()).isEqualTo(1);
+            assertThat(ergebnis.korrigiert()).isZero();
+            verify(dokumentRepository, never()).save(any());
+            verifyNoInteractions(auditService);
+        }
+
+        @Test
+        void ueberspringtTypenDerenBetragNichtAusPositionenFolgt() {
+            // Abschlagsrechnung: Betrag gibt der Benutzer frei vor.
+            // Schlussrechnung: Betrag ist der Restbetrag aus dem Abrechnungsverlauf.
+            // Storno: Betrag ist das negierte Original.
+            AusgangsGeschaeftsDokument abschlag =
+                    dokument(AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG, "AR-1",
+                            JSON_MIT_PAUSCHALRABATT, "3412.20");
+            AusgangsGeschaeftsDokument schluss =
+                    dokument(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG, "SR-1",
+                            JSON_MIT_PAUSCHALRABATT, "3412.20");
+            AusgangsGeschaeftsDokument storno =
+                    dokument(AusgangsGeschaeftsDokumentTyp.STORNO, "ST-1",
+                            JSON_MIT_PAUSCHALRABATT, "-3412.20");
+            when(dokumentRepository.findAll()).thenReturn(List.of(abschlag, schluss, storno));
+
+            var ergebnis = service.korrigiereRabattBetraege(null, null);
+
+            assertThat(ergebnis.geprueft()).isZero();
+            assertThat(ergebnis.korrigiert()).isZero();
+            verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        void fasstDigitalAngenommeneDokumenteNichtAn() {
+            // Der Kunde hat genau diesen Betrag bestaetigt. Bei einer AB mit
+            // mitbeauftragten Alternativen setzt DokumentFreigabeService den
+            // betragNetto ausserdem explizit — aus den Positionen nicht reproduzierbar.
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1",
+                            JSON_MIT_PAUSCHALRABATT, "3412.20");
+            d.setDigitalAngenommen(true);
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+
+            var ergebnis = service.korrigiereRabattBetraege(null, null);
+
+            assertThat(ergebnis.geprueft()).isZero();
+            assertThat(d.getBetragNetto()).isEqualByComparingTo("3412.20");
+            verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        void schreibtNichtWegenEinesEinzelnenCents() {
+            // Ein echter Rabatt-Fehler ist r% der Summe. Ein Cent Abweichung stammt aus
+            // einer Rundungsdifferenz und rechtfertigt keine Aenderung an einem
+            // festgeschriebenen Beleg.
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-1",
+                            JSON_MIT_PAUSCHALRABATT, "3309.84");
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+
+            var ergebnis = service.korrigiereRabattBetraege(null, null);
+
+            assertThat(ergebnis.geprueft()).isEqualTo(1);
+            assertThat(ergebnis.korrigiert()).isZero();
+            verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        void ueberspringtStornierteDokumente() {
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-1",
+                            JSON_MIT_PAUSCHALRABATT, "3412.20");
+            d.setStorniert(true);
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+
+            var ergebnis = service.korrigiereRabattBetraege(null, null);
+
+            assertThat(ergebnis.geprueft()).isZero();
+            verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        void korrigiertAuchGebuchteDokumente_weilSonstGenauDieseFalschBlieben() {
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-1",
+                            JSON_MIT_PAUSCHALRABATT, "3412.20");
+            d.setGebucht(true);
+            when(dokumentRepository.findAll()).thenReturn(List.of(d));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findGeschaeftsdokumenteByDokumentid("RE-1"))
+                    .thenReturn(List.of());
+
+            var ergebnis = service.korrigiereRabattBetraege(null, null);
+
+            assertThat(ergebnis.korrigiert()).isEqualTo(1);
+            assertThat(d.getBetragNetto()).isEqualByComparingTo("3309.83");
+        }
+
+        @Test
+        void ignoriertDokumenteOhnePositionenJson() {
+            AusgangsGeschaeftsDokument d =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-1", null, "100.00");
+            AusgangsGeschaeftsDokument leer =
+                    dokument(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-2", "   ", "100.00");
+            when(dokumentRepository.findAll()).thenReturn(List.of(d, leer));
+
+            assertThat(service.korrigiereRabattBetraege(null, null).geprueft()).isZero();
+        }
+    }
+
+    /**
+     * Erkennung, ob ein positionenJson ueberhaupt einen Rabatt traegt. Grenzt den
+     * Korrekturlauf eng ein: ohne Rabatt gibt es den Bug nicht.
+     *
+     * DSGVO: ausschliesslich Dummy-Daten.
+     */
+    @Nested
+    class RabattErkennung {
+
+        @Test
+        void erkenntDokumentPauschalrabatt() {
+            assertThat(service.enthaeltRabatt("""
+                    {"blocks":[{"id":"s1","type":"SERVICE","quantity":1,"price":100}],"globalRabatt":5}
+                    """)).isTrue();
+        }
+
+        @Test
+        void erkenntPositionsRabatt_auchInAbschnitten() {
+            assertThat(service.enthaeltRabatt("""
+                    {"blocks":[{"id":"sec","type":"SECTION_HEADER","children":[
+                       {"id":"s1","type":"SERVICE","quantity":1,"price":100,"discount":10}
+                    ]}]}
+                    """)).isTrue();
+        }
+
+        @Test
+        void erkenntLegacyArrayFormat() {
+            assertThat(service.enthaeltRabatt(
+                    "[{\"id\":\"s1\",\"type\":\"SERVICE\",\"quantity\":1,\"price\":100,\"discount\":25}]"))
+                    .isTrue();
+        }
+
+        @Test
+        void meldetKeinenRabattWennKeinerHinterlegtIst() {
+            assertThat(service.enthaeltRabatt("""
+                    {"blocks":[{"id":"s1","type":"SERVICE","quantity":1,"price":100}],"globalRabatt":0}
+                    """)).isFalse();
+        }
+
+        @Test
+        void ungueltigesJsonGiltAlsRabattfrei() {
+            assertThat(service.enthaeltRabatt("kein json")).isFalse();
+        }
+
+        @Test
+        void leseGlobalRabattProzent_liefertProzentsatzOderNull() {
+            assertThat(AusgangsGeschaeftsDokumentService.leseGlobalRabattProzent(
+                    "{\"blocks\":[],\"globalRabatt\":3}")).isEqualByComparingTo("3");
+            assertThat(AusgangsGeschaeftsDokumentService.leseGlobalRabattProzent(
+                    "{\"blocks\":[],\"globalRabatt\":0}")).isNull();
+            assertThat(AusgangsGeschaeftsDokumentService.leseGlobalRabattProzent(
+                    "{\"blocks\":[]}")).isNull();
+            assertThat(AusgangsGeschaeftsDokumentService.leseGlobalRabattProzent(null)).isNull();
+            assertThat(AusgangsGeschaeftsDokumentService.leseGlobalRabattProzent("kein json")).isNull();
+        }
+
+        @Test
+        void leseGlobalRabattProzent_kapptUnplausibleWerteBei100() {
+            assertThat(AusgangsGeschaeftsDokumentService.leseGlobalRabattProzent(
+                    "{\"blocks\":[],\"globalRabatt\":150}")).isEqualByComparingTo("100");
         }
     }
 

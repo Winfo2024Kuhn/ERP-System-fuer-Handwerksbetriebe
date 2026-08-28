@@ -88,6 +88,14 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
   boolean existsByDokumentid(@Param("dokumentid") String dokumentid);
 
   /**
+   * Offene-Posten-Eintraege zu einer Dokumentnummer. Der Eintrag traegt eine eigene
+   * Kopie des Bruttobetrags, die bei einer Betragskorrektur am Ausgangsdokument
+   * nachgezogen werden muss.
+   */
+  @Query("SELECT g FROM ProjektGeschaeftsdokument g WHERE g.dokumentid = :dokumentid")
+  List<ProjektGeschaeftsdokument> findGeschaeftsdokumenteByDokumentid(@Param("dokumentid") String dokumentid);
+
+  /**
    * Prüft ob es noch unbezahlte Rechnungen für ein Projekt gibt.
    */
   @Query("""

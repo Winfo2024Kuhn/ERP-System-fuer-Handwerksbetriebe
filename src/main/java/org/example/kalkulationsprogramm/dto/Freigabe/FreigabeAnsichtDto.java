@@ -51,4 +51,16 @@ public class FreigabeAnsichtDto
 
     /** true, wenn das Dokument wählbare Alternativpositionen enthält. */
     private boolean hatAlternativen;
+
+    /**
+     * Dokument-Pauschalrabatt in Prozent (z.B. 3.0) oder {@code null}, wenn keiner
+     * gewährt wurde.
+     *
+     * <p>Ohne dieses Feld ergibt die Summe der einzeln ausgewiesenen Positionen auf
+     * der Freigabe-Seite mehr als der angezeigte Gesamtbetrag — der Kunde sähe die
+     * Differenz ohne Erklärung. {@code basisNetto}/{@code basisBrutto} sind bereits
+     * die rabattierten Werte; dieses Feld dient allein dem Ausweis der Zeile
+     * "Rabatt −x %".</p>
+     */
+    private BigDecimal globalRabattProzent;
 }

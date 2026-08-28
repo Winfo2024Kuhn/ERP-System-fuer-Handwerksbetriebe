@@ -39,6 +39,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsG
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
+import org.example.kalkulationsprogramm.util.RabattRechner;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -104,6 +105,12 @@ public class AusgangsGeschaeftsDokumentService {
         this.zeitbuchungRepository = zeitbuchungRepository;
         this.auditService = auditService;
     }
+
+    /**
+     * Mapper fuer positionenJson-Auswertungen. Statisch, weil der Korrekturlauf ueber
+     * den Gesamtbestand sonst pro Dokument mehrere Mapper-Instanzen erzeugt.
+     */
+    private static final ObjectMapper POSITIONEN_MAPPER = new ObjectMapper();
 
     /** Rechnungstypen, die im Abrechnungsverlauf berücksichtigt werden */
     private static final Set<AusgangsGeschaeftsDokumentTyp> RECHNUNGSTYPEN = EnumSet.of(
@@ -1245,12 +1252,18 @@ public class AusgangsGeschaeftsDokumentService {
 
     /**
      * Berechnet den Nettobetrag aus dem positionenJson eines Dokuments.
-     * Summiert (quantity * price) aller SERVICE-Blöcke (auch in SECTION_HEADER verschachtelt).
+     *
+     * <p>Summiert alle nicht-optionalen SERVICE-Bloecke (auch in SECTION_HEADER
+     * verschachtelt) inklusive Positions-Rabatt und zieht anschliessend den
+     * Dokument-Pauschalrabatt ab. Muss deckungsgleich mit
+     * {@code helpers.ts#calculateNettoNachRabatt} und
+     * {@link RechnungPdfService} rechnen — dieser Wert wird vom Korrekturlauf
+     * auch geschrieben, nicht nur angezeigt.</p>
      */
-    private BigDecimal berechneNettoAusPositionenJson(String positionenJson) {
+    // Paketsichtbar statt private: wird direkt in AusgangsGeschaeftsDokumentServiceTest geprueft.
+    BigDecimal berechneNettoAusPositionenJson(String positionenJson) {
         try {
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(positionenJson);
+            JsonNode root = POSITIONEN_MAPPER.readTree(positionenJson);
 
             JsonNode blocks;
             if (root.isArray()) {
@@ -1265,7 +1278,14 @@ public class AusgangsGeschaeftsDokumentService {
             for (JsonNode block : blocks) {
                 summe = summe.add(summeServiceBlock(block));
             }
-            return summe.setScale(2, RoundingMode.HALF_UP);
+
+            // Dokument-Pauschalrabatt liegt neben den Bloecken im Wrapper-Objekt
+            // ({blocks, globalRabatt, ...}) und gilt auf die gesamte Nettosumme.
+            // Rundung MUSS ueber RabattRechner laufen: eine eigene Faktor-Rechnung hier
+            // weicht um einen Cent vom PDF ab, und der Korrekturlauf wuerde dann bereits
+            // korrekte, festgeschriebene Rechnungen umschreiben.
+            summe = summe.setScale(2, RoundingMode.HALF_UP);
+            return RabattRechner.nettoNachRabatt(summe, leseGlobalRabattProzent(positionenJson));
         } catch (Exception e) {
             log.warn("Fehler beim Berechnen des Nettobetrags aus positionenJson: {}", e.getMessage());
             return null;
@@ -1276,10 +1296,30 @@ public class AusgangsGeschaeftsDokumentService {
         BigDecimal summe = BigDecimal.ZERO;
         String type = block.has("type") ? block.get("type").asText() : "";
 
-        if ("SERVICE".equals(type)) {
+        // Optionale Positionen (Wahl-/Alternativpositionen) zaehlen NICHT zur Nettosumme —
+        // genau wie im Editor (helpers.ts#calculateNetto) und im PDF
+        // (RechnungPdfService#addSummenBlock). Fehlte der Filter hier, wuerde der
+        // Korrekturlauf Angebote mit Alternativpositionen auf einen zu hohen Betrag
+        // umschreiben — schreibend, auf festgeschriebenen Belegen.
+        if ("SERVICE".equals(type) && !block.path("optional").asBoolean(false)) {
             double quantity = block.has("quantity") ? block.get("quantity").asDouble(0) : 0;
             double price = block.has("price") ? block.get("price").asDouble(0) : 0;
-            summe = summe.add(BigDecimal.valueOf(quantity).multiply(BigDecimal.valueOf(price)));
+            // Verbindliche Zeilenregel, identisch im Editor (helpers.ts#serviceLineTotal):
+            //     round2( round2(menge × preis) × (1 − rabatt/100) )
+            // Die ERSTE Rundung ist entscheidend: das Frontend rechnet in Doubles und
+            // kann ein exaktes x,xx5 nicht darstellen (4,10 × 0,85 = 3.4849999…).
+            // Erst wenn beide Seiten auf demselben Cent-Betrag aufsetzen, kommen sie
+            // zwingend zum selben Ergebnis — sonst schreibt der Korrekturlauf korrekte,
+            // festgeschriebene Belege um.
+            BigDecimal zeile = BigDecimal.valueOf(quantity).multiply(BigDecimal.valueOf(price))
+                    .setScale(2, RoundingMode.HALF_UP);
+            double discount = block.has("discount") ? block.get("discount").asDouble(0) : 0;
+            if (discount > 0) {
+                BigDecimal faktor = BigDecimal.ONE.subtract(
+                        BigDecimal.valueOf(Math.min(100d, discount)).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP));
+                zeile = zeile.multiply(faktor).setScale(2, RoundingMode.HALF_UP);
+            }
+            summe = summe.add(zeile);
         }
 
         if ("SECTION_HEADER".equals(type) && block.has("children") && block.get("children").isArray()) {
@@ -1915,6 +1955,220 @@ public class AusgangsGeschaeftsDokumentService {
      * @param nachgetragen Projekte, die daraufhin einen Preis bekommen haben
      */
     public record PreisNachtragErgebnis(int geprueft, int nachgetragen) {
+    }
+
+    /**
+     * Dokumenttypen, deren {@code betragNetto} sich direkt aus den Positionen ergibt
+     * und daher aus {@code positionenJson} nachgerechnet werden darf.
+     *
+     * <p>Bewusst NICHT enthalten:
+     * {@code ABSCHLAGSRECHNUNG} (Betrag gibt der Benutzer frei vor),
+     * {@code SCHLUSSRECHNUNG} (Betrag ist der Restbetrag aus dem Abrechnungsverlauf)
+     * und {@code STORNO} (Betrag ist das negierte Original).</p>
+     */
+    private static final Set<AusgangsGeschaeftsDokumentTyp> POSITIONSABGELEITETE_TYPEN = EnumSet.of(
+            AusgangsGeschaeftsDokumentTyp.ANGEBOT,
+            AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT,
+            AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG,
+            AusgangsGeschaeftsDokumentTyp.RECHNUNG,
+            AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG,
+            AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT);
+
+    /**
+     * Rechnet bei Bestandsdokumenten mit Rabatt den {@code betragNetto} aus
+     * {@code positionenJson} neu.
+     *
+     * <p>Hintergrund: Der Dokument-Pauschalrabatt ({@code globalRabatt}) lag nur als
+     * Metadatum in {@code positionenJson} und floss nie in den gespeicherten
+     * {@code betragNetto}. Editor-Footer und PDF rechneten ihn heraus, alles andere —
+     * Projekt-Dokumentliste, Offene Posten, Projekt-Bruttopreis und die
+     * Rechnungs-E-Mail — zeigte den unrabattierten Betrag. Dokumente, die seit dem Fix
+     * gespeichert wurden, sind bereits korrekt; dieser Lauf holt den Altbestand nach.</p>
+     *
+     * <p><strong>GoBD:</strong> Der Lauf fasst bewusst auch gebuchte Dokumente an, weil
+     * sonst genau die festgeschriebenen Rechnungen falsch blieben. Jede Korrektur wird
+     * als {@code GEAENDERT} mit Begruendung in den Audit-Trail geschrieben, ist also
+     * nachvollziehbar. Angefasst wird nur, was tatsaechlich einen Rabatt traegt und wo
+     * der nachgerechnete Betrag vom gespeicherten abweicht — alles andere bleibt
+     * unveraendert. Der Lauf ist idempotent: ein zweiter Durchlauf findet nichts mehr.</p>
+     *
+     * <p><strong>Betriebshinweis — der Lauf sperrt kurzzeitig das gesamte System:</strong>
+     * Er laeuft in EINER Transaktion ueber den Gesamtbestand. Der erste korrigierte Beleg
+     * nimmt ueber {@code AusgangsGeschaeftsDokumentAuditService} einen
+     * {@code PESSIMISTIC_WRITE} auf die Singleton-Zeile {@code audit_chain_state} und
+     * haelt ihn bis zum Commit. Solange blockiert <em>jede</em> Aktion, die einen
+     * Audit-Eintrag schreibt:</p>
+     * <ul>
+     *   <li>Rechnung buchen, versenden oder stornieren</li>
+     *   <li>digitale Annahme durch den Kunden ueber die Freigabe-Seite
+     *       ({@code protokolliereDigitaleAnnahme}) — also auch von aussen</li>
+     * </ul>
+     * <p>Deshalb: <strong>einmalig, manuell durch einen Admin, ausserhalb der Arbeitszeit
+     * und nicht, waehrend eine Freigabe beim Kunden offen ist.</strong> Fuer den Bestand
+     * eines Handwerksbetriebs (Groessenordnung 10³–10⁴ Dokumente, davon ein Bruchteil mit
+     * Rabatt) liegt die Laufzeit im Sekundenbereich. Ab etwa 50.000 Dokumenten oder
+     * spuerbar mehr als einer Minute Laufzeit ist Chunking Pflicht — bewusst nicht
+     * vorweggenommen, weil es eine zusaetzliche Bean mit
+     * {@code @Transactional(REQUIRES_NEW)} pro Dokument braucht, die ohne laufende
+     * Datenbank nicht verifizierbar war. Der Lauf ist idempotent, ein Abbruch
+     * mittendrin ist also unkritisch.</p>
+     *
+     * <p>Nicht abgedeckt: Rechnungen ohne {@code positionenJson} (z.B. direkt aus einer
+     * AB erzeugt, Betrag vom Vorgaenger uebernommen) — dort gibt es nichts nachzurechnen,
+     * sie behalten ihren gespeicherten Betrag.</p>
+     *
+     * @param bearbeiterId ausloesender Benutzer fuer den Audit-Eintrag (darf null sein)
+     * @param ipAdresse   IP fuer den Audit-Eintrag (darf null sein)
+     * @return wie viele Dokumente mit Rabatt geprueft und wie viele korrigiert wurden
+     */
+    @Transactional
+    public RabattKorrekturErgebnis korrigiereRabattBetraege(Long bearbeiterId, String ipAdresse) {
+        int geprueft = 0;
+        int korrigiert = 0;
+        Set<Long> betroffeneProjekte = new LinkedHashSet<>();
+        // GoBD: Bei einer Aenderung an festgeschriebenen Belegen ist das "wer" der
+        // wichtigste Teil des Audit-Eintrags — sonst steht dort nur "system".
+        var bearbeiter = bearbeiterId != null
+                ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
+                : null;
+
+        for (AusgangsGeschaeftsDokument dokument : dokumentRepository.findAll()) {
+            String json = dokument.getPositionenJson();
+            if (json == null || json.isBlank()) continue;
+            if (dokument.isStorniert()) continue;
+            // Digital angenommene Dokumente bleiben unangetastet: der Kunde hat genau
+            // diesen Betrag bestaetigt. Bei einer AB mit mitbeauftragten Alternativen
+            // setzt DokumentFreigabeService den betragNetto ausserdem explizit
+            // (Basis rabattiert + Delta unrabattiert) — der waere aus den Positionen
+            // gar nicht reproduzierbar und wuerde hier still nach unten korrigiert.
+            if (dokument.isDigitalAngenommen()) continue;
+            if (!POSITIONSABGELEITETE_TYPEN.contains(dokument.getTyp())) continue;
+            if (!enthaeltRabatt(json)) continue;
+
+            geprueft++;
+
+            BigDecimal neuNetto = berechneNettoAusPositionenJson(json);
+            if (neuNetto == null) continue;
+
+            // Cent-Toleranz statt exaktem Vergleich: ein echter Rabatt-Fehler ist immer
+            // r% der Summe, also um Groessenordnungen groesser. Ein einzelner Cent kann
+            // dagegen aus einer Rundungsdifferenz stammen — und dafuer eine
+            // festgeschriebene Rechnung umzuschreiben waere unverhaeltnismaessig.
+            BigDecimal altNetto = dokument.getBetragNetto();
+            if (altNetto != null
+                    && altNetto.subtract(neuNetto).abs().compareTo(new BigDecimal("0.01")) <= 0) {
+                continue;
+            }
+
+            BigDecimal mwstSatz = dokument.getMwstSatz() != null ? dokument.getMwstSatz() : new BigDecimal("0.19");
+            BigDecimal neuBrutto = neuNetto.add(neuNetto.multiply(mwstSatz)).setScale(2, RoundingMode.HALF_UP);
+
+            dokument.setBetragNetto(neuNetto);
+            dokument.setBetragBrutto(neuBrutto);
+            AusgangsGeschaeftsDokument gespeichert = dokumentRepository.save(dokument);
+
+            auditService.protokolliereAenderung(gespeichert, bearbeiter,
+                    "Automatische Rabatt-Korrektur: Nettobetrag " + altNetto + " -> " + neuNetto
+                            + " (Rabatt war nicht im gespeicherten Betrag enthalten)",
+                    ipAdresse);
+
+            // Offenen Posten nachziehen — er traegt eine eigene Kopie des Bruttobetrags.
+            if (gespeichert.getDokumentNummer() != null) {
+                for (ProjektGeschaeftsdokument posten :
+                        projektDokumentRepository.findGeschaeftsdokumenteByDokumentid(gespeichert.getDokumentNummer())) {
+                    posten.setBruttoBetrag(neuBrutto);
+                    projektDokumentRepository.save(posten);
+                }
+            }
+
+            if (gespeichert.getProjekt() != null) {
+                betroffeneProjekte.add(gespeichert.getProjekt().getId());
+            }
+            korrigiert++;
+        }
+
+        // Erst nach allen Dokumenten: der Projektpreis summiert ueber die Dokumente,
+        // eine Neuberechnung pro Dokument waere teuer und teils auf halbem Stand.
+        for (Long projektId : betroffeneProjekte) {
+            berechneProjektPreisUndStatus(projektId);
+        }
+
+        log.info("Rabatt-Korrektur abgeschlossen: {} von {} Dokumenten mit Rabatt korrigiert, {} Projektpreise neu berechnet.",
+                korrigiert, geprueft, betroffeneProjekte.size());
+        return new RabattKorrekturErgebnis(geprueft, korrigiert, betroffeneProjekte.size());
+    }
+
+    /**
+     * Liest den Dokument-Pauschalrabatt aus dem {@code positionenJson}.
+     *
+     * <p>Der Wert liegt neben den Bloecken im Wrapper-Objekt
+     * ({@code {blocks, globalRabatt, ...}}) und gilt auf die gesamte Nettosumme.
+     * Legacy-Dokumente im nackten Array-Format haben ihn nicht.</p>
+     *
+     * @return Prozentsatz (0-100) oder {@code null}, wenn kein Rabatt hinterlegt ist
+     */
+    public static BigDecimal leseGlobalRabattProzent(String positionenJson) {
+        if (positionenJson == null || positionenJson.isBlank()) return null;
+        try {
+            JsonNode root = POSITIONEN_MAPPER.readTree(positionenJson);
+            double rabatt = root.path("globalRabatt").asDouble(0);
+            if (rabatt <= 0) return null;
+            return BigDecimal.valueOf(Math.min(100d, rabatt));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Traegt das positionenJson einen Rabatt — entweder den Dokument-Pauschalrabatt
+     * oder einen Rabatt auf einer einzelnen Position?
+     *
+     * <p>Grenzt den Korrekturlauf bewusst eng ein: ohne Rabatt gibt es den Bug nicht,
+     * und ein abweichender Betrag haette dann eine andere, hier nicht zu behandelnde
+     * Ursache (z.B. ein von Hand gesetzter Betrag).</p>
+     */
+    boolean enthaeltRabatt(String positionenJson) {
+        try {
+            JsonNode root = POSITIONEN_MAPPER.readTree(positionenJson);
+
+            if (root.path("globalRabatt").asDouble(0) > 0) return true;
+
+            JsonNode blocks;
+            if (root.isArray()) {
+                blocks = root;
+            } else if (root.has("blocks") && root.get("blocks").isArray()) {
+                blocks = root.get("blocks");
+            } else {
+                return false;
+            }
+            for (JsonNode block : blocks) {
+                if (blockHatRabatt(block)) return true;
+            }
+            return false;
+        } catch (Exception e) {
+            log.warn("Rabatt-Pruefung auf positionenJson fehlgeschlagen: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean blockHatRabatt(JsonNode block) {
+        if (block.path("discount").asDouble(0) > 0) return true;
+        if (block.has("children") && block.get("children").isArray()) {
+            for (JsonNode child : block.get("children")) {
+                if (blockHatRabatt(child)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Ergebnis von {@link #korrigiereRabattBetraege(Long, String)}.
+     *
+     * @param geprueft         Dokumente mit Rabatt, die durchgerechnet wurden
+     * @param korrigiert       Dokumente, deren Betrag abwich und angepasst wurde
+     * @param projektePreisNeu Projekte, deren Auftragspreis daraufhin neu berechnet wurde
+     */
+    public record RabattKorrekturErgebnis(int geprueft, int korrigiert, int projektePreisNeu) {
     }
 
     // --- Anfrage-Preis Berechnung aus Dokumenten ---

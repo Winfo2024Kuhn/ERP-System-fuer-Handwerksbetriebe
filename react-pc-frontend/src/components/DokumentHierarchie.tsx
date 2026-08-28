@@ -31,6 +31,7 @@ import type {
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from '../types';
 import type { DocBlock } from './document-editor/types';
 import { TeilrechnungPositionRow, getAllServiceBlocks, filterBlocksBySelectedIds } from './TeilrechnungPositionRow';
+import { serviceLineTotal, nettoNachGlobalRabatt, calculateNettoNachRabatt } from './document-editor/helpers';
 
 // ============ Farbkonfiguration ============
 
@@ -108,6 +109,9 @@ export function DokumentHierarchie({
 
     // Teilrechnung Positions-Auswahl
     const [basisDokBlocks, setBasisDokBlocks] = useState<DocBlock[]>([]);
+    // Pauschalrabatt des Basisdokuments. Eine Teilrechnung muss ihn erben, weil sich
+    // der Restbetrag aus dem RABATTIERTEN betragNetto des Basisdokuments ableitet.
+    const [basisDokGlobalRabatt, setBasisDokGlobalRabatt] = useState<number>(0);
     const [selectedBlockIds, setSelectedBlockIds] = useState<Set<string>>(new Set());
     const [expandedBlockIds, setExpandedBlockIds] = useState<Set<string>>(new Set());
 
@@ -186,6 +190,7 @@ export function DokumentHierarchie({
         setShowRechnungDialog(true);
         setAbrechnungsverlauf(null);
         setBasisDokBlocks([]);
+        setBasisDokGlobalRabatt(0);
         setSelectedBlockIds(new Set());
         setExpandedBlockIds(new Set());
         try {
@@ -201,6 +206,7 @@ export function DokumentHierarchie({
                         const parsed = JSON.parse(dokData.positionenJson);
                         const blocks: DocBlock[] = Array.isArray(parsed) ? parsed : (parsed.blocks || []);
                         setBasisDokBlocks(blocks);
+                        setBasisDokGlobalRabatt(Array.isArray(parsed) ? 0 : (parsed.globalRabatt || 0));
                         // Alle SERVICE-Blocks standardmäßig auswählen
                         const allIds = new Set<string>();
                         for (const b of blocks) {
@@ -256,11 +262,11 @@ export function DokumentHierarchie({
                     return;
                 }
                 const filteredBlocks = filterBlocksBySelectedIds(basisDokBlocks, selectedBlockIds);
-                positionenJson = JSON.stringify({ blocks: filteredBlocks, globalRabatt: 0 });
+                // Pauschalrabatt des Basisdokuments erben — sonst uebersteigt die
+                // Teilrechnung den (rabattierten) Restbetrag und wird abgewiesen.
+                positionenJson = JSON.stringify({ blocks: filteredBlocks, globalRabatt: basisDokGlobalRabatt });
                 // Betrag aus gewählten Positionen berechnen für Abrechnungsverlauf
-                betrag = getAllServiceBlocks(basisDokBlocks)
-                    .filter(b => selectedBlockIds.has(b.id))
-                    .reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0);
+                betrag = calculateNettoNachRabatt(filteredBlocks, basisDokGlobalRabatt);
             }
 
             const response = await fetch('/api/ausgangs-dokumente', {
@@ -291,7 +297,7 @@ export function DokumentHierarchie({
             setRechnungLoading(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rechnungBasisDok, rechnungTyp, abschlagsBetrag, berechneterAbschlagNetto, abrechnungsverlauf, editorParam, createPayloadIds, onRefresh, toast, selectedBlockIds, basisDokBlocks]);
+    }, [rechnungBasisDok, rechnungTyp, abschlagsBetrag, berechneterAbschlagNetto, abrechnungsverlauf, editorParam, createPayloadIds, onRefresh, toast, selectedBlockIds, basisDokBlocks, basisDokGlobalRabatt]);
 
     // ============ Knoten ein-/ausklappen ============
 
@@ -1007,11 +1013,12 @@ export function DokumentHierarchie({
                                             Summe ({selectedBlockIds.size} von {getAllServiceBlocks(basisDokBlocks).length} Positionen)
                                         </span>
                                         <span className="text-base font-bold text-rose-700">
-                                            {formatCurrency(
+                                            {formatCurrency(nettoNachGlobalRabatt(
                                                 getAllServiceBlocks(basisDokBlocks)
-                                                    .filter(b => selectedBlockIds.has(b.id))
-                                                    .reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0)
-                                            )}
+                                                    .filter(b => !b.optional && selectedBlockIds.has(b.id))
+                                                    .reduce((sum, b) => sum + serviceLineTotal(b), 0),
+                                                basisDokGlobalRabatt
+                                            ))}
                                         </span>
                                     </div>
                                 )}

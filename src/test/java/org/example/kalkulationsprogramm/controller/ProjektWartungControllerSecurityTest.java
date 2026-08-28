@@ -91,6 +91,48 @@ class ProjektWartungControllerSecurityTest {
         verifyNoInteractions(ausgangsGeschaeftsDokumentService);
     }
 
+    @Test
+    @DisplayName("Rabatt-Korrektur: ohne Anmeldung kein Zugriff")
+    void rabattKorrekturAnonymWirdAbgewiesen() throws Exception {
+        mockMvc.perform(post("/api/admin/projekte/rabatt-betraege-korrigieren").with(csrf()))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(ausgangsGeschaeftsDokumentService);
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Rabatt-Korrektur: normaler Benutzer darf den Bestand nicht umrechnen")
+    void rabattKorrekturNormalerBenutzerWirdAbgewiesen() throws Exception {
+        mockMvc.perform(post("/api/admin/projekte/rabatt-betraege-korrigieren").with(csrf()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(ausgangsGeschaeftsDokumentService);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Rabatt-Korrektur: Admin darf")
+    void rabattKorrekturAdminDarf() throws Exception {
+        org.mockito.BDDMockito.given(ausgangsGeschaeftsDokumentService
+                        .korrigiereRabattBetraege(org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any()))
+                .willReturn(new AusgangsGeschaeftsDokumentService.RabattKorrekturErgebnis(2, 1, 1));
+
+        mockMvc.perform(post("/api/admin/projekte/rabatt-betraege-korrigieren").with(csrf()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Rabatt-Korrektur: ohne CSRF-Token kein Zugriff, auch als Admin")
+    void rabattKorrekturOhneCsrfTokenAbgewiesen() throws Exception {
+        mockMvc.perform(post("/api/admin/projekte/rabatt-betraege-korrigieren"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(ausgangsGeschaeftsDokumentService);
+    }
+
     private static org.springframework.test.web.servlet.request.RequestPostProcessor csrf() {
         return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf();
     }
