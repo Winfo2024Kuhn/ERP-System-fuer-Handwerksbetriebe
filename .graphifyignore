@@ -13,6 +13,7 @@ react-zeiterfassung/dist/
 
 # Graphify selbst
 graphify-out/
+.graphify-venv/
 
 # Logs & Uploads
 logs/

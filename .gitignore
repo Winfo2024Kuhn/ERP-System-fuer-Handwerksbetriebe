@@ -83,6 +83,12 @@ package-lock.json
 # komplett ignoriert — Quelle der Wahrheit ist der Root-Graph.
 react-pc-frontend/graphify-out/
 react-zeiterfassung/graphify-out/
+# Lokale Graphify-Installation (projekt-eigenes venv, nicht systemweit).
+# Maschinenspezifisch -> nie committen. Neu anlegen:
+#   py -3 -m venv .graphify-venv && .graphify-venv/Scripts/python -m pip install graphifyy
+.graphify-venv/
+graphify.cmd
+graphify
 .claude/settings.local.json
 
 
