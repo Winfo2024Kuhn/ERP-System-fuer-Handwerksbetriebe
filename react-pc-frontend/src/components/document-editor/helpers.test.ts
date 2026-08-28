@@ -21,6 +21,10 @@ import {
     brauchtAnnahmeLinkAbfrage,
     buildPositionMap,
     calculateNetto,
+    serviceLineTotal,
+    calculateNettoNachRabatt,
+    nettoNachGlobalRabatt,
+    rabattBetrag,
     calculateSectionSubtotal,
     gruppiereFuerAnzeige,
     extractBoldFromHtml,
@@ -393,5 +397,165 @@ describe('gruppiereFuerAnzeige', () => {
     it('loest Bauabschnitte nicht auf', () => {
         const blocks: DocBlock[] = [{ id: 'sec', type: 'SECTION_HEADER', children: [] }];
         expect(gruppiereFuerAnzeige(blocks)).toEqual([{ art: 'block', block: blocks[0] }]);
+    });
+});
+
+/**
+ * Regressions-Bug (2026-08-28): Der Dokument-Pauschalrabatt (globalRabatt) wurde
+ * nur in positionenJson als Metadatum abgelegt und im Editor-Footer sowie im PDF
+ * angewandt — NIE in den persistierten `betragNetto`. Folge: Projekt-Dokumentliste,
+ * Offene Posten, Projekt-Bruttopreis und Rechnungs-E-Mail zeigten den
+ * unrabattierten Betrag.
+ *
+ * DSGVO: ausschliesslich Dummy-Daten.
+ */
+describe('calculateNettoNachRabatt', () => {
+    it('zieht den Dokument-Pauschalrabatt von der Nettosumme ab', () => {
+        const blocks = [leistung('a', 3412.2)];
+        expect(calculateNettoNachRabatt(blocks, 3)).toBeCloseTo(3309.83, 2);
+    });
+
+    it('laesst die Summe ohne Rabatt unveraendert', () => {
+        const blocks = [leistung('a', 1000)];
+        expect(calculateNettoNachRabatt(blocks, 0)).toBe(1000);
+        expect(calculateNettoNachRabatt(blocks, undefined)).toBe(1000);
+    });
+
+    it('kombiniert Positions-Rabatt und Dokument-Rabatt', () => {
+        // Position: 1000 − 10% = 900, danach Dokument-Rabatt 5% = 855
+        const blocks = [leistung('a', 1000, { discount: 10 })];
+        expect(calculateNettoNachRabatt(blocks, 5)).toBeCloseTo(855, 2);
+    });
+
+    it('ignoriert optionale und Alternativ-Positionen wie calculateNetto', () => {
+        const blocks = [
+            leistung('fest', 1000),
+            leistung('opt', 500, { optional: true }),
+            leistung('alt', 700, { optional: true, alternativGruppe: 'Geländer' }),
+        ];
+        expect(calculateNettoNachRabatt(blocks, 10)).toBeCloseTo(900, 2);
+    });
+
+    it('behandelt 100% Rabatt und ignoriert unplausible Werte', () => {
+        const blocks = [leistung('a', 1000)];
+        expect(calculateNettoNachRabatt(blocks, 100)).toBe(0);
+        expect(calculateNettoNachRabatt(blocks, -5)).toBe(1000);
+        expect(calculateNettoNachRabatt(blocks, 150)).toBe(0);
+    });
+});
+
+/**
+ * Frontend und Backend MUESSEN den Pauschalrabatt identisch runden. Wich der
+ * gespeicherte Betrag um einen Cent vom PDF ab, hielt der Korrekturlauf ein
+ * korrektes Dokument fuer falsch und schrieb eine festgeschriebene Rechnung um.
+ * Pendant: RabattRechnerTest im Backend.
+ *
+ * DSGVO: ausschliesslich Dummy-Daten.
+ */
+describe('rabattBetrag / nettoNachGlobalRabatt', () => {
+    // Diese Faelle trifft die Binaerdarstellung von unten (4,10*15 = 61.49999999999999).
+    // Eine Rundung direkt auf dem Double-Produkt liefert hier einen Cent zu wenig und
+    // weicht damit vom BigDecimal-Backend ab. Der frueher benutzte 100,10/5%-Fall ist
+    // ausgerechnet einer, bei dem beide Varianten uebereinstimmen — er taugt nicht als
+    // Waechter.
+    it.each([
+        [4.10, 15, 0.62, 3.48],
+        [32.30, 15, 4.85, 27.45],
+        [2.30, 25, 0.58, 1.72],
+        [2048.70, 15, 307.31, 1741.39],
+    ])('rechnet %s EUR mit %s%% exakt wie das Backend', (netto, prozent, erwarteterRabatt, erwartetesNetto) => {
+        expect(rabattBetrag(netto, prozent)).toBeCloseTo(erwarteterRabatt, 2);
+        expect(nettoNachGlobalRabatt(netto, prozent)).toBeCloseTo(erwartetesNetto, 2);
+    });
+
+    it('rundet die Haelfte vom Nullpunkt weg, auch bei negativen Betraegen', () => {
+        // Java RoundingMode.HALF_UP rundet away-from-zero, Math.round Richtung +unendlich.
+        expect(rabattBetrag(-100.1, 5)).toBeCloseTo(-5.01, 2);
+    });
+
+    it('rundet den Rabattbetrag auf zwei Nachkommastellen (Abzugs-Variante)', () => {
+        // round2(100,10 × 5 / 100) = round2(5,005) = 5,01 -> 95,09
+        expect(rabattBetrag(100.1, 5)).toBeCloseTo(5.01, 2);
+        expect(nettoNachGlobalRabatt(100.1, 5)).toBeCloseTo(95.09, 2);
+        // Die Faktor-Variante haette 95,10 geliefert — genau die Divergenz, die der
+        // Korrekturlauf sonst als "falsch" interpretiert haette.
+        expect(nettoNachGlobalRabatt(100.1, 5)).not.toBeCloseTo(95.1, 2);
+    });
+
+    it('trifft den Realfall aus dem Bugreport', () => {
+        expect(nettoNachGlobalRabatt(3412.2, 3)).toBeCloseTo(3309.83, 2);
+    });
+
+    it('laesst den Betrag ohne wirksamen Rabatt unveraendert', () => {
+        expect(nettoNachGlobalRabatt(1000, 0)).toBe(1000);
+        expect(nettoNachGlobalRabatt(1000, undefined)).toBe(1000);
+        expect(nettoNachGlobalRabatt(1000, -5)).toBe(1000);
+        expect(rabattBetrag(1000, 0)).toBe(0);
+    });
+
+    it('kappt unplausible Prozentwerte bei 100', () => {
+        expect(nettoNachGlobalRabatt(1000, 100)).toBe(0);
+        expect(nettoNachGlobalRabatt(1000, 150)).toBe(0);
+    });
+});
+
+/**
+ * Teilrechnung: Der Restbetrag leitet sich aus dem RABATTIERTEN betragNetto des
+ * Basisdokuments ab. Eine Teilrechnung ueber alle Positionen muss deshalb denselben
+ * rabattierten Betrag ergeben — sonst uebersteigt sie den Restbetrag und wird
+ * clientseitig gesperrt bzw. serverseitig abgewiesen.
+ */
+describe('Teilrechnung erbt den Pauschalrabatt', () => {
+    it('Vollauswahl trifft exakt den rabattierten Restbetrag des Basisdokuments', () => {
+        const blocks = [leistung('a', 3412.2)];
+        const basisBetragNetto = calculateNettoNachRabatt(blocks, 3); // = 3309,83
+        const teilrechnungSumme = nettoNachGlobalRabatt(
+            blocks.reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0), 3);
+
+        expect(teilrechnungSumme).toBeCloseTo(basisBetragNetto, 2);
+        expect(teilrechnungSumme).toBeLessThanOrEqual(basisBetragNetto + 0.01);
+    });
+});
+
+/**
+ * Zeilenrundung: Editor und Backfill MUESSEN pro Position denselben Cent-Betrag
+ * ergeben. Vorher summierte das Frontend ungerundete Doubles und das Backend
+ * rundete erst die Gesamtsumme — 10,10 EUR mit 5 % Positionsrabatt ergab 9,59
+ * gegen 9,60. Der Korrekturlauf haette solche Dokumente fuer falsch gehalten.
+ * Pendant: AusgangsGeschaeftsDokumentServiceTest#rundet_jede_zeile_wie_das_frontend.
+ *
+ * DSGVO: ausschliesslich Dummy-Daten.
+ */
+describe('serviceLineTotal rundet pro Zeile auf Cent', () => {
+    it.each([
+        [10.10, 5, 9.60],
+        [4.10, 15, 3.49],
+        [2.30, 25, 1.73],
+        [200.09, 10, 180.08],
+        // Rabattsaetze mit DREI Nachkommastellen: `rabatt * 100` im Double verfehlt
+        // exakte Ties (1.005 * 100 = 100.49999999999999) und rundet ab, wo das
+        // Backend aufrundet. Bei 10.000 EUR sind das 1,00 EUR Differenz.
+        [10000.00, 1.005, 9899.00],
+        [899.90, 0.145, 898.55],
+    ])('%s EUR mit %s%% Positionsrabatt ergibt %s', (preis, discount, erwartet) => {
+        expect(serviceLineTotal(leistung('x', preis, { discount }))).toBeCloseTo(erwartet, 2);
+    });
+
+    it('laesst Zeilen ohne Rabatt unveraendert', () => {
+        expect(serviceLineTotal(leistung('x', 1000))).toBe(1000);
+    });
+});
+
+/**
+ * Pauschalrabatt mit Saetzen, die im Double keine exakte Multiplikation zulassen.
+ * Pendant: RabattRechnerTest#trifft_saetze_mit_nachkommastellen.
+ */
+describe('rabattBetrag trifft Saetze mit Nachkommastellen', () => {
+    it.each([
+        [27382.50, 21.4, 5859.86],
+        [1000.00, 16.4, 164.00],
+        [12345.67, 19.9, 2456.79],
+    ])('%s EUR mit %s%% ergibt %s', (netto, prozent, erwartet) => {
+        expect(rabattBetrag(netto, prozent)).toBeCloseTo(erwartet, 2);
     });
 });

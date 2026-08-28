@@ -24,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.example.kalkulationsprogramm.util.RabattRechner;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -389,11 +391,13 @@ public class DokumentGeneratorController {
                     }
                 }
             }
-            // Globalen Rabatt anwenden (nur wenn kein expliziter betragNetto)
-            if (request.betragNetto() == null && request.globalRabattProzent() != null && request.globalRabattProzent() > 0) {
-                BigDecimal rabattFaktor = BigDecimal.ONE.subtract(
-                        BigDecimal.valueOf(request.globalRabattProzent()).divide(new BigDecimal("100"), 4, java.math.RoundingMode.HALF_UP));
-                betrag = betrag.multiply(rabattFaktor).setScale(2, java.math.RoundingMode.HALF_UP);
+            // Globalen Rabatt anwenden (nur wenn kein expliziter betragNetto).
+            // Zentral ueber RabattRechner: die frueher hier gerechnete Faktor-Variante
+            // wich um einen Cent von der Rabattzeile im PDF ab.
+            if (request.betragNetto() == null && request.globalRabattProzent() != null) {
+                betrag = RabattRechner.nettoNachRabatt(
+                        betrag.setScale(2, java.math.RoundingMode.HALF_UP),
+                        BigDecimal.valueOf(request.globalRabattProzent()));
             }
             // MwSt. 19% für Brutto
             BigDecimal brutto = betrag.multiply(new BigDecimal("1.19")).setScale(2, java.math.RoundingMode.HALF_UP);

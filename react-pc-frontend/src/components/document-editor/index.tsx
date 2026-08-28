@@ -71,7 +71,7 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
             return insertIntoSection(prev, block, anchor.sectionId);
     }
 }
-import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
@@ -1191,7 +1191,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             // bytegenau kompatibel mit bestehenden Dokumenten.
             const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
             const htmlInhalt = blocksToHtml(persistedBlocks);
-            const blockNetto = calculateNetto(persistedBlocks);
+            // Pauschalrabatt MUSS hier einfliessen: `betragNetto` ist der Wert, der
+            // persistiert wird und aus dem das Backend den Bruttobetrag ableitet.
+            // Projekt-Dokumentliste, Offene Posten, Projekt-Bruttopreis und die
+            // Rechnungs-E-Mail lesen ausschliesslich diesen Wert — ein nur in
+            // positionenJson abgelegter globalRabatt kaeme dort nie an.
+            const blockNetto = calculateNettoNachRabatt(persistedBlocks, globalRabatt);
             // Für Schlussrechnung: effektiven Restbetrag verwenden (Blocksumme minus bereits abgerechnete)
             let betragNetto = blockNetto;
             if (dokumentTyp === 'SCHLUSSRECHNUNG' && bereitsAbgerechnetDurchAndere !== null) {
@@ -2643,6 +2648,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             }
         }
 
+        const expliziterNettoBetrag = dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagBetragNetto !== null
+            ? abschlagBetragNetto
+            : undefined;
+
         return {
             dokumentTyp,
             templateName: isPreview ? 'preview' : 'default',
@@ -2652,9 +2661,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             schlusstext,
             backgroundImagePage1: backgroundImage,
             backgroundImagePage2: backgroundImagePage2,
-            globalRabattProzent: globalRabatt > 0 ? globalRabatt : null,
+            // Ein expliziter betragNetto (Abschlagsrechnung) ist bereits der Endbetrag.
+            // Dann darf der Prozentsatz NICHT mitgehen, sonst zieht
+            // RechnungPdfService#addSummenBlock den Rabatt ein zweites Mal ab.
+            // Gleiche Weiche wie in AutoAuftragsbestaetigungVersandService#buildPdfBytes.
+            globalRabattProzent: (globalRabatt > 0 && expliziterNettoBetrag === undefined) ? globalRabatt : null,
             abrechnungsverlauf,
-            betragNetto: dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagBetragNetto !== null ? abschlagBetragNetto : undefined,
+            betragNetto: expliziterNettoBetrag,
             abschlagInfo: dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagInfo ? abschlagInfo : undefined,
         };
     };
@@ -2763,6 +2776,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
                     abrechnungsPositionen={abrechnungsPositionen}
                     basisdokumentBetragNetto={basisdokumentBetragNetto}
+                    globalRabatt={globalRabatt}
                 />
             )}
         </SortableBlock>

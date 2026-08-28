@@ -57,6 +57,7 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import type { DocBlock } from '../components/document-editor/types';
 import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks } from '../components/TeilrechnungPositionRow';
+import { serviceLineTotal, nettoNachGlobalRabatt, calculateNettoNachRabatt } from '../components/document-editor/helpers';
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
@@ -280,6 +281,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Teilrechnung Positions-Auswahl
     const [basisDokBlocks, setBasisDokBlocks] = useState<DocBlock[]>([]);
+    // Pauschalrabatt des Basisdokuments. Eine Teilrechnung muss ihn erben: der
+    // Restbetrag leitet sich aus dem RABATTIERTEN betragNetto des Basisdokuments ab —
+    // eine unrabattierte Positionssumme wuerde ihn zwangslaeufig uebersteigen und die
+    // Teilrechnung waere fuer jedes rabattierte Basisdokument blockiert.
+    const [basisDokGlobalRabatt, setBasisDokGlobalRabatt] = useState<number>(0);
     const [selectedBlockIds, setSelectedBlockIds] = useState<Set<string>>(new Set());
     const [expandedBlockIds, setExpandedBlockIds] = useState<Set<string>>(new Set());
     const [bereitsAbgerechneteBlockIds, setBereitsAbgerechneteBlockIds] = useState<Set<string>>(new Set());
@@ -300,10 +306,15 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Teilrechnung: Summe der gewählten Positionen
     const teilrechnungSelectedSum = useMemo(() => {
-        return getAllServiceBlocks(basisDokBlocks)
-            .filter(b => selectedBlockIds.has(b.id))
-            .reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0);
-    }, [basisDokBlocks, selectedBlockIds]);
+        // `!b.optional` wie in calculateNetto: der gespeicherte Betrag laesst
+        // Wahl-/Alternativpositionen aussen vor, die Anzeige muss dasselbe tun —
+        // sonst zeigt der Dialog mehr an als abgerechnet wird und die Restbetrag-
+        // Pruefung sperrt die Vollauswahl faelschlich.
+        const roh = getAllServiceBlocks(basisDokBlocks)
+            .filter(b => !b.optional && selectedBlockIds.has(b.id))
+            .reduce((sum, b) => sum + serviceLineTotal(b), 0);
+        return nettoNachGlobalRabatt(roh, basisDokGlobalRabatt);
+    }, [basisDokBlocks, selectedBlockIds, basisDokGlobalRabatt]);
 
     // Teilrechnung: Prüfung ob Gesamtbetrag (gewählte Positionen + bereits abgerechnet) den Basisbetrag überschreitet
     const teilrechnungExceedsRestbetrag = useMemo(() => {
@@ -1952,6 +1963,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                             const parsed = JSON.parse(dokData.positionenJson);
                                                                                             const blocks: DocBlock[] = Array.isArray(parsed) ? parsed : (parsed.blocks || []);
                                                                                             setBasisDokBlocks(blocks);
+                                                                                            setBasisDokGlobalRabatt(Array.isArray(parsed) ? 0 : (parsed.globalRabatt || 0));
                                                                                             // Nur noch nicht abgerechnete Positionen vorauswählen
                                                                                             const allIds = new Set<string>();
                                                                                             for (const b of blocks) {
@@ -1975,6 +1987,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                             const parsed = JSON.parse(dokData.positionenJson);
                                                                                             const blocks: DocBlock[] = Array.isArray(parsed) ? parsed : (parsed.blocks || []);
                                                                                             setBasisDokBlocks(blocks);
+                                                                                            setBasisDokGlobalRabatt(Array.isArray(parsed) ? 0 : (parsed.globalRabatt || 0));
                                                                                             const allIds = new Set<string>();
                                                                                             for (const b of blocks) {
                                                                                                 if (b.type === 'SERVICE') allIds.add(b.id);
@@ -2815,11 +2828,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             return;
                                         }
                                         const allBlocksWithZeros = zeroOutUnselectedBlocks(basisDokBlocks, selectedBlockIds);
-                                        positionenJson = JSON.stringify({ blocks: allBlocksWithZeros, globalRabatt: 0 });
+                                        // Pauschalrabatt des Basisdokuments erben — sonst uebersteigt die
+                                        // Teilrechnung den (rabattierten) Restbetrag und wird abgewiesen.
+                                        positionenJson = JSON.stringify({ blocks: allBlocksWithZeros, globalRabatt: basisDokGlobalRabatt });
                                         // Betrag aus gewählten Positionen berechnen für Abrechnungsverlauf
-                                        betrag = getAllServiceBlocks(basisDokBlocks)
-                                            .filter(b => selectedBlockIds.has(b.id))
-                                            .reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0);
+                                        betrag = calculateNettoNachRabatt(allBlocksWithZeros, basisDokGlobalRabatt);
                                     }
 
                                     try {

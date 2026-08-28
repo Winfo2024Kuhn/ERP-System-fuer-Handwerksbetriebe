@@ -674,6 +674,19 @@ public class AutoAuftragsbestaetigungVersandService
         LayoutDto layout = vorlage.formBlocks().isEmpty()
                 ? RechnungPdfService.getDefaultLayout()
                 : RechnungPdfService.createLayoutFromFormBlocks(vorlage.formBlocks(), 595f, 842f);
+        // Der Dokument-Pauschalrabatt steht im positionenJson und muss auch in der
+        // automatisch versendeten AB ausgewiesen werden — sonst sieht der Kunde in der
+        // AB eine hoehere Summe als im angenommenen Angebot.
+        //
+        // Ein explizit gesetzter betragNetto (Fall "Kunde hat Alternativen mitbeauftragt",
+        // siehe DokumentFreigabeService) enthaelt den Rabatt bereits. Dann darf der
+        // Prozentsatz NICHT zusaetzlich mitgegeben werden, sonst zieht
+        // RechnungPdfService#addSummenBlock ihn ein zweites Mal ab.
+        BigDecimal expliziterNetto = ab.getBetragNetto();
+        BigDecimal globalRabatt = expliziterNetto != null
+                ? null
+                : AusgangsGeschaeftsDokumentService.leseGlobalRabattProzent(ab.getPositionenJson());
+
         RechnungDto dto = new RechnungDto(
                 layout,
                 kopfdaten,
@@ -682,9 +695,9 @@ public class AutoAuftragsbestaetigungVersandService
                 null,                          // Schlusstext: kommt über Textbausteine im positionenJson
                 vorlage.backgroundImagePage1,  // Briefkopf-Bild Seite 1
                 vorlage.backgroundImagePage2,  // Briefkopf-Bild Folgeseiten
-                null,                          // globaler Rabatt
+                globalRabatt,                  // Pauschalrabatt aus dem Angebot
                 null,                          // Abrechnungsverlauf
-                ab.getBetragNetto(),           // expliziter Netto-Betrag → AB übernimmt den Wert vom Angebot
+                expliziterNetto,               // expliziter Netto-Betrag → AB übernimmt den Wert vom Angebot
                 null);
         return rechnungPdfService.generatePdfBytes(dto);
     }

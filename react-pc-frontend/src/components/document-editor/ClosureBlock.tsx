@@ -1,5 +1,5 @@
-import { FolderOpen, Layers, Receipt, FileText } from 'lucide-react';
-import { formatCurrency } from './helpers';
+import { FolderOpen, Layers, Receipt, FileText, Percent } from 'lucide-react';
+import { formatCurrency, normalisiereRabattProzent, rabattBetrag as berechneRabattBetrag } from './helpers';
 import type { ClosureSummary } from './helpers';
 
 interface AbrechnungsPosition {
@@ -29,9 +29,19 @@ interface ClosureBlockProps {
     abrechnungsPositionen?: AbrechnungsPosition[];
     /** Nettobetrag des Basisdokuments (AB/Anfrage) */
     basisdokumentBetragNetto?: number | null;
+    /** Pauschalrabatt auf das gesamte Dokument in Prozent */
+    globalRabatt?: number | null;
 }
 
-export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereitsAbgerechnetDurchAndere, abrechnungsPositionen, basisdokumentBetragNetto }: ClosureBlockProps) {
+export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereitsAbgerechnetDurchAndere, abrechnungsPositionen, basisdokumentBetragNetto, globalRabatt }: ClosureBlockProps) {
+    // Pauschalrabatt: `summary.gesamtNetto` enthaelt nur die Positions-Rabatte.
+    // Der Abschluss muss den Betrag zeigen, der auch berechnet und versendet wird.
+    const rabattProzent = normalisiereRabattProzent(globalRabatt);
+    const hasRabatt = rabattProzent > 0 && summary.gesamtNetto > 0;
+    // Zentrale Rundung: der Abschluss muss denselben Betrag zeigen, der gespeichert
+    // und im PDF ausgewiesen wird — sonst weicht er um einen Cent ab.
+    const rabattBetrag = hasRabatt ? berechneRabattBetrag(summary.gesamtNetto, rabattProzent) : 0;
+    const gesamtNettoEffektiv = summary.gesamtNetto - rabattBetrag;
     const hasSections = summary.sections.length > 0;
     const showBreakdown = hasSections;
     const isAbschlag = dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagBetragNetto != null;
@@ -105,13 +115,36 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
                     )}
 
                     {/* Divider + Grand total */}
-                    <div className="pt-1.5">
+                    <div className="pt-1.5 space-y-1.5">
+                        {hasRabatt && (
+                            <>
+                                <div className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-slate-100">
+                                    <span className="text-xs font-medium text-slate-600">Zwischensumme Netto</span>
+                                    <span className="text-sm font-semibold text-slate-700">
+                                        {formatCurrency(summary.gesamtNetto)} €
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-rose-100">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-7 h-7 bg-rose-100 rounded-md flex items-center justify-center flex-shrink-0">
+                                            <Percent className="w-3.5 h-3.5 text-rose-600" />
+                                        </div>
+                                        <span className="text-xs font-medium text-slate-600">
+                                            Rabatt {formatCurrency(rabattProzent)} %
+                                        </span>
+                                    </div>
+                                    <span className="text-sm font-bold text-rose-600">
+                                        − {formatCurrency(rabattBetrag)} €
+                                    </span>
+                                </div>
+                            </>
+                        )}
                         <div className="flex items-center justify-between px-3 py-2.5 bg-rose-50 border border-rose-200 rounded-lg">
                             <span className="text-xs font-bold text-rose-700 uppercase tracking-wide">
-                                Gesamtsumme Netto
+                                {hasRabatt ? 'Gesamtsumme Netto nach Rabatt' : 'Gesamtsumme Netto'}
                             </span>
                             <span className="text-base font-bold text-slate-900">
-                                {formatCurrency(summary.gesamtNetto)} €
+                                {formatCurrency(gesamtNettoEffektiv)} €
                             </span>
                         </div>
                     </div>
@@ -120,15 +153,38 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
 
             {/* No sections: show only grand total if there are services */}
             {!showBreakdown && summary.gesamtNetto > 0 && (
-                <div className="px-4 pb-4">
-                    <div className="flex items-center justify-between px-3 py-2.5 bg-rose-50 border border-rose-200 rounded-lg">
-                        <span className="text-xs font-bold text-rose-700 uppercase tracking-wide">
-                            Gesamtsumme Netto
-                        </span>
-                        <span className="text-base font-bold text-slate-900">
-                            {formatCurrency(summary.gesamtNetto)} €
-                        </span>
-                    </div>
+                <div className="px-4 pb-4 space-y-1.5">
+                        {hasRabatt && (
+                            <>
+                                <div className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-slate-100">
+                                    <span className="text-xs font-medium text-slate-600">Zwischensumme Netto</span>
+                                    <span className="text-sm font-semibold text-slate-700">
+                                        {formatCurrency(summary.gesamtNetto)} €
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-rose-100">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-7 h-7 bg-rose-100 rounded-md flex items-center justify-center flex-shrink-0">
+                                            <Percent className="w-3.5 h-3.5 text-rose-600" />
+                                        </div>
+                                        <span className="text-xs font-medium text-slate-600">
+                                            Rabatt {formatCurrency(rabattProzent)} %
+                                        </span>
+                                    </div>
+                                    <span className="text-sm font-bold text-rose-600">
+                                        − {formatCurrency(rabattBetrag)} €
+                                    </span>
+                                </div>
+                            </>
+                        )}
+                        <div className="flex items-center justify-between px-3 py-2.5 bg-rose-50 border border-rose-200 rounded-lg">
+                            <span className="text-xs font-bold text-rose-700 uppercase tracking-wide">
+                                {hasRabatt ? 'Gesamtsumme Netto nach Rabatt' : 'Gesamtsumme Netto'}
+                            </span>
+                            <span className="text-base font-bold text-slate-900">
+                                {formatCurrency(gesamtNettoEffektiv)} €
+                            </span>
+                        </div>
                 </div>
             )}
 
@@ -152,7 +208,7 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
                                 <span className="text-xs font-medium text-slate-600">Gesamtauftragssumme (Netto)</span>
                             </div>
                             <span className="text-sm font-bold text-slate-900">
-                                {formatCurrency(basisdokumentBetragNetto != null ? basisdokumentBetragNetto : summary.gesamtNetto)} €
+                                {formatCurrency(basisdokumentBetragNetto != null ? basisdokumentBetragNetto : gesamtNettoEffektiv)} €
                             </span>
                         </div>
 
@@ -216,7 +272,7 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
                                     </span>
                                 </div>
                                 <span className="text-base font-bold text-slate-900">
-                                    {formatCurrency(summary.gesamtNetto)} €
+                                    {formatCurrency(gesamtNettoEffektiv)} €
                                 </span>
                             </div>
                         )}
@@ -232,9 +288,9 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
                                         <span className="text-xs font-bold text-rose-700 uppercase tracking-wide">
                                             Abschlagsbetrag (Netto)
                                         </span>
-                                        {(basisdokumentBetragNetto ?? summary.gesamtNetto) > 0 && (
+                                        {(basisdokumentBetragNetto ?? gesamtNettoEffektiv) > 0 && (
                                             <p className="text-[10px] text-rose-500">
-                                                {((abschlagBetragNetto / (basisdokumentBetragNetto ?? summary.gesamtNetto)) * 100).toFixed(1)} % der Auftragssumme
+                                                {((abschlagBetragNetto / (basisdokumentBetragNetto ?? gesamtNettoEffektiv)) * 100).toFixed(1)} % der Auftragssumme
                                             </p>
                                         )}
                                     </div>
@@ -257,7 +313,7 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
                                     </span>
                                 </div>
                                 <span className="text-base font-bold text-slate-900">
-                                    {formatCurrency(Math.max(0, (basisdokumentBetragNetto ?? summary.gesamtNetto) - bereitsAbgerechnetDurchAndere))} €
+                                    {formatCurrency(Math.max(0, (basisdokumentBetragNetto ?? gesamtNettoEffektiv) - bereitsAbgerechnetDurchAndere))} €
                                 </span>
                             </div>
                         )}

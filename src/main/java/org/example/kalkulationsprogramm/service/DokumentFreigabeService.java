@@ -858,12 +858,19 @@ public class DokumentFreigabeService
         boolean hatAlternativen = !ausgangsGeschaeftsDokumentService
                 .sammleOptionaleAlternativIds(json).isEmpty();
         BigDecimal mwstProzent = mwst != null ? mwst.multiply(new BigDecimal("100")) : null;
-        return new FreigabePositionsAnsicht(positionen, basisNetto, basisBrutto, mwstProzent, hatAlternativen);
+        // Pauschalrabatt mitgeben: basisNetto/basisBrutto sind bereits rabattiert, aber
+        // die Positionen darunter stehen zum vollen Preis. Ohne die Rabattzeile sieht der
+        // Kunde eine unerklaerte Differenz zwischen Positionssumme und Gesamtbetrag.
+        BigDecimal globalRabattProzent =
+                AusgangsGeschaeftsDokumentService.leseGlobalRabattProzent(json);
+        return new FreigabePositionsAnsicht(positionen, basisNetto, basisBrutto, mwstProzent,
+                hatAlternativen, globalRabattProzent);
     }
 
     /** Kundensichere Positions-Ansicht inkl. Basisbeträge und MwSt-Satz für die Freigabe-Seite. */
     public record FreigabePositionsAnsicht(List<FreigabePositionDto> positionen, BigDecimal basisNetto,
-                                           BigDecimal basisBrutto, BigDecimal mwstProzent, boolean hatAlternativen) {}
+                                           BigDecimal basisBrutto, BigDecimal mwstProzent, boolean hatAlternativen,
+                                           BigDecimal globalRabattProzent) {}
 
     /**
      * Wenn die akzeptierte Freigabe zu einem AusgangsGeschaeftsDokument vom Typ ANGEBOT gehört

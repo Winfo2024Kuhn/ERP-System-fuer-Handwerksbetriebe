@@ -335,14 +335,91 @@ export function blocksToHtml(blocks: DocBlock[]): string {
  * Calculates netto total from all services (root + nested in sections).
  */
 /**
+ * Kaufmaennisches Runden wie Javas `RoundingMode.HALF_UP`: die Haelfte geht IMMER vom
+ * Nullpunkt weg. `Math.round` rundet dagegen Richtung +unendlich und weicht damit bei
+ * negativen Betraegen (z.B. Gutschriften) vom Backend ab.
+ */
+function rundeKaufmaennisch(wert: number): number {
+    return wert < 0 ? -Math.round(-wert) : Math.round(wert);
+}
+
+/**
  * Returns the line total for a single SERVICE block, applying per-position discount.
  */
- export function serviceLineTotal(b: DocBlock): number {
-    const base = (b.quantity || 0) * (b.price || 0);
-    if (b.discount && b.discount > 0) {
-        return base * (1 - b.discount / 100);
+/** Nachkommastellen der kuerzesten Dezimaldarstellung — wie Javas `Double.toString`. */
+function dezimalstellen(wert: number): number {
+    const s = String(wert);
+    // Exponentialschreibweise (1e-7, 1e21) laesst sich so nicht zerlegen. Bei
+    // Geldbetraegen und Mengen kommt sie nicht vor; -1 signalisiert dem Aufrufer,
+    // auf die Double-Rechnung zurueckzufallen statt still 0 Stellen anzunehmen.
+    if (s.includes('e') || s.includes('E')) return -1;
+    const punkt = s.indexOf('.');
+    return punkt < 0 ? 0 : s.length - punkt - 1;
+}
+
+/**
+ * Prozentsatz in ganzzahlige Hundertstel-Prozent — exakt, ohne Double-Multiplikation.
+ *
+ * Entspricht `BigDecimal.valueOf(p).divide(100, 4, HALF_UP)` im Backend: der Faktor
+ * hat dort vier Nachkommastellen, der Prozentsatz also effektiv zwei. `p * 100` im
+ * Double verfehlt exakte Ties — `1.005 * 100` ergibt 100.49999999999999 und rundet
+ * ab, wo BigDecimal aufrundet (0,0101 statt 0,0100). Bei 10.000 € sind das 1,00 €.
+ */
+function prozentInHundertstel(prozent: number): number {
+    const skala = dezimalstellen(prozent);
+    if (skala < 0) return rundeKaufmaennisch(prozent * 100);
+    const mantisse = Math.round(prozent * 10 ** skala);
+    return skala <= 2
+        ? mantisse * 10 ** (2 - skala)
+        : teileUndRunde(mantisse, 10 ** (skala - 2));
+}
+
+/** Ganzzahlige Division mit kaufmaennischer Rundung (HALF_UP, vom Nullpunkt weg). */
+function teileUndRunde(zaehler: number, nenner: number): number {
+    const ganz = Math.trunc(zaehler / nenner);
+    const rest = Math.abs(zaehler % nenner);
+    if (rest * 2 < nenner) return ganz;
+    return ganz + (zaehler < 0 ? -1 : 1);
+}
+
+/**
+ * `menge × preis` exakt, Ergebnis in ganzen Cent.
+ *
+ * Beide Faktoren werden ueber ihre Dezimalstellen ganzzahlig gemacht — genau wie
+ * `BigDecimal.valueOf(double)` im Backend, das ebenfalls auf der kuerzesten
+ * Dezimaldarstellung aufsetzt. Ein direktes `menge * preis` im Double verfehlt
+ * exakte Halb-Cent-Werte: 4,7 × 1216,35 ergibt 5716.844999… statt 5716,845 und
+ * rundet damit auf 5716,84 statt 5716,85.
+ */
+function produktInCent(menge: number, preis: number): number {
+    const sm = dezimalstellen(menge);
+    const sp = dezimalstellen(preis);
+    if (sm < 0 || sp < 0) return rundeKaufmaennisch(menge * preis * 100);
+    const im = Math.round(menge * 10 ** sm);
+    const ip = Math.round(preis * 10 ** sp);
+    const produkt = im * ip;
+    if (!Number.isSafeInteger(produkt)) {
+        // Praktisch unerreichbar bei Geldbetraegen; lieber ungenau als still falsch.
+        return rundeKaufmaennisch(menge * preis * 100);
     }
-    return base;
+    const skala = sm + sp;
+    return skala <= 2
+        ? produkt * 10 ** (2 - skala)
+        : teileUndRunde(produkt, 10 ** (skala - 2));
+}
+
+ export function serviceLineTotal(b: DocBlock): number {
+    // Verbindliche Zeilenregel, identisch im Backend (summeServiceBlock):
+    //     round2( round2(menge × preis) × (1 − rabatt/100) )
+    // Durchgehend ganzzahlig gerechnet, weil Doubles exakte Halb-Cent-Werte nicht
+    // treffen. Liefen beide Seiten hier auseinander, haette der Korrekturlauf
+    // korrekte, festgeschriebene Belege umgeschrieben.
+    const cent = produktInCent(b.quantity || 0, b.price || 0);
+    const rabatt = (b.discount && b.discount > 0) ? Math.min(100, b.discount) : 0;
+    if (rabatt <= 0) return cent / 100;
+    // Faktor in Zehntausendsteln — entspricht `divide(100, 4, HALF_UP)` im Backend.
+    const faktorZaehler = 10000 - prozentInHundertstel(rabatt);
+    return teileUndRunde(cent * faktorZaehler, 10000) / 100;
 }
 
 export function calculateNetto(blocks: DocBlock[]): number {
@@ -360,6 +437,66 @@ export function calculateNetto(blocks: DocBlock[]): number {
         }
     }
     return total;
+}
+
+/**
+ * Normalisiert einen Rabatt-Prozentwert auf den gueltigen Bereich 0-100.
+ * Unplausible Eingaben (negativ, NaN, null) ergeben 0 = kein Rabatt.
+ */
+export function normalisiereRabattProzent(rabattProzent?: number | null): number {
+    if (rabattProzent == null || !Number.isFinite(rabattProzent) || rabattProzent <= 0) return 0;
+    return Math.min(100, rabattProzent);
+}
+
+/**
+ * Rabattbetrag auf zwei Nachkommastellen — genau der Wert, der im PDF als eigene
+ * Rabattzeile steht.
+ *
+ * Pendant zu `RabattRechner#rabattBetrag` im Backend. Beide Seiten MUESSEN identisch
+ * runden: weicht der gespeicherte Betrag um einen Cent vom PDF ab, haelt der
+ * Korrekturlauf ein korrektes Dokument fuer falsch und schreibt eine festgeschriebene
+ * Rechnung um.
+ *
+ * Deshalb wird in GANZZAHL-CENT gerechnet. `netto * rabatt` direkt auf dem Double
+ * verfehlt jeden Halb-Cent-Fall, den die Binaerdarstellung von unten trifft:
+ *   4,10 * 15  = 61.49999999999999  -> gerundet 61 statt 62  (0,61 statt 0,62)
+ *   32,30 * 15 = 484.49999999999994 -> 4,84 statt 4,85
+ *   2,30 * 25  =  57.49999999999999 -> 0,57 statt 0,58
+ * Das Backend rechnet exakt (BigDecimal) und kaeme jeweils auf den hoeheren Wert.
+ */
+export function rabattBetrag(netto: number, globalRabatt?: number | null): number {
+    const rabatt = normalisiereRabattProzent(globalRabatt);
+    if (rabatt <= 0) return 0;
+    // Backend: round2( round2(netto) × prozent / 100 ) — hier ganzzahlig nachgebildet.
+    // `cent * rabatt` waere wieder eine Double-Multiplikation mit nicht-ganzzahligem
+    // Faktor und wuerde bei Saetzen wie 21,4 % um einen Cent abweichen.
+    const cent = rundeKaufmaennisch(netto * 100);
+    const skala = dezimalstellen(rabatt);
+    if (skala < 0) return rundeKaufmaennisch(cent * rabatt / 100) / 100;
+    const mantisse = Math.round(rabatt * 10 ** skala);
+    return teileUndRunde(cent * mantisse, 100 * 10 ** skala) / 100;
+}
+
+/** Nettobetrag nach Abzug des Dokument-Pauschalrabatts. */
+export function nettoNachGlobalRabatt(netto: number, globalRabatt?: number | null): number {
+    return netto - rabattBetrag(netto, globalRabatt);
+}
+
+/**
+ * Nettosumme NACH Abzug des Dokument-Pauschalrabatts.
+ *
+ * `calculateNetto` beruecksichtigt nur die Rabatte der einzelnen Positionen
+ * (`block.discount`) und laesst optionale/Alternativ-Positionen aussen vor. Der
+ * Pauschalrabatt auf das gesamte Dokument liegt daneben in `globalRabatt` und muss
+ * zusaetzlich abgezogen werden.
+ *
+ * Diese Funktion ist die massgebliche Quelle fuer den Betrag, der als `betragNetto`
+ * persistiert wird. Alles was daran haengt — Projekt-Dokumentliste, Offene Posten,
+ * Projekt-Bruttopreis, Rechnungs-E-Mail — rechnet sonst mit dem unrabattierten
+ * Betrag weiter.
+ */
+export function calculateNettoNachRabatt(blocks: DocBlock[], globalRabatt?: number | null): number {
+    return nettoNachGlobalRabatt(calculateNetto(blocks), globalRabatt);
 }
 
 /**

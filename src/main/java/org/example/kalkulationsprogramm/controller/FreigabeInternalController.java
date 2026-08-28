@@ -195,7 +195,8 @@ public class FreigabeInternalController
                     .basisNetto(ansicht.basisNetto())
                     .basisBrutto(ansicht.basisBrutto())
                     .mwstProzent(ansicht.mwstProzent())
-                    .hatAlternativen(ansicht.hatAlternativen());
+                    .hatAlternativen(ansicht.hatAlternativen())
+                    .globalRabattProzent(ansicht.globalRabattProzent());
         }
         return builder.build();
     }

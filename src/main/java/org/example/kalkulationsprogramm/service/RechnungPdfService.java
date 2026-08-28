@@ -33,6 +33,8 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfTemplate;
 import com.lowagie.text.pdf.PdfWriter;
 
+import org.example.kalkulationsprogramm.util.RabattRechner;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -1454,14 +1456,12 @@ public class RechnungPdfService {
             gesamtAuftragssumme = abrechnungsverlauf.basisdokumentBetragNetto();
         }
 
-        // Globalen Rabatt anwenden falls vorhanden
-        boolean hasGlobalRabatt = globalRabattProzent != null && globalRabattProzent.compareTo(BigDecimal.ZERO) > 0;
-        BigDecimal rabattBetrag = BigDecimal.ZERO;
-        BigDecimal nettoNachRabatt = netto;
-        if (hasGlobalRabatt) {
-            rabattBetrag = netto.multiply(globalRabattProzent).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
-            nettoNachRabatt = netto.subtract(rabattBetrag);
-        }
+        // Globalen Rabatt anwenden falls vorhanden. Rundung zentral ueber RabattRechner,
+        // damit gespeicherter Betrag, ZUGFeRD-Betrag und diese Anzeige nicht um einen
+        // Cent auseinanderlaufen.
+        boolean hasGlobalRabatt = RabattRechner.normalisiereProzent(globalRabattProzent) != null;
+        BigDecimal rabattBetrag = RabattRechner.rabattBetrag(netto, globalRabattProzent);
+        BigDecimal nettoNachRabatt = RabattRechner.nettoNachRabatt(netto, globalRabattProzent);
 
         // MwSt und Brutto berechnen (auf Basis des rabattierten Netto)
         BigDecimal mwstSatz = new BigDecimal("0.19");
@@ -1618,30 +1618,40 @@ public class RechnungPdfService {
                 }
             }
 
-            // --- Trennlinie ---
-            PdfPCell restLine = new PdfPCell();
-            restLine.setBorder(Rectangle.TOP);
-            restLine.setBorderColor(lineColor);
-            restLine.setBorderWidth(0.75f);
-            restLine.setColspan(3);
-            restLine.setFixedHeight(6f);
-            sumTable.addCell(restLine);
-
             // --- Verbleibender Restbetrag (netto) ---
             BigDecimal restbetragNetto = gesamtAuftragssumme.subtract(bereitsAbgerechnetNetto).subtract(nettoNachRabatt);
-            PdfPCell restLabel = new PdfPCell(new Phrase("Verbleibender Restbetrag (netto)", boldFont));
-            restLabel.setBorder(Rectangle.NO_BORDER);
-            restLabel.setPaddingTop(2f);
-            restLabel.setPaddingBottom(8f);
-            restLabel.setColspan(2);
-            sumTable.addCell(restLabel);
 
-            PdfPCell restValue = new PdfPCell(new Phrase(nf.format(restbetragNetto) + " €", boldFont));
-            restValue.setBorder(Rectangle.NO_BORDER);
-            restValue.setPaddingTop(2f);
-            restValue.setPaddingBottom(8f);
-            restValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumTable.addCell(restValue);
+            // Rechnet die Rechnung den kompletten Auftrag ab und gab es keine
+            // Vorrechnungen, ist der Rest per Definition 0,00 € — die Zeile waere nur
+            // Rauschen. Bei Abschlags-, Teil- und Schlussrechnungen bleibt sie stehen:
+            // dort ist der noch offene Rest die eigentliche Information.
+            boolean zeigeRestbetrag = isAbschlag || isSchlussrechnung || hasAbrechnung
+                    || restbetragNetto.abs().compareTo(new BigDecimal("0.01")) >= 0;
+
+            if (zeigeRestbetrag) {
+                // --- Trennlinie ---
+                PdfPCell restLine = new PdfPCell();
+                restLine.setBorder(Rectangle.TOP);
+                restLine.setBorderColor(lineColor);
+                restLine.setBorderWidth(0.75f);
+                restLine.setColspan(3);
+                restLine.setFixedHeight(6f);
+                sumTable.addCell(restLine);
+
+                PdfPCell restLabel = new PdfPCell(new Phrase("Verbleibender Restbetrag (netto)", boldFont));
+                restLabel.setBorder(Rectangle.NO_BORDER);
+                restLabel.setPaddingTop(2f);
+                restLabel.setPaddingBottom(8f);
+                restLabel.setColspan(2);
+                sumTable.addCell(restLabel);
+
+                PdfPCell restValue = new PdfPCell(new Phrase(nf.format(restbetragNetto) + " €", boldFont));
+                restValue.setBorder(Rectangle.NO_BORDER);
+                restValue.setPaddingTop(2f);
+                restValue.setPaddingBottom(8f);
+                restValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
+                sumTable.addCell(restValue);
+            }
 
             // --- Trennlinie vor Zahlbetrag-Block ---
             PdfPCell zahlTrenn = new PdfPCell();
