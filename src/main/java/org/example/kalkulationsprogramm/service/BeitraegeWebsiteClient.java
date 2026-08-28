@@ -179,6 +179,56 @@ public class BeitraegeWebsiteClient {
         return beitragAusAntwort(sendenUndParsen(request));
     }
 
+    /** Bilddatei der Website samt ihrem Content-Type. */
+    public record BildAntwort(byte[] daten, String contentType) {}
+
+    /**
+     * Erlaubte Dateinamen fuer Beitragsbilder. Die Website vergibt sie selbst
+     * als UUID plus Endung; hier wird nur sichergestellt, dass kein Pfadwechsel
+     * darin steckt. Ohne diese Pruefung koennte ein manipulierter Name aus dem
+     * Upload-Verzeichnis ausbrechen (Path Traversal).
+     */
+    private static final java.util.regex.Pattern ERLAUBTER_DATEINAME =
+            java.util.regex.Pattern.compile("^[A-Za-z0-9._-]{1,120}$");
+
+    /**
+     * Holt ein Beitragsbild von der Website und reicht es unveraendert weiter.
+     * Noetig, weil die Bilder unter /uploads/aktuelles/ auf der Website liegen
+     * und der Browser eines Arbeitsplatzes die Website nicht zwingend erreicht.
+     *
+     * <p>Der abschliessende Slash ist Pflicht: die Website laeuft mit
+     * {@code trailingSlash: 'always'}, ohne ihn matcht die Route nicht.
+     */
+    public BildAntwort holeBild(String dateiname) {
+        if (dateiname == null || !ERLAUBTER_DATEINAME.matcher(dateiname.trim()).matches()
+                || dateiname.contains("..")) {
+            throw new BeitraegeWebsiteException("Unzulaessiger Dateiname fuer ein Beitragsbild.");
+        }
+        HttpRequest request = HttpRequest.newBuilder(uri("/uploads/aktuelles/" + dateiname.trim() + "/"))
+                .timeout(READ_TIMEOUT)
+                .header("Authorization", "Bearer " + apiToken)
+                .GET()
+                .build();
+
+        HttpResponse<byte[]> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (IOException e) {
+            throw new BeitraegeWebsiteException("Netzwerkfehler beim Laden des Bildes: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BeitraegeWebsiteException("Laden des Bildes wurde unterbrochen.", e);
+        }
+
+        if (response.statusCode() >= 400) {
+            throw new BeitraegeWebsiteException(
+                    "Website-API antwortete mit HTTP " + response.statusCode(), response.statusCode());
+        }
+
+        String contentType = response.headers().firstValue("Content-Type").orElse("image/webp");
+        return new BildAntwort(response.body(), contentType);
+    }
+
     // --- Hilfsmethoden ---
 
     /**

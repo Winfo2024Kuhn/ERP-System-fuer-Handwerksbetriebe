@@ -83,6 +83,17 @@ class BeitraegeWebsiteClientTest {
         return response;
     }
 
+    @SuppressWarnings("unchecked")
+    private HttpResponse<byte[]> byteAntwort(int statusCode, byte[] body, String contentType) {
+        HttpResponse<byte[]> response = mock(HttpResponse.class);
+        when(response.statusCode()).thenReturn(statusCode);
+        when(response.body()).thenReturn(body);
+        java.net.http.HttpHeaders headers = java.net.http.HttpHeaders.of(
+                java.util.Map.of("Content-Type", List.of(contentType)), (a, b) -> true);
+        when(response.headers()).thenReturn(headers);
+        return response;
+    }
+
     private void stelleAntwortBereit(int statusCode, String body) throws Exception {
         HttpResponse<String> response = antwort(statusCode, body);
         when(mockHttpClient.<String>send(any(HttpRequest.class), any())).thenReturn(response);
@@ -567,5 +578,45 @@ class BeitraegeWebsiteClientTest {
         verify(mockHttpClient).send(anfrage.capture(), any());
         assertThat(anfrage.getValue().uri().toString())
                 .doesNotContain("//api/internal");
+    }
+
+    @Test
+    void bildWirdUnterDerUploadAdresseGeholt() throws Exception {
+        mitWebsiteUrl(BASE_URL);
+        HttpResponse<byte[]> response = byteAntwort(200, new byte[]{1, 2, 3}, "image/webp");
+        when(mockHttpClient.<byte[]>send(any(), any())).thenReturn(response);
+
+        BeitraegeWebsiteClient.BildAntwort bild = client.holeBild("abc123.webp");
+
+        ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(anfrage.capture(), any());
+        assertThat(anfrage.getValue().uri().toString())
+                .isEqualTo(BASE_URL + "/uploads/aktuelles/abc123.webp/");
+        assertThat(bild.daten()).containsExactly(1, 2, 3);
+        assertThat(bild.contentType()).isEqualTo("image/webp");
+    }
+
+    @Test
+    void dateinameMitPfadwechselWirdAbgelehnt() {
+        // Kein mitWebsiteUrl(...): die Dateiname-Pruefung in holeBild() laeuft
+        // vor uri()/ermittleBaseUrl() und fragt die Firmenstammdaten daher nie ab.
+        assertThatThrownBy(() -> client.holeBild("../../etc/passwd"))
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Dateiname");
+    }
+
+    @Test
+    void dateinameMitSchraegstrichWirdAbgelehnt() {
+        // Kein mitWebsiteUrl(...): siehe dateinameMitPfadwechselWirdAbgelehnt.
+        assertThatThrownBy(() -> client.holeBild("ordner/bild.webp"))
+                .isInstanceOf(BeitraegeWebsiteException.class)
+                .hasMessageContaining("Dateiname");
+    }
+
+    @Test
+    void leererDateinameWirdAbgelehnt() {
+        // Kein mitWebsiteUrl(...): siehe dateinameMitPfadwechselWirdAbgelehnt.
+        assertThatThrownBy(() -> client.holeBild("  "))
+                .isInstanceOf(BeitraegeWebsiteException.class);
     }
 }

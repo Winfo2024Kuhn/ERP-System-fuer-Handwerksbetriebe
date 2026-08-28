@@ -112,6 +112,20 @@ public class BeitraegeController {
     }
 
     /**
+     * Reicht ein Beitragsbild der Website durch. Der Browser des Arbeitsplatzes
+     * erreicht die Website nicht zwingend selbst, deshalb laeuft die Anzeige
+     * ueber das ERP.
+     */
+    @GetMapping("/bild/{dateiname:.+}")
+    public ResponseEntity<byte[]> bild(@PathVariable String dateiname) {
+        BeitraegeWebsiteClient.BildAntwort bild = beitraegeWebsiteClient.holeBild(dateiname);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(bild.contentType()))
+                .cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofHours(1)).cachePublic())
+                .body(bild.daten());
+    }
+
+    /**
      * Fängt jeden Fehlschlag von {@link BeitraegeWebsiteClient} ab (Netzwerkfehler
      * oder eine Fehlerantwort der Website-API) und übersetzt ihn einheitlich in
      * HTTP 502, statt ihn als 500 durchfallen zu lassen. Nur für Methoden dieses
