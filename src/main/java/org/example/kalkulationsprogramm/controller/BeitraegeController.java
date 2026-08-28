@@ -143,15 +143,44 @@ public class BeitraegeController {
     }
 
     /**
-     * Fängt jeden Fehlschlag von {@link BeitraegeWebsiteClient} ab (Netzwerkfehler
-     * oder eine Fehlerantwort der Website-API) und übersetzt ihn einheitlich in
-     * HTTP 502, statt ihn als 500 durchfallen zu lassen. Nur für Methoden dieses
-     * Controllers wirksam, da der Handler hier lokal und nicht als
-     * {@code @ControllerAdvice} deklariert ist.
+     * Fängt jeden Fehlschlag von {@link BeitraegeWebsiteClient} ab (Netzwerkfehler,
+     * fehlende Konfiguration oder eine Fehlerantwort der Website-API) und übersetzt
+     * ihn einheitlich in eine HTTP-Fehlerantwort, statt ihn als 500 durchfallen zu
+     * lassen. Nur für Methoden dieses Controllers wirksam, da der Handler hier
+     * lokal und nicht als {@code @ControllerAdvice} deklariert ist.
+     *
+     * <p>Unterscheidet anhand von {@link BeitraegeWebsiteException#getStatusCode()}
+     * zwei Fälle:
+     * <ul>
+     *   <li><b>Konfigurationsfehler</b> ({@code statusCode == null}): Die Ausnahme
+     *   entsteht, bevor überhaupt ein Aufruf an die Website rausgeht (z. B. keine
+     *   Website-Adresse hinterlegt, kein API-Token gesetzt). Die Meldung stammt in
+     *   diesem Fall immer von unserem eigenen Code, nie von der Website selbst, und
+     *   wird deshalb unverändert durchgereicht - erst dadurch erfährt ein Betrieb
+     *   beim Ersteinrichten, WAS genau fehlt, statt nur "nicht erreichbar" zu lesen
+     *   und die Leitung oder den Server zu prüfen. HTTP 503 statt 502, weil hier gar
+     *   kein Aufruf versucht wurde: nicht die Website ist das Problem, sondern eine
+     *   fehlende Konfiguration bei uns. Der eigene Status macht die beiden Fälle
+     *   auch maschinell auseinanderhaltbar, nicht nur am Text der Meldung.
+     *   <li><b>Echter Fehler der Website</b> ({@code statusCode != null}): Ein
+     *   Aufruf wurde tatsächlich versucht, die Website hat mit einem Fehlerstatus
+     *   geantwortet. {@code ex.getMessage()} kann hier den rohen Antwort-Body der
+     *   Website enthalten (siehe {@code BeitraegeWebsiteClient.sendenUndParsen})
+     *   - möglicherweise mit Pfaden, Stacktraces oder Datenbankmeldungen der
+     *   Gegenstelle. Deshalb bleibt es bei der festen, allgemeinen Meldung und 502.
+     * </ul>
      */
     @ExceptionHandler(BeitraegeWebsiteException.class)
     public ResponseEntity<Map<String, Object>> handleBeitraegeWebsiteException(BeitraegeWebsiteException ex) {
         log.warn("[BeitraegeController] Aufruf der Website-API fehlgeschlagen: {}", ex.getMessage(), ex);
+        if (ex.getStatusCode() == null) {
+            String meldung = ex.getMessage() != null
+                    ? ex.getMessage()
+                    : "Website nicht erreichbar oder hat einen Fehler gemeldet.";
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                    "success", false,
+                    "message", meldung));
+        }
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                 "success", false,
                 "message", "Website nicht erreichbar oder hat einen Fehler gemeldet."));

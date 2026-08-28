@@ -41,10 +41,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Deckt alle Endpoints von {@link BeitraegeController} ab: je Endpoint
  * Happy-Path und Fehlerfall (eine vom gemockten {@link BeitraegeWebsiteClient}
- * geworfene {@link BeitraegeWebsiteException} muss als HTTP 502 herauskommen).
- * Fuer den Bild-Endpunkt zusaetzlich die Sicherheits-Header (nosniff,
- * cachePrivate) sowie die 502-statt-500-Absicherung bei einem von der
- * Website gelieferten, nicht parsbaren Content-Type.
+ * geworfene {@link BeitraegeWebsiteException} mit gesetztem Status muss als
+ * HTTP 502 herauskommen). Fuer den Bild-Endpunkt zusaetzlich die
+ * Sicherheits-Header (nosniff, cachePrivate) sowie die 503-statt-500-
+ * Absicherung bei einem von der Website gelieferten, nicht parsbaren
+ * Content-Type.
+ *
+ * <p>Eigener Block zu {@code handleBeitraegeWebsiteException}: eine
+ * {@link BeitraegeWebsiteException} OHNE Status (Konfigurationsfehler wie
+ * fehlende Website-Adresse oder fehlendes API-Token - die Ausnahme entsteht,
+ * bevor ueberhaupt ein Aufruf an die Website geht) liefert HTTP 503 mit der
+ * durchgereichten Original-Meldung, damit ein Betrieb beim Ersteinrichten
+ * erfaehrt, was genau fehlt. Eine {@link BeitraegeWebsiteException} MIT Status
+ * (ein tatsaechlich versuchter Aufruf, den die Website mit einem Fehlerstatus
+ * beantwortet hat) bleibt bei HTTP 502 mit der festen, allgemeinen Meldung -
+ * die Rohmeldung der Website (kann intern Details wie Pfade oder
+ * Datenbankfehler enthalten) darf hier nicht in der Antwort auftauchen.
  *
  * <p>Zusaetzlich abgedeckt: die Bean-Validation der Request-DTOs
  * ({@code @NotBlank} auf {@link BeitragUpsertRequest} und auf
@@ -85,24 +97,38 @@ class BeitraegeControllerTest {
                 .andExpect(header().string("Cache-Control", not(containsString("public"))));
     }
 
+    /**
+     * {@code holeBild} prueft den Dateinamen lokal, bevor ueberhaupt ein Aufruf an
+     * die Website geht - die Ausnahme traegt deshalb keinen Status und faellt unter
+     * {@code handleBeitraegeWebsiteException} in den Konfigurationsfehler-Zweig:
+     * 503 mit der durchgereichten (hier unbedenklichen, weil selbst geschriebenen)
+     * Meldung statt des frueheren pauschalen 502.
+     */
     @Test
-    void bild_abgelehnterDateiname_liefert502() throws Exception {
+    void bild_abgelehnterDateiname_liefert503MitMeldung() throws Exception {
         given(beitraegeWebsiteClient.holeBild("boese.js"))
                 .willThrow(new BeitraegeWebsiteException("Unzulaessiger Dateiname fuer ein Beitragsbild."));
 
         mockMvc.perform(get("/api/beitraege/bild/boese.js"))
-                .andExpect(status().isBadGateway())
-                .andExpect(jsonPath("$.success").value(false));
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Unzulaessiger Dateiname fuer ein Beitragsbild."));
     }
 
+    /**
+     * Der Content-Type-Parsefehler wird im Controller selbst ohne Status geworfen
+     * (kein HTTP-Aufruf beteiligt), faellt also ebenfalls in den
+     * Konfigurationsfehler-Zweig: 503 statt des frueheren 502 - entscheidend ist
+     * weiterhin, dass kein roher 500 herauskommt.
+     */
     @Test
-    void bild_ungueltigerContentTypeVonDerWebsite_liefert502StattServerFehler() throws Exception {
+    void bild_ungueltigerContentTypeVonDerWebsite_liefert503StattServerFehler() throws Exception {
         byte[] bytes = {1};
         given(beitraegeWebsiteClient.holeBild("abc123.webp"))
                 .willReturn(new BeitraegeWebsiteClient.BildAntwort(bytes, "kaputt"));
 
         mockMvc.perform(get("/api/beitraege/bild/abc123.webp"))
-                .andExpect(status().isBadGateway())
+                .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.success").value(false));
     }
 
@@ -127,11 +153,67 @@ class BeitraegeControllerTest {
     @Test
     void liste_clientWirftException_liefert502() throws Exception {
         given(beitraegeWebsiteClient.listeAlle())
-                .willThrow(new BeitraegeWebsiteException("Website nicht erreichbar."));
+                .willThrow(new BeitraegeWebsiteException("Website-API antwortete mit HTTP 500", 500));
 
         mockMvc.perform(get("/api/beitraege"))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // --- handleBeitraegeWebsiteException: Konfigurationsfehler vs. echter Website-Fehler ---
+    // Ueber den liste()-Endpunkt exemplarisch geprueft; der Handler ist fuer alle
+    // Endpoints identisch (siehe Klassen-Javadoc oben).
+
+    @Test
+    void liste_keineWebsiteAdresseHinterlegt_liefert503MitHinweisAufFirmendaten() throws Exception {
+        given(beitraegeWebsiteClient.listeAlle())
+                .willThrow(new BeitraegeWebsiteException(
+                        "Keine Website-Adresse hinterlegt. Entweder website.beitraege.base-url setzen "
+                        + "oder die Website in den Firmendaten eintragen."));
+
+        mockMvc.perform(get("/api/beitraege"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value(
+                        "Keine Website-Adresse hinterlegt. Entweder website.beitraege.base-url setzen "
+                        + "oder die Website in den Firmendaten eintragen."));
+    }
+
+    @Test
+    void liste_keinApiTokenKonfiguriert_liefert503MitHinweisAufToken() throws Exception {
+        given(beitraegeWebsiteClient.listeAlle())
+                .willThrow(new BeitraegeWebsiteException("Kein API-Token für die Website-Anbindung konfiguriert."));
+
+        mockMvc.perform(get("/api/beitraege"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Kein API-Token für die Website-Anbindung konfiguriert."));
+    }
+
+    @Test
+    void liste_echterHttpFehlerDerWebsite_bleibtBei502MitAllgemeinerMeldung() throws Exception {
+        given(beitraegeWebsiteClient.listeAlle())
+                .willThrow(new BeitraegeWebsiteException(
+                        "Website-API antwortete mit HTTP 500: interner Datenbankfehler in Tabelle beitraege", 500));
+
+        mockMvc.perform(get("/api/beitraege"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Website nicht erreichbar oder hat einen Fehler gemeldet."));
+    }
+
+    @Test
+    void liste_echterHttpFehlerDerWebsite_rohmeldungTauchtNichtInAntwortAuf() throws Exception {
+        given(beitraegeWebsiteClient.listeAlle())
+                .willThrow(new BeitraegeWebsiteException(
+                        "Website-API antwortete mit HTTP 500: /var/www/geheim/stacktrace.log "
+                        + "SQLException in Tabelle beitraege", 500));
+
+        mockMvc.perform(get("/api/beitraege"))
+                .andExpect(status().isBadGateway())
+                .andExpect(content().string(not(containsString("/var/www/geheim"))))
+                .andExpect(content().string(not(containsString("stacktrace"))))
+                .andExpect(content().string(not(containsString("SQLException"))));
     }
 
     // --- GET /api/beitraege/{id} ---
@@ -196,7 +278,7 @@ class BeitraegeControllerTest {
         request.setContent("C");
 
         given(beitraegeWebsiteClient.anlegen(any(BeitragUpsertRequest.class)))
-                .willThrow(new BeitraegeWebsiteException("Website nicht erreichbar."));
+                .willThrow(new BeitraegeWebsiteException("Website-API antwortete mit HTTP 500", 500));
 
         mockMvc.perform(post("/api/beitraege")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -225,7 +307,7 @@ class BeitraegeControllerTest {
     void aktualisieren_clientWirftException_liefert502() throws Exception {
         BeitragUpsertRequest request = neuerUpsertRequest("Titel", "Kurzfassung", "Volltext");
         given(beitraegeWebsiteClient.aktualisieren(anyLong(), any(BeitragUpsertRequest.class)))
-                .willThrow(new BeitraegeWebsiteException("Website nicht erreichbar."));
+                .willThrow(new BeitraegeWebsiteException("Website-API antwortete mit HTTP 500", 500));
 
         mockMvc.perform(patch("/api/beitraege/3")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -316,7 +398,7 @@ class BeitraegeControllerTest {
     @Test
     void status_clientWirftException_liefert502() throws Exception {
         given(beitraegeWebsiteClient.statusSetzen(anyLong(), anyString()))
-                .willThrow(new BeitraegeWebsiteException("Website nicht erreichbar."));
+                .willThrow(new BeitraegeWebsiteException("Website-API antwortete mit HTTP 500", 500));
 
         mockMvc.perform(post("/api/beitraege/3/status")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -344,7 +426,7 @@ class BeitraegeControllerTest {
         MockMultipartFile datei = new MockMultipartFile(
                 "bild", "baustelle.png", MediaType.IMAGE_PNG_VALUE, new byte[] {1, 2, 3});
         given(beitraegeWebsiteClient.bildHinzufuegen(anyLong(), any(MultipartFile.class)))
-                .willThrow(new BeitraegeWebsiteException("Website nicht erreichbar."));
+                .willThrow(new BeitraegeWebsiteException("Website-API antwortete mit HTTP 500", 500));
 
         mockMvc.perform(multipart("/api/beitraege/4/bilder").file(datei))
                 .andExpect(status().isBadGateway())
@@ -372,7 +454,7 @@ class BeitraegeControllerTest {
     @Test
     void bildLoeschen_clientWirftException_liefert502() throws Exception {
         given(beitraegeWebsiteClient.bildLoeschen(anyLong(), anyLong()))
-                .willThrow(new BeitraegeWebsiteException("Website nicht erreichbar."));
+                .willThrow(new BeitraegeWebsiteException("Website-API antwortete mit HTTP 500", 500));
 
         mockMvc.perform(delete("/api/beitraege/8/bilder/15"))
                 .andExpect(status().isBadGateway())
@@ -396,7 +478,7 @@ class BeitraegeControllerTest {
     @Test
     void altText_clientWirftException_liefert502() throws Exception {
         given(beitraegeWebsiteClient.altTextAktualisieren(anyLong(), anyLong(), anyString()))
-                .willThrow(new BeitraegeWebsiteException("Website nicht erreichbar."));
+                .willThrow(new BeitraegeWebsiteException("Website-API antwortete mit HTTP 500", 500));
 
         mockMvc.perform(patch("/api/beitraege/8/bilder/15")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -431,7 +513,7 @@ class BeitraegeControllerTest {
     @Test
     void titelbild_clientWirftException_liefert502() throws Exception {
         given(beitraegeWebsiteClient.titelbildSetzen(anyLong(), anyLong()))
-                .willThrow(new BeitraegeWebsiteException("Website nicht erreichbar."));
+                .willThrow(new BeitraegeWebsiteException("Website-API antwortete mit HTTP 500", 500));
 
         mockMvc.perform(post("/api/beitraege/3/titelbild")
                         .contentType(MediaType.APPLICATION_JSON)
