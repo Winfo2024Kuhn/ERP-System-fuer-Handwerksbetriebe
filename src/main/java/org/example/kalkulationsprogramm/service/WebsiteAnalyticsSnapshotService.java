@@ -7,10 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.WebsiteAnalyticsSnapshot;
 import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.AnalyticsSnapshotRequestDto;
 import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.AnalyticsSnapshotResponseDto;
+import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.VerlaufPunktDto;
 import org.example.kalkulationsprogramm.repository.WebsiteAnalyticsSnapshotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Collections;
@@ -90,6 +92,31 @@ public class WebsiteAnalyticsSnapshotService {
     @Transactional(readOnly = true)
     public Optional<AnalyticsSnapshotResponseDto> findLatest() {
         return repository.findFirstByOrderBySnapshotDateDesc().map(this::toResponse);
+    }
+
+    /** Untere und obere Schranke fuer den angefragten Zeitraum. */
+    private static final int MIN_TAGE = 1;
+    private static final int MAX_TAGE = 365;
+
+    /**
+     * Liefert den Besucherverlauf der letzten {@code tage} Tage.
+     * Der Parameter wird hart auf 1 bis 365 begrenzt: ohne Schranke wuerde
+     * ein grosser Wert die gesamte Tabelle laden, ein negativer ein Datum
+     * in der Zukunft ergeben und damit immer eine leere Liste.
+     */
+    @Transactional(readOnly = true)
+    public List<VerlaufPunktDto> findVerlauf(int tage) {
+        int begrenzt = Math.min(Math.max(tage, MIN_TAGE), MAX_TAGE);
+        LocalDate ab = LocalDate.now().minusDays(begrenzt);
+        return repository.findBySnapshotDateGreaterThanEqualOrderBySnapshotDateAsc(ab).stream()
+                .map(e -> new VerlaufPunktDto(
+                        e.getSnapshotDate(),
+                        e.getVisitorsToday(),
+                        e.getTotalsVisitors(),
+                        e.getTotalsPageviews(),
+                        e.getTotalsSubmissions(),
+                        e.getConversion()))
+                .toList();
     }
 
     private String writeJson(Object value) {

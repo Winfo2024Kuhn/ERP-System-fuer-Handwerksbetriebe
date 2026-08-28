@@ -2,12 +2,15 @@ package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.AnalyticsSnapshotResponseDto;
+import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.VerlaufPunktDto;
 import org.example.kalkulationsprogramm.service.WebsiteAnalyticsSnapshotService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -27,5 +30,15 @@ public class WebsiteAnalyticsSnapshotController {
         Optional<AnalyticsSnapshotResponseDto> latest = service.findLatest();
         return latest.map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /**
+     * Besucherverlauf fuer die Linie im Insights-Tab. Die Begrenzung des
+     * Zeitraums macht der Service, nicht der Controller.
+     */
+    @GetMapping("/verlauf")
+    public ResponseEntity<List<VerlaufPunktDto>> verlauf(
+            @RequestParam(defaultValue = "30") int tage) {
+        return ResponseEntity.ok(service.findVerlauf(tage));
     }
 }
