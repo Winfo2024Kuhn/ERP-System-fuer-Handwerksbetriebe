@@ -8,11 +8,17 @@ import { BeitragAssistent } from './BeitragAssistent';
 // gehoben, nur "mock"-praefigierte Variablen duerfen darin referenziert werden.
 const mockSchrittTextMounts = vi.fn();
 
+// Bildet den echten ProjektSearchModal nach: dessen handleSelect ruft erst
+// onSelect und direkt danach onClose auf. Genau dieses onClose fehlte hier
+// frueher -- dadurch blieb unbemerkt, dass der Assistent sich beim Waehlen
+// eines Projekts selbst geschlossen hat.
 vi.mock('../ProjektSearchModal', () => ({
-    ProjektSearchModal: ({ isOpen, onSelect }: {
-        isOpen: boolean; onSelect: (p: { id: number; bauvorhaben: string }) => void;
+    ProjektSearchModal: ({ isOpen, onSelect, onClose }: {
+        isOpen: boolean;
+        onSelect: (p: { id: number; bauvorhaben: string }) => void;
+        onClose: () => void;
     }) => isOpen ? (
-        <button onClick={() => onSelect({ id: 1, bauvorhaben: 'Balkonanlage' })}>
+        <button onClick={() => { onSelect({ id: 1, bauvorhaben: 'Balkonanlage' }); onClose(); }}>
             Projekt wählen
         </button>
     ) : null,
