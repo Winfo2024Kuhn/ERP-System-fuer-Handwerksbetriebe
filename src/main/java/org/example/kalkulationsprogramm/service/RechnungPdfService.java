@@ -33,6 +33,8 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfTemplate;
 import com.lowagie.text.pdf.PdfWriter;
 
+import org.example.kalkulationsprogramm.domain.Firmeninformation;
+import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.example.kalkulationsprogramm.util.RabattRechner;
 
 import lombok.RequiredArgsConstructor;
@@ -245,6 +247,16 @@ public class RechnungPdfService {
     private static final Font FONT_HEADER = FontFactory.getFont(FontFactory.TIMES_BOLD, 12);
     private static final Font FONT_TITLE = FontFactory.getFont(FontFactory.TIMES_BOLD, 14);
     private static final Color HEADER_BG = new Color(220, 38, 38); // Rose-600
+    /** Firmenfarbe, wenn in den Firmeninformationen keine hinterlegt ist. */
+    private static final Color FIRMENFARBE_STANDARD = new Color(0x50, 0x00, 0x10);
+
+    /**
+     * Die Firmenfarbe steht in den Firmeninformationen. Optional injiziert, damit der
+     * Service auch ohne Spring-Kontext gerendert werden kann (Tests, Vorschauen) — dann
+     * greift die Standardfarbe.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private FirmeninformationRepository firmeninformationRepository;
     private static final Color ALT_ROW_BG = new Color(250, 250, 250);
 
     // ======================= PDF Generation =======================
@@ -1491,292 +1503,194 @@ public class RechnungPdfService {
         PdfPTable sumTable = new PdfPTable(new float[] { 6f, 2f, 2f });
         sumTable.setWidthPercentage(100);
 
-        // Trennlinie
-        PdfPCell lineCell = new PdfPCell();
-        lineCell.setBorder(Rectangle.TOP);
-        lineCell.setBorderColor(lineColor);
-        lineCell.setBorderWidth(1.5f);
-        lineCell.setColspan(3);
-        lineCell.setFixedHeight(8f);
-        sumTable.addCell(lineCell);
-
         // Vorherige Rechnungen vorhanden?
         boolean hasAbrechnung = abrechnungsverlauf != null && abrechnungsverlauf.positionen() != null
                 && !abrechnungsverlauf.positionen().isEmpty();
 
         if (hasBasisdokument) {
-            // === INTEGRIERTER FLOW: Auftragsübersicht + Abzüge + Zahlbetrag ===
-            Font smallFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, 9, textColor);
+            // === ABRECHNUNGSSTAND + ZU ZAHLEN ===
+            // Zwei klar getrennte Abschnitte: oben was der Auftrag insgesamt kostet und
+            // was davon noch offen ist, unten was mit dieser Rechnung faellig wird.
+            // In der Uebersicht steht brutto gross und netto klein darunter — der Kunde
+            // rechnet in Bruttobetraegen. Der Steuerausweis folgt im Zahlblock.
             DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+            Color firmenfarbe = ermittleFirmenfarbe();
 
-            // --- Gesamtauftragssumme (netto) ---
-            String gesamtLabel = "Gesamtauftragssumme (netto)";
-            if (abrechnungsverlauf.basisdokumentTyp() != null && !abrechnungsverlauf.basisdokumentTyp().isBlank()) {
-                gesamtLabel += " laut " + abrechnungsverlauf.basisdokumentTyp();
-                if (abrechnungsverlauf.basisdokumentNummer() != null && !abrechnungsverlauf.basisdokumentNummer().isBlank()) {
-                    gesamtLabel += " Nr. " + abrechnungsverlauf.basisdokumentNummer();
-                }
-                if (abrechnungsverlauf.basisdokumentDatum() != null) {
-                    gesamtLabel += " vom " + abrechnungsverlauf.basisdokumentDatum().format(dateFmt);
+            // --- Summen vorab, damit Fortschrittsbalken und Restbetrag stimmen ---
+            BigDecimal bereitsAbgerechnetNetto = BigDecimal.ZERO;
+            if (hasAbrechnung) {
+                for (AbrechnungspositionPdfDto pos : abrechnungsverlauf.positionen()) {
+                    bereitsAbgerechnetNetto = bereitsAbgerechnetNetto.add(
+                            pos.betragNetto() != null ? pos.betragNetto() : BigDecimal.ZERO);
                 }
             }
-            PdfPCell auftragsLabel = new PdfPCell(new Phrase(gesamtLabel, normalFont));
-            auftragsLabel.setBorder(Rectangle.NO_BORDER);
-            auftragsLabel.setPaddingTop(4f);
-            auftragsLabel.setPaddingBottom(3f);
-            auftragsLabel.setColspan(2);
-            sumTable.addCell(auftragsLabel);
 
-            PdfPCell auftragsValue = new PdfPCell(new Phrase(nf.format(gesamtAuftragssumme) + " €", normalFont));
-            auftragsValue.setBorder(Rectangle.NO_BORDER);
-            auftragsValue.setPaddingTop(4f);
-            auftragsValue.setPaddingBottom(3f);
-            auftragsValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumTable.addCell(auftragsValue);
+            // Die Schlussrechnung rechnet genau den noch offenen Rest ab.
+            if (isSchlussrechnung) {
+                nettoNachRabatt = gesamtAuftragssumme.subtract(bereitsAbgerechnetNetto);
+                mwst = nettoNachRabatt.multiply(mwstSatz).setScale(2, java.math.RoundingMode.HALF_UP);
+                brutto = nettoNachRabatt.add(mwst);
+            }
 
-            // --- abzgl. bereits abgerechnete Rechnungen (einzeln aufgelistet) ---
-            BigDecimal bereitsAbgerechnetNetto = BigDecimal.ZERO;
+            BigDecimal auftragBrutto = bruttoMitSteuer(gesamtAuftragssumme, mwstSatz);
+
+            // === Abschnitt 1: Abrechnungsstand ===
+            addAbschnittsUeberschrift(sumTable, "Abrechnungsstand", 0f, lineColor);
+
+            if (gesamtAuftragssumme.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal abgerechnetNetto = bereitsAbgerechnetNetto.add(nettoNachRabatt);
+                double prozent = abgerechnetNetto.multiply(new BigDecimal("100"))
+                        .divide(gesamtAuftragssumme, 1, java.math.RoundingMode.HALF_UP)
+                        .doubleValue();
+                addFortschrittsBalken(sumTable, prozent, firmenfarbe);
+            }
+
+            // --- Auftragssumme ---
+            String basisZeile = null;
+            if (abrechnungsverlauf.basisdokumentTyp() != null && !abrechnungsverlauf.basisdokumentTyp().isBlank()) {
+                basisZeile = abrechnungsverlauf.basisdokumentTyp();
+                if (abrechnungsverlauf.basisdokumentNummer() != null && !abrechnungsverlauf.basisdokumentNummer().isBlank()) {
+                    basisZeile += " Nr. " + abrechnungsverlauf.basisdokumentNummer();
+                }
+                if (abrechnungsverlauf.basisdokumentDatum() != null) {
+                    basisZeile += " vom " + abrechnungsverlauf.basisdokumentDatum().format(dateFmt);
+                }
+            }
+            addUebersichtsZeile(sumTable, "Auftragssumme", basisZeile,
+                    nf.format(auftragBrutto) + " €",
+                    "netto " + nf.format(gesamtAuftragssumme) + " €", false, firmenfarbe);
+
+            // --- bereits gestellte Rechnungen, einzeln ---
+            // Die Bruttobetraege werden zeilenweise gerundet und die Restsumme daraus
+            // abgeleitet, damit die Spalte auf dem Papier exakt aufgeht.
+            BigDecimal vorRechnungenBrutto = BigDecimal.ZERO;
             if (hasAbrechnung) {
                 int posCounter = 0;
                 for (AbrechnungspositionPdfDto pos : abrechnungsverlauf.positionen()) {
                     posCounter++;
                     BigDecimal posNetto = pos.betragNetto() != null ? pos.betragNetto() : BigDecimal.ZERO;
-                    bereitsAbgerechnetNetto = bereitsAbgerechnetNetto.add(posNetto);
+                    BigDecimal posBrutto = bruttoMitSteuer(posNetto, mwstSatz);
+                    vorRechnungenBrutto = vorRechnungenBrutto.add(posBrutto);
 
-                    String typLabel = pos.typ() != null ? pos.typ() : "Rechnung";
-                    String posLabel = "abzgl. " + posCounter + ". "
-                            + typLabel.substring(0, 1).toUpperCase() + typLabel.substring(1).toLowerCase()
-                            + " Nr. " + pos.dokumentNummer();
+                    String typLabel = pos.typ() != null && !pos.typ().isBlank() ? pos.typ() : "Rechnung";
+                    typLabel = typLabel.substring(0, 1).toUpperCase() + typLabel.substring(1).toLowerCase();
+                    String bezeichnung = posCounter + ". " + typLabel;
+                    if (pos.dokumentNummer() != null && !pos.dokumentNummer().isBlank()) {
+                        bezeichnung += " Nr. " + pos.dokumentNummer();
+                    }
+                    String datumsZeile = pos.datum() != null ? "vom " + pos.datum().format(dateFmt) : null;
 
-                    PdfPCell posLabelCell = new PdfPCell(new Phrase(posLabel, smallFont));
-                    posLabelCell.setBorder(Rectangle.NO_BORDER);
-                    posLabelCell.setPaddingTop(1f);
-                    posLabelCell.setPaddingBottom(1f);
-                    posLabelCell.setPaddingLeft(8f);
-                    posLabelCell.setColspan(2);
-                    sumTable.addCell(posLabelCell);
-
-                    PdfPCell posValueCell = new PdfPCell(new Phrase("− " + nf.format(posNetto) + " €", smallFont));
-                    posValueCell.setBorder(Rectangle.NO_BORDER);
-                    posValueCell.setPaddingTop(1f);
-                    posValueCell.setPaddingBottom(1f);
-                    posValueCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                    sumTable.addCell(posValueCell);
+                    addUebersichtsZeile(sumTable, bezeichnung, datumsZeile,
+                            "- " + nf.format(posBrutto) + " €",
+                            "netto " + nf.format(posNetto) + " €", false, firmenfarbe);
                 }
             }
 
-            // --- Schlussrechnung: Rechnungsbetrag = Restbetrag (Gesamt - bereits abgerechnet) ---
-            if (isSchlussrechnung) {
-                BigDecimal schlussrechnungNetto = gesamtAuftragssumme.subtract(bereitsAbgerechnetNetto);
-                nettoNachRabatt = schlussrechnungNetto;
-                // MwSt und Brutto neu berechnen auf Basis des Restbetrags
-                mwst = nettoNachRabatt.multiply(mwstSatz).setScale(2, java.math.RoundingMode.HALF_UP);
-                brutto = nettoNachRabatt.add(mwst);
-            }
-
-            // --- abzgl. diese Rechnung (netto) ---
-            String dieseRechnungLabel;
+            // --- diese Rechnung ---
+            String dieseBezeichnung;
             if (isAbschlag) {
-                dieseRechnungLabel = "abzgl. dieser Abschlag (netto)";
+                dieseBezeichnung = "diese Abschlagsrechnung";
             } else if (isSchlussrechnung) {
-                dieseRechnungLabel = "abzgl. diese Schlussrechnung (netto)";
+                dieseBezeichnung = "diese Schlussrechnung";
             } else {
-                dieseRechnungLabel = "abzgl. diese Rechnung (netto)";
+                dieseBezeichnung = "diese Rechnung";
             }
-            PdfPCell dieseLabel = new PdfPCell(new Phrase(dieseRechnungLabel, normalFont));
-            dieseLabel.setBorder(Rectangle.NO_BORDER);
-            dieseLabel.setPaddingTop(3f);
-            dieseLabel.setPaddingBottom(3f);
-            dieseLabel.setColspan(2);
-            sumTable.addCell(dieseLabel);
 
-            PdfPCell dieseValue = new PdfPCell(new Phrase("− " + nf.format(nettoNachRabatt) + " €", normalFont));
-            dieseValue.setBorder(Rectangle.NO_BORDER);
-            dieseValue.setPaddingTop(3f);
-            dieseValue.setPaddingBottom(3f);
-            dieseValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumTable.addCell(dieseValue);
-
-            // --- Abschlag-Typ Hinweis (prozentual / brutto) ---
+            // Wie der Abschlag zustande kam, steht als Unterzeile — das ersetzt die
+            // frueheren freistehenden Hinweiszeilen.
+            String dieseUnterzeile = null;
             if (isAbschlag && abschlagInfo != null && abschlagInfo.eingabeWert() != null) {
-                Font hintFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, new Color(100, 116, 139)); // Slate-500
-                String hint = null;
                 if ("prozent".equals(abschlagInfo.modus())) {
                     String prozentStr = abschlagInfo.eingabeWert().stripTrailingZeros().toPlainString().replace('.', ',');
-                    hint = "(ca. " + prozentStr + "% der Gesamtsumme)";
+                    dieseUnterzeile = "ca. " + prozentStr + " % der Auftragssumme";
                 } else if ("brutto".equals(abschlagInfo.modus())) {
-                    hint = "(Eingabe: " + nf.format(abschlagInfo.eingabeWert()) + " € brutto)";
-                }
-                if (hint != null) {
-                    PdfPCell hintCell = new PdfPCell(new Phrase(hint, hintFont));
-                    hintCell.setBorder(Rectangle.NO_BORDER);
-                    hintCell.setPaddingTop(0f);
-                    hintCell.setPaddingBottom(3f);
-                    hintCell.setPaddingLeft(8f);
-                    hintCell.setColspan(3);
-                    sumTable.addCell(hintCell);
+                    dieseUnterzeile = "Eingabe: " + nf.format(abschlagInfo.eingabeWert()) + " € brutto";
                 }
             }
+            if (dieseUnterzeile == null && isAbschlag && gesamtAuftragssumme.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal anteil = nettoNachRabatt.multiply(new BigDecimal("100"))
+                        .divide(gesamtAuftragssumme, 1, java.math.RoundingMode.HALF_UP);
+                NumberFormat pf = NumberFormat.getNumberInstance(Locale.GERMANY);
+                pf.setMinimumFractionDigits(0);
+                pf.setMaximumFractionDigits(1);
+                dieseUnterzeile = "ca. " + pf.format(anteil) + " % der Auftragssumme";
+            }
 
-            // --- Verbleibender Restbetrag (netto) ---
-            BigDecimal restbetragNetto = gesamtAuftragssumme.subtract(bereitsAbgerechnetNetto).subtract(nettoNachRabatt);
+            addUebersichtsZeile(sumTable, dieseBezeichnung, dieseUnterzeile,
+                    "- " + nf.format(brutto) + " €",
+                    "netto " + nf.format(nettoNachRabatt) + " €", false, firmenfarbe);
+
+            // --- Noch offen ---
+            BigDecimal restNetto = gesamtAuftragssumme.subtract(bereitsAbgerechnetNetto).subtract(nettoNachRabatt);
+            // Bewusst aus dem Nettorest gerechnet und nicht als Differenz der Bruttozeilen:
+            // sonst bleiben bei krummen Betraegen Rundungsreste stehen und eine restlos
+            // abgerechnete Schlussrechnung meldet "Noch offen 0,01 €".
+            BigDecimal restBrutto = bruttoMitSteuer(restNetto, mwstSatz);
 
             // Rechnet die Rechnung den kompletten Auftrag ab und gab es keine
             // Vorrechnungen, ist der Rest per Definition 0,00 € — die Zeile waere nur
             // Rauschen. Bei Abschlags-, Teil- und Schlussrechnungen bleibt sie stehen:
             // dort ist der noch offene Rest die eigentliche Information.
             boolean zeigeRestbetrag = isAbschlag || isSchlussrechnung || hasAbrechnung
-                    || restbetragNetto.abs().compareTo(new BigDecimal("0.01")) >= 0;
+                    || restNetto.abs().compareTo(new BigDecimal("0.01")) >= 0;
 
             if (zeigeRestbetrag) {
-                // --- Trennlinie ---
-                PdfPCell restLine = new PdfPCell();
-                restLine.setBorder(Rectangle.TOP);
-                restLine.setBorderColor(lineColor);
-                restLine.setBorderWidth(0.75f);
-                restLine.setColspan(3);
-                restLine.setFixedHeight(6f);
-                sumTable.addCell(restLine);
+                PdfPCell restLinie = new PdfPCell();
+                restLinie.setBorder(Rectangle.TOP);
+                restLinie.setBorderColor(new Color(203, 213, 225)); // Slate-300
+                restLinie.setBorderWidth(0.75f);
+                restLinie.setColspan(3);
+                restLinie.setFixedHeight(5f);
+                sumTable.addCell(restLinie);
 
-                PdfPCell restLabel = new PdfPCell(new Phrase("Verbleibender Restbetrag (netto)", boldFont));
-                restLabel.setBorder(Rectangle.NO_BORDER);
-                restLabel.setPaddingTop(2f);
-                restLabel.setPaddingBottom(8f);
-                restLabel.setColspan(2);
-                sumTable.addCell(restLabel);
-
-                PdfPCell restValue = new PdfPCell(new Phrase(nf.format(restbetragNetto) + " €", boldFont));
-                restValue.setBorder(Rectangle.NO_BORDER);
-                restValue.setPaddingTop(2f);
-                restValue.setPaddingBottom(8f);
-                restValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                sumTable.addCell(restValue);
+                addUebersichtsZeile(sumTable, "Noch offen", null,
+                        nf.format(restBrutto) + " €",
+                        "netto " + nf.format(restNetto) + " €", true, firmenfarbe);
             }
 
-            // --- Trennlinie vor Zahlbetrag-Block ---
-            PdfPCell zahlTrenn = new PdfPCell();
-            zahlTrenn.setBorder(Rectangle.TOP);
-            zahlTrenn.setBorderColor(lineColor);
-            zahlTrenn.setBorderWidth(1.5f);
-            zahlTrenn.setColspan(3);
-            zahlTrenn.setFixedHeight(8f);
-            sumTable.addCell(zahlTrenn);
+            // === Abschnitt 2: Zu zahlen ===
+            addAbschnittsUeberschrift(sumTable, "Zu zahlen", 14f, lineColor);
 
-            // --- Rechnungsbetrag (netto) ---
-            String rechnungLabel;
-            if (isAbschlag) {
-                rechnungLabel = "Abschlagsbetrag (netto)";
-            } else if (isSchlussrechnung) {
-                rechnungLabel = "Schlussrechnungsbetrag (netto)";
-            } else {
-                rechnungLabel = "Rechnungsbetrag (netto)";
-            }
-            PdfPCell rbLabel = new PdfPCell(new Phrase(rechnungLabel, normalFont));
-            rbLabel.setBorder(Rectangle.NO_BORDER);
-            rbLabel.setPaddingTop(4f);
-            rbLabel.setPaddingBottom(3f);
-            sumTable.addCell(rbLabel);
+            // Rabatt getrennt ausweisen, damit der Nettobetrag nachvollziehbar bleibt.
+            // Bei der Schlussrechnung ergibt sich der Betrag aus dem offenen Rest, dort
+            // greift der Globalrabatt nicht.
+            if (hasGlobalRabatt && !isSchlussrechnung) {
+                addZahlZeile(sumTable, "Nettobetrag vor Rabatt", null, nf.format(netto) + " €", false, normalFont, boldFont);
 
-            PdfPCell rbEmpty = new PdfPCell(new Phrase("", normalFont));
-            rbEmpty.setBorder(Rectangle.NO_BORDER);
-            sumTable.addCell(rbEmpty);
-
-            PdfPCell rbValue = new PdfPCell(new Phrase(nf.format(nettoNachRabatt) + " €", normalFont));
-            rbValue.setBorder(Rectangle.NO_BORDER);
-            rbValue.setPaddingTop(4f);
-            rbValue.setPaddingBottom(3f);
-            rbValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumTable.addCell(rbValue);
-
-            // Bei Abschlagsrechnungen: prozentualen Anteil der Gesamtauftragssumme anzeigen
-            if (isAbschlag && gesamtAuftragssumme.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal prozent = nettoNachRabatt.multiply(new BigDecimal("100"))
-                        .divide(gesamtAuftragssumme, 1, java.math.RoundingMode.HALF_UP);
-                NumberFormat pf = NumberFormat.getNumberInstance(Locale.GERMANY);
-                pf.setMinimumFractionDigits(0);
-                pf.setMaximumFractionDigits(1);
-                Font hintFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 8, new Color(120, 120, 120));
-                PdfPCell prozentHint = new PdfPCell(new Phrase("entspricht ca. " + pf.format(prozent) + " % der Gesamtauftragssumme", hintFont));
-                prozentHint.setBorder(Rectangle.NO_BORDER);
-                prozentHint.setPaddingTop(0f);
-                prozentHint.setPaddingBottom(4f);
-                prozentHint.setPaddingLeft(0f);
-                prozentHint.setColspan(3);
-                sumTable.addCell(prozentHint);
-            }
-
-            // Globaler Rabatt (falls vorhanden)
-            if (hasGlobalRabatt) {
                 Font rabattFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 10, new Color(220, 38, 38));
-
-                PdfPCell rabattLabel = new PdfPCell(new Phrase("Rabatt", rabattFont));
-                rabattLabel.setBorder(Rectangle.NO_BORDER);
-                rabattLabel.setPaddingTop(3f);
-                rabattLabel.setPaddingBottom(3f);
-                sumTable.addCell(rabattLabel);
-
-                PdfPCell rabattPercentCell = new PdfPCell(new Phrase(nf.format(globalRabattProzent) + " %", rabattFont));
-                rabattPercentCell.setBorder(Rectangle.NO_BORDER);
-                rabattPercentCell.setPaddingTop(3f);
-                rabattPercentCell.setPaddingBottom(3f);
-                rabattPercentCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                sumTable.addCell(rabattPercentCell);
-
-                PdfPCell rabattValueCell = new PdfPCell(new Phrase("-" + nf.format(rabattBetrag) + " €", rabattFont));
-                rabattValueCell.setBorder(Rectangle.NO_BORDER);
-                rabattValueCell.setPaddingTop(3f);
-                rabattValueCell.setPaddingBottom(3f);
-                rabattValueCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                sumTable.addCell(rabattValueCell);
+                addZahlZeile(sumTable, "Rabatt", nf.format(globalRabattProzent) + " %",
+                        "- " + nf.format(rabattBetrag) + " €", false, rabattFont, rabattFont);
             }
 
-            // --- zzgl. Umsatzsteuer ---
-            PdfPCell ustLabel = new PdfPCell(new Phrase("zzgl. Umsatzsteuer", normalFont));
-            ustLabel.setBorder(Rectangle.NO_BORDER);
-            ustLabel.setPaddingTop(3f);
-            ustLabel.setPaddingBottom(3f);
-            sumTable.addCell(ustLabel);
+            addZahlZeile(sumTable, "Nettobetrag", null, nf.format(nettoNachRabatt) + " €", false, normalFont, boldFont);
+            addZahlZeile(sumTable, "Umsatzsteuer", "19 %", nf.format(mwst) + " €", false, normalFont, boldFont);
 
-            PdfPCell ustPercent = new PdfPCell(new Phrase("19 %", normalFont));
-            ustPercent.setBorder(Rectangle.NO_BORDER);
-            ustPercent.setPaddingTop(3f);
-            ustPercent.setPaddingBottom(3f);
-            ustPercent.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumTable.addCell(ustPercent);
+            // Schlussrechnung: §14 Abs. 5 UStG verlangt, dass die Steuer auf die bereits
+            // abgerechneten Betraege erkennbar ist.
+            if (isSchlussrechnung && vorRechnungenBrutto.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal ustAufVorrechnungen = vorRechnungenBrutto.subtract(bereitsAbgerechnetNetto);
+                Font hinweisFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, new Color(100, 116, 139));
+                PdfPCell hinweis = new PdfPCell(new Phrase(
+                        "in den bereits gestellten Rechnungen enthaltene Umsatzsteuer: "
+                                + nf.format(ustAufVorrechnungen) + " €", hinweisFont));
+                hinweis.setBorder(Rectangle.NO_BORDER);
+                hinweis.setColspan(3);
+                hinweis.setPaddingTop(1f);
+                hinweis.setPaddingBottom(3f);
+                sumTable.addCell(hinweis);
+            }
 
-            PdfPCell ustValue = new PdfPCell(new Phrase(nf.format(mwst) + " €", normalFont));
-            ustValue.setBorder(Rectangle.NO_BORDER);
-            ustValue.setPaddingTop(3f);
-            ustValue.setPaddingBottom(3f);
-            ustValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumTable.addCell(ustValue);
+            PdfPCell zahlLinie = new PdfPCell();
+            zahlLinie.setBorder(Rectangle.TOP);
+            zahlLinie.setBorderColor(new Color(203, 213, 225)); // Slate-300
+            zahlLinie.setBorderWidth(0.75f);
+            zahlLinie.setColspan(3);
+            zahlLinie.setFixedHeight(5f);
+            sumTable.addCell(zahlLinie);
 
-            // --- Spacer ---
-            PdfPCell spacer = new PdfPCell(new Phrase("", normalFont));
-            spacer.setBorder(Rectangle.NO_BORDER);
-            spacer.setFixedHeight(6f);
-            spacer.setColspan(3);
-            sumTable.addCell(spacer);
+            Font zahlbetragFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 12, textColor);
+            addZahlZeile(sumTable, "Zahlbetrag", null, nf.format(brutto) + " €", true, zahlbetragFont, zahlbetragFont);
 
-            // --- Zahlbetrag (fett) ---
-            PdfPCell zahlLabel = new PdfPCell(new Phrase("Zahlbetrag", boldFont));
-            zahlLabel.setBorder(Rectangle.NO_BORDER);
-            zahlLabel.setPaddingTop(3f);
-            zahlLabel.setPaddingBottom(6f);
-            sumTable.addCell(zahlLabel);
-
-            PdfPCell zahlEmpty = new PdfPCell(new Phrase("", normalFont));
-            zahlEmpty.setBorder(Rectangle.NO_BORDER);
-            sumTable.addCell(zahlEmpty);
-
-            PdfPCell zahlValue = new PdfPCell(new Phrase(nf.format(brutto) + " €", boldFont));
-            zahlValue.setBorder(Rectangle.NO_BORDER);
-            zahlValue.setPaddingTop(3f);
-            zahlValue.setPaddingBottom(6f);
-            zahlValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumTable.addCell(zahlValue);
-
-            // --- Abschlusslinie ---
             PdfPCell bottomLine = new PdfPCell();
             bottomLine.setBorder(Rectangle.TOP);
             bottomLine.setBorderColor(lineColor);
@@ -1787,6 +1701,16 @@ public class RechnungPdfService {
 
         } else {
             // === STANDARD FLOW: Netto + MwSt + Gesamt (ohne Basisdokument) ===
+
+            // Trennlinie. Der Abrechnungsstand-Zweig oben bringt seine eigene Linie
+            // unter der Abschnittsueberschrift mit und braucht diese hier nicht.
+            PdfPCell lineCell = new PdfPCell();
+            lineCell.setBorder(Rectangle.TOP);
+            lineCell.setBorderColor(lineColor);
+            lineCell.setBorderWidth(1.5f);
+            lineCell.setColspan(3);
+            lineCell.setFixedHeight(8f);
+            sumTable.addCell(lineCell);
 
             // Abschlagsrechnung: Gesamtauftragssumme anzeigen (aus Positionensumme)
             if (isAbschlag && positionenNetto.compareTo(BigDecimal.ZERO) > 0) {
@@ -1935,6 +1859,190 @@ public class RechnungPdfService {
 
         ct.addElement(wrapperTable);
 
+    }
+
+    /** Bruttobetrag zu einem Nettobetrag, kaufmaennisch auf Cent gerundet. */
+    private static BigDecimal bruttoMitSteuer(BigDecimal netto, BigDecimal mwstSatz) {
+        if (netto == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal steuer = netto.multiply(mwstSatz).setScale(2, java.math.RoundingMode.HALF_UP);
+        return netto.add(steuer);
+    }
+
+    /**
+     * Firmenfarbe aus den Firmeninformationen. Faellt auf die Standardfarbe zurueck,
+     * wenn nichts hinterlegt oder der Wert unbrauchbar ist.
+     */
+    private Color ermittleFirmenfarbe() {
+        if (firmeninformationRepository == null) {
+            return FIRMENFARBE_STANDARD;
+        }
+        try {
+            return firmeninformationRepository.findById(1L)
+                    .map(Firmeninformation::getFirmenfarbe)
+                    .filter(hex -> hex != null && !hex.isBlank())
+                    .map(hex -> parseColor(hex, FIRMENFARBE_STANDARD))
+                    .orElse(FIRMENFARBE_STANDARD);
+        } catch (Exception e) {
+            log.warn("Firmenfarbe konnte nicht geladen werden, nutze Standardfarbe", e);
+            return FIRMENFARBE_STANDARD;
+        }
+    }
+
+    /** Mischt eine Farbe mit Weiss — 0f bleibt die Farbe, 1f ist reines Weiss. */
+    private static Color aufhellen(Color farbe, float anteil) {
+        return new Color(
+                Math.round(farbe.getRed() + (255 - farbe.getRed()) * anteil),
+                Math.round(farbe.getGreen() + (255 - farbe.getGreen()) * anteil),
+                Math.round(farbe.getBlue() + (255 - farbe.getBlue()) * anteil));
+    }
+
+    /**
+     * Abschnittsüberschrift im Summenblock: kleine graue Versalien über einer kräftigen
+     * Linie — dieselbe Optik wie der Kopf der Positionstabelle. Das Dokument kennt keine
+     * Kästen, deshalb trennt hier die Linie statt eines Rahmens.
+     */
+    private void addAbschnittsUeberschrift(PdfPTable sumTable, String text, float abstandDavor, Color lineColor) {
+        if (abstandDavor > 0f) {
+            PdfPCell abstand = new PdfPCell(new Phrase(" "));
+            abstand.setBorder(Rectangle.NO_BORDER);
+            abstand.setColspan(3);
+            abstand.setFixedHeight(abstandDavor);
+            sumTable.addCell(abstand);
+        }
+
+        Chunk beschriftung = new Chunk(text.toUpperCase(Locale.GERMANY),
+                FontFactory.getFont(FontFactory.TIMES_BOLD, 9, new Color(71, 85, 105))); // Slate-600
+        beschriftung.setCharacterSpacing(0.8f);
+
+        PdfPCell zelle = new PdfPCell(new Phrase(beschriftung));
+        zelle.setBorder(Rectangle.BOTTOM);
+        zelle.setBorderColor(lineColor);
+        zelle.setBorderWidth(1.5f);
+        zelle.setColspan(3);
+        zelle.setPaddingBottom(5f);
+        sumTable.addCell(zelle);
+    }
+
+    /**
+     * Fortschrittsbalken über die volle Breite plus Beschriftung darunter, in der
+     * Firmenfarbe: gefuellter Teil satt, offener Teil als heller Ton derselben Farbe.
+     */
+    private void addFortschrittsBalken(PdfPTable sumTable, double prozent, Color firmenfarbe) {
+        float anteil = (float) Math.max(0d, Math.min(100d, prozent));
+        Color gefuellt = firmenfarbe;
+        Color offen = aufhellen(firmenfarbe, 0.88f);
+
+        // Ein PdfPTable braucht positive Spaltenbreiten, daher die Randfaelle einzeln.
+        boolean nurGefuellt = anteil >= 100f;
+        boolean nurOffen = anteil <= 0f;
+        PdfPTable balken = nurGefuellt || nurOffen
+                ? new PdfPTable(new float[] { 1f })
+                : new PdfPTable(new float[] { anteil, 100f - anteil });
+        balken.setWidthPercentage(100);
+
+        if (!nurOffen) {
+            balken.addCell(balkenSegment(gefuellt));
+        }
+        if (!nurGefuellt) {
+            balken.addCell(balkenSegment(offen));
+        }
+
+        PdfPCell balkenZelle = new PdfPCell(balken);
+        balkenZelle.setBorder(Rectangle.NO_BORDER);
+        balkenZelle.setColspan(3);
+        balkenZelle.setPaddingTop(6f);
+        balkenZelle.setPaddingBottom(2f);
+        sumTable.addCell(balkenZelle);
+
+        NumberFormat pf = NumberFormat.getNumberInstance(Locale.GERMANY);
+        pf.setMinimumFractionDigits(0);
+        pf.setMaximumFractionDigits(0);
+        PdfPCell beschriftung = new PdfPCell(new Phrase(
+                "Mit dieser Rechnung sind " + pf.format(anteil) + " % des Auftrags abgerechnet.",
+                FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, new Color(100, 116, 139)))); // Slate-500
+        beschriftung.setBorder(Rectangle.NO_BORDER);
+        beschriftung.setColspan(3);
+        beschriftung.setPaddingBottom(6f);
+        sumTable.addCell(beschriftung);
+    }
+
+    private static PdfPCell balkenSegment(Color farbe) {
+        PdfPCell segment = new PdfPCell(new Phrase(" "));
+        segment.setBorder(Rectangle.NO_BORDER);
+        segment.setBackgroundColor(farbe);
+        segment.setFixedHeight(5f);
+        // Ohne das bleibt zwischen gefuelltem und offenem Teil ein weisser Spalt stehen.
+        segment.setPadding(0f);
+        return segment;
+    }
+
+    /**
+     * Zeile der Abrechnungsübersicht: links die Bezeichnung mit optionaler Unterzeile,
+     * rechts der Bruttobetrag mit dem Nettobetrag klein und grau darunter.
+     */
+    private void addUebersichtsZeile(PdfPTable sumTable, String bezeichnung, String unterzeile,
+                                     String bruttoText, String nettoText, boolean hervorgehoben,
+                                     Color firmenfarbe) {
+        String schrift = hervorgehoben ? FontFactory.TIMES_BOLD : FontFactory.TIMES_ROMAN;
+        Font textFont = FontFactory.getFont(schrift, hervorgehoben ? 11 : 10, new Color(0, 0, 0));
+        Font unterFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, 8, new Color(100, 116, 139)); // Slate-500
+        Font nettoFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, firmenfarbe);
+
+        Phrase links = new Phrase(new Chunk(bezeichnung, textFont));
+        if (unterzeile != null && !unterzeile.isBlank()) {
+            links.add(Chunk.NEWLINE);
+            links.add(new Chunk(unterzeile, unterFont));
+        }
+        PdfPCell linkeZelle = new PdfPCell(links);
+        linkeZelle.setBorder(Rectangle.NO_BORDER);
+        linkeZelle.setColspan(2);
+        linkeZelle.setLeading(0f, 1.25f);
+        linkeZelle.setPaddingTop(4f);
+        linkeZelle.setPaddingBottom(3f);
+        sumTable.addCell(linkeZelle);
+
+        Phrase rechts = new Phrase(new Chunk(bruttoText, textFont));
+        if (nettoText != null && !nettoText.isBlank()) {
+            rechts.add(Chunk.NEWLINE);
+            rechts.add(new Chunk(nettoText, nettoFont));
+        }
+        PdfPCell rechteZelle = new PdfPCell(rechts);
+        rechteZelle.setBorder(Rectangle.NO_BORDER);
+        rechteZelle.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        rechteZelle.setLeading(0f, 1.25f);
+        rechteZelle.setPaddingTop(4f);
+        rechteZelle.setPaddingBottom(3f);
+        sumTable.addCell(rechteZelle);
+    }
+
+    /**
+     * Zeile im Zahlblock: Label, optionaler Mittelwert (z.B. der Steuersatz) und Betrag.
+     */
+    private void addZahlZeile(PdfPTable sumTable, String label, String mitte, String betrag,
+                              boolean extraAbstand, Font labelFont, Font betragFont) {
+        float unten = extraAbstand ? 6f : 3f;
+
+        PdfPCell labelZelle = new PdfPCell(new Phrase(label, labelFont));
+        labelZelle.setBorder(Rectangle.NO_BORDER);
+        labelZelle.setPaddingTop(4f);
+        labelZelle.setPaddingBottom(unten);
+        sumTable.addCell(labelZelle);
+
+        PdfPCell mittelZelle = new PdfPCell(new Phrase(mitte != null ? mitte : "", labelFont));
+        mittelZelle.setBorder(Rectangle.NO_BORDER);
+        mittelZelle.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        mittelZelle.setPaddingTop(4f);
+        mittelZelle.setPaddingBottom(unten);
+        sumTable.addCell(mittelZelle);
+
+        PdfPCell betragZelle = new PdfPCell(new Phrase(betrag, betragFont));
+        betragZelle.setBorder(Rectangle.NO_BORDER);
+        betragZelle.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        betragZelle.setPaddingTop(4f);
+        betragZelle.setPaddingBottom(unten);
+        sumTable.addCell(betragZelle);
     }
 
     /**

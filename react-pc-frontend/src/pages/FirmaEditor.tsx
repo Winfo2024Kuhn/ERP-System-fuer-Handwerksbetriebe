@@ -36,6 +36,8 @@ interface Firmeninformation {
     geschaeftsfuehrer: string;
     fusszeileText: string;
     googleBewertungsLink: string;
+    /** Hausfarbe als Hex mit fuehrendem #, z.B. "#500010". Leer = Standardfarbe. */
+    firmenfarbe: string;
     mahnverfahrenAktiv: boolean;
     tageBisZahlungserinnerung: number;
     tageBisErsteMahnung: number;
@@ -757,6 +759,27 @@ export default function FirmaEditor() {
                                         />
                                         <p className="text-xs text-slate-500 mt-1">
                                             Wird in E-Mails über den Platzhalter <code className="bg-slate-100 px-1 rounded">{'{{REVIEW_LINK}}'}</code> als Link „Jetzt Bewertung abgeben" eingefügt.
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <Label>Firmenfarbe</Label>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="color"
+                                                aria-label="Firmenfarbe wählen"
+                                                value={/^#[0-9a-fA-F]{6}$/.test(firma.firmenfarbe || '') ? firma.firmenfarbe : '#500010'}
+                                                onChange={e => setFirma({ ...firma, firmenfarbe: e.target.value })}
+                                                className="h-9 w-12 rounded border border-slate-200 bg-white p-1 cursor-pointer"
+                                            />
+                                            <Input
+                                                value={firma.firmenfarbe || ''}
+                                                onChange={e => setFirma({ ...firma, firmenfarbe: e.target.value })}
+                                                placeholder="#500010"
+                                                className="font-mono"
+                                            />
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            Akzentfarbe auf Rechnungen: Fortschrittsbalken im Abrechnungsstand und die kleinen Nettobeträge. Leer lassen für die Standardfarbe.
                                         </p>
                                     </div>
                                 </div>

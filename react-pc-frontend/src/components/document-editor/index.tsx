@@ -343,6 +343,25 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         abschlagsNummer?: number;
     }>>([]);
 
+    // Firmenfarbe aus den Firmeninformationen — Akzent im Abrechnungsstand.
+    // null = noch nicht geladen oder nicht hinterlegt, dann greift die Standardfarbe.
+    const [firmenfarbe, setFirmenfarbe] = useState<string | null>(null);
+
+    useEffect(() => {
+        let abgebrochen = false;
+        fetch('/api/firma')
+            .then(res => (res.ok ? res.json() : null))
+            .then(daten => {
+                if (!abgebrochen && daten?.firmenfarbe) {
+                    setFirmenfarbe(daten.firmenfarbe);
+                }
+            })
+            .catch(() => {
+                // Ohne Farbe zeichnet der Abrechnungsstand in der Standardfarbe.
+            });
+        return () => { abgebrochen = true; };
+    }, []);
+
     // Abschlagsrechnung: user-defined installment amount
     const [abschlagBetragNetto, setAbschlagBetragNetto] = useState<number | null>(null);
     // Abschlagsrechnung: Eingabemodus und Originalwert
@@ -2777,6 +2796,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     abrechnungsPositionen={abrechnungsPositionen}
                     basisdokumentBetragNetto={basisdokumentBetragNetto}
                     globalRabatt={globalRabatt}
+                    firmenfarbe={firmenfarbe}
                 />
             )}
         </SortableBlock>

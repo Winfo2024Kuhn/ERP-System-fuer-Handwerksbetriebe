@@ -80,6 +80,7 @@ public class FirmeninformationService {
         fi.setGeschaeftsfuehrer(dto.getGeschaeftsfuehrer());
         fi.setFusszeileText(dto.getFusszeileText());
         fi.setGoogleBewertungsLink(normalizeUrl(dto.getGoogleBewertungsLink()));
+        fi.setFirmenfarbe(normalisiereFarbe(dto.getFirmenfarbe()));
 
         fi.setMahnverfahrenAktiv(dto.isMahnverfahrenAktiv());
         fi.setTageBisZahlungserinnerung(positivOrDefault(dto.getTageBisZahlungserinnerung(), 7));
@@ -260,6 +261,35 @@ public class FirmeninformationService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    /**
+     * Nimmt nur einen sauberen Hex-Wert an ("#500010" oder "500010", auch dreistellig).
+     * Alles andere wird verworfen — dann greift im Dokument die Standardfarbe.
+     *
+     * Die Kurzform wird immer auf sechs Stellen aufgezogen: Color.decode im PDF liest
+     * "#abc" sonst als 0x000abc statt als "#aabbcc", und die Vorschau im Editor
+     * akzeptiert ohnehin nur sechs Stellen. Gespeichert wird also nur ein Format.
+     */
+    private String normalisiereFarbe(String eingabe) {
+        if (eingabe == null || eingabe.isBlank()) {
+            return null;
+        }
+        String hex = eingabe.trim();
+        if (!hex.startsWith("#")) {
+            hex = "#" + hex;
+        }
+        if (!hex.matches("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")) {
+            return null;
+        }
+        if (hex.length() == 4) {
+            StringBuilder lang = new StringBuilder("#");
+            for (int i = 1; i < 4; i++) {
+                lang.append(hex.charAt(i)).append(hex.charAt(i));
+            }
+            hex = lang.toString();
+        }
+        return hex.toLowerCase();
+    }
+
     private FirmeninformationDto toDto(Firmeninformation fi) {
         FirmeninformationDto dto = new FirmeninformationDto();
         dto.setId(fi.getId());
@@ -282,6 +312,7 @@ public class FirmeninformationService {
         dto.setGeschaeftsfuehrer(fi.getGeschaeftsfuehrer());
         dto.setFusszeileText(fi.getFusszeileText());
         dto.setGoogleBewertungsLink(fi.getGoogleBewertungsLink());
+        dto.setFirmenfarbe(fi.getFirmenfarbe());
         dto.setMahnverfahrenAktiv(fi.isMahnverfahrenAktiv());
         dto.setTageBisZahlungserinnerung(fi.getTageBisZahlungserinnerung());
         dto.setTageBisErsteMahnung(fi.getTageBisErsteMahnung());

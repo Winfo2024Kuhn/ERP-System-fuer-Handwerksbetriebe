@@ -53,6 +53,12 @@ public class Firmeninformation {
     @Column(length = 1000)
     private String fusszeileText; // Text für Dokumenten-Fußzeile
 
+    // Hausfarbe des Betriebs als Hex-Wert mit fuehrendem # (z.B. "#500010").
+    // Wird in Dokumenten als Akzent gesetzt: Fortschrittsbalken im Abrechnungsstand
+    // und die kleinen Nettobetraege. Leer = Standardfarbe.
+    @Column(name = "firmenfarbe", length = 7)
+    private String firmenfarbe;
+
     // URL zur Google-Bewertungsseite des Betriebs.
     // Wird in E-Mail-Vorlagen über den Platzhalter {{REVIEW_LINK}} als klickbarer Link eingesetzt.
     @Column(name = "google_bewertungs_link", length = 500)

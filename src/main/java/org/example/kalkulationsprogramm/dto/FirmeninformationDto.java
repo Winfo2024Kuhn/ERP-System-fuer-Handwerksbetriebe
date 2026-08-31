@@ -26,6 +26,8 @@ public class FirmeninformationDto {
     private String geschaeftsfuehrer;
     private String fusszeileText;
     private String googleBewertungsLink;
+    /** Hausfarbe als Hex mit fuehrendem #, z.B. "#500010". Leer = Standardfarbe. */
+    private String firmenfarbe;
 
     // Mahnverfahren — siehe Firmeninformation
     private boolean mahnverfahrenAktiv;
