@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baueMailText } from './LieferantReklamationenTab';
+import { baueMailText, lieferantDokumentUrl } from './LieferantReklamationenTab';
 import type { LieferantReklamation } from '../types';
 
 /** Dummy-Reklamation (DSGVO: keine echten Personen- oder Firmendaten). */
@@ -101,5 +101,15 @@ describe('baueMailText – Inhalt', () => {
         expect(text).not.toContain('<script>');
         expect(text).not.toContain('<img src=x');
         expect(text).toContain('&lt;script&gt;');
+    });
+});
+
+describe('lieferantDokumentUrl', () => {
+    // Regression: Vorher zeigte der Lieferschein-Link auf /api/dokumente/{dateiname}.
+    // Dieser Endpunkt kennt nur die Projekt- und Anfrage-Ordner, Lieferanten-
+    // Dokumente liegen woanders – der Server antwortete darauf mit einem Fehler.
+    it('adressiert das Dokument über Lieferant und Dokument-ID', () => {
+        expect(lieferantDokumentUrl(3, 1473))
+            .toBe('/api/lieferanten/3/dokumente/1473/download');
     });
 });

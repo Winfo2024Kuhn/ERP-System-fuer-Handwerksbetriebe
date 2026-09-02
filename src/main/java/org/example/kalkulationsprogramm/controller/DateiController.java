@@ -93,11 +93,18 @@ public class DateiController {
         Resource resource;
         try {
             resource = dateiSpeicherService.ladeDokumentAlsResource(dokument.getGespeicherterDateiname());
+        } catch (SecurityException ex) {
+            // Verzeichnistraversal: muss als solcher sichtbar bleiben und darf nicht
+            // unter den harmlosen 404ern verschwinden.
+            throw ex;
         } catch (RuntimeException ex) {
             if (!dokument.getGespeicherterDateiname().equalsIgnoreCase(dateiname)) {
                 return liefereDokumentOhneMetadaten(dateiname);
             }
-            throw ex;
+            log.warn("Dokument {} steht in der Datenbank, die Datei fehlt aber ({})",
+                    dateiname, ex.getClass().getSimpleName());
+            log.debug("Details zur fehlenden Datei {}", dateiname, ex);
+            throw new NotFoundException("Dokument nicht gefunden: " + dateiname);
         }
 
         String originalerDateiname = dokument.getOriginalDateiname();
@@ -199,7 +206,25 @@ public class DateiController {
     }
 
     private ResponseEntity<Resource> liefereDokumentOhneMetadaten(String dateiname) {
-        Resource resource = dateiSpeicherService.ladeDokumentAlsResource(dateiname);
+        Resource resource;
+        try {
+            resource = dateiSpeicherService.ladeDokumentAlsResource(dateiname);
+        } catch (SecurityException ex) {
+            // Verzeichnistraversal bleibt ein eigener Fall – siehe oben.
+            throw ex;
+        } catch (RuntimeException ex) {
+            // Eine Datei, die es nicht gibt, ist kein Serverfehler. Vorher schlug die
+            // RuntimeException bis zum DispatcherServlet durch und der Nutzer sah
+            // "Fehler 500" statt eines verwertbaren Hinweises.
+            //
+            // Nur Dateiname und Exception-Klasse ins WARN: Die Meldung des Service
+            // zaehlt alle Speicherpfade inklusive UNC-Serveradresse auf, und die
+            // gehoert nicht in ein Log, das nach aussen gereicht wird.
+            log.warn("Dokument {} konnte nicht ausgeliefert werden ({})",
+                    dateiname, ex.getClass().getSimpleName());
+            log.debug("Details zum nicht auslieferbaren Dokument {}", dateiname, ex);
+            throw new NotFoundException("Dokument nicht gefunden: " + dateiname);
+        }
         if (resource == null) {
             throw new NotFoundException("Dokument nicht gefunden: " + dateiname);
         }

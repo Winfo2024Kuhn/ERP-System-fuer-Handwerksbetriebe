@@ -944,6 +944,14 @@ public class LieferantenController {
         if (dokument == null) {
             return ResponseEntity.notFound().build();
         }
+        // Das Dokument muss zu genau diesem Lieferanten gehoeren. Ohne die Pruefung
+        // liesse sich jedes Lieferanten-Dokument ueber eine beliebige Lieferanten-ID
+        // abrufen: Die Pfade 3 und 4 in resolveDokumentPath suchen in gemeinsamen
+        // Ordnern und ignorieren die uebergebene ID.
+        if (dokument.getLieferant() == null
+                || !dokument.getLieferant().getId().equals(lieferantId)) {
+            return ResponseEntity.notFound().build();
+        }
 
         // Datei finden
         java.nio.file.Path filePath = resolveDokumentPath(dokument, lieferantId);

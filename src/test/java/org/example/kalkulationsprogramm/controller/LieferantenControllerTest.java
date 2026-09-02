@@ -222,6 +222,29 @@ class LieferantenControllerTest {
   }
 
   /**
+   * Baut ein Dokument samt zugehoerigem Lieferanten. Die Spalte lieferant_id ist
+   * NOT NULL, und der Download-Endpunkt prueft, dass Dokument und angefragter
+   * Lieferant zusammengehoeren — ein Dokument ohne Lieferanten gibt es nicht.
+   */
+  private LieferantDokument dokumentVonLieferant(Long dokumentId, Long lieferantId) {
+    Lieferanten lieferant = new Lieferanten();
+    lieferant.setId(lieferantId);
+    LieferantDokument dokument = new LieferantDokument();
+    dokument.setId(dokumentId);
+    dokument.setLieferant(lieferant);
+    return dokument;
+  }
+
+  /** Ein Dokument eines anderen Lieferanten darf ueber fremde IDs nicht abrufbar sein. */
+  @Test
+  void dokumentEinesAnderenLieferantenWirdNichtAusgeliefert() throws Exception {
+    when(lieferantDokumentService.findById(9L)).thenReturn(dokumentVonLieferant(9L, 43L));
+
+    mockMvc.perform(get("/api/lieferanten/42/dokumente/9/download"))
+        .andExpect(status().isNotFound());
+  }
+
+  /**
    * Happy-Path fuer den Mobile-Beleg-Bugfix: ein zu LieferantDokument promoteter
    * Mobile-Beleg traegt gespeicherterDateiname="belege/<file>" und liegt physisch
    * unter <uploadDir>/belege/. Die neue Stufe-0-Aufloesung in resolveDokumentPath
@@ -236,8 +259,7 @@ class LieferantenControllerTest {
 
     ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
 
-    LieferantDokument dokument = new LieferantDokument();
-    dokument.setId(7L);
+    LieferantDokument dokument = dokumentVonLieferant(7L, 42L);
     dokument.setOriginalDateiname("scan.pdf");
     dokument.setGespeicherterDateiname("belege/scan.pdf");
     when(lieferantDokumentService.findById(7L)).thenReturn(dokument);
@@ -263,8 +285,7 @@ class LieferantenControllerTest {
 
     ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
 
-    LieferantDokument dokument = new LieferantDokument();
-    dokument.setId(8L);
+    LieferantDokument dokument = dokumentVonLieferant(8L, 42L);
     dokument.setGespeicherterDateiname("../secret.txt");
     when(lieferantDokumentService.findById(8L)).thenReturn(dokument);
 

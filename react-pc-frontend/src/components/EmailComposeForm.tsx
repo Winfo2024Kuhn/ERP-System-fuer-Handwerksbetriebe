@@ -12,6 +12,7 @@ import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import type { ProjektDetail, ProjektDokument } from '../types';
 import { extractEmailAddress, isSingleEmailAddress } from '../lib/emailAddress';
+import { komprimiereBildFuerEmail, komprimiereBilderFuerEmail } from '../lib/bildKomprimierung';
 import { EmailRecipientInput } from './EmailRecipientInput';
 import { EmailEntityDocumentPicker } from './EmailEntityDocumentPicker';
 import { EmailZuordnungSearchModal, type EmailZuordnung } from './EmailZuordnungSearchModal';
@@ -23,8 +24,38 @@ interface UploadedFile {
     sourceDokumentId?: number;
 }
 
-/** Obergrenze für alle Anhänge einer E-Mail zusammen. */
-export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+/**
+ * Größte Nachricht, die unser Mailserver (T-Online) noch annimmt.
+ *
+ * <p>Bewusst mit den dezimalen 20.000.000 Bytes gerechnet und nicht mit 20 MiB:
+ * Wo genau der Server die Grenze zieht, ist nicht dokumentiert, und die
+ * vorsichtigere Zahl kostet uns nur ein knappes Megabyte.</p>
+ */
+const MAX_NACHRICHT_BYTES = 20_000_000;
+
+/**
+ * Platz für alles, was neben den Anhängen in der Nachricht steckt: Kopfzeilen,
+ * HTML-Text, Signatur, das zitierte Original einer Antwort und die
+ * MIME-Trennzeilen zwischen den Teilen.
+ */
+const RESERVE_FUER_NACHRICHT_BYTES = 1024 * 1024;
+
+/**
+ * Anhänge reisen in E-Mails Base64-kodiert: Aus je 3 Bytes werden 4 (Faktor
+ * 1,333), dazu kommt alle 76 Zeichen ein Zeilenumbruch (rund 1,4 %).
+ */
+const BASE64_FAKTOR = 1.353;
+
+/**
+ * Obergrenze für alle Anhänge einer E-Mail zusammen – gemessen an den rohen
+ * Dateigrößen, wie sie hier im Formular stehen.
+ *
+ * <p>Früher standen hier schlicht 20 MB. Damit meldete das Formular "passt",
+ * während die kodierte Nachricht schon bei 27 MB lag und T-Online den Versand
+ * ablehnte. Der Fehler fiel dem Nutzer erst beim Senden auf die Füße.</p>
+ */
+export const MAX_ATTACHMENT_BYTES =
+    Math.floor((MAX_NACHRICHT_BYTES - RESERVE_FUER_NACHRICHT_BYTES) / BASE64_FAKTOR);
 
 export const formatFileSize = (bytes: number): string => {
     if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -303,6 +334,10 @@ export function EmailComposeForm({
     const [showEntityDokumente, setShowEntityDokumente] = useState(false);
     const [loadingEntityDokumentIds, setLoadingEntityDokumentIds] = useState<Set<number>>(new Set());
 
+    // Verkleinern großer Fotos dauert je nach Anzahl eine Sekunde. Ohne Rückmeldung
+    // wirkt das Formular in der Zeit, als wäre der Anhang verschluckt worden.
+    const [komprimiereAnhaenge, setKomprimiereAnhaenge] = useState(false);
+
     // Externe hochgeladene Dateien
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>(() => {
         if (initialAttachments && initialAttachments.length > 0) {
@@ -312,6 +347,31 @@ export function EmailComposeForm({
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<HTMLDivElement>(null);
+
+    // Anhänge, die von außen mitgegeben wurden, ebenfalls verkleinern. Damit
+    // gilt die Regel "Fotos gehen nicht im Original raus" für das Formular als
+    // Ganzes und nicht nur für die Wege, die es selbst anbietet – ein künftiger
+    // Aufrufer kann sie nicht mehr versehentlich umgehen. Bereits verkleinerte
+    // Dateien erkennt komprimiereBilderFuerEmail und lässt sie in Ruhe.
+    useEffect(() => {
+        let abgebrochen = false;
+        const originale = uploadedFiles.map(eintrag => eintrag.file);
+        if (originale.length === 0) return;
+
+        void komprimiereBilderFuerEmail(originale).then(verkleinert => {
+            const hatSichGeaendert = verkleinert.some((datei, i) => datei !== originale[i]);
+            if (abgebrochen || !hatSichGeaendert) return;
+            setUploadedFiles(vorher => vorher.map((eintrag, i) => (
+                originale[i] === eintrag.file ? { ...eintrag, file: verkleinert[i] } : eintrag
+            )));
+        });
+
+        return () => { abgebrochen = true; };
+        // Absichtlich nur beim Öffnen: Später hinzugefügte Anhänge sind an ihrer
+        // Quelle schon verkleinert, ein Lauf bei jeder Änderung würde sich selbst
+        // wieder auslösen.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const attachmentBytes = useMemo(
         () => uploadedFiles.reduce((sum, uploadedFile) => sum + uploadedFile.file.size, 0),
         [uploadedFiles]
@@ -610,14 +670,23 @@ export function EmailComposeForm({
         setRecipient(prev => (prev === entityKundenEmails[0] ? prev : entityKundenEmails[0]));
     }, [entityKundenEmails]);
 
-    // Externe Dateien hochladen
-    const handleFileUpload = (files: FileList | null) => {
-        if (!files) return;
+    // Externe Dateien hochladen. Fotos werden vorher verkleinert – siehe
+    // komprimiereBilderFuerEmail: Handyfotos sprengen sonst das Anhangslimit.
+    const handleFileUpload = async (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+
+        setKomprimiereAnhaenge(true);
+        let verkleinert: File[];
+        try {
+            verkleinert = await komprimiereBilderFuerEmail(Array.from(files));
+        } finally {
+            setKomprimiereAnhaenge(false);
+        }
 
         setUploadedFiles(previous => {
             const accepted: UploadedFile[] = [];
             let nextSize = previous.reduce((sum, uploadedFile) => sum + uploadedFile.file.size, 0);
-            for (const file of Array.from(files)) {
+            for (const file of verkleinert) {
                 if (nextSize + file.size > MAX_ATTACHMENT_BYTES) {
                     setError(`Anhänge dürfen zusammen höchstens ${formatFileSize(MAX_ATTACHMENT_BYTES)} groß sein.`);
                     continue;
@@ -647,11 +716,11 @@ export function EmailComposeForm({
             const response = await fetch(downloadUrl);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const blob = await response.blob();
-            const file = new File(
+            const file = await komprimiereBildFuerEmail(new File(
                 [blob],
                 document.originalDateiname,
                 { type: blob.type || document.dateityp || 'application/octet-stream' }
-            );
+            ));
 
             setUploadedFiles(previous => {
                 const currentSize = previous.reduce((sum, uploadedFile) => sum + uploadedFile.file.size, 0);
@@ -677,7 +746,7 @@ export function EmailComposeForm({
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        handleFileUpload(e.dataTransfer.files);
+        void handleFileUpload(e.dataTransfer.files);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -1290,16 +1359,26 @@ export function EmailComposeForm({
                                 className="border-2 border-dashed border-slate-300 rounded-xl p-5 text-center hover:border-rose-400 hover:bg-rose-50/50 transition-colors cursor-pointer"
                                 onClick={() => fileInputRef.current?.click()}
                             >
-                                <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
-                                <p className="text-sm font-medium text-slate-700">Dateien hier ablegen oder klicken</p>
-                                <p className="text-xs text-slate-500 mt-1">PDFs, Bilder und weitere Dokumente werden direkt als Anhang hinzugefügt.</p>
+                                {komprimiereAnhaenge ? (
+                                    <>
+                                        <Loader2 className="w-8 h-8 mx-auto text-rose-500 mb-2 animate-spin" />
+                                        <p className="text-sm font-medium text-slate-700">Fotos werden verkleinert …</p>
+                                        <p className="text-xs text-slate-500 mt-1">Große Bilder passen sonst nicht in die E-Mail.</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+                                        <p className="text-sm font-medium text-slate-700">Dateien hier ablegen oder klicken</p>
+                                        <p className="text-xs text-slate-500 mt-1">PDFs, Bilder und weitere Dokumente werden direkt als Anhang hinzugefügt. Große Fotos verkleinern wir automatisch.</p>
+                                    </>
+                                )}
                             </div>
                             <input
                                 ref={fileInputRef}
                                 type="file"
                                 multiple
                                 className="hidden"
-                                onChange={(e) => handleFileUpload(e.target.files)}
+                                onChange={(e) => void handleFileUpload(e.target.files)}
                             />
 
                             <div className="space-y-1">

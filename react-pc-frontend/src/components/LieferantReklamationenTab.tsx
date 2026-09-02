@@ -13,6 +13,19 @@ import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 import type { LieferantReklamation } from '../types';
 import { prependUniqueById } from '../lib/optimisticUploads';
+import { komprimiereBilderFuerEmail } from '../lib/bildKomprimierung';
+
+/**
+ * Link auf die Datei eines Lieferanten-Dokuments.
+ *
+ * <p>Bewusst nicht `/api/dokumente/{name}`: Dieser Endpunkt sucht nur in den
+ * Projekt- und Anfrage-Ordnern. Lieferanten-Dokumente liegen woanders (u. a.
+ * unter `uploads/lieferanten/`) und werden über ihre ID ausgeliefert – sonst
+ * antwortet der Server mit "Datei nicht gefunden".</p>
+ */
+export function lieferantDokumentUrl(lieferantId: number, dokumentId: number): string {
+    return `/api/lieferanten/${lieferantId}/dokumente/${dokumentId}/download`;
+}
 
 /** Vorbereitete Reklamations-Mail, die im Compose-Formular geöffnet wird. */
 interface ReklamationsMail {
@@ -148,8 +161,11 @@ export function LieferantReklamationenTab({ lieferantId, lieferantName, lieferan
      * werden geladen und als Anhänge ins Compose-Formular gehängt, dazu ein
      * vorformulierter Text. Empfänger ist die `info@`-Adresse des Lieferanten.
      *
-     * <p>Angehängt werden bewusst die Original-Fotos, nicht die kleinen Vorschauen:
-     * Der Lieferant soll den Mangel auf dem Bild auch erkennen können.</p>
+     * <p>Angehängt werden die Fotos in voller Ansicht, nicht die briefmarkengroßen
+     * Vorschauen: Der Lieferant soll den Mangel auf dem Bild auch erkennen können.
+     * Vor dem Anhängen laufen sie durch {@link komprimiereBilderFuerEmail} – vier
+     * Handyfotos im Original wären zusammen über 20 MB, und so viel nimmt unser
+     * Mailserver gar nicht erst an.</p>
      */
     const handlePerEmailMelden = async (rek: LieferantReklamation) => {
         const empfaenger = waehleInfoEmpfaenger(lieferantEmails);
@@ -163,13 +179,18 @@ export function LieferantReklamationenTab({ lieferantId, lieferantName, lieferan
             const anhaenge: File[] = [];
             const fehlgeschlagen: string[] = [];
 
-            const bilder = await Promise.all(
+            // Herunterladen parallel (wartet nur auf das Netz), Verkleinern danach
+            // nacheinander – siehe komprimiereBilderFuerEmail: gleichzeitig
+            // dekodierte Fotos fressen den Arbeitsspeicher.
+            const geladen = await Promise.all(
                 (rek.bilder || []).map(bild => ladeAlsAnhang(bild.url, bild.originalDateiname))
             );
-            bilder.forEach((datei, index) => {
-                if (datei) anhaenge.push(datei);
-                else fehlgeschlagen.push(rek.bilder[index].originalDateiname);
+            geladen.forEach((datei, index) => {
+                if (!datei) fehlgeschlagen.push(rek.bilder[index].originalDateiname);
             });
+            const bilder = await komprimiereBilderFuerEmail(
+                geladen.filter((datei): datei is File => datei !== null));
+            anhaenge.push(...bilder);
             const bilderAngehaengt = anhaenge.length;
 
             // Gleiche Bedingung wie bei der Verlinkung in der Karte: Nur ein wirklich
@@ -179,7 +200,7 @@ export function LieferantReklamationenTab({ lieferantId, lieferantName, lieferan
             if (rek.lieferscheinId && rek.lieferscheinDateiname) {
                 const name = rek.lieferscheinDateiname;
                 const lieferschein = await ladeAlsAnhang(
-                    `/api/dokumente/${encodeURIComponent(name)}?download=true`, name);
+                    lieferantDokumentUrl(lieferantId, rek.lieferscheinId), name);
                 if (lieferschein) {
                     anhaenge.push(lieferschein);
                     lieferscheinAngehaengt = true;
@@ -360,7 +381,7 @@ export function LieferantReklamationenTab({ lieferantId, lieferantName, lieferan
                                             Lieferschein:
                                             {rek.lieferscheinId ? (
                                                 <a
-                                                    href={`/api/dokumente/${encodeURIComponent(rek.lieferscheinDateiname || '')}`}
+                                                    href={lieferantDokumentUrl(lieferantId, rek.lieferscheinId)}
                                                     target="_blank"
                                                     rel="noreferrer"
                                                     className="font-medium text-rose-600 hover:underline"

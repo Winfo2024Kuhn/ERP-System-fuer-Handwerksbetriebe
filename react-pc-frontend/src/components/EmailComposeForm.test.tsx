@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EmailComposeForm } from './EmailComposeForm';
+import { EmailComposeForm, MAX_ATTACHMENT_BYTES } from './EmailComposeForm';
 
 /**
  * Regressionstests fuer die Rueckfrage "E-Mail-Adresse speichern?".
@@ -436,5 +436,108 @@ describe('EmailComposeForm – Absender bei Geschaeftsdokumenten', () => {
         await waitFor(() =>
             expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
         );
+    });
+});
+
+/**
+ * Regressionstests für das Anhangslimit.
+ *
+ * Hintergrund: Das Formular rechnete mit den rohen Dateigrößen gegen die
+ * 20 MB des Mailservers. In der fertigen Nachricht sind Anhänge aber
+ * Base64-kodiert und damit gut ein Drittel größer – der Versand scheiterte
+ * beim Mailserver, obwohl das Formular grünes Licht gegeben hatte.
+ */
+describe('MAX_ATTACHMENT_BYTES', () => {
+    /** Base64 (4/3) plus ein Zeilenumbruch alle 76 Zeichen. */
+    const BASE64_FAKTOR = 4 / 3 * 1.014;
+
+    /** Vom Mailserver (T-Online) angenommene Nachrichtengröße. */
+    const SERVER_LIMIT = 20_000_000;
+
+    it('bleibt kodiert samt Text und Kopfzeilen unter dem Server-Limit', () => {
+        const kodiert = MAX_ATTACHMENT_BYTES * BASE64_FAKTOR;
+
+        expect(kodiert).toBeLessThan(SERVER_LIMIT);
+        // Kopfzeilen, HTML-Text, Signatur und ein zitiertes Original brauchen
+        // ebenfalls Platz – mindestens ein Megabyte muss frei bleiben.
+        expect(SERVER_LIMIT - kodiert).toBeGreaterThanOrEqual(1024 * 1024);
+    });
+
+    it('lässt trotzdem genug Platz für einen Satz Reklamationsfotos', () => {
+        // Ein verkleinertes Handyfoto liegt bei rund 1,2 MB, dazu ein Lieferschein.
+        expect(MAX_ATTACHMENT_BYTES).toBeGreaterThan(8 * 1024 * 1024);
+    });
+});
+
+/**
+ * Regressionstest für die Verdrahtung der Bildkomprimierung.
+ *
+ * Hintergrund: Die Komprimierung hing zunächst nur an den Wegen, die das
+ * Formular selbst anbietet. Anhänge, die ein Aufrufer mitgibt (etwa die Fotos
+ * einer Reklamation), wären ungeprüft im Original hinausgegangen.
+ *
+ * Getestet wird die echte Komprimierung, nicht ein Mock davon – jsdom kann
+ * weder Bilder dekodieren noch Canvas zeichnen, deshalb stehen dafür die
+ * gleichen Attrappen wie in bildKomprimierung.test.ts.
+ */
+describe('EmailComposeForm – Anhänge verkleinern', () => {
+    const VERKLEINERTE_BYTES = Math.round(1.2 * 1024 * 1024);
+
+    beforeEach(() => {
+        gesendeteRequests = [];
+        vi.stubGlobal('fetch', mockFetch());
+        vi.stubGlobal('createImageBitmap', vi.fn(async () => ({
+            width: 4000, height: 3000, close: () => { },
+        })));
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+            fillStyle: '', fillRect: vi.fn(), drawImage: vi.fn(),
+        } as unknown as CanvasRenderingContext2D);
+        HTMLCanvasElement.prototype.toBlob = function (rueckruf: BlobCallback) {
+            rueckruf(new Blob([new Uint8Array(VERKLEINERTE_BYTES)], { type: 'image/jpeg' }));
+        };
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('verkleinert auch Fotos, die von außen mitgegeben wurden', async () => {
+        const original = new File(['x'], 'baustelle.jpg', { type: 'image/jpeg' });
+        Object.defineProperty(original, 'size', { value: 6 * 1024 * 1024 });
+
+        render(
+            <EmailComposeForm
+                onClose={() => { }}
+                projektId={PROJEKT_ID}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Reklamation"
+                initialAttachments={[original]}
+            />
+        );
+
+        expect(await screen.findAllByText('baustelle.jpg')).not.toHaveLength(0);
+        // 6 MB Original -> 1,2 MB verkleinert; die Angabe kommt aus formatFileSize.
+        expect(await screen.findByText('1.2 MB')).toBeInTheDocument();
+        expect(screen.queryByText('6.0 MB')).not.toBeInTheDocument();
+    });
+
+    it('lässt einen PDF-Anhang unangetastet', async () => {
+        const lieferschein = new File(['x'], 'lieferschein.pdf', { type: 'application/pdf' });
+        Object.defineProperty(lieferschein, 'size', { value: 3 * 1024 * 1024 });
+
+        render(
+            <EmailComposeForm
+                onClose={() => { }}
+                projektId={PROJEKT_ID}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Reklamation"
+                initialAttachments={[lieferschein]}
+            />
+        );
+
+        expect(await screen.findAllByText('lieferschein.pdf')).not.toHaveLength(0);
+        expect(await screen.findByText('3.0 MB')).toBeInTheDocument();
+        expect(createImageBitmap).not.toHaveBeenCalled();
     });
 });

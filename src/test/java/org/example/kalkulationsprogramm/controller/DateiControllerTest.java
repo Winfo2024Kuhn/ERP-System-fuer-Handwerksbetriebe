@@ -117,6 +117,70 @@ class DateiControllerTest {
                         "inline; filename=\"" + filename + "\""));
     }
 
+    // Regression: Ein Lieferschein aus dem Reklamationen-Tab liegt gar nicht im
+    // Dokumenten-Ordner. Vorher schlug die RuntimeException aus dem
+    // DateiSpeicherService bis zum Servlet durch und der Nutzer sah "Fehler 500".
+    @org.junit.jupiter.api.Test
+    void meldet404StattServerfehlerWennDieDateiFehlt() throws Exception {
+        String dateiname = "Scan_2026-09-02T05-15-29-175Z.pdf";
+        when(dateiSpeicherService.ladeDokumentMetadaten(anyString()))
+                .thenThrow(new NotFoundException("nicht in der Datenbank"));
+        when(dateiSpeicherService.ladeDokumentAlsResource(dateiname))
+                .thenThrow(new RuntimeException("Datei nicht gefunden oder nicht lesbar: " + dateiname));
+
+        mockMvc.perform(get("/api/dokumente/" + dateiname))
+                .andExpect(status().isNotFound());
+    }
+
+    @org.junit.jupiter.api.Test
+    void meldet404WennDieDateiZumGespeichertenNamenFehlt() throws Exception {
+        String dateiname = "a266c9d7-0e34-4bb0-9ca6-1a61aa2d9997.pdf";
+        ProjektDokument doc = new ProjektDokument();
+        doc.setGespeicherterDateiname(dateiname);
+        when(dateiSpeicherService.ladeDokumentMetadaten(anyString())).thenReturn(doc);
+        when(dateiSpeicherService.ladeDokumentAlsResource(dateiname))
+                .thenThrow(new RuntimeException("Datei nicht gefunden oder nicht lesbar"));
+
+        mockMvc.perform(get("/api/dokumente/" + dateiname))
+                .andExpect(status().isNotFound());
+    }
+
+    // Ein Traversal-Versuch darf nicht als harmloser 404 durchgehen, sonst ist er
+    // im Monitoring nicht mehr von einem toten Link zu unterscheiden.
+    @org.junit.jupiter.api.Test
+    void reichtVerzeichnistraversalNichtAls404Durch() throws Exception {
+        String dateiname = "boese.pdf";
+        when(dateiSpeicherService.ladeDokumentMetadaten(anyString()))
+                .thenThrow(new NotFoundException("nicht in der Datenbank"));
+        when(dateiSpeicherService.ladeDokumentAlsResource(dateiname))
+                .thenThrow(new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt"));
+
+        try {
+            mockMvc.perform(get("/api/dokumente/" + dateiname));
+            org.junit.jupiter.api.Assertions.fail("SecurityException hätte durchschlagen müssen");
+        } catch (Exception ex) {
+            Throwable ursache = ex;
+            while (ursache != null && !(ursache instanceof SecurityException)) {
+                ursache = ursache.getCause();
+            }
+            org.junit.jupiter.api.Assertions.assertNotNull(ursache,
+                    "Erwartet wurde eine SecurityException, kein stiller 404");
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void meldet404WennWederGespeicherteNochAngefragteDateiExistiert() throws Exception {
+        String angefragt = "ca5b0c48-4000-412a-ad2c-a8c8ce62b533.jpg";
+        ProjektDokument doc = new ProjektDokument();
+        doc.setGespeicherterDateiname("a266c9d7-0e34-4bb0-9ca6-1a61aa2d9997.JPEG");
+        when(dateiSpeicherService.ladeDokumentMetadaten(anyString())).thenReturn(doc);
+        when(dateiSpeicherService.ladeDokumentAlsResource(anyString()))
+                .thenThrow(new RuntimeException("Datei nicht gefunden oder nicht lesbar"));
+
+        mockMvc.perform(get("/api/dokumente/" + angefragt))
+                .andExpect(status().isNotFound());
+    }
+
     @org.junit.jupiter.api.Test
     void fallsBackToRequestedFilenameWhenStoredFileMissing() throws Exception {
         String requested = "ca5b0c48-4000-412a-ad2c-a8c8ce62b533.jpg";
