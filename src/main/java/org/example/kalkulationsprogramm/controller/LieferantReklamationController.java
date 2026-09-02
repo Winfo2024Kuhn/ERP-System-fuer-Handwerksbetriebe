@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.dto.CreateReklamationRequest;
 import org.example.kalkulationsprogramm.dto.LieferantReklamationDto;
 import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.controller.LieferantenController.LieferantBildDto;
+import static org.example.kalkulationsprogramm.controller.LieferantenController.bildPfadSegment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -134,7 +135,8 @@ public class LieferantReklamationController {
             LieferantBildDto dto = new LieferantBildDto();
             dto.id = bild.getId();
             dto.originalDateiname = bild.getOriginalDateiname();
-            dto.url = "/api/lieferanten/bilder/file/" + bild.getGespeicherterDateiname();
+            dto.url = "/api/lieferanten/bilder/file/" + bildPfadSegment(bild.getGespeicherterDateiname());
+            dto.vorschauUrl = dto.url + "/vorschau";
             dto.erstelltAm = bild.getErstelltAm();
             if (mitarbeiter != null) {
                 dto.mitarbeiterVorname = mitarbeiter.getVorname();
@@ -195,7 +197,8 @@ public class LieferantReklamationController {
             LieferantBildDto img = new LieferantBildDto();
             img.id = b.getId();
             img.originalDateiname = b.getOriginalDateiname();
-            img.url = "/api/lieferanten/bilder/file/" + b.getGespeicherterDateiname();
+            img.url = "/api/lieferanten/bilder/file/" + bildPfadSegment(b.getGespeicherterDateiname());
+            img.vorschauUrl = img.url + "/vorschau";
             img.beschreibung = b.getBeschreibung();
             img.erstelltAm = b.getErstelltAm();
             if (b.getHochgeladenVon() != null) {

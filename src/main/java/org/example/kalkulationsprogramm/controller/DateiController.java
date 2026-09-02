@@ -1,9 +1,5 @@
 package org.example.kalkulationsprogramm.controller;
 
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
@@ -11,21 +7,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.Principal;
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReadParam;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.ImageInputStream;
 
 import org.example.kalkulationsprogramm.domain.Dokument;
 import org.example.kalkulationsprogramm.dto.OpenExternalResponse;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
+import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,36 +35,9 @@ import lombok.AllArgsConstructor;
 public class DateiController {
 
     private final DateiSpeicherService dateiSpeicherService;
+    private final BildVorschauService bildVorschauService;
 
     private static final Logger log = LoggerFactory.getLogger(DateiController.class);
-
-    private static final int THUMBNAIL_MAX_SIZE = 300;
-
-    /**
-     * Obergrenze für die Bildgröße (100 Megapixel). Größere Bilder stammen in aller Regel
-     * aus einem manipulierten Header und werden nicht dekodiert, damit ein einzelner
-     * Aufruf nicht den Speicher des Servers sprengt.
-     */
-    private static final long MAX_PIXEL_ANZAHL = 100_000_000L;
-
-    /**
-     * Maximale Anzahl gecachter Thumbnails. Bei ~15 KB pro JPEG bleibt der
-     * Speicherbedarf damit unter ~8 MB — der Cache kann also nicht unbegrenzt wachsen.
-     */
-    private static final int THUMBNAIL_CACHE_MAX_ENTRIES = 500;
-
-    /**
-     * LRU-Cache: Wird das Limit überschritten, fliegt der am längsten nicht
-     * angeforderte Eintrag raus. {@code synchronizedMap} weil {@link LinkedHashMap}
-     * selbst nicht threadsicher ist und schon Lesezugriffe die Zugriffsreihenfolge ändern.
-     */
-    private final Map<String, byte[]> thumbnailCache = Collections.synchronizedMap(
-            new LinkedHashMap<>(16, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
-                    return size() > THUMBNAIL_CACHE_MAX_ENTRIES;
-                }
-            });
 
     /**
      * Dieser Endpunkt liefert gespeicherte Bilder aus.
@@ -167,7 +129,7 @@ public class DateiController {
     @GetMapping("/api/dokumente/{dateiname:.+}/thumbnail")
     public ResponseEntity<byte[]> liefereThumbnail(@PathVariable String dateiname) {
         // Aus Cache liefern, falls vorhanden
-        byte[] cached = thumbnailCache.get(dateiname);
+        byte[] cached = bildVorschauService.ausCache(dateiname);
         if (cached != null) {
             return ResponseEntity.ok()
                     .contentType(MediaType.IMAGE_JPEG)
@@ -200,12 +162,11 @@ public class DateiController {
         }
 
         try {
-            byte[] jpegBytes = erzeugeThumbnail(resource);
+            byte[] jpegBytes = bildVorschauService.erzeugeUndCache(dateiname, resource);
             if (jpegBytes == null) {
                 // Format nicht lesbar – Original zurückgeben
                 return fallbackOriginal(resource, dateiname, contentType);
             }
-            thumbnailCache.put(dateiname, jpegBytes);
             return ResponseEntity.ok()
                     .contentType(MediaType.IMAGE_JPEG)
                     .cacheControl(CacheControl.maxAge(86400, TimeUnit.SECONDS).cachePrivate())
@@ -215,100 +176,6 @@ public class DateiController {
             log.warn("Thumbnail-Erzeugung fehlgeschlagen für {}: {}", dateiname, e.getMessage());
             return fallbackOriginal(resource, dateiname, contentType);
         }
-    }
-
-    /**
-     * Erzeugt das verkleinerte JPEG.
-     *
-     * <p>Entscheidend ist das Subsampling: Statt ein 12-Megapixel-Handyfoto erst
-     * vollständig in den Speicher zu dekodieren (~48 MB) und dann zu skalieren, liest
-     * der Decoder direkt nur jedes n-te Pixel. Das spart bei typischen Baustellenfotos
-     * grob Faktor 16 an CPU und Arbeitsspeicher und verhindert, dass ein einzelnes
-     * riesiges Bild den Server aus dem Speicher wirft.
-     *
-     * @return das JPEG oder {@code null}, wenn kein Reader das Format lesen kann
-     */
-    private byte[] erzeugeThumbnail(Resource resource) throws IOException {
-        try (InputStream is = resource.getInputStream();
-             ImageInputStream iis = ImageIO.createImageInputStream(is)) {
-
-            if (iis == null) {
-                return null;
-            }
-            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
-            if (!readers.hasNext()) {
-                return null;
-            }
-
-            ImageReader reader = readers.next();
-            try {
-                reader.setInput(iis);
-                int origWidth = reader.getWidth(0);
-                int origHeight = reader.getHeight(0);
-
-                // Absurd große Bilder gar nicht erst anfassen (manipulierter Header)
-                if ((long) origWidth * origHeight > MAX_PIXEL_ANZAHL) {
-                    log.warn("Bild zu groß für Thumbnail: {}x{} Pixel", origWidth, origHeight);
-                    return null;
-                }
-
-                // Nur jedes n-te Pixel dekodieren, solange das Ergebnis groß genug bleibt
-                int subsampling = Math.max(1, Math.min(
-                        origWidth / THUMBNAIL_MAX_SIZE,
-                        origHeight / THUMBNAIL_MAX_SIZE));
-                ImageReadParam param = reader.getDefaultReadParam();
-                if (subsampling > 1) {
-                    param.setSourceSubsampling(subsampling, subsampling, 0, 0);
-                }
-
-                BufferedImage bild = reader.read(0, param);
-                if (bild == null) {
-                    return null;
-                }
-
-                // Subsampling trifft die Zielgröße nur grob – Rest sauber herunterrechnen
-                if (bild.getWidth() > THUMBNAIL_MAX_SIZE || bild.getHeight() > THUMBNAIL_MAX_SIZE) {
-                    bild = skaliereAufZielgroesse(bild);
-                }
-                return convertToJpeg(bild);
-            } finally {
-                reader.dispose();
-            }
-        }
-    }
-
-    /** Skaliert auf max. {@link #THUMBNAIL_MAX_SIZE} px Kantenlänge, Seitenverhältnis bleibt erhalten. */
-    private BufferedImage skaliereAufZielgroesse(BufferedImage original) {
-        double scale = Math.min(
-                (double) THUMBNAIL_MAX_SIZE / original.getWidth(),
-                (double) THUMBNAIL_MAX_SIZE / original.getHeight());
-        int newWidth = Math.max(1, (int) Math.round(original.getWidth() * scale));
-        int newHeight = Math.max(1, (int) Math.round(original.getHeight() * scale));
-
-        BufferedImage thumbnail = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g2d = thumbnail.createGraphics();
-        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2d.drawImage(original, 0, 0, newWidth, newHeight, null);
-        g2d.dispose();
-        return thumbnail;
-    }
-
-    private byte[] convertToJpeg(BufferedImage image) throws IOException {
-        // Transparenz entfernen (JPEG unterstützt kein Alpha)
-        BufferedImage rgbImage = image;
-        if (image.getType() == BufferedImage.TYPE_INT_ARGB || image.getColorModel().hasAlpha()) {
-            rgbImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
-            Graphics2D g = rgbImage.createGraphics();
-            g.setColor(java.awt.Color.WHITE);
-            g.fillRect(0, 0, image.getWidth(), image.getHeight());
-            g.drawImage(image, 0, 0, null);
-            g.dispose();
-        }
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ImageIO.write(rgbImage, "jpg", baos);
-        return baos.toByteArray();
     }
 
     private ResponseEntity<byte[]> fallbackOriginal(Resource resource, String dateiname, String contentType) {

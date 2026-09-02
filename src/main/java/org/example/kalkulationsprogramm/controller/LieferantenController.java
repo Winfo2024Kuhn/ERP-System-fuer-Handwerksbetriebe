@@ -36,6 +36,7 @@ import org.example.kalkulationsprogramm.mapper.LieferantMapper;
 import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.LieferantArtikelpreisService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantEmailResolver;
@@ -75,6 +76,7 @@ import lombok.RequiredArgsConstructor;
 public class LieferantenController {
 
     private final LieferantenRepository lieferantenRepository;
+    private final BildVorschauService bildVorschauService;
     private final SentMailArchiver sentMailArchiver;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final org.example.kalkulationsprogramm.repository.KostenstelleRepository kostenstelleRepository;
@@ -1100,7 +1102,8 @@ public class LieferantenController {
             LieferantBildDto dto = new LieferantBildDto();
             dto.id = b.getId();
             dto.originalDateiname = b.getOriginalDateiname();
-            dto.url = "/api/lieferanten/bilder/file/" + b.getGespeicherterDateiname();
+            dto.url = "/api/lieferanten/bilder/file/" + bildPfadSegment(b.getGespeicherterDateiname());
+            dto.vorschauUrl = dto.url + "/vorschau";
             dto.beschreibung = b.getBeschreibung();
             dto.erstelltAm = b.getErstelltAm();
             if (b.getHochgeladenVon() != null) {
@@ -1120,10 +1123,8 @@ public class LieferantenController {
         }
         var bild = bildOpt.get();
         try {
-            java.nio.file.Path path = java.nio.file.Paths.get("uploads", "lieferanten",
-                    bild.getLieferant().getId().toString(), "bilder", bild.getGespeicherterDateiname());
-
-            if (!java.nio.file.Files.exists(path)) {
+            Path path = loeseBildPfadAuf(bild);
+            if (path == null || !java.nio.file.Files.exists(path)) {
                 return ResponseEntity.notFound().build();
             }
 
@@ -1139,6 +1140,121 @@ public class LieferantenController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    /**
+     * Liefert eine verkleinerte Vorschau (max. 300 px) eines Lieferantenbildes.
+     *
+     * <p>Reklamationsfotos kommen direkt vom Handy und sind gern mehrere Megabyte groß.
+     * In der Galerie werden sie aber nur briefmarkengroß angezeigt — dort das Original
+     * zu laden, lässt die Seite unnötig lange hängen. Beim ersten Aufruf wird die
+     * Vorschau erzeugt und danach aus dem Cache bedient.</p>
+     */
+    @GetMapping("/bilder/file/{dateiname:.+}/vorschau")
+    public ResponseEntity<byte[]> getBildVorschau(@PathVariable String dateiname) {
+        var bildOpt = bildRepository.findByGespeicherterDateiname(dateiname);
+        if (bildOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        var bild = bildOpt.get();
+
+        // Der Dateiname allein ist als Cache-Schlüssel eindeutig (UUID-Präfix beim Upload),
+        // durch das Präfix kollidiert er aber auch nicht mit Dokument-Thumbnails.
+        String cacheKey = "lieferant-bild:" + dateiname;
+        byte[] cached = bildVorschauService.ausCache(cacheKey);
+        if (cached != null) {
+            return vorschauAntwort(cached, dateiname);
+        }
+
+        Path path = loeseBildPfadAuf(bild);
+        if (path == null || !java.nio.file.Files.exists(path)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        try {
+            var resource = new org.springframework.core.io.UrlResource(path.toUri());
+            byte[] vorschau = bildVorschauService.erzeugeUndCache(cacheKey, resource);
+            if (vorschau == null) {
+                // Format nicht lesbar (z.B. HEIC ohne Plugin) – dann eben das Original
+                return getBildDateiAlsBytes(path, dateiname);
+            }
+            return vorschauAntwort(vorschau, dateiname);
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Kodiert den gespeicherten Dateinamen für die Verwendung in einer Bild-URL.
+     *
+     * <p>Der Name enthält den Originalnamen vom Handy. Zeichen wie {@code #}, {@code ?}
+     * oder {@code %} würden die URL sonst zerlegen – beim Vorschau-Link besonders
+     * ärgerlich, weil das angehängte {@code /vorschau} dann im Query-Teil landet und
+     * der Browser stillschweigend das große Originalbild lädt.</p>
+     */
+    static String bildPfadSegment(String gespeicherterDateiname) {
+        return org.springframework.web.util.UriUtils.encodePathSegment(
+                gespeicherterDateiname, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Bestimmt den Speicherort eines Lieferantenbildes und stellt sicher, dass er
+     * im Bilder-Ordner des Lieferanten liegt.
+     *
+     * <p>Der Dateiname stammt aus der Datenbank, ist damit aber nicht automatisch
+     * harmlos: Beim Upload wird der vom Gerät gemeldete Name nur bereinigt, und
+     * {@code StringUtils.cleanPath} behält führende {@code ../}-Elemente. Ohne diese
+     * Prüfung könnte ein so benanntes Bild Dateien außerhalb des Ordners ausliefern.</p>
+     *
+     * @return der geprüfte Pfad oder {@code null}, wenn er aus dem Ordner herausführt
+     */
+    private Path loeseBildPfadAuf(org.example.kalkulationsprogramm.domain.LieferantBild bild) {
+        Path ordner = Path.of("uploads", "lieferanten",
+                bild.getLieferant().getId().toString(), "bilder")
+                .toAbsolutePath().normalize();
+
+        // Nur den reinen Dateinamen verwenden – etwaige Pfadanteile fallen damit weg
+        Path dateiname = Path.of(bild.getGespeicherterDateiname()).getFileName();
+        if (dateiname == null) {
+            return null;
+        }
+
+        Path pfad = ordner.resolve(dateiname).normalize();
+        return pfad.startsWith(ordner) ? pfad : null;
+    }
+
+    private ResponseEntity<byte[]> vorschauAntwort(byte[] jpeg, String dateiname) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .cacheControl(org.springframework.http.CacheControl
+                        .maxAge(86400, java.util.concurrent.TimeUnit.SECONDS).cachePrivate())
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        inlineDisposition("vorschau_" + dateiname))
+                .body(jpeg);
+    }
+
+    private ResponseEntity<byte[]> getBildDateiAlsBytes(java.nio.file.Path path, String dateiname) throws IOException {
+        String contentType = java.nio.file.Files.probeContentType(path);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(
+                        contentType != null ? contentType : MediaType.APPLICATION_OCTET_STREAM_VALUE))
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        inlineDisposition(dateiname))
+                .body(java.nio.file.Files.readAllBytes(path));
+    }
+
+    /**
+     * Baut den {@code Content-Disposition}-Header.
+     *
+     * <p>Ein Anführungszeichen im Dateinamen würde den Header sonst zerreißen, deshalb
+     * die Kodierung über {@link org.springframework.http.ContentDisposition} – die kümmert
+     * sich zugleich um Umlaute, die in Handy-Dateinamen regelmäßig vorkommen.</p>
+     */
+    private String inlineDisposition(String dateiname) {
+        return org.springframework.http.ContentDisposition.inline()
+                .filename(dateiname, java.nio.charset.StandardCharsets.UTF_8)
+                .build()
+                .toString();
     }
 
     @PostMapping(value = "/{id}/bilder", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -1186,7 +1302,8 @@ public class LieferantenController {
             LieferantBildDto dto = new LieferantBildDto();
             dto.id = bild.getId();
             dto.originalDateiname = bild.getOriginalDateiname();
-            dto.url = "/api/lieferanten/bilder/file/" + bild.getGespeicherterDateiname();
+            dto.url = "/api/lieferanten/bilder/file/" + bildPfadSegment(bild.getGespeicherterDateiname());
+            dto.vorschauUrl = dto.url + "/vorschau";
             dto.beschreibung = bild.getBeschreibung();
             dto.erstelltAm = bild.getErstelltAm();
             dto.mitarbeiterVorname = mitarbeiter.getVorname();
@@ -1226,6 +1343,8 @@ public class LieferantenController {
         public Long id;
         public String originalDateiname;
         public String url;
+        /** Verkleinerte Vorschau (max. 300 px) – für Galerien und Listen, lädt deutlich schneller. */
+        public String vorschauUrl;
         public String beschreibung;
         public java.time.LocalDateTime erstelltAm;
         public String mitarbeiterVorname;

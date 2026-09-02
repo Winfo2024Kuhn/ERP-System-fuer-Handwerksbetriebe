@@ -226,6 +226,8 @@ export interface LieferantNotiz {
 export interface LieferantReklamationBild {
   id: number;
   url: string;
+  /** Verkleinerte Vorschau für die Galerie. Fehlt sie, wird auf `url` zurückgefallen. */
+  vorschauUrl?: string;
   originalDateiname: string;
 }
 

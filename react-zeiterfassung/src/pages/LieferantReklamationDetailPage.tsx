@@ -14,6 +14,8 @@ interface Reklamation {
     bilder: {
         id: number;
         url: string;
+        /** Verkleinerte Vorschau für die Galerie. Fehlt sie, wird auf `url` zurückgefallen. */
+        vorschauUrl?: string;
         originalDateiname: string;
     }[];
 }
@@ -154,7 +156,16 @@ export function LieferantReklamationDetailPage() {
                                 onClick={() => setViewerImage(img.url)}
                                 className="aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200 relative group cursor-pointer"
                             >
-                                <img src={img.url} alt="Reklamation" className="w-full h-full object-cover" />
+                                {/* Kleine Vorschau statt Originalfoto – Handybilder sind mehrere MB
+                                    groß, hier aber nur briefmarkengroß zu sehen. Beim Antippen
+                                    öffnet weiterhin das Original. */}
+                                <img
+                                    src={img.vorschauUrl || img.url}
+                                    alt={`Reklamationsbild: ${img.originalDateiname}`}
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="w-full h-full object-cover"
+                                />
                             </div>
                         ))}
                     </div>

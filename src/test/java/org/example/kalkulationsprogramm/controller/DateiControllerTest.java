@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
+import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -16,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -27,6 +29,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DateiController.class)
+// Echter BildVorschauService statt Mock: Die Thumbnail-Tests unten prüfen die
+// tatsächlich erzeugten Bilddaten (Größe, Format) – mit einem Mock würden sie nichts messen.
+@Import(BildVorschauService.class)
 @AutoConfigureMockMvc(addFilters = false)
 class DateiControllerTest {
 
@@ -191,7 +196,7 @@ class DateiControllerTest {
     }
 
     // ============== THUMBNAILS ==============
-    // Hinweis: Der Thumbnail-Cache lebt auf Controller-Instanz-Ebene und wird von allen
+    // Hinweis: Der Thumbnail-Cache lebt im BildVorschauService-Bean und wird von allen
     // Tests dieser Klasse geteilt. Jeder Test nutzt daher einen eigenen Dateinamen.
 
     /** Erzeugt ein echtes JPEG der gewünschten Größe (einfarbig, keine Personendaten). */

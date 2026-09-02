@@ -1,20 +1,109 @@
+/* eslint-disable react-refresh/only-export-components -- baueMailText ist reine Textlogik und wird separat getestet (siehe EmailComposeForm.tsx, gleiches Muster) */
 import { useEffect, useState } from "react";
-import { AlertTriangle, Calendar, FileText, User, CheckCircle, Trash, Plus } from "lucide-react";
+import { AlertTriangle, Calendar, FileText, User, CheckCircle, Trash, Plus, Mail, Loader2 } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { ImageViewer } from "./ui/image-viewer";
 import { CreateReklamationModal } from "./CreateReklamationModal";
+import { EmailComposeModal } from "./EmailComposeModal";
+import { MAX_ATTACHMENT_BYTES, formatFileSize } from "./EmailComposeForm";
+import { escapeHtml } from "./emailContentFrameUtils";
+import { waehleInfoEmpfaenger } from '../lib/emailAddress';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 import type { LieferantReklamation } from '../types';
 import { prependUniqueById } from '../lib/optimisticUploads';
 
+/** Vorbereitete Reklamations-Mail, die im Compose-Formular geöffnet wird. */
+interface ReklamationsMail {
+    empfaenger: string;
+    betreff: string;
+    text: string;
+    anhaenge: File[];
+}
+
+/**
+ * Lädt eine Datei vom Server und verpackt sie als {@link File} für den E-Mail-Anhang.
+ * @returns die Datei oder `null`, wenn sie nicht geladen werden konnte
+ */
+async function ladeAlsAnhang(url: string, dateiname: string): Promise<File | null> {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        return new File([blob], dateiname, { type: blob.type || 'application/octet-stream' });
+    } catch (err) {
+        console.error(`Anhang "${dateiname}" konnte nicht geladen werden:`, err);
+        return null;
+    }
+}
+
+/**
+ * Baut Betreff und vorformulierten Text der Reklamations-Mail.
+ *
+ * @param lieferscheinAngehaengt ob der Lieferschein tatsächlich als Anhang dranhängt.
+ *        Konnte er nicht geladen werden, darf der Text ihn auch nicht ankündigen –
+ *        sonst sucht der Lieferant nach einem Anhang, den es nicht gibt.
+ * @param bilderAngehaengt Anzahl der tatsächlich angehängten Fotos
+ */
+export function baueMailText(
+    rek: LieferantReklamation,
+    lieferscheinAngehaengt: boolean,
+    bilderAngehaengt: number,
+): { betreff: string; text: string } {
+    const lieferschein = rek.lieferscheinNummer || rek.lieferscheinDateiname;
+    const datum = new Date(rek.erstelltAm).toLocaleDateString('de-DE');
+
+    const betreff = lieferschein
+        ? `Reklamation zu Lieferschein ${lieferschein}`
+        : `Reklamation vom ${datum}`;
+
+    const fotoHinweis = bilderAngehaengt === 1
+        ? 'unser Foto dazu hängt an dieser E-Mail an'
+        : `unsere ${bilderAngehaengt} Fotos dazu hängen an dieser E-Mail an`;
+
+    let lieferscheinZeile = '';
+    if (lieferschein && lieferscheinAngehaengt) {
+        lieferscheinZeile = bilderAngehaengt > 0
+            ? `<p>Es geht um den Lieferschein <strong>${escapeHtml(lieferschein)}</strong> – er hängt zusammen mit den Fotos an dieser E-Mail an.</p>`
+            : `<p>Es geht um den Lieferschein <strong>${escapeHtml(lieferschein)}</strong>. Er hängt an dieser E-Mail an.</p>`;
+    } else if (lieferschein) {
+        lieferscheinZeile = bilderAngehaengt > 0
+            ? `<p>Es geht um den Lieferschein <strong>${escapeHtml(lieferschein)}</strong>, ${fotoHinweis}.</p>`
+            : `<p>Es geht um den Lieferschein <strong>${escapeHtml(lieferschein)}</strong>.</p>`;
+    } else if (bilderAngehaengt > 0) {
+        lieferscheinZeile = `<p>Dazu ${bilderAngehaengt === 1 ? 'haben wir ein Foto angehängt' : `haben wir ${bilderAngehaengt} Fotos angehängt`}.</p>`;
+    }
+
+    // Die vor Ort erfasste Beschreibung als Startpunkt einsetzen – ergänzt wird
+    // sie direkt im Compose-Formular, dort steht der Cursor bereits im Text.
+    const beschreibung = (rek.beschreibung || '').trim();
+    const beschreibungsBlock = beschreibung
+        ? `<p><strong>Das ist uns aufgefallen:</strong><br>${escapeHtml(beschreibung).replace(/\n/g, '<br>')}</p>`
+        : '';
+
+    const text = [
+        `<p>Guten Tag,</p>`,
+        `<p>bei einer Lieferung von Ihnen gibt es leider etwas zu beanstanden.</p>`,
+        beschreibungsBlock,
+        lieferscheinZeile,
+        `<p><strong>Bitte hier noch ergänzen, woran es genau liegt:</strong><br>&nbsp;</p>`,
+        `<p>Bitte sagen Sie uns kurz Bescheid, wie wir das regeln.</p>`,
+        `<p>Vielen Dank und viele Grüße</p>`,
+    ].filter(Boolean).join('');
+
+    return { betreff, text };
+}
 
 interface LieferantReklamationenTabProps {
     lieferantId: number;
+    /** Name des Lieferanten – nur für die Anzeige im Mail-Dialog. */
+    lieferantName?: string;
+    /** Hinterlegte Adressen. Die Mail geht an `info@`, sonst an die erste davon. */
+    lieferantEmails?: string[];
 }
 
-export function LieferantReklamationenTab({ lieferantId }: LieferantReklamationenTabProps) {
+export function LieferantReklamationenTab({ lieferantId, lieferantName, lieferantEmails }: LieferantReklamationenTabProps) {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [reklamationen, setReklamationen] = useState<LieferantReklamation[]>([]);
@@ -25,6 +114,10 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
 
     // Create Modal State
     const [createModalOpen, setCreateModalOpen] = useState(false);
+
+    // E-Mail-Versand: vorbereitete Mail und die Reklamation, deren Anhänge gerade laden
+    const [reklamationsMail, setReklamationsMail] = useState<ReklamationsMail | null>(null);
+    const [mailWirdVorbereitetId, setMailWirdVorbereitetId] = useState<number | null>(null);
 
     const loadData = async () => {
         setLoading(true);
@@ -48,6 +141,72 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
     const handleImageClick = (rek: LieferantReklamation, clickedIndex: number) => {
         const images = rek.bilder.map(b => ({ url: b.url, name: b.originalDateiname }));
         setReklamationBildViewer({ images, startIndex: clickedIndex });
+    };
+
+    /**
+     * Bereitet die Reklamations-Mail vor: Alle Fotos und der verlinkte Lieferschein
+     * werden geladen und als Anhänge ins Compose-Formular gehängt, dazu ein
+     * vorformulierter Text. Empfänger ist die `info@`-Adresse des Lieferanten.
+     *
+     * <p>Angehängt werden bewusst die Original-Fotos, nicht die kleinen Vorschauen:
+     * Der Lieferant soll den Mangel auf dem Bild auch erkennen können.</p>
+     */
+    const handlePerEmailMelden = async (rek: LieferantReklamation) => {
+        const empfaenger = waehleInfoEmpfaenger(lieferantEmails);
+        if (!empfaenger) {
+            toast.error("Für diesen Lieferanten ist keine E-Mail-Adresse hinterlegt.");
+            return;
+        }
+
+        setMailWirdVorbereitetId(rek.id);
+        try {
+            const anhaenge: File[] = [];
+            const fehlgeschlagen: string[] = [];
+
+            const bilder = await Promise.all(
+                (rek.bilder || []).map(bild => ladeAlsAnhang(bild.url, bild.originalDateiname))
+            );
+            bilder.forEach((datei, index) => {
+                if (datei) anhaenge.push(datei);
+                else fehlgeschlagen.push(rek.bilder[index].originalDateiname);
+            });
+            const bilderAngehaengt = anhaenge.length;
+
+            // Gleiche Bedingung wie bei der Verlinkung in der Karte: Nur ein wirklich
+            // verknüpfter Lieferschein wird geholt, sonst gäbe es einen Fehler-Toast
+            // für einen Anhang, den die Oberfläche gar nicht anbietet.
+            let lieferscheinAngehaengt = false;
+            if (rek.lieferscheinId && rek.lieferscheinDateiname) {
+                const name = rek.lieferscheinDateiname;
+                const lieferschein = await ladeAlsAnhang(
+                    `/api/dokumente/${encodeURIComponent(name)}?download=true`, name);
+                if (lieferschein) {
+                    anhaenge.push(lieferschein);
+                    lieferscheinAngehaengt = true;
+                } else {
+                    fehlgeschlagen.push(name);
+                }
+            }
+
+            if (fehlgeschlagen.length > 0) {
+                toast.error(`Nicht angehängt werden konnte: ${fehlgeschlagen.join(', ')}`);
+            }
+
+            // Der Versand würde sonst erst im letzten Moment scheitern. Die Anhänge
+            // lassen sich im Formular einzeln entfernen, deshalb nur ein Hinweis.
+            const gesamtGroesse = anhaenge.reduce((summe, datei) => summe + datei.size, 0);
+            if (gesamtGroesse > MAX_ATTACHMENT_BYTES) {
+                toast.error(
+                    `Die Anhänge sind zusammen ${formatFileSize(gesamtGroesse)} groß. `
+                    + `Erlaubt sind ${formatFileSize(MAX_ATTACHMENT_BYTES)} – bitte einzelne Bilder entfernen.`
+                );
+            }
+
+            const { betreff, text } = baueMailText(rek, lieferscheinAngehaengt, bilderAngehaengt);
+            setReklamationsMail({ empfaenger, betreff, text, anhaenge });
+        } finally {
+            setMailWirdVorbereitetId(null);
+        }
     };
 
     const handleComplete = async (id: number) => {
@@ -155,17 +314,35 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
                                         </h3>
                                     </div>
 
-                                    {rek.status !== 'ABGESCHLOSSEN' && (
+                                    <div className="flex items-center gap-2 mr-8">
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => handleComplete(rek.id)}
-                                            className="text-slate-600 hover:text-green-600 hover:bg-green-50 border-slate-200 hover:border-green-200 mr-8"
+                                            onClick={() => handlePerEmailMelden(rek)}
+                                            disabled={mailWirdVorbereitetId === rek.id}
+                                            className="border-rose-300 text-rose-700 hover:bg-rose-50 cursor-pointer"
+                                            title="Fotos und Lieferschein als E-Mail an den Lieferanten schicken"
                                         >
-                                            <CheckCircle className="w-4 h-4 mr-2" />
-                                            Abschließen
+                                            {mailWirdVorbereitetId === rek.id ? (
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            ) : (
+                                                <Mail className="w-4 h-4 mr-2" />
+                                            )}
+                                            {mailWirdVorbereitetId === rek.id ? 'Wird vorbereitet…' : 'Per E-Mail melden'}
                                         </Button>
-                                    )}
+
+                                        {rek.status !== 'ABGESCHLOSSEN' && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleComplete(rek.id)}
+                                                className="text-slate-600 hover:text-green-600 hover:bg-green-50 border-slate-200 hover:border-green-200 cursor-pointer"
+                                            >
+                                                <CheckCircle className="w-4 h-4 mr-2" />
+                                                Abschließen
+                                            </Button>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <p className="text-slate-700 whitespace-pre-wrap bg-slate-50 p-3 rounded-lg border border-slate-100">
@@ -209,7 +386,16 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
                                                 onClick={() => handleImageClick(rek, idx)}
                                                 className="block relative aspect-square rounded-lg overflow-hidden border border-slate-200 hover:border-rose-300 transition-colors group cursor-pointer"
                                             >
-                                                <img src={img.url} alt="Reklamationsbild" className="w-full h-full object-cover" />
+                                                {/* Kleine Vorschau statt Originalfoto – Handybilder sind
+                                                    mehrere MB groß, hier aber nur briefmarkengroß zu sehen.
+                                                    In der Großansicht kommt weiter das Original. */}
+                                                <img
+                                                    src={img.vorschauUrl || img.url}
+                                                    alt={`Reklamationsbild ${idx + 1} von ${rek.bilder.length}: ${img.originalDateiname}`}
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    className="w-full h-full object-cover"
+                                                />
                                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                                                     <div className="bg-white/90 rounded-full p-2 shadow-sm">
                                                         <FileText className="w-4 h-4 text-slate-700" />
@@ -232,6 +418,21 @@ export function LieferantReklamationenTab({ lieferantId }: LieferantReklamatione
                 images={reklamationBildViewer?.images}
                 startIndex={reklamationBildViewer?.startIndex}
             />
+
+            {reklamationsMail && (
+                <EmailComposeModal
+                    isOpen
+                    onClose={() => setReklamationsMail(null)}
+                    initialRecipient={reklamationsMail.empfaenger}
+                    initialSubject={reklamationsMail.betreff}
+                    initialBody={reklamationsMail.text}
+                    initialAttachments={reklamationsMail.anhaenge}
+                    onSuccess={() => {
+                        setReklamationsMail(null);
+                        toast.success(`Reklamation an ${lieferantName || 'den Lieferanten'} verschickt.`);
+                    }}
+                />
+            )}
 
             <CreateReklamationModal
                 isOpen={createModalOpen}

@@ -6,6 +6,7 @@ import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { cn } from "../lib/utils";
+import { extractEmailAddress, infoAdresseZuDomain } from "../lib/emailAddress";
 import type { Lieferant, LieferantDetail } from "../types";
 import { EmailsTab } from "../components/EmailsTab";
 import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
@@ -242,6 +243,8 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     <div className="absolute inset-0 overflow-y-auto pr-2">
                         <LieferantReklamationenTab
                             lieferantId={lieferant.id as number}
+                            lieferantName={lieferant.lieferantenname}
+                            lieferantEmails={lieferant.kundenEmails}
                         />
                     </div>
                 )}
@@ -832,6 +835,37 @@ function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; o
     );
 }
 
+/**
+ * Ergänzt die Adressliste um eine neue Adresse – und hängt die allgemeine
+ * `info@`-Adresse derselben Domain mit an, falls sie noch fehlt.
+ *
+ * Trägt jemand also `bestellung@meier.de` ein, steht danach auch `info@meier.de`
+ * zur Auswahl. Grund: An die Zentrale gehen Reklamationen und allgemeine Post,
+ * und im Alltag denkt beim Anlegen eines Lieferanten niemand daran, sie separat
+ * nachzutragen. Sichtbar als Chip in der Liste – wer sie nicht will, entfernt sie.
+ *
+ * Die eingetragene Adresse bleibt bewusst vorn: Die erste Adresse der Liste wird
+ * an anderer Stelle als Standard-Empfänger vorbelegt, und das soll die Adresse
+ * sein, die der Benutzer selbst gewählt hat – nicht die automatisch ergänzte.
+ */
+function mitInfoAdresse(vorhandene: string[] | undefined, neueAdresse: string): string[] {
+    const liste = [...(vorhandene || [])];
+    const bereitsEnthalten = (adresse: string) =>
+        liste.some(e => extractEmailAddress(e).toLowerCase() === adresse.toLowerCase());
+
+    const neu = neueAdresse.trim();
+    if (!neu) return liste;
+
+    if (!bereitsEnthalten(extractEmailAddress(neu))) {
+        liste.push(neu);
+    }
+    const infoAdresse = infoAdresseZuDomain(neu);
+    if (infoAdresse && !bereitsEnthalten(infoAdresse)) {
+        liste.push(infoAdresse);
+    }
+    return liste;
+}
+
 function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; onClose: () => void; onSave: (l: Lieferant) => void }) {
     const [formData, setFormData] = useState<Lieferant>({ ...lieferant });
     const [newEmail, setNewEmail] = useState("");
@@ -843,12 +877,7 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
 
     const addEmail = () => {
         if (!newEmail.trim()) return;
-        const current = formData.kundenEmails || [];
-        if (current.includes(newEmail.trim())) {
-            setNewEmail("");
-            return;
-        }
-        setFormData(prev => ({ ...prev, kundenEmails: [...current, newEmail.trim()] }));
+        setFormData(prev => ({ ...prev, kundenEmails: mitInfoAdresse(prev.kundenEmails, newEmail) }));
         setNewEmail("");
     };
 
@@ -1074,11 +1103,7 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                         // Wenn noch Text im E-Mail-Feld steht, diesen automatisch hinzufügen
                         const finalData = { ...formData };
                         if (newEmail.trim()) {
-                            const current = finalData.kundenEmails || [];
-                            // Nur hinzufügen wenn noch nicht vorhanden
-                            if (!current.includes(newEmail.trim())) {
-                                finalData.kundenEmails = [...current, newEmail.trim()];
-                            }
+                            finalData.kundenEmails = mitInfoAdresse(finalData.kundenEmails, newEmail);
                         }
                         onSave(finalData);
                     }} className="bg-rose-600 hover:bg-rose-700 text-white">Speichern</Button>

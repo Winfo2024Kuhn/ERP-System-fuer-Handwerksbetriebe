@@ -23,9 +23,10 @@ interface UploadedFile {
     sourceDokumentId?: number;
 }
 
-const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+/** Obergrenze für alle Anhänge einer E-Mail zusammen. */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
-const formatFileSize = (bytes: number): string => {
+export const formatFileSize = (bytes: number): string => {
     if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };

@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantBildRepository;
+import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.LieferantArtikelpreisService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantEmailResolver;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -49,6 +51,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(LieferantenController.class)
+// Echter BildVorschauService statt Mock: Die Vorschau-Tests unten pruefen die
+// tatsaechlich erzeugten Bilddaten – mit einem Mock wuerden sie nichts messen.
+@Import(BildVorschauService.class)
 @AutoConfigureMockMvc(addFilters = false)
 class LieferantenControllerTest {
 
@@ -265,5 +270,143 @@ class LieferantenControllerTest {
 
     mockMvc.perform(get("/api/lieferanten/42/dokumente/8/download"))
         .andExpect(status().isNotFound());
+  }
+
+  // ============== VORSCHAUBILDER ==============
+  // Hinweis: Der Endpunkt loest den Bilder-Ordner relativ zum Arbeitsverzeichnis auf.
+  // Die Tests legen ihre Dateien deshalb unter einer bewusst unrealistischen
+  // Lieferanten-ID ab, damit sie auf keinen Fall im Ordner eines echten Lieferanten
+  // landen, und raeumen alles wieder weg.
+
+  private static final long TEST_LIEFERANT_ID = 999_000_042L;
+
+  /** Loescht die im Test angelegte Bilddatei samt der leeren Ordner darueber. */
+  private void raeumeTestBildOrdnerAuf(String dateiname) throws Exception {
+    Path bilder = Path.of("uploads", "lieferanten", String.valueOf(TEST_LIEFERANT_ID), "bilder");
+    if (dateiname != null) {
+      Files.deleteIfExists(bilder.resolve(dateiname));
+    }
+    Files.deleteIfExists(bilder);
+    Files.deleteIfExists(bilder.getParent());
+  }
+
+  /** Legt eine Bilddatei dort ab, wo der Vorschau-Endpunkt sie erwartet. */
+  private byte[] legeLieferantenBildAn(long lieferantId, String dateiname, int breite, int hoehe)
+      throws Exception {
+    java.awt.image.BufferedImage bild =
+        new java.awt.image.BufferedImage(breite, hoehe, java.awt.image.BufferedImage.TYPE_INT_RGB);
+    java.awt.Graphics2D g = bild.createGraphics();
+    g.setColor(java.awt.Color.GRAY);
+    g.fillRect(0, 0, breite, hoehe);
+    g.dispose();
+    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+    javax.imageio.ImageIO.write(bild, "jpg", out);
+    byte[] daten = out.toByteArray();
+
+    Path ziel = Path.of("uploads", "lieferanten", String.valueOf(lieferantId), "bilder", dateiname);
+    Files.createDirectories(ziel.getParent());
+    Files.write(ziel, daten);
+    return daten;
+  }
+
+  /**
+   * Meldet dem Repository ein Bild mit dem angegebenen gespeicherten Dateinamen.
+   * Der Lookup greift fuer jeden angefragten Namen – so laesst sich auch ein
+   * Datenbankwert testen, der sich nicht als Request-Pfad schreiben liesse.
+   */
+  private void registriereBild(String gespeicherterDateiname) {
+    Lieferanten lieferant = new Lieferanten();
+    lieferant.setId(TEST_LIEFERANT_ID);
+    var bild = new org.example.kalkulationsprogramm.domain.LieferantBild();
+    bild.setLieferant(lieferant);
+    bild.setGespeicherterDateiname(gespeicherterDateiname);
+    when(lieferantBildRepository.findByGespeicherterDateiname(any()))
+        .thenReturn(Optional.of(bild));
+  }
+
+  @Test
+  @DisplayName("Vorschau liefert ein verkleinertes JPEG statt des Originalfotos")
+  void vorschauVerkleinertDasBild() throws Exception {
+    String dateiname = "vorschau-test-" + java.util.UUID.randomUUID() + ".jpg";
+    byte[] original = legeLieferantenBildAn(TEST_LIEFERANT_ID, dateiname, 2000, 1500);
+    registriereBild(dateiname);
+
+    try {
+      byte[] vorschau = mockMvc.perform(get("/api/lieferanten/bilder/file/" + dateiname + "/vorschau"))
+          .andExpect(status().isOk())
+          .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+              .content().contentType(MediaType.IMAGE_JPEG))
+          // "private": Reklamationsfotos sind personenbezogen, kein geteilter Proxy-Cache
+          .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+              .header().string(org.springframework.http.HttpHeaders.CACHE_CONTROL,
+                  "max-age=86400, private"))
+          .andReturn().getResponse().getContentAsByteArray();
+
+      java.awt.image.BufferedImage verkleinert =
+          javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(vorschau));
+      org.assertj.core.api.Assertions.assertThat(verkleinert.getWidth()).isEqualTo(300);
+      org.assertj.core.api.Assertions.assertThat(verkleinert.getHeight()).isEqualTo(225);
+      org.assertj.core.api.Assertions.assertThat(vorschau.length).isLessThan(original.length);
+    } finally {
+      raeumeTestBildOrdnerAuf(dateiname);
+    }
+  }
+
+  @Test
+  @DisplayName("Vorschau meldet 404, wenn der Dateiname unbekannt ist")
+  void vorschauMeldet404BeiUnbekannterDatei() throws Exception {
+    when(lieferantBildRepository.findByGespeicherterDateiname(any())).thenReturn(Optional.empty());
+
+    mockMvc.perform(get("/api/lieferanten/bilder/file/gibtesnicht.jpg/vorschau"))
+        .andExpect(status().isNotFound());
+  }
+
+  /**
+   * Der Dateiname wird ausschliesslich ueber die Datenbank aufgeloest. Ein
+   * Traversal-Versuch findet dort keinen Treffer und kann damit keine Datei
+   * ausserhalb des Bilder-Ordners ausliefern.
+   */
+  @Test
+  @DisplayName("Vorschau blockiert Path-Traversal im Dateinamen")
+  void vorschauBlocktPathTraversal() throws Exception {
+    when(lieferantBildRepository.findByGespeicherterDateiname(any())).thenReturn(Optional.empty());
+
+    mockMvc.perform(get("/api/lieferanten/bilder/file/..%2F..%2Fapplication.properties/vorschau"))
+        .andExpect(status().isNotFound());
+  }
+
+  /**
+   * Regression: Der gespeicherte Dateiname stammt zwar aus der Datenbank, wird beim
+   * Upload aber nur von {@code StringUtils.cleanPath} bereinigt – und das behaelt
+   * fuehrende {@code ../}-Elemente. Ein so benanntes Bild darf keine Datei ausserhalb
+   * des Bilder-Ordners ausliefern.
+   *
+   * <p>Die Zieldatei liegt bewusst zwei Ebenen ueber dem Bilder-Ordner und existiert
+   * wirklich: Ohne die Absicherung in {@code loeseBildPfadAuf} wuerde der Endpunkt sie
+   * mit 200 samt Inhalt ausliefern. Der Request-Pfad selbst ist harmlos – geprueft wird
+   * ausschliesslich der Wert aus der Datenbank.</p>
+   */
+  @Test
+  @DisplayName("Vorschau liefert keine Datei ausserhalb des Bilder-Ordners aus")
+  void vorschauBlocktTraversalImGespeichertenDateinamen() throws Exception {
+    Path geheim = Path.of("uploads", "lieferanten", "geheim-testdatei.txt");
+    Files.createDirectories(geheim.getParent());
+    Files.writeString(geheim, "streng vertraulich");
+
+    // Vom Bilder-Ordner (uploads/lieferanten/<id>/bilder) zwei Ebenen hoch
+    String boesartig = "../../geheim-testdatei.txt";
+    registriereBild(boesartig);
+
+    try {
+      byte[] antwort = mockMvc.perform(
+          get("/api/lieferanten/bilder/file/harmlos.jpg/vorschau"))
+          .andExpect(status().isNotFound())
+          .andReturn().getResponse().getContentAsByteArray();
+
+      org.assertj.core.api.Assertions.assertThat(new String(antwort))
+          .doesNotContain("streng vertraulich");
+    } finally {
+      Files.deleteIfExists(geheim);
+    }
   }
 }

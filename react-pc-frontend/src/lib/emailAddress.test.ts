@@ -4,6 +4,9 @@ import {
     extractDisplayName,
     formatRecipient,
     isSingleEmailAddress,
+    infoAdresseZuDomain,
+    istInfoAdresse,
+    waehleInfoEmpfaenger,
 } from './emailAddress';
 
 describe('extractEmailAddress', () => {
@@ -116,5 +119,62 @@ describe('formatRecipient', () => {
 
     it('liefert leeren String ohne Eingabe', () => {
         expect(formatRecipient(undefined)).toBe('');
+    });
+});
+
+describe('infoAdresseZuDomain', () => {
+    it('bildet die info@-Adresse zur Domain einer Unter-Adresse', () => {
+        expect(infoAdresseZuDomain('bestellung@meier.de')).toBe('info@meier.de');
+        expect(infoAdresseZuDomain('Max.Mustermann@baustoffe-mueller.de')).toBe('info@baustoffe-mueller.de');
+    });
+
+    it('kommt auch mit Anzeigenamen zurecht', () => {
+        expect(infoAdresseZuDomain('"Muster GmbH" <lager@muster-gmbh.de>')).toBe('info@muster-gmbh.de');
+    });
+
+    it('vereinheitlicht die Schreibweise der Domain', () => {
+        expect(infoAdresseZuDomain('Lager@Meier.DE')).toBe('info@meier.de');
+    });
+
+    it('liefert leeren String ohne erkennbare Domain', () => {
+        expect(infoAdresseZuDomain('keine-adresse')).toBe('');
+        expect(infoAdresseZuDomain('@ohne-lokalteil.de')).toBe('');
+        expect(infoAdresseZuDomain('')).toBe('');
+        expect(infoAdresseZuDomain(undefined)).toBe('');
+    });
+});
+
+describe('istInfoAdresse', () => {
+    it('erkennt die allgemeine Adresse unabhängig von der Schreibweise', () => {
+        expect(istInfoAdresse('info@meier.de')).toBe(true);
+        expect(istInfoAdresse('INFO@meier.de')).toBe(true);
+        expect(istInfoAdresse('"Zentrale" <info@meier.de>')).toBe(true);
+    });
+
+    it('erkennt Fachabteilungen nicht als allgemeine Adresse', () => {
+        expect(istInfoAdresse('bestellung@meier.de')).toBe(false);
+        expect(istInfoAdresse('information@meier.de')).toBe(false);
+        expect(istInfoAdresse('')).toBe(false);
+        expect(istInfoAdresse(undefined)).toBe(false);
+    });
+});
+
+describe('waehleInfoEmpfaenger', () => {
+    it('bevorzugt die info@-Adresse, egal an welcher Stelle sie steht', () => {
+        expect(waehleInfoEmpfaenger(['bestellung@meier.de', 'info@meier.de'])).toBe('info@meier.de');
+    });
+
+    it('gibt die reine Adresse ohne Anzeigenamen zurück', () => {
+        expect(waehleInfoEmpfaenger(['"Zentrale" <info@meier.de>'])).toBe('info@meier.de');
+    });
+
+    it('nimmt die erste Adresse, wenn es keine info@ gibt', () => {
+        expect(waehleInfoEmpfaenger(['bestellung@meier.de', 'lager@meier.de'])).toBe('bestellung@meier.de');
+    });
+
+    it('liefert leeren String ohne hinterlegte Adressen', () => {
+        expect(waehleInfoEmpfaenger([])).toBe('');
+        expect(waehleInfoEmpfaenger(undefined)).toBe('');
+        expect(waehleInfoEmpfaenger([undefined, ''])).toBe('');
     });
 });

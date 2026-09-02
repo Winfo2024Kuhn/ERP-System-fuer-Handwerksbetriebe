@@ -73,3 +73,38 @@ export function formatRecipient(value?: string, nameOverride?: string): string {
     if (!name || name.toLowerCase() === address.toLowerCase()) return address;
     return `"${name}" <${address}>`;
 }
+
+/** Liefert den Domain-Teil einer Adresse in Kleinbuchstaben, sonst einen leeren String. */
+function domainVon(value?: string): string {
+    const address = extractEmailAddress(value).toLowerCase();
+    const at = address.lastIndexOf('@');
+    return at > 0 ? address.slice(at + 1) : '';
+}
+
+/**
+ * Baut die allgemeine `info@`-Adresse zur Domain einer bekannten Adresse.
+ *
+ * Hintergrund: Wer bei einem Lieferanten die Adresse der Bestellabteilung
+ * einträgt, will Reklamationen und allgemeine Post trotzdem an die Zentrale
+ * schicken können. Die Zentrale ist praktisch immer `info@` derselben Domain.
+ *
+ * @returns z.B. `info@meier.de` – oder `''`, wenn keine Domain erkennbar ist
+ */
+export function infoAdresseZuDomain(value?: string): string {
+    const domain = domainVon(value);
+    return domain ? `info@${domain}` : '';
+}
+
+/** Prüft, ob die Adresse die allgemeine `info@`-Adresse ihrer Domain ist. */
+export function istInfoAdresse(value?: string): boolean {
+    return extractEmailAddress(value).toLowerCase().startsWith('info@');
+}
+
+/**
+ * Wählt aus einer Liste die Adresse, an die allgemeine Post gehen soll.
+ * Bevorzugt wird die `info@`-Adresse, sonst die erste hinterlegte Adresse.
+ */
+export function waehleInfoEmpfaenger(adressen?: (string | undefined)[]): string {
+    const gueltige = (adressen || []).map(a => extractEmailAddress(a)).filter(Boolean);
+    return gueltige.find(istInfoAdresse) || gueltige[0] || '';
+}
