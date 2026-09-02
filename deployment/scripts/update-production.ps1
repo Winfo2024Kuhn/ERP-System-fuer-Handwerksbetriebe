@@ -7,6 +7,7 @@
 
 param(
     [switch]$SkipBuild,
+    [switch]$SkipFrontendBuild,
     [switch]$SkipBackup,
     [switch]$Force
 )
@@ -20,6 +21,7 @@ if (-not $isAdmin) {
     
     $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     if ($SkipBuild) { $arguments += " -SkipBuild" }
+    if ($SkipFrontendBuild) { $arguments += " -SkipFrontendBuild" }
     if ($SkipBackup) { $arguments += " -SkipBackup" }
     if ($Force) { $arguments += " -Force" }
     
@@ -213,6 +215,117 @@ if (-not $SkipBackup) {
     }
 } else {
     Write-Warning-Custom "Datenbank-Backup wird uebersprungen (-SkipBackup)"
+}
+
+# ============================================================================
+# Frontend-Build
+# ============================================================================
+# MUSS vor dem Maven-Build laufen: Beide Frontends schreiben ihr Ergebnis nach
+# src\main\resources\static, und genau von dort packt Maven es in die JAR.
+# Ohne diesen Schritt wuerde eine neue JAR mit dem alten Frontend ausgeliefert -
+# der Server haette dann neue Endpunkte, aber die Oberflaeche von gestern.
+# ============================================================================
+
+# Baut ein einzelnes Frontend. Gibt $true bei Erfolg zurueck.
+function Invoke-FrontendBuild {
+    param(
+        [string]$Name,
+        [string]$Path,
+        [string]$NpmExe
+    )
+
+    if (-not (Test-Path $Path)) {
+        Write-Error-Custom "Frontend-Verzeichnis nicht gefunden: $Path"
+        return $false
+    }
+
+    Write-Info "Baue $Name ..."
+    Push-Location $Path
+    try {
+        # Abhaengigkeiten nur installieren, wenn sie fehlen oder aelter als das
+        # Lockfile sind - sonst kostet jeder Deploy unnoetig Minuten.
+        $nodeModules = Join-Path $Path "node_modules"
+        $lockFile = Join-Path $Path "package-lock.json"
+
+        $muessInstallieren = -not (Test-Path $nodeModules)
+        if (-not $muessInstallieren -and (Test-Path $lockFile)) {
+            $lockZeit = (Get-Item $lockFile).LastWriteTime
+            $modulesZeit = (Get-Item $nodeModules).LastWriteTime
+            if ($lockZeit -gt $modulesZeit) {
+                Write-Info "  package-lock.json ist neuer als node_modules - installiere neu"
+                $muessInstallieren = $true
+            }
+        }
+
+        if ($muessInstallieren) {
+            Write-Info "  Installiere Abhaengigkeiten (npm ci)..."
+            if (Test-Path $lockFile) {
+                & $NpmExe ci | Out-Host
+            } else {
+                & $NpmExe install | Out-Host
+            }
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error-Custom "npm-Installation fuer $Name fehlgeschlagen (Exit: $LASTEXITCODE)"
+                return $false
+            }
+        }
+
+        & $NpmExe run build | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error-Custom "Build von $Name fehlgeschlagen (Exit: $LASTEXITCODE)"
+            return $false
+        }
+
+        Write-Success "$Name gebaut"
+        return $true
+    } finally {
+        Pop-Location
+    }
+}
+
+if (-not $SkipBuild -and -not $SkipFrontendBuild) {
+    Write-Host ""
+    Write-Info "Starte Frontend-Build (kann einige Minuten dauern)..."
+
+    # npm.cmd statt npm: Der PowerShell-Wrapper npm.ps1 wird von einer
+    # restriktiven Ausfuehrungsrichtlinie blockiert, die .cmd-Variante nie.
+    $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npmCmd) {
+        $npmCmd = Get-Command npm -ErrorAction SilentlyContinue
+    }
+
+    if (-not $npmCmd) {
+        Write-Error-Custom "npm nicht gefunden - das Frontend kann nicht gebaut werden."
+        Write-Info "Bitte Node.js installieren (https://nodejs.org) oder mit -SkipFrontendBuild starten,"
+        Write-Info "wenn die bereits eingecheckten Frontend-Dateien ausreichen."
+        exit 1
+    }
+
+    $npmExe = $npmCmd.Source
+    Write-Info "Verwende npm: $npmExe"
+
+    $frontends = @(
+        @{ Name = "Desktop-Oberflaeche (react-pc-frontend)"; Path = (Join-Path $REPO_PATH "react-pc-frontend") },
+        @{ Name = "Zeiterfassung mobil (react-zeiterfassung)"; Path = (Join-Path $REPO_PATH "react-zeiterfassung") }
+    )
+
+    foreach ($frontend in $frontends) {
+        $erfolg = Invoke-FrontendBuild -Name $frontend.Name -Path $frontend.Path -NpmExe $npmExe
+        if (-not $erfolg) {
+            # Hart abbrechen: Eine JAR mit halb gebautem Frontend auszuliefern waere
+            # schlimmer als ein abgebrochenes Update - die alte Version laeuft ja noch.
+            Write-Error-Custom "Frontend-Build fehlgeschlagen - Update abgebrochen."
+            Write-Info "Die laufende Anwendung wurde noch nicht angefasst und laeuft unveraendert weiter."
+            exit 1
+        }
+    }
+
+    # Zurueck ins Repo - Maven und die Kopierschritte erwarten das als Arbeitsverzeichnis
+    Set-Location $REPO_PATH
+    Write-Success "Frontend-Build erfolgreich abgeschlossen"
+} elseif ($SkipFrontendBuild) {
+    Write-Warning-Custom "Frontend-Build wird uebersprungen (-SkipFrontendBuild)"
+    Write-Info "Es werden die Dateien aus src\main\resources\static verwendet, die im Repo liegen."
 }
 
 # Maven Build
