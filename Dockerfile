@@ -14,7 +14,11 @@ RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
 COPY src src
 
 # Build the JAR (skip tests – they run separately)
-RUN ./mvnw clean package -DskipTests -B
+# Bauen und das Ergebnis auf einen festen Namen legen. Ohne das muesste hier
+# die Projektversion stehen — die laeuft erfahrungsgemaess auseinander
+# (pom stand auf 1.0.3, das Dockerfile noch auf 1.0.0).
+RUN ./mvnw clean package -DskipTests -B \
+ && cp target/Kalkulationsprogramm-*.jar /app/app.jar
 
 # ===== Stage 2: Runtime image =====
 FROM eclipse-temurin:23-jre
@@ -32,14 +36,16 @@ RUN mkdir -p /app/uploads/attachments \
              /app/logs
 
 # Copy the built JAR from builder stage
-COPY --from=builder /app/target/Kalkulationsprogramm-1.0.0.jar app.jar
+COPY --from=builder /app/app.jar app.jar
 
 # Expose server port
 EXPOSE 8080
 
-# Health check (simple TCP check since no actuator is present)
+# Health check. wget statt curl: das JRE-Image bringt kein curl mit, der
+# Healthcheck konnte deshalb nie gruen werden und der Container blieb
+# dauerhaft auf 'unhealthy', obwohl die App lief.
 HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=60s \
-    CMD curl -sf http://localhost:8080/ || exit 1
+    CMD wget -qO- http://localhost:8080/ >/dev/null 2>&1 || exit 1
 
 # Run with docker profile
 ENTRYPOINT ["java", "-jar", "app.jar", "--spring.profiles.active=docker"]
