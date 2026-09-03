@@ -22,6 +22,16 @@ public class Artikel
     private Long id;
 
     /**
+     * Optimistisches Sperren: schuetzt gegen paralleles Speichern (auch aus
+     * der Mobile-App, die keine Sperr-Oberflaeche hat). JOINED-Vererbung:
+     * die Spalte gehoert nur auf die Wurzeltabelle "artikel", nicht auf
+     * "artikel_werkstoffe"/"artikel_hilfsstoffe" - deshalb steht das Feld
+     * hier auf der Basisklasse und nicht (auch) auf den Subklassen.
+     */
+    @Version
+    private Long version;
+
+    /**
      * Alle Preisstaende dieses Artikels - einschliesslich der historischen.
      * Fuer "den Preis" immer {@link #getAktuellePreise()} verwenden.
      */
