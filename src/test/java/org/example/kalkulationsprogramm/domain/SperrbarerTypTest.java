@@ -39,7 +39,7 @@ class SperrbarerTypTest {
     @Test
     void ausTextUeberstehtSqlInjectionVersuchOhneAusnahme() {
         // Sicherheits-Checkliste TESTING_SECURITY.md: SQL-Injection-String darf
-        // keine Ausnahme auslösen, sondern muss als unbekannter Wert behandelt werden.
+        // keine Ausnahme ausloesen, sondern muss als unbekannter Wert behandelt werden.
         assertThat(SperrbarerTyp.ausText("'; DROP TABLE datensatz_lock; --")).isEmpty();
     }
 
