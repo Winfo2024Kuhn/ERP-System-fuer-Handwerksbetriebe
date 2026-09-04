@@ -85,6 +85,15 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     };
 
     const variant = dialog.variant || 'danger';
+    // Task 8a: role="dialog" + aria-labelledby fehlten bisher komplett --
+    // Screenreader sahen ueberhaupt keinen Dialog, und der globale
+    // Toast-Umzug bei offenem Dialog (siehe toast.tsx, sucht per
+    // document.querySelector('[role="dialog"]')) griff hier nicht: ein
+    // Fehler-Toast waehrend dieser Bestaetigung offen stand, blieb faelschlich
+    // unten rechts stehen. title ist optional (ConfirmOptions) -- ohne Titel
+    // gibt es keine ID zum Verlinken, darum aria-label mit der Nachricht als
+    // Ersatz, statt den Dialog unbenannt zu lassen.
+    const titelId = 'confirm-dialog-titel';
 
     return (
         <ConfirmContext.Provider value={{ confirm }}>
@@ -99,13 +108,19 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     />
                     {/* Dialog */}
                     <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+                        <div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby={dialog.title ? titelId : undefined}
+                            aria-label={dialog.title ? undefined : dialog.message}
+                            className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200"
+                        >
                             <div className="flex flex-col items-center text-center gap-4">
                                 {iconMap[variant]}
 
                                 <div>
                                     {dialog.title && (
-                                        <h3 className="text-lg font-semibold text-slate-900 mb-1">
+                                        <h3 id={titelId} className="text-lg font-semibold text-slate-900 mb-1">
                                             {dialog.title}
                                         </h3>
                                     )}
