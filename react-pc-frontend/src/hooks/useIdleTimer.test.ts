@@ -297,6 +297,15 @@ describe('useIdleTimer', () => {
         });
         expect(result.current.verbleibendeSekunden).toBeNull();
         expect(onIdle).not.toHaveBeenCalled();
+
+        // Zuruecksetzen allein reicht nicht - der neue Zyklus muss auch
+        // wirklich armiert sein. Sonst waere ein Fix gruen, der nur
+        // zuruecksetzt und nichts mehr plant. Neue Warn-Marke: 300s - 60s = 240s ab Neu-Armieren.
+        act(() => {
+            vi.advanceTimersByTime(121_000);
+        });
+        expect(onWarn).toHaveBeenCalledTimes(2);
+        expect(result.current.verbleibendeSekunden).toBeTypeOf('number');
     });
 
     it('timeoutMs-Wechsel waehrend der Vorwarnung setzt den Countdown zurueck (kein eingefrorener Wert)', () => {
@@ -338,6 +347,15 @@ describe('useIdleTimer', () => {
         });
         expect(result.current.verbleibendeSekunden).toBeNull();
         expect(onIdle).not.toHaveBeenCalled();
+
+        // Zuruecksetzen allein reicht nicht - der neue Zyklus muss auch
+        // wirklich armiert sein. Sonst waere ein Fix gruen, der nur
+        // zuruecksetzt und nichts mehr plant. Neue Warn-Marke: 600s - 60s = 540s ab Neu-Armieren.
+        act(() => {
+            vi.advanceTimersByTime(421_000);
+        });
+        expect(onWarn).toHaveBeenCalledTimes(2);
+        expect(result.current.verbleibendeSekunden).toBeTypeOf('number');
     });
 
     it('respektiert benutzerdefinierte timeoutMs/warnMs statt der Standardwerte', () => {
