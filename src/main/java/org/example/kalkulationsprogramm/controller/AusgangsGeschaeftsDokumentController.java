@@ -256,6 +256,11 @@ public class AusgangsGeschaeftsDokumentController {
         try {
             AusgangsGeschaeftsDokument result = service.buchen(id, userId, clientIp(request));
             return ResponseEntity.ok(service.findById(result.getId()));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -272,6 +277,11 @@ public class AusgangsGeschaeftsDokumentController {
         try {
             service.buchenNachEmailVersand(id, userId, clientIp(request));
             return ResponseEntity.ok(service.findById(id));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -290,6 +300,11 @@ public class AusgangsGeschaeftsDokumentController {
             }
             String dateiname = service.speicherePdfFuerDokument(id, pdfBytes);
             return ResponseEntity.ok(java.util.Map.of("dateiname", dateiname));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Speichern der PDF für Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -317,6 +332,11 @@ public class AusgangsGeschaeftsDokumentController {
         try {
             AusgangsGeschaeftsDokument storno = service.stornieren(id, userId, clientIp(request), grund);
             return ResponseEntity.ok(service.findById(storno.getId()));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Stornieren von Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -342,6 +362,11 @@ public class AusgangsGeschaeftsDokumentController {
             String ip = clientIp(request);
             service.loeschen(id, begruendung, userId, ip);
             return ResponseEntity.ok().build();
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }

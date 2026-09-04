@@ -533,6 +533,21 @@ class AusgangsGeschaeftsDokumentControllerTest {
             mockMvc.perform(post("/api/ausgangs-dokumente/1/buchen"))
                     .andExpect(status().isBadRequest());
         }
+
+        @Test
+        @DisplayName("Versionskonflikt beim Buchen gibt 409 mit Handwerker-Meldung zurück")
+        void versionskonfliktBeimBuchenGibt409() throws Exception {
+            given(service.buchen(eq(1L), any(), any()))
+                    .willThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                            AusgangsGeschaeftsDokument.class, 1L));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/buchen"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value(
+                            "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(
+                            org.hamcrest.Matchers.containsString("ObjectOptimisticLockingFailureException"))));
+        }
     }
 
     @Nested
@@ -547,6 +562,32 @@ class AusgangsGeschaeftsDokumentControllerTest {
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/email-versendet"))
                     .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Gewöhnlicher Fehler beim Buchen nach E-Mail-Versand gibt weiterhin 400 zurück")
+        void gewoehnlicherFehlerBeiEmailVersendetGibt400() throws Exception {
+            given(service.buchenNachEmailVersand(eq(1L), any(), any()))
+                    .willThrow(new RuntimeException("Dokument nicht gefunden"));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/email-versendet"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().string("Dokument nicht gefunden"));
+        }
+
+        @Test
+        @DisplayName("Versionskonflikt beim Buchen nach E-Mail-Versand gibt 409 mit Handwerker-Meldung zurück")
+        void versionskonfliktBeiEmailVersendetGibt409() throws Exception {
+            given(service.buchenNachEmailVersand(eq(1L), any(), any()))
+                    .willThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                            AusgangsGeschaeftsDokument.class, 1L));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/email-versendet"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value(
+                            "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(
+                            org.hamcrest.Matchers.containsString("ObjectOptimisticLockingFailureException"))));
         }
     }
 
@@ -574,6 +615,36 @@ class AusgangsGeschaeftsDokumentControllerTest {
                             .contentType(MediaType.APPLICATION_OCTET_STREAM)
                             .content(new byte[0]))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Gewöhnlicher Fehler beim PDF-Speichern gibt weiterhin 400 zurück")
+        void gewoehnlicherFehlerBeiPdfSpeichernGibt400() throws Exception {
+            given(service.speicherePdfFuerDokument(eq(1L), any(byte[].class)))
+                    .willThrow(new RuntimeException("Datei konnte nicht geschrieben werden"));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/pdf-speichern")
+                            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                            .content(new byte[]{0x25, 0x50, 0x44, 0x46}))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().string("Datei konnte nicht geschrieben werden"));
+        }
+
+        @Test
+        @DisplayName("Versionskonflikt beim PDF-Speichern gibt 409 mit Handwerker-Meldung zurück")
+        void versionskonfliktBeiPdfSpeichernGibt409() throws Exception {
+            given(service.speicherePdfFuerDokument(eq(1L), any(byte[].class)))
+                    .willThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                            AusgangsGeschaeftsDokument.class, 1L));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/pdf-speichern")
+                            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                            .content(new byte[]{0x25, 0x50, 0x44, 0x46}))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value(
+                            "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(
+                            org.hamcrest.Matchers.containsString("ObjectOptimisticLockingFailureException"))));
         }
     }
 
@@ -614,6 +685,21 @@ class AusgangsGeschaeftsDokumentControllerTest {
             mockMvc.perform(post("/api/ausgangs-dokumente/1/storno"))
                     .andExpect(status().isBadRequest());
         }
+
+        @Test
+        @DisplayName("Versionskonflikt beim Stornieren gibt 409 mit Handwerker-Meldung zurück")
+        void versionskonfliktBeimStornierenGibt409() throws Exception {
+            given(service.stornieren(eq(1L), any(), any(), any()))
+                    .willThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                            AusgangsGeschaeftsDokument.class, 1L));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/storno"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value(
+                            "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(
+                            org.hamcrest.Matchers.containsString("ObjectOptimisticLockingFailureException"))));
+        }
     }
 
     @Nested
@@ -651,6 +737,23 @@ class AusgangsGeschaeftsDokumentControllerTest {
             mockMvc.perform(delete("/api/ausgangs-dokumente/1")
                             .param("begruendung", "Test"))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Versionskonflikt beim Löschen gibt 409 mit Handwerker-Meldung zurück")
+        void versionskonfliktBeimLoeschenGibt409() throws Exception {
+            given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-001"));
+            doThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                    AusgangsGeschaeftsDokument.class, 1L))
+                    .when(service).loeschen(eq(1L), any(), any(), any());
+
+            mockMvc.perform(delete("/api/ausgangs-dokumente/1")
+                            .param("begruendung", "Test"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value(
+                            "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(
+                            org.hamcrest.Matchers.containsString("ObjectOptimisticLockingFailureException"))));
         }
     }
 
