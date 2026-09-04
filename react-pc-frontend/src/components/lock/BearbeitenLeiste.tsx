@@ -71,14 +71,18 @@ export interface BearbeitenLeisteProps {
  *
  * Reihenfolge im Markup (Design-Review zu Abschnitt 6, Nachschaerfung):
  * die drei Status-Baender ("Sie lesen nur mit.", Countdown, Verbindung weg)
- * stehen VOR dem Umschalt-Knopf, der Knopf ist immer das letzte Kind. Der
- * einzige heutige Verwender (LieferantDokumentModal) bindet diese Leiste in
- * ein `justify-between`-Layout ein, das sie als Ganzes rechtsbuendig
- * ausrichtet -- waechst ein Band, verschiebt sich dadurch die LINKE Kante
- * des gesamten Blocks, nicht seine rechte. Ein Knopf, der als erstes Kind
- * an der linken Kante klebt, sprang deshalb bei jedem erscheinenden Band um
- * dessen volle Breite nach links (~540px beim Countdown-Text). Als
- * LETZTES Kind bleibt der Knopf dagegen an der rechten (fixen) Kante des
+ * stehen VOR dem Umschalt-Knopf. Nach dem Knopf folgt hoechstens noch der
+ * unsichtbare `sr-only`-Beschreibungs-Span fuer `aria-describedby`
+ * (`bearbeitenGesperrtGrund`) -- der nimmt keinen Platz ein und zaehlt fuer
+ * das Layout darum nicht mit. Der Knopf ist also das letzte Element, das
+ * fuer die Breite des Blocks eine Rolle spielt. Der einzige heutige
+ * Verwender (LieferantDokumentModal) bindet diese Leiste in ein
+ * `justify-between`-Layout ein, das sie als Ganzes rechtsbuendig ausrichtet
+ * -- waechst ein Band, verschiebt sich dadurch die LINKE Kante des gesamten
+ * Blocks, nicht seine rechte. Ein Knopf, der als erstes Kind an der linken
+ * Kante klebt, sprang deshalb bei jedem erscheinenden Band um dessen volle
+ * Breite nach links (~540px beim Countdown-Text). Nach den Baendern
+ * platziert bleibt der Knopf dagegen an der rechten (fixen) Kante des
  * Blocks stehen, egal wie viele Baender davor erscheinen oder verschwinden.
  */
 export function BearbeitenLeiste({

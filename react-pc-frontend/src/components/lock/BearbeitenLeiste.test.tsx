@@ -233,6 +233,29 @@ describe('BearbeitenLeiste', () => {
             expect(leiste.children).toHaveLength(1);
             expect(leiste.children[0].tagName).toBe('BUTTON');
         });
+
+        it('nach dem Knopf folgt hoechstens der unsichtbare sr-only-Beschreibungs-Span, nichts, das Platz einnimmt', () => {
+            // Deckt genau die Luecke ab, die der Code-Review an der
+            // Klassen-Doku bemaengelt hat: mit gesetztem
+            // bearbeitenGesperrtGrund ist der Knopf NICHT mehr das letzte
+            // Kind im DOM (der sr-only-Span fuer aria-describedby folgt
+            // ihm) -- fuer das Layout zaehlt das aber nicht, weil der Span
+            // unsichtbar ist und keinen Platz einnimmt.
+            const { container } = renderLeiste({
+                modus: 'lesen',
+                kannBearbeiten: false,
+                bearbeitenGesperrtGrund: 'Sperre wird gerade geprüft…',
+            });
+
+            const leiste = container.firstElementChild as HTMLElement;
+            const kinder = Array.from(leiste.children);
+            const knopfIndex = kinder.findIndex(el => el.tagName === 'BUTTON');
+            const nachDemKnopf = kinder.slice(knopfIndex + 1);
+
+            expect(nachDemKnopf).toHaveLength(1);
+            expect(nachDemKnopf[0].tagName).toBe('SPAN');
+            expect(nachDemKnopf[0].className).toContain('sr-only');
+        });
     });
 
     describe('Lesen-Modus-Hinweis "Sie lesen nur mit."', () => {
