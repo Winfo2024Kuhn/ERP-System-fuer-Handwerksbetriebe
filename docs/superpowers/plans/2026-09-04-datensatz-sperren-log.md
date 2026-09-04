@@ -1648,3 +1648,417 @@ keinen "Sie lesen nur mit.", weil das Modal zeigeNurLesenHinweis nicht setzt.
    an dieser Datei nichts geändert wurde. Mit einem freien Port (5277) liefen beide Specs
    anschließend grün. Kein Eingriff in den fremden Prozess (nicht meiner, nicht angefasst) —
    nur der eigene Port gewechselt.
+
+## Abschnitt 7-1 — Design-Review (Design-Reviewer)
+
+**Ampel: 🟡 — von meiner Seite abgenommen.** Alle drei Nachbesserungen aus Abschnitt 6
+sitzen, selbst nachgemessen. Kein blockierender Befund.
+
+Worktree `wt/review-design`, Stand `cb27780c`. `E2E_PORT=5190 npm run test:e2e`:
+**94 Tests, alle grün**, beide Größen `pc-14zoll` (1440×900) und `pc-monitor` (1920×1080).
+Zehn Tests mehr als in Durchgang 2 (84) — die neue `e2e/bearbeiten-leiste.spec.ts` mit
+5 Zuständen × 2 Größen. Zur Stabilität siehe den Hinweis unten.
+
+### Die vier Prüfpunkte
+
+**1. Unterscheiden sich die drei Bänder auf einen Blick? Passen amber und red? Kontrast?**
+
+Ja. Im Browser ausgelesene Computed-Styles, nicht geschätzt:
+
+| Band | Hintergrund | Text | Rand | Icon | Kontrast |
+| --- | --- | --- | --- | --- | --- |
+| Countdown (Warnung) | `rgb(255,251,235)` amber-50 | `rgb(146,64,14)` amber-800 | `rgb(252,211,77)` amber-300 | `Timer` | **6,84 : 1** |
+| Verbindung weg (Störung) | `rgb(254,242,242)` red-50 | `rgb(185,28,28)` red-700 | `rgb(252,165,165)` red-300 | `WifiOff` | **5,91 : 1** |
+| Nur-Lesen-Hinweis | rose-50 | slate-700 | rose-100 | `Lock` | (unverändert) |
+
+Beide neuen Bänder liegen deutlich über der AA-Schwelle von 4,5 : 1 für Fließtext.
+Gelb = „gleich passiert was", Rot = „etwas ist kaputt", Rose = „nur ein Hinweis" — die
+Stufung ist jetzt auf einen Blick da und deckt sich mit dem Design-System
+(`amber-500` warn, `red-600` danger, rose als Akzent). Keine Fremdpalette, Icons sind
+Lucide, kein Emoji, Systemschrift. Der 🟡 aus Abschnitt 6 („drei gleich aussehende
+rose-Bänder", „Countdown ohne Icon") ist damit erledigt.
+
+**2. Springt `Fertig` wirklich nicht mehr?**
+
+Nein — und zwar nicht „≤ 5 px", sondern **exakt 0 px**. Gemessene `boundingBox` desselben
+Knopfes im selben Ablauf, vor und nach dem Erscheinen des Bandes:
+
+| Größe | ohne Band | mit Countdown | mit Verbindung weg |
+| --- | --- | --- | --- |
+| pc-14zoll | [1294, 139, 85, 34] | [1294, 139, 85, 34] | [1294, 139, 85, 34] |
+| pc-monitor | [1650, 148, 85, 34] | [1650, 148, 85, 34] | [1650, 148, 85, 34] |
+
+Die Ursache ist sauber gelöst: die Bänder rendern vor dem Knopf, der Knopf ist das letzte
+Kind und klebt damit an der rechten (festen) Kante des `justify-between`-Blocks. In den
+Screenshots `leiste-bearbeiten`, `leiste-countdown` und `leiste-verbindung-weg` liegt der
+Knopf sichtbar auf derselben Linie.
+
+**3. Passt der Countdown-Text auf 14 Zoll in eine Zeile?**
+
+Ja. Band [715, 139, 567, 34] auf 14 Zoll. Die Höhe von 34 px ist eine Textzeile (20 px)
+plus `py-1.5` (12 px) plus 2 px Rand — kein Umbruch. Bis zum `Fertig`-Knopf (beginnt bei
+x 1294) bleiben **12 px** (`gap-3`), der Knopf wird also nicht bedrängt. Auf 1920
+identisch: [1071, 148, 567, 34]. Der ganze Leisten-Block misst 664 px in einer Kopfzeile
+von ~1340 px — reichlich Luft.
+
+**4. Ist der deaktivierte Knopf als „deaktiviert mit Grund" erkennbar?**
+
+Teils — und der fehlende Teil ist der angekündigte 7d-Stand. Gemessen am echten Knopf im
+Modal, beide Größen: `disabled = true`, `cursor: not-allowed`, `opacity: 0.5`, aber
+`title = null` und `aria-describedby = null`. Der neue Prop `bearbeitenGesperrtGrund`
+wird vom `LieferantDokumentModal` noch nicht übergeben; eine Hover-Probe zeigt
+erwartungsgemäß keinen Tooltip. Als *deaktiviert* ist der Knopf klar erkennbar
+(halbtransparent + Verbotscursor), und das *Warum* steht heute unmittelbar daneben im
+roten Band („Sperre konnte nicht geholt werden — bitte neu laden.") plus im Toast. Die
+Komponente selbst ist richtig gebaut (`title`, `aria-describedby`, `sr-only`-Span, kein
+leeres `title=""`). Kein Befund, der Browser-Beleg kommt mit 7d.
+
+**5. Tab-Hinweis in Sie-Form**
+
+Wording sitzt: „Dokument gespeichert und freigegeben — Sie können diesen Tab jetzt
+schließen." Über die Route ist die Seite weiterhin nicht erreichbar, deshalb mit dem
+echten Markup und demselben Stylesheet in der laufenden App aufgenommen. Gemessen:
+Absatz [528, 466, 384, 48] auf 14 Zoll und [768, 556, 384, 48] auf 1920 — `max-w-sm`
+(384 px), 16 px Schrift, 24 px Zeilenhöhe, **zwei Zeilen**, mittig, Systemschriftstack
+(`system-ui, -apple-system, sans-serif`), kein Webfont. Rose-100-Kreis mit rose-600
+`CheckCircle2` darüber, ruhige slate-50-Fläche. Einziger Wermutstropfen: der Umbruch
+fällt hinter „— Sie", das „Sie" hängt allein am Zeilenende. → 🟡
+
+### Angeschaute Screenshots
+
+Alle 24 aus `react-pc-frontend/test-results/design/`, jeweils `--pc-14zoll` und
+`--pc-monitor`:
+
+1. `leiste-bearbeiten` · 2. `leiste-lesen` · 3. `leiste-countdown` ·
+4. `leiste-verbindung-weg` · 5. `leiste-deaktiviert` (alle fünf neu in diesem Abschnitt)
+6. `lieferant-modal-bearbeiten` · 7. `lieferant-modal-gesperrt` ·
+8. `lieferant-modal-fremdes-lock` · 9. `lieferant-modal-fehler` ·
+10. `lieferant-modal-speicherfehler-toast`
+11. `dokument-editor-vor-schliessen` · 12. `dokument-editor-ungespeichert-warnung`
+
+Dazu 4 eigene Aufnahmen (Wegwerf-Spec, nach dem Lauf gelöscht, Worktree ist sauber):
+`tab-schliessen-hinweis` und `deaktiviert-hover`, je `--pc-14zoll` und `--pc-monitor`.
+
+### Die sechs Fragen je Zustand
+
+**`leiste-bearbeiten` (14 Zoll + Monitor)** — freies Lock, keine Bänder
+1. *Farben?* `Fertig` weißer Outline-Knopf mit rose-Rand, `Speichern` die einzige gefüllte
+   rosa Fläche. Genau eine Primäraktion.
+2. *Design-System?* Ja. rose/slate, Lucide, kein Emoji, Systemschrift, `rounded-lg`.
+3. *Look-and-Feel?* Ruhig. Linke Bandhälfte leer — 7d verdrahtet dort „Sie lesen nur mit."
+   nicht, der Zustand ist ohnehin der Bearbeiten-Modus, in dem kein Hinweis hingehört.
+4. *UX?* Nach 7b öffnet das Modal direkt im Bearbeiten-Modus: Formular frei, `Fertig`
+   sichtbar. Ein Schritt weniger als vorher, das ist eine echte Verbesserung.
+5. *Auffindbar?* Ja, `Fertig` am Kopf des Datensatzes, ohne Scrollen, beide Größen.
+6. *Überschneidung?* Nein, kein waagerechtes Scrollen.
+
+**`leiste-lesen` (14 Zoll + Monitor)** — nach Klick auf `Fertig`
+1. *Farben?* `Bearbeiten` rose-600 gefüllt und aktiv, `Speichern` rose-600 bei 50 %
+   (deaktiviert). Weiterhin zwei rosa Flächen, eine davon blass — bekannt aus Abschnitt 6,
+   in 7c nicht angefasst, nicht verschlechtert.
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Ruhig; linke Bandhälfte noch leer (7d).
+4. *UX?* Der Wechsel lesen/bearbeiten ist am Knopf klar ablesbar.
+5. *Auffindbar?* Ja, ohne Scrollen.
+6. *Überschneidung?* Nein.
+
+**`leiste-countdown` (14 Zoll + Monitor)**
+1. *Farben?* Amber-Band mit `Timer`, Kontrast 6,84 : 1 — als Warnung lesbar und klar vom
+   rosa Hinweis und vom roten Störungsband getrennt.
+2. *Design-System?* Ja, `amber` ist die dokumentierte Warnfarbe.
+3. *Look-and-Feel?* Das Band füllt die Leiste sinnvoll, auf 1920 wirkt nichts verloren.
+4. *UX?* „Wird in 59 Sekunden freigegeben — bewegen Sie die Maus, um weiterzuarbeiten."
+   Sagt was passiert und was man dagegen tut. Handwerker-Sprache.
+5. *Auffindbar?* Ja, am Kopf, ohne Scrollen, in beiden Größen vollständig sichtbar.
+6. *Überschneidung?* Nein. Einzeilig, 12 px Abstand zum Knopf, Knopf bleibt exakt stehen.
+
+**`leiste-verbindung-weg` (14 Zoll + Monitor)**
+1. *Farben?* Rotes Band mit `WifiOff`, Kontrast 5,91 : 1, halbfett — dringlicher als der
+   Countdown, genau die richtige Reihenfolge.
+2. *Design-System?* Ja, `red` ist die Danger-Semantik.
+3. *Look-and-Feel?* Ruhig, in beiden Größen gleich.
+4. *UX?* „Verbindung weg — Ihre Änderungen sind noch nicht gespeichert." Konkret, ohne
+   Fachchinesisch.
+5. *Auffindbar?* Ja.
+6. *Überschneidung?* Nein, Knopf steht exakt still.
+
+**`leiste-deaktiviert` (14 Zoll + Monitor)** — Erwerb scheitert (500)
+1. *Farben?* Rotes Band mit `AlertTriangle` im Modal, `Bearbeiten` rose-600 bei 50 %,
+   Toast oben rechts. Zustand klar als Störung lesbar.
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Das Band nimmt die volle freie Breite, wirkt nicht hohl.
+4. *UX?* Siehe Prüfpunkt 4 — deaktiviert erkennbar, Grund daneben lesbar, Tooltip kommt 7d.
+5. *Auffindbar?* Ja.
+6. *Überschneidung?* Nein — Toast oben rechts, Fußleiste frei (der Fix aus Durchgang 2
+   hält auch hier).
+
+**`lieferant-modal-*` (je 14 Zoll + Monitor)**
+1.–6. Gegenüber Durchgang 2 unverändert; die Dateien sind größengleich bis auf wenige
+   hundert Byte. `bearbeiten` zeigt jetzt (7b) direkt den Bearbeiten-Modus,
+   `fremdes-lock` bleibt der stärkste Zustand (rose-50-Band, Name fett, `Bearbeiten`
+   aktiv), `fehler` und `speicherfehler-toast` zeigen weiterhin Toast oben rechts bei
+   freier Fußleiste. Keine Überschneidung, kein waagerechtes Scrollen, nichts
+   abgeschnitten außer der bekannten Scroll-Kante des Formulars (7c-Restpunkt).
+
+**`dokument-editor-*` (je 14 Zoll + Monitor)**
+1.–6. Unverändert gut: Vorschau-Spalte ausgelaufen bei 45 % mit Skelett-Muster, genau eine
+   rosa Primäraktion (`PDF`), Warn-Dialog mit amber-Icon und rose-600-Primärknopf,
+   keine Überschneidung. `Nicht speichern` bricht weiter auf zwei Zeilen um (7c-Restpunkt).
+
+### 💡 Hinweise (blockieren nicht)
+
+- **Umbruch im Tab-Hinweis.** Bei `max-w-sm` (384 px) fällt der Zeilenumbruch hinter
+  „— Sie", das „Sie" steht allein am Ende der ersten Zeile. Ein `text-balance` oder etwas
+  mehr Breite würde nach dem Gedankenstrich trennen und den Satz ruhiger machen.
+- **E2E-Flattern auf kaltem Dev-Server.** Der vorgeschriebene komplette Lauf war 94/94 grün.
+  Fährt man dagegen nur die drei Sperr-Specs gegen einen **frisch gestarteten** Vite-Server,
+  fallen 4 pc-14zoll-Tests aus `bearbeiten-leiste.spec.ts` mit
+  `expect(locator).toBeVisible()` — dieselben Tests brauchten dort 19–21 s statt der
+  5–6 s bei warmem Server. Zweiter Lauf derselben drei Specs: 24/24 grün, die Spec allein:
+  10/10 grün. Kein Produktfehler, aber die neue Spec ist die, die beim ersten Zugriff auf
+  einen kalten Server anschlägt; in CI würde sie flattern. Ein großzügigeres Warten beim
+  ersten Öffnen (oder `waitForLoadState`) im Hilfsschritt würde das abfangen.
+- Beobachtung, kein Befund: Verbindung-weg-Band und Lock-Fehler-Band im Modal sehen jetzt
+  fast gleich aus (beide red-50/red-300/red-700, gleiche Stelle). Sie treten nie
+  gleichzeitig auf, sind beide echte Störungen und tragen verschiedene Icons
+  (`WifiOff` / `AlertTriangle`) — die gemeinsame Stufe ist richtig.
+- Aus Abschnitt 6 offen und unverändert (7d bzw. Restpunkte): kein Tooltip und kein
+  „Sie lesen nur mit." im echten Modal, zwei rosa Knöpfe im Lesen-Modus, `Nicht speichern`
+  zweizeilig, PDF-Spalte frisst auf 14 Zoll zwei Drittel des Modals, Scroll-Kante im
+  Formular. **Nichts davon hat sich verschlechtert.**
+
+## Abschnitt 7-1 — Code-Review (Code-Reviewer)
+
+**Ampel: 🔴** — ein blockierender Befund: der 🔴 aus Review 5 („`modus === 'bearbeiten'` ohne
+gehaltenes Lock") ist über einen zweiten Pfad wieder erreichbar. Alles andere ist sauber.
+Stand `d7ba4a6e`.
+
+### 🛑 Blockierend
+
+**Verliert der Nutzer die Sperre während des Bearbeitens, bleibt das Formular editierbar.**
+`react-pc-frontend/src/components/lock/useDatensatzLock.ts:171-190` (409-Zweig in `heartbeat`)
+
+Der 409-Zweig des Heartbeats setzt `status='locked-by-other'`, `heldRef=false` und stoppt den
+Heartbeat — **`modus` bleibt aber unangetastet**. Seit 7b steht `modus` nach einem erfolgreichen
+Mount-Acquire automatisch auf `'bearbeiten'`. Damit ist die verbotene Kombination erreichbar.
+
+Selbst gemessen (Wegwerf-Probe am Hook, Mount-Acquire 200, danach Heartbeat 409):
+
+```
+PROBE vor  HB: status=acquired        modus=bearbeiten
+PROBE nach HB: status=locked-by-other modus=bearbeiten  halter=Anna Beispiel
+PROBE => formGesperrt waere: false
+```
+
+Folge im einzigen heutigen Verbraucher: `LieferantDokumentModal.tsx:90` leitet
+`formGesperrt = lock.modus !== "bearbeiten"` ab. Alle ~20 Felder bleiben also aktiv und der
+Speichern-Knopf freigeschaltet, während direkt darüber der `GesperrtHinweis` meldet, dass ein
+Kollege den Datensatz bearbeitet. Die `BearbeitenLeiste` zeigt dabei „Fertig" statt „Bearbeiten" —
+die Oberfläche widerspricht sich selbst.
+
+Wie kommt es dazu? Der Server gibt eine verwaiste Sperre nach 90 s an den Nächsten weiter
+(`DatensatzLockService.STALE_AFTER`). Ein gedrosselter Hintergrund-Tab, ein kurzer Standby oder eine
+Netzpause reicht, damit der 30-Sekunden-Heartbeat das Fenster reißt; der nächste Heartbeat bekommt
+dann 409.
+
+Kein stilles Überschreiben: `LieferantDokumentController:99` prüft `isHeldBy(EINGANG, …)` und weist
+den PUT ab. Der Schaden ist also „getippte Arbeit ist weg und muss neu gemacht werden" plus eine
+widersprüchliche Oberfläche — kein Datenverlust in der Datenbank.
+
+Fairerweise: der Pfad ist nicht neu von 7b **erzeugt**. Schon vorher setzte der 6b-Behelf im Modal
+denselben Modus, und der 409-Zweig setzte ihn auch damals nicht zurück. 7b hat die Zuständigkeit für
+`modus` aber bewusst in den Hook geholt und die Semantik neu entschieden — das ist die Stelle und der
+Moment, das zu schließen.
+
+Nachweisbar sein muss: nach einem Heartbeat-409 ist `modus === 'lesen'` (und damit das Formular
+gesperrt), während `kannBearbeiten` true bleibt, damit die Übernahme per Klick möglich ist. Der
+vorhandene Test in `useDatensatzLock.test.tsx:322` prüft genau diesen Fall — aber nur `status`,
+`kannBearbeiten` und `halterName`, **nicht `modus`**. Genau durch diese Lücke ist es gerutscht.
+
+### Mutationsproben (Quellstand danach byte-identisch, `git diff d7ba4a6e` leer)
+
+1. **7b Punkt 2** — `setModus('bearbeiten')` im Acquire-Erfolg entfernt: **17 Tests rot**
+   (6 im Hook, 11 von 14 im Modal) — deckt sich mit der Meldung des Agenten. Darunter
+   „wechselt nach einem erfolgreichen Mount-Acquire automatisch in den Modus \"bearbeiten\"" und
+   „ruft die Acquire-Route nur einmal auf".
+2. **7b Punkt 1** — beide zweiten Generationsprüfungen (nach `res.json()`, in `acquire` **und**
+   `heartbeat`) entfernt: **genau 2 Tests rot**, beide mit
+   `AssertionError: expected 'locked-by-other' to be 'idle'`. Saubere Isolation.
+3. **7c `bearbeitenGesperrtGrund`** — `title={grund}` am Bearbeiten-Knopf entfernt: **genau 1 Test
+   rot** („trägt title UND aria-describedby, wenn der Knopf deaktiviert ist und ein Grund gesetzt
+   wurde"), die übrigen 24 blieben grün.
+
+### Selbst gemessene Zahlen
+
+| | Baseline (Abschnitt 6) | jetzt |
+|---|---|---|
+| Backend | 2462 / 0 F / 4 E | **2462 / 0 Failures / 4 Errors** (nach Einzel-Nachlauf) |
+| Frontend Testdateien | 87 | **87** |
+| Frontend Tests | 1033 | **1049** (+16) |
+| Lint | 0 Fehler, 1 Warnung | **0 Fehler, 1 Warnung** |
+
+- Backend ist unberührt; die 4 Errors sind namentlich die bekannten umgebungsbedingten.
+  Im Volllauf kam **ein** zusätzlicher Fehlschlag dazu:
+  `UnifiedEmailControllerExtractEmailTest.adversarialInputWithoutAt_isLinear` — ein Test mit
+  500-ms-Zeitschranke in einer von diesem Abschnitt nicht angefassten Datei. Einzeln nachgefahren:
+  **12/12 grün**. Lastartefakt (der Design-Reviewer fährt parallel Dev-Server und Browser),
+  kein Befund.
+- Frontend-Volllauf: ein Fehlschlag in `document-editor/index.test.tsx` („speichert die
+  Materialauswahl als SERVICE-Block") — ebenfalls nicht angefasst. Isoliert **2x 19/19 grün**.
+  Auch Last, kein Befund.
+- Testzahlen der vier Dateien selbst nachgezählt und mit den Task-Meldungen abgeglichen:
+  Hook **33** + Modal **14** = **47** (7b meldete 47 ✓), Leiste **25** + Hinweis **7** = **32**
+  (7c meldete 32 ✓).
+- Lint-Warnung ist die vorbestehende `BelegeKasseEditor.tsx:1204`.
+- `npm run build` grün, `src/main/resources/static/` zurückgesetzt.
+
+### 💡 Hinweise (blockieren nicht)
+
+- `useDatensatzLock.test.tsx:322` — der Heartbeat-409-Test prüft `status`, `kannBearbeiten` und
+  `halterName`, aber nicht `modus`. Eine Zusicherung dort hätte den 🔴 oben verhindert; sie gehört
+  zusammen mit dem Fix dazu.
+- `BearbeitenLeiste.tsx` — der Klassenkommentar sagt „der Knopf ist immer das letzte Kind". Sobald
+  `bearbeitenGesperrtGrund` greift, folgt ihm noch das `sr-only`-`<span>` für `aria-describedby`.
+  Ohne Layout-Wirkung (Tailwinds `sr-only` ist absolut positioniert und damit aus dem Flex-Fluss),
+  aber der Kommentar stimmt so nicht mehr ganz.
+- Die beiden neuen Props werden vom einzigen Verbraucher noch nicht gesetzt — laut Auftrag bewusst
+  (Task 7d). Geprüft und in Ordnung: beide sind optional, `zeigeNurLesenHinweis` hat den Default
+  `false`, `bearbeitenGesperrtGrund` wird nur bei `!kannBearbeiten` und nach `trim()` ausgewertet
+  (kein leeres `title=""`). Die DOM-Umordnung bricht keinen Verbraucher — die Leiste wird heute nur
+  vom Lieferant-Modal und vom Hook-Testharness gerendert, beide grün.
+
+### Sonst geprüft, ohne Befund
+
+- **Generationsprüfung (7b Punkt 1):** in beiden 409-Zweigen jetzt zweimal — einmal nach dem
+  `fetch`-await, einmal nach `res.json()`. Das ist die richtige Stelle: `json()` ist selbst ein
+  zweiter Await-Punkt. Beide durch je einen eigenen Test abgedeckt, Mutationsprobe beißt.
+- **6b-Behelf im Modal entfernt:** der Effekt ist raus, der Hook macht es selbst; der neue Test
+  „ruft die Acquire-Route nur einmal auf" sichert ab, dass daraus kein zweiter Request wird.
+- **Kein neuer Pfad zu `modus='bearbeiten'` ohne Lock über `onBearbeiten`:** dessen erster Zweig
+  setzt nur bei `lockUrl == null` (nichts zu sperren) oder `heldRef.current === true`. Der
+  Retry-Zweig überlässt das Umschalten jetzt vollständig `acquire()`, das nur im Erfolgsfall
+  umschaltet. Beide sauber.
+- **Datenschutz:** nur Dummy-Namen (Anna Büro, Anna Beispiel, Erika Musterfrau, Ueberholt Beispiel),
+  keine E-Mail-Adressen, keine Secrets im Abschnitt-Diff.
+- **Diff-Hygiene:** 10 Dateien, kein Backend, kein `test-results/`, kein Build-Output.
+- **Performance:** kein neues Polling, kein zweiter Timer. `BearbeitenLeiste` bleibt eine reine
+  Darstellungskomponente ohne State; `useId()` ist vernachlässigbar.
+
+## Abschnitt 7-1 — Task 7c Nachtrag (Coding-Agent)
+
+Zeit: 2026-09-04T23:28:00Z
+Branch: lock/task-7c-bearbeiten-leiste
+Commit(s): 6858c0d1
+Status: fertig
+
+Was gemacht wurde:
+- Nachtrag aus dem Code-Review (🟡): Klassen-Kommentar in BearbeitenLeiste.tsx behauptete
+  "Knopf ist immer das letzte Kind" — stimmt nicht mehr, sobald bearbeitenGesperrtGrund
+  greift, weil dann der unsichtbare sr-only-Span für aria-describedby dem Knopf folgt.
+  Kommentar korrigiert: Bänder stehen vor dem Knopf, nach dem Knopf folgt höchstens der
+  unsichtbare Beschreibungs-Span — nichts, das Platz einnimmt bzw. für die Breite des Blocks
+  zählt.
+- Die beiden bestehenden "letztes Kind"-Tests bleiben unverändert korrekt (sie prüfen den
+  Modus 'bearbeiten', dort greift kein Grund, also existiert der Span dort nie). Zur Deckung
+  der eigentlich gemeldeten Lücke einen neuen Test ergänzt: mit gesetztem
+  bearbeitenGesperrtGrund folgt nach dem Knopf genau ein Element, ein SPAN mit sr-only-Klasse.
+  Mutationsprobe: sr-only-Klasse testweise entfernt → neuer Test wird rot
+  (`expected '' to contain 'sr-only'`) — zurückgesetzt, wieder grün.
+- `npx vitest run src/components/lock/BearbeitenLeiste.test.tsx` → 26/26 grün.
+- `npm run lint` → 0 Fehler, genau die 1 vorbestehende Warnung (BelegeKasseEditor.tsx:1204).
+
+Bedenken / Abweichungen vom Plan:
+- keine.
+
+## Abschnitt 7-1 — Task 7b Nachbesserung 1 (Coding-Agent)
+
+**Zeit:** 04.09.2026, ca. 23:15–23:36 Uhr
+**Branch:** `lock/task-7b-hook` (Ausgangspunkt `68c3d951`)
+**Commit:** `6c7c39df` — fix(sperr-hook): Bearbeiten-Modus ohne gehaltenes Lock nach Heartbeat-409 behoben
+**Status:** ✅ fertig, alle Gates grün (nur eigene Testdateien, wie vorgegeben).
+
+### Der Befund
+
+Der 409-Zweig im Heartbeat (`useDatensatzLock.ts`, damals Z. 171–190) setzte `status='locked-by-other'`
+und `heldRef.current=false`, liess `modus` aber unangetastet. Seit Task 7b Punkt 2 schaltet `acquire()`
+nach jedem erfolgreichen Erwerb `modus` auf `'bearbeiten'` — dadurch war
+`status='locked-by-other'` bei gleichzeitig `modus='bearbeiten'` erreichbar: genau die seit
+Review 5 verbotene Kombination „Bearbeiten-Modus ohne gehaltenes Lock". Im Lieferant-Modal
+(`formGesperrt = modus !== 'bearbeiten'`) blieben dabei alle Felder aktiv und Speichern
+freigeschaltet, während `GesperrtHinweis` einen anderen Halter meldete. Auslöser in der Praxis:
+gedrosselter Hintergrund-Tab reisst das 90-Sekunden-Fenster, ein Kollege übernimmt, der nächste
+Heartbeat bekommt 409.
+
+### Roter Test zuerst
+
+Bestehenden Test um `:322` (`ein Heartbeat mit 409 wechselt in "locked-by-other"...`) um eine
+`modus`-Zusicherung ergänzt — genau die Lücke, durch die der Befund rutschte (der Test prüfte
+bis dahin nur `status`/`kannBearbeiten`/`halterName`). Rote Meldung gegen den unveränderten
+Stand von `68c3d951`:
+
+```
+AssertionError: expected 'bearbeiten' to be 'lesen'
+Expected: "lesen"
+Received: "bearbeiten"
+```
+
+### Fix
+
+`setModus('lesen')` im 409-Zweig von `heartbeat()`, direkt neben `heldRef.current = false`.
+
+### Systematische Prüfung der übrigen Übergänge
+
+Alle Stellen im Hook durchgegangen, an denen `heldRef.current` auf `false` gesetzt wird:
+
+| Stelle | Ergebnis |
+| --- | --- |
+| `heartbeat()`, 409-Zweig | **Bug — behoben** (siehe oben). |
+| `acquire()`, 409-Zweig (Retry scheitert erneut mit Fremdsperre) | Kein beobachtbarer Fehler heute (`acquire()` wird nur aufgerufen, wenn `modus` bereits `'lesen'` ist — bestehender Test „onBearbeiten() nach freigeben() bleibt im Modus 'lesen', wenn der erneute Versuch mit 409 scheitert" deckt das ab), aber **defensiv `setModus('lesen')` ergänzt**, damit die Invariante an der Stelle selbst gilt statt sich auf die Aufrufer-Reihenfolge zu verlassen. |
+| `acquire()`, `!res.ok`-Zweig (z.B. 500 beim Retry) | Gleiche Einschätzung — **defensiv ergänzt**, mitgetestet im neuen Kettentest (letzter Schritt: erneuter Retry scheitert mit 500). |
+| `acquire()`, `catch`-Zweig (Netzfehler, kein AbortError) | Gleiche Einschätzung — **defensiv ergänzt**. Kein dedizierter Test dafür ergänzt (Zeitgründe); durch die Invariante der anderen Zweige mitabgesichert, echte Regressionsgefahr gering. |
+| `heartbeat()`, `!res.ok`-Zweig (Netzfehler ohne 409, auch nach mehreren Fehlschlägen) | **Kein Fund** — dieser Zweig ändert `heldRef` gar nicht, das Lock gilt bis zu einem 409 oder einer aktiven Freigabe als weiter gehalten. Bestehenden Test „zwei aufeinanderfolgende fehlgeschlagene Heartbeats..." um `status`/`modus`-Zusicherung erweitert, um das explizit festzuhalten statt es nur zu vermuten. |
+| `aktivFreigeben()` (freigeben() während ein Acquire läuft) | **Kein Fund** — setzt `status`/`modus`/`halter` bereits unconditional gemeinsam zurück. Der interessante Fall ist der UMGEKEHRTE Race: ein überholter, noch laufender Acquire, der NACH einem `freigeben()` mit Erfolg (200) zurückkommt — abgesichert durch die (aus einer früheren Nachbesserung bestehende) Generationsprüfung direkt nach dem `fetch()`-await in `acquire()`. Dafür neuen Test geschrieben (siehe unten), der das erstmals über `modus`/`status` statt nur über den Request-Zähler prüft. |
+| `releaseKeepalive()` (Unmount/`pagehide`) | Bewusst **nicht angefasst** — fire-and-forget für die Seiten-Teardown, ändert `status`/`modus` absichtlich nicht (siehe Docstring dort). Die vom Reviewer vorgeschlagene Invariante („nie `modus==='bearbeiten'` bei `status!=='acquired'`") bleibt hier ohnehin gewahrt, weil `status` ebenfalls unverändert `'acquired'` bleibt — kein Widerspruch zwischen den beiden exponierten Werten, nur der interne `heldRef` läuft (absichtlich) auseinander. Exotischer Randfall (bfcache-Restore nach `pagehide`), nicht vom Reviewer benannt — als Beobachtung hier vermerkt, kein eigener Task daraus gemacht. |
+
+### Neue Tests
+
+1. **Erweiterung des Heartbeat-409-Tests** um `expect(result.current.modus).toBe('lesen')` — der eigentliche rote Test.
+2. **Kettentest** „gilt ueber eine ganze Kette von Uebergaengen hinweg: Mount-Erfolg -> Heartbeat-409 -> Retry-Erfolg -> Fertig -> erneuter Acquire-Fehler" mit einem `pruefeInvariante()`-Helfer, der nach jedem Schritt sicherstellt, dass `modus==='bearbeiten'` nur bei `status==='acquired'` vorkommt (die von der Nutzerseite vorgeschlagene generelle Invariante). Deckt dabei auch den defensiven `!res.ok`-Zweig in `acquire()` ab (letzter Schritt: 500 beim erneuten Retry).
+3. **Test für „freigeben() während ein Retry-Acquire noch läuft"**: ein hängender Retry-Acquire wird durch ein zwischenzeitliches `freigeben()` überholt; ein danach eintreffender Erfolg (200) darf `modus` nicht mehr auf `'bearbeiten'` setzen. Bestätigt, dass die bestehende Generationsprüfung (aus einer früheren Nachbesserung) diesen Fall bereits ohne Codeänderung abdeckt.
+4. **Erweiterung** des Tests „zwei aufeinanderfolgende fehlgeschlagene Heartbeats..." um `status`/`modus`-Zusicherungen (bestätigt: reine Netzfehler ohne 409 lassen das Lock unangetastet).
+
+### Mutationsprobe
+
+`setModus('lesen')` im Heartbeat-409-Zweig wieder entfernt → **genau 2 Tests rot**, alle anderen
+33 bleiben grün:
+- der erweiterte Heartbeat-409-Test: `AssertionError: expected 'bearbeiten' to be 'lesen'`
+- der neue Kettentest: `AssertionError: expected 'bearbeiten' not to be 'bearbeiten'` (an der Stelle
+  direkt nach dem Heartbeat-409-Schritt)
+
+Fix danach wiederhergestellt, Quellstand per `git diff --stat` gegen den committeten Stand
+geprüft (identisch). Die drei defensiven `setModus('lesen')`-Ergänzungen in `acquire()` wurden
+NICHT einzeln mutiert (keine der drei ist bei gegebenem Aufrufer-Gefüge heute beobachtbar
+scharf) — das ist im Bericht oben transparent vermerkt, nicht verschwiegen.
+
+### Gates (nur eigene Dateien, wie vorgegeben)
+
+- `npx vitest run src/components/lock/useDatensatzLock.test.tsx` → **35/35 grün**.
+- `npx vitest run src/components/LieferantDokumentModal.test.tsx` → **14/14 grün**, unverändert.
+- `npm run lint` → **0 Fehler, genau die 1 vorbestehende Warnung** (`BelegeKasseEditor.tsx:1204`).
+- `npm run build` → grün, `src/main/resources/static/` danach zurückgesetzt.
+- Playwright nicht erneut gefahren — diese Nachbesserung ändert ausschliesslich
+  `useDatensatzLock.ts`/-test, keine Modal-/UI-Datei; die 6b/7b-Spec bleibt durch die
+  unveränderten, weiter grünen `LieferantDokumentModal.test.tsx` mittelbar abgedeckt.
+
+### Bedenken / Abweichungen vom Plan
+
+Keine Abweichung vom Auftrag. Eigene Entscheidungen, transparent gemacht:
+- Die drei defensiven `setModus('lesen')`-Ergänzungen in `acquire()` sind nach heutigem
+  Aufrufer-Gefüge nicht scharf beobachtbar (dort ist `modus` bereits `'lesen'`, bevor `acquire()`
+  überhaupt aufgerufen wird) — trotzdem ergänzt, weil der Auftrag ausdrücklich verlangt, dass die
+  Invariante „heldRef=false ⇒ modus='lesen'" an JEDER Stelle selbst gilt, nicht nur aus der
+  Aufruf-Reihenfolge folgt. Keine eigene Mutationsprobe je Zeile, da nicht scharf testbar ohne
+  einen Aufrufer-Pfad zu erfinden, den es heute nicht gibt.
+- `releaseKeepalive()` bewusst nicht angefasst (siehe Tabelle oben) — ausserhalb dessen, was der
+  Reviewer als Übergänge benannt hat, und die genannte Invariante bleibt dort ohnehin gewahrt.
+  Falls das dennoch geschlossen werden soll, wäre das ein eigener, expliziter Auftrag.

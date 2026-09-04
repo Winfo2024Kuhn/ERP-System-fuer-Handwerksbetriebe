@@ -317,8 +317,21 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
 
 #### Task 7a — DocumentEditorPage auf das neue Fundament (Runde 7-2)
 - Files: `react-pc-frontend/src/pages/DocumentEditorPage.tsx`,
-  `DocumentEditorPage.test.tsx` (neu), `e2e/dokument-editor-seite.spec.ts` (neu).
-  `BearbeitenLeiste.tsx` gehört jetzt **7c**, nicht mehr 7a.
+  `DocumentEditorPage.test.tsx` (neu), `e2e/dokument-editor-seite.spec.ts` (neu),
+  **plus** `components/lock/TabSchliessenHinweis.tsx` (nur `text-balance`, Hinweis aus
+  Design-Review 7-1: das „Sie" hängt allein am Zeilenende) und, falls die Seite einen
+  Speicher-Auslöser braucht, minimal `document-editor/index.tsx` + `types.ts` (nur dafür,
+  als Abweichung vermerken — niemand sonst arbeitet in Runde 7-2 daran).
+  `BearbeitenLeiste.tsx` gehört **7c**, nicht 7a.
+- Runde 7-1 hat geliefert, was 7a braucht: Hook öffnet direkt im Modus `bearbeiten`,
+  Leiste hat `bearbeitenGesperrtGrund` und `zeigeNurLesenHinweis`.
+
+> **Orchestrator, vor Runde 7-2 — erledigt:** Design-Review 7-1 meldete E2E-Flattern auf
+> kaltem Dev-Server (`toBeVisible()` reißt nach 5 s, während Vite noch 19–21 s baut).
+> `playwright.config.ts` hat jetzt `globalSetup: e2e/hilfen/aufwaermen.ts` (lädt
+> Startseite, Dokument-Editor und Lieferanten einmal mit echtem Browser) und
+> `expect.timeout: 15 s`. Gegen kalten Server ausgeführt: Leisten-Spec 5/5 in 29 s,
+> einzelne Tests 2,7–6,6 s. Commit siehe Feature-Branch.
 - Consumes: 6a (`readOnly`, `onLockFreigeben`), 5a, `useIdleTimer`, `GesperrtHinweis`.
 - `useDocumentLock`/`DocumentLockedModal` raus. `locked-by-other` ⇒ Editor mit
   `readOnly`, darüber `GesperrtHinweis` + `BearbeitenLeiste` (`lesen`). `acquired` ⇒
