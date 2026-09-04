@@ -392,9 +392,48 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
      Entscheidung nach Konvention; der Nutzer kann sie umdrehen.
   Jeder Punkt mit rotem Test; Screenshots nach dem Ausklingen der Übergänge.
 
-### Abschnitt 8 — zwei Spuren parallel
+### Abschnitt 8 — in zwei Runden
 
-#### Task 8a — Toast, Confirm-Dialog und Konfliktmeldung nachschärfen (Befunde aus Design-Review 6, 2. Durchgang)
+> **Umgeschnitten nach Code-Review 7-2:** `document-editor/index.test.tsx` hängt noch an
+> `useDocumentLock` (Seiten-Nachbau im Test, stubbt `/api/dokument-locks/`). Das Löschen der
+> alten Dateien wäre allein nicht grün. Deshalb **Runde 8-1 = 8a + 8b parallel** (disjunkte
+> Dateien), **Runde 8-2 = Aufräumen durch den Orchestrator**, wenn nichts mehr auf die alten
+> Klassen zeigt.
+
+#### ~~Task 8b~~ — aufgegangen in **7a Nachbesserung 1** (Design-Review 7-2 hat Punkt 1 und 2 als 🔴 gewertet; derselbe Agent, dieselben Dateien, gleiche Runde). Runde 8-1 ist damit nur noch 8a.
+
+#### (ehemals 8b) Editor-Kopf und Seiten-Layout — Inhalt zur Nachvollziehbarkeit
+- Files: `react-pc-frontend/src/components/document-editor/DocumentEditorHeader.tsx`,
+  `document-editor/index.tsx`, `document-editor/types.ts`, `document-editor/index.test.tsx`,
+  `pages/DocumentEditorPage.tsx`, `pages/DocumentEditorPage.test.tsx`,
+  `e2e/dokument-editor-seite.spec.ts`
+- Consumes: alles aus 7-2 (gemerged).
+- Steps, je roter Test zuerst:
+  1. **„Gebucht"-Badge nur bei wirklich gebuchten Dokumenten.** Heute kommt es aus
+     `isLocked`, in das seit 6a auch `readOnly` fließt — bei Fremdsperre und Lock-Fehler
+     steht „Gebucht" auf einem ungebuchten Dokument (auch storniert/digital angenommen
+     tragen es fälschlich). Der Editor rechnet `gebucht && invoiceTypes.includes(typ)`
+     schon aus (`index.tsx:~428`); diesen Ausdruck als eigenen Prop an den Header geben,
+     `isLocked` bleibt fürs Deaktivieren. Nachweisbar: Fremdsperre ⇒ kein „Gebucht";
+     gebuchtes Dokument ⇒ „Gebucht"; storniert ⇒ „Storniert" ohne „Gebucht".
+  2. **Layout ohne `transform`-Trick.** Der `[transform:translateZ(0)]`-Container der Seite
+     macht sich zum Containing Block für **alle** `fixed`-Nachfahren des Editors — 12
+     Vollbild-Dialoge decken die Leiste nicht mehr ab, „Fertig" bleibt bei offenem
+     Ungespeichert-Dialog klickbar und gibt die Sperre frei. Stattdessen: der Editor
+     (`fixed inset-0`) bekommt seinen oberen Versatz explizit (z.B. CSS-Variable
+     `--lock-leiste-hoehe`, von der Seite gesetzt, im Editor `top-[var(--lock-leiste-hoehe,0px)]`),
+     der Container verliert das `transform`. Nachweisbar (Spec): bei offenem
+     Ungespeichert-Dialog ist der „Fertig"-Knopf **nicht** anklickbar (Backdrop liegt
+     darüber, `elementFromPoint` trifft den Backdrop); Leiste und Editor überlappen sich
+     weiterhin nicht (`designPruefung`).
+  3. `setSchliesstGerade(true)` in `onLockFreigebenFuerSchliessen` **vor** dem `await`, nicht
+     danach (Hinweis Code-Review 7-2).
+  4. X-Knopf im Header bekommt ein `aria-label` („Editor schließen") — seit 6a offen.
+  5. **`index.test.tsx` von `useDocumentLock` lösen:** der Seiten-Nachbau im Test und die
+     Stubs auf `/api/dokument-locks/` auf `useDatensatzLock` / `/api/datensatz-locks/`
+     umstellen. Voraussetzung dafür, dass Runde 8-2 die alten Dateien löschen kann.
+
+#### Task 8a — Toast, Confirm-Dialog, Konfliktmeldung und Hook nachschärfen — Runde 8-1
 - Files: `react-pc-frontend/src/components/ui/toast.tsx`, `toast.test.tsx`,
   `react-pc-frontend/src/components/ui/confirm-dialog.tsx` (+ Test),
   `react-pc-frontend/src/components/lock/useKonfliktMeldung.ts`, `useKonfliktMeldung.test.tsx`,
@@ -427,9 +466,15 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
      Mount und treffen nur den `useState`-Initializer. Test ergänzen, der den Dialog
      **nach** dem Mount öffnet und wieder schließt (Container wandert `bottom-6` →
      `top-6` → `bottom-6`), plus ein Test für `observer.disconnect()` beim Unmount.
+  6. **Aus Design-Review 7-2** (Files um `components/LieferantDokumentModal.tsx` + Test
+     erweitern): „Sie lesen nur mit." erscheint im Modal auch neben dem Fehler- und
+     Ladeband und drängt das rote Band zusammen (x 61–1250 → 61–1132) — die dringende
+     Meldung weicht der beiläufigen. Die Seite nutzt die bessere Regel
+     (`lock.status === 'idle'`, `DocumentEditorPage.tsx:~109`); das Modal
+     (`LieferantDokumentModal.tsx:~119`) daran angleichen. Roter Test zuerst.
   Jeder Punkt roter Test zuerst; e2e-Spec mit `designPruefung` bei stehendem Toast.
 
-## Abschnitt 8 (Aufräumen — macht der Orchestrator selbst, parallel zu 8a)
+## Abschnitt 8-2 (Aufräumen — macht der Orchestrator selbst, nach 8a)
 
 Zusätzlich nimmt der Orchestrator dabei den Halbsatz aus Code-Review 6 mit: in
 `document-editor/index.tsx`, `handleSave`, Create-Zweig — `setDokument(created)` muss vor

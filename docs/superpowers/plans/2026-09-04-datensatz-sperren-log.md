@@ -2313,3 +2313,352 @@ Roter Test zuerst (`DocumentEditorPage.test.tsx`, "blendet die eigene Leiste aus
 5. **`handwerkerprogramm-design`-Skill über das Skill-Tool nicht im Standard-Weg geprüft** — wie schon in früheren Abschnitten (siehe 6a) direkt per Read-Tool gelesen (SKILL.md + README.md) statt über `Skill({skill: ...})`, da in dieser Session ohnehin nur Lese-Werkzeuge zur Verfügung standen und der direkte Weg zuverlässig funktioniert.
 
 Keine sonstigen Abweichungen. Plan und Realität stimmten größtenteils überein — die Optimistik-Logik gegen das Flackern und die `schliesstGerade`-Ergänzung waren beim Schreiben des Plans nicht im Detail vorweggenommen, ließen sich aber vollständig innerhalb der vorgesehenen Dateiliste lösen.
+
+## Abschnitt 7-2 — Code-Review (Code-Reviewer)
+
+**Ampel: 🟡** — kein blockierender Befund. Von meiner Seite abgenommen. Stand `256b3e1d`.
+
+### Verbraucher-Greps (Voraussetzung für das Löschen in Abschnitt 8)
+
+**Frontend** (`useDocumentLock|DocumentLockedModal|dokument-locks`): im **Produktivcode sauber**.
+Übrig sind nur die alten Dateien selbst (`useDocumentLock.ts`, `DocumentLockedModal.tsx`) und reine
+Prosa-Erwähnungen in Kommentaren (`GesperrtHinweis`, `useDatensatzLock`, `DocumentEditorPage`,
+`document-editor/index.tsx:1188`). Kein Produktivcode ruft sie mehr auf.
+
+**Aber ein Test tut es noch:** `document-editor/index.test.tsx` importiert `useDocumentLock` (Zeile 9,
+benutzt in Zeile 204) und stubbt `/api/dokument-locks/AUSGANG/42/{acquire,heartbeat}` (Zeilen 254/261).
+Das ist der Seiten-Nachbau `SeiteMitAltemLock` aus Abschnitt 6, Durchgang 2. Beim Löschen in
+Abschnitt 8 bricht diese Datei — der Nachbau sollte dort auf `useDatensatzLock` gezogen werden
+(jetzt möglich, da 7a die echte Seite umgestellt hat).
+
+**Backend** (`DokumentLockService|DokumentLockDto|DokumentLockRepository`): **sauber**. Nur noch die
+alten Klassen untereinander (`DokumentLockController`, `DokumentLockService`, `DokumentLockDto`,
+`DokumentLockRepository`) plus zwei Prosa-Kommentare in `SperrbarerTyp.java` und
+`DatensatzLockService.java`. `DokumentLockController` ist damit ein noch gemappter, aber
+verbraucherloser Endpunkt unter `/api/dokument-locks` — fällt in Abschnitt 8.
+
+### Mutationsproben (Quellstand danach byte-identisch, `git diff 256b3e1d` leer)
+
+1. **Reihenfolge speichern/freigeben** — in `onIdle` getauscht ⇒
+   `AssertionError: expected [ 'freigeben', 'speichern' ] to deeply equal [ 'speichern', 'freigeben' ]`
+   (1 von 11 rot).
+2. **`readOnly` bei Fremdsperre** — `readOnly` fest auf `false` ⇒ **3 von 11 rot**
+   („Fertig gibt frei", „fremde Sperre … Editor readOnly", „Acquire-Fehler … deaktivierter Knopf").
+3. **`speichernFuerFreigabe` ohne Wirkung** — Rumpf auf `return;` ⇒
+   `AssertionError: expected 0 to be greater than or equal to 1` („speichert über das Ref, wenn
+   ungespeicherte Änderungen vorliegen"), 1 von 33 rot.
+
+### Das optimistische Fenster — selbst nachgestellt
+
+Die Frage war, ob `kamOhneIdRef`/`ersterErwerbNachAnlageGeschehenRef` wirklich **nur** den
+Anlege-Übergang abdecken und ein späterer echter Lock-Verlust trotzdem sofort `readOnly` erzwingt.
+Eigene Wegwerf-Probe an der echten Seite (Start ohne Id → Anlegen → Acquire 200 → 30 s später
+Heartbeat 409):
+
+```
+start   : readOnly=false
+angelegt: readOnly=false                     (kein Flackern, wie beabsichtigt)
+nach HB-409: readOnly=true  gesperrtHinweisSichtbar=true
+```
+
+Sauber. Der Riegel hält, weil die Latch-Zeile beim **ersten** Auflösen (`acquired` /
+`locked-by-other` / `error`) endgültig zuschnappt; danach zählt nur noch der echte `lock.modus`.
+Auch die Richtung stimmt: bliebe der Server hängen, bliebe das Fenster offen — dann hält der
+Ersteller das Lock aber ohnehin serverseitig (Backend-`create` vergibt es), editierbar ist also
+richtig. Ein Fremdhalter kann in diesem Fenster nicht auftreten. `kamOhneIdRef` wird nur im ersten
+Render gesetzt, eine mit Id geöffnete Seite bekommt die Optimistik also nie.
+
+Kleiner Vorbehalt ohne praktische Folge: die Latch-Zuweisung passiert im Render-Rumpf (Ref-Mutation
+während des Renderns). Unter StrictMode/Concurrent kann sie in einem verworfenen Render zuschnappen
+— dann schließt das Fenster einen Tick zu früh, also in die **sichere** Richtung (kurzes Flackern
+statt fälschlich editierbar).
+
+### 💡 Hinweise (blockieren nicht)
+
+- **`DocumentEditorHeader.tsx:75-81` — „Gebucht"-Badge bei jedem `isLocked`.** Ich habe das als
+  **🟡** eingestuft, nicht als 🔴 — mit Begründung, weil die Frage ausdrücklich gestellt war:
+  Die Aussage ist fachlich falsch (ein Schloss-Symbol mit dem Wort „Gebucht" auf einem ungebuchten
+  Dokument), und sie ist durch diese Runde erstmals in einer **häufigen** Lage sichtbar — jeder
+  Kollege, der ein gesperrtes Dokument öffnet, sieht sie. Gegen 🔴 spricht: die Fehlkopplung ist
+  **älter als dieses Vorhaben** (`storniert` und `digitalAngenommen` lösen sie seit jeher aus — ein
+  storniertes Dokument trägt heute „Gebucht" **und** „Storniert" nebeneinander), es geht nichts
+  verloren, nichts wird still überschrieben, und direkt daneben steht mit `GesperrtHinweis` die
+  richtige Erklärung. Das ist ein falsches Etikett, kein kaputter Ablauf.
+  Trotzdem gehört es vor der Auslieferung repariert, nicht auf unbestimmt vertagt.
+  **Fix gehört in den Header:** `DocumentEditorHeader.tsx` darf das Badge nicht aus `isLocked`
+  ableiten. Der Editor rechnet `gebucht && invoiceTypes.includes(typ)` ohnehin schon für `isLocked`
+  aus (`index.tsx:428-433`) — dieser Teilausdruck als eigener Prop (z. B. `zeigeGebuchtBadge`)
+  hinüber, `isLocked` bleibt für das Deaktivieren der Bedienelemente. Zwei kleine Änderungen in
+  `index.tsx` und `DocumentEditorHeader.tsx`.
+- **`DocumentEditorPage.tsx` — der `[transform:translateZ(0)]`-Container betrifft mehr als den
+  Editor-Rahmen.** Ein `transform` macht das Element laut CSS-Spezifikation zum Containing Block für
+  **alle** `position: fixed`-Nachfahren — nicht nur für den Editor selbst. Im Editor-Teilbaum liegen
+  mindestens 12 Vollbild-Overlays mit `fixed inset-0` (`Modals.tsx` 6x, `AlternativGruppeDialog`,
+  `RabattDialog`, `EmailFormatDialog`, `EmailValidityDialog`, `KategorieBestaetigenDialog`,
+  `ArtikelAuswahlDialog`) plus ein Tooltip mit `fixed z-[100]`. Die sind jetzt alle auf den Bereich
+  **unterhalb** der Leiste beschränkt: ihr Backdrop deckt die Leiste nicht mehr ab, und weil die
+  Leiste geometrisch außerhalb liegt, bleibt sie sichtbar **und anklickbar**, während ein
+  Editor-Dialog offen ist. Ein Klick auf „Fertig" bei offenem Ungespeichert-Dialog gibt dann die
+  Sperre frei und setzt den Editor unter dem Dialog auf `readOnly`. Unschön, nicht zerstörerisch
+  (Speichern wird serverseitig abgewiesen). Sauber wäre, die Leiste in denselben Containing Block zu
+  legen, damit Editor-Overlays sie mit abdecken. Die optische Hälfte (Dialoge sitzen jetzt im
+  verkleinerten Bereich statt mittig im Viewport) gehört dem Design-Reviewer.
+  **Nicht betroffen:** der Toast-Container (Provider hängt über der Seite) und `KiHilfeChat`
+  (Geschwister *außerhalb* des transformierten Containers) — beide bleiben viewport-verankert.
+  Geprüft, kein Befund.
+- **`DocumentEditorPage.tsx` (`onLockFreigebenFuerSchliessen`)** — `setSchliesstGerade(true)` steht
+  **vor** dem `await lock.freigeben()`. Scheiterte die Freigabe, bliebe die Leiste dauerhaft
+  ausgeblendet, während der Editor offen bleibt. In der Praxis nicht erreichbar, weil
+  `aktivFreigeben` seinen Fetch selbst abfängt und nie ablehnt — aber das Flag nach dem `await` zu
+  setzen wäre robuster.
+- **Editor-X-Knopf ohne `aria-label`** (`DocumentEditorHeader.tsx:64`) — seit 6a offen, weiterhin
+  offen. Die Tests behelfen sich mit „erster Button im Baum"; der Orchestrator musste den E2E-Locator
+  deswegen gerade erst auf `getByTestId('dokument-editor-flaeche')` eingrenzen. Ein `aria-label`
+  würde beides erledigen.
+
+### Sonst geprüft, ohne Befund
+
+- **Idle:** `enabled: lock.modus === 'bearbeiten'` nutzt bewusst den **echten**, nicht den
+  optimistischen Modus — im Lesen-Modus läuft kein Timer, es gibt nichts zu verlieren. `onIdle`
+  speichert erst, gibt dann frei; durch Test und Mutationsprobe belegt.
+- **`speichernFuerFreigabe`:** No-op ohne ungespeicherte Änderungen und bei `isLocked` — kein
+  Leerlauf-Request. Wartet den vollen Roundtrip ab, bevor die Seite freigibt. Genau eine Methode am
+  Handle, minimale Schnittstelle.
+- **`schliesstGerade`** versteckt die Leiste nur auf dem X-Pfad; das normale „Fertig" läuft nicht
+  durch den Wrapper, die Leiste bleibt sichtbar — beide Fälle je mit eigenem Test.
+- **7d:** `bearbeitenGesperrtGrund` nur bei `loading`/`error` gesetzt (genau die Zustände mit
+  `kannBearbeiten === false`), sonst `undefined` ⇒ gar kein `title`. `zeigeNurLesenHinweis` schließt
+  die Fremdsperre aus, damit nicht zwei Texte denselben Zustand erklären. Der Fehlertext ist
+  wortgleich mit Band und Toast. Sauber verdrahtet.
+- **Datenschutz:** nur Dummy-Namen (Anna Beispiel, Bea Beispiel). Keine Secrets, kein Build-Output,
+  kein `test-results/` im Diff.
+- **Performance:** kein neues Polling, kein zweiter Timer; der Editor mountet beim Id-Wechsel nicht
+  neu (`mountCount` bleibt 1, eigener Test).
+
+### Selbst gemessene Zahlen
+
+| | Baseline (7-1) | jetzt |
+|---|---|---|
+| Backend | 2462 / 0 F / 4 E | **2462 / 0 Failures / 4 Errors** |
+| Frontend Testdateien | 87 | **88** (+1 `DocumentEditorPage.test.tsx`) |
+| Frontend Tests | 1052 | **1071** (+19) |
+| Lint | 0 Fehler, 1 Warnung | **0 Fehler, 1 Warnung** |
+
+- Die 4 Backend-Errors sind namentlich die bekannten umgebungsbedingten; sonst keine Ausfälle.
+- Frontend-Volllauf **komplett grün, kein Flake** — kein einziger Test musste einzeln nachgefahren
+  werden.
+- Lint-Warnung ist die vorbestehende `BelegeKasseEditor.tsx:1204`.
+- `npm run build` grün, `src/main/resources/static/` zurückgesetzt. Code byte-identisch zu
+  `256b3e1d`. Die beiden unversionierten `.claude/skills/`-Dateien des Nutzers habe ich nicht
+  angefasst.
+
+## Abschnitt 7-2 — Design-Review (Design-Reviewer)
+
+**Ampel: 🔴** — zwei blockierende Befunde, beide im Browser durchgemessen. Das Layout der
+neuen Seite selbst ist dagegen sauber: die Leiste schiebt den Editor exakt, ohne
+Überschneidung, auf beiden Größen.
+
+Worktree `wt/review-design`, Stand `256b3e1d`. `E2E_PORT=5190 npm run test:e2e`:
+**104 Tests, alle grün**, beide Größen `pc-14zoll` (1440×900) und `pc-monitor` (1920×1080).
+Zehn Tests mehr als in 7-1 (94). Das Aufwärmen per `globalSetup` wirkt — das
+Kaltstart-Flattern aus 7-1 ist nicht wieder aufgetreten, auch nicht beim Fahren einzelner
+Specs.
+
+### 🛑 Blockierend 1: „Gebucht" steht auf einem Dokument, das nicht gebucht ist
+
+Der Editor-Kopf zeigt in **drei** der fünf neuen Zustände ein amber-Badge „Gebucht" —
+`editor-seite-lesen`, `editor-seite-gesperrt`, `editor-seite-fehler`, auf beiden Größen.
+Im Zustand `editor-seite-bearbeiten` fehlt es (dort ist `isLocked` false).
+
+Nachgemessen im Browser (identisch auf 14 Zoll und 1920):
+
+| | Wert |
+| --- | --- |
+| Badge-Text | `Gebucht` |
+| Rahmen | x 188, y 70, 70 × 21 |
+| Hintergrund / Text / Rand | `rgb(255,251,235)` amber-50 / `rgb(180,83,9)` amber-700 / `rgb(253,230,138)` amber-200 |
+| Kontrast | 4,84 : 1 — gut lesbar |
+
+Das Dokument im Test hat `gebucht: false` (`e2e/hilfen/dokument-editor.ts`,
+`BEISPIEL_DOKUMENT`). Die Oberfläche behauptet also nachweislich das Gegenteil dessen, was
+im Datensatz steht — nicht „unglücklich formuliert", sondern **falsch**.
+
+Ursache: `DocumentEditorHeader.tsx` rendert das Badge an `isLocked`, und `isLocked` ist in
+`document-editor/index.tsx:428` eine Sammelvariable aus vier verschiedenen Gründen:
+
+```
+const isLocked = !!(readOnly || dokument?.storniert || dokument?.digitalAngenommen
+                    || (dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ)));
+```
+
+Der `readOnly`-Term kam in 6a dazu; der Kopf selbst wurde zuletzt lange vor diesem Vorhaben
+angefasst. Neu ist, dass **dieser Abschnitt** die drei Nur-Lesen-Zustände über die echte
+Route überhaupt sichtbar macht: vorher stand bei Fremdsperre ein blockierendes Modal davor,
+der Nutzer sah den Editor gar nicht.
+
+Warum das blockiert: „gebucht" heißt in diesem Produkt, die Rechnung ist in der Buchhaltung
+erfasst. Ein Handwerker, der das an seiner Rechnung liest, zieht daraus Schlüsse über seine
+Buchführung. Frage 4 (Gulf of Evaluation, „Was ist passiert?") wird nicht nur schlecht,
+sondern falsch beantwortet — bei einem Finanzdokument.
+
+**Nachweisbar sein muss:** Das Badge „Gebucht" erscheint genau dann, wenn `dokument.gebucht`
+für einen Rechnungstyp gesetzt ist — und in keinem der Sperr-/Nur-Lesen-Zustände. Naheliegend:
+dem Kopf ein eigenes `gebucht`-Prop geben statt `isLocked` doppelt zu benutzen; wenn ein
+Zustand „schreibgeschützt" sichtbar sein soll, bekommt er ein eigenes, ehrliches Etikett.
+
+### 🛑 Blockierend 2: Der Warn-Dialog blockiert die neue Leiste nicht — man kann die Sperre hinter dem offenen Dialog freigeben
+
+Der Editor ist weiterhin `fixed inset-0`; die Seite gibt ihm über
+`[transform:translateZ(0)]` ein eigenes Containing-Block unter der Leiste. Damit sind auch
+**die Modale des Editors** auf diesen Container beschränkt — der Scrim des
+„Ungespeicherte Änderungen"-Dialogs endet an der Oberkante des Editors und lässt die
+Leiste darüber voll bedienbar.
+
+Gemessen, beide Größen, bei offenem Warn-Dialog:
+
+| | pc-14zoll | pc-monitor |
+| --- | --- | --- |
+| `Fertig` in der Leiste | [1339, 10, 85, 34] | [1819, 10, 85, 34] |
+| `elementFromPoint` in dessen Mitte | **BUTTON „Fertig"** | **BUTTON „Fertig"** |
+| Playwright-Klickbarkeit (`trial`) | **ja** | **ja** |
+
+Und was dann passiert, ebenfalls gemessen (Klick auf `Fertig`, während der Dialog steht):
+
+| | Ergebnis (beide Größen) |
+| --- | --- |
+| DELETE auf die Sperre | **1× abgesetzt — die Sperre ist weg** |
+| Warn-Dialog | **steht weiter offen**, inklusive `Speichern & Schließen` |
+| Leiste danach | zeigt `Bearbeiten` und „Sie lesen nur mit." |
+
+Der Nutzer sieht damit gleichzeitig „Sie lesen nur mit." am Kopf und „Möchten Sie die
+Änderungen speichern, bevor Sie den Editor verlassen?" in der Mitte, mit einem aktiven
+`Speichern & Schließen` — ein Speichern-Angebot auf einem Datensatz, dessen Sperre gerade
+freigegeben wurde. Zwei Aussagen auf einem Bildschirm, die sich widersprechen; erreichbar
+in zwei Klicks. Das ist keine Geschmacksfrage, sondern ein Zustand, den die Oberfläche
+selbst herstellt, und er entsteht durch die Layout-Technik dieses Abschnitts.
+
+**Nachweisbar sein muss:** Solange ein Editor-Modal offen ist, ist der Umschalter der
+Leiste nicht bedienbar (`elementFromPoint` in seiner Mitte trifft den Scrim, nicht den
+Knopf) — oder die Leiste ist in diesem Moment gar nicht da. Die Probe gehört in
+`e2e/dokument-editor-seite.spec.ts` neben den X-Knopf-Ablauf.
+
+### Angeschaute Screenshots
+
+Alle 36 aus `react-pc-frontend/test-results/design/`, jeweils `--pc-14zoll` und
+`--pc-monitor`:
+
+1. `editor-seite-bearbeiten` · 2. `editor-seite-lesen` · 3. `editor-seite-gesperrt` ·
+4. `editor-seite-fehler` · 5. `editor-seite-tab-schliessen` (alle fünf neu)
+6. `lieferant-modal-lesen-hinweis` · 7. `lieferant-modal-fehler-tooltip` (beide neu)
+8. `lieferant-modal-bearbeiten` · 9. `lieferant-modal-fremdes-lock` ·
+10. `lieferant-modal-fehler` · 11. `lieferant-modal-speicherfehler-toast`
+12. `leiste-bearbeiten` · 13. `leiste-lesen` · 14. `leiste-countdown` ·
+15. `leiste-verbindung-weg` · 16. `leiste-deaktiviert`
+17. `dokument-editor-vor-schliessen` · 18. `dokument-editor-ungespeichert-warnung`
+
+Dazu 6 eigene Aufnahmen (Wegwerf-Specs, danach gelöscht, Worktree ist sauber):
+`editor-fehler-mit-toast`, `warndialog-gegen-leiste`, `nach-fertig-im-dialog`, je beide Größen.
+
+### Die sechs Fragen je Zustand
+
+**`editor-seite-bearbeiten` (14 Zoll + Monitor)**
+1. *Farben?* Leiste weiß, `Fertig` weißer Outline-Knopf mit rose-Rand, `PDF` im Editor-Kopf
+   die einzige gefüllte rosa Fläche. Kein „Gebucht"-Badge — korrekt.
+2. *Design-System?* Ja. rose/slate, Lucide, kein Emoji, Systemschrift.
+3. *Look-and-Feel?* Ruhig. Die Leiste ist im Bearbeiten-Zustand links leer — auf 1920 ein
+   1920 px breiter weißer Streifen mit einem Knopf. Etwas viel Rahmen für eine Aktion, aber
+   der Preis dafür, dass die Aktion immer an derselben Stelle steht. 🟡
+4. *UX?* Der Editor ist voll bedienbar, `Fertig` klar als Sekundäraktion.
+5. *Auffindbar?* Ja. Gemessen: Umschalter bei [1339, 10] bzw. [1819, 10], ohne Scrollen,
+   `elementFromPoint` trifft den Knopf selbst.
+6. *Überschneidung?* Nein, und hier ist die Layout-Technik nachweislich sauber:
+   Leiste [0, 0, 1440, **55**], Editor-Fläche [0, **55**, 1440, 845], Ende bei 900 —
+   bündig, kein Überlappen, kein Abschneiden. Auf 1920 analog (55 / 1025 / 1080).
+
+**`editor-seite-lesen` (14 Zoll + Monitor)** — nach eigenem „Fertig"
+1. *Farben?* „Sie lesen nur mit." in slate-500 neben rose-600 `Bearbeiten` — ruhig und klar.
+   **Aber:** amber-Badge „Gebucht" im Kopf (Blocker 1).
+2. *Design-System?* Farben ja. Das Badge-Icon ist ein handgemaltes inline-`<svg>` statt
+   eines Lucide-Icons — Regelbruch, aber vorbestehend, siehe Hinweise.
+3. *Look-and-Feel?* Ruhig, Werkzeugleiste des Editors korrekt reduziert.
+4. *UX?* Der Zustand ist benannt (7c-Hinweis wirkt) — bis auf das falsche Badge.
+5. *Auffindbar?* Ja, `Bearbeiten` am Kopf, ohne Scrollen.
+6. *Überschneidung?* Nein. Leiste 55 px, Editor darunter.
+
+**`editor-seite-gesperrt` (14 Zoll + Monitor)** — Fremdsperre (409)
+1. *Farben?* Volles rose-50-Band mit `Lock`: „Anna Beispiel bearbeitet das gerade — Sie
+   sehen den aktuellen Stand. Seit 5 Min.", daneben rose-600 `Bearbeiten`. Klar vom
+   Fehlerzustand (rot) und vom Bearbeiten-Zustand (leer) getrennt. Badge-Problem wie oben.
+2. *Design-System?* Ja (bis auf das vorbestehende Badge-SVG).
+3. *Look-and-Feel?* Das Band füllt die Leiste auch auf 1920 sinnvoll — genau das, was dem
+   Bearbeiten-Zustand fehlt.
+4. *UX?* Klartext mit Namen, `Bearbeiten` bleibt sichtbar und aktiv (Übernahmeversuch).
+   Zahlungsziel wird als Text statt als Eingabefeld gezeigt — korrekt.
+5. *Auffindbar?* Ja, Hinweis und Aktion am Kopf, auf 14 Zoll ohne Scrollen.
+6. *Überschneidung?* Nein. Leiste [0, 0, 1440, **59**], Editor [0, **59**, 1440, 841].
+
+**`editor-seite-fehler` (14 Zoll + Monitor)** — Acquire 500
+1. *Farben?* Rotes Band mit `AlertTriangle`, `Bearbeiten` deaktiviert (rose bei 50 %),
+   dazu der Toast unten rechts. Störung klar von Hinweis getrennt. Badge-Problem wie oben.
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Ruhig.
+4. *UX?* Meldung dreifach: Band, Toast und Tooltip am deaktivierten Knopf.
+5. *Auffindbar?* Ja.
+6. *Überschneidung?* Nein — und der Toast ist hier ausdrücklich geprüft worden. Kein Dialog
+   offen, also steht er unten rechts (`bottom-6 right-6`, gemessen). Toast [978, 830, 438, 46]
+   auf 14 Zoll gegen die Statuszeile [0, 864, 1440, 36]: die 12 px Überlappung treffen nur
+   den Leerraum über der Textzeile. `elementFromPoint` auf **Netto**, **MwSt**, **Brutto**
+   (Beschriftung und Wert) und **Zahlungsziel** trifft auf beiden Größen jeweils das eigene
+   SPAN, nie den Toast. Nichts Gebrauchtes verdeckt.
+
+**`editor-seite-tab-schliessen` (14 Zoll + Monitor)** — der X-Knopf-Ablauf über die echte Route
+1. *Farben?* rose-100-Kreis mit rose-600 `CheckCircle2` auf slate-50, Text slate-700. Ruhig.
+2. *Design-System?* Ja, Systemschrift, kein Webfont.
+3. *Look-and-Feel?* Aufgeräumte Vollbild-Bestätigung.
+4. *UX?* Der Ablauf funktioniert jetzt im Browser: Warnung ⇒ Speichern ⇒ Hinweisseite.
+5. *Auffindbar?* Mittig, nichts zu suchen.
+6. *Überschneidung?* Nein — und das `schliesstGerade`-Flag sitzt: **die Leiste ist weg**,
+   kein „Fertig"/„Bearbeiten" mehr über der Bestätigung. Genau richtig.
+   Der `text-balance` wirkt: der Umbruch fällt jetzt hinter „freigegeben", das alleinstehende
+   „Sie" aus 7-1 ist weg (der Gedankenstrich beginnt nun Zeile 2 — Geschmackssache).
+
+**`lieferant-modal-lesen-hinweis` (14 Zoll + Monitor)**
+1.–6. „Sie lesen nur mit." füllt die vorher leere linke Bandhälfte, `Bearbeiten` rose-600
+   daneben. Der 🟡 aus Abschnitt 6 ist damit auch hier erledigt. Keine Überschneidung.
+
+**`lieferant-modal-fehler-tooltip` (14 Zoll + Monitor)**
+1. *Farben?* Rotes Fehlerband **und** „Sie lesen nur mit." nebeneinander — siehe Hinweise.
+2.–6. Sonst unverändert; Toast oben rechts, Fußleiste frei, keine Überschneidung.
+
+**`leiste-*` (je 14 Zoll + Monitor)**
+1.–6. Unverändert gut aus 7-1: amber-Countdown mit `Timer`, rotes Verbindung-weg-Band mit
+   `WifiOff`, Umschalter an fester Stelle. Neu ist, dass `leiste-lesen` und
+   `leiste-deaktiviert` jetzt „Sie lesen nur mit." zeigen (7d).
+
+**`lieferant-modal-*` und `dokument-editor-*` (je beide Größen)**
+1.–6. Gegenüber 7-1 unverändert. `dokument-editor-vor-schliessen` zeigt jetzt zusätzlich die
+   Leiste am Kopf — konsistent mit der neuen Seite, ohne Überschneidung.
+
+### 💡 Hinweise (blockieren nicht)
+
+- **„Sie lesen nur mit." doppelt neben Fehler- und Ladeband** (die Frage des 7d-Agenten):
+  störend, ja — aber nicht wegen der Wiederholung, sondern wegen der Gewichtung. Im
+  Fehlerfall schrumpft das rote Band von x 61–1250 auf x 61–1132, damit der ruhige Hinweis
+  danebenpasst: die dringende Meldung weicht der beiläufigen. Und die Lösung steht schon im
+  Haus — die Seite benutzt die engere Regel
+  `lock.status === 'idle'` (`DocumentEditorPage.tsx:109`), das Modal die weitere
+  `lock.modus === 'lesen' && lock.status !== 'locked-by-other'`
+  (`LieferantDokumentModal.tsx:119`). Das Modal auf die Regel der Seite angleichen, dann ist
+  der Hinweis dort, wo er hingehört, und weg, wo ein Band schon spricht. 🟡
+- **Das Badge-Icon ist ein handgemaltes inline-`<svg>`** (`DocumentEditorHeader.tsx`), kein
+  Lucide-Icon. Das verstößt gegen Regel 3 des Design-Systems („Icons are Lucide. Never
+  hand-roll SVGs."). Vorbestehend — die Datei wurde zuletzt lange vor diesem Vorhaben
+  angefasst —, deshalb kein eigener Blocker gegen 7-2. Gehört aber zusammen mit Blocker 1
+  repariert, dann ist es eine Zeile mehr.
+- **Die leere Leiste im Bearbeiten-Zustand**: 55 px weißer Streifen über die volle Breite für
+  einen einzigen Knopf, links nichts. Auf 14 Zoll kostet das 6,1 % der Höhe (der Editor
+  behält 845 von 900 px, die Statuszeile bleibt sichtbar) — vertretbar, wirkt auf 1920 aber
+  hohl.
+- Aus früheren Abschnitten offen und unverändert (Restpunkte): zwei rosa Knöpfe im
+  Lesen-Modus des Modals, `Nicht speichern` zweizeilig, PDF-Spalte frisst auf 14 Zoll zwei
+  Drittel des Modals, Scroll-Kante im Formular. **Nichts davon hat sich verschlechtert.**
