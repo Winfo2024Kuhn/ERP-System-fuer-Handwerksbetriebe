@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -54,6 +55,15 @@ class DatensatzLockServiceTest {
         assertThat(result.holderUserId()).isEqualTo(USER_A);
         assertThat(result.holderDisplayName()).isEqualTo("Max Mustermann");
         verify(repository).saveAndFlush(any(DatensatzLock.class));
+    }
+
+    @Test
+    void staleAfterBleibtBeiNeunzigSekunden() {
+        // Die Spec nagelt die 90 Sekunden ausdruecklich fest (Absturz-Netz, wenn
+        // der Heartbeat ausbleibt). Alle uebrigen stale-Tests leiten ihre
+        // Zeitstempel aus dieser Konstante ab und bleiben deshalb auch dann
+        // gruen, wenn der Wert verstellt wird - dieser Test schliesst die Luecke.
+        assertThat(DatensatzLockService.STALE_AFTER).isEqualTo(Duration.ofSeconds(90));
     }
 
     @Test
