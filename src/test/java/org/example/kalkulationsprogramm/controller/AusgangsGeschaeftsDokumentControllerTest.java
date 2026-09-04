@@ -447,6 +447,44 @@ class AusgangsGeschaeftsDokumentControllerTest {
                             .content(objectMapper.writeValueAsString(dto)))
                     .andExpect(status().isUnauthorized());
         }
+
+        @Test
+        @DisplayName("Versionskonflikt beim Speichern gibt 409 mit Handwerker-Meldung zurück")
+        void versionskonfliktGibt409() throws Exception {
+            given(service.aktualisieren(eq(1L), any(AusgangsGeschaeftsDokumentUpdateDto.class)))
+                    .willThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                            AusgangsGeschaeftsDokument.class, 1L));
+
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+            dto.setBetreff("Versuch");
+
+            mockMvc.perform(put("/api/ausgangs-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value(
+                            "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(
+                            org.hamcrest.Matchers.containsString("ObjectOptimisticLockingFailureException"))));
+        }
+
+        @Test
+        @DisplayName("Gewöhnlicher Service-Fehler liefert weiterhin 400 (kein Verschlucken des catch)")
+        void gewoehnlicherFehlerGibtWeiterhin400() throws Exception {
+            given(service.aktualisieren(eq(1L), any(AusgangsGeschaeftsDokumentUpdateDto.class)))
+                    .willThrow(new IllegalArgumentException("Betrag muss positiv sein"));
+
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+            dto.setBetreff("Versuch");
+
+            mockMvc.perform(put("/api/ausgangs-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().string("Betrag muss positiv sein"));
+        }
     }
 
     @Nested

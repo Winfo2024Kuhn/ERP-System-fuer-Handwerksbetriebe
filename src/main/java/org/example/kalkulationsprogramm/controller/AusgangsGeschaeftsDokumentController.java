@@ -24,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -222,6 +223,11 @@ public class AusgangsGeschaeftsDokumentController {
         try {
             AusgangsGeschaeftsDokument updated = service.aktualisieren(id, dto);
             return ResponseEntity.ok(service.findById(updated.getId()));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Aktualisieren von Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
