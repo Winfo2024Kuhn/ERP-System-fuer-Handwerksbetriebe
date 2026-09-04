@@ -640,3 +640,29 @@ Sicherheit / DSGVO:
 
 Abschnitt 5 damit vollständig: 5a nach zwei Nachbesserungen abgenommen, 5b und 5c seit
 Review 1 unverändert abgenommen.
+
+## Abschnitt 6 — Task 6c (Coding-Agent)
+
+- Zeit: 2026-09-04, 19:54
+- Branch: lock/task-6c-ausgangs-controller
+- Commits: b01602a7 (Teil 1 — Lock-Service-Tausch), 0e49d9b0 (Teil 2 — Versionskonflikt-Durchgriff)
+- Status: grün — 45/45 Tests im Controller, Backend-Gesamtlauf 2462 Tests, 0 Failures, genau die 4 vorbestehenden Baseline-Errors (AuditChainRepairIntegrationTest 2x, AuditHashRoundtripDiagnoseTest 2x, CannotCreateTransaction)
+
+### Was gemacht wurde
+
+**Teil 1 — Abhängigkeitstausch.** `DokumentLockService`/`TYP_AUSGANG`/`DokumentLockDto` durch `DatensatzLockService`/`SperrbarerTyp.AUSGANG`/`DatensatzLockDto` ersetzt: Import, Feld, `create` (Lock-Vergabe für den Ersteller mit `DatensatzLockDto.ACQUIRED`-Vergleich), `update` (`isHeldBy`). Verhalten unverändert. Bestehende Tests auf `@MockBean DatensatzLockService` und `any(SperrbarerTyp.class)`/`eq(SperrbarerTyp.AUSGANG)` umgestellt. Test ergänzt, der den konkreten Typ-Parameter prüft (`verify(dokumentLockService).isHeldBy(eq(SperrbarerTyp.AUSGANG), eq(1L), eq(42L))`). Mutationsprobe gefahren: Typ im Produktivcode testweise auf `EINGANG` gedreht → Test wurde rot (`expected 200, was 200` — Verify schlug fehl, Status blieb 200 aber der `verify`-Aufruf auf `eq(SperrbarerTyp.AUSGANG)` scheiterte), danach zurückgedreht, wieder grün.
+
+**Teil 2 — Versionskonflikt-Durchgriff.** Für `buchen`, `emailVersendet`, `pdfSpeichern`, `stornieren` und `delete` je ein `catch (ObjectOptimisticLockingFailureException e) { throw e; }` vor dem allgemeinen `catch (RuntimeException e)` ergänzt — exakt das Muster aus `update`. `create` und `getAbrechnungsverlauf` bewusst nicht angefasst (Begründung aus dem Auftrag: `create` legt neu an, kein Versionskonflikt möglich; `getAbrechnungsverlauf` schreibt nicht).
+
+Rote Meldungen je Speicherweg (vor der Änderung, mit `ObjectOptimisticLockingFailureException` vom Service):
+- `buchen`: `versionskonfliktBeimBuchenGibt409` → `Status expected:<409> but was:<400>`
+- `emailVersendet`: `versionskonfliktBeiEmailVersendetGibt409` → `Status expected:<409> but was:<400>`
+- `pdfSpeichern`: `versionskonfliktBeiPdfSpeichernGibt409` → `Status expected:<409> but was:<400>`
+- `stornieren`: `versionskonfliktBeimStornierenGibt409` → `Status expected:<409> but was:<400>`
+- `delete`: `versionskonfliktBeimLoeschenGibt409` → `Status expected:<409> but was:<400>`
+
+Je Speicherweg zusätzlich ein Regressionstest (gewöhnlicher `RuntimeException` liefert weiterhin 400): für `buchen` und `stornieren` und `delete` waren solche Tests bereits vorhanden (`doppeltessBuchenGibt400`, `doppelteStornierungGibt400`, `loeschenGebuchtGibt400`) und blieben unverändert grün; für `emailVersendet` und `pdfSpeichern` neu ergänzt (`gewoehnlicherFehlerBeiEmailVersendetGibt400`, `gewoehnlicherFehlerBeiPdfSpeichernGibt400`).
+
+### Bedenken / Abweichungen vom Plan
+
+Keine. Plan konnte 1:1 umgesetzt werden, Vorbild-Commit `e9c84599` (LieferantDokumentController) und Muster aus `update` (Z. ~226–231) passten direkt.

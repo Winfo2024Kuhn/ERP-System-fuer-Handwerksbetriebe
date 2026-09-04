@@ -121,17 +121,26 @@ setzen), Script `test:e2e`. Dieselbe Hilfsdatei wie in der PC-App daneben legen.
 
 ## Wer prüft was
 
-- **Coding-Agent:** schreibt die Spec, fährt sie auf eigenem Port, schaut die
-  Screenshots an, schreibt die sechs Antworten je Größe ins Kontext-Log. Ohne das ist
-  der Task nicht fertig — egal wie grün Lint, Unit-Tests und Build sind.
-- **Review-Agent:** fährt `npm run test:e2e` nach dem Merge selbst, schaut die
-  Screenshots selbst an, beantwortet die sechs Fragen selbst. Er glaubt dem Coding-Agenten
-  nichts. Ein Design-Befund ist 🔴, wenn er Frage 5 oder 6 verletzt (nicht auffindbar,
-  Überschneidung, Abschneiden auf 14 Zoll) oder das Design-System bricht (fremde Farbe,
-  Emoji, handgemaltes SVG). Geschmacksfragen zu 3 sind 🟡.
-- **Orchestrator:** kann zusätzlich mit dem Playwright-MCP (`browser_navigate`,
-  `browser_take_screenshot`, `browser_resize`) selbst durch die laufende App klicken, wenn
-  ein Screenshot nicht reicht, um eine Frage zu beantworten.
+- **Coding-Agent:** schreibt die Spec für seinen Ablauf und fährt **nur diese
+  Spec** auf eigenem Port (`E2E_PORT=<port> npx playwright test e2e/<spec>`).
+  Nie die ganze E2E-Suite, nie die ganze Unit-Suite — Vorgabe des Nutzers,
+  es dauert zu lang. Ein kurzer Blick auf die eigenen Screenshots schadet
+  nicht, die formale Beurteilung ist aber nicht seine.
+- **Design-Reviewer** (`loese-problem-design-review`, eigener Agent, nur bei
+  Frontend-Änderungen): fährt `npm run test:e2e` komplett (alle Specs, beide
+  Größen) in einem **eigenen Worktree** auf dem gemergten Stand, schaut jeden
+  Screenshot unter `test-results/design/` mit dem Read-Tool an und beantwortet
+  die sechs Fragen je Größe schriftlich im Kontext-Log. Wo ein Screenshot nicht
+  reicht, klickt er mit dem Playwright-MCP (`browser_navigate`,
+  `browser_resize`, `browser_take_screenshot`) selbst durch die laufende App.
+  Ampel: 🔴 bei Frage 5 oder 6 verletzt (nicht auffindbar, Überschneidung,
+  Abschneiden auf 14 Zoll) oder Bruch des Design-Systems (fremde Farbe, Emoji,
+  handgemaltes SVG); Geschmacksfragen zu 3 sind 🟡.
+- **Code-Reviewer** (`loese-problem-review`): läuft parallel, fasst E2E und
+  Design nicht an — Code, Korrektheit, Performance, Datenschutz, Sicherheit,
+  volle Unit-/Backend-Suiten.
+- **Orchestrator:** merged vorher, legt den Review-Worktree an, startet beide
+  Reviewer in einer Nachricht.
 
 ## Was NICHT hierher gehört
 
