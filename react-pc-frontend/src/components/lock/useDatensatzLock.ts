@@ -13,7 +13,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  *
  * Modus/kannBearbeiten/verbindungWeg gehen direkt als Props an
  * BearbeitenLeiste, halterName/seit direkt an GesperrtHinweis -- siehe
- * die Kommentare dort.
+ * die Kommentare dort. status wird zusaetzlich roh exportiert, damit die
+ * aufrufende Seite z.B. bei 'error' einen eigenen Hinweis zeigen kann.
  *
  * Anders als im ersten Entwurf ist "Bearbeiten" HIER kein reiner
  * UI-Umschalter mehr: das Mount-Acquire haelt das Lock zwar zunaechst fuer
@@ -42,11 +43,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * von hier, sondern aus useIdleTimer -- die Seite verdrahtet beides. Ein
  * zweiter, eigener Timer hier wuerde genau den Fehler wiederholen, an dem
  * der heutige Dokument-Editor krankt (zwei Timer, die auseinanderlaufen).
+ *
+ * WICHTIG (Kontext-Log, Nachbesserung 2): kannBearbeiten bedeutet "ein Klick
+ * auf Bearbeiten ist gerade sinnvoll", NICHT "wir halten das Lock". Eine
+ * Fremdsperre (locked-by-other) und der frisch freigegebene Zustand (idle)
+ * liefern darum beide kannBearbeiten=true -- BearbeitenLeiste rendert den
+ * Knopf disabled=!kannBearbeiten, und genau in diesen beiden Zustaenden
+ * braucht der Knopf einen Klick, um den Retry aus onBearbeiten() ueberhaupt
+ * ausloesen zu koennen. Nur waehrend ein Acquire laeuft (loading) oder nach
+ * einem Fehler (error) ist kannBearbeiten=false, weil ein Klick dort
+ * wirkungslos waere (siehe onBearbeiten unten).
  */
 
 export type DatensatzLockTyp = 'AUSGANG' | 'EINGANG';
 
-type DatensatzLockStatus = 'idle' | 'loading' | 'acquired' | 'locked-by-other' | 'error';
+export type DatensatzLockStatus = 'idle' | 'loading' | 'acquired' | 'locked-by-other' | 'error';
 
 interface DatensatzLockDto {
     status: 'ACQUIRED' | 'LOCKED_BY_OTHER';
@@ -64,8 +75,17 @@ interface Halter {
 export interface UseDatensatzLockResult {
     /** Aktueller Anzeige-Modus -- direkt als Prop an BearbeitenLeiste. */
     modus: 'lesen' | 'bearbeiten';
-    /** false, solange kein Lock gehalten wird (laedt, Fehler, fremd gesperrt) -- direkt an BearbeitenLeiste. */
+    /**
+     * "Ein Klick auf Bearbeiten ist gerade sinnvoll" -- direkt als Prop an
+     * BearbeitenLeiste (dort disabled=!kannBearbeiten). True bei 'idle'
+     * (frisch freigegeben oder noch nie geholt), 'acquired' und AUCH bei
+     * 'locked-by-other' (ein Klick versucht dann die Uebernahme, siehe
+     * onBearbeiten). Nur bei 'loading' oder 'error' false, weil ein Klick
+     * dort wirkungslos waere.
+     */
     kannBearbeiten: boolean;
+    /** Roher interner Zustand, z.B. damit die Seite bei 'error' einen Hinweis zeigen kann. */
+    status: DatensatzLockStatus;
     /** true nach mehreren fehlgeschlagenen Heartbeats in Folge -- direkt an BearbeitenLeiste. */
     verbindungWeg: boolean;
     /** Anzeigename des Halters, nur gesetzt waehrend jemand anderes haelt -- direkt an GesperrtHinweis. */
@@ -164,6 +184,16 @@ export function useDatensatzLock(
         (url: string, gen: number) => {
             stopHeartbeat();
             fehlschlaegeRef.current = 0;
+            // verbindungWeg explizit zuruecksetzen, nicht nur den Zaehler:
+            // ein VORHERIGER Zyklus (vor einem freigeben()/Lock-Verlust)
+            // kann das Flag auf true stehen gelassen haben (Fehlschlaege
+            // wurden nie durch einen weiteren erfolgreichen Heartbeat
+            // "geheilt", weil der Zyklus vorher schon endete). Ohne diesen
+            // Reset wuerde die "Verbindung weg"-Warnung nach einem
+            // erfolgreichen erneuten Acquire faelschlich weiter angezeigt,
+            // obwohl der frische Heartbeat noch gar keine Chance hatte,
+            // etwas zu melden (siehe Kontext-Log, Nachbesserung 2).
+            setVerbindungWeg(false);
             heartbeatTimerRef.current = setInterval(() => void heartbeat(url, gen), HEARTBEAT_INTERVAL_MS);
         },
         [heartbeat, stopHeartbeat]
@@ -337,11 +367,17 @@ export function useDatensatzLock(
         void freigeben();
     }, [freigeben]);
 
-    const kannBearbeiten = lockUrl == null || status === 'acquired';
+    // Bewusst NICHT auf status === 'acquired' verengt: 'idle' (frisch
+    // freigegeben) und 'locked-by-other' (Fremdsperre) sind die beiden
+    // Faelle, in denen der Retry aus onBearbeiten() ueberhaupt erst noetig
+    // wird -- der Knopf, der ihn ausloest, darf dafuer nicht deaktiviert
+    // sein. Siehe Klassenkommentar und Kontext-Log, Nachbesserung 2.
+    const kannBearbeiten = lockUrl == null || (status !== 'loading' && status !== 'error');
 
     return {
         modus,
         kannBearbeiten,
+        status,
         verbindungWeg,
         halterName: status === 'locked-by-other' ? halter?.displayName : undefined,
         seit: status === 'locked-by-other' ? formatiereSeitMinuten(halter) : undefined,
