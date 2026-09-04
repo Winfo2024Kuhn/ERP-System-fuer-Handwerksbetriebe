@@ -93,15 +93,20 @@ export function useIdleTimer({
         }
     }, []);
 
-    // Plant Warn- und Idle-Timeout neu, OHNE selbst synchron State zu setzen.
-    // Das Zuruecksetzen von countdownState auf null passiert ausschliesslich in
-    // jetztZuruecksetzen() - so bleibt der einzige synchron-im-Effekt-erreichbare
-    // Aufruf beim Mount ein reiner Timer-Aufbau ohne setState
-    // (react-hooks/set-state-in-effect). Die setState-Aufrufe in den
-    // Timeout-/Interval-Callbacks unten sind unkritisch: die feuern asynchron,
-    // nicht synchron waehrend der Effekt-Ausfuehrung.
+    // Plant Warn- und Idle-Timeout neu UND setzt countdownState synchron auf
+    // null zurueck. Das Zuruecksetzen ist zwingend Teil dieser Funktion, nicht
+    // optional: timerPlanen() ist genau die Funktion, die der Haupt-Effekt bei
+    // JEDEM Neu-Armieren aufruft (Mount, enabled/timeoutMs/warnMs-Wechsel).
+    // Ohne den Reset hier wuerde ein laufender Vorwarn-Countdown ein
+    // Neu-Armieren mitten in der Vorwarnung ueberleben und eingefroren stehen
+    // bleiben, bis Minuten spaeter der naechste Warn-Timeout feuert - siehe
+    // Kontext-Log, Nachbesserung 3 (die vorherige Fassung hatte den Reset
+    // versehentlich hier entfernt, um react-hooks/set-state-in-effect zu
+    // umgehen, und damit den Hook-Vertrag "verbleibendeSekunden ist nur
+    // waehrend der Vorwarnung gesetzt, sonst null" gebrochen).
     const timerPlanen = useCallback(() => {
         alleTimerRaeumen();
+        setCountdownState(null);
 
         const warnNachMs = Math.max(timeoutMs - warnMs, 0);
         const vorwarnDauerSekunden = Math.max(Math.round((timeoutMs - warnNachMs) / 1000), 0);
@@ -126,15 +131,14 @@ export function useIdleTimer({
         }, timeoutMs);
     }, [timeoutMs, warnMs, alleTimerRaeumen]);
 
-    // Aktivitaet (oder ein manueller Aufruf): plant die Timer neu UND setzt den
-    // Countdown zurueck. Wird bewusst nur aus dem (asynchron feuernden)
+    // Aktivitaet (oder ein manueller Aufruf): aktualisiert den Drossel-
+    // Zeitstempel und plant ueber timerPlanen() neu (das setzt countdownState
+    // bereits selbst zurueck, siehe dort). Wird aus dem asynchron feuernden
     // Aktivitaets-Listener und als oeffentliche zuruecksetzen()-Funktion
-    // aufgerufen - NICHT direkt aus dem Effekt-Koerper beim Mount, sonst waere
-    // der setState-Aufruf hier synchron im Effekt erreichbar.
+    // aufgerufen.
     const jetztZuruecksetzen = useCallback(() => {
         letzterResetRef.current = Date.now();
         timerPlanen();
-        setCountdownState(null);
     }, [timerPlanen]);
 
     useEffect(() => {
@@ -145,8 +149,21 @@ export function useIdleTimer({
             return;
         }
 
-        // Direkter Aufbau ohne jetztZuruecksetzen() - siehe Kommentar dort.
+        // Direkter Aufbau ohne jetztZuruecksetzen() (das wuerde nur den
+        // Drossel-Zeitstempel zusaetzlich aktualisieren, was beim Mount/
+        // Neu-Armieren keinen Unterschied macht - hier reicht die Ref-Zeile
+        // direkt darunter). timerPlanen() ruft synchron setCountdownState(null)
+        // auf: react-hooks/set-state-in-effect zielt auf State, der aus
+        // Props/State ABGELEITET werden koennte und stattdessen waehrend des
+        // Renders berechnet werden sollte. countdownState ist aber keine
+        // Ableitung - er haengt von einer zeitgesteuerten Terminplanung ab, die
+        // nur ein Effekt aufbauen kann. Das synchrone Zuruecksetzen ist hier
+        // Teil des Aufbaus selbst (Mount UND jeder Neu-Armieren-Durchlauf bei
+        // enabled/timeoutMs/warnMs-Wechsel), nicht dessen Folge - ein
+        // verzoegertes Zuruecksetzen wuerde fuer einen Moment einen veralteten
+        // Countdown-Wert anzeigen (siehe Kontext-Log, Nachbesserung 3).
         letzterResetRef.current = Date.now();
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         timerPlanen();
 
         const throttledReset = () => {

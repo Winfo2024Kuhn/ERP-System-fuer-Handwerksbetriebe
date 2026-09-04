@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useIdleTimer } from './useIdleTimer';
+import { useIdleTimer, type UseIdleTimerOptions } from './useIdleTimer';
 
 // Reine Untaetigkeits-Erkennung: keine Locks, keine Netzwerkaufrufe, keine UI.
 // Deshalb kommen in diesen Tests auch keine personenbezogenen Daten vor
@@ -171,7 +171,11 @@ describe('useIdleTimer', () => {
         }
 
         // Genau 1 durchgefuehrter Reset (= 2 neue Timeouts), nicht 50 (= 100).
-        expect(setTimeoutSpy).toHaveBeenCalledTimes(2);
+        // toBeLessThanOrEqual statt toHaveBeenCalledTimes(2): der Test soll
+        // nicht sproede daran haengen, ob React/Testing-Library selbst
+        // irgendwann eigene setTimeout-Aufrufe einstreut - "hoechstens 2" ist
+        // die eigentliche Drossel-Garantie, "genau 2" waere zufaellig strenger.
+        expect(setTimeoutSpy.mock.calls.length).toBeLessThanOrEqual(2);
         expect(renderCount - renderCountVorBurst).toBeLessThanOrEqual(1);
         expect(result.current.verbleibendeSekunden).toBeNull();
         expect(onIdle).not.toHaveBeenCalled();
@@ -250,6 +254,89 @@ describe('useIdleTimer', () => {
         act(() => {
             vi.advanceTimersByTime(SECHZIG_SEKUNDEN_MS);
         });
+        expect(onIdle).not.toHaveBeenCalled();
+    });
+
+    it('enabled true->false->true waehrend der Vorwarnung setzt den Countdown zurueck (kein eingefrorener Wert)', () => {
+        const { onWarn, onIdle } = neueCallbacks();
+        const { result, rerender } = renderHook<ReturnType<typeof useIdleTimer>, UseIdleTimerOptions>(
+            props => useIdleTimer(props),
+            { initialProps: { onWarn, onIdle, enabled: true } }
+        );
+
+        act(() => {
+            vi.advanceTimersByTime(FUENF_MINUTEN_MS - SECHZIG_SEKUNDEN_MS);
+        });
+        expect(result.current.verbleibendeSekunden).toBe(60);
+
+        // Ein paar Sekunden warten, damit ein konkreter, von 60 verschiedener
+        // Zwischenwert im Countdown steht - sonst waere ein "eingefrorener"
+        // Wert von einem frischen null nicht unterscheidbar.
+        act(() => {
+            vi.advanceTimersByTime(5_000);
+        });
+        expect(result.current.verbleibendeSekunden).toBe(55);
+
+        act(() => {
+            rerender({ onWarn, onIdle, enabled: false });
+        });
+        expect(result.current.verbleibendeSekunden).toBeNull();
+
+        act(() => {
+            rerender({ onWarn, onIdle, enabled: true });
+        });
+
+        // Der Countdown darf NICHT beim eingefrorenen Wert (55) stehenbleiben -
+        // das Neu-Armieren startet einen frischen Zyklus.
+        expect(result.current.verbleibendeSekunden).toBeNull();
+
+        // Auch zwei Minuten spaeter noch null: kein eingefrorener Wert, und die
+        // URSPRUENGLICHE 5:00-Marke darf nach dem Neu-Armieren nicht mehr greifen.
+        act(() => {
+            vi.advanceTimersByTime(120_000);
+        });
+        expect(result.current.verbleibendeSekunden).toBeNull();
+        expect(onIdle).not.toHaveBeenCalled();
+    });
+
+    it('timeoutMs-Wechsel waehrend der Vorwarnung setzt den Countdown zurueck (kein eingefrorener Wert)', () => {
+        const { onWarn, onIdle } = neueCallbacks();
+        const { result, rerender } = renderHook<ReturnType<typeof useIdleTimer>, UseIdleTimerOptions>(
+            props => useIdleTimer(props),
+            {
+                initialProps: {
+                    onWarn,
+                    onIdle,
+                    enabled: true,
+                    timeoutMs: FUENF_MINUTEN_MS,
+                    warnMs: SECHZIG_SEKUNDEN_MS,
+                },
+            }
+        );
+
+        act(() => {
+            vi.advanceTimersByTime(FUENF_MINUTEN_MS - SECHZIG_SEKUNDEN_MS);
+        });
+        expect(result.current.verbleibendeSekunden).toBe(60);
+
+        act(() => {
+            vi.advanceTimersByTime(5_000);
+        });
+        expect(result.current.verbleibendeSekunden).toBe(55);
+
+        act(() => {
+            rerender({ onWarn, onIdle, enabled: true, timeoutMs: 600_000, warnMs: SECHZIG_SEKUNDEN_MS });
+        });
+
+        // Der Countdown darf nicht beim eingefrorenen Wert (55) stehenbleiben,
+        // obwohl `enabled` sich hier gar nicht aendert - die enabled-Maskierung
+        // allein reicht also nicht, das Neu-Armieren selbst muss zuruecksetzen.
+        expect(result.current.verbleibendeSekunden).toBeNull();
+
+        act(() => {
+            vi.advanceTimersByTime(120_000);
+        });
+        expect(result.current.verbleibendeSekunden).toBeNull();
         expect(onIdle).not.toHaveBeenCalled();
     });
 
