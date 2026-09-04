@@ -17,11 +17,12 @@ import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.example.kalkulationsprogramm.service.DokumentLockService;
+import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
@@ -60,7 +61,7 @@ public class LieferantDokumentController {
     private final EmailRepository emailRepository;
     private final EmailAttachmentProcessingService emailAttachmentProcessingService;
     private final org.example.kalkulationsprogramm.repository.EmailAttachmentRepository emailAttachmentRepository;
-    private final DokumentLockService dokumentLockService;
+    private final DatensatzLockService dokumentLockService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -95,7 +96,7 @@ public class LieferantDokumentController {
         if (principal == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        if (!dokumentLockService.isHeldBy(DokumentLockService.TYP_EINGANG, dokumentId, principal.getId())) {
+        if (!dokumentLockService.isHeldBy(SperrbarerTyp.EINGANG, dokumentId, principal.getId())) {
             // Body bleibt leer — DTO-Generic ist <Response>, statt das zu sprengen
             // verlassen wir uns auf den 409-Status. Frontend-Modal blockiert
             // Save bereits, sobald acquire/heartbeat 409 liefern.
