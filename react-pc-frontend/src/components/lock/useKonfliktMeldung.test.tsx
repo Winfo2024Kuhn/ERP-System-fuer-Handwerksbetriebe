@@ -179,6 +179,21 @@ describe('useKonfliktMeldung', () => {
         await waitFor(() => expect(screen.getByTestId('ergebnis')).toHaveTextContent('true'));
     });
 
+    it('faerbt den "Neu laden"-Knopf rose statt amber -- gefuellte Primaeraktionen sind im Design-System rose, amber ist Warn-Icons vorbehalten (Task 8a)', async () => {
+        const user = userEvent.setup();
+        const response = new Response(null, { status: 409 });
+        renderMitProvider(response, 'Dokument');
+
+        await user.click(screen.getByText('Pruefen'));
+        const neuLadenKnopf = await screen.findByText('Neu laden');
+
+        expect(neuLadenKnopf.className).toContain('bg-rose-600');
+        expect(neuLadenKnopf.className).not.toContain('bg-amber-500');
+
+        await user.click(neuLadenKnopf);
+        await waitFor(() => expect(screen.getByTestId('ergebnis')).toHaveTextContent('true'));
+    });
+
     it('enthaelt keinen englischen Fachbegriff im gerenderten Dialog', async () => {
         const user = userEvent.setup();
         const response = new Response(null, { status: 409 });
