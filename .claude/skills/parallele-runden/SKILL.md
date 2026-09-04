@@ -152,6 +152,36 @@ Konsequenz für den Hauptagenten: Meldet ein Agent „fertig", ohne
 Commit-Hashes zu nennen, ist er nicht fertig. Erst `git log` und
 `git status` im Worktree ansehen, dann glauben.
 
+### Zeitabhängige Tests werden flaky, wenn mehrere Agenten gleichzeitig testen (04.09.2026)
+
+Ein Agent meldete einen Failure in `UnifiedEmailControllerExtractEmailTest` —
+ein Test mit 500-ms-Zeitschranke, in einer Datei, die er nie angefasst hatte.
+Ursache war nicht sein Code, sondern die Last: drei Agenten fuhren gleichzeitig
+Testsuiten auf derselben Maschine.
+
+Das ist der Preis der Parallelität und kein Grund, sie aufzugeben. Aber:
+
+- Der Auftrag muss sagen, dass ein Failure in einer **nicht angefassten** Datei
+  mit Zeitschranke erst wiederholt wird, bevor er gemeldet wird.
+- Der Prüfagent fährt die volle Suite, wenn die Umsetzungs-Agenten **fertig**
+  sind, nicht währenddessen. Sonst misst er die Last der Nachbarn mit.
+- Ein Failure, der beim zweiten Lauf allein weg ist, gehört als Beobachtung
+  ins Kontext-Log — nicht als Befund in die Ampel.
+
+### Auftrag als nachweisbares Ergebnis formulieren, nicht als Lösungsweg (04.09.2026)
+
+Ein Befund war zweimal von Reviews weitergereicht und zweimal nicht behoben
+worden. Beim dritten Anlauf stand im Auftrag kein Lösungsweg, sondern das
+prüfbare Ergebnis: „Versionskonflikt ⇒ 409 mit dieser Meldung, kein
+Klassenname im Body, alle übrigen Fehlerfälle weiterhin 400." Dazu ein Satz
+zu der Falle, in die der naive Weg läuft („den catch verengen, nicht
+streichen — sonst kippen die anderen Fälle auf 500"). Der Agent hat es beim
+ersten Versuch sauber gelöst, inklusive zweitem Test als Regressionsschutz.
+
+Also: **Was muss hinterher nachweisbar wahr sein** gehört in den Auftrag.
+**Wie** der Agent dahin kommt, gehört ihm. Die eine bekannte Falle benennen
+lohnt sich trotzdem — sie kostet einen Satz und spart eine Runde.
+
 ## Abschluss
 
 Nach der letzten Runde einmal alles zusammen: Frontend-Tests, Frontend-Build,
