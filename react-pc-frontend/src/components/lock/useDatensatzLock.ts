@@ -328,6 +328,24 @@ export function useDatensatzLock(
             if (!heldRef.current) return;
             heldRef.current = false;
             stopHeartbeat();
+            // Task 8a (Review-Fund): modus/status HIER selbst nachziehen, statt
+            // sich auf heldRef allein zu verlassen. Auf dem Unmount-Cleanup-
+            // Pfad ist das folgenlos -- der Aufrufer (Cleanup des lockUrl-
+            // Effekts) setzt beides direkt danach ohnehin selbst zurueck, und
+            // der Komponentenbaum verschwindet gleich ganz. Auf dem
+            // "pagehide"-Pfad ist es dagegen die EINZIGE Stelle: der Tab
+            // schliesst nicht, er geht nur in den bfcache -- ohne diesen Reset
+            // blieben modus='bearbeiten'/status='acquired' unveraendert
+            // stehen, obwohl das Lock hier gerade per DELETE freigegeben
+            // wird. Kommt der Tab per bfcache zurueck (kein Reload, kein
+            // Remount, exakt derselbe React-Baum), zeigt sich das Formular
+            // weiterhin bearbeitbar, obwohl die Sperre laengst weg ist --
+            // ein Speichern liefe ins Leere, weil das Backend den PUT ohne
+            // gueltige Sperre ablehnt.
+            setStatus('idle');
+            setHalter(null);
+            setModus('lesen');
+            setVerbindungWeg(false);
             try {
                 void fetch(url, {
                     method: 'DELETE',
