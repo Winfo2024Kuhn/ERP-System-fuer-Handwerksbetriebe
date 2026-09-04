@@ -1,0 +1,57 @@
+# Plan-Format für loese-problem
+
+Erweitert das normale `writing-plans`-/`parallele-runden`-Format um eine
+Worktree-Spalte, weil hier jeder Task zusätzlich zur Datei-Trennung ein
+eigenes Worktree bekommt.
+
+```markdown
+# Plan: <Thema>
+
+Issue: #<Nummer>
+Feature-Branch: feature/<slug>
+Kontext-Log: docs/superpowers/plans/<datum>-<thema>-log.md
+
+## Global Constraints
+
+<Regeln, die für alle Tasks gelten — Doku-Pflichtlektüre, Projektregeln, etc.>
+
+## Abschnitt 1 (max. 3 Tasks, disjunkte Dateien)
+
+### Task 1
+- Branch: feature/<slug>/task-1
+- Worktree: .claude/worktrees/<slug>-task-1
+- Files: <Liste der Dateien, die dieser Task anfasst>
+- Interfaces:
+  - Produces: <was dieser Task erzeugt, das andere importieren könnten>
+  - Consumes: <was dieser Task aus anderen Tasks braucht — muss vorher fertig sein>
+- Steps:
+  - [ ] Schritt 1
+  - [ ] Schritt 2
+
+### Task 2
+...
+
+## Abschnitt 2
+...
+
+## Log
+
+<wird während der Ausführung NICHT hier befüllt — siehe eigene
+Kontext-Log-Datei. Dieser Abschnitt bleibt für eine kurze
+Abschluss-Zusammenfassung pro Abschnitt durch den Review-Agenten reserviert.>
+```
+
+## Regeln für den Abschnittsschnitt
+
+Dieselben zwei Regeln wie in `parallele-runden`:
+
+1. Keine zwei Tasks eines Abschnitts schreiben in dieselbe Datei.
+2. Ein Task startet erst, wenn alles fertig und geprüft ist, was er unter
+   `Consumes` braucht.
+
+Zusätzlich hier: jeder Task bekommt ein eigenes Worktree, auch wenn die
+Datei-Trennung schon sauber ist — das ist die zweite Sicherheitsebene, falls
+ein Task doch mal unerwartet eine gemeinsame Datei anfasst (z.B. eine
+generierte Datei). Ein echter Merge-Konflikt beim Zusammenführen der
+Task-Branches ist dann ein sichtbarer Fehler statt eines stillen
+Datenverlusts.
