@@ -1,6 +1,8 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useDatensatzLock } from './useDatensatzLock';
+import { useDatensatzLock, type DatensatzLockTyp } from './useDatensatzLock';
+import { BearbeitenLeiste } from './BearbeitenLeiste';
 
 // Dummy-Response-Fabrik fuer die DatensatzLockDto-Antworten des Backends
 // (siehe DatensatzLockController: status/holderUserId/holderDisplayName/
@@ -25,6 +27,23 @@ function lockResponse(
     return new Response(JSON.stringify(body), {
         status: body.status === 'ACQUIRED' ? 200 : 409,
     });
+}
+
+// Testkomponente fuer die "Zusammenspiel"-Tests weiter unten: verdrahtet den
+// Hook 1:1 mit der ECHTEN BearbeitenLeiste, so wie es eine Seite spaeter tun
+// wird -- nur so laesst sich pruefen, ob kannBearbeiten am Knopf ankommt.
+function LeisteMitHook({ typ, id }: { typ: DatensatzLockTyp; id: number | null }) {
+    const lock = useDatensatzLock(typ, id);
+    return (
+        <BearbeitenLeiste
+            modus={lock.modus}
+            kannBearbeiten={lock.kannBearbeiten}
+            verbleibendeSekunden={null}
+            verbindungWeg={lock.verbindungWeg}
+            onBearbeiten={lock.onBearbeiten}
+            onFertig={lock.onFertig}
+        />
+    );
 }
 
 describe('useDatensatzLock', () => {
@@ -75,15 +94,17 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(lockResponse());
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
 
             expect(result.current.modus).toBe('lesen');
         });
 
-        it('ruft ohne ID (idle) keinen acquire-Request auf', () => {
-            renderHook(() => useDatensatzLock('AUSGANG', null));
+        it('ruft ohne ID (idle) keinen acquire-Request auf und erlaubt sofort Bearbeiten', () => {
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', null));
 
             expect(fetchMock).not.toHaveBeenCalled();
+            expect(result.current.status).toBe('idle');
+            expect(result.current.kannBearbeiten).toBe(true);
         });
     });
 
@@ -92,7 +113,7 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(lockResponse());
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
 
             act(() => result.current.onBearbeiten());
 
@@ -104,7 +125,7 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })); // DELETE durch onFertig
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
             act(() => result.current.onBearbeiten());
             expect(result.current.modus).toBe('bearbeiten');
 
@@ -118,7 +139,7 @@ describe('useDatensatzLock', () => {
     });
 
     describe('Gesperrt durch anderen (409)', () => {
-        it('setzt kannBearbeiten auf false und liefert halterName/seit aus der Antwort', async () => {
+        it('setzt status auf "locked-by-other" und liefert halterName/seit -- kannBearbeiten bleibt true, damit die Uebernahme moeglich ist', async () => {
             const jetzt = new Date('2026-09-04T10:12:00.000Z');
             vi.useFakeTimers();
             vi.setSystemTime(jetzt);
@@ -136,24 +157,21 @@ describe('useDatensatzLock', () => {
                 await vi.runOnlyPendingTimersAsync();
             });
 
-            expect(result.current.kannBearbeiten).toBe(false);
+            expect(result.current.status).toBe('locked-by-other');
+            expect(result.current.kannBearbeiten).toBe(true);
             expect(result.current.halterName).toBe('Thomas Beispiel');
             expect(result.current.seit).toBe('5');
 
             vi.useRealTimers();
         });
 
-        it('onBearbeiten() versucht bei einer Fremdsperre trotzdem ein neues Acquire, bleibt aber im Modus "lesen", solange weiter gesperrt ist', async () => {
-            // Siehe Kontext-Log, Nachbesserung 1: der Knopf ist in
-            // BearbeitenLeiste zwar deaktiviert, aber der Hook selbst darf
-            // sich nicht auf kannBearbeiten verlassen -- sonst kann ein
-            // inzwischen frei gewordener Datensatz nie wieder uebernommen
-            // werden.
+        it('onBearbeiten() versucht bei einer Fremdsperre ein neues Acquire, bleibt aber im Modus "lesen", solange weiter gesperrt ist', async () => {
             fetchMock.mockResolvedValueOnce(lockResponse({ status: 'LOCKED_BY_OTHER' })); // Mount-Acquire
             fetchMock.mockResolvedValueOnce(lockResponse({ status: 'LOCKED_BY_OTHER' })); // erneuter Versuch durch onBearbeiten: weiterhin gesperrt
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(false));
+            await waitFor(() => expect(result.current.status).toBe('locked-by-other'));
+            expect(result.current.kannBearbeiten).toBe(true);
 
             act(() => result.current.onBearbeiten());
 
@@ -171,7 +189,7 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(lockResponse());
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
 
             expect(result.current.halterName).toBeUndefined();
             expect(result.current.seit).toBeUndefined();
@@ -245,7 +263,7 @@ describe('useDatensatzLock', () => {
             vi.useRealTimers();
         });
 
-        it('ein Heartbeat mit 409 wechselt in "locked-by-other" und stoppt weitere Heartbeats', async () => {
+        it('ein Heartbeat mit 409 wechselt in "locked-by-other" (kannBearbeiten bleibt true) und stoppt weitere Heartbeats', async () => {
             vi.useFakeTimers();
             fetchMock.mockResolvedValueOnce(lockResponse());
             fetchMock.mockResolvedValueOnce(lockResponse({ status: 'LOCKED_BY_OTHER', holderDisplayName: 'Anna Beispiel' }));
@@ -255,7 +273,8 @@ describe('useDatensatzLock', () => {
                 await vi.advanceTimersByTimeAsync(30_000);
             });
 
-            expect(result.current.kannBearbeiten).toBe(false);
+            expect(result.current.status).toBe('locked-by-other');
+            expect(result.current.kannBearbeiten).toBe(true);
             expect(result.current.halterName).toBe('Anna Beispiel');
 
             const anzahlNachErstemAusfall = fetchMock.mock.calls.length;
@@ -268,6 +287,49 @@ describe('useDatensatzLock', () => {
 
             vi.useRealTimers();
         });
+
+        it('verbindungWeg wird beim naechsten erfolgreichen Acquire wieder auf false gesetzt, auch wenn es vom vorherigen Zyklus noch true war', async () => {
+            // Regressionstest fuer den Befund aus Nachbesserung 2: startHeartbeat
+            // setzte bisher nur den Fehlschlag-Zaehler zurueck, nicht das
+            // sichtbare verbindungWeg-Flag -- eine "Verbindung weg"-Warnung aus
+            // einem VORHERIGEN Zyklus (vor freigeben()) blieb dadurch nach einem
+            // frischen, erfolgreichen Acquire faelschlich stehen.
+            vi.useFakeTimers();
+            fetchMock.mockResolvedValueOnce(lockResponse()); // Mount-Acquire
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 })); // Heartbeat 1: fail
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 })); // Heartbeat 2: fail -> verbindungWeg true
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })); // freigeben(): DELETE
+            fetchMock.mockResolvedValueOnce(lockResponse()); // erneutes Acquire durch onBearbeiten
+
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
+
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+            expect(result.current.status).toBe('acquired');
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(60_000);
+            });
+            expect(result.current.verbindungWeg).toBe(true);
+
+            await act(async () => {
+                await result.current.freigeben();
+            });
+
+            await act(async () => {
+                result.current.onBearbeiten();
+                await Promise.resolve();
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+
+            expect(result.current.status).toBe('acquired');
+            expect(result.current.verbindungWeg).toBe(false);
+
+            vi.useRealTimers();
+        });
     });
 
     describe('Freigabe', () => {
@@ -276,7 +338,7 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
             const { result, unmount } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
 
             unmount();
 
@@ -291,7 +353,7 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
 
             act(() => {
                 window.dispatchEvent(new Event('pagehide'));
@@ -307,7 +369,7 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(lockResponse({ status: 'LOCKED_BY_OTHER' }));
             const { result, unmount } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(false));
+            await waitFor(() => expect(result.current.status).toBe('locked-by-other'));
 
             fetchMock.mockClear();
             unmount();
@@ -323,7 +385,7 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
             act(() => result.current.onBearbeiten());
             expect(result.current.modus).toBe('bearbeiten');
 
@@ -336,6 +398,31 @@ describe('useDatensatzLock', () => {
                 expect.objectContaining({ method: 'DELETE' })
             );
             expect(result.current.modus).toBe('lesen');
+        });
+    });
+
+    // status exportieren: die Seite braucht den rohen Zustand z.B. fuer eine
+    // eigene Fehleranzeige bei 'error' (siehe Kontext-Log, Nachbesserung 2).
+    describe('status', () => {
+        it('wird nach einem Acquire-Fehler (500) zu "error"', async () => {
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
+
+            await waitFor(() => expect(result.current.status).toBe('error'));
+        });
+
+        it('wird nach freigeben() zu "idle"', async () => {
+            fetchMock.mockResolvedValueOnce(lockResponse());
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
+
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
+
+            await act(async () => {
+                await result.current.freigeben();
+            });
+
+            expect(result.current.status).toBe('idle');
         });
     });
 
@@ -355,6 +442,7 @@ describe('useDatensatzLock', () => {
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
             await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+            expect(result.current.status).toBe('loading');
             expect(result.current.kannBearbeiten).toBe(false);
 
             act(() => result.current.onBearbeiten());
@@ -364,7 +452,7 @@ describe('useDatensatzLock', () => {
 
             // Aufraeumen, damit die haengende Promise den Test nicht ueberlebt.
             acquireAufloesen(lockResponse());
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
         });
 
         it('nach einem Acquire-Fehler (500) ist kannBearbeiten false und onBearbeiten() loest keinen zweiten Request aus', async () => {
@@ -372,7 +460,8 @@ describe('useDatensatzLock', () => {
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
             await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(false));
+            await waitFor(() => expect(result.current.status).toBe('error'));
+            expect(result.current.kannBearbeiten).toBe(false);
 
             act(() => result.current.onBearbeiten());
 
@@ -386,13 +475,14 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(lockResponse()); // erneutes Acquire durch onBearbeiten: Erfolg
 
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
 
             await act(async () => {
                 await result.current.freigeben();
             });
             expect(result.current.modus).toBe('lesen');
-            expect(result.current.kannBearbeiten).toBe(false);
+            expect(result.current.status).toBe('idle');
+            expect(result.current.kannBearbeiten).toBe(true);
 
             act(() => result.current.onBearbeiten());
 
@@ -412,7 +502,7 @@ describe('useDatensatzLock', () => {
             ); // erneutes Acquire durch onBearbeiten: inzwischen haelt jemand anderes
 
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
 
             await act(async () => {
                 await result.current.freigeben();
@@ -446,7 +536,7 @@ describe('useDatensatzLock', () => {
                 await Promise.resolve();
                 await Promise.resolve();
             });
-            expect(result.current.kannBearbeiten).toBe(true);
+            expect(result.current.status).toBe('acquired');
 
             await act(async () => {
                 await result.current.freigeben();
@@ -480,7 +570,7 @@ describe('useDatensatzLock', () => {
             fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })); // DELETE durch onFertig
 
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
-            await waitFor(() => expect(result.current.kannBearbeiten).toBe(true));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
             act(() => result.current.onBearbeiten());
             expect(result.current.modus).toBe('bearbeiten');
 
@@ -493,7 +583,91 @@ describe('useDatensatzLock', () => {
                 )
             );
             await waitFor(() => expect(result.current.modus).toBe('lesen'));
-            expect(result.current.kannBearbeiten).toBe(false);
+            expect(result.current.status).toBe('idle');
+            expect(result.current.kannBearbeiten).toBe(true);
+        });
+    });
+
+    // Nachbesserung 2: kannBearbeiten war so definiert, dass es genau in den
+    // Zustaenden false wurde, in denen der Retry aus Nachbesserung 1 gebraucht
+    // wird (nach "Fertig" und bei Fremdsperre) -- die ECHTE BearbeitenLeiste
+    // deaktiviert ihren Knopf ueber genau diese Prop, war also nie klickbar.
+    // Diese Tests rendern Hook und echte BearbeitenLeiste zusammen, um genau
+    // das abzudecken (ein reiner Hook-Test haette den Fehler nicht gefunden).
+    describe('Zusammenspiel mit der echten BearbeitenLeiste', () => {
+        it('nach onFertig() ist der Bearbeiten-Knopf wieder aktiv; ein Klick acquiriert erneut, erst bei 200 erscheint "Fertig"', async () => {
+            const user = userEvent.setup();
+            fetchMock.mockResolvedValueOnce(lockResponse()); // Mount-Acquire
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })); // DELETE durch Fertig-Klick
+            fetchMock.mockResolvedValueOnce(lockResponse()); // erneutes Acquire durch Bearbeiten-Klick
+
+            render(<LeisteMitHook typ="AUSGANG" id={42} />);
+
+            const bearbeiten1 = await screen.findByRole('button', { name: 'Bearbeiten' });
+            await waitFor(() => expect(bearbeiten1).toBeEnabled());
+            await user.click(bearbeiten1);
+
+            const fertig = await screen.findByRole('button', { name: 'Fertig' });
+            await user.click(fertig);
+
+            const bearbeiten2 = await screen.findByRole('button', { name: 'Bearbeiten' });
+            await waitFor(() => expect(bearbeiten2).toBeEnabled());
+
+            await user.click(bearbeiten2);
+
+            await waitFor(() =>
+                expect(
+                    fetchMock.mock.calls.filter(
+                        call => call[0] === '/api/datensatz-locks/AUSGANG/42/acquire'
+                    )
+                ).toHaveLength(2)
+            );
+            expect(await screen.findByRole('button', { name: 'Fertig' })).toBeInTheDocument();
+        });
+
+        it('bei Fremdsperre ist der Bearbeiten-Knopf aktiv; ein Klick uebernimmt einen zwischenzeitlich freigewordenen Datensatz', async () => {
+            // Echte Timer + waitFor statt Fake-Timer: userEvent.click() haengt
+            // sich unter vi.useFakeTimers() zuverlaessig auf (auch mit
+            // delay: null), vermutlich weil die jsdom/Pointer-Events-Kette
+            // intern auf requestAnimationFrame wartet, das vi.useFakeTimers()
+            // standardmaessig mitfaked. Dass ein erfolgreicher erneuter
+            // Acquire den Heartbeat wieder in Gang setzt, ist bereits durch
+            // "nach erfolgreichem erneuten Acquire laeuft der Heartbeat
+            // wieder" und den verbindungWeg-Regressionstest oben abgedeckt --
+            // beide durchlaufen exakt denselben acquire()/startHeartbeat()-
+            // Code, nur ueber onBearbeiten() statt per Klick ausgeloest.
+            const user = userEvent.setup();
+            fetchMock.mockResolvedValueOnce(
+                lockResponse({ status: 'LOCKED_BY_OTHER', holderDisplayName: 'Klaus Beispiel' })
+            ); // Mount: fremd gesperrt
+            fetchMock.mockResolvedValueOnce(lockResponse()); // Klick auf "Bearbeiten": Kollege hat inzwischen freigegeben
+
+            render(<LeisteMitHook typ="AUSGANG" id={42} />);
+
+            const bearbeitenKnopf = await screen.findByRole('button', { name: 'Bearbeiten' });
+            await waitFor(() => expect(bearbeitenKnopf).toBeEnabled());
+
+            await user.click(bearbeitenKnopf);
+
+            expect(await screen.findByRole('button', { name: 'Fertig' })).toBeInTheDocument();
+        });
+
+        it('nach einem Acquire-Fehler (500) ist der Bearbeiten-Knopf deaktiviert; ein Klick loest keinen zweiten Request aus', async () => {
+            const user = userEvent.setup();
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
+
+            render(<LeisteMitHook typ="AUSGANG" id={42} />);
+
+            const bearbeitenKnopf = await screen.findByRole('button', { name: 'Bearbeiten' });
+            await waitFor(() => expect(bearbeitenKnopf).toBeDisabled());
+
+            await user.click(bearbeitenKnopf);
+
+            expect(
+                fetchMock.mock.calls.filter(
+                    call => call[0] === '/api/datensatz-locks/AUSGANG/42/acquire'
+                )
+            ).toHaveLength(1);
         });
     });
 });
