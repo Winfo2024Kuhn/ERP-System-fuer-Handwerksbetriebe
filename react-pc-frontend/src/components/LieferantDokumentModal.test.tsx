@@ -196,6 +196,31 @@ describe('LieferantDokumentModal', () => {
             expect(screen.getByPlaceholderText('RE-2024-001')).toBeDisabled();
             expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled();
         });
+
+        it('traegt nach eigenem "Fertig" KEIN title auf dem wieder anklickbaren Bearbeiten-Knopf (Task 7d: bearbeitenGesperrtGrund nur bei loading/error gesetzt)', async () => {
+            const user = userEvent.setup();
+            const fetchMock = buildFetchMock();
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderModal();
+            await user.click(await screen.findByRole('button', { name: 'Fertig' }));
+
+            const bearbeiten = await screen.findByRole('button', { name: 'Bearbeiten' });
+            expect(bearbeiten).toBeEnabled();
+            expect(bearbeiten).not.toHaveAttribute('title');
+            expect(bearbeiten).not.toHaveAttribute('aria-describedby');
+        });
+
+        it('zeigt nach eigenem "Fertig" den Hinweis "Sie lesen nur mit." in der Leiste (Lesen-Modus ohne fremden Halter)', async () => {
+            const user = userEvent.setup();
+            const fetchMock = buildFetchMock();
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderModal();
+            await user.click(await screen.findByRole('button', { name: 'Fertig' }));
+
+            expect(await screen.findByText('Sie lesen nur mit.')).toBeInTheDocument();
+        });
     });
 
     describe('Fremdes Lock (Zustand "locked-by-other")', () => {
@@ -227,6 +252,21 @@ describe('LieferantDokumentModal', () => {
                 fetchMock.mock.calls.filter(call => call[0] === `/api/datensatz-locks/EINGANG/${DOKUMENT_ID}/acquire`)
             ).toHaveLength(2);
         });
+
+        it('zeigt bei Fremdsperre KEINEN "Sie lesen nur mit."-Hinweis -- GesperrtHinweis erklaert den Zustand bereits, kein doppelter Text', async () => {
+            const fetchMock = buildFetchMock({
+                acquire: aufrufNummer =>
+                    aufrufNummer === 1
+                        ? lockResponse({ status: 'LOCKED_BY_OTHER', holderDisplayName: 'Thomas Beispiel' })
+                        : lockResponse(),
+            });
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderModal();
+
+            expect(await screen.findByText(/Thomas Beispiel/)).toBeInTheDocument();
+            expect(screen.queryByText('Sie lesen nur mit.')).not.toBeInTheDocument();
+        });
     });
 
     describe('Waehrend des Sperren-Abrufs (Zustand "loading")', () => {
@@ -240,7 +280,9 @@ describe('LieferantDokumentModal', () => {
             renderModal();
 
             expect(await screen.findByText('Sperre wird geprüft…')).toBeInTheDocument();
-            expect(screen.getByRole('button', { name: 'Bearbeiten' })).toBeDisabled();
+            const bearbeiten = screen.getByRole('button', { name: 'Bearbeiten' });
+            expect(bearbeiten).toBeDisabled();
+            expect(bearbeiten).toHaveAttribute('title', 'Sperre wird gerade geholt …');
             expect(screen.getByPlaceholderText('RE-2024-001')).toBeDisabled();
 
             // Aufraeumen, damit die haengende Promise den Test nicht ueberlebt.
@@ -263,8 +305,22 @@ describe('LieferantDokumentModal', () => {
             await waitFor(() =>
                 expect(screen.getAllByText('Sperre konnte nicht geholt werden — bitte neu laden.')).toHaveLength(2)
             );
-            expect(screen.getByRole('button', { name: 'Bearbeiten' })).toBeDisabled();
+            const bearbeiten = screen.getByRole('button', { name: 'Bearbeiten' });
+            expect(bearbeiten).toBeDisabled();
             expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled();
+        });
+
+        it('traegt denselben Wortlaut wie das rote Fehlerband als title auf dem deaktivierten Bearbeiten-Knopf (Task 7d: bearbeitenGesperrtGrund)', async () => {
+            const fetchMock = buildFetchMock({ acquire: () => new Response(null, { status: 500 }) });
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderModal();
+
+            await screen.findByRole('alert');
+            const bearbeiten = screen.getByRole('button', { name: 'Bearbeiten' });
+            expect(bearbeiten).toBeDisabled();
+            expect(bearbeiten).toHaveAttribute('title', 'Sperre konnte nicht geholt werden — bitte neu laden.');
+            expect(bearbeiten.getAttribute('aria-describedby')).toBeTruthy();
         });
     });
 

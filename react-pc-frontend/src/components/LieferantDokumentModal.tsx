@@ -97,6 +97,27 @@ export default function LieferantDokumentModal({
                 ? LOCK_FEHLER_TEXT
                 : 'Erst „Bearbeiten“ klicken, um Änderungen zu speichern.';
 
+    // Grund fuer den deaktivierten Bearbeiten-Knopf in der BearbeitenLeiste
+    // (Task 7d: Verdrahtung der in Runde 7-1/Task 7c gebauten, bis hierher
+    // ungenutzten Props). Nur in den beiden Zustaenden gesetzt, in denen
+    // kannBearbeiten tatsaechlich false ist (siehe useDatensatzLock) -- sonst
+    // undefined, damit BearbeitenLeiste gar kein title-Attribut rendert.
+    // Fehlertext bewusst identisch mit LOCK_FEHLER_TEXT (rotes Band oben UND
+    // Toast) -- sonst laesst der Nutzer denselben Fehler mit zwei
+    // unterschiedlichen Formulierungen lesen.
+    const bearbeitenGesperrtGrund =
+        lock.status === "loading"
+            ? "Sperre wird gerade geholt …"
+            : lock.status === "error"
+                ? LOCK_FEHLER_TEXT
+                : undefined;
+
+    // "Sie lesen nur mit." nur zeigen, wenn kein fremder Halter separat
+    // erklaert wird -- bei Fremdsperre uebernimmt GesperrtHinweis (oben
+    // links) die Erklaerung bereits, ein zweiter Hinweis fuer denselben
+    // Zustand waere doppelt gemoppelt (Task 7d).
+    const zeigeNurLesenHinweis = lock.modus === "lesen" && lock.status !== "locked-by-other";
+
     // Schliessen (X, Hintergrund, Abbrechen) gibt die Sperre AKTIV frei --
     // nicht nur ueber den passiven Unmount-/lockUrl-Wechsel-Pfad im Hook
     // (der ist fuer Tab-/Seiten-Schliessen gedacht, feuert per keepalive und
@@ -376,6 +397,8 @@ export default function LieferantDokumentModal({
                             kannBearbeiten={lock.kannBearbeiten}
                             verbleibendeSekunden={idleTimer.verbleibendeSekunden}
                             verbindungWeg={lock.verbindungWeg}
+                            bearbeitenGesperrtGrund={bearbeitenGesperrtGrund}
+                            zeigeNurLesenHinweis={zeigeNurLesenHinweis}
                             onBearbeiten={lock.onBearbeiten}
                             onFertig={lock.onFertig}
                         />
