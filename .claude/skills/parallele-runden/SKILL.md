@@ -205,6 +205,27 @@ anderen Worktrees mit — auch der, die gerade laufen.
 Gilt genauso für jeden anderen geteilten Ordner, den man per Junction oder
 Symlink in einen Worktree hängt.
 
+### Eine geteilte Prop braucht eine Bedeutung, nicht nur einen Namen (04.09.2026)
+
+Ein Hook wurde gebaut, dessen Verbraucher-Komponente schon existierte. Der
+Auftrag sagte: „Rückgabewert aus den Props der Komponente ableiten." Der Agent
+hat das getan — Name und Typ von `kannBearbeiten` passten exakt. Nur die
+**Bedeutung** nicht: der Hook meinte „wir halten das Lock", die Komponente
+meinte „der Nutzer darf anfangen". Beide für sich mit 24 bzw. 12 Tests grün.
+Zusammen gerendert war der Knopf genau dann tot, wenn er gebraucht wurde.
+Zwei Review-Runden, bis das auffiel — beim ersten Mal hat der Reviewer den
+Hook allein geprüft.
+
+Zwei Konsequenzen:
+
+- Im Plan gehört unter `Interfaces` zu jeder Prop, die zwei Tasks teilen, ein
+  Satz, **was sie bedeutet** — nicht nur Name und Typ. „`kannBearbeiten:
+  boolean`" reicht nicht. „`kannBearbeiten`: ein Klick auf Bearbeiten ist
+  gerade sinnvoll; false nur bei laufendem oder gescheitertem Acquire" reicht.
+- Produziert ein Task etwas, das ein **schon vorhandener** Baustein
+  konsumiert, muss sein Test beide zusammen rendern. Und der Prüfagent auch.
+  Ein Baustein, der nur gegen sich selbst getestet ist, ist nicht geprüft.
+
 ### Auftrag als nachweisbares Ergebnis formulieren, nicht als Lösungsweg (04.09.2026)
 
 Ein Befund war zweimal von Reviews weitergereicht und zweimal nicht behoben
