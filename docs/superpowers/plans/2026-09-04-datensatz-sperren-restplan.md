@@ -354,7 +354,31 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
      („Sie lesen nur mit." — Anrede laut Entscheidung des Nutzers, siehe Du/Sie-Frage).
   Jeder Punkt mit rotem Test; Screenshots nach dem Ausklingen der Übergänge.
 
-## Abschnitt 8 (Aufräumen — macht der Orchestrator selbst)
+### Abschnitt 8 — zwei Spuren parallel
+
+#### Task 8a — Toast, Confirm-Dialog und Konfliktmeldung nachschärfen (Befunde aus Design-Review 6, 2. Durchgang)
+- Files: `react-pc-frontend/src/components/ui/toast.tsx`, `toast.test.tsx`,
+  `react-pc-frontend/src/components/ui/confirm-dialog.tsx` (+ Test),
+  `react-pc-frontend/src/components/lock/useKonfliktMeldung.ts`, `useKonfliktMeldung.test.tsx`,
+  `e2e/toast-bei-dialog.spec.ts` (neu)
+- Consumes: nichts Neues (alles fertig).
+- Steps:
+  1. Toast bei offenem Dialog: heute `top-6`, nur 4 px Luft zum Schließen-X des Modals.
+     Ein zweizeiliger Toast (46 → 86 px) verdeckt X und „Vorschau aktiv" auf beiden
+     Größen — gemessen. Nachweisbar: bei offenem Dialog und zweizeiligem Toast trifft
+     `elementFromPoint` in der Mitte des Schließen-X das X. Lösung ist frei (mehr
+     Abstand, oder Toast unter dem Modal-Kopf, oder links statt rechts).
+  2. `confirm-dialog.tsx` trägt kein `role="dialog"` — der Toast-Umzug greift dort nicht,
+     und Screenreader sehen keinen Dialog. `role="dialog"` + `aria-modal` + `aria-labelledby`.
+  3. `useKonfliktMeldung.ts`: `variant: 'warning'` färbt „Neu laden" amber-500 — gefüllte
+     Primäraktionen sind im System rose (`UnsavedChangesModal` macht es vor). Auf `'info'`
+     oder das rose-Muster angleichen. Dazu toter Code: `eigeneMeldung || body?.message || '…'`
+     — `eigeneMeldung` ist nie leer, die Fallbacks greifen nie. Entweder die
+     Server-Meldung wirklich bevorzugen oder die Fallbacks streichen; Kommentar dazu
+     ehrlich machen.
+  Jeder Punkt roter Test zuerst; e2e-Spec mit `designPruefung` bei stehendem Toast.
+
+## Abschnitt 8 (Aufräumen — macht der Orchestrator selbst, parallel zu 8a)
 
 Löschen der alten Klassen UND die `DROP TABLE`-Migration gehören in **eine** Auslieferung,
 sonst entsteht ein Zwischenstand, der nicht startet (Entity mappt eine Tabelle, die es

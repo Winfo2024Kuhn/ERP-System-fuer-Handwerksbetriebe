@@ -1089,3 +1089,316 @@ Bedenken / Abweichungen vom Plan:
 - toast.test.tsx existierte bereits (nicht wie im Auftrag "eigener Unit-Test in einer toast.test.tsx" impliziert eine neue Datei) -- bestehende Datei um eine eigene describe-Gruppe erweitert statt eine zweite Testdatei fuer denselben Baustein anzulegen.
 - Der GESUCHTE Bug betraf laut Befund auch "gleiche Geometrie" beim Speicher-Fehler-Toast -- dafuer einen komplett neuen Testfall ergaenzt (nicht nur behauptet, dass derselbe Fix greift), inklusive eigenem PUT-Stub auf /api/lieferant-dokumente/{id}.
 - Der bestehende Fehlerfall-Test wurde umbenannt (Zusatz "Toast verdeckt die Fussleiste nicht" im Titel) und um die zwei neuen Assertions erweitert statt einen komplett getrennten Test zu schreiben -- inhaltlich derselbe Ablauf (Oeffnen mit Lock-Fehler), keine Pruefkraft verloren, nur ergaenzt.
+
+## Abschnitt 6 — Task 6a Nachbesserung 1 (Coding-Agent)
+
+- Zeit: 2026-09-04, ca. 20:55–21:15 (lokale Sessionzeit)
+- Branch: lock/task-6a-editor-seite
+- Commit: 9a1c4f15 — fix(dokument-editor): neu angelegtes Dokument verliert Sperre nicht mehr nach 90s
+- Status: 🟢 fertig. `npx vitest run src/components/document-editor/index.test.tsx src/components/lock/TabSchliessenHinweis.test.tsx` → 25/25 grün. `npm run lint` → 0 Fehler, genau die 1 vorbestehende Warnung (BelegeKasseEditor.tsx:1204). `npm run build` → grün, Output zurückgesetzt. `E2E_PORT=5179 npx playwright test e2e/dokument-editor-tab-schliessen.spec.ts` → weiterhin 6/6 grün (nicht geändert, aber gegen den neuen Code nachgefahren).
+
+**Befund (vom Code-Review, bestätigt):** `syncDocumentIdInUrl` schrieb die beim Anlegen vergebene Id per `window.history.replaceState` in die URL. React-Router bekam das nicht mit, `useSearchParams` in `DocumentEditorPage.tsx` blieb unverändert, der Seiten-Lock-Hook (`useDocumentLock`) blieb auf `idle` und pingte nie. Nach `STALE_AFTER` (90s, serverseitig) scheiterte jeder folgende PUT — auch der 10-Sekunden-Autosave — mit 409, ohne Rettungsweg (das alte `tryAcquireLock`-Retry ist mit der Aufräumung in Abschnitt 6a weg).
+
+**Gewählter Weg: Router statt `replaceState` (Weg 1 aus dem Auftrag).** Begründung: kleiner, bleibt vollständig in `index.tsx`/`index.test.tsx`, keine Änderung an `DocumentEditorPage.tsx` nötig (die Datei gehört Abschnitt 7a). `syncDocumentIdInUrl` nutzt jetzt `useSearchParams()`/`setSearchParams(..., { replace: true })` statt `window.history.replaceState` — die Seite (liest `dokumentId` über dieselben `useSearchParams`) bekommt die neue Id dadurch als Prop-Änderung mit, ihr Lock-Hook akquiriert (bekommt vom Server ACQUIRED zurück, weil das Backend das Lock beim Anlegen schon für den Ersteller hält) und startet seinen 30s-Heartbeat.
+
+**Was zusätzlich geprüft/angepasst werden musste, damit der Editor beim `dokumentId`-Wechsel weder neu lädt noch Zustand verwirft:**
+- Die "Load Document"-Effect (`useEffect(..., [dokumentId])`) hätte bei einem Wechsel von `undefined` auf die frische Id sonst erneut `GET /api/ausgangs-dokumente/{id}` ausgeführt und den kompletten lokalen State (Blöcke, Kontextdaten, Datum, `hasUnsavedChanges` …) mit dem Server-Stand überschrieben — ein Verlust zwischenzeitlicher, noch nicht gespeicherter Tastatureingaben. Guard ergänzt: `if (dokument?.id === dokumentId) { setLoading(false); return; }` — `setDokument(created)` läuft im selben `handleSave`-Aufruf synchron VOR `syncDocumentIdInUrl`, ist also schon gesetzt, wenn die Prop-Änderung beim nächsten Render ankommt.
+- Der Pfad-Guard in `syncDocumentIdInUrl` (nur auf `/dokument-editor` aktiv) prüfte bisher `window.location.pathname` — das ist bei einem `MemoryRouter` (Tests, aber auch technisch bei künftiger Einbettung) NIE die echte Browser-URL. Umgestellt auf `useLocation().pathname` aus react-router. Ohne diesen zweiten Fix blieb der rote Test aus Punkt 1 rot, obwohl `setSearchParams` bereits verdrahtet war — Fund direkt beim ersten Testlauf.
+
+**Rote Tests:**
+1. „kann ein frisch angelegtes Dokument auch nach mehr als 90s noch speichern" (`index.test.tsx`, neue Describe „Sperre nach Neuanlage bleibt am Leben"): Mini-Nachbau der Seiten-Verdrahtung (`SeiteMitAltemLock`: `useSearchParams` + der echte, heute noch aktive `useDocumentLock`-Hook + `DocumentEditor`), Fake-Timer, Stub mit tatsächlich beobachtbarem Lock-Verfall (PUT antwortet mit 409, wenn seit dem letzten Acquire/Heartbeat mehr als 90s vergangen sind). Gegen den Alt-Stand rot: `expected false to be true` bei der Prüfung, ob je ein Request an `/api/dokument-locks/AUSGANG/42/acquire` ging (ging nie, weil die Seite die neue Id nie sah). Nach dem router-Fix zunächst weiterhin rot (derselbe Fehler) — Ursache war der zweite Fund (`window.location` vs. `useLocation()`), danach grün.
+2. „zeigt bei einem Versionskonflikt (JSON-Body) die Neu-laden-Meldung statt rohem JSON" (`index.test.tsx`, neue Describe „409 beim Speichern: zwei verschiedene Ursachen"): PUT mit `content-type: application/json` und `ApiError`-Body. Gegen den Alt-Stand rot: Timeout beim Warten auf den Text „Nicht gespeichert" (der alte Code zeigte stattdessen `res.text()`, also den rohen JSON-String, in einem Toast). Nach der Umstellung auf `useKonfliktMeldung.pruefeAntwort(res)` bei JSON-Content-Type grün.
+3. „raeumt den 150ms-Warte-Timer beim Unmount auf": Spy auf `window.setTimeout`/`window.clearTimeout`, geprüft wird die EXAKTE Timer-Id (nicht nur „clearTimeout wurde irgendwann aufgerufen" — ein erster, zu lascher Entwurf dieses Tests blieb beim Alt-Stand fälschlich grün, weil irgendwo im Baum ohnehin `clearTimeout` für andere Timer läuft). Mit der exakten Id gegen den Alt-Stand rot (`Number of calls: 6`, keiner mit der erwarteten Id). Nach `tabSchliessenTimerRef` + `window.clearTimeout(...)` im Unmount-Cleanup grün.
+4. Companion-Test „zeigt bei einer Fremdsperre (Text-Body) weiterhin die einfache Warnmeldung, keinen Neu-laden-Dialog" — war bereits mit dem Alt-Stand grün (die einfache `toast.warning(res.text())`-Behandlung war für den Text-Body-Fall nie falsch), bleibt als Regressionsschutz für die neue Content-Type-Verzweigung stehen.
+5. Bestehender Test „sendet nach Mount und Unmount keinen Request an /api/dokument-locks/…" (Abschnitt 6a) unverändert grün — der Editor selbst holt weiterhin kein eigenes Lock; alle neuen Requests in Test 1 laufen über den (test-eigenen) Seiten-Hook, nicht über den Editor.
+
+**Bedenken / Abweichungen vom Plan:**
+- `syncDocumentIdInUrl`s Dependency-Array hat sich durch `useSearchParams`/`useLocation` von `[]` auf `[searchParams, setSearchParams, location]` geändert — dadurch bekommt `handleSave` (hängt an `syncDocumentIdInUrl`) bei jeder Navigation eine neue Funktionsreferenz und der Autosave-`setInterval` (hängt an `handleSave`) wird entsprechend neu aufgesetzt. Funktional unbedenklich (der Effekt räumt sein Intervall im Cleanup sauber ab, siehe bestehender Code), aber eine Verhaltensänderung gegenüber der bisherigen, komplett stabilen `[]`-Referenz — hier vermerkt statt still hingenommen.
+- Die 90s-Testprobe nutzt einen lokal im Testfile nachgebauten Mini-Wrapper (`SeiteMitAltemLock`) statt `DocumentEditorPage.tsx` selbst — bewusst, weil die echte Seite laut Restplan erst in Abschnitt 7a auf `useDatensatzLock`/`readOnly`/`onLockFreigeben` umgestellt wird und ich diese Datei nicht anfassen darf/soll. Der Wrapper nutzt aber den ECHTEN, heute noch aktiven `useDocumentLock`-Hook (kein Mock) — das Verhalten ist damit ehrlich geprüft, nur die Verdrahtung drumherum ist nachgebaut statt importiert.
+- Für den Versionskonflikt-Fall wird jetzt `useKonfliktMeldung('Dokument')` verwendet (Pflicht-Komponente, bereits von 6b genutzt) — das öffnet bei einem Versionskonflikt einen `confirm()`-Dialog mit „Neu laden"/„Abbrechen" statt eines reinen Toasts. Das ist eine sichtbare UX-Änderung gegenüber dem bisherigen (fehlerhaften) Zustand, aber genau das im Auftrag verlangte Verhalten (dieselbe Behandlung wie bei 6b).
+
+## Abschnitt 6 — Design-Review 2 (Design-Reviewer)
+
+**Ampel: 🟡 — von meiner Seite abgenommen.** Der 🔴 aus Durchgang 1 ist behoben, selbst
+nachgemessen. Kein neuer blockierender Befund.
+
+Worktree `wt/review-design`, Stand `320cd455`. `E2E_PORT=5190 npm run test:e2e`:
+**84 Tests, alle grün**, beide Größen `pc-14zoll` (1440×900) und `pc-monitor` (1920×1080).
+Zwei Tests mehr als in Durchgang 1 (82) — neu ist die Fußleisten-Probe in beiden
+Fehler-Szenarien von `lieferant-dokument-modal.spec.ts`. Kein `website-*`-Test rot.
+
+### Der 🔴 aus Durchgang 1: behoben
+
+**Gemessen, nicht geglaubt.** Eigene Nachmessung im Browser (Wegwerf-Spec, danach gelöscht),
+jeweils 1,4 s nach dem Auslösen, also mit voll eingeblendetem Toast:
+
+| Szenario | Größe | Toast | `Abbrechen` | `elementFromPoint` Mitte | `Speichern` | `elementFromPoint` Mitte |
+| --- | --- | --- | --- | --- | --- | --- |
+| Lock-Fehler beim Öffnen | pc-14zoll | x 978–1416, y 24–70 | 1139–1240, 812–850 | **BUTTON „Abbrechen"** | 1252–1379, 812–850 | **BUTTON „Speichern"** |
+| Lock-Fehler beim Öffnen | pc-monitor | x 1458–1896, y 24–70 | 1495–1596, 983–1021 | **BUTTON „Abbrechen"** | 1608–1735, 983–1021 | **BUTTON „Speichern"** |
+| Speicherfehler | pc-14zoll | x 1096–1416, y 24–70 | 1139–1240, 812–850 | **BUTTON „Abbrechen"** | 1252–1379, 812–850 | **BUTTON „Speichern"** |
+| Speicherfehler | pc-monitor | x 1576–1896, y 24–70 | 1495–1596, 983–1021 | **BUTTON „Abbrechen"** | 1608–1735, 983–1021 | **BUTTON „Speichern"** |
+
+8 von 8 Treffern landen auf dem jeweiligen Knopf, keiner auf dem Toast
+(`istToast: false` in allen acht Fällen). Der Container trägt in allen vier Läufen die
+Klassen `fixed z-[9999] … top-6 right-6`. Deckt sich mit der Meldung des Agenten.
+
+Zusätzlich geprüft, was der Toast an seinem neuen Platz verdeckt — nichts Gebrauchtes:
+
+| Element (pc-14zoll) | Rahmen | Treffer in der Mitte |
+| --- | --- | --- |
+| Schließen-X des Modals | 1353–1387, 74–108 | `path` im X-Knopf (nicht Toast) |
+| „Vorschau aktiv" | 1191–1339, 74–110 | BUTTON „Vorschau aktiv" |
+| `Bearbeiten` / `Fertig` | 1263–1379, 141–175 | der jeweilige Button |
+| Titel „Dokument bearbeiten" | 61–240, 78–106 | liegt weit links, Toast beginnt bei x 978 |
+
+Auf `pc-monitor` dasselbe Bild. Die Fußleiste ist auf beiden Größen frei, der Modal-Kopf
+bleibt bedienbar.
+
+**Zur Frage, ob die Meldung aus dem Blick wandert:** in beiden Abläufen dieses Abschnitts
+nein — die Meldung steht doppelt. Beim Lock-Fehler als rotes Band oben im Modal (genau dort,
+wo der Blick nach dem Öffnen hinfällt), beim Speicherfehler zusätzlich als rotes Band direkt
+über der Fußleiste, also unmittelbar neben dem gerade gedrückten `Speichern`. Der Toast ist
+in beiden Fällen die Zweitmeldung, nicht der einzige Kanal. Kein 🟡.
+
+**Ist das rote Band lauter als der Nur-Lesen-Hinweis?** Ja, deutlich. Der Lock-Fehler ist
+jetzt ein Band mit Fläche (red-50), Rand (red-300), `AlertTriangle` in red-600 und
+halbfettem red-700-Text; der `GesperrtHinweis` bleibt das ruhige rose-50-Band mit
+`Lock`-Icon und normalem slate-700. Die Dringlichkeit ist damit richtig herum verteilt —
+der 🟡 aus Durchgang 1 ist erledigt.
+
+### Angeschaute Screenshots
+
+Alle 14 aus `react-pc-frontend/test-results/design/`, jeweils `--pc-14zoll` und `--pc-monitor`:
+
+1. `dokument-editor-vor-schliessen`
+2. `dokument-editor-ungespeichert-warnung`
+3. `lieferant-modal-bearbeiten`
+4. `lieferant-modal-gesperrt`
+5. `lieferant-modal-fremdes-lock`
+6. `lieferant-modal-fehler`
+7. `lieferant-modal-speicherfehler-toast` (neu in diesem Durchgang)
+
+Dazu 8 eigene Zusatz-Aufnahmen (Wegwerf-Spec, danach gelöscht, Worktree ist sauber):
+`nachmessung-lockfehler`, `nachmessung-speicherfehler`, `probe-zweizeiliger-toast`,
+`editor-versionskonflikt`, `editor-sperrkonflikt-toast` — je `--pc-14zoll` und `--pc-monitor`.
+
+### Die sechs Fragen je Zustand
+
+**`dokument-editor-vor-schliessen` (14 Zoll + Monitor)**
+1. *Farben?* Ja, unverändert gut: eine rosa Primäraktion (`PDF`), Rest slate.
+2. *Design-System?* Ja. Die Vorschau zeigt jetzt sauber das Skelett-Muster (rose/slate-Balken)
+   statt eines leeren Kastens — genau die Vorgabe „nie ein leeres Loch beim Laden".
+3. *Look-and-Feel?* Ruhig, ausgewogen, auf 1920 nichts verwaist.
+4. *UX?* Leerer Zustand in ganzen Sätzen, Handwerker-Sprache.
+5. *Auffindbar?* Ja, X-Knopf oben links ohne Scrollen.
+6. *Überschneidung?* Nein — und der 🟡 aus Durchgang 1 ist weg: die Vorschau-Spalte steht
+   jetzt **ausgelaufen** bei 45 % (14 Zoll x 792–1440 = 648 px, 1920 x 1057–1920 = 863 px)
+   statt bei ~88 px mitten in der Animation. `uebergaengeAusklingenLassen` wirkt.
+
+**`dokument-editor-ungespeichert-warnung` (14 Zoll + Monitor)**
+1.–6. Unverändert gut: drei klar gestufte Ausgänge, genau eine rosa Primäraktion
+   (`Speichern & Schließen`), amber-50/amber-500 als Warn-Icon, `rounded-2xl`, `shadow-2xl`,
+   mittig, keine Überschneidung, kein waagerechtes Scrollen.
+   Bekannt aus 7c: `Nicht speichern` bricht weiter auf zwei Zeilen um. Nicht schlechter geworden.
+
+**`lieferant-modal-bearbeiten` (14 Zoll + Monitor)**
+1. *Farben?* Jetzt richtig: `Fertig` steht in **beiden** Größen als weißer Outline-Knopf mit
+   rose-Rand und rose-Text da, `Speichern` ist die einzige gefüllte rosa Fläche. Der halbe
+   Farbübergang aus Durchgang 1 ist weg.
+2. *Design-System?* Ja, rose/slate, Lucide, kein Emoji, Systemschrift.
+3. *Look-and-Feel?* Ruhig. Linke Bandhälfte weiterhin leer (7c), unverändert.
+4. *UX?* Eine Primäraktion, Formular sichtbar bedienbar.
+5. *Auffindbar?* Ja, `Fertig` am Kopf, ohne Scrollen.
+6. *Überschneidung?* Nein, kein waagerechtes Scrollen.
+
+**`lieferant-modal-gesperrt` (14 Zoll + Monitor)**
+1.–6. Unverändert zu Durchgang 1. Zwei rosa Knöpfe (`Bearbeiten` voll, `Speichern` bei 50 %),
+   Zustandswechsel nur über die Textfarbe der Felder, linke Bandhälfte ohne Satz — alles
+   bekannt und in 7c. Keine Überschneidung, nichts abgeschnitten, nichts verschlechtert.
+
+**`lieferant-modal-fremdes-lock` (14 Zoll + Monitor)**
+1.–6. Unverändert der stärkste Zustand: volles rose-50-Band mit `Lock`, Name fett,
+   „Thomas Beispiel bearbeitet das gerade — Sie sehen den aktuellen Stand. Seit 5 Min.",
+   `Bearbeiten` sichtbar und aktiv. Auf 14 Zoll ohne Scrollen am Kopf des Datensatzes.
+   Keine Überschneidung.
+
+**`lieferant-modal-fehler` (14 Zoll + Monitor)** — Acquire liefert 500
+1. *Farben?* Jetzt klar: rotes Band (red-50/red-300/red-700) mit `AlertTriangle` gegen das
+   rose-50 des Nur-Lesen-Hinweises. Auf einen Blick unterscheidbar.
+2. *Design-System?* Ja. `red` ist die dokumentierte Danger-Semantik, keine Fremdpalette.
+3. *Look-and-Feel?* Das Band nimmt die volle freie Breite und füllt die Leiste auch auf 1920.
+4. *UX?* Meldung im Modal **und** als Toast. `Bearbeiten` weiterhin deaktiviert ohne Tooltip (7c).
+5. *Auffindbar?* Ja.
+6. *Überschneidung?* **Nein — der Befund aus Durchgang 1 ist weg.** Toast oben rechts,
+   Fußleiste frei, Werte oben in der Tabelle.
+
+**`lieferant-modal-speicherfehler-toast` (14 Zoll + Monitor)** — neu
+1. *Farben?* Toast red-50/red-200 mit `XCircle`, dazu das rote Inline-Band über der Fußleiste.
+   `Speichern` bleibt als rose-600 die Primäraktion, klar getrennt vom Rot der Fehlermeldung.
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* In Ordnung. Wenn das Inline-Band erscheint, schrumpft der Formularbereich
+   um ~46 px und der Inhalt rutscht — kosmetisch, kein Fehler.
+4. *UX?* Vorbildlich: Fehler steht direkt neben dem gedrückten Knopf **und** im Toast.
+5. *Auffindbar?* Ja, `Speichern` frei bedienbar (gemessen, s. o.).
+6. *Überschneidung?* Nein. Auf 1920 fällt auf, dass die Skonto-Zeile vom Inline-Band
+   angeschnitten wird — das ist die Kante des Scroll-Containers, bekannt aus 7c.
+
+**Zusatz `editor-versionskonflikt` (14 Zoll + Monitor)** — 409 mit JSON-Body
+1. *Farben?* 🟡: `Neu laden` ist **amber-500 gefüllt**, nicht rose-600 — siehe Hinweise.
+   Sonst sauber: amber-100-Kreis mit `AlertTriangle`, `Abbrechen` als slate-Outline.
+2. *Design-System?* Der Dialog selbst ja — es ist die Pflicht-Komponente `useConfirm()`
+   (`ui/confirm-dialog.tsx`), kein selbstgebautes Modal: weiß, `rounded-2xl`, `shadow-2xl`,
+   `bg-black/40 backdrop-blur-sm`. Nur die Knopffarbe fällt aus der Reihe.
+3. *Look-and-Feel?* Ruhig, mittig, in beiden Größen gleich.
+4. *UX?* Wording ist genau richtig und der Kern der Nachbesserung: „Nicht gespeichert —
+   Jemand anders hat dieses Dokument gerade gespeichert. Ihre Änderungen wurden nicht
+   übernommen — bitte neu laden." Kein rohes JSON mehr, Handwerker-Sprache, zwei klare Wege.
+5. *Auffindbar?* Ja, mittig im Bild.
+6. *Überschneidung?* Nein. Gemessen: kein Toast im DOM (`toastDa: false` — der Dialog
+   **ersetzt** ihn, richtig so), `Abbrechen` (521,509,194×42) und `Neu laden`
+   (727,509,192×42) auf 14 Zoll bzw. (761,599) und (967,599) auf 1920 beide frei anklickbar.
+
+**Zusatz `editor-sperrkonflikt-toast` (14 Zoll + Monitor)** — 409 mit Text-Body
+1. *Farben?* amber-50/amber-200 mit `AlertTriangle` — `toast.warning`, nicht `error`. Richtige
+   Stufe: es ist kein Fehler, sondern „gleich nochmal versuchen".
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Unauffällig unten rechts.
+4. *UX?* „Dokument wird gerade von Thomas Beispiel bearbeitet" — der Servertext, verständlich,
+   mit Namen. Genau die Trennung, die die Nachbesserung wollte.
+5. *Auffindbar?* Ja.
+6. *Überschneidung?* Nein. Im Editor ist kein `role="dialog"` offen, der Toast bleibt also
+   korrekt unten rechts und verdeckt die Statuszeile (Netto/MwSt/Brutto) nicht.
+
+### 💡 Hinweise (blockieren nicht)
+
+- **Nur 4 px Luft nach unten.** Der Toast endet bei y = 70, der Schließen-X des Modals
+  beginnt bei y = 74 (14 Zoll) bzw. 83 (1920). Probe mit einem zweizeiligen Text von
+  realistischer Länge: die Toast-Höhe wächst von 46 auf 86 px, die Unterkante auf y = 110 —
+  und dann trifft `elementFromPoint` in der Mitte von Schließen-X **und** „Vorschau aktiv"
+  auf beiden Größen den Toast. Heute tritt das nicht ein, weil beide Meldungen dieses
+  Abschnitts kurz und fest sind (`LOCK_FEHLER_TEXT`, „Speichern fehlgeschlagen"). Der
+  Container ist aber global und andere Stellen bauen ihre Meldungen aus Servertexten
+  zusammen. Ein bisschen Abstand nach oben oder ein schmalerer Toast bei offenem Dialog
+  würde die Kante entschärfen.
+- **`Neu laden` ist amber-500 gefüllt statt rose-600** (`useKonfliktMeldung.ts`,
+  `variant: 'warning'`). Amber ist im Design-System die Warnfarbe für Icons und Badges;
+  gefüllte Primäraktionen sind rose-600. Der `UnsavedChangesModal` im selben Editor macht
+  genau das: amber-Icon, rose-600-Knopf. `variant: 'info'` würde beides angleichen.
+- Auf 1920 ragt der Toast über den rechten Modalrand hinaus (Modal endet bei x ≈ 1758, Toast
+  bis x 1896) und liegt damit halb auf dem Modal, halb auf der Anwendung dahinter. Verdeckt
+  nichts, sieht nur etwas beliebig platziert aus.
+- `confirm-dialog.tsx` setzt kein `role="dialog"`. Der Toast-Umzug greift deshalb nicht,
+  wenn nur ein Confirm-Dialog offen ist. In den geprüften Abläufen egal (der Dialog ist
+  mittig, der Toast unten rechts, und beim Versionskonflikt gibt es gar keinen Toast) —
+  aber der Auslöser des Fixes hängt an einem Attribut, das eine der beiden Dialog-Arten
+  im Projekt nicht trägt.
+- Aus Durchgang 1 unverändert und in Task 7c aufgehoben: drei gleich aussehende rose-Bänder
+  (Hinweis / Countdown / Verbindung weg), Countdown ohne Icon, kein Tooltip am deaktivierten
+  `Bearbeiten`, `Fertig`-Sprung beim Erscheinen des Countdowns, „Nicht speichern" auf zwei
+  Zeilen, PDF-Spalte frisst auf 14 Zoll zwei Drittel des Modals. **Nichts davon hat sich
+  verschlechtert.**
+- Du/Sie liegt weiter beim Nutzer.
+
+## Abschnitt 6 — Code-Review 2 (Code-Reviewer)
+
+**Ampel: 🟡** — der 🔴 aus Durchgang 1 ist behoben und nachgewiesen. Von meiner Seite abgenommen.
+Stand `320cd455`.
+
+### 🔴 aus Durchgang 1: **behoben**
+
+*„Neu angelegte Dokumente verlieren nach 90 s ihre Sperre und lassen sich nicht mehr speichern."*
+
+`syncDocumentIdInUrl` schreibt die Id jetzt über `setSearchParams(..., { replace: true })` statt
+`window.history.replaceState`; der Pfad-Guard läuft über `useLocation()`. Die Seite sieht die neue
+Id, ihr Lock-Hook akquiriert und pingt.
+
+**Nachweis — Mutationsprobe:** `setSearchParams` zurück auf `window.history.replaceState` gedreht
+⇒ `DocumentEditor – Sperre nach Neuanlage bleibt am Leben > kann ein frisch angelegtes Dokument
+auch nach mehr als 90s noch speichern` wird rot:
+`AssertionError: expected false to be true // Object.is equality` — das ist die
+`akquiriert`-Zusicherung, die Seite holt das Lock also nie. Genau der Fehler aus Durchgang 1.
+
+Der Test beweist wirklich etwas: sein Stub bildet den Serververfall nach (`STALE_AFTER` 90 s, PUT
+antwortet 409, wenn zwischenzeitlich kein Heartbeat kam). Eine Stub, die PUT immer durchlässt,
+wäre auch mit dem alten Code grün gewesen.
+
+### Die drei Rückfragen zur 6a-Nachbesserung — gemessen, nicht vermutet
+
+Eigene Wegwerf-Probe im Neuanlage-Szenario, 60 s Laufzeit nach dem Anlegen:
+`refetch=0 acquire=1 put=0 post=1`
+
+- **(b) Zustandsverlust beim Wechsel `dokumentId: undefined → 42`?** Nein. `refetch=0` — der Guard
+  `dokument?.id === dokumentId` greift, das erneute Laden bleibt aus, also überschreibt nichts die
+  ungespeicherten Blöcke. Der Guard steht im Load-Effekt vor jedem State-Schreiber außer
+  `setLoading(false)`, und der Create-Zweig in `handleSave` ruft selbst nie `setBlocks`.
+- **(c) Zweites Laden, zweites Acquire, Autosave-Doppelschlag?** Keins davon. Genau ein `acquire`
+  (das der Seite; das Backend-Acquire in `create` ist serverintern und kostet keinen Client-Request),
+  genau ein `POST`, kein einziger überflüssiger `PUT` über sechs Autosave-Fenster hinweg.
+- **(d) Endlosschleife durch die neue Dependency-Kette?** Nein. `syncDocumentIdInUrl` wird
+  ausschließlich aus `handleSave` gerufen, nie aus einem Effekt, und steigt früh aus, wenn der
+  Suchparameter schon den richtigen Wert hat. Der Autosave-Effekt hing schon vorher an `blocks`
+  (neue Array-Identität bei jeder Änderung) und wurde daher ohnehin bei jeder Eingabe neu
+  aufgezogen — `searchParams`/`location` ändern sich nur bei Navigation und machen das nicht
+  schlechter. Volle Suite läuft ohne Hänger durch.
+
+### Befund zu `src/components/ui/toast.tsx`
+
+- **Unmount:** `return () => observer.disconnect()` ist da. ✓
+- **Kosten:** gemessen — 500 DOM-Mutationen im `body`-Subtree erzeugen **0** zusätzliche Renders im
+  Provider-Baum. `setOffen` mit unverändertem Boolean lässt React aussteigen, der Provider (der die
+  ganze App umschließt) rendert also nicht mit. Übrig bleibt ein `document.querySelector` pro
+  MutationObserver-Microtask-Batch — vernachlässigbar. `attributeFilter: ['role']` begrenzt zudem
+  den Attribut-Zweig.
+- **Dauerhafte `role="dialog"`-Knoten?** Keine. Alle 8 Fundstellen im Produktivcode
+  (`ArtikelAuswahlDialog`, `AlternativGruppeDialog`, `document-editor/Modals`, `EmailComposeForm`,
+  `EmailZuordnungSearchModal`, `KassenbuchAbschlussLeiste`, `LieferantDokumentModal`,
+  `LieferantenDetailsModal`) sind bedingt gemountet — entweder `if (!isOpen) return null` oder ein
+  `{flag && (...)}` an der Aufrufstelle. Keine hängt versteckt dauerhaft im DOM. Toasts landen also
+  nicht auf Dauer oben rechts.
+- **Portale außerhalb von `document.body`:** der Erst-Check (`document.querySelector`) durchsucht
+  das ganze Dokument und fände sie; nur spätere *Änderungen* außerhalb von `body` würden verpasst.
+  Im Projekt hängt praktisch alles an `body` — theoretische Lücke.
+
+**Mutationsprobe am Unit-Test: sie beißt nicht.** Den gesamten `MutationObserver` samt
+`observe`/`disconnect` aus `useIrgendeinDialogOffen` entfernt ⇒ **alle 8 Tests in `toast.test.tsx`
+bleiben grün** (`Test Files 1 passed, Tests 8 passed`). Beide Positionierungstests rendern den
+Dialog schon beim Mount, treffen also nur den `useState`-Initializer und den Erst-Check im Effekt —
+die eigentliche Dynamik ist ungeprüft.
+
+Der Code selbst ist trotzdem richtig: eine eigene Wegwerf-Probe, die den Dialog erst **nach** dem
+Mount öffnet und wieder schließt, zeigt den Container korrekt nach `top-6` und zurück nach
+`bottom-6` wandern. Also Testlücke, kein Codefehler — deshalb 🟡 und kein 🔴.
+
+### Selbst gemessene Zahlen
+
+| | Durchgang 1 | jetzt |
+|---|---|---|
+| Backend | 2462 / 0 F / 4 E | **2462 / 0 Failures / 4 Errors** (unverändert) |
+| Frontend Testdateien | 87 | **87** |
+| Frontend Tests | 1027 | **1033** (+6) |
+| Lint | 0 Fehler, 1 Warnung | **0 Fehler, 1 Warnung** |
+
+- Backend ist von den Nachbesserungen nicht berührt; die 4 Errors sind namentlich dieselben
+  umgebungsbedingten wie immer.
+- **Erwartung „88 Dateien" stimmt nicht:** `ui/toast.test.tsx` gab es schon vor Abschnitt 6 (6 Tests),
+  6b hat sie nur um 2 erweitert. Daher 87 Dateien und +6 Tests: 6a +4 (150-ms-Timer, zwei
+  409-Ursachen, Neuanlage nach 90 s), Toast +2.
+- Frontend-Volllauf diesmal **komplett grün, kein einziger Flake** — die Zeitschranken-Ausfälle aus
+  Durchgang 1 waren tatsächlich Last.
+- `npm run build` grün, `src/main/resources/static/` zurückgesetzt. Arbeitsbaum außer den
+  Plan-Dokumenten sauber; Code byte-identisch zu `320cd455`.
+
+### 💡 Hinweise (blockieren nicht)
+
+- `ui/toast.test.tsx` — ein Test, der den Dialog **nach** dem Mount öffnet und wieder schließt,
+  würde den `MutationObserver` tatsächlich absichern. Aktuell überlebt seine komplette Entfernung
+  die Suite.
+- `ui/toast.tsx` — kein Test für `observer.disconnect()` beim Unmount des Providers.
+- `document-editor/index.tsx` (`handleSave`, Create-Zweig) — der neue Guard hängt daran, dass
+  `setDokument(created)` **vor** `syncDocumentIdInUrl(created.id)` steht und beide im selben
+  React-Batch landen. Stimmt heute; ein Halbsatz „Reihenfolge nicht tauschen" an der Stelle würde
+  verhindern, dass jemand das später sortiert und den Guard aushebelt.
+- Die beiden Nachbesserungen aus meinen Hinweisen in Durchgang 1 (409-JSON im Toast, 150-ms-Timer)
+  sind umgesetzt und jeweils mit eigenem Test belegt — der Timer-Test prüft sogar die konkrete
+  Timer-Id statt nur „`clearTimeout` wurde irgendwann gerufen". Sauber gemacht.
