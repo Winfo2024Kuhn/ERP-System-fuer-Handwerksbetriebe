@@ -65,6 +65,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * ungueltiger 409-Befund trotzdem noch halterName/status auf den (falschen)
  * Stand schreiben.
  *
+ * WICHTIG (Kontext-Log, Task 7b Nachbesserung 1): der Absatz oben behauptete,
+ * eine Fremdsperre "beim Mount ODER beim Heartbeat" liesse den Modus auf
+ * "lesen" -- fuer den Heartbeat stimmte das bis zu dieser Nachbesserung
+ * NICHT: der 409-Zweig in heartbeat() setzte status/heldRef zwar korrekt
+ * zurueck, liess modus aber unangetastet. Weil acquire() seit Task 7b nach
+ * einem erfolgreichen Erwerb modus auf "bearbeiten" setzt, war damit
+ * status='locked-by-other' bei GLEICHZEITIG modus='bearbeiten' erreichbar --
+ * genau die seit Review 5 verbotene Kombination "Bearbeiten-Modus ohne
+ * gehaltenes Lock" (siehe kannBearbeiten-Definition unten). Fix: setModus
+ * ('lesen') ergaenzt, direkt neben heldRef.current=false. Die Invariante
+ * gilt jetzt an JEDER Stelle im Hook, die heldRef auf false setzt, fuer sich
+ * selbst -- auch dort, wo modus nach heutigem Aufrufer-Gefuege ohnehin schon
+ * "lesen" waere (siehe die "defensiv"-Kommentare in acquire()), statt sich
+ * auf die Reihenfolge der Aufrufer zu verlassen.
+ *
  * WICHTIG (Kontext-Log, Nachbesserung 2): kannBearbeiten bedeutet "ein Klick
  * auf Bearbeiten ist gerade sinnvoll", NICHT "wir halten das Lock". Eine
  * Fremdsperre (locked-by-other) und der frisch freigegebene Zustand (idle)
@@ -184,6 +199,14 @@ export function useDatensatzLock(
                     setHalter(toHalter(data));
                     setStatus('locked-by-other');
                     heldRef.current = false;
+                    // Nachbesserung 1 (Task 7b): OHNE dieses setModus blieb der
+                    // Modus "bearbeiten" stehen, obwohl das Lock hier gerade an
+                    // einen anderen verloren geht -- genau die seit Review 5
+                    // verbotene Kombination "Bearbeiten-Modus ohne gehaltenes
+                    // Lock". Erreichbar z.B. durch einen gedrosselten
+                    // Hintergrund-Tab: das 90-Sekunden-Fenster reisst, ein
+                    // Kollege uebernimmt, der naechste Heartbeat bekommt 409.
+                    setModus('lesen');
                     stopHeartbeat();
                     return;
                 }
@@ -257,12 +280,22 @@ export function useDatensatzLock(
                     setHalter(toHalter(data));
                     setStatus('locked-by-other');
                     heldRef.current = false;
+                    // Defensiv (Nachbesserung 1, Task 7b): siehe die
+                    // ausfuehrliche Begruendung im 409-Zweig von heartbeat()
+                    // oben. An dieser Stelle ist modus nach heutigem Stand
+                    // bereits "lesen" (acquire() wird nur aufgerufen, wenn
+                    // heldRef vorher schon false war), aber die Invariante
+                    // "heldRef=false => modus='lesen'" soll an JEDER Stelle,
+                    // die heldRef auf false setzt, selbst gelten -- nicht nur
+                    // aus der Reihenfolge der Aufrufer folgen.
+                    setModus('lesen');
                     return;
                 }
 
                 if (!res.ok) {
                     setStatus('error');
                     heldRef.current = false;
+                    setModus('lesen'); // defensiv, siehe Kommentar im 409-Zweig oben
                     return;
                 }
 
@@ -282,6 +315,7 @@ export function useDatensatzLock(
                 if (err instanceof DOMException && err.name === 'AbortError') return;
                 setStatus('error');
                 heldRef.current = false;
+                setModus('lesen'); // defensiv, siehe Kommentar im 409-Zweig oben
             }
         },
         [startHeartbeat, stopHeartbeat]

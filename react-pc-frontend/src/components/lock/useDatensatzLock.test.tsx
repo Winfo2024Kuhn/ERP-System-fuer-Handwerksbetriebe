@@ -286,7 +286,7 @@ describe('useDatensatzLock', () => {
             vi.useRealTimers();
         });
 
-        it('zwei aufeinanderfolgende fehlgeschlagene Heartbeats setzen verbindungWeg auf true', async () => {
+        it('zwei aufeinanderfolgende fehlgeschlagene Heartbeats setzen verbindungWeg auf true -- das Lock selbst (heldRef/status/modus) bleibt unangetastet', async () => {
             vi.useFakeTimers();
             fetchMock.mockResolvedValueOnce(lockResponse());
             fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
@@ -298,6 +298,13 @@ describe('useDatensatzLock', () => {
             });
 
             expect(result.current.verbindungWeg).toBe(true);
+            // Nachbesserung 1 (Task 7b), systematische Pruefung: ein einfacher
+            // Netzfehler (ohne 409) setzt heldRef NICHT auf false -- das Lock
+            // gilt weiter als gehalten, bis entweder ein 409 kommt oder aktiv
+            // freigegeben wird. modus/status duerfen sich hier also NICHT
+            // aendern, auch nach mehreren Fehlschlägen in Folge.
+            expect(result.current.status).toBe('acquired');
+            expect(result.current.modus).toBe('bearbeiten');
 
             vi.useRealTimers();
         });
@@ -332,6 +339,15 @@ describe('useDatensatzLock', () => {
             expect(result.current.status).toBe('locked-by-other');
             expect(result.current.kannBearbeiten).toBe(true);
             expect(result.current.halterName).toBe('Anna Beispiel');
+            // Nachbesserung 1 (Task 7b): vor diesem Test wurde hier NUR status/
+            // kannBearbeiten/halterName geprueft, nicht modus -- durch genau
+            // diese Luecke rutschte der Befund "Bearbeiten-Modus ohne
+            // gehaltenes Lock" durch (modus blieb faelschlich "bearbeiten",
+            // obwohl der Heartbeat das Lock gerade an einen anderen verloren
+            // hat). Das Lieferant-Modal haette bei dieser Kombination alle
+            // Felder aktiv gelassen, waehrend der GesperrtHinweis einen
+            // anderen Halter meldet.
+            expect(result.current.modus).toBe('lesen');
 
             const anzahlNachErstemAusfall = fetchMock.mock.calls.length;
 
@@ -696,6 +712,130 @@ describe('useDatensatzLock', () => {
             await waitFor(() => expect(result.current.modus).toBe('lesen'));
             expect(result.current.status).toBe('idle');
             expect(result.current.kannBearbeiten).toBe(true);
+        });
+    });
+
+    // Nachbesserung 1 (Task 7b): der Code-Review fand die seit Review 5
+    // verbotene Kombination "modus='bearbeiten' ohne gehaltenes Lock" ueber
+    // den 409-Zweig von heartbeat() (siehe der korrigierte Test oben in
+    // "Heartbeat"). Die Tests hier gehen die vom Reviewer genannten weiteren
+    // Uebergaenge systematisch durch: einen zusammenhaengenden Ablauf ueber
+    // mehrere Zustandswechsel hinweg, und den Sonderfall "freigeben() waehrend
+    // ein Acquire noch laeuft".
+    describe('Invariante: modus "bearbeiten" nur bei tatsaechlich gehaltenem Lock', () => {
+        /**
+         * Die vom Reviewer vorgeschlagene Invariante, hier als Helfer: sobald
+         * status NICHT (mehr) 'acquired' ist, darf modus NICHT 'bearbeiten'
+         * sein -- unabhaengig davon, WELCHER Uebergang gerade dazu gefuehrt
+         * hat. Gilt bewusst nur fuer den Fall mit ID (lockUrl != null); ohne
+         * ID gibt es kein Lock-Konzept, und modus darf dort frei umschalten
+         * (siehe Klassenkommentar, "Ohne ID... nur die Anzeige umschalten").
+         */
+        function pruefeInvariante(ergebnis: { modus: string; status: string }) {
+            if (ergebnis.status !== 'acquired') {
+                expect(ergebnis.modus).not.toBe('bearbeiten');
+            }
+        }
+
+        it('gilt ueber eine ganze Kette von Uebergaengen hinweg: Mount-Erfolg -> Heartbeat-409 -> Retry-Erfolg -> Fertig -> erneuter Acquire-Fehler', async () => {
+            vi.useFakeTimers();
+            fetchMock.mockResolvedValueOnce(lockResponse()); // 1: Mount-Acquire Erfolg
+            fetchMock.mockResolvedValueOnce(
+                lockResponse({ status: 'LOCKED_BY_OTHER', holderDisplayName: 'Petra Beispiel' })
+            ); // 2: Heartbeat -> 409 (der eigentliche Befund)
+            fetchMock.mockResolvedValueOnce(lockResponse()); // 3: Retry-Acquire durch onBearbeiten: Erfolg
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })); // 4: onFertig -> DELETE
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 })); // 5: erneuter Retry-Acquire: Fehler
+
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
+
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+            expect(result.current.status).toBe('acquired');
+            pruefeInvariante(result.current);
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(30_000);
+            });
+            expect(result.current.status).toBe('locked-by-other');
+            // Genau diese Zeile waere ohne den Fix in diesem Nachbesserungsauftrag
+            // fehlgeschlagen: modus stand hier faelschlich noch auf "bearbeiten".
+            pruefeInvariante(result.current);
+
+            act(() => result.current.onBearbeiten());
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+            expect(result.current.status).toBe('acquired');
+            pruefeInvariante(result.current);
+
+            act(() => result.current.onFertig());
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+            expect(result.current.status).toBe('idle');
+            pruefeInvariante(result.current);
+
+            act(() => result.current.onBearbeiten());
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+            expect(result.current.status).toBe('error');
+            pruefeInvariante(result.current);
+
+            vi.useRealTimers();
+        });
+
+        it('freigeben() waehrend ein Retry-Acquire noch laeuft: ein spaeter eintreffender Erfolg (200) darf modus nicht mehr auf "bearbeiten" setzen', async () => {
+            // Dritter vom Reviewer genannter Uebergang. Abgesichert durch die
+            // bestehende Generationspruefung direkt nach dem fetch()-await in
+            // acquire() (nicht neu in dieser Nachbesserung) -- hier erstmals
+            // mit modus/status statt nur mit dem Request-Zaehler geprueft.
+            let retryAufloesen: (value: Response) => void = () => {};
+            fetchMock.mockResolvedValueOnce(lockResponse()); // Mount-Acquire: Erfolg
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })); // 1. freigeben(): DELETE
+            fetchMock.mockReturnValueOnce(
+                new Promise<Response>(resolve => { retryAufloesen = resolve; })
+            ); // Retry-Acquire durch onBearbeiten: haengt zunaechst
+
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
+            await waitFor(() => expect(result.current.status).toBe('acquired'));
+            expect(result.current.modus).toBe('bearbeiten');
+
+            await act(async () => {
+                await result.current.freigeben();
+            });
+            expect(result.current.modus).toBe('lesen');
+
+            act(() => result.current.onBearbeiten());
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+            // WAEHREND der Retry-Acquire noch haengt, wird erneut freigegeben
+            // (z.B. Idle-Timeout oder ein zweiter Klick anderswo). heldRef ist
+            // hier bereits false -- kein weiteres DELETE noetig.
+            await act(async () => {
+                await result.current.freigeben();
+            });
+            expect(result.current.modus).toBe('lesen');
+            expect(result.current.status).toBe('idle');
+
+            // Der laengst ueberholte Retry-Acquire trifft jetzt (verspaetet)
+            // mit Erfolg (200) ein.
+            act(() => {
+                retryAufloesen(lockResponse());
+            });
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+
+            expect(result.current.modus).toBe('lesen');
+            expect(result.current.status).toBe('idle');
         });
     });
 
