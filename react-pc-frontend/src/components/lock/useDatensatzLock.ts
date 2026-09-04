@@ -44,6 +44,27 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * zweiter, eigener Timer hier wuerde genau den Fehler wiederholen, an dem
  * der heutige Dokument-Editor krankt (zwei Timer, die auseinanderlaufen).
  *
+ * WICHTIG (Kontext-Log, Task 7b): jedes ERFOLGREICHE Acquire -- ob beim
+ * stillen Mount-Erwerb oder als Retry aus onBearbeiten() -- schaltet den
+ * Modus selbst auf "bearbeiten" um (siehe acquire()). Vorher blieb der Hook
+ * nach dem Mount-Erwerb im Modus "lesen" haengen: wer die Seite oeffnete,
+ * hielt das Lock zwar (blockierte also Kollegen), durfte selbst aber nichts
+ * bearbeiten, ohne vorher noch einmal auf "Bearbeiten" zu klicken -- das
+ * entspricht nicht dem tatsaechlichen Editor-Verhalten und war reine
+ * Blockade ohne Nutzen fuer den Oeffnenden selbst. Nur eine Fremdsperre
+ * (409, beim Mount ODER beim Heartbeat) und ein Fehler lassen den Modus
+ * bewusst auf "lesen" -- die Spec ersetzt damit nur die harte Blockierung
+ * bei Fremdsperre durch Nur-Lesen, nicht mehr.
+ *
+ * Ebenfalls aus dieser Nachbesserung: in den beiden 409-Zweigen (acquire()
+ * und heartbeat()) steht die Generationspruefung jetzt ZWEIMAL -- einmal
+ * direkt nach dem fetch()-await wie bisher, und ein zweites Mal NACH
+ * res.json(). json() ist selbst ein zweiter await, und in dessen Fenster
+ * kann ein zwischenzeitliches freigeben() (oder ein neuer Versuch) genau
+ * diesen Aufruf ueberholen -- ohne die zweite Pruefung wuerde ein laengst
+ * ungueltiger 409-Befund trotzdem noch halterName/status auf den (falschen)
+ * Stand schreiben.
+ *
  * WICHTIG (Kontext-Log, Nachbesserung 2): kannBearbeiten bedeutet "ein Klick
  * auf Bearbeiten ist gerade sinnvoll", NICHT "wir halten das Lock". Eine
  * Fremdsperre (locked-by-other) und der frisch freigegebene Zustand (idle)
@@ -150,6 +171,14 @@ export function useDatensatzLock(
 
                 if (res.status === 409) {
                     const data = (await res.json().catch(() => null)) as DatensatzLockDto | null;
+                    // Zweite Generationspruefung NACH res.json() (Task 7b): das
+                    // await davor kann durch ein zwischenzeitliches freigeben()
+                    // oder einen neuen Versuch ueberholt werden -- genau in
+                    // diesem Fenster wartet json() noch auf die Antwort. Ohne
+                    // diese zweite Pruefung wuerde ein laengst ungueltiger
+                    // 409-Befund trotzdem noch halterName/status auf den
+                    // (falschen) Stand schreiben.
+                    if (!mountedRef.current || gen !== generationRef.current) return;
                     fehlschlaegeRef.current = 0;
                     setVerbindungWeg(false);
                     setHalter(toHalter(data));
@@ -219,6 +248,12 @@ export function useDatensatzLock(
 
                 if (res.status === 409) {
                     const data = (await res.json().catch(() => null)) as DatensatzLockDto | null;
+                    // Zweite Generationspruefung NACH res.json() (Task 7b): siehe
+                    // ausfuehrliche Begruendung im gleichen Zweig in heartbeat()
+                    // oben -- json() ist selbst ein zweiter await, in dessen
+                    // Fenster ein freigeben() oder ein neuer Versuch diesen
+                    // Acquire ueberholen kann.
+                    if (!mountedRef.current || gen !== generationRef.current) return;
                     setHalter(toHalter(data));
                     setStatus('locked-by-other');
                     heldRef.current = false;
@@ -234,6 +269,13 @@ export function useDatensatzLock(
                 setHalter(null);
                 setStatus('acquired');
                 heldRef.current = true;
+                // Modus direkt auf "bearbeiten" umschalten (Task 7b): sowohl beim
+                // stillen Mount-Erwerb als auch bei einem Retry aus onBearbeiten()
+                // -- vorher blieb der Hook nach dem Mount im Modus "lesen" haengen,
+                // wer oeffnete hielt das Lock (blockierte also Kollegen), durfte
+                // selbst aber nichts bearbeiten. Nur eine Fremdsperre oder ein
+                // Fehler (siehe die beiden Zweige oben) sollen "lesen" ergeben.
+                setModus('bearbeiten');
                 startHeartbeat(url, gen);
             } catch (err) {
                 if (!mountedRef.current || gen !== generationRef.current) return;
@@ -352,13 +394,11 @@ export function useDatensatzLock(
 
         // status ist hier 'idle' (frisch freigegeben) oder 'locked-by-other'
         // (ein anderer hielt den Datensatz zuletzt) -- in beiden Faellen ist
-        // ein frischer Versuch sinnvoll, siehe Klassenkommentar.
-        void (async () => {
-            await acquire(lockUrl);
-            if (heldRef.current) {
-                setModus('bearbeiten');
-            }
-        })();
+        // ein frischer Versuch sinnvoll, siehe Klassenkommentar. acquire()
+        // selbst schaltet bei Erfolg bereits auf "bearbeiten" um (Task 7b) --
+        // bei einem erneuten Fehlschlag (409/500) bleibt es bei "lesen", auch
+        // dafuer sorgt acquire() bereits selbst.
+        void acquire(lockUrl);
     }, [lockUrl, status, acquire]);
 
     const freigeben = useCallback(() => aktivFreigeben(lockUrl), [lockUrl, aktivFreigeben]);
