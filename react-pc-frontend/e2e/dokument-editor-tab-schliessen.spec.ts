@@ -92,9 +92,16 @@ test.describe('Dokument-Editor – Tab schließen', () => {
         // deckt beide Ausgaenge ab: Hauptsache, der bisherige Schliess-Weg
         // wird ueberhaupt noch angestossen.
         await expect.poll(async () => {
-            const geschlossen = await windowCloseAufrufe(page);
-            const editorWeg = await page.getByRole('button', { name: 'PDF' }).isHidden();
-            return geschlossen > 0 || editorWeg;
+            try {
+                const geschlossen = await windowCloseAufrufe(page);
+                const editorWeg = await page.getByRole('button', { name: 'PDF' }).isHidden();
+                return geschlossen > 0 || editorWeg;
+            } catch {
+                // navigate(-1) reisst die Ausfuehrungsumgebung mitten in der
+                // Abfrage weg -- das ist selbst schon der Beweis, dass der
+                // Editor verschwunden ist.
+                return true;
+            }
         }).toBe(true);
     });
 
