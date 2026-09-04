@@ -78,14 +78,14 @@ async function oeffneSeite(page: Page) {
 }
 
 /**
- * Der X-Knopf in der Kopfzeile hat kein aria-label (DocumentEditorHeader.tsx,
- * nicht Teil dieses Tasks). Er ist der erste Button INNERHALB des Editor-
- * Bereichs -- explizit dorthin eingegrenzt, weil die neue Bearbeiten-Leiste
- * der Seite jetzt DAVOR im DOM steht und sonst faelschlich "Fertig"/
- * "Bearbeiten" getroffen wuerde (siehe Kontext-Log, roter Test).
+ * Der X-Knopf in der Kopfzeile traegt seit Design-Review Abschnitt 7-2
+ * (Befund 4) `aria-label="Editor schließen"` -- vorher war er nur ohne
+ * Testing-Library-Rolle als erster Button im Editor-Bereich erreichbar
+ * (siehe Kontext-Log). Die eigene Bearbeiten-Leiste der Seite steht zwar
+ * DAVOR im DOM, hat aber selbst keinen Knopf mit diesem Namen.
  */
 function xKnopf(page: Page) {
-    return page.getByTestId('dokument-editor-flaeche').locator('button').first();
+    return page.getByRole('button', { name: 'Editor schließen' });
 }
 
 async function adresseAendern(page: Page, neueAdresse: string) {
@@ -190,5 +190,52 @@ test.describe('DocumentEditorPage - Sperr-Fundament', () => {
         await expect(page.getByRole('status')).toContainText('Sie können diesen Tab jetzt schließen');
 
         await designPruefung(page, testInfo, 'editor-seite-tab-schliessen');
+    });
+
+    test('Warn-Dialog blockiert die Bearbeiten-Leiste: kein Klick auf "Fertig" durch das Modal hindurch', async ({ page }, testInfo) => {
+        // Design-Review Abschnitt 7-2, Befund 2: der fruehere `transform`-
+        // Container der Seite erzeugte fuer ALLE `position:fixed`-Nachfahren
+        // des Editors (auch dessen Vollbild-Dialoge) ein eigenes containing
+        // block -- ein offenes Modal deckte die Leiste dadurch nicht mehr ab,
+        // ein Klick auf "Fertig" ging durch den (optisch als Overlay
+        // wirkenden) Backdrop hindurch: DELETE auf die Sperre, obwohl der
+        // Warn-Dialog "Ungespeicherte Änderungen" noch offen war.
+        await stubbeDokumentEditorApi(page);
+        await stubbeDatensatzLock(page, 'frei');
+        await oeffneSeite(page);
+
+        const fertig = page.getByRole('button', { name: 'Fertig' });
+        await expect(fertig).toBeVisible();
+
+        await adresseAendern(page, 'Max Mustermann\nNeue Gasse 7\n54321 Beispielstadt');
+        await xKnopf(page).click();
+        await expect(page.getByText('Ungespeicherte Änderungen')).toBeVisible();
+
+        const box = await fertig.boundingBox();
+        if (!box) throw new Error('Kein Bounding-Box fuer "Fertig" gefunden');
+        const mitteX = box.x + box.width / 2;
+        const mitteY = box.y + box.height / 2;
+
+        const trifftFertig = () =>
+            page.evaluate(
+                ({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.textContent?.includes('Fertig') ?? false,
+                { x: mitteX, y: mitteY },
+            );
+
+        expect(
+            await trifftFertig(),
+            'Der Warn-Dialog muss die Bearbeiten-Leiste ueberdecken (elementFromPoint darf NICHT den Knopf treffen), solange er offen ist',
+        ).toBe(false);
+
+        // Leiste und Editor ueberlappen sich weiterhin nicht (unveraendert
+        // seit Abschnitt 7a), Leiste bleibt buendig ueber dem Editor.
+        await designPruefung(page, testInfo, 'editor-seite-warn-dialog-blockiert-leiste', {
+            primaerAktion: page.getByRole('button', { name: 'Speichern & Schließen' }),
+        });
+
+        // Kontrolle: nach "Abbrechen" ist "Fertig" wieder ganz normal klickbar.
+        await page.getByRole('button', { name: 'Abbrechen' }).click();
+        await expect(page.getByText('Ungespeicherte Änderungen')).toHaveCount(0);
+        expect(await trifftFertig()).toBe(true);
     });
 });

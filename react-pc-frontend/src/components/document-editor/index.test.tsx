@@ -1,12 +1,12 @@
 import type { ComponentProps, Ref } from 'react';
 import { createRef } from 'react';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter, useSearchParams } from 'react-router-dom';
 import { ToastProvider } from '../ui/toast';
 import { ConfirmProvider } from '../ui/confirm-dialog';
-import { useDocumentLock } from '../useDocumentLock';
+import { useDatensatzLock } from '../lock/useDatensatzLock';
 import DocumentEditor from './index';
 import type { DocumentEditorHandle } from './types';
 
@@ -155,21 +155,20 @@ function renderEditorMitRef(
 }
 
 /**
- * Der X-Knopf in der Kopfzeile (DocumentEditorHeader.tsx, nicht Teil dieses
- * Tasks) hat kein aria-label -- er ist damit ohne Testing-Library-Rolle
- * erreichbar. Er ist zuverlaessig der erste Button im gerenderten Baum.
+ * Der X-Knopf in der Kopfzeile (DocumentEditorHeader.tsx). Traegt seit
+ * Design-Review Abschnitt 7-2 (Befund 4) `aria-label="Editor schließen"` --
+ * vorher war er nur ueber `container.querySelector('button')` (erster Button
+ * im Baum) erreichbar, siehe Kontext-Log fuer die Begruendung.
  */
 function xKnopf(container: HTMLElement): HTMLElement {
-    const knopf = container.querySelector('button');
-    if (!knopf) throw new Error('X-Knopf nicht gefunden');
-    return knopf;
+    return within(container).getByRole('button', { name: 'Editor schließen' });
 }
 
-/** Alle Requests an die alten (dokument-locks) oder neuen (datensatz-locks) Lock-Endpunkte. */
+/** Alle Requests an die Datensatz-Lock-Endpunkte. */
 function lockAufrufe(fetchMock: ReturnType<typeof mockFetch>): string[] {
     return fetchMock.mock.calls
         .map(call => call[0] as string)
-        .filter(url => typeof url === 'string' && (url.includes('/dokument-locks/') || url.includes('/datensatz-locks/')));
+        .filter(url => typeof url === 'string' && url.includes('/datensatz-locks/'));
 }
 
 /** Wie mockFetch, aber der PUT ans Dokument schlaegt serverseitig fehl. */
@@ -192,16 +191,23 @@ function mockFetchMitFehlschlagendemSpeichern() {
 /**
  * Mini-Nachbau der fuer Nachbesserung 1 relevanten Verdrahtung aus
  * DocumentEditorPage.tsx (gehoert Abschnitt 7a, hier NICHT importiert, nur
- * nachgebaut): liest dokumentId aus der URL und haelt darueber das
- * (heute noch aktive) Seiten-Lock per useDocumentLock. Damit laesst sich
+ * nachgebaut -- die echte Seite zieht Router/Toast/Lock-Bausteine mit, die
+ * fuer DIESEN Test nicht noetig sind): liest dokumentId aus der URL und
+ * haelt darueber das Seiten-Lock per useDatensatzLock. Damit laesst sich
  * pruefen, ob der Editor der Seite eine neu angelegte Id tatsaechlich ueber
  * den Router mitteilt -- nur dann sieht dieser Wrapper sie und akquiriert.
+ *
+ * Abweichung Design-/Code-Review Abschnitt 7-2 (Befund 5): frueher auf den
+ * VORGAENGER-Hook (aeltere, mittlerweile abgeloeste Sperr-Route) nachgebaut
+ * -- der wird zusammen mit seinem Modal in Abschnitt 8 komplett geloescht,
+ * dieser Test haette dann sofort gebrochen. Jetzt auf useDatensatzLock
+ * (`/api/datensatz-locks/...`) umgestellt, exakt dieselbe Aussage.
  */
-function SeiteMitAltemLock(props: Omit<ComponentProps<typeof DocumentEditor>, 'dokumentId'>) {
+function SeiteMitSeitenLock(props: Omit<ComponentProps<typeof DocumentEditor>, 'dokumentId'>) {
     const [searchParams] = useSearchParams();
     const roh = searchParams.get('dokumentId');
     const dokumentId = roh ? Number(roh) : undefined;
-    useDocumentLock('AUSGANG', dokumentId);
+    useDatensatzLock('AUSGANG', dokumentId);
     return <DocumentEditor {...props} dokumentId={dokumentId} />;
 }
 
@@ -210,7 +216,7 @@ function renderNeuesDokumentMitSeitenLock(props: Partial<ComponentProps<typeof D
         <MemoryRouter initialEntries={['/dokument-editor']}>
             <ConfirmProvider>
                 <ToastProvider>
-                    <SeiteMitAltemLock onClose={() => { }} {...props} />
+                    <SeiteMitSeitenLock onClose={() => { }} {...props} />
                 </ToastProvider>
             </ConfirmProvider>
         </MemoryRouter>
@@ -251,14 +257,14 @@ function mockFetchNeuesDokument() {
             pingen();
             return jsonAntwort(dokument);
         }
-        if (url === '/api/dokument-locks/AUSGANG/42/acquire' && init?.method === 'POST') {
+        if (url === '/api/datensatz-locks/AUSGANG/42/acquire' && init?.method === 'POST') {
             pingen();
             return jsonAntwort({
                 status: 'ACQUIRED', holderUserId: 1, holderDisplayName: 'Max Mustermann',
                 acquiredAt: new Date().toISOString(), lastHeartbeatAt: new Date().toISOString(),
             });
         }
-        if (url === '/api/dokument-locks/AUSGANG/42/heartbeat' && init?.method === 'POST') {
+        if (url === '/api/datensatz-locks/AUSGANG/42/heartbeat' && init?.method === 'POST') {
             pingen();
             return jsonAntwort({
                 status: 'ACQUIRED', holderUserId: 1, holderDisplayName: 'Max Mustermann',
@@ -534,7 +540,7 @@ describe('DocumentEditor – Material einfügen', () => {
 
 describe('DocumentEditor – kein eigenes Lock mehr', () => {
     // Regression: der Editor hatte frueher einen zweiten, nie gestoppten
-    // Heartbeat (auf /api/dokument-locks/AUSGANG/.../heartbeat) UND ein
+    // Heartbeat auf der alten, mittlerweile abgeloesten Sperr-Route UND ein
     // eigenes Acquire, zusaetzlich zum Lock-Hook der Seite. Beides ist raus
     // -- der Editor haelt und beruehrt gar kein Lock mehr, das macht
     // ausschliesslich die Seite (useDatensatzLock, anderer Task).
@@ -551,7 +557,7 @@ describe('DocumentEditor – kein eigenes Lock mehr', () => {
         vi.restoreAllMocks();
     });
 
-    it('sendet nach Mount und Unmount keinen Request an /api/dokument-locks/ oder /api/datensatz-locks/', async () => {
+    it('sendet nach Mount und Unmount keinen Request an einen Datensatz-Lock-Endpunkt', async () => {
         const { unmount } = renderEditor();
         await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
 
@@ -585,6 +591,52 @@ describe('DocumentEditor – readOnly-Prop', () => {
         await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
         expect(screen.queryByRole('button', { name: 'Material' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Speichern/i })).not.toBeInTheDocument();
+    });
+});
+
+describe('DocumentEditor – "Gebucht"-Badge (Design-Review Abschnitt 7-2, Befund 1)', () => {
+    // Regression: das Badge haengte bisher an isLocked, das AUCH bei
+    // Fremdsperre/eigenem "Fertig"/Sperrfehler true ist -- "Gebucht" heisst
+    // in diesem Produkt "in der Buchhaltung erfasst" und stand faelschlich
+    // auf einem Dokument mit gebucht=false (dokumentAntwort.gebucht ist
+    // ueberall in dieser Datei false, siehe oben).
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('zeigt "Gebucht" NICHT bei Fremdsperre (readOnly=true), obwohl isLocked dadurch true wird', async () => {
+        fetchMock = mockFetch();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor({ readOnly: true });
+
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+        expect(screen.queryByText('Gebucht')).not.toBeInTheDocument();
+    });
+
+    it('zeigt "Gebucht" weiterhin fuer eine tatsaechlich gebuchte Rechnung', async () => {
+        fetchMock = mockFetch({ gebucht: true });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor();
+
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+        expect(screen.getByText('Gebucht')).toBeInTheDocument();
+    });
+
+    it('zeigt "Gebucht" NICHT fuer ein storniertes Dokument (eigenes Badge "Storniert")', async () => {
+        fetchMock = mockFetch({ storniert: true });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor();
+
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+        expect(screen.queryByText('Gebucht')).not.toBeInTheDocument();
+        expect(screen.getByText('Storniert')).toBeInTheDocument();
     });
 });
 
@@ -817,9 +869,9 @@ describe('DocumentEditor – Sperre nach Neuanlage bleibt am Leben', () => {
         fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
         // Mehrfach in kleinen Schritten flushen: das Anlegen stoesst eine
         // ganze Kette an (POST -> setSearchParams -> Seite re-rendert ->
-        // useDocumentLock-Effekt -> Acquire-Fetch) ueber mehrere
-        // React-Commits hinweg, die ein einzelner 0ms-Flush nicht immer
-        // vollstaendig abbildet.
+        // Lock-Hook-Effekt -> Acquire-Fetch) ueber mehrere React-Commits
+        // hinweg, die ein einzelner 0ms-Flush nicht immer vollstaendig
+        // abbildet.
         for (let i = 0; i < 10; i++) {
             await act(async () => { await vi.advanceTimersByTimeAsync(10); });
         }
@@ -832,13 +884,12 @@ describe('DocumentEditor – Sperre nach Neuanlage bleibt am Leben', () => {
         // Die Seite muss die neue Id uebernommen und ihr Lock akquiriert
         // haben -- sonst pingt sie nie, und genau das ist der Fehler.
         const akquiriert = fetchMock.mock.calls.some(
-            call => call[0] === '/api/dokument-locks/AUSGANG/42/acquire'
+            call => call[0] === '/api/datensatz-locks/AUSGANG/42/acquire'
         );
         expect(akquiriert).toBe(true);
 
         // Mehr als STALE_AFTER (90s) vergehen -- der Seiten-Heartbeat (alle
-        // 30s, siehe useDocumentLock) muss das Lock in der Zwischenzeit am
-        // Leben gehalten haben.
+        // 30s) muss das Lock in der Zwischenzeit am Leben gehalten haben.
         await act(async () => { await vi.advanceTimersByTimeAsync(91_000); });
 
         fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
