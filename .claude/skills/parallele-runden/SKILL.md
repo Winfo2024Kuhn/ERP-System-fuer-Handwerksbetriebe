@@ -108,6 +108,49 @@ Erst bei grün.
 | „Ich prüfe am Ende alles auf einmal" | Ein Fehler aus Runde 1 steckt dann in fünf Runden Arbeit |
 | „Der Agent darf auch die Nachbardatei anfassen, ist ja praktisch" | Genau daraus entstehen die Konflikte, die die Runden verhindern sollen |
 | „Testgetrieben ist hier Formsache" | Ohne roten Test weiß niemand, ob der grüne Test überhaupt etwas prüft |
+| „Der Agent lässt den langen Testlauf im Hintergrund laufen" | Er wartet auf eine Meldung, die ihn nie erreicht, und endet mit fertigem, aber nicht committetem Code |
+| „Das Merkwürdige von eben schreibe ich am Ende auf" | Am Ende ist der Grund vergessen. Sofort rein, siehe unten. |
+
+## Diesen Skill im Lauf verbessern
+
+Dieser Skill ist nie fertig. Er wird **während** der Läufe geschärft, nicht
+danach.
+
+Die Regel: Sobald im Lauf etwas auffällt — ein Agent hängt, ein Gate reißt,
+eine Anweisung wird von mehreren Agenten gleich missverstanden — schreibst du
+es sofort hier rein, bevor du weitermachst. Nicht merken und am Ende
+nachtragen. Am Ende ist der Grund vergessen und nur noch das Symptom da.
+
+Was reingehört:
+
+- Was passiert ist, konkret genug zum Wiedererkennen.
+- Warum es passiert ist, soweit du es weißt.
+- Was der Auftrag künftig enthalten muss, damit es nicht wieder passiert.
+
+Was nicht reingehört: einmalige Zufälle, Geschmacksfragen, und alles, was
+schon dasteht. Lieber einen bestehenden Punkt schärfen als einen zweiten
+danebenstellen.
+
+Zweimal dasselbe erlebt und nicht aufgeschrieben heißt: beim dritten Mal
+kostet es wieder eine Nachbesserungsrunde.
+
+## Beobachtungen aus echten Läufen
+
+### Agenten schicken Testläufe in den Hintergrund und bleiben stehen (04.09.2026)
+
+Alle drei Agenten eines Abschnitts starteten ihren Testlauf im Hintergrund und
+beendeten ihren Zug mit „ich warte auf die Benachrichtigung". Die kommt bei
+einem Subagenten aber nicht an. Ergebnis: Code fertig geschrieben, aber nichts
+committet und nichts im Kontext-Log — von außen sah es aus wie drei
+abgeschlossene Tasks.
+
+Konsequenz für den Auftrag: **Testläufe im Vordergrund, mit hohem Timeout**
+(600000 ms). Kein Hintergrund, kein Monitor. Ein Backend-Testlauf braucht
+Minuten, das ist in Ordnung — der Agent soll ihn abwarten.
+
+Konsequenz für den Hauptagenten: Meldet ein Agent „fertig", ohne
+Commit-Hashes zu nennen, ist er nicht fertig. Erst `git log` und
+`git status` im Worktree ansehen, dann glauben.
 
 ## Abschluss
 
