@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Pencil, Plus, Check, X } from 'lucide-react';
 import { useEditor } from '@tiptap/react';
 import { TiptapToolbar } from '../TiptapEditor';
@@ -93,6 +94,7 @@ import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { EmailValidityDialog } from './EmailValidityDialog';
 import { useToast } from '../ui/toast';
 import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
+import { useKonfliktMeldung } from '../lock/useKonfliktMeldung';
 
 interface ImportedGaebBlock {
     type: string;
@@ -220,6 +222,20 @@ function RechnungsadresseBlock({
 
 export default function DocumentEditor({ projektId, anfrageId, dokumentId, initialDokumentTyp, onClose, readOnly = false, onLockFreigeben }: DocumentEditorProps) {
     const toast = useToast();
+    // Fuer das Zurueckschreiben der beim Anlegen vergebenen Id in die URL
+    // (syncDocumentIdInUrl) -- MUSS ueber den Router laufen, nicht per
+    // window.history.replaceState, sonst bekommt die Seite (liest dokumentId
+    // aus genau diesen searchParams) die neue Id nie mit und ihr Lock-Hook
+    // bleibt auf 'idle' stehen (Nachbesserung 1, siehe Kontext-Log).
+    const [searchParams, setSearchParams] = useSearchParams();
+    // Fuer den Pfad-Guard in syncDocumentIdInUrl: MUSS die Router-Location
+    // sein, nicht window.location -- ein MemoryRouter (z.B. in Tests, aber
+    // auch technisch denkbar bei zukuenftiger Einbettung) ruehrt
+    // window.location ueberhaupt nicht an.
+    const location = useLocation();
+    // Versionskonflikt (409 mit JSON-Body vom RestExceptionHandler) bekommt
+    // die geteilte Neu-laden-Meldung statt eines rohen JSON-Textes im Toast.
+    const konfliktMeldung = useKonfliktMeldung('Dokument');
     // --- State ---
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -715,6 +731,20 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 setLoading(false);
                 return;
             }
+            // Nachbesserung 1: dokumentId wechselt jetzt auch dann, wenn WIR
+            // selbst gerade erst angelegt haben (syncDocumentIdInUrl schreibt
+            // die neue Id ueber den Router in die URL, die Seite reicht sie
+            // als Prop zurueck). dokument.id ist dann bereits exakt diese Id
+            // (setDokument(created) lief im selben handleSave-Aufruf vorher).
+            // Ein erneutes Fetch wuerde hier zwischenzeitliche, noch nicht
+            // gespeicherte Tipp-Aenderungen des Nutzers stillschweigend mit
+            // dem gerade erst gespeicherten Stand ueberschreiben -- also
+            // ueberspringen, wenn wir dieses Dokument schon vollstaendig im
+            // State haben.
+            if (dokument?.id === dokumentId) {
+                setLoading(false);
+                return;
+            }
             try {
                 const res = await fetch(`/api/ausgangs-dokumente/${dokumentId}`);
                 if (res.ok) {
@@ -936,6 +966,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             }
         };
         loadDokument();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dokumentId]);
 
     // --- Load Vorlagen ---
@@ -1127,21 +1158,26 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         })();
     }, [loading, dokumentId, dokumentTyp, replacePlaceholders, kontextDaten, projektId, anfrageId, dokument, standardTexteErneuern, kontextGeladen]);
 
+    // Nachbesserung 1 (Kontext-Log): frueher per window.history.replaceState
+    // geschrieben -- das aendert die URL, ohne dass react-router (und damit
+    // der ueber useSearchParams lesende Seiten-Lock-Hook) je davon erfaehrt.
+    // Ein frisch angelegtes Dokument blieb dadurch ohne Seiten-Heartbeat und
+    // verlor sein Soft-Lock nach STALE_AFTER (90s) -- der naechste Autosave
+    // scheiterte dann mit 409, ohne dass der Editor das noch reparieren
+    // konnte (das alte tryAcquireLock-Retry ist ja weg). Jetzt ueber
+    // setSearchParams, damit die Seite (und ihr Lock-Hook) die neue Id
+    // tatsaechlich mitbekommt.
     const syncDocumentIdInUrl = useCallback((savedDocumentId?: number) => {
         if (!savedDocumentId) return;
-        try {
-            const url = new URL(window.location.href);
-            if (!url.pathname.endsWith('/dokument-editor')) return;
+        if (!location.pathname.endsWith('/dokument-editor')) return;
 
-            const idAsString = String(savedDocumentId);
-            if (url.searchParams.get('dokumentId') === idAsString) return;
+        const idAsString = String(savedDocumentId);
+        if (searchParams.get('dokumentId') === idAsString) return;
 
-            url.searchParams.set('dokumentId', idAsString);
-            window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-        } catch (err) {
-            console.warn('Konnte dokumentId nicht in URL synchronisieren:', err);
-        }
-    }, []);
+        const naechste = new URLSearchParams(searchParams);
+        naechste.set('dokumentId', idAsString);
+        setSearchParams(naechste, { replace: true });
+    }, [searchParams, setSearchParams, location]);
 
     // Das Lock selbst haelt jetzt ausschliesslich die Seite (useDatensatzLock,
     // anderer Task) -- der Editor holt und pingt keins mehr. Frueher gab es
@@ -1215,9 +1251,23 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 // Ein 409 hier bedeutet also entweder eine echte Fremdsperre
                 // oder eine tatsaechlich abgelaufene Seiten-Sperre; beides
                 // kann der Editor selbst nicht reparieren.
+                //
+                // Zwei GRUNDVERSCHIEDENE Ursachen stecken hinter demselben
+                // Statuscode (Nachbesserung 1, Kontext-Log): der Lock-Check
+                // in update() liefert einen reinen Text-Body ("Dokument wird
+                // gerade von ... bearbeitet"), ein echter Versionskonflikt
+                // (RestExceptionHandler.handleOptimisticLockingFailure) einen
+                // JSON-Body. Ohne diese Unterscheidung landete beim
+                // Versionskonflikt der rohe JSON-Text im Toast. Der
+                // Content-Type verraet zuverlaessig, welcher Fall vorliegt.
                 if (res.status === 409) {
-                    const konfliktText = await res.text().catch(() => '');
-                    toast.warning(konfliktText || 'Dieses Dokument wird gerade von einem anderen Benutzer bearbeitet. Bitte kurz warten und es erneut versuchen.');
+                    const istJson = (res.headers.get('content-type') || '').includes('application/json');
+                    if (istJson) {
+                        await konfliktMeldung.pruefeAntwort(res);
+                    } else {
+                        const konfliktText = await res.text().catch(() => '');
+                        toast.warning(konfliktText || 'Dieses Dokument wird gerade von einem anderen Benutzer bearbeitet. Bitte kurz warten und es erneut versuchen.');
+                    }
                     return null;
                 }
                 if (res.ok) {
@@ -1295,7 +1345,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         }
         return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, bereitsAbgerechnetDurchAndere, globalRabatt]);
+    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, konfliktMeldung, bereitsAbgerechnetDurchAndere, globalRabatt]);
 
     /**
      * Setzt das Dokumentdatum auf heute, sofern das Dokument noch bearbeitbar
@@ -1355,9 +1405,21 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     // zurueckgeht oder den Tab schliesst (siehe DocumentEditorProps).
     const [zeigeTabSchliessenHinweis, setZeigeTabSchliessenHinweis] = useState(false);
     const mountedRef = useRef(true);
+    // Haelt die Timer-Id des 150ms-Waits unten fest, damit sie beim Unmount
+    // (z.B. weil ein Elternteil den Editor doch noch wegnimmt, bevor der
+    // Timer feuert) sauber abgeraeumt wird -- sonst laeuft ein verwaister
+    // Timer weiter und versucht spaeter, State auf einer laengst
+    // ungemounteten Komponente zu setzen.
+    const tabSchliessenTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
     useEffect(() => {
         mountedRef.current = true;
-        return () => { mountedRef.current = false; };
+        return () => {
+            mountedRef.current = false;
+            if (tabSchliessenTimerRef.current != null) {
+                window.clearTimeout(tabSchliessenTimerRef.current);
+                tabSchliessenTimerRef.current = null;
+            }
+        };
     }, []);
 
     const tabSchliessen = useCallback(async () => {
@@ -1378,7 +1440,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         // zweifelsfrei selbst geoeffnet hat). Existiert die Komponente nach
         // kurzer Wartezeit noch, zeigen wir statt stumm nichts zu tun eine
         // Bestaetigung, dass Speichern und Freigeben trotzdem geklappt haben.
-        window.setTimeout(() => {
+        tabSchliessenTimerRef.current = window.setTimeout(() => {
+            tabSchliessenTimerRef.current = null;
             if (mountedRef.current) setZeigeTabSchliessenHinweis(true);
         }, 150);
     // eslint-disable-next-line react-hooks/exhaustive-deps
