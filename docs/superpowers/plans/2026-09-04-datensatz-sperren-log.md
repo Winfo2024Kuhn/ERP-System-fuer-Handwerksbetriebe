@@ -1402,3 +1402,249 @@ Mount öffnet und wieder schließt, zeigt den Container korrekt nach `top-6` und
 - Die beiden Nachbesserungen aus meinen Hinweisen in Durchgang 1 (409-JSON im Toast, 150-ms-Timer)
   sind umgesetzt und jeweils mit eigenem Test belegt — der Timer-Test prüft sogar die konkrete
   Timer-Id statt nur „`clearTimeout` wurde irgendwann gerufen". Sauber gemacht.
+
+## Abschnitt 7 — Task 7b (Coding-Agent)
+
+**Zeit:** 04.09.2026, ca. 22:40–22:57 Uhr
+**Branch:** `lock/task-7b-hook` (auf `claude/eloquent-ramanujan-gz0w2t` @ `c394c6b4`)
+**Commits:**
+- `eca52122` — fix(sperr-hook): Generationspruefung nach json() und Modus bearbeiten nach Mount-Acquire
+- `68c3d951` — refactor(lieferant-modal): Bearbeiten-Behelf entfernt, Hook uebernimmt Moduswechsel selbst
+
+**Status:** ✅ fertig, alle Gates grün (nur eigene Testdateien/eigene Spec, wie vorgegeben).
+
+### Was gemacht wurde
+
+**Punkt 1 — Generationsprüfung nach `res.json()` im 409-Zweig (acquire + heartbeat)**
+
+Roter Test zuerst, zwei neue Tests in `useDatensatzLock.test.tsx`:
+- „ein durch freigeben() ueberholtes 409-Ergebnis beim Mount-Acquire schreibt nach dem
+  verzoegerten json() keinen Zustand mehr" — künstlich hängendes `json()` (Promise, die erst
+  nach einem zwischenzeitlichen `freigeben()` auflöst). Rote Meldung vor dem Fix:
+  `AssertionError: expected 'locked-by-other' to be 'idle'` (Z. 250) — der überholte 409-Befund
+  schrieb trotzdem noch `halterName`/`status`.
+- Gleiches Muster für den Heartbeat-Zweig, gleiche rote Meldung (Z. 389).
+
+Fix: in beiden 409-Zweigen (`acquire()` und `heartbeat()`) direkt nach dem `await res.json()`
+eine zweite `if (!mountedRef.current || gen !== generationRef.current) return;`-Prüfung
+eingefügt — die erste Prüfung direkt nach `fetch()` reicht nicht, weil `json()` selbst ein
+zweiter `await` ist, in dessen Fenster ein `freigeben()` oder ein neuer Versuch den Aufruf
+überholen kann.
+
+**Mutationsprobe:** beide `if`-Zeilen wieder entfernt → exakt die 2 neuen Tests werden rot
+(`expected 'locked-by-other' to be 'idle'`), alle anderen bleiben grün. Fix wiederhergestellt,
+33/33 grün.
+
+**Punkt 2 — Modus nach erfolgreichem Mount-Acquire ist `'bearbeiten'`**
+
+Roter Test zuerst: bestehenden Test „startet im Modus 'lesen', auch nachdem das Lock
+erfolgreich erworben wurde" umbenannt und umgeschrieben auf die neue Bedeutung (nicht
+abgeschwächt) — rote Meldung vor dem Fix: `AssertionError: expected 'lesen' to be 'bearbeiten'`.
+Zusätzlich: neuer Test „bleibt bei einer Fremdsperre beim Mount im Modus 'lesen'" (Absicherung,
+dass NUR der Erfolgsfall wechselt), der bestehende Freigabe-Test um „bleibt bei 'lesen', bis der
+Nutzer erneut klickt" erweitert, und das Zusammenspiel-Szenario mit der echten
+`BearbeitenLeiste` umgeschrieben: zeigt jetzt direkt nach Mount „Fertig" (vorher musste der Test
+selbst erst auf „Bearbeiten" klicken, bevor „Fertig" überhaupt erschien) — vor dem Fix:
+`Unable to find role="button" and name "Fertig"` (Timeout, DOM zeigte nur „Bearbeiten").
+
+Fix: `acquire()` setzt im Erfolgszweig jetzt zusätzlich `setModus('bearbeiten')` — sowohl beim
+stillen Mount-Erwerb als auch beim Retry aus `onBearbeiten()`. `onBearbeiten()`s eigener
+Wrapper (`await acquire(); if (heldRef.current) setModus('bearbeiten')`) wurde dadurch
+redundant und auf `void acquire(lockUrl)` vereinfacht. 409 und Fehler bleiben unverändert bei
+`'lesen'`. Docstring oben in der Datei um einen Absatz zur neuen Invariante ergänzt.
+
+**Mutationsprobe:** `setModus('bearbeiten')` im Erfolgszweig wieder entfernt → 6 Hook-Tests rot
+(u. a. der umbenannte „wechselt automatisch..."-Test und das Zusammenspiel-Szenario). Fix
+wiederhergestellt, 33/33 grün.
+
+**Punkt 3 — 6b's Behelf in `LieferantDokumentModal.tsx` entfernen**
+
+Effekt entfernt, der bei `status === 'acquired' && modus === 'lesen'` einmalig
+`lock.onBearbeiten()` rief (reiner Workaround aus Task 6b, weil der Hook das vorher nicht
+selbst tat). Da Punkt 2 das jetzt im Hook erledigt, ist der Effekt überflüssig. Neuer Test in
+`LieferantDokumentModal.test.tsx`: „ruft die Acquire-Route nur einmal auf — der frühere
+Modal-Effekt (6b-Behelf) entfällt seit Task 7b" (prüft nach ein paar Mikrotask-Ticks, dass kein
+zweiter `/acquire`-Request feuert). Sonst nichts im Modal angefasst.
+
+**Kombinierte Mutationsprobe (aus dem Auftrag):** Punkt 2 zurückgesetzt (`setModus` im
+Erfolgszweig entfernt) UND Punkt 3 angewendet (Effekt weg) → **11 von 14**
+`LieferantDokumentModal`-Tests werden rot (u. a. „Fertig" nie gefunden, Formular bleibt
+disabled), weil ohne den Hook-Fix und ohne den Behelf-Effekt niemand mehr den Modus
+umschaltet. Fix wiederhergestellt, 14/14 grün.
+
+Quellstand nach allen Proben wiederhergestellt und erneut per Vitest/Lint/Build bestätigt —
+byte-identisch zum committeten Stand (per `git diff --stat` nach jeder Rücksicherung geprüft).
+
+### Gates (nur eigene Dateien/eigene Spec, wie vorgegeben)
+
+- `npx vitest run src/components/lock/useDatensatzLock.test.tsx
+  src/components/LieferantDokumentModal.test.tsx` → **47/47 grün** (33 + 14).
+- `npm run lint` → **0 Fehler, genau die 1 vorbestehende Warnung**
+  (`BelegeKasseEditor.tsx:1204`, `react-hooks/exhaustive-deps`).
+- `npm run build` → grün, `src/main/resources/static/` danach zurückgesetzt
+  (`git checkout` für `index.html`/CSS, neue gehashte JS-Datei gelöscht).
+- `E2E_PORT=5176 npx playwright test e2e/lieferant-dokument-modal.spec.ts` → **8/8 grün**
+  (4 Tests × `pc-14zoll` + `pc-monitor`). Die bestehende 6b-Spec sichert weiter „öffnen mit
+  freiem Lock ⇒ Formular frei, Leiste im Modus bearbeiten" zu — jetzt über den Hook statt den
+  Effekt, unverändert grün. Screenshot `lieferant-modal-bearbeiten--pc-14zoll.png` kurz
+  angeschaut: Modal öffnet direkt mit „Fertig"-Knopf und editierbarem Formular, Farben/Layout
+  unauffällig (formale Design-Prüfung ist nicht meine Aufgabe als Coding-Agent).
+
+### Bedenken / Abweichungen vom Plan
+
+Keine. Plan und Realität stimmten überein — beide Befunde ließen sich wie im Auftrag
+beschrieben reproduzieren und beheben. Einzige eigene Entscheidung: Commits nach Dateien
+statt strikt nach den drei Punkten aufgeteilt (Punkt 1+2 in einem Commit für
+`useDatensatzLock.ts`/-test, Punkt 3 in einem zweiten für das Modal) — Punkt 1 und 2 ändern
+denselben Erfolgszweig in `acquire()` und teilen sich einen zusammenhängenden Docstring-Absatz;
+eine Aufspaltung bis auf Hunk-Ebene hätte den Kommentartext künstlich zerrissen. „Gern je
+Punkt" war laut Auftrag ohnehin optional.
+
+## Abschnitt 7 — Task 7c (Coding-Agent)
+
+Zeit: 2026-09-04T22:58:00Z
+Branch: lock/task-7c-bearbeiten-leiste
+Commit(s): 5e4047b6, b2b3c1cc
+Status: fertig
+
+Was gemacht wurde:
+
+Pflichtlektüre vor dem ersten Edit: FRONTEND_UI.md, TESTING_SECURITY.md, Design-Skill
+handwerkerprogramm-design (README + SKILL.md), playwright-design-pruefung/SKILL.md,
+kriterien.md. Dazu BearbeitenLeiste.tsx/-test, useDatensatzLock.ts (Kommentar zu
+kannBearbeiten), GesperrtHinweis.tsx, TabSchliessenHinweis.tsx/-test,
+LieferantDokumentModal.tsx (nur gelesen, nicht angefasst) und die beiden bestehenden
+E2E-Specs zum Abschauen der Stub-Muster.
+
+**Punkt 1 (Prop-Kommentar):** kannBearbeiten-Doc in BearbeitenLeiste.tsx auf die seit
+Review 5 gültige Bedeutung umgeschrieben ("ein Klick auf Bearbeiten ist gerade sinnvoll").
+Reiner Kommentar, kein Verhaltenscode — kein eigener Test, useDatensatzLock.ts selbst nicht
+angefasst (nicht in der Dateiliste).
+
+**Punkt 2 (Tooltip am deaktivierten Knopf):** neuer optionaler Prop bearbeitenGesperrtGrund.
+Roter Test zuerst (toHaveAttribute('title', ...) schlug mit null fehl, da der Prop noch nicht
+existierte), dann title + aria-describedby (verweist auf ein sr-only-Element mit dem
+Grundtext, via useId()) am Bearbeiten-Knopf ergänzt, nur wenn !kannBearbeiten UND der
+(getrimmte) Grund nicht leer ist. 4 neue Tests: Tooltip mit Grund, kein title ohne Grund, kein
+Tooltip bei aktiviertem Knopf trotz gesetztem Grund, Leerraum-Grund wird ignoriert.
+Mutationsprobe: grund hart auf undefined gesetzt → der erste dieser Tests wird rot (erwartet
+title="Sperre wird gerade geprüft…", bekommt null) — zurückgesetzt, wieder grün.
+
+**Punkt 3 (drei unterscheidbare Bänder):** Countdown-Band von rose-50 auf amber-50/amber-300/
+amber-800 mit neuem Timer-Icon (fehlte als einziges Band); Verbindungswarnung von rose-50 auf
+red-50/red-300/red-700 (font-semibold), exakt die Farbskala des Fehlerbands im Lieferant-Modal
+(AlertTriangle-Band dort, hier bleibt WifiOff). GesperrtHinweis bewusst nicht angefasst (bleibt
+rose-50, nicht meine Datei). 2 neue Klassen-Assertion-Tests. Mutationsprobe: beide Farbsätze
+einzeln zurück auf die alten rose-Klassen gesetzt → jeweils der zugehörige Test wird rot
+(toMatch(/amber-50/) bzw. /red-50/ schlägt fehl) — zurückgesetzt, wieder grün.
+
+**Punkt 4 (Fertig springt nicht):** Ursache verstanden, bevor codiert wurde — das einzige
+heutige Verwender-Layout (LieferantDokumentModal.tsx, nur gelesen) bindet die Leiste in einen
+flex justify-between-Container ein (Hinweis links mit flex-1 min-w-0, Leiste rechts ohne
+Wachstum) — bei genau zwei Flex-Kindern hält justify-content: space-between das RECHTE Kind an
+der rechten Kante fest, unabhängig von dessen eigener Breite; nur die LINKE Kante des Kindes
+wandert. Der Umschalt-Knopf war bisher das ERSTE Kind der Leiste und klebte damit an der
+wandernden linken Kante → er sprang um die volle Bandbreite nach links, sobald ein Band
+erschien (der gemeldete ~540-px-Sprung). Fix: alle Status-Bänder (Lesen-Hinweis, Countdown,
+Verbindung) stehen jetzt VOR dem Knopf im Markup, der Knopf ist immer das letzte Kind — damit
+bleibt er an der (fixen) rechten Kante, egal wie viele Bänder davor erscheinen/verschwinden.
+2 neue Unit-Tests sichern die Markup-Reihenfolge ab (auch für den bandlosen Leerzustand).
+Mutationsprobe: Knopf testweise wieder als erstes Kind gerendert → beide Reihenfolge-Tests
+werden rot — zurückgesetzt, wieder grün. Der eigentliche Nachweis ist aber die Playwright-Spec
+(siehe Gates unten): getBoundingClientRect-x-Differenz des Fertig-Knopfs vor/nach Erscheinen
+von Countdown- bzw. Verbindungs-Band ≤ 5 px, auf pc-14zoll UND pc-monitor.
+
+Bewusste Einschränkung dieses Fixes: er behebt exakt das heute reale, gelesene Layout
+(rechtsbündiger Block). Ein künftiger Verwender mit einem LINKS-verankerten Layout (z. B. die
+Dokument-Editor-Seite, die die Leiste laut Auftrag "bald" nutzt) könnte dieselbe Verschiebung
+in die andere Richtung bekommen — das lässt sich ohne Kenntnis von dessen Layout nicht
+vorwegnehmen und müsste bei der Integration dort mit einer eigenen Positions-Probe erneut
+geprüft werden.
+
+**Punkt 5 (Lesen-Hinweis "Sie lesen nur mit."):** neuer optionaler Prop
+zeigeNurLesenHinweis (Default false). Begründung für Prop statt Ableitung: aus
+modus/kannBearbeiten allein sind idle (frisch frei) und locked-by-other (Fremdsperre) in
+useDatensatzLock nicht unterscheidbar (beide liefern modus='lesen', kannBearbeiten=true) — nur
+die aufrufende Seite weiß, ob sie zusätzlich GesperrtHinweis zeigt. Default bewusst false
+(nicht true), damit eine Seite, die den Prop (noch) nicht setzt, den neuen Text nicht
+fälschlich NEBEN einem sichtbaren GesperrtHinweis doppelt anzeigt. 3 neue Tests (zeigt bei
+true+lesen, zeigt nicht bei Default, zeigt nicht im Bearbeiten-Modus). Mutationsprobe:
+Bedingung mit false && kurzgeschlossen → der "zeigt bei true"-Test wird rot — zurückgesetzt,
+wieder grün.
+
+**Punkt 6 (TabSchliessenHinweis siezen):** Text auf "Dokument gespeichert und freigegeben —
+Sie können diesen Tab jetzt schließen." geändert. Roter Test zuerst (beide neuen/geänderten
+Tests in TabSchliessenHinweis.test.tsx liefen gegen den alten Du-Text rot), dann Text im
+Component angepasst, grün. e2e/dokument-editor-tab-schliessen.spec.ts geprüft — referenziert
+diesen Text NICHT (eigener Kommentar dort erklärt, dass eine echte Browser-Probe für den neuen
+Prop-gesteuerten Ablauf erst mit Abschnitt 7a möglich wird), also nichts dort zu ändern.
+
+**Neue Playwright-Spec e2e/bearbeiten-leiste.spec.ts:** rendert die Leiste über das
+Lieferant-Dokument-Modal (/api gestubbt wie in lieferant-dokument-modal.spec.ts, Dummy-Namen,
+eigene IDs). 5 Tests, je einmal designPruefung(...): leiste-bearbeiten, leiste-lesen (nach
+Fertig-Klick), leiste-countdown, leiste-verbindung-weg, leiste-deaktiviert. Countdown und
+Verbindungsverlust hängen an echten Timern (60s-Vorwarnung ab 240s, Heartbeat alle 30s, "weg"
+ab 2 Fehlschlägen) — dafür page.clock.install() + runFor() genutzt (nicht fastForward(), das
+würde mehrfach fällige Intervalle nur einmal feuern lassen und den 2. Heartbeat-Fehlschlag
+verschlucken). Beide Positions-Proben (Countdown- und Verbindungs-Test) bestätigen Punkt 4 im
+echten Browser.
+
+Bekannte Lücke (siehe "Bedenken" unten): bearbeitenGesperrtGrund und zeigeNurLesenHinweis sind
+in BearbeitenLeiste.tsx vollständig implementiert und unit-getestet, werden aber von
+LieferantDokumentModal.tsx (nicht in meiner Dateiliste, siehe Auftrag "Files — nur diese") noch
+nicht durchgereicht. Der "leiste-deaktiviert"-Zustand in der neuen Spec zeigt darum einen
+deaktivierten Knopf OHNE sichtbaren Tooltip-Text (die Komponente KANN ihn zeigen, bekommt hier
+aber keinen Grund übergeben) — Nachweis für Punkt 2 ist am Ende ausschließlich
+unit-testbasiert. Ebenso zeigt leiste-lesen in der Spec (nach Fertig-Klick, idle-Zustand)
+keinen "Sie lesen nur mit.", weil das Modal zeigeNurLesenHinweis nicht setzt.
+
+### Gates (nur eigene Dateien/eigene Spec, wie vorgegeben)
+
+- `npx vitest run src/components/lock/BearbeitenLeiste.test.tsx
+  src/components/lock/TabSchliessenHinweis.test.tsx` → **32/32 grün** (25 + 7).
+- `npm run lint` → **0 Fehler, genau die 1 vorbestehende Warnung**
+  (BelegeKasseEditor.tsx:1204, react-hooks/exhaustive-deps).
+- `npm run build` → grün, src/main/resources/static/ danach zurückgesetzt (git checkout für
+  index.html/CSS, neue gehashte JS-Datei gelöscht).
+- `E2E_PORT=5277 npx playwright test e2e/bearbeiten-leiste.spec.ts` → **10/10 grün** (5 Tests
+  × pc-14zoll + pc-monitor). Screenshots unter
+  test-results/design/leiste-<zustand>--<projekt>.png kurz selbst angeschaut: amber-Countdown
+  mit Timer-Icon und kräftig-rotes Verbindungs-Band sind auf einen Blick von der rose-50-
+  Nur-Lesen-Zeile unterscheidbar, Fertig-Knopf sitzt in beiden Bandzuständen sichtbar an
+  derselben Stelle wie im Grundzustand; formale Design-Beurteilung bleibt beim
+  Design-Reviewer.
+
+### Bedenken / Abweichungen vom Plan
+
+1. bearbeitenGesperrtGrund/zeigeNurLesenHinweis nicht ins Lieferant-Modal verdrahtet.
+   LieferantDokumentModal.tsx steht nicht in der Dateiliste dieses Tasks ("Files — nur
+   diese"), darum nicht angefasst ("Braucht ein Punkt eine Datei außerhalb deiner Liste:
+   melden, nicht anfassen"). Beide Punkte sind auf Komponentenebene fertig und mutationsfest
+   getestet; die letzte Meile (Prop im Modal übergeben — für Punkt 2 z. B. gesperrtTooltip als
+   bearbeitenGesperrtGrund, für Punkt 5 lock.status === 'idle' als zeigeNurLesenHinweis) ist
+   ein Ein-Zeiler pro Prop, den eine künftige Aufgabe an dieser Datei mitnehmen sollte, sonst
+   bleiben beide Design-Review-Befunde im Produktivbetrieb nur halb sichtbar.
+
+2. Zweite, im Auftrag nicht erwähnte Fundstelle für Punkt 6. Neben der explizit genannten
+   e2e/dokument-editor-tab-schliessen.spec.ts (dort nichts zu ändern, siehe oben) hat auch
+   src/components/document-editor/index.test.tsx:634 (Test "zeigt den Tab-Schließen-Hinweis,
+   wenn window.close wirkungslos bleibt") den alten Du-Text fest verdrahtet:
+   screen.findByText(/kannst diesen Tab jetzt schließen/). Diese Datei steht NICHT in meiner
+   Dateiliste — nicht angefasst, nur gemeldet. Nach dem Merge dieses Tasks wird dieser eine
+   Test dort mit "element(s) not found" rot, bis jemand die Regex auf die neue Sie-Form
+   anpasst (z. B. /können diesen Tab jetzt schließen/). Bitte beim Review/Merge einplanen.
+
+3. Layout-Fix (Punkt 4) ist an das heutige Lieferant-Modal-Layout gebunden, siehe
+   ausführliche Begründung oben unter Punkt 4 — kein Fehler, nur ein Hinweis für die künftige
+   Dokument-Editor-Integration.
+
+4. Portkollision beim ersten Testlauf, nicht mein Code: E2E_PORT=5177 (wie im Auftrag
+   vorgeschlagen) war zum Zeitpunkt des Testlaufs bereits von einem fremden Prozess belegt
+   (vite-pruefung.mjs aus einer anderen Session, unter einem fremden scratchpad-Pfad) —
+   Playwrights reuseExistingServer hat sich an diesen fremden Server gehängt und einen völlig
+   anderen Ablauf ausgeliefert (alte DocumentLockedModal/DocumentEditorPage-Route statt
+   LieferantDokumentModal). Zur Kontrolle probeweise auch die bestehende
+   lieferant-dokument-modal.spec.ts auf Port 5177 laufen lassen — dieselbe Fehlmeldung, obwohl
+   an dieser Datei nichts geändert wurde. Mit einem freien Port (5277) liefen beide Specs
+   anschließend grün. Kein Eingriff in den fremden Prozess (nicht meiner, nicht angefasst) —
+   nur der eigene Port gewechselt.

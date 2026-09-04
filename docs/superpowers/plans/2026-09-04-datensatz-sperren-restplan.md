@@ -342,6 +342,17 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
   entfernen (gehört dann 7b, weil 6b abgeschlossen ist — Files entsprechend erweitern:
   `LieferantDokumentModal.tsx` nur für diese eine Zeile).
 
+#### Task 7d — Lieferant-Modal: neue Leisten-Props verdrahten (Runde 7-2, parallel zu 7a)
+- Files: `react-pc-frontend/src/components/LieferantDokumentModal.tsx`,
+  `LieferantDokumentModal.test.tsx`, `e2e/lieferant-dokument-modal.spec.ts`
+- Consumes: 7c (`bearbeitenGesperrtGrund`, `zeigeNurLesenHinweis`), 7b (Hook-Modus)
+- Herkunft: Bedenken aus 7c — beide Props sind gebaut und getestet, aber noch von keinem
+  Verbraucher benutzt. Ohne Verdrahtung tauchen Tooltip und „Sie lesen nur mit." nie auf.
+- Steps: bei `status === 'loading'` bzw. `'error'` einen Grund an `bearbeitenGesperrtGrund`
+  geben (Handwerker-Sprache, z.B. „Sperre wird gerade geholt" / „Sperre konnte nicht geholt
+  werden — bitte neu laden"); `zeigeNurLesenHinweis` im Modus `lesen` ohne fremden Halter.
+  Je Prop roter Test zuerst, Spec-Zusicherung + `designPruefung` für beide Zustände.
+
 #### Task 7c — BearbeitenLeiste nachschärfen (Befunde aus Design-Review 6)
 - Files: `react-pc-frontend/src/components/lock/BearbeitenLeiste.tsx`,
   `BearbeitenLeiste.test.tsx`, `e2e/bearbeiten-leiste.spec.ts` (neu)

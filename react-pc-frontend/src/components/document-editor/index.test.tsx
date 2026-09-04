@@ -632,7 +632,7 @@ describe('DocumentEditor – Tab schließen (X-Button-Ablauf)', () => {
         // (kein "Name aus Inhalt" fuer die Rolle status), aber ein blosses
         // getByRole('status') faende IMMER zuerst die von dnd-kit.
         const hinweis = await screen.findByText(
-            /kannst diesen Tab jetzt schließen/,
+            /können diesen Tab jetzt schließen/,
             undefined,
             { timeout: 2000 },
         );
