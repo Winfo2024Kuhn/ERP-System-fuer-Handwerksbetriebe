@@ -101,7 +101,13 @@ Erst bei grün. Und **erst aufräumen, dann starten:** die Worktrees und
 Task-Branches der abgenommenen Runde löschen, bevor die nächste Runde
 anläuft.
 
+```powershell
+# 1. ZUERST die node_modules-Junction lösen — ohne -Recurse, sonst löscht
+#    es durch die Junction hindurch das gemeinsame Ziel (siehe Beobachtungen)
+(Get-Item "<worktree-pfad>\react-pc-frontend\node_modules").Delete()
+```
 ```bash
+# 2. dann erst den Worktree und den Branch
 git worktree remove --force <worktree-pfad>
 git branch -d <task-branch>        # -d, nicht -D: verweigert, wenn nicht gemerged
 ```
@@ -180,6 +186,24 @@ Das ist der Preis der Parallelität und kein Grund, sie aufzugeben. Aber:
   sind, nicht währenddessen. Sonst misst er die Last der Nachbarn mit.
 - Ein Failure, der beim zweiten Lauf allein weg ist, gehört als Beobachtung
   ins Kontext-Log — nicht als Befund in die Ampel.
+
+### `git worktree remove` löscht durch eine Junction hindurch (04.09.2026)
+
+Damit nicht jeder Worktree ein eigenes `npm ci` braucht, lag `node_modules`
+in jedem Worktree als Windows-Junction auf das eine `node_modules` im
+Haupt-Repo. Beim Aufräumen der ersten Runde hat `git worktree remove --force`
+die Junction nicht als Verweis behandelt, sondern als Ordner — und das
+**gemeinsame Ziel** mit ausgeräumt. Der Prüfagent der nächsten Runde fand
+ein leeres `node_modules` vor und musste erst `npm ci` fahren, bevor ein
+einziges Gate lief.
+
+Deshalb steht in „Nächste Runde" jetzt der Zwei-Schritt: erst die Junction
+lösen (`(Get-Item …).Delete()`, ohne `-Recurse`), dann den Worktree
+entfernen. Wer die Reihenfolge umdreht, löscht die Abhängigkeiten aller
+anderen Worktrees mit — auch der, die gerade laufen.
+
+Gilt genauso für jeden anderen geteilten Ordner, den man per Junction oder
+Symlink in einen Worktree hängt.
 
 ### Auftrag als nachweisbares Ergebnis formulieren, nicht als Lösungsweg (04.09.2026)
 
