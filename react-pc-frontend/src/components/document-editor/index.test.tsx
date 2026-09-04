@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -104,9 +105,6 @@ function mockFetch(dokumentAbweichung: Record<string, unknown> = {}) {
         if (url.startsWith('/api/formulare/templates/selection')) {
             return jsonAntwort({ templateName: null });
         }
-        if (url.startsWith('/api/dokument-locks/')) {
-            return jsonAntwort({ ok: true });
-        }
         if (url.startsWith('/api/artikel/filteroptionen')) {
             // Contract von ArtikelSuche.tsx: herstellverfahren/fertigungszustand,
             // nicht produktlinien/werkstoffe/profilformen.
@@ -125,16 +123,51 @@ function mockFetch(dokumentAbweichung: Record<string, unknown> = {}) {
     });
 }
 
-function renderEditor() {
+function renderEditor(props: Partial<ComponentProps<typeof DocumentEditor>> = {}) {
     return render(
         <MemoryRouter initialEntries={['/dokumente/1']}>
             <ConfirmProvider>
                 <ToastProvider>
-                    <DocumentEditor dokumentId={1} onClose={() => { }} />
+                    <DocumentEditor dokumentId={1} onClose={() => { }} {...props} />
                 </ToastProvider>
             </ConfirmProvider>
         </MemoryRouter>
     );
+}
+
+/**
+ * Der X-Knopf in der Kopfzeile (DocumentEditorHeader.tsx, nicht Teil dieses
+ * Tasks) hat kein aria-label -- er ist damit ohne Testing-Library-Rolle
+ * erreichbar. Er ist zuverlaessig der erste Button im gerenderten Baum.
+ */
+function xKnopf(container: HTMLElement): HTMLElement {
+    const knopf = container.querySelector('button');
+    if (!knopf) throw new Error('X-Knopf nicht gefunden');
+    return knopf;
+}
+
+/** Alle Requests an die alten (dokument-locks) oder neuen (datensatz-locks) Lock-Endpunkte. */
+function lockAufrufe(fetchMock: ReturnType<typeof mockFetch>): string[] {
+    return fetchMock.mock.calls
+        .map(call => call[0] as string)
+        .filter(url => typeof url === 'string' && (url.includes('/dokument-locks/') || url.includes('/datensatz-locks/')));
+}
+
+/** Wie mockFetch, aber der PUT ans Dokument schlaegt serverseitig fehl. */
+function mockFetchMitFehlschlagendemSpeichern() {
+    const basis = mockFetch();
+    return vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/api/ausgangs-dokumente/1' && init?.method === 'PUT') {
+            return Promise.resolve({
+                ok: false,
+                status: 500,
+                statusText: 'Internal Server Error',
+                text: () => Promise.resolve('Serverfehler beim Speichern.'),
+                json: () => Promise.resolve({}),
+            });
+        }
+        return basis(url, init);
+    });
 }
 
 /** Adresse ueber den Inline-Editor aendern und bestaetigen. */
@@ -369,5 +402,154 @@ describe('DocumentEditor – Material einfügen', () => {
 
         await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
         expect(screen.queryByRole('button', { name: 'Material' })).not.toBeInTheDocument();
+    });
+});
+
+describe('DocumentEditor – kein eigenes Lock mehr', () => {
+    // Regression: der Editor hatte frueher einen zweiten, nie gestoppten
+    // Heartbeat (auf /api/dokument-locks/AUSGANG/.../heartbeat) UND ein
+    // eigenes Acquire, zusaetzlich zum Lock-Hook der Seite. Beides ist raus
+    // -- der Editor haelt und beruehrt gar kein Lock mehr, das macht
+    // ausschliesslich die Seite (useDatensatzLock, anderer Task).
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        fetchMock = mockFetch();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('sendet nach Mount und Unmount keinen Request an /api/dokument-locks/ oder /api/datensatz-locks/', async () => {
+        const { unmount } = renderEditor();
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+
+        // Kurze Pause: ein sofortiger Heartbeat-Ping direkt nach dem Mount
+        // (so verhielt sich die fruehere zweite Lock-Schleife) haette hier
+        // laengst gefeuert.
+        await new Promise(resolve => setTimeout(resolve, 50));
+        unmount();
+
+        expect(lockAufrufe(fetchMock)).toEqual([]);
+    });
+});
+
+describe('DocumentEditor – readOnly-Prop', () => {
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        fetchMock = mockFetch();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('verhaelt sich wie ein gesperrtes Dokument (kein Material-Knopf, kein Speichern)', async () => {
+        renderEditor({ readOnly: true });
+
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+        expect(screen.queryByRole('button', { name: 'Material' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Speichern/i })).not.toBeInTheDocument();
+    });
+});
+
+describe('DocumentEditor – Tab schließen (X-Button-Ablauf)', () => {
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        fetchMock = mockFetch();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('haelt die Reihenfolge speichern -> onLockFreigeben -> window.close ein', async () => {
+        const user = userEvent.setup();
+        const reihenfolge: string[] = [];
+
+        const basisFetch = mockFetch();
+        fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (url === '/api/ausgangs-dokumente/1' && init?.method === 'PUT') {
+                reihenfolge.push('speichern');
+            }
+            return basisFetch(url, init);
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        const onLockFreigeben = vi.fn(async () => { reihenfolge.push('onLockFreigeben'); });
+        vi.spyOn(window, 'close').mockImplementation(() => { reihenfolge.push('window.close'); });
+
+        const { container } = renderEditor({ onLockFreigeben });
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+        await adresseAendern(user, NEUE_ADRESSE);
+
+        await user.click(xKnopf(container));
+        await user.click(await screen.findByRole('button', { name: /Speichern & Schließen/ }));
+
+        await waitFor(() => expect(reihenfolge).toContain('window.close'));
+        expect(reihenfolge).toEqual(['speichern', 'onLockFreigeben', 'window.close']);
+    });
+
+    it('zeigt den Tab-Schließen-Hinweis, wenn window.close wirkungslos bleibt', async () => {
+        // Simuliert genau den gemeldeten Fehler (macOS Safari): window.close()
+        // tut nichts, weil der Browser es nicht zulaesst.
+        const user = userEvent.setup();
+        vi.spyOn(window, 'close').mockImplementation(() => { /* wirkungslos */ });
+        const onLockFreigeben = vi.fn().mockResolvedValue(undefined);
+
+        const { container } = renderEditor({ onLockFreigeben });
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+
+        // Keine ungespeicherten Aenderungen: das X schliesst direkt, ohne
+        // den Warn-Dialog.
+        await user.click(xKnopf(container));
+
+        // Ueber den Text suchen, nicht ueber die Rolle: @dnd-kit/core rendert
+        // waehrend der ganzen Editor-Lebensdauer selbst eine unsichtbare
+        // role="status"-Ankuendigung (Drag&Drop-Screenreader-Live-Region) ohne
+        // eigenen aria-label -- getByRole('status', {name}) faende die nie
+        // (kein "Name aus Inhalt" fuer die Rolle status), aber ein blosses
+        // getByRole('status') faende IMMER zuerst die von dnd-kit.
+        const hinweis = await screen.findByText(
+            /kannst diesen Tab jetzt schließen/,
+            undefined,
+            { timeout: 2000 },
+        );
+        expect(hinweis).toHaveAttribute('role', 'status');
+        expect(onLockFreigeben).toHaveBeenCalledTimes(1);
+    });
+
+    it('bricht bei fehlgeschlagenem Speichern ab: kein onLockFreigeben, kein window.close, Toast, Editor bleibt offen', async () => {
+        const user = userEvent.setup();
+        fetchMock = mockFetchMitFehlschlagendemSpeichern();
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        const onLockFreigeben = vi.fn().mockResolvedValue(undefined);
+        const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => { });
+
+        const { container } = renderEditor({ onLockFreigeben });
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+        await adresseAendern(user, NEUE_ADRESSE);
+
+        await user.click(xKnopf(container));
+        await user.click(await screen.findByRole('button', { name: /Speichern & Schließen/ }));
+
+        expect(await screen.findByText(/Speichern fehlgeschlagen/)).toBeInTheDocument();
+        expect(onLockFreigeben).not.toHaveBeenCalled();
+        expect(closeSpy).not.toHaveBeenCalled();
+        // Editor (samt Warn-Dialog) bleibt offen -- kein TabSchliessenHinweis.
+        expect(screen.getByRole('button', { name: /Speichern & Schließen/ })).toBeInTheDocument();
     });
 });
