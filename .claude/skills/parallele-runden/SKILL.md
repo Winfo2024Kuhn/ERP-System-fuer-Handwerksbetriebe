@@ -97,7 +97,20 @@ Danach **erneut prüfen**, nicht darauf vertrauen, dass die Nachbesserung saß.
 
 ### 5. Nächste Runde
 
-Erst bei grün.
+Erst bei grün. Und **erst aufräumen, dann starten:** die Worktrees und
+Task-Branches der abgenommenen Runde löschen, bevor die nächste Runde
+anläuft.
+
+```bash
+git worktree remove --force <worktree-pfad>
+git branch -d <task-branch>        # -d, nicht -D: verweigert, wenn nicht gemerged
+```
+
+Warum vor dem Start und nicht irgendwann später: Jede Runde hinterlässt drei
+Ordner mit komplettem Repo-Inhalt. Nach drei Runden sind das neun, und im
+Editor sieht man nicht mehr, welcher davon gerade lebt. Das `-d` beim
+Branch-Löschen ist die Sicherung — verweigert Git, ist etwas nicht
+gemerged, und das will man wissen.
 
 ## Was schiefgeht, wenn man schludert
 
