@@ -21,7 +21,7 @@ export function TabSchliessenHinweis() {
             <div className="p-4 bg-rose-100 rounded-full">
                 <CheckCircle2 className="w-8 h-8 text-rose-600" aria-hidden="true" />
             </div>
-            <p role="status" className="max-w-sm text-base text-slate-700">
+            <p role="status" className="max-w-sm text-base text-slate-700 text-balance">
                 Dokument gespeichert und freigegeben — Sie können diesen Tab jetzt schließen.
             </p>
         </div>

@@ -1,4 +1,5 @@
-import type { ComponentProps } from 'react';
+import type { ComponentProps, Ref } from 'react';
+import { createRef } from 'react';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -7,6 +8,7 @@ import { ToastProvider } from '../ui/toast';
 import { ConfirmProvider } from '../ui/confirm-dialog';
 import { useDocumentLock } from '../useDocumentLock';
 import DocumentEditor from './index';
+import type { DocumentEditorHandle } from './types';
 
 // DSGVO: ausschliesslich Dummy-Daten.
 const ALTE_ADRESSE = 'Max Mustermann\nMusterweg 1\n12345 Musterstadt';
@@ -130,6 +132,22 @@ function renderEditor(props: Partial<ComponentProps<typeof DocumentEditor>> = {}
             <ConfirmProvider>
                 <ToastProvider>
                     <DocumentEditor dokumentId={1} onClose={() => { }} {...props} />
+                </ToastProvider>
+            </ConfirmProvider>
+        </MemoryRouter>
+    );
+}
+
+/** Wie renderEditor, aber mit einem Ref auf das imperative Handle (Task 7a). */
+function renderEditorMitRef(
+    ref: Ref<DocumentEditorHandle>,
+    props: Partial<ComponentProps<typeof DocumentEditor>> = {}
+) {
+    return render(
+        <MemoryRouter initialEntries={['/dokumente/1']}>
+            <ConfirmProvider>
+                <ToastProvider>
+                    <DocumentEditor ref={ref} dokumentId={1} onClose={() => { }} {...props} />
                 </ToastProvider>
             </ConfirmProvider>
         </MemoryRouter>
@@ -827,5 +845,65 @@ describe('DocumentEditor – Sperre nach Neuanlage bleibt am Leben', () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
         expect(screen.getByRole('button', { name: 'Gespeichert' })).toBeInTheDocument();
+    });
+});
+
+describe('DocumentEditor – imperatives Handle speichernFuerFreigabe (Task 7a)', () => {
+    // Abweichung vom Plan (Kontext-Log Abschnitt 7a): DocumentEditor bot bisher
+    // keinen Weg von aussen, einen Speichervorgang auszuloesen -- die Seite
+    // braucht das aber fuer den Untaetigkeits-Timer (erst speichern, dann die
+    // Sperre freigeben). Kleinstmoegliche Ergaenzung: forwardRef +
+    // useImperativeHandle mit genau einer Methode, siehe types.ts.
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        fetchMock = mockFetch();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('speichert ueber das Ref, wenn ungespeicherte Aenderungen vorliegen', async () => {
+        const ref = createRef<DocumentEditorHandle>();
+        renderEditorMitRef(ref);
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+
+        await adresseAendern(userEvent.setup(), NEUE_ADRESSE);
+
+        await act(async () => {
+            await ref.current!.speichernFuerFreigabe();
+        });
+
+        const aufrufe = speicherAufrufe(fetchMock);
+        expect(aufrufe.length).toBeGreaterThanOrEqual(1);
+        expect(aufrufe.at(-1)?.rechnungsadresseOverride).toBe(NEUE_ADRESSE);
+    });
+
+    it('ist ein No-op ohne ungespeicherte Aenderungen -- kein Leerlauf-Speichern bei jedem Idle-Ablauf', async () => {
+        const ref = createRef<DocumentEditorHandle>();
+        renderEditorMitRef(ref);
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+
+        await act(async () => {
+            await ref.current!.speichernFuerFreigabe();
+        });
+
+        expect(speicherAufrufe(fetchMock).length).toBe(0);
+    });
+
+    it('speichert nicht ueber ein gesperrtes (readOnly) Dokument', async () => {
+        const ref = createRef<DocumentEditorHandle>();
+        renderEditorMitRef(ref, { readOnly: true });
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+
+        await act(async () => {
+            await ref.current!.speichernFuerFreigabe();
+        });
+
+        expect(speicherAufrufe(fetchMock).length).toBe(0);
     });
 });

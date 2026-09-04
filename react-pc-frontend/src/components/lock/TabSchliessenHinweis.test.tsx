@@ -53,4 +53,9 @@ describe('TabSchliessenHinweis', () => {
         expect(wurzel?.className).toContain('fixed');
         expect(wurzel?.className).toContain('inset-0');
     });
+
+    it('nutzt text-balance am Hinweistext, damit das letzte Wort nicht allein umbricht (Design-Review Abschnitt 7-1)', () => {
+        render(<TabSchliessenHinweis />);
+        expect(screen.getByRole('status').className).toContain('text-balance');
+    });
 });
