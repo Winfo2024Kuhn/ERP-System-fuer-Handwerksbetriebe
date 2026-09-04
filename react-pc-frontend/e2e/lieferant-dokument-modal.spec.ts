@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { test, expect, type Locator, type Page, type Route } from '@playwright/test';
 import { designPruefung } from './hilfen/design';
 
 /**
@@ -128,6 +128,33 @@ async function oeffneDokumentModal(page: Page) {
     await expect(dialog(page)).toBeVisible();
 }
 
+/**
+ * Design-Review-Regression: der Toast-Container lag fest unten rechts, genau
+ * dort, wo die Modal-Fussleiste (Abbrechen/Speichern) sitzt. Ein Fehler-Toast
+ * beim Oeffnen legte sich auf 1440x900 ueber beide Knoepfe -- ein Klick in
+ * ihre Mitte traf den Toast, nicht den Knopf. Prueft per
+ * document.elementFromPoint (wie vom Reviewer gemessen), dass die Mitte des
+ * Knopfes wirklich noch zum Knopf gehoert.
+ */
+async function erwarteTreffer(page: Page, knopf: Locator, beschriftung: string) {
+    const box = await knopf.boundingBox();
+    if (!box) throw new Error(`Kein Bounding-Box fuer "${beschriftung}" gefunden`);
+    const mitteX = box.x + box.width / 2;
+    const mitteY = box.y + box.height / 2;
+
+    const trifftKnopf = await page.evaluate(
+        ({ x, y }) => document.elementFromPoint(x, y)?.closest('button') != null,
+        { x: mitteX, y: mitteY },
+    );
+    expect(trifftKnopf, `elementFromPoint in der Mitte von "${beschriftung}" (${mitteX}, ${mitteY}) trifft keinen Knopf -- vermutlich verdeckt ein fest positioniertes Element (Toast?) die Fussleiste`).toBe(true);
+
+    const istGesuchterKnopf = await page.evaluate(
+        ({ x, y, text }) => document.elementFromPoint(x, y)?.closest('button')?.textContent?.includes(text) ?? false,
+        { x: mitteX, y: mitteY, text: beschriftung },
+    );
+    expect(istGesuchterKnopf, `elementFromPoint in der Mitte von "${beschriftung}" trifft einen ANDEREN Knopf`).toBe(true);
+}
+
 test.describe('LieferantDokumentModal - Sperr-Fundament', () => {
     test('freies Lock: Formular ist sofort frei, Leiste zeigt "Fertig"; Fertig sperrt wieder und aktiviert "Bearbeiten"', async ({ page }, testInfo) => {
         await stubbeLieferantApi(page, 'frei');
@@ -173,17 +200,46 @@ test.describe('LieferantDokumentModal - Sperr-Fundament', () => {
         await expect(dialog(page).getByPlaceholder('RE-2024-001')).toBeEnabled();
     });
 
-    test('Fehlerfall (500): Hinweis im Modal und Toast, "Bearbeiten" bleibt deaktiviert', async ({ page }, testInfo) => {
+    test('Fehlerfall (500) beim Oeffnen: Hinweis im Modal und Toast, Toast verdeckt die Fussleiste nicht, "Bearbeiten" bleibt deaktiviert', async ({ page }, testInfo) => {
         await stubbeLieferantApi(page, 'fehler');
         await oeffneDokumentModal(page);
 
         await expect(dialog(page).getByRole('alert')).toContainText('Sperre konnte nicht geholt werden');
+        await expect(page.getByTestId('toast-container')).toContainText('Sperre konnte nicht geholt werden — bitte neu laden.');
+        // Derselbe Wortlaut steht doppelt im Dokument -- einmal im Modal, einmal im Toast.
         await expect(page.getByText('Sperre konnte nicht geholt werden — bitte neu laden.')).toHaveCount(2);
 
         const bearbeiten = dialog(page).getByRole('button', { name: 'Bearbeiten' });
         await expect(bearbeiten).toBeDisabled();
-        await expect(dialog(page).getByRole('button', { name: 'Speichern' })).toBeDisabled();
+        const abbrechen = dialog(page).getByRole('button', { name: 'Abbrechen' });
+        const speichern = dialog(page).getByRole('button', { name: 'Speichern' });
+        await expect(speichern).toBeDisabled();
+
+        // Design-Review-Befund: bei stehendem Toast musste die Fussleiste trotzdem klickbar bleiben.
+        await erwarteTreffer(page, abbrechen, 'Abbrechen');
+        await erwarteTreffer(page, speichern, 'Speichern');
 
         await designPruefung(page, testInfo, 'lieferant-modal-fehler', { primaerAktion: bearbeiten });
+    });
+
+    test('Speicherfehler (500): Toast verdeckt die Fussleiste ebenfalls nicht', async ({ page }, testInfo) => {
+        await stubbeLieferantApi(page, 'frei');
+        await page.route(`**/api/lieferant-dokumente/${DOKUMENT_ID}`, route => {
+            if (route.request().method() === 'PUT') return route.fulfill({ status: 500, body: '' });
+            return route.fulfill({ status: 404, body: '' });
+        });
+        await oeffneDokumentModal(page);
+
+        const speichern = dialog(page).getByRole('button', { name: 'Speichern' });
+        await expect(speichern).toBeEnabled();
+        await speichern.click();
+
+        await expect(page.getByTestId('toast-container')).toContainText('Speichern fehlgeschlagen');
+
+        const abbrechen = dialog(page).getByRole('button', { name: 'Abbrechen' });
+        await erwarteTreffer(page, abbrechen, 'Abbrechen');
+        await erwarteTreffer(page, speichern, 'Speichern');
+
+        await designPruefung(page, testInfo, 'lieferant-modal-speicherfehler-toast', { primaerAktion: speichern });
     });
 });

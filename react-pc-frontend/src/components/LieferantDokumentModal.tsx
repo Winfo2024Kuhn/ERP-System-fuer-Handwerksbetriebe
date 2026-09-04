@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
-import { X, Eye, FileText, Hash, Euro, Link2, FolderPlus, AlertCircle, CheckCircle, RefreshCw, Truck, Percent, CreditCard, Lock } from "lucide-react";
+import { X, Eye, FileText, Hash, Euro, Link2, FolderPlus, AlertCircle, AlertTriangle, CheckCircle, RefreshCw, Truck, Percent, CreditCard } from "lucide-react";
 
 import { Input } from "./ui/input";
 import { Select } from "./ui/select-custom";
@@ -379,8 +379,11 @@ export default function LieferantDokumentModal({
                                 </div>
                             )}
                             {lock.status === "error" && (
-                                <div role="alert" className="flex items-center gap-2 text-sm text-rose-700">
-                                    <Lock className="w-4 h-4 shrink-0" aria-hidden="true" />
+                                <div
+                                    role="alert"
+                                    className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"
+                                >
+                                    <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" aria-hidden="true" />
                                     {LOCK_FEHLER_TEXT}
                                 </div>
                             )}

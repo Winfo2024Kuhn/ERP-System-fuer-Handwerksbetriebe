@@ -88,3 +88,59 @@ describe('Toast', () => {
         expect(screen.getByText('Fehler aufgetreten')).toBeInTheDocument();
     });
 });
+
+/**
+ * Regressionsschutz fuer einen Design-Review-Befund (Abschnitt 6, Task 6b
+ * Nachbesserung 1): der Toast-Container liegt fest unten rechts -- genau
+ * dort, wo die Fussleiste ("Abbrechen"/"Speichern") praktisch jedes Modals im
+ * Projekt sitzt. Ein Fehler-Toast beim Oeffnen von LieferantDokumentModal
+ * legte sich auf 1440x900 fuenf Sekunden lang ueber genau diese Knoepfe --
+ * ein Klick in ihre Mitte traf den Toast statt den Knopf.
+ */
+function TestKomponenteMitDialog({ dialogOffen }: { dialogOffen: boolean }) {
+    const toast = useToast();
+    return (
+        <div>
+            <button onClick={() => toast.error('Sperre konnte nicht geholt werden — bitte neu laden.')}>
+                Fehler ausloesen
+            </button>
+            {dialogOffen && (
+                <div role="dialog" aria-modal="true" aria-label="Testdialog">
+                    Modal-Inhalt
+                </div>
+            )}
+        </div>
+    );
+}
+
+describe('Toast-Container - Positionierung bei offenem Dialog', () => {
+    it('liegt unten rechts, wenn kein Dialog offen ist', async () => {
+        render(
+            <ToastProvider>
+                <TestKomponenteMitDialog dialogOffen={false} />
+            </ToastProvider>
+        );
+        await act(async () => {
+            screen.getByText('Fehler ausloesen').click();
+        });
+
+        const container = screen.getByTestId('toast-container');
+        expect(container.className).toContain('bottom-6');
+        expect(container.className).not.toContain('top-6');
+    });
+
+    it('wandert nach oben rechts, solange ein Dialog offen ist', async () => {
+        render(
+            <ToastProvider>
+                <TestKomponenteMitDialog dialogOffen={true} />
+            </ToastProvider>
+        );
+        await act(async () => {
+            screen.getByText('Fehler ausloesen').click();
+        });
+
+        const container = screen.getByTestId('toast-container');
+        expect(container.className).toContain('top-6');
+        expect(container.className).not.toContain('bottom-6');
+    });
+});

@@ -96,10 +96,54 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
     );
 }
 
+/**
+ * True, solange irgendwo ein offener Dialog (role="dialog") im DOM steht.
+ *
+ * Grund: der Toast-Container liegt fest unten rechts -- genau dort, wo so
+ * gut wie jedes Modal im Projekt seine Fussleiste mit "Abbrechen"/"Speichern"
+ * hat (siehe LieferantDokumentModal.tsx). Ein Fehler-Toast beim Oeffnen legt
+ * sich dann fuenf Sekunden lang ueber genau die Knoepfe, die als naechstes
+ * gebraucht werden -- auf 14 Zoll (1440x900) trifft ein Klick in die Mitte
+ * beider Knoepfe den Toast statt den Knopf. Ausweichen statt den Fehler in
+ * jedem einzelnen Modal einzeln zu umschiffen: bei offenem Dialog wandert der
+ * GESAMTE Container nach oben rechts, wo kein Modal jemals Aktionen platziert.
+ */
+function useIrgendeinDialogOffen(): boolean {
+    const [offen, setOffen] = useState(
+        () => typeof document !== 'undefined' && document.querySelector('[role="dialog"]') !== null
+    );
+
+    useEffect(() => {
+        if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
+
+        const aktualisieren = () => {
+            setOffen(document.querySelector('[role="dialog"]') !== null);
+        };
+        aktualisieren();
+
+        // Beobachtet das ganze Dokument, nicht nur einen bekannten Modal-Slot --
+        // Modale werden hier ganz unterschiedlich eingehaengt (Portal, direkt im
+        // Baum, ...). attributeFilter auf 'role' begrenzt, damit nicht jede
+        // beliebige Attribut-Aenderung irgendwo im DOM einen Re-Check ausloest.
+        const observer = new MutationObserver(aktualisieren);
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['role'],
+        });
+
+        return () => observer.disconnect();
+    }, []);
+
+    return offen;
+}
+
 // --- Provider ---
 export function ToastProvider({ children }: { children: React.ReactNode }) {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const idCounter = useRef(0);
+    const dialogOffen = useIrgendeinDialogOffen();
 
     const dismiss = useCallback((id: number) => {
         setToasts(prev => prev.filter(t => t.id !== id));
@@ -120,8 +164,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     return (
         <ToastContext.Provider value={{ toast }}>
             {children}
-            {/* Toast Container */}
-            <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 items-end pointer-events-auto">
+            {/* Toast Container -- oben rechts bei offenem Dialog, sonst unten rechts (siehe useIrgendeinDialogOffen). */}
+            <div
+                data-testid="toast-container"
+                className={`fixed z-[9999] flex flex-col gap-2 items-end pointer-events-auto ${
+                    dialogOffen ? 'top-6 right-6' : 'bottom-6 right-6'
+                }`}
+            >
                 {toasts.map(t => (
                     <ToastItem key={t.id} toast={t} onDismiss={dismiss} />
                 ))}
