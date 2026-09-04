@@ -14,6 +14,21 @@ Vollständig abgedeckt durch `.claude/commands/security-audit.md` und
 `docs/agent instructions/docs/TESTING_SECURITY.md` — hier nicht dupliziert,
 einfach die Checklisten dort abarbeiten.
 
+## Grüne Gates (nicht verhandelbar)
+
+Ein Task ist erst fertig, wenn **alle** Prüfungen grün sind, die das Projekt
+kennt — nicht nur die, die im Auftrag namentlich stehen. Im Frontend sind das
+`lint`, `test` **und** `build`; im Backend der volle Testlauf.
+
+`lint` wird dabei am häufigsten übersehen: ein Task lieferte Build und Tests
+grün ab und riss trotzdem ein vorher grünes Lint-Gate ein — Kosten: zwei
+Nachbesserungsrunden. Der Review-Agent fährt Lint deshalb auch dann selbst,
+wenn im Auftrag nur von Tests die Rede war.
+
+Gegenstück: vorbestehende Fehler aus der Baseline (siehe Kontext-Log) sind
+**nicht** deine Baustelle. Nicht reparieren, nicht überspringen, nicht
+deaktivieren — nur die Abnahmeregel einhalten.
+
 ## Performance
 
 - Backend: keine N+1-Queries in Schleifen ohne `JOIN FETCH`; Pagination bei

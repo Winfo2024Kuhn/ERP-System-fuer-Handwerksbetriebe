@@ -67,6 +67,22 @@ Worktree-/Branch-Zuordnung pro Task. Lege außerdem die Kontext-Log-Datei an
 (`references/kontext-log-format.md`) und den Feature-Branch für das gesamte
 Vorhaben.
 
+**Danach, bevor der erste Coding-Agent startet** — lies dazu
+`references/fallstricke.md`, dort steht das Warum zu jedem Punkt:
+
+1. **Baseline messen.** Backend- und Frontend-Tests **plus Lint** auf dem
+   unveränderten Feature-Branch laufen lassen. Exakte Zahlen und die Namen
+   vorbestehender Fehler ins Kontext-Log, mit Abnahmeregel („grün = genau
+   diese N bekannten Fehler, der N+1. ist neu"). Ohne das streiten Coding- und
+   Review-Agent später über Fehler, die schon vorher da waren.
+2. **Umgebung prüfen und ins Kontext-Log schreiben:** Build-Werkzeuge
+   vorhanden und in der geforderten Version? Abhängigkeiten installierbar
+   (Egress-Policy!)? Wenn etwas nur mit einem Workaround geht, gehört der
+   Workaround ins Log — sonst scheitert jeder Agent einzeln daran.
+3. **Worktrees des ersten Abschnitts selbst anlegen.** Niemals die Agenten
+   `git worktree add` machen lassen: parallel kollidieren sie am
+   `.git`-Verzeichnis.
+
 ## Schritt 5: Abschnitte abarbeiten (Schleife)
 
 Für jeden Abschnitt der Reihe nach:
@@ -85,8 +101,20 @@ Für jeden Abschnitt der Reihe nach:
    zurück zu Schritt 3.
    **🔴 nach der 2. erfolglosen Nachbesserung:** Pipeline stoppen, verbleibende
    🔴-Befunde dem Nutzer vorlegen. **ENDE.**
-5. **🟢/🟡:** Abschnitt abgenommen, weiter zum nächsten Abschnitt. Keine
-   offenen Abschnitte mehr → weiter zu Schritt 6.
+5. **🟢/🟡:** Abschnitt abgenommen. **Sofort in den Feature-Branch mergen und
+   pushen** — nicht bis zum Schluss warten. Der Container kann eingesammelt
+   werden und ein Kontolimit die Pipeline mitten in der Arbeit abreißen; was
+   nicht auf `origin` liegt, ist weg. Danach die Worktrees des nächsten
+   Abschnitts anlegen und weiter. Keine offenen Abschnitte mehr → Schritt 6.
+
+**Wenn ein Agent abstürzt** (Kontolimit, Timeout, API-Fehler): nicht einfach
+neu starten. Erst nachsehen, was er hinterlassen hat —
+`git -C <worktree> log --oneline <feature-branch>..HEAD` und
+`git -C <worktree> status --short`. Ein halb fertiger Task kann einen Stand
+hinterlassen, der für sich genommen kaputt ist (real passiert: Entity-Feld
+committet, zugehörige Migration nur unversioniert daneben — die Anwendung
+wäre nicht mehr gestartet). Erst den Stand heilen oder verwerfen, dann neu
+starten.
 
 ## Schritt 6: Pull Request
 
@@ -111,6 +139,27 @@ Schritt 0 — keine Stildetails, die hat der Abschnitts-Reviewer schon geprüft:
 
 PR mergen (GitHub-MCP), Issue schließen. Kurz berichten: Issue-/PR-Nummer,
 Anzahl Abschnitte, Anzahl Nachbesserungs-Runden insgesamt.
+
+## Schritt 9: Skill nachschärfen (Pflicht, nicht optional)
+
+Bist du unterwegs auf ein Problem gestoßen, das dieser Skill hätte verhindern
+können, hänge es an `references/fallstricke.md` an — **bevor** du die Aufgabe
+als erledigt meldest. Kandidaten sind Dinge, die dich oder einen Agenten Zeit
+gekostet haben, ohne zur eigentlichen Aufgabe zu gehören:
+
+- eine Nachbesserungsrunde, die ein Satz im Auftrag verhindert hätte,
+- ein Umgebungsproblem, an dem mehrere Agenten nacheinander gescheitert sind,
+- ein Fehler, den die Testsuite prinzipbedingt nicht sehen konnte,
+- eine Stelle, an der Plan oder Doku nachweislich falsch lagen.
+
+**Nicht** aufnehmen: einmalige Ausrutscher, Geschmacksfragen, alles schon
+Dokumentierte. Format: kurze Überschrift, das Fehlerbild zum Wiedererkennen,
+die Regel fürs nächste Mal. Lieber drei brauchbare Zeilen als eine Seite
+Nacherzählung.
+
+Wenn eine Regel eine Datei betrifft, die ohnehin schon Vorgaben macht
+(`plan-format.md`, `kriterien.md`, `kontext-log-format.md`), gehört sie dorthin
+statt in die Sammeldatei.
 
 ## Rollen & Modelle
 
@@ -140,6 +189,10 @@ Pipeline stoppt und legt dem Nutzer die verbleibenden Befunde vor.
   Abschnitts-/Worktree-Zuordnung.
 - `references/kontext-log-format.md` — Format und Lock-Protokoll für die
   gemeinsame Kontext-Log-Datei.
+- `references/fallstricke.md` — **gesammelte Stolperstellen aus echten
+  Läufen.** Orchestrator liest sie vor Schritt 4, der Review-Agent bekommt sie
+  im Auftrag. Die dort für Coding-Agenten markierten Punkte gehören in deren
+  Auftragstext.
 - `references/kriterien.md` — Performance-/Observability-/API-Design-Kriterien,
   gemeinsame Quelle für Coding- und Review-Agent (Coding-Agent liest sie
   vorher, damit der Review-Agent möglichst wenig findet).
