@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- @dsCard group="Spacing" name="Spacing — Scale" subtitle="4px baseline" viewport="640x360" -->
+<html lang="de"><head><meta charset="utf-8" /><title>Spacing</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box}
+  .scale{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+  .row{display:grid;grid-template-columns:60px 1fr 60px;align-items:center;gap:10px}
+  .bar{height:14px;background:var(--rose-500);border-radius:3px}
+  .token{font-family:var(--font-mono);font-size:11px;color:var(--fg-muted)}
+  .size{text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--fg-muted)}
+  .header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+</style></head><body>
+<div class="header"><div><div class="name">Spacing scale · 4px baseline</div><div class="sub">4 / 8 / 12 / 16 / 20 / 24 / 32 / 40 / 48 — Tailwind-aligned</div></div></div>
+<div class="scale">
+  <div class="row"><span class="token">space-1</span><div class="bar" style="width:4px"></div><span class="size">4</span></div>
+  <div class="row"><span class="token">space-2</span><div class="bar" style="width:8px"></div><span class="size">8</span></div>
+  <div class="row"><span class="token">space-3</span><div class="bar" style="width:12px"></div><span class="size">12</span></div>
+  <div class="row"><span class="token">space-4</span><div class="bar" style="width:16px"></div><span class="size">16 · gap default</span></div>
+  <div class="row"><span class="token">space-5</span><div class="bar" style="width:20px"></div><span class="size">20</span></div>
+  <div class="row"><span class="token">space-6</span><div class="bar" style="width:24px"></div><span class="size">24 · card pad</span></div>
+  <div class="row"><span class="token">space-8</span><div class="bar" style="width:32px"></div><span class="size">32 · section</span></div>
+  <div class="row"><span class="token">space-10</span><div class="bar" style="width:40px"></div><span class="size">40</span></div>
+  <div class="row"><span class="token">space-12</span><div class="bar" style="width:48px"></div><span class="size">48 · page y</span></div>
+</div>
+</body></html>

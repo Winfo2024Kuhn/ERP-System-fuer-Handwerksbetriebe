@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- @dsCard group="Components" name="Components — Page header" subtitle="Eyebrow + uppercase title + actions" viewport="960x200" -->
+<html lang="de"><head><meta charset="utf-8" /><title>Page header</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html,body{margin:0;padding:0;background:var(--slate-50)}
+  body{font-family:var(--font-sans);color:var(--fg);padding:20px;box-sizing:border-box;font-size:14px}
+  .ph{display:flex;justify-content:space-between;align-items:flex-end;gap:16px}
+  .eyebrow{font-size:12px;font-weight:600;color:var(--brand);text-transform:uppercase;letter-spacing:.06em}
+  .title{font-size:30px;font-weight:700;color:var(--slate-900);letter-spacing:-.01em;margin:2px 0 4px}
+  .sub{font-size:14px;color:var(--fg-muted)}
+  .actions{display:flex;gap:8px;flex-shrink:0}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;font-size:14px;font-weight:500;border:1px solid;cursor:pointer}
+  .btn-p{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .btn-o{background:#fff;color:var(--rose-700);border-color:var(--rose-200)}
+  [data-lucide]{width:16px;height:16px;stroke-width:2}
+  .header-note{font-size:11px;color:var(--fg-muted);margin-top:10px;font-family:var(--font-mono)}
+</style></head><body>
+<div class="ph">
+  <div>
+    <div class="eyebrow">PROJEKTMANAGEMENT</div>
+    <div class="title">PROJEKTÜBERSICHT</div>
+    <div class="sub">Übersicht und Verwaltung Ihrer Projekte.</div>
+  </div>
+  <div class="actions">
+    <button class="btn btn-p"><i data-lucide="plus"></i>Neues Projekt</button>
+    <button class="btn btn-o"><i data-lucide="refresh-cw"></i>Aktualisieren</button>
+  </div>
+</div>
+<div class="header-note">PageHeader.tsx · eyebrow (rose-600, uppercase) · title (uppercase, bold) · sub · right actions</div>
+<script>lucide.createIcons();</script>
+</body></html>

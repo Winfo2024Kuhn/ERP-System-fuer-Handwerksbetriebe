@@ -61,7 +61,8 @@ Bevor du Code schreibst oder änderst, lädst du **zwingend** die passende Dokum
 
 Frontend-Edits brauchen **zwei** Freigaben: das gelesene `FRONTEND_UI.md` **und** einen aufgerufenen Design-Skill. Der Hook blockt sonst mit `DESIGN-SKILL-GUARD`:
 
-- `ui-ux-pro-max:ui-ux-pro-max` — Standard (Styles, Farben, Typografie, UX-Regeln)
+- `handwerkerprogramm-design` — **Pflicht-Standard.** Unser eigenes, projektspezifisches Design-System: Farben, Typografie, Icon-Vokabular, Wording/Terminologie, fertige UI-Kits (Desktop + Mobile) und echte Screenshots. Immer zuerst dieser.
+- `ui-ux-pro-max:ui-ux-pro-max` — generisch (Styles, Farben, Typografie, UX-Regeln), nur ergänzend wenn `handwerkerprogramm-design` eine Frage offenlässt
 - `frontend-design:frontend-design` — visuelle Ausrichtung neuer UI
 - `ui-ux-pro-max:design-system` — Design-Tokens, Komponenten-Specs
 - `ui-ux-pro-max:design` — Logos, Banner, Icons, Präsentationen

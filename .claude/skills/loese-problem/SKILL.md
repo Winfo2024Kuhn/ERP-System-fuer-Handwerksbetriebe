@@ -196,3 +196,5 @@ Pipeline stoppt und legt dem Nutzer die verbleibenden Befunde vor.
 - `references/kriterien.md` — Performance-/Observability-/API-Design-Kriterien,
   gemeinsame Quelle für Coding- und Review-Agent (Coding-Agent liest sie
   vorher, damit der Review-Agent möglichst wenig findet).
+
+  

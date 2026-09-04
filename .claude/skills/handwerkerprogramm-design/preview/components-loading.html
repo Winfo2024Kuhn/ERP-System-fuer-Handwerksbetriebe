@@ -1,0 +1,51 @@
+<!-- @dsCard group="Components" viewport="760x300" name="Loading states" subtitle="Skeleton → loaded → failed · PDF shimmer" -->
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8" /><title>Loading states</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .cell{display:flex;flex-direction:column;gap:8px}
+  .tile{aspect-ratio:4/3;border-radius:var(--radius-md);overflow:hidden;position:relative;border:1px solid var(--border)}
+  .skel{position:absolute;inset:0;background:var(--slate-200);border-radius:var(--radius-md);animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  .loaded{position:absolute;inset:0;background:linear-gradient(135deg,var(--slate-300),var(--slate-400));display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600}
+  .failed{position:absolute;inset:0;background:var(--slate-100);display:flex;align-items:center;justify-content:center;color:var(--slate-400)}
+  .shim{position:absolute;inset:0;background:linear-gradient(90deg,#f1f5f9 0%,#fce7f3 40%,#f1f5f9 80%);background-size:200% 100%;animation:shim 2s ease-in-out infinite}
+  @keyframes shim{0%{background-position:-200% 0}100%{background-position:200% 0}}
+  .lbl{font-size:11px;font-weight:600;color:var(--slate-700)}
+  .tok{font-family:var(--font-mono);font-size:9px;color:var(--fg-muted);line-height:1.4}
+  .header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+  .note{font-size:11px;color:var(--fg-muted);margin-top:14px}
+  .note b{color:var(--fg)}
+  [data-lucide]{width:24px;height:24px;stroke-width:2}
+</style></head><body>
+<div class="header"><div><div class="name">Loading & failure states</div><div class="sub">ThumbnailImage \u00b7 PDF shimmer \u00b7 no layout shift, ever</div></div></div>
+<div class="grid">
+  <div class="cell">
+    <div class="tile"><div class="skel"></div></div>
+    <div class="lbl">1 \u00b7 Loading</div>
+    <div class="tok">bg-slate-200<br />motion-safe:animate-pulse</div>
+  </div>
+  <div class="cell">
+    <div class="tile"><div class="loaded">Foto</div></div>
+    <div class="lbl">2 \u00b7 Loaded</div>
+    <div class="tok">opacity 0\u21921<br />transition 200ms</div>
+  </div>
+  <div class="cell">
+    <div class="tile"><div class="failed"><i data-lucide="image-off"></i></div></div>
+    <div class="lbl">3 \u00b7 Failed</div>
+    <div class="tok">bg-slate-100 \u00b7 ImageOff<br />w-6 h-6 text-slate-400</div>
+  </div>
+  <div class="cell">
+    <div class="tile"><div class="shim"></div></div>
+    <div class="lbl">PDF skeleton</div>
+    <div class="tok">.skeleton-shimmer<br />slate\u2192pink\u2192slate \u00b7 2s</div>
+  </div>
+</div>
+<div class="note"><b>Order of fallback:</b> server thumbnail (max 300px) \u2192 original image \u2192 <code style="font-size:10px">ImageOff</code> tile with <code style="font-size:10px">role="img"</code> + <code style="font-size:10px">aria-label</code>. Never render an empty box.</div>
+<script>lucide.createIcons();</script>
+</body></html>

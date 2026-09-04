@@ -6,12 +6,53 @@
 
 | Skill | Wofür |
 | --- | --- |
-| `ui-ux-pro-max:ui-ux-pro-max` | **Standard.** Styles, Farbpaletten, Typografie, 99 UX-Regeln (Accessibility, Touch, Performance, Animation) |
+| `handwerkerprogramm-design` | **Pflicht-Standard, immer zuerst.** Unser eigenes Design-System für dieses Produkt: Farben, Typografie, Icon-Vokabular (Lucide), Wording/Terminologie, fertige UI-Kits für Desktop-ERP + Mobile-PWA, echte Screenshots/Logos zum Wiederverwenden. Ersetzt keine der anderen Skills, geht ihnen aber vor. |
+| `ui-ux-pro-max:ui-ux-pro-max` | Generisch. Styles, Farbpaletten, Typografie, 99 UX-Regeln (Accessibility, Touch, Performance, Animation) — nur ergänzend, wenn `handwerkerprogramm-design` etwas offenlässt |
 | `frontend-design:frontend-design` | Visuelle Ausrichtung neuer UI, wenn es nicht nach Template aussehen soll |
 | `ui-ux-pro-max:design-system` | Design-Tokens, Komponenten-Specs, systematische Skalen |
 | `ui-ux-pro-max:design` | Logos, Banner, Icons, Präsentationen, Corporate Identity |
 
 Das Flag gilt pro Session — ein Aufruf reicht für alle folgenden Frontend-Edits.
+
+## 🧭 Kern-Prinzip: Gulf of Execution & Gulf of Evaluation
+
+Jede UI-Entscheidung wird an diesen zwei Fragen gemessen. Beide MÜSSEN mit Ja beantwortbar sein, sonst ist die Umsetzung nicht fertig:
+
+### Gulf of Execution — "Sieht der Nutzer sofort, WIE er sein Ziel erreicht?"
+- Jede interaktive Fläche sieht klickbar aus (Cursor, Hover-State, Fokus-Ring). Nichts, was wie normaler Text aussieht, ist heimlich ein Button oder Link.
+- Pro Screen genau **eine** klar erkennbare Primär-Aktion (gefüllter `bg-rose-600`-Button). Sekundäre und destruktive Aktionen sind visuell klar abgesetzt (siehe Button-Klassen unten).
+- Icon-only-Buttons **immer** mit sichtbarem Tooltip/`aria-label` — nie ein Icon ohne Erklärung raten lassen.
+- Deaktivierte Buttons/Felder erklären per Tooltip **warum** sie deaktiviert sind, statt einfach grau und stumm zu sein.
+- Destruktive Aktionen (Löschen, Stornieren, unwiderrufliches Versenden) verlangen eine Bestätigung per Dialog — nie ein einzelner Klick, der sofort unwiderruflich ausführt.
+- Formulare zeigen Pflichtfelder, Format-Hinweise (z. B. Datumsformat, Mengeneinheit) und Platzhalter **bevor** der Nutzer den Fehler macht, nicht erst danach in einer Fehlermeldung.
+
+### Gulf of Evaluation — "Sieht der Nutzer sofort, WAS passiert ist?"
+- Jede asynchrone Aktion (Speichern, Löschen, Senden, Import, Export) zeigt einen sichtbaren Ladezustand (Spinner/Skeleton, Button per `disabled` gegen Doppel-Klick gesperrt) **und danach** ein sichtbares Ergebnis. Nie "Klick ins Leere".
+- Erfolg → Toast (`toast.success(...)`), Fehler → **immer** Toast (`toast.error(...)`) — siehe Abschnitt „Toast-Pflicht" unten. Kein stiller Fail, kein Fehler, der nur in der Browser-Konsole landet.
+- Gespeicherte/geänderte Daten aktualisieren sichtbar die UI, ohne dass der Nutzer neu laden oder raten muss, ob es geklappt hat.
+- Lade-Zustand, leere Liste und Fehler-Zustand sind drei optisch klar unterscheidbare Zustände — eine leere Liste darf nie wie ein kaputter Ladevorgang aussehen (und umgekehrt).
+
+## 🍞 Toast-Pflicht bei Fehlern
+
+**Jede fehlgeschlagene Aktion MUSS eine Toast-Fehlermeldung zeigen** — API-Fehler, Validierungsfehler, Netzwerkfehler, alles. Kein `alert()`, kein stiller `catch`-Block, kein Fehler, der nur per `console.error` verschwindet.
+
+Nutze die vorhandene Komponente `src/components/ui/toast.tsx` (nicht neu bauen):
+
+```tsx
+import { useToast } from '../components/ui/toast'; // Pfad je nach Ordnertiefe anpassen
+
+const toast = useToast();
+
+try {
+  await api.save(data);
+  toast.success('Gespeichert.');
+} catch (err) {
+  toast.error(err instanceof Error ? err.message : 'Rechnung konnte nicht gespeichert werden.');
+}
+```
+
+- Meldungstext ist konkret, deutsch, im Handwerker-Wording — nicht „Ein Fehler ist aufgetreten", sondern was genau fehlgeschlagen ist (z. B. „Rechnung konnte nicht gespeichert werden.").
+- Erfolg wird nur getoastet, wenn er sonst nicht sichtbar ist (z. B. kein Redirect danach). Fehler werden **immer** getoastet, ausnahmslos.
 
 ## 🔌 MCP-Pflicht für Komponenten
 
@@ -23,6 +64,8 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 | `magic` (21st.dev) | Moderne Layouts mit Animationen auf Tailwind-Basis. Braucht die Umgebungsvariable `TWENTYFIRST_API_KEY` (**niemals** den Key in `.mcp.json` schreiben — die Datei ist eingecheckt). |
 
 **Wichtig:** Gezogene Komponenten immer auf unser Design-System umstellen (rose/slate statt der shadcn-Default-Farben) und die Pflicht-Komponenten unten haben Vorrang vor neu gezogenen.
+
+**Farbpaletten-Pflicht:** `ui-ux-pro-max`, `frontend-design` & Co. schlagen von sich aus oft fremde Paletten vor (blue/indigo/violet als Default-Theme). Diese Vorschläge sind nur Ausgangspunkt für Struktur, Spacing und Komponenten-Auswahl — Farben werden **immer** auf unser Schema unten (rose/slate) umgestellt, bevor Code committet wird. Kein Fallback auf Skill- oder MCP-Default-Farben, auch nicht "nur vorübergehend" oder in Mockups/Prototypen.
 
 ## Build & Coding-Regeln
 - Nach JEDER Änderung: `npm run build` im jeweiligen Ordner ausführen (Fail Fast!).

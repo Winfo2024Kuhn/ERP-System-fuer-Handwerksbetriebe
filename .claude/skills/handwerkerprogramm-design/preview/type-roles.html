@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- @dsCard group="Type" name="Type — Roles" subtitle="PageHeader · subgroup · metric · chip" viewport="720x280" -->
+<html lang="de"><head><meta charset="utf-8" /><title>Type — Roles</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .cell{border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--surface)}
+  .token{font-family:var(--font-mono);font-size:10px;color:var(--fg-muted);margin-top:6px;letter-spacing:.02em}
+  .eyebrow{font-size:12px;font-weight:600;color:var(--brand);text-transform:uppercase;letter-spacing:.06em}
+  .title{font-size:24px;font-weight:700;color:var(--slate-900);letter-spacing:-.01em;margin-top:2px}
+  .sub{font-size:14px;color:var(--fg-muted);margin-top:4px}
+  .subgroup{font-size:9px;font-weight:600;color:var(--slate-400);text-transform:uppercase;letter-spacing:.08em}
+  .tabnum{font-variant-numeric:tabular-nums;font-size:18px;font-weight:700;color:var(--slate-900)}
+  .chip{display:inline-flex;align-items:center;padding:2px 8px;background:#e0e7ff;color:#4338ca;border-radius:6px;font-family:var(--font-mono);font-size:13px}
+</style></head><body>
+<div class="grid">
+  <div class="cell">
+    <div class="eyebrow">PROJEKTMANAGEMENT</div>
+    <div class="title">PROJEKTÜBERSICHT</div>
+    <div class="sub">Übersicht und Verwaltung Ihrer Projekte.</div>
+    <div class="token">PageHeader · eyebrow / title / sub</div>
+  </div>
+  <div class="cell">
+    <div class="subgroup">AUFTRÄGE</div>
+    <div style="margin-top:6px;font-size:13px;font-weight:500;color:var(--slate-700)">Projekte · Anfragen · Bestellungen</div>
+    <div class="token">Ribbon subgroup label · 9px / uppercase / tracking-wider</div>
+  </div>
+  <div class="cell">
+    <div style="font-size:12px;font-weight:500;color:var(--fg-muted)">Heute gearbeitet</div>
+    <div class="tabnum">7h 42min</div>
+    <div class="token">Metric · tabular-nums · 18/700</div>
+  </div>
+  <div class="cell">
+    <div style="font-size:14px;color:var(--slate-700);line-height:1.6">Platzhalter <span class="chip">{{KUNDENNAME}}</span> in Vorlage.</div>
+    <div class="token">Document editor chip · indigo-100 / 700 · mono</div>
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- @dsCard group="Components" name="Components — Buttons" subtitle="4 variants · KI Gem button" viewport="720x280" -->
+<html lang="de"><head><meta charset="utf-8" /><title>Buttons</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box;font-size:14px}
+  .group{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:all var(--dur);cursor:pointer;border:1px solid transparent;font-family:var(--font-sans);font-weight:500}
+  .btn-default{background:var(--brand);color:#fff;border-color:var(--brand);padding:8px 16px;border-radius:8px;font-size:14px}
+  .btn-default:hover{background:var(--brand-hover);border-color:var(--brand-hover)}
+  .btn-outline{background:#fff;color:var(--rose-700);border-color:var(--rose-200);padding:8px 16px;border-radius:8px;font-size:14px}
+  .btn-outline:hover{background:var(--rose-50)}
+  .btn-ghost{background:transparent;color:var(--rose-700);padding:8px 16px;border-radius:8px;font-size:14px}
+  .btn-ghost:hover{background:var(--rose-100)}
+  .btn-secondary{background:var(--slate-100);color:var(--slate-800);border-color:var(--slate-200);padding:8px 16px;border-radius:8px;font-size:14px}
+  .btn-secondary:hover{background:var(--slate-200)}
+  .btn-sm{padding:6px 12px;font-size:14px;border-radius:4px}
+  .btn-ai{background:transparent;color:var(--brand);padding:6px 12px;border-radius:4px;font-size:14px;font-weight:500}
+  .btn-ai:hover{background:var(--rose-100)}
+  .caption{font-size:10px;font-weight:600;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.05em;width:100%;margin-top:2px}
+  .header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+  [data-lucide]{width:16px;height:16px;stroke-width:2}
+</style></head><body>
+<div class="header"><div><div class="name">Buttons</div><div class="sub">4 variants · default = rose-600. KI (Gem) uses ghost + rose.</div></div></div>
+<div class="caption">Variants</div>
+<div class="group">
+  <button class="btn btn-default"><i data-lucide="plus"></i>Neues Projekt</button>
+  <button class="btn btn-outline"><i data-lucide="refresh-cw"></i>Aktualisieren</button>
+  <button class="btn btn-ghost">Filtern</button>
+  <button class="btn btn-secondary">Abbrechen</button>
+</div>
+<div class="caption">Size · sm</div>
+<div class="group">
+  <button class="btn btn-default btn-sm">Speichern</button>
+  <button class="btn btn-outline btn-sm">Reset</button>
+  <button class="btn btn-ai"><i data-lucide="gem"></i>KI-Optimierung</button>
+</div>
+<div class="caption">States</div>
+<div class="group">
+  <button class="btn btn-default">Default</button>
+  <button class="btn btn-default" style="background:var(--brand-hover);border-color:var(--brand-hover)">Hover</button>
+  <button class="btn btn-default" disabled style="opacity:.5;cursor:not-allowed">Disabled</button>
+  <button class="btn btn-default" style="box-shadow:0 0 0 2px #fff, 0 0 0 4px var(--brand-ring)">Focus</button>
+</div>
+<script>lucide.createIcons();</script>
+</body></html>
