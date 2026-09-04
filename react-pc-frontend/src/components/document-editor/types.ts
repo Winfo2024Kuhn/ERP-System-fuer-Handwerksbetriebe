@@ -86,6 +86,26 @@ export interface DocumentEditorProps {
     onLockFreigeben?: () => Promise<void>;
 }
 
+/**
+ * Imperatives Handle des Editors (Task 7a) -- die Seite braucht einen Weg,
+ * den Editor VOR dem automatischen Freigeben des Datensatz-Locks (Untaetig-
+ * keits-Timer, siehe useIdleTimer/useDatensatzLock) zum Speichern zu bringen.
+ * `handleSave` selbst ist reiner Editor-internal-State (kein Prop) -- ein
+ * Ref ist hier die kleinste Ergaenzung, die das nach aussen gibt, ohne die
+ * bestehende Prop-Schnittstelle umzubauen. Siehe Kontext-Log Abschnitt 7a
+ * (Abweichung vom Plan: DocumentEditor war zuvor keine forwardRef-Komponente).
+ */
+export interface DocumentEditorHandle {
+    /**
+     * Speichert sofort, falls ungespeicherte Aenderungen vorliegen -- sonst
+     * ein No-op (kein unnoetiger Request). Wartet auf den kompletten
+     * Speicher-Roundtrip, bevor sie sich aufloest, damit der Aufrufer
+     * (die Seite) erst DANACH die Sperre freigibt: "niemals freigeben,
+     * solange ungespeicherte Aenderungen im Editor liegen".
+     */
+    speichernFuerFreigabe: () => Promise<void>;
+}
+
 export interface KontextDaten {
     kundennummer?: string;
     kundenName?: string;

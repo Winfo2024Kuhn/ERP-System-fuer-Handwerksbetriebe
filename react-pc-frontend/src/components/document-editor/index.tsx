@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Pencil, Plus, Check, X } from 'lucide-react';
 import { useEditor } from '@tiptap/react';
@@ -32,7 +32,7 @@ import {
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 
-import type { DocBlock, DocumentEditorProps, KontextDaten, TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, EditorInstance } from './types';
+import type { DocBlock, DocumentEditorProps, DocumentEditorHandle, KontextDaten, TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, EditorInstance } from './types';
 import {
     CLOSURE_BLOCK_ID,
     syncClosureBlock,
@@ -220,7 +220,10 @@ function RechnungsadresseBlock({
     );
 }
 
-export default function DocumentEditor({ projektId, anfrageId, dokumentId, initialDokumentTyp, onClose, readOnly = false, onLockFreigeben }: DocumentEditorProps) {
+const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(function DocumentEditor(
+    { projektId, anfrageId, dokumentId, initialDokumentTyp, onClose, readOnly = false, onLockFreigeben },
+    ref
+) {
     const toast = useToast();
     // Fuer das Zurueckschreiben der beim Anlegen vergebenen Id in die URL
     // (syncDocumentIdInUrl) -- MUSS ueber den Router laufen, nicht per
@@ -1346,6 +1349,22 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, konfliktMeldung, bereitsAbgerechnetDurchAndere, globalRabatt]);
+
+    // Imperatives Handle fuer die Seite (Task 7a, Issue #82): der
+    // Untaetigkeits-Timer der Seite (useIdleTimer + useDatensatzLock) darf
+    // die Sperre erst freigeben, NACHDEM ungespeicherte Aenderungen
+    // gespeichert wurden -- "niemals freigeben, solange ungespeicherte
+    // Aenderungen im Editor liegen" (Spec). Ohne ungespeicherte Aenderungen
+    // ist es bewusst ein No-op (kein Leerlauf-Request bei jedem Idle-Ablauf
+    // eines rein lesend offenen Dokuments). `isLocked` zusaetzlich geprueft,
+    // weil `handleSave` selbst bei isLocked ohnehin `null` liefert (siehe
+    // oben) -- der fruehe Ausstieg hier spart den Aufruf ganz.
+    useImperativeHandle(ref, () => ({
+        speichernFuerFreigabe: async () => {
+            if (isLocked || !hasUnsavedChanges) return;
+            await handleSave();
+        },
+    }), [isLocked, hasUnsavedChanges, handleSave]);
 
     /**
      * Setzt das Dokumentdatum auf heute, sofern das Dokument noch bearbeitbar
@@ -3410,4 +3429,6 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             />
         </div>
     );
-}
+});
+
+export default DocumentEditor;
