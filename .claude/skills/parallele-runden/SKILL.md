@@ -55,7 +55,7 @@ Jeder Agent bekommt genau seinen Task-Abschnitt plus die Global Constraints.
 Nicht den ganzen Plan: er soll seinen Task bauen, nicht die Nachbarn
 mitdenken.
 
-Der Auftrag muss diese sechs Punkte enthalten:
+Der Auftrag muss diese sieben Punkte enthalten:
 
 - Welchen Task aus welcher Datei
 - Global Constraints zuerst lesen
@@ -66,6 +66,13 @@ Der Auftrag muss diese sechs Punkte enthalten:
   gleichzeitig in denselben Ordnern arbeiten
 - Anhalten und melden, wenn der Plan von der Wirklichkeit im Code abweicht,
   statt still etwas anderes zu bauen
+- **Frontend-Task ⇒ Playwright-Spec Pflicht.** Was der Nutzer am Ende sieht
+  und klickt, wird end-to-end geprüft, nicht nur per Unit-Test: eine Spec
+  unter `react-pc-frontend/e2e/` für genau den geänderten Ablauf, mit
+  gestubbten `/api`-Routen über `e2e/hilfen/api.ts` (kein Backend nötig).
+  Läuft mit `npm run test:e2e`. Parallel laufende Agenten brauchen je einen
+  eigenen Port: `E2E_PORT=5174 npm run test:e2e` (Konfig liest die Variable,
+  Standard 5173). Vorgabe des Nutzers vom 04.09.2026 — gilt dauerhaft.
 
 ### 2. Warten
 
@@ -81,6 +88,9 @@ Der Prüfagent führt die Tests selbst aus. Er glaubt keinem Bericht eines
 Umsetzungs-Agenten. Er prüft mindestens:
 
 - Laufen alle Tests, und baut das Projekt?
+- Bei Frontend-Änderungen: läuft `npm run test:e2e` (Playwright) — und gibt es
+  für den geänderten Ablauf überhaupt eine Spec? Ein Frontend-Task ohne
+  Playwright-Spec ist nicht fertig, egal wie grün die Unit-Tests sind.
 - Wurden die Tests wirklich zuerst geschrieben? Die Commit-Reihenfolge zeigt es.
 - Passen die erzeugten Namen und Typen exakt zu dem, was im Plan unter
   `Produces` steht? Spätere Tasks importieren sie.

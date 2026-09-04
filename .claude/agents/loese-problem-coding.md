@@ -39,6 +39,14 @@ Design-Skills, aber für dieses Produkt ist `handwerkerprogramm-design` die
 richtige Antwort, nicht die generischen `ui-ux-pro-max`-Skills. Erst danach
 editieren.
 
+**Bei React-Tasks außerdem Pflicht: eine Playwright-Spec.** Was der Nutzer
+sieht und klickt, wird end-to-end geprüft, nicht nur per Unit-Test. Lege unter
+`react-pc-frontend/e2e/` eine Spec für genau deinen geänderten Ablauf an
+(API-Routen stubben über `e2e/hilfen/api.ts`, kein Backend nötig) und fahr sie
+mit `E2E_PORT=<eigener Port> npm run test:e2e`, damit du parallel laufenden
+Agenten nicht den Dev-Server wegnimmst. Details in
+`.claude/skills/loese-problem/references/kriterien.md`.
+
 **Zusätzlich lesen:** `.claude/skills/loese-problem/references/kriterien.md`
 (Performance, Observability, API-Design). Der Abschnitts-Reviewer prüft
 genau danach — hältst du dich schon beim Schreiben daran, sparst du dir und

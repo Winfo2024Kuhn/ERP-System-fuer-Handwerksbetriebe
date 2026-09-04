@@ -18,7 +18,17 @@ einfach die Checklisten dort abarbeiten.
 
 Ein Task ist erst fertig, wenn **alle** Prüfungen grün sind, die das Projekt
 kennt — nicht nur die, die im Auftrag namentlich stehen. Im Frontend sind das
-`lint`, `test` **und** `build`; im Backend der volle Testlauf.
+`lint`, `test`, `build` **und `test:e2e`** (Playwright, siehe unten); im Backend
+der volle Testlauf.
+
+**Playwright-Pflicht bei Frontend-Änderungen** (Vorgabe des Nutzers vom
+04.09.2026): Was der Nutzer sieht und klickt, wird end-to-end geprüft. Jeder
+Task, der `.tsx`/`.ts` unter `react-pc-frontend/src/` ändert, liefert eine
+Spec unter `react-pc-frontend/e2e/` für genau den geänderten Ablauf — mit
+gestubbten `/api`-Routen über `e2e/hilfen/api.ts`, ohne Backend, ohne echte
+Personendaten. Laufen mehrere Agenten gleichzeitig, bekommt jeder einen
+eigenen Port: `E2E_PORT=5174 npm run test:e2e`. Der Review-Agent fährt
+`npm run test:e2e` nach dem Merge selbst, auf dem Standard-Port.
 
 `lint` wird dabei am häufigsten übersehen: ein Task lieferte Build und Tests
 grün ab und riss trotzdem ein vorher grünes Lint-Gate ein — Kosten: zwei

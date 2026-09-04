@@ -30,7 +30,7 @@ eine Datei-Überschneidung übersehen") — nicht einfach aufeinander
 ```bash
 ./mvnw.cmd clean package -DskipTests 2>&1 | tail -30
 ./mvnw.cmd test 2>&1 | tail -50
-cd react-pc-frontend && npm run lint && npm run build && npm run test
+cd react-pc-frontend && npm run lint && npm run build && npm run test && npm run test:e2e   # e2e: Playwright, Pflicht bei Frontend-Aenderungen
 cd react-zeiterfassung && npm run lint && npm run build && npm run test   # nur falls Mobile betroffen
 ```
 
