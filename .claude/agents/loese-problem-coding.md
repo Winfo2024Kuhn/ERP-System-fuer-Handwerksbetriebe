@@ -28,9 +28,16 @@ einfach hineinwechseln statt neu anzulegen.
 ## 1. Pflichtlektüre
 
 Bevor du irgendeine Datei editierst: lies die passende Doku laut
-`.claude/CLAUDE.md` (`BACKEND_ARCH.md` für Java, `FRONTEND_UI.md` +
-Design-Skill für React, `TESTING_SECURITY.md` für Tests). Der PreToolUse-Hook
-blockt sonst deinen ersten Edit — das ist gewollt, nicht umgehen.
+`.claude/CLAUDE.md` (`BACKEND_ARCH.md` für Java, `FRONTEND_UI.md` für React,
+`TESTING_SECURITY.md` für Tests). Der PreToolUse-Hook blockt sonst deinen
+ersten Edit — das ist gewollt, nicht umgehen.
+
+**Bei React-Tasks zusätzlich zwingend:** Rufe VOR dem ersten Edit den Skill
+`handwerkerprogramm-design` auf (unser eigenes Design-System — Farben,
+Typografie, Icons, Wording, UI-Kits). Der Hook verlangt zwar irgendeinen der
+Design-Skills, aber für dieses Produkt ist `handwerkerprogramm-design` die
+richtige Antwort, nicht die generischen `ui-ux-pro-max`-Skills. Erst danach
+editieren.
 
 **Zusätzlich lesen:** `.claude/skills/loese-problem/references/kriterien.md`
 (Performance, Observability, API-Design). Der Abschnitts-Reviewer prüft

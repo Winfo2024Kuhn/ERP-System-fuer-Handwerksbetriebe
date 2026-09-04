@@ -17,6 +17,8 @@ if (-not $skillName) { exit 0 }
 
 # Alle Skills, die als Design-Pflichtlektuere zaehlen
 $designSkills = @(
+    'handwerkerprogramm-design',
+    'handwerkerprogramm-design:handwerkerprogramm-design',
     'ui-ux-pro-max',
     'ui-ux-pro-max:ui-ux-pro-max',
     'ui-ux-pro-max:design',

@@ -6,7 +6,8 @@
 
 | Skill | Wofür |
 | --- | --- |
-| `ui-ux-pro-max:ui-ux-pro-max` | **Standard.** Styles, Farbpaletten, Typografie, 99 UX-Regeln (Accessibility, Touch, Performance, Animation) |
+| `handwerkerprogramm-design` | **Pflicht-Standard, immer zuerst.** Unser eigenes Design-System für dieses Produkt: Farben, Typografie, Icon-Vokabular (Lucide), Wording/Terminologie, fertige UI-Kits für Desktop-ERP + Mobile-PWA, echte Screenshots/Logos zum Wiederverwenden. Ersetzt keine der anderen Skills, geht ihnen aber vor. |
+| `ui-ux-pro-max:ui-ux-pro-max` | Generisch. Styles, Farbpaletten, Typografie, 99 UX-Regeln (Accessibility, Touch, Performance, Animation) — nur ergänzend, wenn `handwerkerprogramm-design` etwas offenlässt |
 | `frontend-design:frontend-design` | Visuelle Ausrichtung neuer UI, wenn es nicht nach Template aussehen soll |
 | `ui-ux-pro-max:design-system` | Design-Tokens, Komponenten-Specs, systematische Skalen |
 | `ui-ux-pro-max:design` | Logos, Banner, Icons, Präsentationen, Corporate Identity |

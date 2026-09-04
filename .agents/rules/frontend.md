@@ -1,5 +1,7 @@
 # Frontend & UI-Guidelines
 
+**Vor jeder Frontend-Änderung zusätzlich lesen:** `.claude/skills/handwerkerprogramm-design/README.md` — unser eigenes Design-System (Farben, Typografie, Icon-Vokabular, Wording/Terminologie, UI-Kits für Desktop-ERP + Mobile-PWA). Die Kurzfassung unten reicht für kleine Änderungen, für alles Neue/Sichtbare zählt das Design-System.
+
 ## Design-System (Handwerker-Fokus: Schlicht, Modern & Klar)
 - **Farbschema:** Rose/Rot als Primär- und Akzentfarbe (`#dc2626` / `rose-600`, kein generisches Blau/Indigo).
 - **Text & Kontraste:** Slate-Palette (`slate-50` bis `slate-900`).

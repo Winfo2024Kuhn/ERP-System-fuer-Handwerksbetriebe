@@ -52,7 +52,7 @@ Bevor du Code schreibst oder änderst, lädst du **zwingend** die passende Dokum
 | Du willst editieren … | Pflicht-Read VORHER |
 | --- | --- |
 | `*.java` (Backend, Tests, Config) | `docs\agent instructions\docs\BACKEND_ARCH.md` |
-| `*.tsx` / `*.ts` / `*.jsx` / `*.js` in `react-pc-frontend/` oder `react-zeiterfassung/` | `docs\agent instructions\docs\FRONTEND_UI.md` |
+| `*.tsx` / `*.ts` / `*.jsx` / `*.js` in `react-pc-frontend/` oder `react-zeiterfassung/` | `docs\agent instructions\docs\FRONTEND_UI.md` **+ zusätzlich** `.claude\skills\handwerkerprogramm-design\README.md` (unser Design-System: Farben, Typografie, Icons, Wording, UI-Kits) |
 | Test-Dateien (`*Test.java`, `*Tests.java`, `*.test.tsx`, `*.spec.ts`, …) | `docs\agent instructions\docs\TESTING_SECURITY.md` |
 
 Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht für die gesamte Session. Wenn dich der Hook blockt: **nicht umgehen**, sondern das genannte Doc per Read laden und den Edit/Write danach erneut versuchen.
