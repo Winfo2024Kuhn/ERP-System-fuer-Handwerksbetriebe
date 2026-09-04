@@ -42,13 +42,23 @@ editieren.
 **Bei React-Tasks außerdem Pflicht: eine Playwright-Spec.** Was der Nutzer
 sieht und klickt, wird end-to-end geprüft, nicht nur per Unit-Test. Lege unter
 `react-pc-frontend/e2e/` eine Spec für genau deinen geänderten Ablauf an
-(API-Routen stubben über `e2e/hilfen/api.ts`, kein Backend nötig) und fahr sie
-mit `E2E_PORT=<eigener Port> npm run test:e2e`, damit du parallel laufenden
-Agenten nicht den Dev-Server wegnimmst. Rufe dafür den Skill
-`playwright-design-pruefung` auf — er sagt dir die Bildschirmgrößen, die
-Hilfsfunktionen und die sechs Fragen, die du je Screenshot schriftlich im
-Kontext-Log beantwortest. Details auch in
-`.claude/skills/loese-problem/references/kriterien.md`.
+(API-Routen stubben über `e2e/hilfen/api.ts`, kein Backend nötig) und fahr
+**nur diese Spec** auf eigenem Port: `E2E_PORT=<port> npx playwright test
+e2e/<spec>` — damit du parallel laufenden Agenten nicht den Dev-Server
+wegnimmst. Der Skill `playwright-design-pruefung` sagt dir die
+Bildschirmgrößen und Hilfsfunktionen. Die Design-Beurteilung (Screenshots,
+sechs Fragen) macht der Design-Reviewer, nicht du.
+
+## Testen: nur deine Änderung, nie die ganze Suite
+
+Vorgabe des Nutzers vom 04.09.2026: **Du fährst nie die komplette Testsuite.**
+Das dauert zu lang und macht bei parallel laufenden Agenten zeitabhängige Tests
+flaky. Du testest genau deine Änderung: im Backend `./mvnw -B test
+-Dtest=DeineTestklasse`, im Frontend `npx vitest run <deine Testdatei>` plus
+`npm run lint` und `npm run build` (beide schnell). Alles andere — volle Suite,
+alle E2E-Specs, Design-Prüfung — fahren die Review-Agenten nach dem Merge.
+Testläufe immer **im Vordergrund** mit hohem Timeout, nie im Hintergrund:
+Hintergrund-Benachrichtigungen erreichen dich als Subagent nicht.
 
 **Zusätzlich lesen:** `.claude/skills/loese-problem/references/kriterien.md`
 (Performance, Observability, API-Design). Der Abschnitts-Reviewer prüft
