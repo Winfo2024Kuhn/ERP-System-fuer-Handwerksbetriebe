@@ -27,6 +27,12 @@ export default defineConfig({
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 2 : 0,
     reporter: process.env.CI ? 'html' : 'list',
+    // Kalter Dev-Server: die erste Seite braucht bis zu 20 s, weil Vite die
+    // Module erst beim ersten Zugriff baut. globalSetup waermt einmal auf
+    // (siehe e2e/hilfen/aufwaermen.ts), und Zusicherungen bekommen 15 s statt
+    // 5 s, damit ein einzelner langsamer Modulbau keinen Test rot dreht.
+    globalSetup: './e2e/hilfen/aufwaermen.ts',
+    expect: { timeout: 15_000 },
     use: {
         baseURL,
         trace: 'on-first-retry',
