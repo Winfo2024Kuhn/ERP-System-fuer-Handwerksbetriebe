@@ -351,7 +351,14 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
   4. Layout: Platz für das Countdown-Band reservieren, damit `Fertig` beim Erscheinen
      nicht ~540 px nach links springt.
   5. Im Lesen-Modus nach eigenem „Fertig" die leere linke Hälfte benennen
-     („Sie lesen nur mit." — Anrede laut Entscheidung des Nutzers, siehe Du/Sie-Frage).
+     („Sie lesen nur mit.").
+  6. **Anrede vereinheitlichen — Sie.** Die PC-Oberfläche siezt in 185 Strings und duzt in
+     34 (gezählt am 04.09.2026); die Sperr-Bausteine aus Abschnitt 3 siezen. Der neue
+     `TabSchliessenHinweis` (6a) duzt, weil die Spec-Zusammenfassung so formuliert war —
+     das ist die Ausnahme, nicht die Regel. Text dort auf „Dokument gespeichert und
+     freigegeben — Sie können diesen Tab jetzt schließen." ändern; Files um
+     `components/lock/TabSchliessenHinweis.tsx` + Test + die 6a-Spec-Zusicherung erweitern.
+     Entscheidung nach Konvention; der Nutzer kann sie umdrehen.
   Jeder Punkt mit rotem Test; Screenshots nach dem Ausklingen der Übergänge.
 
 ### Abschnitt 8 — zwei Spuren parallel
@@ -376,9 +383,19 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
      — `eigeneMeldung` ist nie leer, die Fallbacks greifen nie. Entweder die
      Server-Meldung wirklich bevorzugen oder die Fallbacks streichen; Kommentar dazu
      ehrlich machen.
+  4. **Aus Code-Review 6, 2. Durchgang:** die Mutationsprobe am `MutationObserver` in
+     `toast.tsx` beißt nicht — beide Positionierungstests rendern den Dialog schon beim
+     Mount und treffen nur den `useState`-Initializer. Test ergänzen, der den Dialog
+     **nach** dem Mount öffnet und wieder schließt (Container wandert `bottom-6` →
+     `top-6` → `bottom-6`), plus ein Test für `observer.disconnect()` beim Unmount.
   Jeder Punkt roter Test zuerst; e2e-Spec mit `designPruefung` bei stehendem Toast.
 
 ## Abschnitt 8 (Aufräumen — macht der Orchestrator selbst, parallel zu 8a)
+
+Zusätzlich nimmt der Orchestrator dabei den Halbsatz aus Code-Review 6 mit: in
+`document-editor/index.tsx`, `handleSave`, Create-Zweig — `setDokument(created)` muss vor
+`syncDocumentIdInUrl(created.id)` stehen und beide im selben React-Batch; Kommentar
+„Reihenfolge nicht tauschen" mit Grund.
 
 Löschen der alten Klassen UND die `DROP TABLE`-Migration gehören in **eine** Auslieferung,
 sonst entsteht ein Zwischenstand, der nicht startet (Entity mappt eine Tabelle, die es
