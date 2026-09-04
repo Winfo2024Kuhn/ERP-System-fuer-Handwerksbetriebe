@@ -1,10 +1,11 @@
 import type { ComponentProps } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useSearchParams } from 'react-router-dom';
 import { ToastProvider } from '../ui/toast';
 import { ConfirmProvider } from '../ui/confirm-dialog';
+import { useDocumentLock } from '../useDocumentLock';
 import DocumentEditor from './index';
 
 // DSGVO: ausschliesslich Dummy-Daten.
@@ -167,6 +168,114 @@ function mockFetchMitFehlschlagendemSpeichern() {
             });
         }
         return basis(url, init);
+    });
+}
+
+/**
+ * Mini-Nachbau der fuer Nachbesserung 1 relevanten Verdrahtung aus
+ * DocumentEditorPage.tsx (gehoert Abschnitt 7a, hier NICHT importiert, nur
+ * nachgebaut): liest dokumentId aus der URL und haelt darueber das
+ * (heute noch aktive) Seiten-Lock per useDocumentLock. Damit laesst sich
+ * pruefen, ob der Editor der Seite eine neu angelegte Id tatsaechlich ueber
+ * den Router mitteilt -- nur dann sieht dieser Wrapper sie und akquiriert.
+ */
+function SeiteMitAltemLock(props: Omit<ComponentProps<typeof DocumentEditor>, 'dokumentId'>) {
+    const [searchParams] = useSearchParams();
+    const roh = searchParams.get('dokumentId');
+    const dokumentId = roh ? Number(roh) : undefined;
+    useDocumentLock('AUSGANG', dokumentId);
+    return <DocumentEditor {...props} dokumentId={dokumentId} />;
+}
+
+function renderNeuesDokumentMitSeitenLock(props: Partial<ComponentProps<typeof DocumentEditor>> = {}) {
+    return render(
+        <MemoryRouter initialEntries={['/dokument-editor']}>
+            <ConfirmProvider>
+                <ToastProvider>
+                    <SeiteMitAltemLock onClose={() => { }} {...props} />
+                </ToastProvider>
+            </ConfirmProvider>
+        </MemoryRouter>
+    );
+}
+
+/**
+ * Stubbt das Anlegen eines neuen Dokuments (id 42) samt einem serverseitig
+ * PLAUSIBLEN Lock-Verfall: bleiben Acquire/Heartbeat laenger als
+ * STALE_AFTER_MS aus, antwortet der naechste PUT mit 409 -- genau das
+ * Verhalten von DatensatzLockService. Nur so beweist der Test etwas: eine
+ * Stub, die PUT immer erlaubt, wuerde den eigentlichen Fehler (Seite pingt
+ * nie, weil sie die neue Id nie sieht) nicht aufdecken.
+ */
+function mockFetchNeuesDokument() {
+    const STALE_AFTER_MS = 90_000;
+    let dokument: Record<string, unknown> | null = null;
+    let letzterHeartbeatMs: number | null = null;
+    const pingen = () => { letzterHeartbeatMs = Date.now(); };
+
+    return vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/api/ausgangs-dokumente' && init?.method === 'POST') {
+            const dto = JSON.parse(init.body as string);
+            dokument = {
+                id: 42,
+                typ: dto.typ,
+                dokumentNummer: 'RE-2026/09/00042',
+                datum: dto.datum,
+                betreff: dto.betreff,
+                betragNetto: dto.betragNetto,
+                htmlInhalt: dto.htmlInhalt,
+                positionenJson: dto.positionenJson,
+                gebucht: false,
+                storniert: false,
+            };
+            // Backend haelt das Lock beim Anlegen schon fuer den Ersteller,
+            // siehe AusgangsGeschaeftsDokumentController.create.
+            pingen();
+            return jsonAntwort(dokument);
+        }
+        if (url === '/api/dokument-locks/AUSGANG/42/acquire' && init?.method === 'POST') {
+            pingen();
+            return jsonAntwort({
+                status: 'ACQUIRED', holderUserId: 1, holderDisplayName: 'Max Mustermann',
+                acquiredAt: new Date().toISOString(), lastHeartbeatAt: new Date().toISOString(),
+            });
+        }
+        if (url === '/api/dokument-locks/AUSGANG/42/heartbeat' && init?.method === 'POST') {
+            pingen();
+            return jsonAntwort({
+                status: 'ACQUIRED', holderUserId: 1, holderDisplayName: 'Max Mustermann',
+                acquiredAt: new Date().toISOString(), lastHeartbeatAt: new Date().toISOString(),
+            });
+        }
+        if (url === '/api/ausgangs-dokumente/42' && init?.method === 'PUT') {
+            const veraltetSeitMs = letzterHeartbeatMs == null ? Infinity : Date.now() - letzterHeartbeatMs;
+            if (veraltetSeitMs > STALE_AFTER_MS) {
+                return Promise.resolve({
+                    ok: false,
+                    status: 409,
+                    statusText: 'Conflict',
+                    headers: new Headers({ 'content-type': 'text/plain' }),
+                    text: () => Promise.resolve('Dokument wird gerade von einem anderen Benutzer bearbeitet.'),
+                });
+            }
+            const gesendet = JSON.parse(init.body as string);
+            dokument = { ...dokument, ...gesendet };
+            return jsonAntwort(dokument);
+        }
+        if (url === '/api/ausgangs-dokumente/42') {
+            return jsonAntwort(dokument ?? {});
+        }
+        if (url === '/api/dokument-generator/preview') {
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                blob: () => Promise.resolve(new Blob(['%PDF-1.4'], { type: 'application/pdf' })),
+            });
+        }
+        if (url.startsWith('/api/formulare/templates/selection')) {
+            return jsonAntwort({ templateName: null });
+        }
+        return jsonAntwort([]);
     });
 }
 
@@ -551,5 +660,172 @@ describe('DocumentEditor – Tab schließen (X-Button-Ablauf)', () => {
         expect(closeSpy).not.toHaveBeenCalled();
         // Editor (samt Warn-Dialog) bleibt offen -- kein TabSchliessenHinweis.
         expect(screen.getByRole('button', { name: /Speichern & Schließen/ })).toBeInTheDocument();
+    });
+
+    it('raeumt den 150ms-Warte-Timer beim Unmount auf', async () => {
+        // Nachbesserung 1 (Kontext-Log): ohne clearTimeout im Cleanup laeuft
+        // ein verwaister Timer weiter und versucht spaeter, State auf einer
+        // laengst ungemounteten Komponente zu setzen. Ueber die exakte
+        // Timer-Id geprueft (nicht nur "clearTimeout wurde irgendwann
+        // aufgerufen") -- sonst wuerde ein voellig unabhaengiger
+        // clearTimeout-Aufruf anderswo im Baum den Test faelschlich gruen
+        // machen, ohne dass DIESER Timer je abgeraeumt wurde.
+        const user = userEvent.setup();
+        const onLockFreigeben = vi.fn().mockResolvedValue(undefined);
+        vi.spyOn(window, 'close').mockImplementation(() => { });
+        const setTimeoutSpy = vi.spyOn(window, 'setTimeout');
+        const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+
+        const { container, unmount } = renderEditor({ onLockFreigeben });
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+
+        // Keine ungespeicherten Aenderungen: das X loest tabSchliessen()
+        // direkt aus, der 150ms-Timer wird geplant.
+        await user.click(xKnopf(container));
+
+        const timerAufrufe150ms = setTimeoutSpy.mock.calls
+            .map((call, index) => ({ verzoegerungMs: call[1], id: setTimeoutSpy.mock.results[index].value }))
+            .filter(aufruf => aufruf.verzoegerungMs === 150);
+        expect(timerAufrufe150ms.length).toBeGreaterThan(0);
+        const tabSchliessenTimerId = timerAufrufe150ms.at(-1)!.id;
+
+        // Sofort unmounten, deutlich vor den 150ms.
+        unmount();
+
+        expect(clearTimeoutSpy).toHaveBeenCalledWith(tabSchliessenTimerId);
+    });
+});
+
+describe('DocumentEditor – 409 beim Speichern: zwei verschiedene Ursachen', () => {
+    // Nachbesserung 1 (Kontext-Log): eine Fremdsperre (Text-Body vom
+    // Lock-Check in update()) und ein Versionskonflikt (JSON-Body vom
+    // RestExceptionHandler) landen beide mit Status 409 beim Client -- vorher
+    // zeigte handleSave in BEIDEN Faellen res.text() im Toast, beim
+    // Versionskonflikt also den rohen JSON-String.
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        fetchMock = mockFetch();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('zeigt bei einem Versionskonflikt (JSON-Body) die Neu-laden-Meldung statt rohem JSON', async () => {
+        const user = userEvent.setup();
+        const basis = mockFetch();
+        fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (url === '/api/ausgangs-dokumente/1' && init?.method === 'PUT') {
+                return Promise.resolve({
+                    ok: false,
+                    status: 409,
+                    statusText: 'Conflict',
+                    headers: new Headers({ 'content-type': 'application/json' }),
+                    json: () => Promise.resolve({
+                        status: 409,
+                        message: 'Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.',
+                        field: null, fields: [], details: null,
+                    }),
+                    text: () => Promise.resolve('{"status":409,"message":"..."}'),
+                });
+            }
+            return basis(url, init);
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderEditor();
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+
+        expect(await screen.findByText('Nicht gespeichert')).toBeInTheDocument();
+        expect(screen.getByText(/Jemand anders hat dieses Dokument gerade gespeichert/)).toBeInTheDocument();
+        expect(screen.queryByText(/"status":409/)).not.toBeInTheDocument();
+    });
+
+    it('zeigt bei einer Fremdsperre (Text-Body) weiterhin die einfache Warnmeldung, keinen Neu-laden-Dialog', async () => {
+        const user = userEvent.setup();
+        const basis = mockFetch();
+        fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (url === '/api/ausgangs-dokumente/1' && init?.method === 'PUT') {
+                return Promise.resolve({
+                    ok: false,
+                    status: 409,
+                    statusText: 'Conflict',
+                    headers: new Headers({ 'content-type': 'text/plain' }),
+                    text: () => Promise.resolve('Dokument wird gerade von einem anderen Benutzer bearbeitet.'),
+                });
+            }
+            return basis(url, init);
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderEditor();
+        await waitFor(() => expect(screen.getByText(/Musterweg 1/)).toBeInTheDocument(), { timeout: 3000 });
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+
+        expect(await screen.findByText(/wird gerade von einem anderen Benutzer bearbeitet/)).toBeInTheDocument();
+        expect(screen.queryByText('Nicht gespeichert')).not.toBeInTheDocument();
+    });
+});
+
+describe('DocumentEditor – Sperre nach Neuanlage bleibt am Leben', () => {
+    // Nachbesserung 1 (Kontext-Log): ein neu angelegtes Dokument schrieb
+    // seine Id frueher per window.history.replaceState in die URL -- die
+    // Seite (liest dokumentId ueber react-router aus denselben
+    // Suchparametern) bekam davon nichts mit, ihr Lock-Hook blieb auf 'idle'
+    // und pingte nie. Nach STALE_AFTER (90s) scheiterte jeder weitere PUT
+    // (auch der 10s-Autosave) mit 409, ohne dass der Editor das noch
+    // reparieren konnte (das alte tryAcquireLock-Retry ist ja weg).
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('kann ein frisch angelegtes Dokument auch nach mehr als 90s noch speichern', async () => {
+        vi.useFakeTimers();
+        const fetchMock = mockFetchNeuesDokument();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+
+        renderNeuesDokumentMitSeitenLock();
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+        // Neues Dokument: kein Ladevorgang, der Speichern-Knopf ist sofort da.
+        fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+        // Mehrfach in kleinen Schritten flushen: das Anlegen stoesst eine
+        // ganze Kette an (POST -> setSearchParams -> Seite re-rendert ->
+        // useDocumentLock-Effekt -> Acquire-Fetch) ueber mehrere
+        // React-Commits hinweg, die ein einzelner 0ms-Flush nicht immer
+        // vollstaendig abbildet.
+        for (let i = 0; i < 10; i++) {
+            await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+        }
+
+        const angelegt = fetchMock.mock.calls.some(
+            call => call[0] === '/api/ausgangs-dokumente' && (call[1] as RequestInit)?.method === 'POST'
+        );
+        expect(angelegt).toBe(true);
+
+        // Die Seite muss die neue Id uebernommen und ihr Lock akquiriert
+        // haben -- sonst pingt sie nie, und genau das ist der Fehler.
+        const akquiriert = fetchMock.mock.calls.some(
+            call => call[0] === '/api/dokument-locks/AUSGANG/42/acquire'
+        );
+        expect(akquiriert).toBe(true);
+
+        // Mehr als STALE_AFTER (90s) vergehen -- der Seiten-Heartbeat (alle
+        // 30s, siehe useDocumentLock) muss das Lock in der Zwischenzeit am
+        // Leben gehalten haben.
+        await act(async () => { await vi.advanceTimersByTimeAsync(91_000); });
+
+        fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+        expect(screen.getByRole('button', { name: 'Gespeichert' })).toBeInTheDocument();
     });
 });
