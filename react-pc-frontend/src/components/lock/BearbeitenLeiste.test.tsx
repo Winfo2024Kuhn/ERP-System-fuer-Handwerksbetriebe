@@ -21,8 +21,8 @@ function renderLeiste(overrides: Partial<ComponentProps<typeof BearbeitenLeiste>
         onFertig,
         ...overrides,
     };
-    render(<BearbeitenLeiste {...props} />);
-    return { onBearbeiten, onFertig };
+    const { container } = render(<BearbeitenLeiste {...props} />);
+    return { onBearbeiten, onFertig, container };
 }
 
 describe('BearbeitenLeiste', () => {
@@ -141,5 +141,117 @@ describe('BearbeitenLeiste', () => {
         const text = document.body.textContent ?? '';
         expect(text).not.toMatch(/\block\b|\bcheckout\b|\bstale\b/i);
         expect(text).not.toMatch(/\bbewege\b/); // Du-Form ("bewege die Maus") waere falsch, Sie-Form ist "bewegen Sie"
+    });
+
+    describe('Deaktivierter Bearbeiten-Knopf erklaert sich (Gulf of Execution)', () => {
+        it('traegt title UND aria-describedby, wenn der Knopf deaktiviert ist und ein Grund gesetzt wurde', () => {
+            renderLeiste({
+                modus: 'lesen',
+                kannBearbeiten: false,
+                bearbeitenGesperrtGrund: 'Sperre wird gerade geprüft…',
+            });
+
+            const knopf = screen.getByRole('button', { name: 'Bearbeiten' });
+            expect(knopf).toHaveAttribute('title', 'Sperre wird gerade geprüft…');
+
+            const beschreibungsId = knopf.getAttribute('aria-describedby');
+            expect(beschreibungsId).toBeTruthy();
+            expect(document.getElementById(beschreibungsId!)).toHaveTextContent('Sperre wird gerade geprüft…');
+        });
+
+        it('traegt KEIN (auch kein leeres) title-Attribut, wenn der Knopf deaktiviert ist, aber kein Grund uebergeben wurde', () => {
+            renderLeiste({ modus: 'lesen', kannBearbeiten: false });
+
+            const knopf = screen.getByRole('button', { name: 'Bearbeiten' });
+            expect(knopf).not.toHaveAttribute('title');
+            expect(knopf).not.toHaveAttribute('aria-describedby');
+        });
+
+        it('zeigt keinen Tooltip, wenn der Knopf aktiviert ist -- selbst wenn ein Grund uebergeben wurde', () => {
+            renderLeiste({
+                modus: 'lesen',
+                kannBearbeiten: true,
+                bearbeitenGesperrtGrund: 'Sollte hier nie erscheinen',
+            });
+
+            const knopf = screen.getByRole('button', { name: 'Bearbeiten' });
+            expect(knopf).not.toHaveAttribute('title');
+            expect(knopf).not.toHaveAttribute('aria-describedby');
+        });
+
+        it('ignoriert einen nur aus Leerraum bestehenden Grund wie "kein Grund"', () => {
+            renderLeiste({ modus: 'lesen', kannBearbeiten: false, bearbeitenGesperrtGrund: '   ' });
+
+            expect(screen.getByRole('button', { name: 'Bearbeiten' })).not.toHaveAttribute('title');
+        });
+    });
+
+    describe('Drei unterscheidbare Baender (Design-Review Abschnitt 6)', () => {
+        it('Countdown ist eine Warnung: amber-Farben und ein Lucide-Icon, kein rose', () => {
+            renderLeiste({ verbleibendeSekunden: 45 });
+
+            const band = screen.getByRole('status');
+            expect(band.className).toMatch(/amber-50/);
+            expect(band.className).toMatch(/amber-300/);
+            expect(band.className).toMatch(/amber-800/);
+            expect(band.className).not.toMatch(/rose-/);
+            expect(band.querySelector('svg')).not.toBeNull();
+        });
+
+        it('Verbindung weg ist eine Stoerung: kraeftiges Rot wie das Fehlerband im Lieferant-Modal, kein rose', () => {
+            renderLeiste({ verbindungWeg: true });
+
+            const band = screen.getByRole('alert');
+            expect(band.className).toMatch(/red-50/);
+            expect(band.className).toMatch(/red-300/);
+            expect(band.className).toMatch(/red-700/);
+            expect(band.className).not.toMatch(/rose-/);
+            expect(band.querySelector('svg')).not.toBeNull();
+        });
+    });
+
+    describe('Fertig/Bearbeiten springt nicht (Design-Review Abschnitt 6)', () => {
+        it('rendert den Umschalt-Knopf als letztes Kind, egal wie viele Baender davor stehen', () => {
+            const { container } = renderLeiste({
+                modus: 'bearbeiten',
+                verbleibendeSekunden: 30,
+                verbindungWeg: true,
+            });
+
+            const leiste = container.firstElementChild as HTMLElement;
+            const kinder = Array.from(leiste.children);
+            const knopfIndex = kinder.findIndex(el => el.tagName === 'BUTTON');
+
+            expect(knopfIndex).toBeGreaterThanOrEqual(0);
+            expect(knopfIndex).toBe(kinder.length - 1);
+        });
+
+        it('bleibt beim Knopf als letztes Kind auch ganz ohne Baender (kein Sonderfall fuer den Leerzustand)', () => {
+            const { container } = renderLeiste({ modus: 'bearbeiten' });
+
+            const leiste = container.firstElementChild as HTMLElement;
+            expect(leiste.children).toHaveLength(1);
+            expect(leiste.children[0].tagName).toBe('BUTTON');
+        });
+    });
+
+    describe('Lesen-Modus-Hinweis "Sie lesen nur mit."', () => {
+        it('zeigt den Hinweis im Lesen-Modus, wenn zeigeNurLesenHinweis=true gesetzt ist', () => {
+            renderLeiste({ modus: 'lesen', zeigeNurLesenHinweis: true });
+
+            expect(screen.getByText('Sie lesen nur mit.')).toBeInTheDocument();
+        });
+
+        it('zeigt den Hinweis NICHT, wenn zeigeNurLesenHinweis nicht gesetzt ist (Standardwert false)', () => {
+            renderLeiste({ modus: 'lesen' });
+
+            expect(screen.queryByText('Sie lesen nur mit.')).not.toBeInTheDocument();
+        });
+
+        it('zeigt den Hinweis NICHT im Bearbeiten-Modus, selbst wenn zeigeNurLesenHinweis=true ist', () => {
+            renderLeiste({ modus: 'bearbeiten', zeigeNurLesenHinweis: true });
+
+            expect(screen.queryByText('Sie lesen nur mit.')).not.toBeInTheDocument();
+        });
     });
 });
