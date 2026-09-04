@@ -322,9 +322,19 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
   die Seite einen Weg in den Editor — wenn 6a dafür keinen Prop vorgesehen hat, ist das
   ein Bedenken, kein stiller Umbau.
 
-#### Task 7b — Generationsprüfung nach `res.json()` im 409-Zweig
+#### Task 7b — Hook nachziehen: Generationsprüfung + Modus nach Mount-Acquire
 - Files: `useDatensatzLock.ts`, `useDatensatzLock.test.tsx`
-- Wie oben unter [alt] 7b beschrieben.
+- (1) Generationsprüfung nach `res.json()` im 409-Zweig, wie oben unter [alt] 7b.
+- (2) **Befund aus Task 6b:** Der Hook bleibt nach erfolgreichem Acquire beim Mount im
+  Modus `lesen`. Wer öffnet, hält damit das Lock, ohne bearbeiten zu dürfen — blockiert
+  Kollegen und hat selbst nichts davon. 6b hat sich mit einem Modal-eigenen Effekt
+  beholfen (`status === 'acquired' && modus === 'lesen'` ⇒ `onBearbeiten()`), 7a
+  bräuchte denselben. Das gehört in den Hook: nach erfolgreichem **Mount**-Acquire ist
+  `modus` direkt `'bearbeiten'` (so verhält sich der Editor heute, und die Spec ersetzt
+  nur die harte Blockierung bei Fremdsperre durch Nur-Lesen). Nach `freigeben()`/`onFertig`
+  bleibt es `lesen`, bis der Nutzer klickt. Roter Test zuerst; danach 6b's Effekt
+  entfernen (gehört dann 7b, weil 6b abgeschlossen ist — Files entsprechend erweitern:
+  `LieferantDokumentModal.tsx` nur für diese eine Zeile).
 
 ## Abschnitt 8 (Aufräumen — macht der Orchestrator selbst)
 
