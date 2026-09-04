@@ -6,6 +6,7 @@ import java.util.Map;
 
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.FreigabeQuellTyp;
+import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
@@ -17,7 +18,7 @@ import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentAuditS
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.AutoMahnVersandService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
-import org.example.kalkulationsprogramm.service.DokumentLockService;
+import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -53,7 +54,7 @@ public class AusgangsGeschaeftsDokumentController {
     private final DokumentFreigabeService dokumentFreigabeService;
     private final AusgangsGeschaeftsDokumentAuditService auditService;
     private final AutoMahnVersandService autoMahnVersandService;
-    private final DokumentLockService dokumentLockService;
+    private final DatensatzLockService dokumentLockService;
 
     /**
      * Reine Vorschau: rendert die Mahn-PDF einer beliebigen Stufe ohne irgendetwas
@@ -185,11 +186,11 @@ public class AusgangsGeschaeftsDokumentController {
         if (principal != null) {
             try {
                 var lockResult = dokumentLockService.acquire(
-                        DokumentLockService.TYP_AUSGANG,
+                        SperrbarerTyp.AUSGANG,
                         created.getId(),
                         principal.getId(),
                         principal.getDisplayName());
-                if (!org.example.kalkulationsprogramm.dto.DokumentLockDto.ACQUIRED.equals(lockResult.status())) {
+                if (!org.example.kalkulationsprogramm.dto.DatensatzLockDto.ACQUIRED.equals(lockResult.status())) {
                     log.warn("Lock-Vergabe nach Create fuer Dokument {} unerwartet: {}",
                             created.getId(), lockResult.status());
                 }
@@ -216,7 +217,7 @@ public class AusgangsGeschaeftsDokumentController {
         if (principal == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        if (!dokumentLockService.isHeldBy(DokumentLockService.TYP_AUSGANG, id, principal.getId())) {
+        if (!dokumentLockService.isHeldBy(SperrbarerTyp.AUSGANG, id, principal.getId())) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("Dokument wird gerade von einem anderen Benutzer bearbeitet.");
         }

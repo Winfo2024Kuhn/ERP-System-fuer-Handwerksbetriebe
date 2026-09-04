@@ -5,12 +5,14 @@ import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
+import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
+import org.example.kalkulationsprogramm.dto.DatensatzLockDto;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
-import org.example.kalkulationsprogramm.service.DokumentLockService;
+import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -65,7 +67,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
     private org.example.kalkulationsprogramm.service.AutoMahnVersandService autoMahnVersandService;
 
     @MockBean
-    private DokumentLockService dokumentLockService;
+    private DatensatzLockService dokumentLockService;
 
     /**
      * MockMvc-Tests laufen mit `addFilters = false`, daher wird der
@@ -86,7 +88,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
     void mockLockHeld() {
         // Speichern erfordert ein gehaltenes Lock — per Default fuer alle Tests
         // freischalten. Tests, die 409 testen wollen, ueberschreiben lokal.
-        given(dokumentLockService.isHeldBy(anyString(), anyLong(), anyLong())).willReturn(true);
+        given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(true);
     }
 
     @AfterEach
@@ -253,9 +255,9 @@ class AusgangsGeschaeftsDokumentControllerTest {
             entity.setId(7L);
             given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
             given(service.findById(7L)).willReturn(buildResponseDto(7L, "RE-2026-007"));
-            given(dokumentLockService.acquire(anyString(), anyLong(), anyLong(), anyString()))
-                    .willReturn(new org.example.kalkulationsprogramm.dto.DokumentLockDto(
-                            org.example.kalkulationsprogramm.dto.DokumentLockDto.ACQUIRED,
+            given(dokumentLockService.acquire(any(SperrbarerTyp.class), anyLong(), anyLong(), anyString()))
+                    .willReturn(new DatensatzLockDto(
+                            DatensatzLockDto.ACQUIRED,
                             42L, "Max Mustermann", null, null));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -270,7 +272,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
                     .andExpect(jsonPath("$.dokumentNummer").value("RE-2026-007"));
 
             verify(dokumentLockService).acquire(
-                    eq(DokumentLockService.TYP_AUSGANG),
+                    eq(SperrbarerTyp.AUSGANG),
                     eq(7L),
                     eq(42L),
                     eq("Max Mustermann"));
@@ -293,7 +295,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
                             .content(objectMapper.writeValueAsString(dto)))
                     .andExpect(status().isOk());
 
-            verify(dokumentLockService, never()).acquire(anyString(), anyLong(), anyLong(), anyString());
+            verify(dokumentLockService, never()).acquire(any(SperrbarerTyp.class), anyLong(), anyLong(), anyString());
         }
 
         @Test
@@ -303,7 +305,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
             entity.setId(9L);
             given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
             given(service.findById(9L)).willReturn(buildResponseDto(9L, "RE-2026-009"));
-            given(dokumentLockService.acquire(anyString(), anyLong(), anyLong(), anyString()))
+            given(dokumentLockService.acquire(any(SperrbarerTyp.class), anyLong(), anyLong(), anyString()))
                     .willThrow(new RuntimeException("Lock-DB nicht erreichbar"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -424,7 +426,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Ohne Lock-Halterung: 409 Conflict")
         void ohneLockGibt409() throws Exception {
-            given(dokumentLockService.isHeldBy(anyString(), anyLong(), anyLong())).willReturn(false);
+            given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(false);
 
             AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
             dto.setBetreff("Versuch");
@@ -434,6 +436,26 @@ class AusgangsGeschaeftsDokumentControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(dto)))
                     .andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("Lock-Pruefung fragt SperrbarerTyp.AUSGANG mit Dokument- und User-ID ab")
+        void lockPruefungNutztSperrbarerTypAusgang() throws Exception {
+            AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
+            entity.setId(1L);
+            given(service.aktualisieren(eq(1L), any(AusgangsGeschaeftsDokumentUpdateDto.class))).willReturn(entity);
+            given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
+
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+            dto.setBetreff("Aktualisiert");
+
+            mockMvc.perform(put("/api/ausgangs-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isOk());
+
+            verify(dokumentLockService).isHeldBy(eq(SperrbarerTyp.AUSGANG), eq(1L), eq(42L));
         }
 
         @Test
