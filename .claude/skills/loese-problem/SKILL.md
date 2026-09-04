@@ -93,9 +93,22 @@ Für jeden Abschnitt der Reihe nach:
    dem Plan, den Global Constraints, dem Feature-Branch-Namen (Basis für
    seinen eigenen Task-Branch), dem Pfad zur Kontext-Log-Datei.
 2. **Warten**, bis alle Agenten des Abschnitts zurück sind.
-3. **Ein** Review-Agent für den ganzen Abschnitt: `loese-problem-review` (Opus).
-   Er merged die Task-Branches in den Feature-Branch, testet selbst, prüft
-   die Kriterien und liefert eine Ampel.
+3. **Mergen, dann prüfen.** Du merged die Task-Branches selbst per
+   `git merge --no-ff` in den Feature-Branch — ein Konflikt ist ein
+   🔴-Befund gegen den Abschnittsschnitt. Dann die Review-Agenten, **einer**
+   je Rolle für den ganzen Abschnitt:
+   - `loese-problem-review` (Opus): Code, Korrektheit, Performance,
+     Datenschutz, Sicherheit, volle Testsuiten, Mutationsproben. Immer.
+   - `loese-problem-design-review` (Opus): **nur wenn Frontend-Dateien
+     geändert wurden.** Playwright end-to-end im Browser, Screenshots in den
+     festen Bildschirmgrößen, die sechs Design-/UX-Fragen. Läuft **parallel**
+     zum Code-Reviewer in einem **eigenen Worktree** (`../wt/review-design`,
+     legst du an, Junction auf `node_modules` nicht vergessen), weil dessen
+     Mutationsproben sonst in den Dev-Server hineinfunken. Beide in **einer**
+     Nachricht starten.
+   Jeder liefert eine Ampel. Abgenommen ist der Abschnitt erst, wenn **alle**
+   beteiligten Reviewer 🟢 oder 🟡 gemeldet haben. Nachbesserung geht nur an
+   den Reviewer zurück, dessen Befund es war.
 4. **🔴 und noch keine 2 Nachbesserungen versucht:** Befund an denselben
    Coding-Agenten zurück (neuer Auftrag, nur der Befund + sein Task), dann
    zurück zu Schritt 3.

@@ -61,6 +61,11 @@ Der Auftrag muss diese sieben Punkte enthalten:
 - Global Constraints zuerst lesen
 - Testgetrieben, Schritt für Schritt: Test schreiben, fehlschlagen lassen,
   Grund des Fehlschlags prüfen, umsetzen, bestehen lassen, committen
+- **Nur die eigene Änderung testen, nie die ganze Suite** — Backend
+  `-Dtest=MeineKlasse`, Frontend `npx vitest run <datei>` plus `lint` und
+  `build`, die eigene Playwright-Spec auf eigenem Port. Der volle Lauf gehört
+  den Prüfagenten (Vorgabe des Nutzers vom 04.09.2026: zu langsam, und
+  parallel machen die Suiten sich gegenseitig flaky)
 - Welche Pflichtdokumente vor dem ersten Edit zu lesen sind (Hook blockt sonst)
 - **Nur die Dateien anfassen, die unter `Files` stehen**, weil andere Agenten
   gleichzeitig in denselben Ordnern arbeiten
@@ -84,11 +89,27 @@ wenn zwei von drei schon fertig sind.
 
 ### 3. Prüfen
 
-**Ein** Prüfagent für die ganze Runde, nicht einer je Task. Nur so sieht er
-das Zusammenspiel. Modell: das stärkste verfügbare, sonst Opus.
+Erst mergst **du** die Task-Branches per `git merge --no-ff` in den
+Feature-Branch — ein Konflikt ist ein 🔴 gegen den Rundenschnitt, nicht etwas
+zum Wegresolven. Dann die Prüfagenten, **einer je Rolle** für die ganze Runde,
+nicht einer je Task. Nur so sieht er das Zusammenspiel. Modell: das stärkste
+verfügbare, sonst Opus.
 
-Der Prüfagent führt die Tests selbst aus. Er glaubt keinem Bericht eines
-Umsetzungs-Agenten. Er prüft mindestens:
+- **Code-Reviewer** (`loese-problem-review`) — immer. Code, Korrektheit,
+  Performance, Datenschutz, Sicherheit, volle Testsuiten, Mutationsproben.
+- **Design-Reviewer** (`loese-problem-design-review`) — **nur wenn
+  Frontend-Dateien geändert wurden.** Playwright end-to-end im Browser,
+  Screenshots in den festen Bildschirmgrößen, die sechs Design-/UX-Fragen.
+  Läuft **parallel** zum Code-Reviewer, in einem **eigenen Worktree** auf dem
+  gemergten Stand (`../wt/review-design`, legst du an, Junction auf
+  `node_modules` nicht vergessen) — die Mutationsproben des Code-Reviewers
+  würden sonst per Hot-Reload in seinen Dev-Server funken. Beide in **einer**
+  Nachricht starten.
+
+Die Umsetzungs-Agenten haben **nur ihre eigenen Tests** gefahren (Vorgabe des
+Nutzers vom 04.09.2026: nie die ganze Suite, das dauert zu lang). Der volle
+Lauf gehört den Prüfagenten. Sie glauben keinem Bericht eines
+Umsetzungs-Agenten. Der Code-Reviewer prüft mindestens:
 
 - Laufen alle Tests, und baut das Projekt?
 - Bei Frontend-Änderungen: läuft `npm run test:e2e` (Playwright) — und gibt es
@@ -111,10 +132,12 @@ Bei rot geht der Befund an einen Agenten zurück, mit dem Befund im Auftrag.
 Bei gelb entscheidet der Hauptagent, ob er es selbst macht.
 
 Danach **erneut prüfen**, nicht darauf vertrauen, dass die Nachbesserung saß.
+Nachprüfen muss nur der Reviewer, dessen Befund es war — ein Design-🔴 geht
+nach der Nachbesserung zurück an den Design-Reviewer, nicht an beide.
 
 ### 5. Nächste Runde
 
-Erst bei grün. Und **erst aufräumen, dann starten:** die Worktrees und
+Erst, wenn **alle** beteiligten Prüfagenten grün oder gelb gemeldet haben. Und **erst aufräumen, dann starten:** die Worktrees und
 Task-Branches der abgenommenen Runde löschen, bevor die nächste Runde
 anläuft.
 
@@ -242,6 +265,26 @@ Zwei Konsequenzen:
 - Produziert ein Task etwas, das ein **schon vorhandener** Baustein
   konsumiert, muss sein Test beide zusammen rendern. Und der Prüfagent auch.
   Ein Baustein, der nur gegen sich selbst getestet ist, ist nicht geprüft.
+
+### Eine ungetestete Hilfsdatei vom Orchestrator ist ein garantierter Merge-Konflikt (04.09.2026)
+
+Der Orchestrator lieferte mitten in einer Runde eine neue, geteilte Hilfsdatei
+(`e2e/hilfen/design.ts`) aus — Typcheck grün, nie ausgeführt. Sie war kaputt
+(`testInfo.outputPath('..')` verweigert Playwright grundsätzlich). Beide
+Frontend-Agenten der Runde brauchten sie, beide standen davor, beide haben sie
+repariert — unterschiedlich. Ergebnis: Konflikt in einer Datei, die in keiner
+`Files`-Liste stand, und den der Rundenschnitt gar nicht verhindern konnte.
+
+Zwei Konsequenzen:
+
+- **Was der Orchestrator ausliefert, hat er ausgeführt.** Für eine
+  Playwright-Hilfe heißt das: eine Wegwerf-Spec, die sie einmal aufruft, auf
+  eigenem Port laufen lassen, dann erst committen. Typcheck ist kein Test.
+- **Geteilte Hilfsdateien gehören dem Orchestrator.** Findet ein Agent dort
+  einen Fehler, repariert er ihn lokal, um weiterzukommen — aber er meldet
+  ihn sofort im Kontext-Log als Bedenken, und der Orchestrator zieht **eine**
+  Version auf den Feature-Branch und lässt alle Task-Branches sie per Merge
+  nachziehen, bevor gemerged wird. Nicht zwei Reparaturen konkurrieren lassen.
 
 ### Auftrag als nachweisbares Ergebnis formulieren, nicht als Lösungsweg (04.09.2026)
 

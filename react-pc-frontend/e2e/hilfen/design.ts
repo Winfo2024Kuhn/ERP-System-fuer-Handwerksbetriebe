@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Hilfen fuer die Design-Pruefung (siehe .claude/skills/playwright-design-pruefung).
@@ -34,14 +34,14 @@ export async function designPruefung(
     name: string,
     optionen: DesignPruefungOptionen = {},
 ): Promise<void> {
-    // testInfo.outputPath() erlaubt seit Playwright 1.62 kein Verlassen des
-    // eigenen Test-Ausgabeverzeichnisses mehr ('..'-Segmente werfen einen
-    // Fehler) -- der Zielordner test-results/design/ liegt aber bewusst
-    // NEBEN den einzelnen Test-Ordnern (siehe Skill-Doku), nicht darunter.
-    // Deshalb den Pfad direkt aus dem projektweiten outputDir bauen.
-    const designOrdner = join(testInfo.project.outputDir, 'design');
-    mkdirSync(designOrdner, { recursive: true });
-    const pfad = join(designOrdner, `${name}--${testInfo.project.name}.png`);
+    // testInfo.outputPath() erlaubt kein Verlassen des PRO-TEST-Ordners (auch
+    // nicht via '..') -- das macht sie fuer einen gemeinsamen Ordner ueber
+    // alle Tests einer Spec hinweg ungeeignet. Direkt gegen den (stabilen)
+    // Projekt-Ausgabeordner rechnen stattdessen, siehe Skill-Doku:
+    // "test-results/design/<name>--<projekt>.png".
+    const zielOrdner = path.join(testInfo.project.outputDir, 'design');
+    fs.mkdirSync(zielOrdner, { recursive: true });
+    const pfad = path.join(zielOrdner, `${name}--${testInfo.project.name}.png`);
     await page.screenshot({ path: pfad, fullPage: optionen.ganzeSeite ?? false });
     await testInfo.attach(`design: ${name}`, { path: pfad, contentType: 'image/png' });
 

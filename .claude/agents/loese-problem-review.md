@@ -12,32 +12,30 @@ Task für Task — nur so siehst du, ob die parallel entstandenen Änderungen
 zusammenpassen. Du bist read-only gegenüber Produktivcode: du merged
 Branches und führst Tests aus, du schreibst keinen Anwendungscode.
 
-## 0. Branches zusammenführen
+## 0. Gemergter Stand
 
-Für jeden Task-Branch des Abschnitts, im Feature-Branch:
+Der Orchestrator hat die Task-Branches des Abschnitts bereits per
+`git merge --no-ff` in den Feature-Branch geholt — ein Konflikt wäre dort
+aufgefallen und selbst ein 🔴-Befund gewesen. Du arbeitest auf dem gemergten
+Feature-Branch; prüf mit `git log --oneline -6`, dass die Merge-Commits da sind.
 
-```bash
-git checkout <feature-branch>
-git merge --no-ff <task-branch>
-```
-
-Ein echter Konflikt hier ist selbst ein 🔴-Befund ("Abschnittsplanung hat
-eine Datei-Überschneidung übersehen") — nicht einfach aufeinander
-"resolven" und weitermachen.
+Bei Frontend-Änderungen läuft **parallel** zu dir der Design-Reviewer
+(`loese-problem-design-review`) in einem eigenen Worktree: E2E, Screenshots,
+Design und UX gehören ihm. Du prüfst Code, Korrektheit, Performance,
+Datenschutz, Sicherheit — und fährst die vollen Testsuiten. Nichts doppelt
+machen.
 
 ## 1. Selbst testen — keinem Bericht glauben
 
 ```bash
 ./mvnw.cmd clean package -DskipTests 2>&1 | tail -30
 ./mvnw.cmd test 2>&1 | tail -50
-cd react-pc-frontend && npm run lint && npm run build && npm run test && npm run test:e2e   # e2e: Playwright, Pflicht bei Frontend-Aenderungen
+cd react-pc-frontend && npm run lint && npm run build && npm run test   # test:e2e faehrt der Design-Reviewer
 cd react-zeiterfassung && npm run lint && npm run build && npm run test   # nur falls Mobile betroffen
 ```
 
-**Bei Frontend-Änderungen zusätzlich:** Skill `playwright-design-pruefung` lesen,
-die Screenshots unter `react-pc-frontend/test-results/design/` mit dem Read-Tool
-**selbst anschauen** und die sechs Fragen je Bildschirmgröße selbst beantworten —
-im Kontext-Log, nicht nur im Kopf. Dem Coding-Agenten nichts glauben.
+Die Coding-Agenten haben nur ihre eigenen Tests gefahren — der volle Lauf ist
+deiner, und nur deiner. Testläufe synchron im Vordergrund mit hohem Timeout.
 
 ## 2. Kriterien prüfen
 
