@@ -34,6 +34,11 @@ cd react-pc-frontend && npm run lint && npm run build && npm run test && npm run
 cd react-zeiterfassung && npm run lint && npm run build && npm run test   # nur falls Mobile betroffen
 ```
 
+**Bei Frontend-Änderungen zusätzlich:** Skill `playwright-design-pruefung` lesen,
+die Screenshots unter `react-pc-frontend/test-results/design/` mit dem Read-Tool
+**selbst anschauen** und die sechs Fragen je Bildschirmgröße selbst beantworten —
+im Kontext-Log, nicht nur im Kopf. Dem Coding-Agenten nichts glauben.
+
 ## 2. Kriterien prüfen
 
 Quelle: `docs/agent instructions/docs/BACKEND_ARCH.md`,

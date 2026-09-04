@@ -66,13 +66,16 @@ Der Auftrag muss diese sieben Punkte enthalten:
   gleichzeitig in denselben Ordnern arbeiten
 - Anhalten und melden, wenn der Plan von der Wirklichkeit im Code abweicht,
   statt still etwas anderes zu bauen
-- **Frontend-Task ⇒ Playwright-Spec Pflicht.** Was der Nutzer am Ende sieht
-  und klickt, wird end-to-end geprüft, nicht nur per Unit-Test: eine Spec
-  unter `react-pc-frontend/e2e/` für genau den geänderten Ablauf, mit
-  gestubbten `/api`-Routen über `e2e/hilfen/api.ts` (kein Backend nötig).
-  Läuft mit `npm run test:e2e`. Parallel laufende Agenten brauchen je einen
-  eigenen Port: `E2E_PORT=5174 npm run test:e2e` (Konfig liest die Variable,
-  Standard 5173). Vorgabe des Nutzers vom 04.09.2026 — gilt dauerhaft.
+- **Frontend-Task ⇒ Skill `playwright-design-pruefung` ist Pflicht.** Was der
+  Nutzer am Ende sieht und klickt, wird end-to-end geprüft, nicht nur per
+  Unit-Test — und zwar zweifach: funktioniert der Ablauf, und sieht er richtig
+  aus. Eine Spec unter `e2e/` für genau den geänderten Ablauf, Screenshots in
+  den festen Bildschirmgrößen (14-Zoll-MacBook und Monitor für die PC-App,
+  Handy für die Zeiterfassung), sechs Fragen zu Farben, Design-System,
+  Look-and-Feel, UX, Auffindbarkeit und Überschneidungen schriftlich im
+  Kontext-Log. Parallel laufende Agenten brauchen je einen eigenen Port:
+  `E2E_PORT=5174 npm run test:e2e`. Vorgabe des Nutzers vom 04.09.2026 —
+  gilt dauerhaft.
 
 ### 2. Warten
 
@@ -89,8 +92,12 @@ Umsetzungs-Agenten. Er prüft mindestens:
 
 - Laufen alle Tests, und baut das Projekt?
 - Bei Frontend-Änderungen: läuft `npm run test:e2e` (Playwright) — und gibt es
-  für den geänderten Ablauf überhaupt eine Spec? Ein Frontend-Task ohne
-  Playwright-Spec ist nicht fertig, egal wie grün die Unit-Tests sind.
+  für den geänderten Ablauf überhaupt eine Spec? Der Prüfagent schaut die
+  Screenshots aus `test-results/design/` **selbst** an und beantwortet die sechs
+  Fragen aus `playwright-design-pruefung` selbst, je Bildschirmgröße. Ein
+  Frontend-Task ohne Spec und ohne angeschaute Screenshots ist nicht fertig,
+  egal wie grün die Unit-Tests sind. Nicht auffindbar, Überschneidung,
+  Abschneiden auf 14 Zoll, fremde Farbe, Emoji: 🔴. Geschmack: 🟡.
 - Wurden die Tests wirklich zuerst geschrieben? Die Commit-Reihenfolge zeigt es.
 - Passen die erzeugten Namen und Typen exakt zu dem, was im Plan unter
   `Produces` steht? Spätere Tasks importieren sie.

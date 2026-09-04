@@ -44,7 +44,10 @@ sieht und klickt, wird end-to-end geprüft, nicht nur per Unit-Test. Lege unter
 `react-pc-frontend/e2e/` eine Spec für genau deinen geänderten Ablauf an
 (API-Routen stubben über `e2e/hilfen/api.ts`, kein Backend nötig) und fahr sie
 mit `E2E_PORT=<eigener Port> npm run test:e2e`, damit du parallel laufenden
-Agenten nicht den Dev-Server wegnimmst. Details in
+Agenten nicht den Dev-Server wegnimmst. Rufe dafür den Skill
+`playwright-design-pruefung` auf — er sagt dir die Bildschirmgrößen, die
+Hilfsfunktionen und die sechs Fragen, die du je Screenshot schriftlich im
+Kontext-Log beantwortest. Details auch in
 `.claude/skills/loese-problem/references/kriterien.md`.
 
 **Zusätzlich lesen:** `.claude/skills/loese-problem/references/kriterien.md`

@@ -30,6 +30,13 @@ Personendaten. Laufen mehrere Agenten gleichzeitig, bekommt jeder einen
 eigenen Port: `E2E_PORT=5174 npm run test:e2e`. Der Review-Agent fährt
 `npm run test:e2e` nach dem Merge selbst, auf dem Standard-Port.
 
+Dazu gehört die **Design-Prüfung** aus dem Skill `playwright-design-pruefung`:
+Screenshots in den festen Bildschirmgrößen (PC-App: 14-Zoll-MacBook 1440×900
+und Monitor 1920×1080; Zeiterfassung: Handy), automatische Checks auf Überlauf
+und Überschneidungen (`e2e/hilfen/design.ts`), und die sechs Fragen — Farben,
+Design-System, Look-and-Feel, UX, Auffindbarkeit, Überschneidungen — schriftlich
+im Kontext-Log, vom Coding-Agenten und vom Review-Agenten je selbst beantwortet.
+
 `lint` wird dabei am häufigsten übersehen: ein Task lieferte Build und Tests
 grün ab und riss trotzdem ein vorher grünes Lint-Gate ein — Kosten: zwei
 Nachbesserungsrunden. Der Review-Agent fährt Lint deshalb auch dann selbst,
