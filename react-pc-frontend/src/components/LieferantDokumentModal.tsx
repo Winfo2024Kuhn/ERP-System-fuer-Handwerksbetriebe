@@ -112,11 +112,18 @@ export default function LieferantDokumentModal({
                 ? LOCK_FEHLER_TEXT
                 : undefined;
 
-    // "Sie lesen nur mit." nur zeigen, wenn kein fremder Halter separat
-    // erklaert wird -- bei Fremdsperre uebernimmt GesperrtHinweis (oben
-    // links) die Erklaerung bereits, ein zweiter Hinweis fuer denselben
-    // Zustand waere doppelt gemoppelt (Task 7d).
-    const zeigeNurLesenHinweis = lock.modus === "lesen" && lock.status !== "locked-by-other";
+    // Task 8a: an lock.status === "idle" ausgerichtet -- dieselbe Regel wie
+    // auf der Dokument-Editor-Seite (DocumentEditorPage.tsx). Die alte Regel
+    // (modus === "lesen" && status !== "locked-by-other") zeigte den ruhigen
+    // Hinweis FAELSCHLICH auch neben dem Lade- ("loading") und dem roten
+    // Fehlerband ("error") -- beides ist modus "lesen", aber kein fremder
+    // Halter. Dort draengt die beilaeufige Meldung das rote Band zusammen,
+    // obwohl die dringende Fehlermeldung Vorrang haben muss. "idle" trifft
+    // nur noch den tatsaechlich gemeinten Fall: frisch freigegeben (eigenes
+    // "Fertig") oder noch nie geholt -- bei Fremdsperre uebernimmt
+    // GesperrtHinweis die Erklaerung bereits (Task 7d), "loading"/"error"
+    // haben ihre eigenen, dringlicheren Hinweise.
+    const zeigeNurLesenHinweis = lock.status === "idle";
 
     // Schliessen (X, Hintergrund, Abbrechen) gibt die Sperre AKTIV frei --
     // nicht nur ueber den passiven Unmount-/lockUrl-Wechsel-Pfad im Hook
