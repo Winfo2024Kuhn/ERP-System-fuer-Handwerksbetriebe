@@ -18,6 +18,13 @@ public class Projekt {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id; // Original: ProjektID
 
+    /**
+     * Optimistisches Sperren: schuetzt gegen paralleles Speichern (auch aus
+     * der Mobile-App, die keine Sperr-Oberflaeche hat).
+     */
+    @Version
+    private Long version;
+
     @Column(nullable = false)
     private String bauvorhaben;
 

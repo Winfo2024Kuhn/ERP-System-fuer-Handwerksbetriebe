@@ -29,6 +29,13 @@ public class AusgangsGeschaeftsDokument {
     private Long id;
 
     /**
+     * Optimistisches Sperren: schuetzt gegen paralleles Speichern (auch aus
+     * der Mobile-App, die keine Sperr-Oberflaeche hat).
+     */
+    @Version
+    private Long version;
+
+    /**
      * Dokumentnummer im Format YYYY/MM/NNNNN, z.B. "2025/01/00001"
      */
     @Column(nullable = false, unique = true, length = 20)

@@ -17,6 +17,13 @@ public class Produktkategorie
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id; // Original: ProduktkategorieID
 
+    /**
+     * Optimistisches Sperren: schuetzt gegen paralleles Speichern (auch aus
+     * der Mobile-App, die keine Sperr-Oberflaeche hat).
+     */
+    @Version
+    private Long version;
+
     @Column(nullable = false)
     private String bezeichnung;
 

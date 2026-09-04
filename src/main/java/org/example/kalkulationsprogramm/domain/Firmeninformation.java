@@ -20,6 +20,13 @@ public class Firmeninformation {
     @Id
     private Long id = 1L; // Singleton - nur ein Datensatz
 
+    /**
+     * Optimistisches Sperren: schuetzt gegen paralleles Speichern (auch aus
+     * der Mobile-App, die keine Sperr-Oberflaeche hat).
+     */
+    @Version
+    private Long version;
+
     @Column(nullable = false)
     private String firmenname;
 

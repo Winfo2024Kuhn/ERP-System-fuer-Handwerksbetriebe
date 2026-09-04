@@ -28,6 +28,13 @@ public class LieferantDokument {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Optimistisches Sperren: schuetzt gegen paralleles Speichern (auch aus
+     * der Mobile-App, die keine Sperr-Oberflaeche hat).
+     */
+    @Version
+    private Long version;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lieferant_id", nullable = false)
     @BatchSize(size = 50)
