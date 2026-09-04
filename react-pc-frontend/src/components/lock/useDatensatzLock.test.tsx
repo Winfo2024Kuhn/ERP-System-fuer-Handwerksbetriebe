@@ -90,13 +90,19 @@ describe('useDatensatzLock', () => {
             );
         });
 
-        it('startet im Modus "lesen", auch nachdem das Lock erfolgreich erworben wurde', async () => {
+        it('wechselt nach einem erfolgreichen Mount-Acquire automatisch in den Modus "bearbeiten" (Task 7b)', async () => {
+            // Vorher blieb der Hook hier im Modus "lesen" haengen: wer die Seite
+            // oeffnete, hielt das Lock (blockierte also Kollegen), durfte selbst
+            // aber nichts bearbeiten, ohne vorher noch einmal auf "Bearbeiten" zu
+            // klicken -- das entspricht nicht dem tatsaechlichen Editor-Verhalten
+            // und war reine Blockade ohne Nutzen. Nur eine Fremdsperre (409) soll
+            // weiterhin Nur-Lesen ergeben, siehe Test direkt unten.
             fetchMock.mockResolvedValueOnce(lockResponse());
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
             await waitFor(() => expect(result.current.status).toBe('acquired'));
 
-            expect(result.current.modus).toBe('lesen');
+            expect(result.current.modus).toBe('bearbeiten');
         });
 
         it('ruft ohne ID (idle) keinen acquire-Request auf und erlaubt sofort Bearbeiten', () => {
@@ -185,6 +191,15 @@ describe('useDatensatzLock', () => {
             expect(result.current.modus).toBe('lesen');
         });
 
+        it('bleibt bei einer Fremdsperre beim Mount im Modus "lesen" (Task 7b: nur der Erfolgsfall wechselt automatisch)', async () => {
+            fetchMock.mockResolvedValueOnce(lockResponse({ status: 'LOCKED_BY_OTHER' }));
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
+
+            await waitFor(() => expect(result.current.status).toBe('locked-by-other'));
+
+            expect(result.current.modus).toBe('lesen');
+        });
+
         it('halterName/seit sind undefined, solange kein anderer den Datensatz haelt', async () => {
             fetchMock.mockResolvedValueOnce(lockResponse());
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
@@ -193,6 +208,47 @@ describe('useDatensatzLock', () => {
 
             expect(result.current.halterName).toBeUndefined();
             expect(result.current.seit).toBeUndefined();
+        });
+
+        it('ein durch freigeben() ueberholtes 409-Ergebnis beim Mount-Acquire schreibt nach dem verzoegerten json() keinen Zustand mehr (Task 7b)', async () => {
+            // Befund aus der Review: die Generationspruefung nach dem ERSTEN await
+            // (fetch) reicht nicht -- res.json() ist selbst ein zweiter await, und
+            // GENAU in diesem Fenster kann freigeben() den Versuch ueberholen. Ohne
+            // eine zweite Pruefung NACH json() wuerde der laengst ungueltige
+            // 409-Befund trotzdem noch halterName/status auf einen falschen Halter
+            // schreiben.
+            let jsonAufloesen: (value: unknown) => void = () => {};
+            const langsame409Antwort = {
+                status: 409,
+                json: () => new Promise(resolve => { jsonAufloesen = resolve; }),
+            } as unknown as Response;
+            fetchMock.mockResolvedValueOnce(langsame409Antwort);
+
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
+
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+            // json() haengt noch -- jetzt ueberholt freigeben() den Versuch.
+            await act(async () => {
+                await result.current.freigeben();
+            });
+            expect(result.current.status).toBe('idle');
+
+            // Erst jetzt loest die (laengst ueberholte) 409-Antwort auf.
+            act(() => {
+                jsonAufloesen({
+                    status: 'LOCKED_BY_OTHER',
+                    holderDisplayName: 'Ueberholt Beispiel',
+                    acquiredAt: '2026-09-04T10:00:00.000Z',
+                });
+            });
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+
+            expect(result.current.status).toBe('idle');
+            expect(result.current.halterName).toBeUndefined();
         });
     });
 
@@ -284,6 +340,54 @@ describe('useDatensatzLock', () => {
             });
 
             expect(fetchMock.mock.calls.length).toBe(anzahlNachErstemAusfall);
+
+            vi.useRealTimers();
+        });
+
+        it('ein durch freigeben() ueberholtes 409-Ergebnis beim Heartbeat schreibt nach dem verzoegerten json() keinen Zustand mehr (Task 7b)', async () => {
+            vi.useFakeTimers();
+            let jsonAufloesen: (value: unknown) => void = () => {};
+            const langsame409Antwort = {
+                status: 409,
+                json: () => new Promise(resolve => { jsonAufloesen = resolve; }),
+            } as unknown as Response;
+            fetchMock.mockResolvedValueOnce(lockResponse()); // Mount-Acquire: Erfolg
+            fetchMock.mockResolvedValueOnce(langsame409Antwort); // Heartbeat: 409, json() haengt
+            fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })); // freigeben(): DELETE
+
+            const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
+
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+            expect(result.current.status).toBe('acquired');
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(30_000);
+            });
+            // Heartbeat-Request ist raus (409), aber json() haengt noch --
+            // jetzt ueberholt freigeben() den Versuch.
+            await act(async () => {
+                await result.current.freigeben();
+            });
+            expect(result.current.status).toBe('idle');
+
+            // Erst jetzt loest die (laengst ueberholte) 409-Antwort auf.
+            act(() => {
+                jsonAufloesen({
+                    status: 'LOCKED_BY_OTHER',
+                    holderDisplayName: 'Ueberholt Beispiel',
+                    acquiredAt: '2026-09-04T10:00:00.000Z',
+                });
+            });
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+
+            expect(result.current.status).toBe('idle');
+            expect(result.current.halterName).toBeUndefined();
 
             vi.useRealTimers();
         });
@@ -380,14 +484,13 @@ describe('useDatensatzLock', () => {
             );
         });
 
-        it('freigeben() sendet aktiv ein DELETE und schaltet den Modus zurueck auf "lesen"', async () => {
+        it('freigeben() sendet aktiv ein DELETE und schaltet den Modus zurueck auf "lesen" -- und bleibt dort ohne weiteren Klick', async () => {
             fetchMock.mockResolvedValueOnce(lockResponse());
             fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
             const { result } = renderHook(() => useDatensatzLock('AUSGANG', 42));
 
             await waitFor(() => expect(result.current.status).toBe('acquired'));
-            act(() => result.current.onBearbeiten());
-            expect(result.current.modus).toBe('bearbeiten');
+            expect(result.current.modus).toBe('bearbeiten'); // seit Task 7b automatisch nach Erfolg
 
             await act(async () => {
                 await result.current.freigeben();
@@ -397,6 +500,14 @@ describe('useDatensatzLock', () => {
                 '/api/datensatz-locks/AUSGANG/42',
                 expect.objectContaining({ method: 'DELETE' })
             );
+            expect(result.current.modus).toBe('lesen');
+
+            // Kein automatischer Retry -- ohne einen erneuten Klick auf
+            // "Bearbeiten" bleibt es bei "lesen".
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
             expect(result.current.modus).toBe('lesen');
         });
     });
@@ -595,17 +706,17 @@ describe('useDatensatzLock', () => {
     // Diese Tests rendern Hook und echte BearbeitenLeiste zusammen, um genau
     // das abzudecken (ein reiner Hook-Test haette den Fehler nicht gefunden).
     describe('Zusammenspiel mit der echten BearbeitenLeiste', () => {
-        it('nach onFertig() ist der Bearbeiten-Knopf wieder aktiv; ein Klick acquiriert erneut, erst bei 200 erscheint "Fertig"', async () => {
+        it('nach Mount steht direkt "Fertig"; Klick darauf gibt frei, macht "Bearbeiten" aktiv, und ein erneuter Klick acquiriert erst bei 200 wieder "Fertig"', async () => {
+            // Seit Task 7b zeigt ein erfolgreiches Mount-Acquire direkt "Fertig"
+            // -- kein Erst-Klick auf "Bearbeiten" mehr noetig (siehe
+            // useDatensatzLock.ts). Vorher musste dieser Test noch selbst einmal
+            // auf "Bearbeiten" klicken, bevor "Fertig" ueberhaupt erschien.
             const user = userEvent.setup();
             fetchMock.mockResolvedValueOnce(lockResponse()); // Mount-Acquire
             fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })); // DELETE durch Fertig-Klick
             fetchMock.mockResolvedValueOnce(lockResponse()); // erneutes Acquire durch Bearbeiten-Klick
 
             render(<LeisteMitHook typ="AUSGANG" id={42} />);
-
-            const bearbeiten1 = await screen.findByRole('button', { name: 'Bearbeiten' });
-            await waitFor(() => expect(bearbeiten1).toBeEnabled());
-            await user.click(bearbeiten1);
 
             const fertig = await screen.findByRole('button', { name: 'Fertig' });
             await user.click(fertig);
