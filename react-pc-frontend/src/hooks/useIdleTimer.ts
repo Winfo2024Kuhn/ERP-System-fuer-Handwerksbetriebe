@@ -55,16 +55,23 @@ export function useIdleTimer({
     onIdle,
     enabled = true,
 }: UseIdleTimerOptions): UseIdleTimerResult {
-    const [verbleibendeSekunden, setVerbleibendeSekunden] = useState<number | null>(null);
+    // Interner Rohwert. Waehrend `enabled === false` wird er bewusst NICHT per
+    // setState auf null gezwungen (das waere ein synchroner setState-Aufruf
+    // direkt im Effekt-Koerper, react-hooks/set-state-in-effect) - stattdessen
+    // maskiert der Rueckgabewert unten den Zustand fuer diesen Fall weg.
+    const [countdownState, setCountdownState] = useState<number | null>(null);
 
     // Callbacks in Refs spiegeln: eine neue Funktionsreferenz vom Aufrufer bei
-    // jedem Render soll Listener/Timer nicht neu aufbauen. Direktes Schreiben
-    // waehrend des Renders ist sicher, weil der Wert selbst nie waehrend des
-    // Renders gelesen wird (nur spaeter, aus Timer-Callbacks).
+    // jedem Render soll Listener/Timer nicht neu aufbauen. Das Schreiben passiert
+    // bewusst in einem Effekt OHNE Dep-Array (laeuft nach jedem Commit) statt
+    // direkt im Funktionskoerper - ein Ref waehrend des Renders zu beschreiben
+    // ist unzulaessig (react-hooks/refs), auch wenn es hier faktisch sicher waere.
     const onWarnRef = useRef(onWarn);
     const onIdleRef = useRef(onIdle);
-    onWarnRef.current = onWarn;
-    onIdleRef.current = onIdle;
+    useEffect(() => {
+        onWarnRef.current = onWarn;
+        onIdleRef.current = onIdle;
+    });
 
     const warnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,18 +93,24 @@ export function useIdleTimer({
         }
     }, []);
 
-    const timerStarten = useCallback(() => {
+    // Plant Warn- und Idle-Timeout neu, OHNE selbst synchron State zu setzen.
+    // Das Zuruecksetzen von countdownState auf null passiert ausschliesslich in
+    // jetztZuruecksetzen() - so bleibt der einzige synchron-im-Effekt-erreichbare
+    // Aufruf beim Mount ein reiner Timer-Aufbau ohne setState
+    // (react-hooks/set-state-in-effect). Die setState-Aufrufe in den
+    // Timeout-/Interval-Callbacks unten sind unkritisch: die feuern asynchron,
+    // nicht synchron waehrend der Effekt-Ausfuehrung.
+    const timerPlanen = useCallback(() => {
         alleTimerRaeumen();
-        setVerbleibendeSekunden(null);
 
         const warnNachMs = Math.max(timeoutMs - warnMs, 0);
         const vorwarnDauerSekunden = Math.max(Math.round((timeoutMs - warnNachMs) / 1000), 0);
 
         warnTimeoutRef.current = setTimeout(() => {
             warnTimeoutRef.current = null;
-            setVerbleibendeSekunden(vorwarnDauerSekunden);
+            setCountdownState(vorwarnDauerSekunden);
             countdownIntervalRef.current = setInterval(() => {
-                setVerbleibendeSekunden(vorher => (vorher != null && vorher > 0 ? vorher - 1 : 0));
+                setCountdownState(vorher => (vorher != null && vorher > 0 ? vorher - 1 : 0));
             }, 1_000);
             onWarnRef.current?.();
         }, warnNachMs);
@@ -108,24 +121,33 @@ export function useIdleTimer({
                 clearInterval(countdownIntervalRef.current);
                 countdownIntervalRef.current = null;
             }
-            setVerbleibendeSekunden(null);
+            setCountdownState(null);
             onIdleRef.current?.();
         }, timeoutMs);
     }, [timeoutMs, warnMs, alleTimerRaeumen]);
 
+    // Aktivitaet (oder ein manueller Aufruf): plant die Timer neu UND setzt den
+    // Countdown zurueck. Wird bewusst nur aus dem (asynchron feuernden)
+    // Aktivitaets-Listener und als oeffentliche zuruecksetzen()-Funktion
+    // aufgerufen - NICHT direkt aus dem Effekt-Koerper beim Mount, sonst waere
+    // der setState-Aufruf hier synchron im Effekt erreichbar.
     const jetztZuruecksetzen = useCallback(() => {
         letzterResetRef.current = Date.now();
-        timerStarten();
-    }, [timerStarten]);
+        timerPlanen();
+        setCountdownState(null);
+    }, [timerPlanen]);
 
     useEffect(() => {
         if (!enabled) {
+            // Kein setState hier - der Rueckgabewert unten maskiert
+            // countdownState bereits auf null, solange enabled false ist.
             alleTimerRaeumen();
-            setVerbleibendeSekunden(null);
             return;
         }
 
-        jetztZuruecksetzen();
+        // Direkter Aufbau ohne jetztZuruecksetzen() - siehe Kommentar dort.
+        letzterResetRef.current = Date.now();
+        timerPlanen();
 
         const throttledReset = () => {
             const jetzt = Date.now();
@@ -149,7 +171,10 @@ export function useIdleTimer({
             });
             alleTimerRaeumen();
         };
-    }, [enabled, jetztZuruecksetzen, alleTimerRaeumen]);
+    }, [enabled, timerPlanen, jetztZuruecksetzen, alleTimerRaeumen]);
 
-    return { verbleibendeSekunden, zuruecksetzen: jetztZuruecksetzen };
+    return {
+        verbleibendeSekunden: enabled ? countdownState : null,
+        zuruecksetzen: jetztZuruecksetzen,
+    };
 }
