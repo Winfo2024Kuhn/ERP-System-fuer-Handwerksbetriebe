@@ -104,6 +104,54 @@ class DatensatzLockControllerTest {
     }
 
     @Nested
+    @DisplayName("POST /api/datensatz-locks/{typ}/{id}/heartbeat")
+    class Heartbeat {
+
+        @Test
+        @DisplayName("Happy-Path: Aufrufer haelt Lock selbst -> 200 mit ACQUIRED (Verlaengerung)")
+        void eigenesLock_liefert200() throws Exception {
+            LocalDateTime now = LocalDateTime.of(2026, 4, 3, 10, 5);
+            given(service.heartbeat(eq(SperrbarerTyp.AUSGANG), eq(5L), eq(42L), eq("Max Mustermann")))
+                    .willReturn(new DatensatzLockDto(DatensatzLockDto.ACQUIRED, 42L, "Max Mustermann", now, now));
+
+            mockMvc.perform(post("/api/datensatz-locks/ausgang/5/heartbeat")
+                            .principal(testAuth()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("ACQUIRED"))
+                    .andExpect(jsonPath("$.holderUserId").value(42));
+        }
+
+        @Test
+        @DisplayName("Fremdes Lock aktiv -> 409 mit LOCKED_BY_OTHER")
+        void fremdesLock_liefert409() throws Exception {
+            LocalDateTime now = LocalDateTime.of(2026, 4, 3, 10, 5);
+            given(service.heartbeat(eq(SperrbarerTyp.AUSGANG), eq(5L), eq(42L), eq("Max Mustermann")))
+                    .willReturn(new DatensatzLockDto(DatensatzLockDto.LOCKED_BY_OTHER, 7L, "Erika Musterfrau", now, now));
+
+            mockMvc.perform(post("/api/datensatz-locks/ausgang/5/heartbeat")
+                            .principal(testAuth()))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.status").value("LOCKED_BY_OTHER"))
+                    .andExpect(jsonPath("$.holderUserId").value(7));
+        }
+
+        @Test
+        @DisplayName("Unbekannter Typ -> 400")
+        void unbekannterTyp_liefert400() throws Exception {
+            mockMvc.perform(post("/api/datensatz-locks/foo/5/heartbeat")
+                            .principal(testAuth()))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Kein Principal -> 401")
+        void keinPrincipal_liefert401() throws Exception {
+            mockMvc.perform(post("/api/datensatz-locks/ausgang/5/heartbeat"))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Nested
     @DisplayName("DELETE /api/datensatz-locks/{typ}/{id}")
     class Release {
 
