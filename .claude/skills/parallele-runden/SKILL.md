@@ -266,6 +266,26 @@ Zwei Konsequenzen:
   konsumiert, muss sein Test beide zusammen rendern. Und der Prüfagent auch.
   Ein Baustein, der nur gegen sich selbst getestet ist, ist nicht geprüft.
 
+### Eine ungetestete Hilfsdatei vom Orchestrator ist ein garantierter Merge-Konflikt (04.09.2026)
+
+Der Orchestrator lieferte mitten in einer Runde eine neue, geteilte Hilfsdatei
+(`e2e/hilfen/design.ts`) aus — Typcheck grün, nie ausgeführt. Sie war kaputt
+(`testInfo.outputPath('..')` verweigert Playwright grundsätzlich). Beide
+Frontend-Agenten der Runde brauchten sie, beide standen davor, beide haben sie
+repariert — unterschiedlich. Ergebnis: Konflikt in einer Datei, die in keiner
+`Files`-Liste stand, und den der Rundenschnitt gar nicht verhindern konnte.
+
+Zwei Konsequenzen:
+
+- **Was der Orchestrator ausliefert, hat er ausgeführt.** Für eine
+  Playwright-Hilfe heißt das: eine Wegwerf-Spec, die sie einmal aufruft, auf
+  eigenem Port laufen lassen, dann erst committen. Typcheck ist kein Test.
+- **Geteilte Hilfsdateien gehören dem Orchestrator.** Findet ein Agent dort
+  einen Fehler, repariert er ihn lokal, um weiterzukommen — aber er meldet
+  ihn sofort im Kontext-Log als Bedenken, und der Orchestrator zieht **eine**
+  Version auf den Feature-Branch und lässt alle Task-Branches sie per Merge
+  nachziehen, bevor gemerged wird. Nicht zwei Reparaturen konkurrieren lassen.
+
 ### Auftrag als nachweisbares Ergebnis formulieren, nicht als Lösungsweg (04.09.2026)
 
 Ein Befund war zweimal von Reviews weitergereicht und zweimal nicht behoben
