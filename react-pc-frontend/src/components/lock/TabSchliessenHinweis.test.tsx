@@ -3,11 +3,17 @@ import { describe, it, expect } from 'vitest';
 import { TabSchliessenHinweis } from './TabSchliessenHinweis';
 
 describe('TabSchliessenHinweis', () => {
-    it('zeigt den exakten Hinweistext', () => {
+    it('zeigt den exakten Hinweistext in der Sie-Form (Sperr-Bausteine siezen, siehe Design-Review Abschnitt 6)', () => {
         render(<TabSchliessenHinweis />);
         expect(screen.getByText(
-            'Dokument gespeichert und freigegeben — du kannst diesen Tab jetzt schließen.',
+            'Dokument gespeichert und freigegeben — Sie können diesen Tab jetzt schließen.',
         )).toBeInTheDocument();
+    });
+
+    it('enthaelt keine Du-Form ("du kannst")', () => {
+        render(<TabSchliessenHinweis />);
+        const text = screen.getByRole('status').textContent ?? '';
+        expect(text).not.toMatch(/\bdu kannst\b/i);
     });
 
     it('setzt role="status", damit Screenreader es ohne Fokusklau ansagen', () => {

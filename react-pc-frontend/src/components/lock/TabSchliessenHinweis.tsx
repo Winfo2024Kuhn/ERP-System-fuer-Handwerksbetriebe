@@ -22,7 +22,7 @@ export function TabSchliessenHinweis() {
                 <CheckCircle2 className="w-8 h-8 text-rose-600" aria-hidden="true" />
             </div>
             <p role="status" className="max-w-sm text-base text-slate-700">
-                Dokument gespeichert und freigegeben — du kannst diesen Tab jetzt schließen.
+                Dokument gespeichert und freigegeben — Sie können diesen Tab jetzt schließen.
             </p>
         </div>
     );
