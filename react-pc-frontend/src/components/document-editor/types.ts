@@ -64,7 +64,26 @@ export interface DocumentEditorProps {
     anfrageId?: number;
     dokumentId?: number;
     initialDokumentTyp?: import('../../types').AusgangsGeschaeftsDokumentTyp;
+    /**
+     * Schliesst den Editor, wenn kein Tab zum Schliessen da ist (die Seite
+     * entscheidet dann zwischen `navigate(-1)` und `window.close()`). Wird
+     * NUR benutzt, wenn `onLockFreigeben` fehlt -- sonst uebernimmt der
+     * X-Button-Ablauf selbst das Schliessen (siehe dort).
+     */
     onClose: () => void;
+    /**
+     * true = die Seite haelt gerade kein Lock, der Nutzer darf nur lesen.
+     * Verhaelt sich wie das bisherige `isLocked` (schreibgeschuetzt, keine
+     * Aktionen). Default false.
+     */
+    readOnly?: boolean;
+    /**
+     * Gibt die von der Seite gehaltene Sperre aktiv frei und wartet, bis der
+     * Server das bestaetigt hat. Wird im X-Button-Ablauf zwischen Speichern
+     * und Tab-Schliessen aufgerufen (siehe dort). Ohne diesen Prop bleibt das
+     * bisherige Verhalten von `onClose` unveraendert.
+     */
+    onLockFreigeben?: () => Promise<void>;
 }
 
 export interface KontextDaten {

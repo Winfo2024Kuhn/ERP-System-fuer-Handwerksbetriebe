@@ -92,6 +92,7 @@ import { anredeEnumToText } from '../EmailComposeForm';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { EmailValidityDialog } from './EmailValidityDialog';
 import { useToast } from '../ui/toast';
+import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
 
 interface ImportedGaebBlock {
     type: string;
@@ -217,7 +218,7 @@ function RechnungsadresseBlock({
     );
 }
 
-export default function DocumentEditor({ projektId, anfrageId, dokumentId, initialDokumentTyp, onClose }: DocumentEditorProps) {
+export default function DocumentEditor({ projektId, anfrageId, dokumentId, initialDokumentTyp, onClose, readOnly = false, onLockFreigeben }: DocumentEditorProps) {
     const toast = useToast();
     // --- State ---
     const [loading, setLoading] = useState(true);
@@ -402,7 +403,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     // storniert / digital angenommen (Angebot, AB) / gebuchte Rechnung → gesperrt.
     // Wichtig für Auto-Save: ohne digitalAngenommen-Check feuert der 10s-Interval
     // bei angenommenen Angeboten/ABs endlos Server-Fehler-Alerts.
+    // `readOnly` kommt zusaetzlich von der Seite: haelt sie gerade kein Lock
+    // (z.B. ein Kollege bearbeitet den Datensatz), darf hier trotzdem nur
+    // gelesen werden -- der Editor haelt selbst kein Lock mehr, siehe unten.
     const isLocked = !!(
+        readOnly ||
         dokument?.storniert ||
         dokument?.digitalAngenommen ||
         (dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ))
@@ -1138,61 +1143,15 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         }
     }, []);
 
-    // Soft-Lock kontinuierlich am Leben halten (alle 30s, STALE_AFTER serverseitig 90s).
-    // Notwendig zusaetzlich zum Page-Level useDocumentLock-Hook, weil dieser die
-    // per replaceState nach POST gesetzte ID nicht mitbekommt — neu erstellte
-    // Dokumente bleiben sonst ohne Heartbeat und das Lock verfaellt nach 90s,
-    // was dazu fuehrt, dass der naechste PUT mit 409 abgelehnt wird (auch wenn
-    // der User das Fenster ruhig offen haelt und nicht tippt).
-    // Hinweis: hartkodiert auf TYP_AUSGANG, weil diese Editor-Komponente nur
-    // fuer Ausgangsdokumente genutzt wird (Eingangs-Editor hat einen eigenen).
-    const currentDokumentId = dokument?.id;
-    useEffect(() => {
-        if (!currentDokumentId || isLocked) return;
-        const ping = () => {
-            void fetch(`/api/dokument-locks/AUSGANG/${currentDokumentId}/heartbeat`, {
-                method: 'POST',
-                credentials: 'same-origin',
-            }).catch(() => { /* best effort, nicht stoeren */ });
-        };
-        // Direkt nach jedem Mount/Wechsel der dokumentId einmal pingen,
-        // damit das Lock auch nach Tab-Backgrounding sofort wieder lebt.
-        ping();
-        const intervalId = setInterval(ping, 30_000);
-        // Tab kommt zurueck in den Vordergrund → Browser drosselt setInterval
-        // im Hintergrund. Wir holen sofort einen Heartbeat nach, damit der
-        // Nutzer nach einer Pause direkt speichern kann, ohne 409.
-        const onVisible = () => {
-            if (document.visibilityState === 'visible') ping();
-        };
-        const onFocus = () => ping();
-        document.addEventListener('visibilitychange', onVisible);
-        window.addEventListener('focus', onFocus);
-        return () => {
-            clearInterval(intervalId);
-            document.removeEventListener('visibilitychange', onVisible);
-            window.removeEventListener('focus', onFocus);
-        };
-    }, [currentDokumentId, isLocked]);
-
-    // Versucht das Lock fuer den aktuellen User (zurueck) zu erwerben.
-    // Liefert true bei Erfolg, false wenn ein anderer User das Lock haelt.
-    const tryAcquireLock = useCallback(async (id: number): Promise<{ ok: boolean; holderName?: string }> => {
-        try {
-            const res = await fetch(`/api/dokument-locks/AUSGANG/${id}/acquire`, {
-                method: 'POST',
-                credentials: 'same-origin',
-            });
-            if (res.ok) return { ok: true };
-            if (res.status === 409) {
-                const data = await res.json().catch(() => null) as { holderDisplayName?: string } | null;
-                return { ok: false, holderName: data?.holderDisplayName };
-            }
-            return { ok: false };
-        } catch {
-            return { ok: false };
-        }
-    }, []);
+    // Das Lock selbst haelt jetzt ausschliesslich die Seite (useDatensatzLock,
+    // anderer Task) -- der Editor holt und pingt keins mehr. Frueher gab es
+    // hier zusaetzlich einen eigenen, nie gestoppten Heartbeat (alle 30s auf
+    // /api/dokument-locks/AUSGANG/.../heartbeat) UND ein eigenes Acquire
+    // (tryAcquireLock, als 409-Retry in handleSave). Beides geriet mit dem
+    // Seiten-Hook aus dem Takt und ist raus (Issue #82, Abschnitt 6a): ein
+    // 409 beim Speichern bedeutet jetzt entweder eine echte Fremdsperre oder
+    // eine abgelaufene Seiten-Sperre -- in beiden Faellen kann der Editor
+    // hier nichts reparieren, siehe handleSave unten.
 
     // --- Save ---
     const handleSave = useCallback(async (): Promise<AusgangsGeschaeftsDokument | null> => {
@@ -1249,19 +1208,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     headers: { 'Content-Type': 'application/json' },
                     body,
                 });
-                let res = await doPut();
-                // Soft-Lock abgelaufen (z.B. Pause vor dem Speichern): einmalig
-                // automatisch re-acquiren und erneut versuchen. Erst wenn das
-                // Lock wirklich bei jemand anderem liegt, geben wir auf.
+                const res = await doPut();
+                // Frueher wurde hier bei 409 automatisch neu ge-acquired
+                // (tryAcquireLock) -- das gehoert jetzt der Seite, die ueber
+                // useDatensatzLock den Heartbeat durchgehend am Laufen haelt.
+                // Ein 409 hier bedeutet also entweder eine echte Fremdsperre
+                // oder eine tatsaechlich abgelaufene Seiten-Sperre; beides
+                // kann der Editor selbst nicht reparieren.
                 if (res.status === 409) {
-                    const lockResult = await tryAcquireLock(id);
-                    if (lockResult.ok) {
-                        res = await doPut();
-                    } else {
-                        const who = lockResult.holderName ? ` von ${lockResult.holderName}` : '';
-                        toast.warning(`Dieses Dokument wird gerade${who} bearbeitet. Bitte kurz warten und es erneut versuchen.`);
-                        return null;
-                    }
+                    const konfliktText = await res.text().catch(() => '');
+                    toast.warning(konfliktText || 'Dieses Dokument wird gerade von einem anderen Benutzer bearbeitet. Bitte kurz warten und es erneut versuchen.');
+                    return null;
                 }
                 if (res.ok) {
                     const updated = await res.json();
@@ -1338,7 +1295,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         }
         return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, tryAcquireLock, bereitsAbgerechnetDurchAndere, globalRabatt]);
+    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, bereitsAbgerechnetDurchAndere, globalRabatt]);
 
     /**
      * Setzt das Dokumentdatum auf heute, sofern das Dokument noch bearbeitbar
@@ -1385,14 +1342,56 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         return () => clearInterval(intervalId);
     }, [blocks, datum, betreff, dokumentTyp, saving, isLocked, handleSave, adresseGeaendert]);
 
+    // --- Tab schliessen (X-Button-Ablauf, Issue #82) ---
+    // Feste Reihenfolge laut Spec: (1) Warnung bei ungespeicherten Aenderungen
+    // (siehe handleClose/UnsavedChangesModal), (2) speichern, (3) Sperre der
+    // Seite aktiv freigeben, (4) Tab schliessen versuchen, (5) existiert der
+    // Tab danach noch (z.B. macOS Safari blockiert window.close() aus
+    // Skripten): ruhige Vollbild-Seite statt des Editors zeigen.
+    // `onLockFreigeben` kommt von der Seite (useDatensatzLock, anderer Task)
+    // und ist optional: ohne ihn (Aufrufer, die das neue Lock-Fundament noch
+    // nicht verdrahtet haben) bleibt das bisherige Verhalten unveraendert --
+    // die Seite entscheidet ueber `onClose`, ob sie per `navigate(-1)`
+    // zurueckgeht oder den Tab schliesst (siehe DocumentEditorProps).
+    const [zeigeTabSchliessenHinweis, setZeigeTabSchliessenHinweis] = useState(false);
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
+
+    const tabSchliessen = useCallback(async () => {
+        if (!onLockFreigeben) {
+            onClose();
+            return;
+        }
+        try {
+            await onLockFreigeben();
+        } catch (err) {
+            console.error('Sperre konnte nicht freigegeben werden:', err);
+            toast.error('Sperre konnte nicht freigegeben werden. Bitte Seite neu laden.');
+            return;
+        }
+        window.close();
+        // window.close() wird vom Browser nicht ueberall zuverlaessig
+        // ausgefuehrt (z.B. macOS Safari, wenn das Skript den Tab nicht
+        // zweifelsfrei selbst geoeffnet hat). Existiert die Komponente nach
+        // kurzer Wartezeit noch, zeigen wir statt stumm nichts zu tun eine
+        // Bestaetigung, dass Speichern und Freigeben trotzdem geklappt haben.
+        window.setTimeout(() => {
+            if (mountedRef.current) setZeigeTabSchliessenHinweis(true);
+        }, 150);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onClose, onLockFreigeben]);
+
     // --- Close Handler ---
     const handleClose = useCallback(() => {
         if (hasUnsavedChanges) {
             setShowUnsavedWarning(true);
         } else {
-            onClose();
+            void tabSchliessen();
         }
-    }, [hasUnsavedChanges, onClose]);
+    }, [hasUnsavedChanges, tabSchliessen]);
 
     // --- Keyboard Shortcut ---
     useEffect(() => {
@@ -2814,6 +2813,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         );
     }
 
+    // Tab-Schliess-Ablauf abgeschlossen (gespeichert + Sperre freigegeben),
+    // aber window.close() hat nicht gegriffen: statt des Editors nur noch
+    // die Bestaetigung zeigen, siehe tabSchliessen() oben.
+    if (zeigeTabSchliessenHinweis) {
+        return <TabSchliessenHinweis />;
+    }
+
     // --- Render ---
     return (
         <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col">
@@ -3116,16 +3122,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     onCancel={() => setShowUnsavedWarning(false)}
                     onDiscard={() => {
                         setShowUnsavedWarning(false);
-                        onClose();
+                        void tabSchliessen();
                     }}
                     onSaveAndClose={async () => {
                         // Nur schliessen, wenn das Speichern wirklich geklappt
                         // hat. Sonst waere die Aenderung weg und der Fehler-Toast
-                        // verschwaende mit dem Editor.
+                        // verschwaende mit dem Editor -- kein onLockFreigeben,
+                        // kein Tab-Schliess-Versuch.
                         const gespeichert = await handleSave();
                         if (!gespeichert) return;
                         setShowUnsavedWarning(false);
-                        onClose();
+                        void tabSchliessen();
                     }}
                 />
             )}
