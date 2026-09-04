@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -42,6 +43,34 @@ public class RestExceptionHandler {
         ConstraintErrorDetail detail = constraintMessageResolver.resolve(ex);
         LOG.debug("Resolved data integrity violation: {}", detail);
         return ResponseEntity.status(detail.status()).body(toApiError(detail));
+    }
+
+    /**
+     * Optimistisches Sperren (siehe @Version auf den Aggregate-Roots): eine
+     * zweite, parallele Aenderung an derselben Zeile wurde bereits
+     * gespeichert, bevor dieser Request sein eigenes Speichern versucht hat.
+     * Faengt damit auch JpaOptimisticLockingFailureException ab -- die
+     * Unterklasse, die Spring Data JPA beim echten Versionskonflikt ueber
+     * EntityManagerFactoryUtils tatsaechlich wirft.
+     *
+     * <p>Sibling von DataIntegrityViolationException unter DataAccessException
+     * (der eine Zweig laeuft ueber NonTransientDataAccessException, der
+     * andere ueber TransientDataAccessException/ConcurrencyFailureException)
+     * -- keiner ist Ober- oder Unterklasse des anderen, es gibt also keine
+     * Ueberdeckung im ExceptionHandler-Resolver.</p>
+     */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLockingFailure(ObjectOptimisticLockingFailureException ex) {
+        LOG.debug("Versionskonflikt beim Speichern (optimistisches Sperren), Entitaetstyp: {}, Id: {}",
+                ex.getPersistentClassName(), ex.getIdentifier());
+        ApiError body = new ApiError(
+                HttpStatus.CONFLICT.value(),
+                "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.",
+                null,
+                List.of(),
+                null
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
