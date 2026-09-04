@@ -306,9 +306,16 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
   `buchen`, `emailVersendet`, `pdfSpeichern`, `stornieren`, `delete` übertragen — je
   Speicherweg roter Test zuerst, verengen statt streichen.
 
-### Abschnitt 7 (gültig)
+### Abschnitt 7 (gültig) — in zwei Runden
 
-#### Task 7a — DocumentEditorPage auf das neue Fundament
+> **Umgeschnitten am 04.09.2026, vor dem Start:** 7a (Seite) hätte gegen den Hook
+> gebaut, den 7b gleichzeitig ändert (Modus nach Mount-Acquire). 7a's Spec müsste dann
+> entweder den alten Zustand zusichern (kippt nach 7b's Merge) oder den neuen (rot vor
+> 7b's Merge). Ein Task startet erst, wenn fertig ist, was er konsumiert — also:
+> **Runde 7-1 = 7b + 7c parallel** (Hook und Leiste, disjunkt), **Runde 7-2 = 7a**
+> danach, auf dem gemergten Stand. Design-Reviewer in 7-1 für 7c, in 7-2 für 7a.
+
+#### Task 7a — DocumentEditorPage auf das neue Fundament (Runde 7-2)
 - Files: `react-pc-frontend/src/pages/DocumentEditorPage.tsx`,
   `DocumentEditorPage.test.tsx` (neu), `e2e/dokument-editor-seite.spec.ts` (neu).
   `BearbeitenLeiste.tsx` gehört jetzt **7c**, nicht mehr 7a.

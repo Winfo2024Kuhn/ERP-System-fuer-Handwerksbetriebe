@@ -152,6 +152,16 @@ git worktree remove --force <worktree-pfad>
 git branch -d <task-branch>        # -d, nicht -D: verweigert, wenn nicht gemerged
 ```
 
+Hat in einem Worktree Playwright gelaufen, scheitert `git worktree remove` auf
+Windows an „Filename too long" — die Ordnernamen unter `test-results/` sind
+länger als MAX_PATH. Git nimmt die Registrierung trotzdem zurück, der Ordner
+bleibt liegen. Dann in PowerShell mit Long-Path-Präfix nachräumen (erst die
+Junction prüfen, sonst löscht es das Ziel mit):
+
+```powershell
+Remove-Item -LiteralPath "\\?\C:\...\wt\review-design" -Recurse -Force
+```
+
 Warum vor dem Start und nicht irgendwann später: Jede Runde hinterlässt drei
 Ordner mit komplettem Repo-Inhalt. Nach drei Runden sind das neun, und im
 Editor sieht man nicht mehr, welcher davon gerade lebt. Das `-d` beim
