@@ -1,0 +1,252 @@
+/* ==========================================================================
+   Handwerkerprogramm — Design Tokens
+   Foundation: Tailwind palette (rose + slate) with rose as brand accent.
+   Reference: react-pc-frontend & react-zeiterfassung (Vite/React 18/19 + TS).
+   ========================================================================== */
+
+:root {
+  /* ---------- Brand / Rose scale ---------- */
+  --rose-50:  #fff1f2;
+  --rose-100: #ffe4e6;
+  --rose-200: #fecdd3;
+  --rose-300: #fda4af;
+  --rose-400: #fb7185;
+  --rose-500: #f43f5e;  /* signal / edges */
+  --rose-600: #e11d48;  /* PRIMARY brand */
+  --rose-700: #be123c;  /* pressed / hover */
+  --rose-800: #9f1239;
+  --rose-900: #881337;
+
+  /* Semantic brand aliases */
+  --brand:          var(--rose-600);
+  --brand-hover:    var(--rose-700);
+  --brand-soft:     var(--rose-100);
+  --brand-soft-bg:  var(--rose-50);
+  --brand-ring:     var(--rose-500);
+  --brand-border:   var(--rose-200);
+  --brand-on:       #ffffff;
+
+  /* ---------- Slate neutrals (copy + chrome) ---------- */
+  --slate-50:  #f8fafc;  /* app background */
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;  /* default border */
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;  /* muted label */
+  --slate-500: #64748b;  /* secondary text */
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;  /* primary text */
+
+  /* Foreground / surface aliases */
+  --fg:          var(--slate-900);
+  --fg-muted:    var(--slate-500);
+  --fg-subtle:   var(--slate-400);
+  --fg-on-brand: #ffffff;
+
+  --bg:          var(--slate-50);
+  --surface:     #ffffff;
+  --surface-alt: var(--slate-50);
+  --surface-hover: var(--slate-100);
+
+  --border:        var(--slate-200);
+  --border-strong: var(--slate-300);
+  --border-soft:   var(--slate-100);
+
+  /* ---------- Semantic colors ---------- */
+  --success:       #16a34a;  /* green-600 */
+  --success-soft:  #dcfce7;
+  --warn:          #f59e0b;  /* amber-500 */
+  --warn-soft:     #fef3c7;
+  --danger:        #dc2626;  /* red-600 */
+  --danger-soft:   #fee2e2;
+  --info:          #6366f1;  /* indigo-500, used for placeholder chips */
+  --info-soft:     #e0e7ff;
+
+  /* AI / KI accent (matches "Gemini" violet-magenta feel in system) */
+  --ai:      #a855f7;  /* purple-500, paired with rose for KI moments */
+  --ai-soft: #f3e8ff;
+
+  /* ---------- Document-editor chips (3 distinct kinds) ---------- */
+  /* 1 · Placeholder token — indigo, mono. {{KUNDENNAME}} */
+  --chip-code-bg: #e0e7ff;
+  --chip-code-fg: #4338ca;
+  /* 2 · Live preview value — yellow highlight, mono */
+  --chip-preview-bg: #fef08a;
+  --chip-preview-fg: #0f172a;
+  /* 3 · Zahlungsziel — rose, interactive (click to edit), bordered */
+  --chip-zahlungsziel-bg: #fff1f2;
+  --chip-zahlungsziel-border: #fecdd3;
+  --chip-zahlungsziel-fg: #be123c;
+  --chip-zahlungsziel-bg-hover: #ffe4e6;
+  --chip-zahlungsziel-border-hover: #fda4af;
+
+  /* ---------- Type scale (system stack — matches prod) ---------- */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+               "Liberation Mono", "Courier New", monospace;
+
+  --fs-xs:   12px;   /* meta, captions, subgroup labels */
+  --fs-sm:   14px;   /* body-small, buttons, inputs */
+  --fs-base: 16px;   /* body */
+  --fs-lg:   18px;   /* card title */
+  --fs-xl:   20px;
+  --fs-2xl:  24px;   /* section title */
+  --fs-3xl:  30px;   /* page title (PageHeader) */
+  --fs-4xl:  36px;
+
+  --lh-tight:  1.2;   /* @kind font */
+  --lh-snug:   1.35;  /* @kind font */
+  --lh-normal: 1.5;   /* @kind font */
+  --lh-loose:  1.7;   /* @kind font */
+
+  --fw-regular:  400; /* @kind font */
+  --fw-medium:   500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:     700; /* @kind font */
+
+  --tracking-wide:  0.05em;  /* @kind font */
+  --tracking-wider: 0.08em;  /* @kind font */
+
+  /* ---------- Document ↔ PDF WYSIWYG metrics ----------
+     The editor must break lines exactly where the printed PDF does.
+     Values mirror RechnungPdfService 1:1 — do not retune them by eye. */
+  --doc-pdf-fs:          10pt;              /* @kind font */
+  --doc-pdf-lh:          1.3;               /* @kind font */
+  --doc-pdf-para-gap:    2pt;               /* @kind spacing */
+  --doc-pdf-w-spalte:    calc(257pt + 24px); /* @kind spacing */
+  --doc-pdf-w-voll:      calc(515pt + 24px); /* @kind spacing */
+
+  /* ---------- Spacing / radii / shadows ---------- */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  --radius-sm:   4px;   /* small buttons, inputs */
+  --radius-md:   6px;
+  --radius-lg:   8px;   /* default buttons/cards */
+  --radius-xl:   12px;
+  --radius-2xl:  16px;  /* dialog / premium card */
+  --radius-3xl:  24px;  /* mobile sheet tops */
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow:    0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 10px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 12px 24px -8px rgb(0 0 0 / 0.10), 0 4px 8px -4px rgb(0 0 0 / 0.06);
+  --shadow-xl: 0 20px 40px -12px rgb(0 0 0 / 0.18);
+  --shadow-rose: 0 10px 40px -10px rgb(225 29 72 / 0.30);
+  --shadow-rose-hover: 0 10px 50px -10px rgb(225 29 72 / 0.50);
+
+  --ring-focus: 0 0 0 2px var(--rose-500);
+
+  /* Motion */
+  --ease-out:    cubic-bezier(0.32, 0.72, 0, 1);   /* @kind other */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);/* @kind other */
+  --dur-fast:    150ms;  /* @kind other */
+  --dur:         200ms;  /* @kind other */
+  --dur-slow:    350ms;  /* @kind other */
+}
+
+/* ==========================================================================
+   Document-editor chips — three kinds, never interchangeable
+   ========================================================================== */
+
+[data-placeholder-chip]{display:inline-flex;align-items:center;padding:2px 8px;background:var(--chip-code-bg);color:var(--chip-code-fg);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:var(--fs-sm)}
+[data-preview-placeholder]{display:inline-flex;align-items:center;padding:2px 8px;background:var(--chip-preview-bg);color:var(--chip-preview-fg);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:var(--fs-sm)}
+[data-zahlungsziel-chip]{display:inline-block;padding:0 6px;border-radius:var(--radius-md);background:var(--chip-zahlungsziel-bg);border:1px solid var(--chip-zahlungsziel-border);color:var(--chip-zahlungsziel-fg);font-weight:var(--fw-semibold);cursor:pointer;user-select:none;white-space:nowrap;transition:background-color var(--dur-fast) ease,border-color var(--dur-fast) ease}
+[data-zahlungsziel-chip]:hover{background:var(--chip-zahlungsziel-bg-hover);border-color:var(--chip-zahlungsziel-border-hover)}
+
+/* ==========================================================================
+   WYSIWYG document metrics — apply to the editor surface so on-screen
+   line breaks match the printed PDF exactly.
+   ========================================================================== */
+
+.doc-pdf-metrics .tiptap-editor-content{font-size:var(--doc-pdf-fs);line-height:var(--doc-pdf-lh)}
+.doc-pdf-metrics .tiptap-editor-content p{margin:0 0 var(--doc-pdf-para-gap) 0}
+.doc-pdf-metrics--spalte .tiptap-editor-content{max-width:var(--doc-pdf-w-spalte)}
+.doc-pdf-metrics--voll .tiptap-editor-content{max-width:var(--doc-pdf-w-voll)}
+
+/* ==========================================================================
+   Semantic typography — apply class or use as reference in components
+   ========================================================================== */
+
+.h-eyebrow {
+  font: var(--fw-semibold) var(--fs-sm)/var(--lh-tight) var(--font-sans);
+  color: var(--brand);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.h1 {
+  font: var(--fw-bold) var(--fs-3xl)/var(--lh-tight) var(--font-sans);
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
+
+.h2 {
+  font: var(--fw-bold) var(--fs-2xl)/var(--lh-snug) var(--font-sans);
+  color: var(--fg);
+}
+
+.h3 {
+  font: var(--fw-semibold) var(--fs-lg)/var(--lh-snug) var(--font-sans);
+  color: var(--fg);
+}
+
+.p, p {
+  font: var(--fw-regular) var(--fs-base)/var(--lh-normal) var(--font-sans);
+  color: var(--fg);
+}
+
+.p-muted {
+  font: var(--fw-regular) var(--fs-base)/var(--lh-normal) var(--font-sans);
+  color: var(--fg-muted);
+}
+
+.p-sm {
+  font: var(--fw-regular) var(--fs-sm)/var(--lh-normal) var(--font-sans);
+  color: var(--fg);
+}
+
+.label {
+  font: var(--fw-semibold) var(--fs-sm)/var(--lh-tight) var(--font-sans);
+  color: var(--slate-700);
+}
+
+.label-tiny {
+  font: var(--fw-semibold) 10px/1 var(--font-sans);
+  color: var(--slate-400);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+}
+
+.code, code {
+  font: var(--fw-regular) var(--fs-sm)/var(--lh-normal) var(--font-mono);
+  color: var(--chip-code-fg);
+  background: var(--chip-code-bg);
+  padding: 2px 6px;
+  border-radius: var(--radius-md);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Gradient rose text (used on premium KPIs / hero numbers) */
+.gradient-text-rose {
+  background: linear-gradient(135deg, var(--rose-600) 0%, var(--rose-400) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}

@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- @dsCard group="Components" name="Components — Badges" subtitle="Status · document type · KI markers" viewport="720x280" -->
+<html lang="de"><head><meta charset="utf-8" /><title>Badges</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box;font-size:14px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid}
+  [data-lucide]{width:12px;height:12px;stroke-width:2.5}
+  .caption{font-size:10px;font-weight:600;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.05em;width:100%;margin-top:4px}
+  .header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+  .online{background:#dcfce7;color:#166534}
+  .online .dot{width:8px;height:8px;border-radius:999px;background:#16a34a}
+</style></head><body>
+<div class="header"><div><div class="name">Status badges & pills</div><div class="sub">Soft bg + dark fg · Lucide dot optional</div></div></div>
+<div class="caption">Status</div>
+<div class="row">
+  <span class="pill online" style="border-color:transparent"><span class="dot"></span>Online</span>
+  <span class="badge" style="background:#dcfce7;color:#166534">Gebucht</span>
+  <span class="badge" style="background:#fef3c7;color:#854d0e">Offen</span>
+  <span class="badge" style="background:#fee2e2;color:#991b1b"><i data-lucide="alert-triangle"></i>Überfällig</span>
+  <span class="badge" style="background:var(--slate-100);color:var(--slate-700)">Entwurf</span>
+</div>
+<div class="caption">Document type</div>
+<div class="row">
+  <span class="badge" style="background:var(--rose-50);color:var(--rose-700);border:1px solid var(--rose-200)"><i data-lucide="file-text"></i>Angebot</span>
+  <span class="badge" style="background:var(--rose-50);color:var(--rose-700);border:1px solid var(--rose-200)"><i data-lucide="receipt"></i>Rechnung</span>
+  <span class="badge" style="background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe"><i data-lucide="split"></i>Teilrechnung</span>
+  <span class="badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #e9d5ff"><i data-lucide="sparkles"></i>Schlussrechnung</span>
+</div>
+<div class="caption">KI · AI marker</div>
+<div class="row">
+  <span class="pill" style="background:#fff;color:var(--brand);border-color:var(--rose-200)"><i data-lucide="gem" style="color:var(--brand)"></i>KI-Hilfe</span>
+  <span class="pill" style="background:#f3e8ff;color:#6b21a8;border-color:#e9d5ff"><i data-lucide="sparkles"></i>Gemini analysiert…</span>
+</div>
+<script>lucide.createIcons();</script>
+</body></html>

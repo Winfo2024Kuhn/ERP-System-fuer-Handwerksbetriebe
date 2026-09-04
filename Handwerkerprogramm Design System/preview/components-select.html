@@ -1,0 +1,50 @@
+<!-- @dsCard group="Components" viewport="760x340" name="Select" subtitle="Portal dropdown · rose ring · Check on selected" -->
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8" /><title>Select</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start}
+  .lbl{font-size:11px;font-weight:600;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .trigger{height:40px;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:var(--radius-md);background:#fff;padding:8px 12px;font-size:14px;cursor:pointer}
+  .trigger.open{border-color:var(--brand-ring);box-shadow:0 0 0 2px #fff,0 0 0 4px var(--brand-ring)}
+  .trigger .ph{color:var(--slate-500)}
+  .menu{margin-top:4px;border:1px solid var(--border);border-radius:var(--radius-md);background:#fff;padding:4px;box-shadow:var(--shadow-xl)}
+  .opt{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:2px;font-size:14px;color:var(--slate-900);cursor:pointer}
+  .opt.hover{background:var(--rose-50);color:#881337}
+  .opt.sel{background:var(--rose-50);color:#881337;font-weight:500}
+  .empty{padding:8px;font-size:14px;color:var(--slate-500);text-align:center}
+  .tok{font-family:var(--font-mono);font-size:9px;color:var(--fg-muted);margin-top:8px;line-height:1.4}
+  .header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+  [data-lucide]{width:16px;height:16px;stroke-width:2}
+</style></head><body>
+<div class="header"><div><div class="name">Custom select</div><div class="sub">h-10 \u00b7 rounded-md \u00b7 portal dropdown \u00b7 rose focus ring + offset</div></div></div>
+<div class="grid">
+  <div>
+    <div class="lbl">Closed \u00b7 placeholder</div>
+    <div class="trigger"><span class="ph">Bitte w\u00e4hlen...</span><i data-lucide="chevron-down" style="opacity:.5"></i></div>
+    <div class="tok">border-slate-200 \u00b7 hover:bg-slate-50</div>
+  </div>
+  <div>
+    <div class="lbl">Open \u00b7 with selection</div>
+    <div class="trigger open"><span>Rechnung</span><i data-lucide="chevron-down" style="opacity:.5;transform:rotate(180deg)"></i></div>
+    <div class="menu">
+      <div class="opt">Angebot</div>
+      <div class="opt sel">Rechnung<i data-lucide="check"></i></div>
+      <div class="opt hover">Teilrechnung</div>
+      <div class="opt">Gutschrift</div>
+    </div>
+    <div class="tok">ring-2 ring-rose-500 ring-offset-2<br />selected: bg-rose-50 + Check</div>
+  </div>
+  <div>
+    <div class="lbl">Empty</div>
+    <div class="trigger open"><span class="ph">Bitte w\u00e4hlen...</span><i data-lucide="chevron-down" style="opacity:.5;transform:rotate(180deg)"></i></div>
+    <div class="menu"><div class="empty">Keine Optionen</div></div>
+    <div class="tok">role="listbox" / role="option"<br />aria-selected</div>
+  </div>
+</div>
+<script>lucide.createIcons();</script>
+</body></html>

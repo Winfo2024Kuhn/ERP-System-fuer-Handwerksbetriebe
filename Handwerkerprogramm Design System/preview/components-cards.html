@@ -1,0 +1,63 @@
+<!doctype html>
+<!-- @dsCard group="Components" name="Components — Cards" subtitle="Default · KPI · action · hero" viewport="720x320" -->
+<html lang="de"><head><meta charset="utf-8" /><title>Cards</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html,body{margin:0;padding:0;background:var(--slate-50)}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box;font-size:14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px;box-shadow:var(--shadow-sm)}
+  .card-lift{transition:all .2s;box-shadow:var(--shadow-sm)}
+  .card-lift:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
+  .icon-tile{width:40px;height:40px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--rose-100);color:var(--brand)}
+  .icon-tile.slate{background:var(--slate-100);color:var(--slate-500)}
+  .icon-tile.amber{background:#fef3c7;color:#b45309}
+  .title{font-size:14px;font-weight:600;color:var(--slate-900)}
+  .sub{font-size:12px;color:var(--fg-muted);margin-top:2px}
+  .kpi{font:700 28px/1 var(--font-sans);color:var(--slate-900);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .label{font-size:11px;color:var(--fg-muted);font-weight:500}
+  .delta{font-size:12px;font-weight:600;color:#16a34a;margin-left:6px}
+  .hero{background:var(--brand);color:#fff;border-radius:16px;padding:16px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow-rose)}
+  .hero .play{width:44px;height:44px;background:rgba(255,255,255,.2);border-radius:10px;display:flex;align-items:center;justify-content:center}
+  .hero-title{font-weight:700;font-size:16px}
+  .hero-sub{font-size:12px;opacity:.85;margin-top:2px}
+  [data-lucide]{width:22px;height:22px;stroke-width:2}
+  .header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.hd{font-size:12px;color:var(--fg-muted)}
+</style></head><body>
+<div class="header"><div><div class="name">Card patterns</div><div class="hd">Default · KPI · Icon-tile action · Hero (mobile)</div></div></div>
+<div class="grid">
+  <div class="card">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <span class="icon-tile"><i data-lucide="briefcase"></i></span>
+      <div>
+        <div class="title">Projekte</div>
+        <div class="sub">Aktive Aufträge verwalten</div>
+      </div>
+    </div>
+  </div>
+  <div class="card card-lift">
+    <div class="label">Umsatz · März</div>
+    <div style="display:flex;align-items:baseline"><span class="kpi">48.120 €</span><span class="delta">+12,4 %</span></div>
+    <div class="sub">vs. Februar 2026</div>
+  </div>
+  <div class="card">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <span class="icon-tile amber"><i data-lucide="folder-open"></i></span>
+      <div>
+        <div class="title">Angebote</div>
+        <div class="sub">14 offen · 3 abgelaufen</div>
+      </div>
+    </div>
+  </div>
+  <div style="grid-column:span 3">
+    <div class="hero">
+      <div class="play"><i data-lucide="play" style="fill:currentColor"></i></div>
+      <div style="flex:1"><div class="hero-title">Zeit erfassen</div><div class="hero-sub">Neue Buchung starten</div></div>
+      <i data-lucide="chevron-right" style="opacity:.8"></i>
+    </div>
+  </div>
+</div>
+<script>lucide.createIcons();</script>
+</body></html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- @dsCard group="Spacing" name="Spacing — Radii" subtitle="rounded-lg default · 2xl dialog · 3xl sheet" viewport="720x220" -->
+<html lang="de"><head><meta charset="utf-8" /><title>Radii</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box}
+  .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+  .cell{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .box{width:100%;aspect-ratio:1/1;background:var(--rose-100);border:1px solid var(--rose-200);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--rose-700);font-size:14px}
+  .token{font-family:var(--font-mono);font-size:10px;color:var(--fg-muted)}
+  .label{font-size:11px;font-weight:600}
+  .header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+</style></head><body>
+<div class="header"><div><div class="name">Corner radii</div><div class="sub">rounded-lg is the default. 2xl = dialogs. 3xl = mobile sheets.</div></div></div>
+<div class="grid">
+  <div class="cell"><div class="box" style="border-radius:4px">4</div><div class="label">sm</div><div class="token">--radius-sm</div></div>
+  <div class="cell"><div class="box" style="border-radius:6px">6</div><div class="label">md</div><div class="token">--radius-md</div></div>
+  <div class="cell"><div class="box" style="border-radius:8px;outline:2px dashed var(--rose-600);outline-offset:3px">8</div><div class="label">lg · default</div><div class="token">--radius-lg</div></div>
+  <div class="cell"><div class="box" style="border-radius:12px">12</div><div class="label">xl</div><div class="token">--radius-xl</div></div>
+  <div class="cell"><div class="box" style="border-radius:16px">16</div><div class="label">2xl · dialog</div><div class="token">--radius-2xl</div></div>
+  <div class="cell"><div class="box" style="border-radius:24px 24px 0 0">24</div><div class="label">3xl · sheet</div><div class="token">--radius-3xl</div></div>
+</div>
+</body></html>

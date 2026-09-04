@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- @dsCard group="Colors" name="Colors — Slate scale" subtitle="Neutrals for chrome + copy" viewport="720x200" -->
+<html lang="de"><head><meta charset="utf-8" /><title>Colors — Slate</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box}
+  .row{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+  .sw{aspect-ratio:1/1;border-radius:10px;display:flex;align-items:flex-end;padding:8px;font-size:10px;font-weight:600;letter-spacing:.02em;box-shadow:inset 0 0 0 1px rgba(0,0,0,.04)}
+  .sw.dark{color:#fff}.sw.light{color:var(--slate-900)}
+  .meta{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+  .legend{display:flex;gap:12px;margin-top:12px;font-size:11px;color:var(--fg-muted)}
+  .legend b{color:var(--fg);font-weight:600}
+</style></head><body>
+  <div class="meta">
+    <div>
+      <div class="name">Slate · Neutral scale</div>
+      <div class="sub">Tailwind slate — chrome + copy.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="sw light" style="background:#f8fafc;outline:1px dashed var(--slate-300);outline-offset:-4px">50</div>
+    <div class="sw light" style="background:#f1f5f9">100</div>
+    <div class="sw light" style="background:#e2e8f0">200</div>
+    <div class="sw light" style="background:#cbd5e1">300</div>
+    <div class="sw dark" style="background:#94a3b8">400</div>
+    <div class="sw dark" style="background:#64748b">500</div>
+    <div class="sw dark" style="background:#475569">600</div>
+    <div class="sw dark" style="background:#334155">700</div>
+    <div class="sw dark" style="background:#1e293b">800</div>
+    <div class="sw dark" style="background:#0f172a">900</div>
+  </div>
+  <div class="legend"><span><b>App bg:</b> 50</span><span><b>Borders:</b> 200</span><span><b>Muted text:</b> 500</span><span><b>Primary text:</b> 900</span></div>
+</body></html>

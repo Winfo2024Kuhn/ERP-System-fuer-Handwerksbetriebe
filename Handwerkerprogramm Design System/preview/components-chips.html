@@ -1,0 +1,43 @@
+<!-- @dsCard group="Components" viewport="760x300" name="Chips" subtitle="Placeholder · preview · Zahlungsziel (interactive)" -->
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8" /><title>Chips</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box;font-size:14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  .cell{border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--surface)}
+  .cell h4{margin:0 0 2px;font-size:13px;font-weight:700}
+  .cell .role{font-size:11px;color:var(--fg-muted);margin-bottom:10px}
+  .demo{font-size:14px;line-height:2;color:var(--slate-700)}
+  .tok{font-family:var(--font-mono);font-size:10px;color:var(--fg-muted);margin-top:10px;padding-top:8px;border-top:1px dashed var(--slate-200)}
+  .header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+  .note{font-size:11px;color:var(--fg-muted);margin-top:12px}
+  .note b{color:var(--fg)}
+  .hoverdemo{margin-top:6px}
+</style></head><body>
+<div class="header"><div><div class="name">Document-editor chips</div><div class="sub">Three kinds \u00b7 never interchangeable</div></div></div>
+<div class="grid">
+  <div class="cell">
+    <h4>Placeholder token</h4>
+    <div class="role">Inert \u00b7 indigo \u00b7 mono</div>
+    <div class="demo">Sehr geehrte <span data-placeholder-chip>{{KUNDENNAME}}</span>,</div>
+    <div class="tok">[data-placeholder-chip]<br />indigo-100 / indigo-700</div>
+  </div>
+  <div class="cell">
+    <h4>Live preview value</h4>
+    <div class="role">Resolved in preview \u00b7 yellow \u00b7 mono</div>
+    <div class="demo">Sehr geehrte <span data-preview-placeholder>Frau M\u00fcller</span>,</div>
+    <div class="tok">[data-preview-placeholder]<br />yellow-200 / slate-900</div>
+  </div>
+  <div class="cell">
+    <h4>Zahlungsziel</h4>
+    <div class="role">Interactive \u00b7 rose \u00b7 bordered</div>
+    <div class="demo">Zahlbar innerhalb <span data-zahlungsziel-chip>14 Tagen</span> netto.</div>
+    <div class="hoverdemo demo">Hover: <span data-zahlungsziel-chip style="background:var(--chip-zahlungsziel-bg-hover);border-color:var(--chip-zahlungsziel-border-hover)">14 Tagen</span></div>
+    <div class="tok">[data-zahlungsziel-chip]<br />rose-50 / rose-200 / rose-700 \u00b7 600</div>
+  </div>
+</div>
+<div class="note"><b>Rule:</b> only the Zahlungsziel chip is clickable. The other two are display-only \u2014 giving them a pointer cursor misleads the user.</div>
+</body></html>
