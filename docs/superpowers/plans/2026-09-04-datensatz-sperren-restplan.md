@@ -310,9 +310,8 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
 
 #### Task 7a — DocumentEditorPage auf das neue Fundament
 - Files: `react-pc-frontend/src/pages/DocumentEditorPage.tsx`,
-  `DocumentEditorPage.test.tsx` (neu), **und** `components/lock/BearbeitenLeiste.tsx`
-  (nur Kommentar zu `kannBearbeiten` und ggf. optionaler Tooltip-Prop für den
-  deaktivierten Knopf — kein Verhaltenscode).
+  `DocumentEditorPage.test.tsx` (neu), `e2e/dokument-editor-seite.spec.ts` (neu).
+  `BearbeitenLeiste.tsx` gehört jetzt **7c**, nicht mehr 7a.
 - Consumes: 6a (`readOnly`, `onLockFreigeben`), 5a, `useIdleTimer`, `GesperrtHinweis`.
 - `useDocumentLock`/`DocumentLockedModal` raus. `locked-by-other` ⇒ Editor mit
   `readOnly`, darüber `GesperrtHinweis` + `BearbeitenLeiste` (`lesen`). `acquired` ⇒
@@ -335,6 +334,25 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
   bleibt es `lesen`, bis der Nutzer klickt. Roter Test zuerst; danach 6b's Effekt
   entfernen (gehört dann 7b, weil 6b abgeschlossen ist — Files entsprechend erweitern:
   `LieferantDokumentModal.tsx` nur für diese eine Zeile).
+
+#### Task 7c — BearbeitenLeiste nachschärfen (Befunde aus Design-Review 6)
+- Files: `react-pc-frontend/src/components/lock/BearbeitenLeiste.tsx`,
+  `BearbeitenLeiste.test.tsx`, `e2e/bearbeiten-leiste.spec.ts` (neu)
+- Consumes: 5a (`kannBearbeiten`-Semantik: „ein Klick ist gerade sinnvoll")
+- Herkunft: 🟡-Hinweise des Design-Reviewers in Abschnitt 6, plus der offene
+  Kommentar-Fix aus Review 5.
+- Steps:
+  1. Prop-Kommentar zu `kannBearbeiten` auf die neue Bedeutung umschreiben.
+  2. Neuer optionaler Prop `bearbeitenGesperrtGrund?: string` ⇒ `title` (Tooltip) am
+     deaktivierten Bearbeiten-Knopf. `FRONTEND_UI.md`: deaktivierte Knöpfe erklären, warum.
+  3. Die drei Bänder unterscheidbar machen: Countdown = Warnung (`amber`, mit Icon —
+     ihm fehlt als einzigem eins), Verbindung weg = Störung (kräftigeres Rot),
+     Nur-Lesen-Hinweis bleibt rose-50. Farben aus `handwerkerprogramm-design`.
+  4. Layout: Platz für das Countdown-Band reservieren, damit `Fertig` beim Erscheinen
+     nicht ~540 px nach links springt.
+  5. Im Lesen-Modus nach eigenem „Fertig" die leere linke Hälfte benennen
+     („Sie lesen nur mit." — Anrede laut Entscheidung des Nutzers, siehe Du/Sie-Frage).
+  Jeder Punkt mit rotem Test; Screenshots nach dem Ausklingen der Übergänge.
 
 ## Abschnitt 8 (Aufräumen — macht der Orchestrator selbst)
 

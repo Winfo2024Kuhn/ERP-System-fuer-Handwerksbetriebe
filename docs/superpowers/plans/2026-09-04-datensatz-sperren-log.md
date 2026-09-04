@@ -746,3 +746,316 @@ Bedenken / Abweichungen vom Plan:
 - **`handwerkerprogramm-design`-Skill ueber das Skill-Tool nicht aufrufbar**: `Skill({skill: "handwerkerprogramm-design"})` lieferte "Unknown skill" (die Skill-Registrierung fuer dieses Worktree/Session scheint diesen Skill trotz vorhandener Dateien unter `.claude/skills/handwerkerprogramm-design/` nicht zu listen). Stattdessen `SKILL.md` und `README.md` direkt per Read-Tool gelesen und die Design-Regeln (rose-600 Primaerfarbe, Lucide-Icons, kein Emoji, rounded-lg, PageHeader-Muster etc.) daraus angewendet. Zusaetzlich: der PreToolUse-Hook `check-doc-read.ps1`/`mark-design-skill-used.ps1` ist in `settings.local.json` auf einen absoluten Pfad `c:\dev\ERP-System-fuer-Handwerksbetriebe\...` verdrahtet, der auf dieser Maschine nicht existiert (das Repo liegt unter `C:\Users\MarvinKuhn\dev\...`) — der Guard hat dementsprechend nie gegriffen, blockierte aber auch keinen mein Edits.
 - **`DocumentEditorHeader.tsx`s X-Button hat kein `aria-label`/keinen sichtbaren Text** (nur ein nacktes `X`-Icon) — ein Verstoss gegen die FRONTEND_UI.md-Pflicht "Icon-only-Buttons immer mit aria-label". Nicht repariert, weil die Datei nicht in meiner Datei-Liste steht; als Bedenken vermerkt statt still mit angefasst. Betrifft auch meine Tests: dort ueber `container.querySelector('button')` (erster Button im Baum) statt einer Rolle angesprochen.
 - **Playwright-Port**: `E2E_PORT=5174` war beim ersten Versuch von einem fremden, bereits laufenden Dev-Server belegt (Titel "Mehrteillage · Sichtprüfung", offensichtlich ein anderes Projekt/Prozess auf dieser Maschine) — `reuseExistingServer` von Playwright haette dessen Inhalt getestet statt meiner Aenderung. Nicht angetastet/beendet (koennte einem anderen Prozess/Agenten gehoeren), stattdessen Port 5179 verwendet (frei, verifiziert vor der Nutzung).
+
+## Abschnitt 6 — Design-Review (Design-Reviewer)
+
+**Ampel: 🔴** — ein blockierender Befund (Frage 6, auf 14 Zoll gemessen). Alles andere ist 🟡.
+
+Worktree `wt/review-design`, Stand `ff863270`. `E2E_PORT=5190 npm run test:e2e`:
+**82 Tests, alle grün**, beide Größen `pc-14zoll` (1440×900) und `pc-monitor` (1920×1080).
+Kein Test aus `website-*.spec.ts` war rot, kein Nachfahren nötig. Für beide geänderten
+Abläufe (6a X-Button, 6b Lieferant-Modal) gibt es eine Spec — kein 🔴 wegen fehlender Spec.
+
+### Angeschaute Screenshots
+
+Aus `react-pc-frontend/test-results/design/` (alle 12, jeweils `--pc-14zoll` und `--pc-monitor`):
+
+1. `dokument-editor-vor-schliessen--pc-14zoll` / `--pc-monitor`
+2. `dokument-editor-ungespeichert-warnung--pc-14zoll` / `--pc-monitor`
+3. `lieferant-modal-bearbeiten--pc-14zoll` / `--pc-monitor`
+4. `lieferant-modal-gesperrt--pc-14zoll` / `--pc-monitor`
+5. `lieferant-modal-fremdes-lock--pc-14zoll` / `--pc-monitor`
+6. `lieferant-modal-fehler--pc-14zoll` / `--pc-monitor`
+
+Dazu 10 eigene Zusatz-Aufnahmen für Zustände, die keine Spec abbildet (Wegwerf-Spec,
+nach dem Lauf gelöscht, Worktree ist sauber):
+`settled-bearbeiten`, `settled-gesperrt`, `fehler-toast`, `leiste-countdown`,
+`leiste-verbindung-weg` — je `--pc-14zoll` und `--pc-monitor`.
+
+### Die sechs Fragen je Zustand
+
+**`dokument-editor-vor-schliessen` (14 Zoll + Monitor)**
+1. *Farben?* Ja. Kopfzeile weiß, Inhalt slate-50, genau eine rosa Primäraktion (`PDF`), alles
+   andere slate-Ghost. Der Rechnung-Chip unten links ist die einzige weitere rosa Fläche und
+   klar als Status lesbar.
+2. *Design-System?* Ja. Nur rose/slate, Lucide durchgehend, kein Emoji, Systemschrift,
+   `rounded-lg`, `shadow-sm`, kein handgemaltes SVG.
+3. *Look-and-Feel?* Ruhig und ausgerichtet. Auf 1920 wirkt die leere Blockfläche etwas groß,
+   das ist aber der leere Beispiel-Datensatz, nicht das Layout.
+4. *UX?* Der leere Zustand erklärt sich in ganzen Sätzen („Nutzen Sie die Buttons oben …"),
+   Handwerker-Sprache. Gut.
+5. *Auffindbar?* Ja, der X-Knopf sitzt oben links, ohne Scrollen.
+6. *Überschneidung?* Kein waagerechtes Scrollen, keine Überlappung.
+   **Aber:** Beide Aufnahmen erwischen die Vorschau-Spalte mitten in ihrer 500-ms-Aufblendanimation
+   (`LivePreviewPanel`, `width 0% → 45%`, `minWidth 340`). Auf 14 Zoll ist sie im Bild nur ~88 px
+   breit und wirkt abgeschnitten; das ist ein Aufnahme-Artefakt, kein Layoutfehler — im
+   `…-ungespeichert-warnung`-Bild derselben Spec steht sie ausgelaufen bei 45 % (645 px bzw. 860 px).
+   → 🟡 (Screenshot vor der Aufnahme ausklingen lassen).
+
+**`dokument-editor-ungespeichert-warnung` (14 Zoll + Monitor)**
+1. *Farben?* Ja, und sauber gestuft: `Abbrechen` slate-Outline, `Nicht speichern` rose-Outline,
+   `Speichern & Schließen` rose-600 gefüllt. Genau eine rosa Primäraktion.
+2. *Design-System?* Ja. `rounded-2xl`, `shadow-2xl`, `bg-black/40 backdrop-blur-sm`,
+   `AlertTriangle` in amber-50/amber-500 als Warn-Semantik. Passt.
+3. *Look-and-Feel?* Ja, mittig, ruhig, in beiden Größen gleich gut.
+4. *UX?* Titel + Erklärzeile + Frage, drei klar unterschiedliche Ausgänge. Vorbildlich.
+5. *Auffindbar?* Ja, mittig im Bild, ohne Scrollen.
+6. *Überschneidung?* Nein.
+   🟡: `Nicht speichern` bricht in beiden Größen auf zwei Zeilen um (`flex-1` teilt gleich breit).
+   Kosmetik.
+
+**`lieferant-modal-bearbeiten` (14 Zoll + Monitor)**
+1. *Farben?* Im ausgelaufenen Zustand ja: `Fertig` ist weiß mit rose-300-Rand/rose-700-Text,
+   `Speichern` unten ist die einzige gefüllte rose-Fläche.
+   **Achtung, beide Screenshots zeigen den Zustand nicht ausgelaufen:** sie fallen in die
+   150-ms-`transition-colors` beim Wechsel `Bearbeiten` (default, rose-600 gefüllt) →
+   `Fertig` (outline). Gemessen: auf `pc-monitor` ist die Knopffläche zum Aufnahmezeitpunkt
+   noch #E11D48 (rose-600, weiße Schrift), auf `pc-14zoll` schon #FADAE1
+   (rose-600 bei ~16 % über Weiß). Nachgestellt mit 1,2 s Wartezeit
+   (`settled-bearbeiten--*`) steht der Knopf in beiden Größen korrekt als weißer
+   Outline-Knopf. → 🟡, gleiche Ursache wie oben.
+2. *Design-System?* Ja. rose/slate, Lucide (`Check`, `Pencil`, `Eye`, `CheckCircle`),
+   kein Emoji, Systemschrift, Karten `rounded-lg`/`shadow-sm`, Dialog `rounded-2xl`.
+3. *Look-and-Feel?* Die Sperr-Leiste ist im freien Zustand links komplett leer — auf 1920 ein
+   ~1300 px breites graues Band mit einem Knopf ganz rechts. Wirkt hohl. → 🟡
+4. *UX?* Genau eine Primäraktion (`Speichern`), `Fertig` klar als Sekundäraktion.
+   Formularfelder aktiv und sichtbar bedienbar.
+5. *Auffindbar?* Ja, `Fertig` sitzt am Kopf des Datensatzes, auf 14 Zoll ohne Scrollen.
+6. *Überschneidung?* Kein waagerechtes Scrollen, keine überlappenden Elemente.
+   🟡: Auf 14 Zoll frisst die PDF-Spalte zwei Drittel der Modalbreite; das Formular endet
+   mitten im Feld „Zahlungsziel" an der Fußleiste, ohne sichtbaren Scrollbalken oder
+   Abschluss-Verlauf. Es ist ein Scroll-Container, also kein Fehler — aber man sieht nicht,
+   dass unten noch etwas kommt.
+
+**`lieferant-modal-gesperrt` (14 Zoll + Monitor)** — eigenes Lock freigegeben, Nur-Lesen
+1. *Farben?* Grenzwertig. `Bearbeiten` ist rose-600 gefüllt, `Speichern` ist rose-600 gefüllt
+   mit 50 % Deckkraft — auf einen Blick zwei rosa Knöpfe. Die Unterscheidung
+   lesen/bearbeiten läuft ansonsten nur über die Textfarbe der Felder
+   (slate-900 → slate-400); Rahmen und Flächen bleiben identisch. → 🟡
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Ruhig, in beiden Größen gleich.
+4. *UX?* 🟡: Wer eben selbst auf `Fertig` geklickt hat, sieht das Formular ausgrauen — die
+   Leiste sagt dazu nichts (linke Hälfte leer). Ein Satz wie „Sie lesen nur mit." würde die
+   Lücke schließen. `Speichern` erklärt seine Deaktivierung immerhin per `title`-Tooltip.
+5. *Auffindbar?* Ja, `Bearbeiten` sitzt am Kopf, ohne Scrollen, in beiden Größen.
+6. *Überschneidung?* Nein.
+
+**`lieferant-modal-fremdes-lock` (14 Zoll + Monitor)** — der beste Zustand des Abschnitts
+1. *Farben?* Ja. `GesperrtHinweis` als volles rose-50-Band mit rose-100-Rand und rose-600-`Lock`,
+   Name fett in slate-900, Rest slate-700. Hebt sich klar von weißem Formular und slate-50-Band ab.
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Sehr ruhig, das Band nimmt die volle freie Breite und füllt die Leiste
+   auch auf 1920 sinnvoll — genau das, was dem freien Zustand fehlt.
+4. *UX?* „Thomas Beispiel bearbeitet das gerade — Sie sehen den aktuellen Stand. Seit 5 Min."
+   Klartext, Handwerker-Sprache, kein Buchhalter-Deutsch. `Bearbeiten` bleibt sichtbar und aktiv
+   (Übernahmeversuch statt Sackgasse). Stark.
+5. *Auffindbar?* Ja — Hinweis und Umschalter stehen direkt über dem Datensatz, auf 14 Zoll
+   ohne Scrollen sichtbar.
+6. *Überschneidung?* Nein, kein waagerechtes Scrollen, nichts abgeschnitten.
+
+**`lieferant-modal-fehler` (14 Zoll + Monitor)** — Acquire liefert 500
+1. *Farben?* 🟡: Der Fehler ist leiser gestaltet als der harmlose Nur-Lesen-Hinweis — nur
+   rose-700-Text mit offenem Schloss auf dem grauen Band, ohne Fläche und ohne Rand, während
+   `GesperrtHinweis` ein volles rose-50-Band bekommt. Dringlichkeit ist verkehrt herum verteilt.
+2. *Design-System?* Ja, rose/slate, Lucide.
+3. *Look-and-Feel?* Unauffällig, fast zu unauffällig.
+4. *UX?* 🟡: `Bearbeiten` ist deaktiviert ohne Tooltip, der das Warum erklärt —
+   `BearbeitenLeiste` gibt keinen `title` durch, während `Speichern` im selben Modal einen hat.
+   Der Grund steht zwar daneben im Band, die Vorgabe aus FRONTEND_UI.md verlangt aber den Tooltip.
+   Der Fehler-Toast erscheint (Toast-Pflicht erfüllt) — im Spec-Screenshot ist er noch nicht
+   sichtbar, weil er ~600–800 ms zum Einblenden braucht und die Aufnahme früher fällt.
+5. *Auffindbar?* Ja.
+6. *Überschneidung?* Nein — siehe aber den blockierenden Befund unten, der genau hier
+   auftritt, sobald der Toast eingeblendet ist.
+
+**Zusatz `leiste-countdown` (14 Zoll + Monitor)** — mit `page.clock` auf 4:05 vorgespult
+1. *Farben?* 🟡: „Wird in 55 Sekunden freigegeben — bewegen Sie die Maus, um weiterzuarbeiten."
+   steht in rose-50/rose-100 — also in genau derselben Optik wie der neutrale
+   `GesperrtHinweis`. Eine Vorwarnung („dir läuft gleich die Sperre weg") sieht damit aus wie
+   eine Info. Das Design-System hält `amber-500` für Warnungen bereit.
+   Außerdem als einziges der drei Bänder ohne Icon.
+2. *Design-System?* Ja (rose/slate, kein Fremdton).
+3. *Look-and-Feel?* Passt, füllt die Leiste.
+4. *UX?* Text sagt klar, was passiert und was man dagegen tun kann. Gut.
+   🟡: Sobald das Band erscheint, rutscht `Fertig` um ~540 px nach links (`justify-between`),
+   also potenziell unter dem Mauszeiger weg.
+5. *Auffindbar?* Ja, auf 14 Zoll vollständig sichtbar (x 848–1380), ohne Scrollen.
+6. *Überschneidung?* Nein.
+
+**Zusatz `leiste-verbindung-weg` (14 Zoll + Monitor)** — Heartbeat auf 500, ~3 Intervalle vorgespult
+1. *Farben?* rose-50 mit rose-200-Rand und rose-700-Text, `WifiOff`. Wirkt durch den dunkleren
+   Text dringlicher als der Countdown — die Reihenfolge stimmt, die Farbfamilie ist aber
+   dieselbe wie bei Hinweis und Countdown. 🟡 wie oben.
+2. *Design-System?* Ja.
+3./4. Ruhig, Text konkret („Ihre Änderungen sind noch nicht gespeichert."). Gut.
+5. *Auffindbar?* Ja, beide Größen ohne Scrollen.
+6. *Überschneidung?* Nein.
+
+### 🛑 Blockierend
+
+**Der Fehler-Toast verdeckt auf 14 Zoll die Fußleiste des Lieferant-Dokument-Modals und
+schluckt deren Klicks.**
+
+Der neue Effekt in `src/components/LieferantDokumentModal.tsx:83` feuert `toast.error(...)`
+automatisch, während das Modal offen ist. Der Toast-Container steht global auf
+`fixed bottom-6 right-6` (`src/components/ui/toast.tsx:124`) und landet damit genau auf der
+Modal-Fußleiste. Gemessen im Browser (Zustand: Acquire 500, 1,2 s nach dem Öffnen):
+
+| Größe | Toast | `Abbrechen` | `Speichern` | `elementFromPoint` in der Knopfmitte |
+| --- | --- | --- | --- | --- |
+| pc-14zoll | y 830–876 | y 812–850 | y 812–850 | **Toast-DIV** (beide Knöpfe) |
+| pc-monitor | y 1010–1056 | y 983–1021 | y 983–1021 | Button (nur untere Kante verdeckt) |
+
+Auf 14 Zoll sind 20 von 38 px Knopfhöhe (53 %) überdeckt, und ein Klick in die Mitte von
+`Abbrechen` oder `Speichern` trifft für die 5 s Toast-Standzeit den Toast, nicht den Knopf.
+Damit ist Frage 6 verletzt („Sticky-Leisten und Modale verdecken nichts, was man gerade
+braucht") — und zwar nicht nur optisch.
+
+Warum die vorhandenen Prüfungen das nicht gesehen haben:
+`keineUeberschneidungen` in `e2e/hilfen/design.ts` überspringt bei offenem Dialog alles
+außerhalb des Dialogs (`if (dialog && !dialog.contains(el)) continue;`) — der Toast liegt
+außerhalb. Und `designPruefung` fotografiert, bevor der Toast eingeblendet ist.
+
+**Nachweisbar sein muss:** bei offenem Modal und stehendem Toast trifft ein
+`document.elementFromPoint` in der Mitte von `Abbrechen` und `Speichern` auf beiden Größen den
+jeweiligen Button. Naheliegende Wege: Toast-Container bei offenem Dialog höher setzen,
+in diesem Zustand auf den Toast verzichten (die Meldung steht ohnehin im Modal),
+oder den Toast oben rechts ausgeben. Die Prüfung gehört in
+`e2e/lieferant-dokument-modal.spec.ts` (Fehlerfall) plus eine Erweiterung von
+`keineUeberschneidungen` um Overlays außerhalb des Dialogs.
+
+### 💡 Hinweise (blockieren nicht)
+
+- `dokument-editor-vor-schliessen` und `lieferant-modal-bearbeiten` fotografieren laufende
+  Übergänge (500-ms-Breitenanimation der Vorschau bzw. 150-ms-Farbübergang von `Bearbeiten`
+  nach `Fertig`). Vor `designPruefung` kurz ausklingen lassen, sonst belegen die Bilder nicht
+  den Zustand, den sie belegen sollen.
+- Alle drei Lock-Bänder (Hinweis, Countdown, Verbindung weg) sind rose-50-Varianten und
+  unterscheiden sich fast nur im Text. Countdown = Warnung, Verbindung weg = Störung —
+  `amber` bzw. ein kräftigeres Rot wären systemkonform und trennten die Zustände auf einen Blick.
+  Dem Countdown fehlt außerdem als einzigem ein Icon.
+- Der Fehlerzustand ist optisch schwächer als der harmlose Nur-Lesen-Hinweis. Ein Band mit
+  Fläche und Rand wie bei `GesperrtHinweis` wäre stimmiger.
+- Der deaktivierte `Bearbeiten`-Knopf erklärt sich nicht per Tooltip (`BearbeitenLeiste` reicht
+  keinen `title` durch), während `Speichern` im selben Modal einen hat.
+- Im Nur-Lesen-Zustand nach eigenem `Fertig` bleibt die linke Hälfte der Leiste leer. Ein Satz
+  („Sie lesen nur mit.") würde den Zustand benennen und das Band auf 1920 füllen.
+- Wenn der Countdown erscheint, springt `Fertig` um ~540 px nach links.
+- `Nicht speichern` im Warn-Dialog bricht auf zwei Zeilen um.
+- Auf 14 Zoll nimmt die PDF-Spalte zwei Drittel des Modals ein; das Formular endet ohne
+  sichtbaren Hinweis, dass darunter noch Felder liegen.
+- Du/Sie: `TabSchliessenHinweis` duzt, `BearbeitenLeiste` siezt. Bekannt, liegt beim Nutzer.
+- `TabSchliessenHinweis` war wie geplant über die Route nicht erreichbar und ist deshalb nur
+  im Code geprüft (rose-100-Kreis, `CheckCircle2` rose-600, slate-50-Fläche, `role="status"` —
+  systemkonform). Der Browser-Beleg kommt mit 7a.
+
+## Abschnitt 6 — Code-Review (Code-Reviewer)
+
+**Ampel: 🔴** — ein blockierender Befund. Alles andere (Tests, Build, Lint, Mutationsproben,
+Datenschutz, Diff-Hygiene) ist sauber.
+
+### Selbst gemessene Zahlen
+
+| | Baseline (nach Abschnitt 5) | jetzt | Delta |
+|---|---|---|---|
+| Backend `./mvnw -B test` | 2454 Tests, 0 F, 4 E | **2462 Tests, 0 Failures, 4 Errors** | +8 |
+| Frontend Testdateien | 85 | **87** | +2 |
+| Frontend Tests | 1003 | **1027** | +24 |
+| Lint | 0 Fehler, 1 Warnung | **0 Fehler, 1 Warnung** | ±0 |
+
+- Die 4 Backend-Errors sind namentlich die bekannten umgebungsbedingten
+  (`AuditChainRepairIntegrationTest` 2x, `AuditHashRoundtripDiagnoseTest` 2x,
+  jeweils `CannotCreateTransaction`) — kein Befund.
+- Lint-Warnung ist die vorbestehende in `BelegeKasseEditor.tsx:1204` — kein Befund.
+- `./mvnw -B clean package -DskipTests` grün. `npm run build` grün;
+  `src/main/resources/static/` danach auf HEAD zurückgesetzt, Arbeitsbaum sauber.
+- Neue Testdateien wie erwartet: `lock/TabSchliessenHinweis.test.tsx` (6a),
+  `LieferantDokumentModal.test.tsx` (6b).
+
+**Flakes unter Parallellast** (Design-Reviewer fuhr gleichzeitig Dev-Server + Browser):
+erster Volllauf 7 Zeitschranken-Fehlschläge, zweiter Volllauf 1. Kein Fehlschlag war
+zweimal derselbe. Alle betroffenen Dateien einzeln nachgefahren — `LieferantDokumentModal.test.tsx`
+3x isoliert 13/13 grün, `document-editor/index.test.tsx` im zweiten Volllauf 15/15 grün.
+Also Lastartefakt, kein Codefehler.
+
+### Verbraucher-Grep auf die alten Lock-Klassen
+
+`grep -rn "DokumentLockService\|useDocumentLock\|DocumentLockedModal\|dokument-locks" src/main react-pc-frontend/src`
+
+Sauber. Es zeigt nur noch auf die alten Klassen: `pages/DocumentEditorPage.tsx` (erwartet, 7a),
+die alten Klassen selbst (`DokumentLockController`, `DokumentLockService`, `useDocumentLock`,
+`DocumentLockedModal`) und reine Erwähnungen in Kommentaren/Tests. Kein anderer Produktivcode
+mehr. `document-editor/index.tsx` enthält nur noch den erklärenden Kommentar, keinen Request.
+
+### Mutationsproben (Quellstand danach byte-identisch, `git diff f8b41d2e` leer)
+
+1. **6a Reihenfolge** — `window.close()` in `tabSchliessen()` vor den `await onLockFreigeben()`-Block gezogen:
+   `AssertionError: expected [ 'speichern', 'window.close', …(1) ] to deeply equal [ Array(3) ]`
+2. **6a Speichern scheitert** — `void tabSchliessen();` vor die `if (!gespeichert) return;`-Schranke gesetzt:
+   `AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times`
+3. **6c Durchgriff** — den `throw e;`-Zweig in `stornieren` entfernt: genau **1 von 45** Tests rot,
+   `AusgangsGeschaeftsDokumentControllerTest$Stornieren.versionskonfliktBeimStornierenGibt409:697
+   Status expected:<409> but was:<400>` — die anderen vier Zweige blieben grün. Saubere Isolation.
+
+### 🛑 Blockierend
+
+**Neu angelegte Dokumente verlieren nach 90 s ihre Sperre und lassen sich nicht mehr speichern.**
+`react-pc-frontend/src/components/document-editor/index.tsx:1146-1155` (entfernter Heartbeat)
+
+Kette: `create` im Backend holt die Sperre korrekt (`SperrbarerTyp.AUSGANG`, Test vorhanden und
+grün). Danach schreibt der Editor die neue Id nur per `window.history.replaceState` in die URL
+(`syncDocumentIdInUrl`, Zeile 1130) — react-router bekommt das nicht mit, `useSearchParams` liefert
+weiter kein `dokumentId`, also läuft `useDocumentLock('AUSGANG', undefined)` in `DocumentEditorPage.tsx:26`
+im Zustand `idle` und pingt nie. `update()` frischt den Heartbeat nicht auf (nur `isHeldBy`-Prüfung).
+Nach `STALE_AFTER` = 90 s ist die Sperre verwaist, jeder weitere PUT (auch der 10-Sekunden-Autosave)
+bekommt 409 — und der Wiederherstellungsweg ist mit 6a weggefallen (`tryAcquireLock`-Retry raus).
+Der Nutzer sieht nur einen Toast; alles ab der 90-Sekunden-Marke Getippte ist bis zum Neuladen
+nicht speicherbar.
+
+Genau davor schützte der entfernte Editor-Heartbeat — sein eigener Kommentar beschrieb diesen
+Fall wörtlich. 6a hat ihn planmäßig entfernt, aber 7a verdrahtet die Seite erst später; in der
+Liste der bewusst akzeptierten Zwischenstände steht nur der unerreichbare `TabSchliessenHinweis`,
+nicht dieser Fall.
+
+Nachweisbar sein muss: ein neu im Editor angelegtes Dokument lässt sich auch nach mehr als 90 s noch
+speichern — entweder weil die Seite die per `replaceState` gesetzte Id mitbekommt und ab da
+heartbeatet, oder weil der Editor die Id an die Seite meldet. Dazu ein Test, der die Uhr über
+90 s vorstellt und danach einen erfolgreichen PUT zeigt.
+
+### 💡 Hinweise (blockieren nicht)
+
+- `document-editor/index.tsx:1229` — bei 409 landet `await res.text()` ungefiltert im Toast.
+  Der Sperrkonflikt liefert Klartext, ein Versionskonflikt (`RestExceptionHandler`) aber JSON;
+  dann liest der Handwerker `{"status":409,"message":"…"}`. 6b macht es an dieser Stelle mit
+  `useKonfliktMeldung` richtig — der Editor könnte denselben Baustein nutzen.
+- `document-editor/index.tsx:1381` — der 150-ms-`setTimeout` wird beim Unmount nicht abgeräumt.
+  Folgenlos, weil `mountedRef` den `setState` abfängt, aber die Id zu merken und im Cleanup zu
+  clearen wäre sauberer.
+- `LieferantDokumentModal.test.tsx:156` — `findByRole` mit der Standard-Wartezeit von 1 s; genau
+  dieser Test kippte unter Parallellast. Eine großzügigere Zeitschranke macht ihn robust.
+- `LieferantDokumentModal.tsx` (`handleClose`) — Freigabe bewusst fire-and-forget, im Gegensatz
+  zum awaiteten Weg in 6a. Hier richtig (nichts hängt am Ergebnis), aber ein Halbsatz im
+  Kommentar, warum es hier anders ist als im Editor, würde die nächste Lesart sparen.
+
+### Sonst geprüft, ohne Befund
+
+- **6c Teil 1** ist wirklich nur ein Tausch: 11 Zeilen im Controller, ausschließlich Import,
+  Feldtyp, Enum statt String-Konstante, DTO-Klasse. Kein Verhaltensunterschied.
+- Kein Klassenname im 409-Body — die fünf neuen Tests prüfen das ausdrücklich mit
+  `not(containsString("ObjectOptimisticLockingFailureException"))`. Der Handler loggt die Ursache
+  weiter (`LOG.debug` mit Entitätstyp und Id), `pdfSpeichern`/`stornieren`/`update` loggen ihre
+  allgemeinen Fehler unverändert per `log.error(..., e)`.
+- **6b:** Idle-Timer nur bei `modus === 'bearbeiten'` scharf; kein zweiter Timer neben
+  `useIdleTimer`; `formGesperrt = modus !== 'bearbeiten'` deckt gesperrt/loading/error in einem
+  ab; Fehler-Toast in Handwerker-Klartext, wortgleich mit dem Inline-Hinweis. Der Auto-`onBearbeiten`-
+  Effekt kann nicht gegen "Fertig" oder die Idle-Freigabe ankämpfen: `aktivFreigeben` setzt den
+  Status auf `idle`, nicht auf `acquired`, die Bedingung greift also nicht erneut.
+- **6a:** Editor schickt nach Mount und Unmount keinen einzigen Lock-Request mehr (eigener Test);
+  `onClose` wird nur noch genommen, wenn `onLockFreigeben` fehlt — kein doppeltes Freigeben.
+- **Datenschutz:** nur Dummy-Namen (Max Mustermann, Anna Büro, Thomas Beispiel,
+  Musterbedarf Baustoffe GmbH), keine echten E-Mail-Adressen, keine Secrets in neuen Dateien.
+- **Diff-Hygiene:** der Abschnitt fasst genau 12 Dateien an. Kein `test-results/`, kein
+  `resources/static/`, kein `playwright-report/`, kein `node_modules/`.
+- **Performance:** keine neuen Fetch-Wasserfälle, kein Polling. Der Editor sendet nach 6a sogar
+  weniger (Heartbeat weg). Der Idle-Countdown rendert nur in der letzten Minute im Sekundentakt,
+  Aktivitäts-Resets sind auf 1/s gedrosselt — kein Re-Render-Sturm.
