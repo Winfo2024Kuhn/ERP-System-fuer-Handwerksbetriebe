@@ -25,7 +25,21 @@
 -- beim Start brechen. Das Java-Feld ist @Enumerated(EnumType.STRING) auf
 -- SperrbarerTyp (aktuell AUSGANG, EINGANG).
 
-DROP TABLE IF EXISTS dokument_lock;
+-- Bewusst KEIN "DROP TABLE dokument_lock" an dieser Stelle.
+--
+-- Spring Boot laesst Flyway VOR dem Aufbau der EntityManagerFactory laufen.
+-- Solange domain/DokumentLock.java die Tabelle dokument_lock noch als @Entity
+-- mappt, wuerde ein Drop hier die Anwendung startunfaehig machen: Flyway
+-- entfernt die Tabelle, danach scheitert die Hibernate-Schemapruefung
+-- (ddl-auto=validate) mit "missing table [dokument_lock]".
+--
+-- In den Tests faellt das nicht auf: dort ist Flyway deaktiviert und das
+-- Schema entsteht per ddl-auto=create-drop aus den Entities.
+--
+-- Der Drop wird deshalb zusammen mit dem Entfernen der Altklassen
+-- (DokumentLock, DokumentLockRepository, DokumentLockService, DokumentLockDto,
+-- DokumentLockController) in einer eigenen spaeteren Migration ausgeliefert.
+-- Beides gehoert zwingend in dieselbe Auslieferung.
 
 CREATE TABLE IF NOT EXISTS datensatz_lock (
     id                 BIGINT       NOT NULL AUTO_INCREMENT,
