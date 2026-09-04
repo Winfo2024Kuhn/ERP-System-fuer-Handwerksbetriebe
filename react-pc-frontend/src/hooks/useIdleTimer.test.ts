@@ -155,6 +155,12 @@ describe('useIdleTimer', () => {
 
         const renderCountVorBurst = renderCount;
 
+        // Direkterer Nachweis als der Render-Zaehler unten: ein tatsaechlich
+        // durchgefuehrter Reset plant genau 2 neue Timeouts (Warn + Idle). Ein
+        // setTimeout-Spy zaehlt also unmittelbar die Anzahl der tatsaechlich
+        // ausgefuehrten Resets, unabhaengig von Reacts Render-Batching.
+        const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
         // Jedes Ereignis einzeln in act() feuern, damit React nicht durch
         // automatisches Batching mehrere Zustandsaenderungen zu einem einzigen
         // Render zusammenfasst und den Drossel-Effekt so verdeckt.
@@ -164,6 +170,8 @@ describe('useIdleTimer', () => {
             });
         }
 
+        // Genau 1 durchgefuehrter Reset (= 2 neue Timeouts), nicht 50 (= 100).
+        expect(setTimeoutSpy).toHaveBeenCalledTimes(2);
         expect(renderCount - renderCountVorBurst).toBeLessThanOrEqual(1);
         expect(result.current.verbleibendeSekunden).toBeNull();
         expect(onIdle).not.toHaveBeenCalled();
