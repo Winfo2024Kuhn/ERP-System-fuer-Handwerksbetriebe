@@ -175,7 +175,15 @@ test.describe('LieferantDokumentModal - Sperr-Fundament', () => {
         await expect(dialog(page).getByPlaceholder('RE-2024-001')).toBeDisabled();
         await expect(dialog(page).getByRole('button', { name: 'Speichern' })).toBeDisabled();
 
-        await designPruefung(page, testInfo, 'lieferant-modal-gesperrt', { primaerAktion: bearbeiten });
+        // Task 7d: nach eigenem "Fertig" (Lesen-Modus OHNE fremden Halter)
+        // zeigt die Leiste jetzt den ruhigen Hinweis -- vorher blieb die linke
+        // Haelfte der Leiste leer (Design-Review-Befund zu Abschnitt 6). Kein
+        // title/aria-describedby auf "Bearbeiten", weil der Knopf hier normal
+        // anklickbar ist (kein Grund zu erklaeren).
+        await expect(dialog(page).getByText('Sie lesen nur mit.')).toBeVisible();
+        await expect(bearbeiten).not.toHaveAttribute('title');
+
+        await designPruefung(page, testInfo, 'lieferant-modal-lesen-hinweis', { primaerAktion: bearbeiten });
     });
 
     test('fremdes Lock (409): GesperrtHinweis mit Namen, Formular gesperrt, "Bearbeiten" versucht die Uebernahme', async ({ page }, testInfo) => {
@@ -220,6 +228,18 @@ test.describe('LieferantDokumentModal - Sperr-Fundament', () => {
         await erwarteTreffer(page, speichern, 'Speichern');
 
         await designPruefung(page, testInfo, 'lieferant-modal-fehler', { primaerAktion: bearbeiten });
+
+        // Task 7d: derselbe Wortlaut wie das rote Fehlerband steht jetzt auch
+        // als Tooltip auf dem deaktivierten "Bearbeiten"-Knopf (Gulf of
+        // Execution -- ein deaktivierter Knopf erklaert per Tooltip WARUM).
+        // Vorher trug der Knopf gar kein title-Attribut (title=null), Hover
+        // zeigte nichts (Design-Review-Befund, Kontext-Log Abschnitt 7-1).
+        await bearbeiten.hover();
+        await expect(bearbeiten).toHaveAttribute('title', 'Sperre konnte nicht geholt werden — bitte neu laden.');
+        const beschreibungsId = await bearbeiten.getAttribute('aria-describedby');
+        expect(beschreibungsId).toBeTruthy();
+
+        await designPruefung(page, testInfo, 'lieferant-modal-fehler-tooltip', { primaerAktion: bearbeiten });
     });
 
     test('Speicherfehler (500): Toast verdeckt die Fussleiste ebenfalls nicht', async ({ page }, testInfo) => {
