@@ -2173,3 +2173,143 @@ Auftrag stimmt. Schritt 5 des Kettentests (Retry-Acquire mit 500) deckt den Fall
   gemeldet hatte, und belegt die Reihenfolge zusätzlich mit einem Test.
 - Datenschutz: nur Dummy-Namen (Anna Beispiel, Petra Beispiel). Keine Secrets, kein Build-Output,
   kein `test-results/` im Diff.
+
+## Abschnitt 7-2 — Task 7d (Coding-Agent)
+
+**Zeit:** 2026-09-05, ca. 00:00–00:05 Uhr
+**Branch:** `lock/task-7d-modal-props` (Worktree `wt/task-7d`)
+**Commit(s):** `b392494e` — fix(lieferant-modal): BearbeitenLeiste-Props bearbeitenGesperrtGrund/zeigeNurLesenHinweis verdrahten
+**Status:** 🟢 fertig, alle Gates grün
+
+### Was gemacht wurde
+
+Task 7c hatte `BearbeitenLeiste` zwei Props gegeben (`bearbeitenGesperrtGrund`,
+`zeigeNurLesenHinweis`), durfte `LieferantDokumentModal` aber nicht anfassen
+(7b arbeitete parallel darin). Dieser Task verdrahtet beide Props im Modal.
+
+**Schritt 1 — `bearbeitenGesperrtGrund`:**
+- Roter Test vorher (3 Assertions rot, Rest der Datei grün):
+  - `Waehrend des Sperren-Abrufs (Zustand "loading")`: `expect(bearbeiten).toHaveAttribute('title', 'Sperre wird gerade geholt …')` → `Expected ... Received: null`
+  - `Fehler beim Sperren (Zustand "error")` (neuer Test „traegt denselben Wortlaut wie das rote Fehlerband…"): `expect(bearbeiten).toHaveAttribute('title', 'Sperre konnte nicht geholt werden — bitte neu laden.')` → `Received: null`
+  - `zeigt nach eigenem "Fertig" den Hinweis "Sie lesen nur mit."…` (gehört eigentlich zu Schritt 2, lief aber im selben Lauf rot mit, siehe dort)
+- Implementiert: `bearbeitenGesperrtGrund` in `LieferantDokumentModal.tsx` aus `lock.status` abgeleitet — `"Sperre wird gerade geholt …"` bei `loading`, identischer Wortlaut wie das rote Fehlerband (`LOCK_FEHLER_TEXT`) bei `error`, sonst `undefined`. An `BearbeitenLeiste` durchgereicht.
+- Nach Fix: alle 18 Tests in `LieferantDokumentModal.test.tsx` grün.
+
+**Schritt 2 — `zeigeNurLesenHinweis`:**
+- Roter Test vorher: `zeigt nach eigenem "Fertig" den Hinweis "Sie lesen nur mit." in der Leiste…` → Timeout, `findByText('Sie lesen nur mit.')` fand nichts (Prop wurde nie gesetzt, Default `false`).
+- Implementiert: `zeigeNurLesenHinweis = lock.modus === "lesen" && lock.status !== "locked-by-other"` — zeigt den Hinweis in jedem Lesen-Zustand außer bei Fremdsperre (dort erklärt `GesperrtHinweis` bereits, kein doppelter Text).
+- Test „zeigt bei Fremdsperre KEINEN Hinweis…" war schon vor der Implementierung grün (Default `false`) — bestätigt aber die Nicht-Regression nach dem Fix.
+
+**Schritt 3 — Playwright-Spec erweitert** (`e2e/lieferant-dokument-modal.spec.ts`):
+- Test „freies Lock…": nach `fertig.click()` zusätzlich geprüft, dass „Sie lesen nur mit." sichtbar ist und der Bearbeiten-Knopf kein `title` trägt; neuer Screenshot `lieferant-modal-lesen-hinweis` (ersetzt den bisherigen Namen `lieferant-modal-gesperrt` an derselben Stelle im Ablauf).
+- Test „Fehlerfall (500) beim Oeffnen…": zusätzlich `bearbeiten.hover()` und Prüfung von `title`/`aria-describedby`; neuer Screenshot `lieferant-modal-fehler-tooltip`.
+- Lauf: `E2E_PORT=5179 npx playwright test e2e/lieferant-dokument-modal.spec.ts` → **8 passed** (4 Tests × 2 Projekte `pc-14zoll`/`pc-monitor`).
+- Screenshots (Auswahl, alle unter `react-pc-frontend/test-results/design/`):
+  - `lieferant-modal-lesen-hinweis--pc-14zoll.png` / `--pc-monitor.png`
+  - `lieferant-modal-fehler-tooltip--pc-14zoll.png` / `--pc-monitor.png`
+  - kurzer Blick (Coding-Agent, keine formale Beurteilung): Hinweis „Sie lesen nur mit." erscheint links neben dem aktivierbaren Bearbeiten-Knopf, keine Überschneidung; im Fehlerzustand steht das rote Band oben, der Knopf ist grau/deaktiviert (Tooltip selbst ist ein natives `title`-Attribut, im Screenshot nicht sichtbar, per `getAttribute` verifiziert).
+
+### Mutationsproben (vor dem Commit, danach Quellstand wieder byte-identisch)
+- Grund nicht durchreichen (`bearbeitenGesperrtGrund={undefined}` fest verdrahtet): 2 Tests rot (`loading`- und `error`-Titel-Assertion).
+- `zeigeNurLesenHinweis` fest `false`: 1 Test rot (Hinweis nach eigenem „Fertig" fehlt).
+- Jeweils per `git diff`/Zeilen-Vergleich bestätigt: Quellcode nach Revert wieder identisch zum Stand vor der Mutation (nur die eine mutierte Zeile geändert und zurückgesetzt).
+
+### Gates
+- `npx vitest run src/components/LieferantDokumentModal.test.tsx` → 18/18 grün.
+- `npm run lint` → 0 Fehler, 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`, `react-hooks/exhaustive-deps`) — unverändert zur Baseline.
+- `npm run build` → grün; `src/main/resources/static/` danach zurückgesetzt (`git checkout` auf die zwei vorbestehenden Dateien, neu erzeugte JS-Datei gelöscht).
+- `E2E_PORT=5179 npx playwright test e2e/lieferant-dokument-modal.spec.ts` → 8/8 grün (beide Größen).
+
+### Bedenken / Abweichungen vom Plan
+
+- **Wortlaut „loading"-Tooltip weicht vom Banner-Text ab:** Der bestehende Lade-Hinweis im Modal (links neben der Leiste) heißt „Sperre wird geprüft…", der neue Tooltip auf dem Bearbeiten-Knopf (Vorgabe aus dem Task-Text) heißt „Sperre wird gerade geholt …". Für den Fehlerfall verlangt der Task explizit denselben Wortlaut wie das rote Band — für `loading` gibt es diese Vorgabe nicht, nur einen Formulierungsvorschlag. Bewusst wörtlich wie vorgegeben umgesetzt, auch wenn zwei leicht unterschiedliche Formulierungen für denselben Ladezustand nebeneinander stehen (Banner vs. Tooltip). Falls das im Design-Review als Inkonsistenz auffällt: einfache Anpassung, beide auf denselben Wortlaut zu bringen.
+- **Hinweis erscheint auch waehrend `loading`/`error`, nicht nur nach „Fertig":** `zeigeNurLesenHinweis` ist an `lock.status !== "locked-by-other"` geknüpft (nicht nur an `status === 'idle'`), weil die Task-Vorgabe als einzige Ausnahme die Fremdsperre nennt. Dadurch zeigt die Leiste „Sie lesen nur mit." auch während des Sperren-Abrufs und im Fehlerfall — dort stehen dann Ladehinweis/Fehlerband UND „Sie lesen nur mit." gleichzeitig. Inhaltlich nicht falsch (der Nutzer liest tatsächlich nur mit), aber möglicherweise redundant. Nicht separat rot getestet, da der Task nur „nach eigenem Fertig" und „bei Fremdsperre" als Pflicht-Testfälle nennt; auf den Screenshots (`lieferant-modal-fehler-tooltip`) ist der Zustand sichtbar und wurde nicht beanstandet.
+- **Screenshot-Name `lieferant-modal-gesperrt` entfernt:** An derselben Stelle im „freies Lock"-Test (nach `fertig.click()`) hieß der bisherige Screenshot `lieferant-modal-gesperrt`; er wurde zu `lieferant-modal-lesen-hinweis` umbenannt (gleicher Zustand, jetzt mit sichtbarem Hinweis). Keine andere Stelle referenziert den alten Namen (geprüft: nur in dieser Spec verwendet).
+- Sonst nichts weiter im Modal verändert, wie vorgegeben.
+
+## Abschnitt 7-2 — Task 7a (Coding-Agent)
+
+**Zeit:** 04.–05.09.2026, ca. 23:40–01:00 Uhr (lokale Sessionzeit)
+**Branch:** `lock/task-7a-editor-seite` (auf `claude/eloquent-ramanujan-gz0w2t` @ `757ca9a5`)
+**Commits:**
+- `8c05a3ce` — feat(dokument-editor): Speicher-Auslöser nach außen für die Seite (Task 7a)
+- `ff988816` — fix(tab-schliessen-hinweis): text-balance gegen alleinstehendes "Sie"
+- `c57e8761` — feat(dokument-editor-seite): auf useDatensatzLock/BearbeitenLeiste umgestellt (Issue #82, Abschnitt 7a)
+- `43f382ee` — test(e2e): Playwright-Spec für die Dokument-Editor-Seite (Issue #82, Abschnitt 7a)
+
+**Status:** 🟢 fertig aus meiner Sicht — alle eigenen Gates grün. Ein Bedenken zu einer FREMDEN, jetzt kaputten Spec (siehe unten), bewusst nicht selbst repariert.
+
+### Was gemacht wurde
+
+Pflichtlektüre vor dem ersten Edit: FRONTEND_UI.md, TESTING_SECURITY.md, `handwerkerprogramm-design` (SKILL.md + README.md, direkt per Read-Tool — das Skill-Tool fand ihn in diesem Worktree), `playwright-design-pruefung/SKILL.md`, `kriterien.md`. Dazu alle fünf fertigen Bausteine mit ihren Kommentaren/Tests (`useDatensatzLock.ts`, `document-editor/index.tsx`, `BearbeitenLeiste.tsx`, `GesperrtHinweis.tsx`, `useIdleTimer.ts`, `toast.tsx`) und `LieferantDokumentModal.tsx` als Vorbild, plus der komplette bisherige Kontext-Log (Abschnitte 6/7/7-1) für die 6a-Entscheidungen zum X-Button-Ablauf.
+
+**1. `useDocumentLock`/`DocumentLockedModal` raus, `useDatensatzLock('AUSGANG', dokumentIdNum)` rein; kein Flackern/Remount beim Anlegen.**
+
+Rotes Verhalten vorab durchdacht statt blind mit `lock.modus` verdrahtet: ein Dokument, das ohne Id startet und beim ersten Speichern seine Id über die URL bekommt, durchläuft in `useDatensatzLock` real `idle`/`loading`, bevor `modus` auf `bearbeiten` springt — ein `readOnly`, das strikt an `lock.modus` hängt, hätte in genau diesem Fenster kurz auf `true` geflackert (verboten laut Auftrag). Lösung: `kamOhneIdRef` (einmalig beim Mount erfasst: kam die Seite ohne Id?) plus `ersterErwerbNachAnlageGeschehenRef` (schaltet die optimistische "schon bearbeiten"-Anzeige nach der ERSTEN Auflösung dieses einen Erwerbs endgültig ab, egal ob Erfolg oder Fehlschlag) — ein SPÄTERER Lock-Verlust oder Übernahmeversuch läuft danach wieder ganz normal über die echten Zustände.
+
+Getrennt davon: `ersteLockAufloesungGeschehenRef` steuert nur die Vollbild-Ladeanzeige ("Dokument wird geöffnet …") und bleibt für ein Dokument OHNE Id von Anfang an `true` (nie anzeigen) bzw. schaltet für ein Dokument MIT Id nach der ersten Auflösung dauerhaft ab — ein späterer Retry (Klick auf "Bearbeiten" nach Fremdsperre/Fehler) ersetzt den Editor danach nicht mehr durch die Ladeanzeige, genau wie im Lieferant-Modal.
+
+Roter Test 1 (`DocumentEditorPage.test.tsx`, "flackert beim Anlegen ... nicht auf readOnly und mountet den Editor nicht neu"): verzögerte Acquire-Antwort (kontrollierbares Promise), Klick auf einen simulierten `setSearchParams`-Aufruf (genau das, was `document-editor/index.tsx`s `syncDocumentIdInUrl` tut) — mit `readOnly = hatId ? lock.modus !== 'bearbeiten' : false` (naive Fassung ohne die Optimistik) rot: `data-readonly` sprang mitten im Roundtrip auf `"true"`. Mit der Optimistik grün, Mount-Zähler bleibt bei 1.
+
+Roter Test 2 (`DocumentEditorPage.test.tsx`, "zeigt eine Vollbild-Ladeanzeige, solange das Lock noch nicht aufgelöst ist"): Acquire-Promise, die nie auflöst, für ein Dokument MIT Id von Anfang an — ohne `zeigeLadeSeite` hätte der (gemockte) Editor sofort sichtbar sein müssen; Test verlangt `queryByTestId('mock-editor')` == null.
+
+**2. Zustände über dem Editor** (`loading`/`locked-by-other`/`acquired`+`bearbeiten`/`lesen` nach Fertig/`error`) — eigene Leiste mit `GesperrtHinweis` + `BearbeitenLeiste`, siehe unten für die Layout-Lösung.
+
+Roter Test (Mutationsprobe, kein separater TDD-Vorlauf nötig, da direkt aus den vorhandenen Bausteinen zusammengesetzt): `gesperrtDurchAnderen` testweise auf `false` gesetzt → Test "zeigt bei fremder Sperre den Gesperrt-Hinweis..." wird rot (`findByText(HALTER_NAME)` findet nichts) — zurückgesetzt, grün.
+
+**3. Untätigkeits-Timer** (`useIdleTimer`, `enabled: lock.modus === 'bearbeiten'`): `onIdle` ruft **erst** `editorRef.current?.speichernFuerFreigabe()`, **dann** `lock.freigeben()`.
+
+Für den Speicher-Auslöser bot `DocumentEditor` bisher nichts an (kein Prop, kein Ref) — wie im Auftrag als möglich vorgesehen, minimal ergänzt: `forwardRef` + `useImperativeHandle` mit **genau einer** Methode `speichernFuerFreigabe()` (No-op ohne ungespeicherte Änderungen oder bei `isLocked`, sonst `await handleSave()`). Dokumentiert als `DocumentEditorHandle` in `document-editor/types.ts`. **Das ist die im Auftrag vorgesehene Abweichung** — siehe unten.
+
+Roter Test 1 (`document-editor/index.test.tsx`, neue Describe "imperatives Handle speichernFuerFreigabe"): drei Tests (speichert bei Änderungen, No-op ohne Änderungen, No-op bei `readOnly`). Mutationsprobe: `if (isLocked || !hasUnsavedChanges) return;` durch einen Kommentar ersetzt → genau der "No-op ohne ungespeicherte Änderungen"-Test wird rot (`expected 1 to be +0`) — zurückgesetzt, grün.
+
+Roter Test 2 (`DocumentEditorPage.test.tsx`, "speichert VOR dem Freigeben (Reihenfolge per Spy)"): `vi.useFakeTimers()`, 300 000 ms vorspulen (Standard-Timeout aus `useIdleTimer`), Reihenfolge-Array via Spy auf dem gemockten `speichernFuerFreigabe` und einem `onDelete`-Hook im Fetch-Stub. Mutationsprobe: Reihenfolge im `onIdle`-Callback vertauscht (erst `freigeben()`, dann `speichernFuerFreigabe()`) → Test rot (`expected ['freigeben','speichern'] to deeply equal ['speichern','freigeben']`) — zurückgesetzt, grün.
+
+**4. `handleClose` unverändert** (`navigate(-1)` vs. `window.close()`, wie 6a es verbunden hat) — nur als Fallback an `onClose` durchgereicht, aktiv nur wenn `onLockFreigeben` fehlt (kein Lock, z. B. neues Dokument ohne Id).
+
+**5. `TabSchliessenHinweis`: `text-balance` am Hinweistext.** Roter Test zuerst (`toContain('text-balance')` schlug fehl, Klasse fehlte), dann ergänzt. 8/8 grün.
+
+**6. Zusätzlicher, im Auftrag nicht wörtlich genannter, aber notwendiger Fund während der eigenen Playwright-Probe:** die eigene Bearbeiten-Leiste blieb nach dem X-Button-Schließen sichtbar (inkl. aktivem "Bearbeiten"-Knopf) **über** dem `TabSchliessenHinweis` des Editors — der ist als bewusst alleinstehende, aktionslose Vollbild-Bestätigung gedacht ("nichts mehr zu tun"). Kein Bounding-Box-Überlapp (die Leiste steht als eigene Zeile darüber), aber ein widersprüchlicher zweiter Kopf: "Sie können schließen" + ein Knopf, der wieder öffnet. Ursache: `lock.freigeben()` (vom X-Button-Ablauf über `onLockFreigeben` aufgerufen) setzt `modus` sofort auf `lesen`, die Seite zeigt daraufhin ganz normal "Sie lesen nur mit." + "Bearbeiten" — genau wie nach einem echten "Fertig", nur dass hier gerade geschlossen wird.
+
+Roter Test zuerst (`DocumentEditorPage.test.tsx`, "blendet die eigene Leiste aus, sobald der Editor darüber die Sperre freigibt"): Klick auf den `onLockFreigeben`-Aufruf im Mock → `queryByRole('button', {name:'Fertig'})`/`'Bearbeiten'` sollen verschwinden — vor dem Fix rot (Leiste blieb stehen). Fix: `onLockFreigebenFuerSchliessen` (setzt `schliesstGerade=true`, dann `lock.freigeben()`) statt `lock.freigeben` direkt an `onLockFreigeben` gebunden; die Leiste rendert nur noch bei `hatId && !schliesstGerade`. Ein zweiter Test sichert ab, dass ein **normales** "Fertig" (nicht über den X-Button) die Leiste NICHT ausblendet — "Sie lesen nur mit." muss dort bestehen bleiben. Mutationsprobe: `!schliesstGerade` aus der Bedingung entfernt → der erste Test wird rot — zurückgesetzt, grün. Per Playwright-Screenshot bestätigt (`editor-seite-tab-schliessen--pc-14zoll.png`): jetzt eine saubere, alleinstehende Bestätigungsseite.
+
+### Layout-Lösung für die Bearbeiten-Leiste über dem Editor
+
+`DocumentEditor` legt sich selbst als `fixed inset-0 z-50` an (unverändert, eigenständige Vollbild-Komponente). Eine Leiste einfach als vorangehendes Geschwister-Element in der Seite hätte der Editor mit seinem eigenen `fixed inset-0` vollständig verdeckt (beide beanspruchen denselben Viewport-Bereich, unabhängig von der DOM-Reihenfolge). Lösung: der Editor steckt jetzt in einem Container mit `[transform:translateZ(0)]` — laut CSS-Spezifikation erzeugt `transform` (wie auch `filter`/`perspective`/`will-change`) für `position:fixed`-Nachfahren ein eigenes "containing block". Da dieser Container in einem `flex flex-col`-Layout **unterhalb** der (bei Bedarf `shrink-0`) gerenderten Leiste liegt, bezieht sich das `inset-0` des Editors jetzt auf genau den freien Platz darunter — er passt sich von selbst an, ob die Leiste gerade sichtbar ist. Per Playwright-Screenshot auf beiden Größen bestätigt (siehe unten): kein Überlapp, keine verdeckten Bereiche, der Editor bleibt vollständig innerhalb seines Bereichs.
+
+### Tests je Größe
+
+- `npx vitest run src/pages/DocumentEditorPage.test.tsx src/components/document-editor/index.test.tsx src/components/lock/TabSchliessenHinweis.test.tsx` → **41/41 grün** (11 neu + 22 [19 bestehend + 3 neu] + 8 [7 bestehend + 1 neu]).
+- `npm run lint` → **0 Fehler, genau die 1 vorbestehende Warnung** (`BelegeKasseEditor.tsx:1204`).
+- `npm run build` → grün, `src/main/resources/static/` danach zurückgesetzt (git checkout `index.html`, `git clean` für die neue gehashte JS/CSS-Datei), vor jedem Commit `git status` nur eigene Dateien.
+- `E2E_PORT=5178 npx playwright test e2e/dokument-editor-seite.spec.ts` → **10/10 grün** (5 Fälle × `pc-14zoll`/`pc-monitor`): freies Lock editierbar+"Fertig"; Fertig→readOnly+"Sie lesen nur mit."+Bearbeiten reaktiviert; fremdes Lock (409)+Dummy-Name "Anna Beispiel"; Acquire-Fehler (500)+Hinweis+Toast+Tooltip; X-Button-Ablauf über die echte Route (speichern→DELETE→`TabSchliessenHinweis`, **zum ersten Mal über die echte Route erreichbar**, siehe 6a-Bedenken/7-1-Design-Review).
+
+### Screenshot-Pfade (kurz selbst angeschaut, formale Beurteilung bleibt dem Design-Reviewer)
+
+`react-pc-frontend/test-results/design/`, je `--pc-14zoll`/`--pc-monitor`:
+- `editor-seite-bearbeiten` — freies Lock, "Fertig" oben rechts, Leiste links leer (bekanntes 🟡-Muster aus dem Lieferant-Modal, nicht neu).
+- `editor-seite-lesen` — nach "Fertig", "Sie lesen nur mit." + "Bearbeiten" (rose-600).
+- `editor-seite-gesperrt` — `GesperrtHinweis` (rose-50-Band, "Anna Beispiel bearbeitet das gerade … Seit 5 Min."), "Bearbeiten" aktiv.
+- `editor-seite-fehler` — rotes Fehlerband, "Bearbeiten" deaktiviert.
+- `editor-seite-tab-schliessen` — **jetzt eine saubere, alleinstehende Bestätigungsseite** (siehe Punkt 6 oben; vor dem Fix stand hier noch die Leiste mit aktivem "Bearbeiten" über der Bestätigung).
+
+### Bedenken / Abweichungen vom Plan
+
+1. **`document-editor/index.tsx` + `document-editor/types.ts` + `document-editor/index.test.tsx` angefasst** — laut Auftrag "nur falls nötig" erlaubt, hiermit als Abweichung vermerkt. Geprüft, dass `DocumentEditor` bisher wirklich nichts Passendes anbot (kein Prop, kein Ref). Minimal gehalten: ein `forwardRef`-Wrapper um die bestehende Funktion, eine `useImperativeHandle`-Stelle mit genau einer Methode, ein neues Interface in `types.ts`. Kein sonstiges Verhalten geändert. `index.test.tsx` bekam drei neue Tests in einer eigenen Describe — notwendige Testabdeckung für die neue Ergänzung, analog zu 6a's Präzedenzfall (dort wurde `types.ts` aus demselben Grund mitgeändert und vom Orchestrator als unbedenklich bestätigt).
+
+2. **🛑 Fremde Spec kaputt, NICHT repariert (nur gemeldet):** `e2e/dokument-editor-tab-schliessen.spec.ts` (Task 6a, nicht in meiner Dateiliste) hat zwei Tests, die über `page.locator('button').first()` den X-Knopf des Editors ansprechen (`xKnopf()`, dort ohne `aria-label`). Durch meine neue Bearbeiten-Leiste STEHT JETZT EIN ANDERER BUTTON ("Fertig"/"Bearbeiten") vor dem X-Knopf im DOM — `button.first()` trifft jetzt die Leiste, nicht mehr den X-Knopf. Selbst reproduziert: `E2E_PORT=5178 npx playwright test e2e/dokument-editor-tab-schliessen.spec.ts` → **4 von 6 Tests rot** (die beiden X-Button-Tests × 2 Größen; der dritte Test dort, der keinen `xKnopf()` braucht, bleibt grün). `e2e/lieferant-dokument-modal.spec.ts` und `e2e/bearbeiten-leiste.spec.ts` (18 Tests) bleiben davon unberührt, selbst gegengeprüft.
+   In MEINER eigenen Spec habe ich dasselbe Problem gefunden und behoben (`data-testid="dokument-editor-flaeche"` auf den Editor-Container, `xKnopf()` darauf eingegrenzt) — der exakt gleiche Fix (eine Zeile) würde `dokument-editor-tab-schliessen.spec.ts` reparieren:
+   ```ts
+   function xKnopf(page: Page) {
+       return page.getByTestId('dokument-editor-flaeche').locator('button').first();
+   }
+   ```
+   Nicht selbst angewendet, weil die Datei nicht in meiner Dateiliste steht ("Braucht ein Punkt eine Datei außerhalb der Liste: melden, nicht anfassen"). **Bitte beim Review/Merge einplanen** — sonst meldet der Code-Reviewer bei seinem Volllauf zwei rote E2E-Tests, deren Ursache hier bereits geklärt ist.
+
+3. **`DocumentEditorHeader.tsx` zeigt "Gebucht" für JEDES `isLocked`, nicht nur für tatsächlich gebuchte Dokumente** — vorbestehendes Verhalten (der `readOnly`-Prop fließt seit 6a additiv in `isLocked` ein), auf den Screenshots `editor-seite-lesen`/`-gesperrt`/`-fehler` dadurch sichtbar ein "Gebucht"-Badge, obwohl das Beispieldokument nicht gebucht ist, sondern nur wegen der Sperre/des Fehlers schreibgeschützt. Nicht repariert (Datei nicht in meiner Liste, Verhalten stammt nicht aus diesem Abschnitt) — nur als Beobachtung vermerkt.
+
+4. **`onLockFreigeben`-Ablauf beim Schließen eines GERADE ERST angelegten, noch unbenannten Dokuments (Randfall):** Klickt der Nutzer X, bevor das Dokument je gespeichert wurde, UND wählt dann im Warn-Dialog "Speichern & Schließen", läuft `handleSave()` (legt an, Id kommt über die URL) **innerhalb desselben Aufrufs**, der bereits die zu diesem Zeitpunkt (noch ohne `onLockFreigeben`) gebundene `tabSchliessen()`-Closure verwendet — der neue, Prop-gesteuerte Ablauf (Sperre aktiv freigeben, `TabSchliessenHinweis`) greift für DIESEN einen Klick nicht, es bleibt beim alten `onClose`-Fallback (`navigate(-1)`/`window.close()`). Das frisch erworbene Lock hängt dadurch nicht verwaist: `useDatensatzLock`s eigener Cleanup-/`pagehide`-Pfad (`releaseKeepalive`) gibt es beim Unmount bzw. beim tatsächlichen Schließen ohnehin per `keepalive`-`DELETE` frei — nur eben nicht über den "schönen", awaiteten Weg mit Bestätigungsseite. Nicht behoben (hätte eine Ref-Indirektion in `document-editor/index.tsx` gebraucht, über den sanktionierten Speicher-Auslöser hinaus) — als Randfall vermerkt statt stillschweigend hingenommen.
+
+5. **`handwerkerprogramm-design`-Skill über das Skill-Tool nicht im Standard-Weg geprüft** — wie schon in früheren Abschnitten (siehe 6a) direkt per Read-Tool gelesen (SKILL.md + README.md) statt über `Skill({skill: ...})`, da in dieser Session ohnehin nur Lese-Werkzeuge zur Verfügung standen und der direkte Weg zuverlässig funktioniert.
+
+Keine sonstigen Abweichungen. Plan und Realität stimmten größtenteils überein — die Optimistik-Logik gegen das Flackern und die `schliesstGerade`-Ergänzung waren beim Schreiben des Plans nicht im Detail vorweggenommen, ließen sich aber vollständig innerhalb der vorgesehenen Dateiliste lösen.

@@ -32,7 +32,10 @@ import {
 
 /** Der X-Knopf in der Kopfzeile hat kein aria-label (DocumentEditorHeader.tsx, nicht Teil dieses Tasks). */
 function xKnopf(page: Page) {
-    return page.locator('button').first();
+    // Seit 7a steht die Bearbeiten-Leiste der Seite VOR dem Editor im DOM --
+    // ein blosses button.first() traefe deren Knopf. Deshalb auf die
+    // Editor-Flaeche eingrenzen (data-testid aus DocumentEditorPage).
+    return page.getByTestId('dokument-editor-flaeche').locator('button').first();
 }
 
 async function adresseAendern(page: Page, neueAdresse: string) {

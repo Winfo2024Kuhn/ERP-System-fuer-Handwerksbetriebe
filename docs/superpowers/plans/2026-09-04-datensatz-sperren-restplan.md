@@ -414,6 +414,14 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
      — `eigeneMeldung` ist nie leer, die Fallbacks greifen nie. Entweder die
      Server-Meldung wirklich bevorzugen oder die Fallbacks streichen; Kommentar dazu
      ehrlich machen.
+  5. **Aus Code-Review 7-1, 2. Durchgang** (Files um `components/lock/useDatensatzLock.ts`
+     + Test erweitern): `releaseKeepalive()` (Unmount/`pagehide`) setzt `heldRef=false`,
+     zieht aber `modus`/`status` nicht nach. Auf dem Cleanup-Pfad folgenlos, auf dem
+     `pagehide`-Pfad überlebt der Zustand eine bfcache-Rückkehr: Formular bearbeitbar ohne
+     Sperre (Backend weist den PUT ab, kein DB-Schaden). Zwei Zeilen dort schließen die
+     Invariante; dazu ein `pageshow`-Test (bfcache-Rückkehr ⇒ `lesen`/`idle`, Bearbeiten
+     holt neu). Und `pruefeInvariante` im Kettentest ist ein manuell aufgerufener Helfer —
+     wenn es billig geht, als `afterEach`-Invariante über alle Hook-Tests legen.
   4. **Aus Code-Review 6, 2. Durchgang:** die Mutationsprobe am `MutationObserver` in
      `toast.tsx` beißt nicht — beide Positionierungstests rendern den Dialog schon beim
      Mount und treffen nur den `useState`-Initializer. Test ergänzen, der den Dialog
