@@ -280,6 +280,10 @@ Zwei Konsequenzen:
 - **Was der Orchestrator ausliefert, hat er ausgeführt.** Für eine
   Playwright-Hilfe heißt das: eine Wegwerf-Spec, die sie einmal aufruft, auf
   eigenem Port laufen lassen, dann erst committen. Typcheck ist kein Test.
+  Und die Probe muss den **echten Befund** nachstellen: die erste Probe für
+  die Toast-Überdeckung war mit erfundener Geometrie gebaut, überschnitt sich
+  gar nicht und fand deshalb nichts — erst mit den vom Reviewer gemessenen
+  Pixelwerten schlug sie an. Eine Probe, die nie rot war, beweist nichts.
 - **Geteilte Hilfsdateien gehören dem Orchestrator.** Findet ein Agent dort
   einen Fehler, repariert er ihn lokal, um weiterzukommen — aber er meldet
   ihn sofort im Kontext-Log als Bedenken, und der Orchestrator zieht **eine**
