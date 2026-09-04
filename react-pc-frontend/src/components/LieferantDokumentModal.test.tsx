@@ -159,6 +159,25 @@ describe('LieferantDokumentModal', () => {
             expect(screen.queryByRole('button', { name: 'Bearbeiten' })).not.toBeInTheDocument();
         });
 
+        it('ruft die Acquire-Route nur einmal auf -- der fruehere Modal-Effekt (6b-Behelf) entfaellt seit Task 7b, der Hook selbst schaltet nach Erfolg auf "bearbeiten" um', async () => {
+            const fetchMock = buildFetchMock();
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderModal();
+
+            await screen.findByRole('button', { name: 'Fertig' });
+            // Ein paar Mikrotask-Ticks "nachschwingen" lassen, damit ein
+            // etwaiger uebrig gebliebener Effekt Zeit haette, noch zuzuschlagen.
+            await act(async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+
+            expect(
+                fetchMock.mock.calls.filter(call => String(call[0]).endsWith('/acquire'))
+            ).toHaveLength(1);
+        });
+
         it('Klick auf "Fertig" gibt die Sperre per DELETE frei; Formular wieder gesperrt, "Bearbeiten" aktiv', async () => {
             const user = userEvent.setup();
             const fetchMock = buildFetchMock();

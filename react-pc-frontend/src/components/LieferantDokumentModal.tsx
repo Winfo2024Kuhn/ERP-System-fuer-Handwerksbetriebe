@@ -55,23 +55,6 @@ export default function LieferantDokumentModal({
     // wuerde ein dauerhaft gemountetes Parent-Element heimlich Locks halten.
     const lock = useDatensatzLock("EINGANG", isOpen && dokument ? dokument.id : null);
 
-    // useDatensatzLock haelt Modus bewusst auf "lesen", auch direkt nach
-    // einem erfolgreichen (stillen) Erwerb beim Oeffnen -- siehe Kommentar
-    // dort. Fuer DIESES Modal ist "geoeffnet + Lock frei bekommen" aber
-    // gleichbedeutend mit "der Nutzer will bearbeiten": kein zusaetzlicher
-    // Klick noetig. Ein manueller Uebernahmeversuch (onBearbeiten nach
-    // Fremdsperre) und die Rueckkehr nach "Fertig"/Idle-Freigabe setzen
-    // modus jeweils selbst -- dieser Effekt greift nur direkt nach dem
-    // stillen Mount-Erwerb (heldRef bereits true, modus noch "lesen"), ruft
-    // dafuer keinen zusaetzlichen Request auf (onBearbeiten erkennt das
-    // bereits gehaltene Lock und schaltet nur die Anzeige um).
-    useEffect(() => {
-        if (lock.status === "acquired" && lock.modus === "lesen") {
-            lock.onBearbeiten();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [lock.status, lock.modus]);
-
     // Fehler beim Sperren: Hinweis im Modal (unten) UND Toast, wie von den
     // Frontend-Regeln fuer fehlgeschlagene Aktionen verlangt. Nur beim
     // Uebergang in "error" ausloesen (Status als String in den Deps), nicht
