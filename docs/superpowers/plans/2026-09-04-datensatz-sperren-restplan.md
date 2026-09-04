@@ -428,6 +428,17 @@ Zusätzlich nimmt der Orchestrator dabei den Halbsatz aus Code-Review 6 mit: in
 `syncDocumentIdInUrl(created.id)` stehen und beide im selben React-Batch; Kommentar
 „Reihenfolge nicht tauschen" mit Grund.
 
+**Und `e2e/hilfen/design.ts` erweitern** — Beobachtung des Nutzers aus einem parallelen
+Lauf (14-Zoll-Layout, in `playwright-design-pruefung/SKILL.md` unversioniert ergänzt): die
+automatischen Checks übersehen drei echte Abschneide-Fehler, die im Browser sofort auffallen.
+(1) `documentElement.scrollWidth` wächst nicht, wenn ein `main` oder ein Container mit
+`overflow-x: hidden` den Überlauf verschluckt — auch `main.scrollWidth <= main.clientWidth`
+messen und jedes `overflow-x: hidden`-Element gegen seinen eigenen `scrollWidth`.
+(2) Text-Abschneiden auf Blatt-Elementen: `scrollWidth > clientWidth` bei Elementen mit Text.
+(3) Elemente mit Breite 0 nicht überspringen — genau die sind der Fall. Mit Wegwerf-Probe
+gegen einen echten Abschneide-Fall ausführen, dann committen. Spec des Nutzers dazu:
+`docs/superpowers/specs/2026-09-04-layout-14-zoll.md` im Haupt-Checkout.
+
 Löschen der alten Klassen UND die `DROP TABLE`-Migration gehören in **eine** Auslieferung,
 sonst entsteht ein Zwischenstand, der nicht startet (Entity mappt eine Tabelle, die es
 nicht mehr gibt — das Testprofil sieht das nicht).

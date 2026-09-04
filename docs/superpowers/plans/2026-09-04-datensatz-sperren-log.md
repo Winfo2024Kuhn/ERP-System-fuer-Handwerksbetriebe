@@ -2062,3 +2062,114 @@ Keine Abweichung vom Auftrag. Eigene Entscheidungen, transparent gemacht:
 - `releaseKeepalive()` bewusst nicht angefasst (siehe Tabelle oben) — ausserhalb dessen, was der
   Reviewer als Übergänge benannt hat, und die genannte Invariante bleibt dort ohnehin gewahrt.
   Falls das dennoch geschlossen werden soll, wäre das ein eigener, expliziter Auftrag.
+
+## Abschnitt 7-1 — Code-Review 2 (Code-Reviewer)
+
+**Ampel: 🟡** — der 🔴 ist behoben und selbst nachgestellt. Von meiner Seite abgenommen.
+Stand `5f2f48be`.
+
+### 🔴 aus Durchgang 1: **behoben**
+
+*„Verliert der Nutzer die Sperre während des Bearbeitens, bleibt das Formular editierbar."*
+
+Selbst nachgestellt (Wegwerf-Probe am Hook, Mount-Acquire 200, danach Heartbeat 409):
+
+```
+vor  HB: status=acquired         modus=bearbeiten
+nach HB: status=locked-by-other  modus=lesen  kannBearbeiten=true  halter=Anna Beispiel
+```
+
+Genau die geforderte Kombination: Formular gesperrt (`modus='lesen'` ⇒ `formGesperrt=true` im
+Modal), Übernahme weiterhin möglich (`kannBearbeiten=true`), Halter benannt.
+
+**Mutationsprobe:** `setModus('lesen')` im 409-Zweig von `heartbeat()` entfernt ⇒ **genau 2 von 35**
+Tests rot, deckt sich mit der Meldung des Agenten:
+- `ein Heartbeat mit 409 wechselt in "locked-by-other" …` → `AssertionError: expected 'bearbeiten' to be 'lesen'`
+- `gilt ueber eine ganze Kette von Uebergaengen hinweg …` → `AssertionError: expected 'bearbeiten' not to be 'bearbeiten'`
+
+Beide neuen Zusicherungen beißen also wirklich — die geschlossene Lücke im alten Test **und** der
+Kettentest.
+
+### Zu den drei Rückfragen
+
+**1. Deckt der Invariantentest wirklich alle Wechsel ab?** Nein — `pruefeInvariante` ist ein
+Hilfsfunktion, die man aufrufen muss, keine automatische Invariante. Sie wird **5x** aufgerufen,
+alle innerhalb des einen Kettentests, also genau an den fünf Stationen dieser Kette
+(Mount-Erfolg → Heartbeat-409 → Retry-Erfolg → Fertig → Acquire-Fehler). Für die realistischen
+Übergänge reicht das zusammen mit dem korrigierten Heartbeat-Test und den beiden
+Acquire-Fehlerzweigen; „über alle Wechsel" ist es aber nicht, und wer später einen neuen Zweig
+ergänzt, wird von ihr nicht automatisch erwischt.
+
+**2. Bleibt ein Übergang, bei dem `heldRef` fällt und `modus` nicht folgt?** Ja, einer:
+`releaseKeepalive()` (`useDatensatzLock.ts:325-341`). Gemessen — nach einem `pagehide` steht:
+
+```
+vor  pagehide: status=acquired  modus=bearbeiten
+nach pagehide: status=acquired  modus=bearbeiten     (heldRef ist jetzt false, DELETE ist raus)
+```
+
+Auf dem **Cleanup-Pfad** ist das folgenlos: dort setzen die unmittelbar folgenden Zeilen
+`setStatus('idle')` und `setModus('lesen')`, die Invariante ist im selben Durchlauf wieder
+hergestellt. Auf dem **`pagehide`-Pfad** bleibt der Zustand dagegen inkonsistent stehen. Das ist
+egal, solange die Seite wirklich verschwindet — nicht aber beim **bfcache**: kommt der Nutzer per
+Zurück-Knopf zurück, wird der eingefrorene JS-Heap samt React-State wiederhergestellt, der Hook
+hat keinen `pageshow`-Handler, der Heartbeat ist gestoppt und das Lock serverseitig freigegeben.
+Der Nutzer sähe ein bearbeitbares Formular ohne Sperre; ein Speichern liefe in die
+`isHeldBy`-Prüfung von `LieferantDokumentController:99` und würde abgewiesen.
+
+Die Begründung im Log („fire-and-forget, `status` ändert sich dort auch nicht") trifft damit den
+Cleanup-Pfad, nicht aber den `pagehide`-Pfad. Schmal, unverändert gegenüber vorher und ohne
+Datenverlust in der Datenbank — deshalb 🟡 und kein 🔴 (siehe Hinweise).
+
+**3. Können die defensiven `setModus('lesen')` in `acquire()` einen noch gültigen Retry
+herauswerfen?** Nein. `acquire()` wird nur an zwei Stellen betreten, und an beiden ist `heldRef`
+bereits false: `onBearbeiten()` steigt vorher aus (`if (lockUrl == null || heldRef.current) { … return; }`),
+und der Mount-Effekt läuft erst, nachdem der Cleanup des vorherigen Durchlaufs
+`releaseKeepalive()` gerufen und `heldRef` auf false gesetzt hat. Es gibt also keinen Zustand, in
+dem ein fehlschlagendes Acquire ein noch gültiges Lock verwirft — die Semantik-Annahme aus dem
+Auftrag stimmt. Schritt 5 des Kettentests (Retry-Acquire mit 500) deckt den Fall zusätzlich ab.
+
+### Selbst gemessene Zahlen
+
+| | Durchgang 1 | jetzt |
+|---|---|---|
+| Frontend Testdateien | 87 | **87** |
+| Frontend Tests | 1049 | **1052** (+3) |
+| Lint | 0 Fehler, 1 Warnung | **0 Fehler, 1 Warnung** |
+| Backend (Stichprobe) | — | **DatensatzLockControllerTest 9/9 grün** |
+
+- Frontend-Volllauf **komplett grün, kein einziger Flake** (in Durchgang 1 waren es zwei
+  lastbedingte Ausfälle).
+- +3 Tests: `6c7c39df` bringt den Kettentest und den Test „freigeben() während ein Retry-Acquire
+  noch läuft", `6858c0d1` einen Test zur Knopf-Reihenfolge. Der korrigierte Heartbeat-409-Test ist
+  kein neuer, sondern der um die `modus`-Zusicherung erweiterte alte.
+- Hook-Datei jetzt 35 Tests (vorher 33).
+- Lint-Warnung ist die vorbestehende `BelegeKasseEditor.tsx:1204`.
+- `npm run build` grün, `src/main/resources/static/` zurückgesetzt. Code byte-identisch zu
+  `5f2f48be`.
+- Die beiden Nutzer-Änderungen in `.claude/skills/` habe ich wie angewiesen nicht angefasst.
+
+### 💡 Hinweise (blockieren nicht)
+
+- `useDatensatzLock.ts:325-341` (`releaseKeepalive`) — setzt `heldRef=false`, ohne `modus`/`status`
+  nachzuziehen. Auf dem Cleanup-Pfad folgenlos, auf dem `pagehide`-Pfad überlebt der Zustand eine
+  bfcache-Rückkehr (siehe oben). Zwei Zeilen `setStatus('idle'); setModus('lesen');` dort würden die
+  Invariante lückenlos machen; alternativ die Notiz im Log um den bfcache-Fall ergänzen, damit die
+  Beobachtung nicht als „geprüft und unkritisch" gelesen wird, obwohl nur der Cleanup-Pfad
+  betrachtet wurde.
+- `useDatensatzLock.test.tsx:734` — `pruefeInvariante` ist ein manuell aufgerufener Helfer (5
+  Aufrufe, alle im selben Kettentest), keine automatische Invariante. Wer künftig einen neuen
+  Zweig ergänzt, der `heldRef` fallen lässt, wird davon nicht automatisch erwischt.
+
+### Sonst geprüft, ohne Befund
+
+- Die vier Stellen, an denen `heldRef` in `acquire()`/`heartbeat()` auf false geht, setzen jetzt
+  alle selbst `setModus('lesen')` — die Invariante gilt lokal, nicht nur aus der Aufruferreihenfolge.
+- `heartbeat()` im `!res.ok`-Zweig fasst `heldRef` bewusst nicht an (nur `verbindungWeg`-Zähler);
+  der neue Test sichert ausdrücklich ab, dass `status`/`modus` dort unverändert bleiben. Richtig so:
+  ein Netz-Hiccup ist kein Lock-Verlust.
+- `aktivFreigeben()` und der Effekt-Cleanup setzen weiterhin beides zurück.
+- Der 7c-Nachtrag `6858c0d1` berichtigt genau den Kommentar, den ich in Durchgang 1 als ungenau
+  gemeldet hatte, und belegt die Reihenfolge zusätzlich mit einem Test.
+- Datenschutz: nur Dummy-Namen (Anna Beispiel, Petra Beispiel). Keine Secrets, kein Build-Output,
+  kein `test-results/` im Diff.
