@@ -28,6 +28,13 @@ public class Beleg {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Optimistisches Sperren: schuetzt gegen paralleles Speichern (auch aus
+     * der Mobile-App, die keine Sperr-Oberflaeche hat).
+     */
+    @Version
+    private Long version;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "beleg_kategorie", nullable = false, length = 40)
     private BelegKategorie belegKategorie = BelegKategorie.UNZUGEORDNET;

@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -13,32 +15,34 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * Soft-Lock fuer Geschaeftsdokumente im Editor.
- * Genau ein User darf ein (dokumentTyp, dokumentId)-Paar gleichzeitig
- * geoeffnet halten. Der Eintrag wird per Heartbeat am Leben gehalten und
- * nach 90s Heartbeat-Stille als verwaist behandelt.
+ * Soft-Lock fuer sperrbare Datensaetze (siehe {@link SperrbarerTyp}), nicht
+ * mehr nur fuer Geschaeftsdokumente wie zuvor {@code DokumentLock}. Genau ein
+ * User darf ein (entitaetTyp, entitaetId)-Paar gleichzeitig geoeffnet halten.
+ * Der Eintrag wird per Heartbeat am Leben gehalten und nach 90s
+ * Heartbeat-Stille als verwaist behandelt (siehe {@code DatensatzLockService}).
  */
 @Getter
 @Setter
 @Entity
 @Table(
-    name = "dokument_lock",
+    name = "datensatz_lock",
     uniqueConstraints = @UniqueConstraint(
-        name = "uk_dokument_lock_target",
-        columnNames = {"dokument_typ", "dokument_id"}
+        name = "uk_datensatz_lock_target",
+        columnNames = {"entitaet_typ", "entitaet_id"}
     )
 )
-public class DokumentLock {
+public class DatensatzLock {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "dokument_typ", nullable = false, length = 16)
-    private String dokumentTyp;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "entitaet_typ", nullable = false, length = 32)
+    private SperrbarerTyp entitaetTyp;
 
-    @Column(name = "dokument_id", nullable = false)
-    private Long dokumentId;
+    @Column(name = "entitaet_id", nullable = false)
+    private Long entitaetId;
 
     @Column(name = "user_id", nullable = false)
     private Long userId;

@@ -96,10 +96,55 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
     );
 }
 
+/**
+ * True, solange irgendwo ein offener Dialog (role="dialog") im DOM steht.
+ *
+ * Grund: der Toast-Container liegt fest unten rechts -- genau dort, wo so
+ * gut wie jedes Modal im Projekt seine Fussleiste mit "Abbrechen"/"Speichern"
+ * hat (siehe LieferantDokumentModal.tsx). Ein Fehler-Toast beim Oeffnen legt
+ * sich dann fuenf Sekunden lang ueber genau die Knoepfe, die als naechstes
+ * gebraucht werden -- auf 14 Zoll (1440x900) trifft ein Klick in die Mitte
+ * beider Knoepfe den Toast statt den Knopf. Ausweichen statt den Fehler in
+ * jedem einzelnen Modal einzeln zu umschiffen: bei offenem Dialog wandert der
+ * GESAMTE Container nach unten LINKS (siehe Kommentar am Container unten fuer
+ * die Begruendung, warum unten links und nicht oben rechts/oben links).
+ */
+function useIrgendeinDialogOffen(): boolean {
+    const [offen, setOffen] = useState(
+        () => typeof document !== 'undefined' && document.querySelector('[role="dialog"]') !== null
+    );
+
+    useEffect(() => {
+        if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
+
+        const aktualisieren = () => {
+            setOffen(document.querySelector('[role="dialog"]') !== null);
+        };
+        aktualisieren();
+
+        // Beobachtet das ganze Dokument, nicht nur einen bekannten Modal-Slot --
+        // Modale werden hier ganz unterschiedlich eingehaengt (Portal, direkt im
+        // Baum, ...). attributeFilter auf 'role' begrenzt, damit nicht jede
+        // beliebige Attribut-Aenderung irgendwo im DOM einen Re-Check ausloest.
+        const observer = new MutationObserver(aktualisieren);
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['role'],
+        });
+
+        return () => observer.disconnect();
+    }, []);
+
+    return offen;
+}
+
 // --- Provider ---
 export function ToastProvider({ children }: { children: React.ReactNode }) {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const idCounter = useRef(0);
+    const dialogOffen = useIrgendeinDialogOffen();
 
     const dismiss = useCallback((id: number) => {
         setToasts(prev => prev.filter(t => t.id !== id));
@@ -120,8 +165,52 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     return (
         <ToastContext.Provider value={{ toast }}>
             {children}
-            {/* Toast Container */}
-            <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 items-end pointer-events-auto">
+            {/*
+                Toast Container -- unten LINKS bei offenem Dialog, sonst unten
+                rechts (siehe useIrgendeinDialogOffen).
+
+                Design-Review-Nachbesserung (Task 8a): "oben rechts" (die
+                6b-Loesung) reichte nicht -- dort sitzen bei praktisch jedem
+                Modal der Schliessen-X-Knopf UND oft ein weiterer Kopf-Knopf
+                (z.B. "Vorschau aktiv" in LieferantDokumentModal). Gemessen
+                blieben zwischen einem einzeiligen Toast und dem X nur 4px
+                Luft (Toast endet y=70, X beginnt y=74) -- ein zweizeiliger
+                Toast (46 -> 86px) ueberdeckt X und "Vorschau aktiv" auf
+                beiden Bildschirmgroessen. Die naechste Wahl war oben LINKS --
+                die eine Ecke, die in keinem Modal im Projekt eine Aktion
+                traegt.
+
+                Design-Review-Nachbesserung 2 (Task 8c): "oben links" schnitt
+                seinerseits auf 14 Zoll die Modal-Ueberschrift an. Gemessen
+                endet ein zweizeiliger Toast [24,24,480,66] bei y=90, der
+                Titel "Dokument bearbeiten" beginnt schon bei y=78 (12px
+                Ueberlappung -- elementFromPoint auf Titel UND Eyebrow trifft
+                dort den Toast statt den Text). Nach oben ausweichen geht auf
+                14 Zoll nicht: das Modal beginnt bei y=57, ein 66px hoher
+                Toast reicht selbst bei top-2 bis y=74. UNTEN LINKS traegt
+                dagegen weder LieferantDokumentModal (Fussleiste rechts) noch
+                der Confirm-Dialog (Knoepfe mittig/rechts) irgendeine Aktion --
+                und die Ecke bleibt frei, unabhaengig davon, wie viele Zeilen
+                der Toast-Text braucht.
+
+                Task 8c Nachtrag (Code-Review-Befund 4): z-[9999] lag UNTER
+                dem Confirm-Backdrop (z-[10000]) und dessen Dialog-Wrapper
+                (z-[10001], siehe confirm-dialog.tsx) -- stand ein
+                Confirm-Dialog offen, lag der (an sich sichtbare, korrekt
+                positionierte) Toast optisch abgedunkelt HINTER dem Backdrop,
+                und ein Klick auf ihn traf in Wirklichkeit den Backdrop
+                (⇒ handleCancel des Confirm-Dialogs). z-[10010] liegt bewusst
+                ueber ALLEM im Projekt (hoechster bisheriger Wert war 10001,
+                siehe Grep ueber `z-[` in src/) -- der Toast traegt nie eine
+                Aktion, die einen gleichzeitig offenen Dialog stoeren koennte,
+                er darf also immer obenauf liegen.
+            */}
+            <div
+                data-testid="toast-container"
+                className={`fixed z-[10010] flex flex-col gap-2 pointer-events-auto ${
+                    dialogOffen ? 'bottom-6 left-6 items-start' : 'bottom-6 right-6 items-end'
+                }`}
+            >
                 {toasts.map(t => (
                     <ToastItem key={t.id} toast={t} onDismiss={dismiss} />
                 ))}

@@ -220,7 +220,10 @@ export default function DokumentUebersichtEditor() {
         params.set('dokumentId', String(doc.id));
         if (doc.typ) params.set('dokumentTyp', doc.typ);
         if (doc.projektId) params.set('projektId', String(doc.projektId));
-        window.open(`/dokument-editor?${params.toString()}`, '_blank', 'noopener');
+        // Bewusst OHNE 'noopener': Der Dokument-Editor-Tab braucht die
+        // Verbindung zu diesem Fenster (window.opener), um sich beim
+        // X-Button selbst schließen zu können (window.close()).
+        window.open(`/dokument-editor?${params.toString()}`, '_blank');
     };
 
     return (

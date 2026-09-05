@@ -3,13 +3,13 @@ package org.example.kalkulationsprogramm.dto;
 import java.time.LocalDateTime;
 
 /**
- * Antwort-DTO fuer den Dokument-Lock-Endpoint.
+ * Antwort-DTO fuer den Datensatz-Lock-Endpoint.
  *
  * status:
  *   ACQUIRED        - Der Caller haelt jetzt das Lock und darf bearbeiten.
  *   LOCKED_BY_OTHER - Ein anderer User haelt das Lock noch.
  */
-public record DokumentLockDto(
+public record DatensatzLockDto(
         String status,
         Long holderUserId,
         String holderDisplayName,

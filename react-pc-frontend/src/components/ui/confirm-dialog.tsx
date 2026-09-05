@@ -1,9 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useId } from 'react';
 import { AlertTriangle, Trash2, HelpCircle } from 'lucide-react';
 
 // --- Types ---
-type ConfirmVariant = 'danger' | 'warning' | 'info';
+type ConfirmVariant = 'danger' | 'warning' | 'info' | 'fehlschlag';
 
 export interface ConfirmOptions {
     title?: string;
@@ -48,12 +48,27 @@ const iconMap: Record<ConfirmVariant, React.ReactNode> = {
             <HelpCircle className="h-6 w-6 text-sky-600" />
         </div>
     ),
+    // Task 8c: fuer Bestaetigungen, die einen bereits eingetretenen Fehlschlag
+    // melden (z.B. "Ihre Aenderungen wurden nicht uebernommen") statt eine
+    // harmlose Frage zu stellen -- 'info' liefert dafuer zwar den geforderten
+    // rose-Knopf, aber ein freundliches blaues Fragezeichen (HelpCircle in
+    // sky-100/sky-600), was fuer einen Fehlschlag die falsche Semantik ist
+    // (Design-Review Abschnitt 7-2/8-1). Icon amber wie ueberall sonst im
+    // Design-System (siehe warning-Variante und Modals.tsx
+    // "Ungespeicherte Aenderungen"), Knopf rose wie 'info' -- genau der
+    // amber-Icon+rose-Knopf-Verbund, den der Review vorgeschlagen hat.
+    fehlschlag: (
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+            <AlertTriangle className="h-6 w-6 text-amber-600" />
+        </div>
+    ),
 };
 
 const confirmBtnMap: Record<ConfirmVariant, string> = {
     danger: 'bg-red-600 hover:bg-red-700 focus:ring-red-500 text-white',
     warning: 'bg-amber-500 hover:bg-amber-600 focus:ring-amber-400 text-white',
     info: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500 text-white',
+    fehlschlag: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500 text-white',
 };
 
 // --- Provider ---
@@ -85,6 +100,26 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     };
 
     const variant = dialog.variant || 'danger';
+    // Task 8a: role="dialog" + aria-labelledby fehlten bisher komplett --
+    // Screenreader sahen ueberhaupt keinen Dialog, und der globale
+    // Toast-Umzug bei offenem Dialog (siehe toast.tsx, sucht per
+    // document.querySelector('[role="dialog"]')) griff hier nicht: ein
+    // Fehler-Toast waehrend dieser Bestaetigung offen stand, blieb faelschlich
+    // unten rechts stehen. title ist optional (ConfirmOptions) -- ohne Titel
+    // gibt es keine ID zum Verlinken, darum aria-label mit der Nachricht als
+    // Ersatz, statt den Dialog unbenannt zu lassen.
+    //
+    // Task 8c Nachtrag (Code-Review): titelId war eine feste String-Literal-ID
+    // ('confirm-dialog-titel') -- stehen zwei ConfirmProvider gleichzeitig im
+    // DOM (z.B. zwei unabhaengige Bestaetigungen auf derselben Seite), tragen
+    // beide h3-Elemente dieselbe id. Eine ID-basierte Suche/Zuordnung
+    // (aria-labelledby, aber auch getElementById) trifft dann immer nur das
+    // ERSTE Element im Dokument, unabhaengig davon, zu welchem Dialog es
+    // eigentlich gehoert -- ein Screenreader wuerde dem zweiten Dialog den
+    // Titel des ersten vorlesen. useId() liefert pro Komponenten-INSTANZ eine
+    // eindeutige, stabile ID.
+    const generierteId = useId();
+    const titelId = `confirm-dialog-titel-${generierteId}`;
 
     return (
         <ConfirmContext.Provider value={{ confirm }}>
@@ -99,13 +134,19 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     />
                     {/* Dialog */}
                     <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+                        <div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby={dialog.title ? titelId : undefined}
+                            aria-label={dialog.title ? undefined : dialog.message}
+                            className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200"
+                        >
                             <div className="flex flex-col items-center text-center gap-4">
                                 {iconMap[variant]}
 
                                 <div>
                                     {dialog.title && (
-                                        <h3 className="text-lg font-semibold text-slate-900 mb-1">
+                                        <h3 id={titelId} className="text-lg font-semibold text-slate-900 mb-1">
                                             {dialog.title}
                                         </h3>
                                     )}

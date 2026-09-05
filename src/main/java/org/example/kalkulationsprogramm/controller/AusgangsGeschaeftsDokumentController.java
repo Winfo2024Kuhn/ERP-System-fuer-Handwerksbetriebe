@@ -6,6 +6,7 @@ import java.util.Map;
 
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.FreigabeQuellTyp;
+import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
@@ -17,13 +18,14 @@ import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentAuditS
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.AutoMahnVersandService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
-import org.example.kalkulationsprogramm.service.DokumentLockService;
+import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -52,7 +54,7 @@ public class AusgangsGeschaeftsDokumentController {
     private final DokumentFreigabeService dokumentFreigabeService;
     private final AusgangsGeschaeftsDokumentAuditService auditService;
     private final AutoMahnVersandService autoMahnVersandService;
-    private final DokumentLockService dokumentLockService;
+    private final DatensatzLockService dokumentLockService;
 
     /**
      * Reine Vorschau: rendert die Mahn-PDF einer beliebigen Stufe ohne irgendetwas
@@ -184,11 +186,11 @@ public class AusgangsGeschaeftsDokumentController {
         if (principal != null) {
             try {
                 var lockResult = dokumentLockService.acquire(
-                        DokumentLockService.TYP_AUSGANG,
+                        SperrbarerTyp.AUSGANG,
                         created.getId(),
                         principal.getId(),
                         principal.getDisplayName());
-                if (!org.example.kalkulationsprogramm.dto.DokumentLockDto.ACQUIRED.equals(lockResult.status())) {
+                if (!org.example.kalkulationsprogramm.dto.DatensatzLockDto.ACQUIRED.equals(lockResult.status())) {
                     log.warn("Lock-Vergabe nach Create fuer Dokument {} unerwartet: {}",
                             created.getId(), lockResult.status());
                 }
@@ -215,13 +217,18 @@ public class AusgangsGeschaeftsDokumentController {
         if (principal == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        if (!dokumentLockService.isHeldBy(DokumentLockService.TYP_AUSGANG, id, principal.getId())) {
+        if (!dokumentLockService.isHeldBy(SperrbarerTyp.AUSGANG, id, principal.getId())) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("Dokument wird gerade von einem anderen Benutzer bearbeitet.");
         }
         try {
             AusgangsGeschaeftsDokument updated = service.aktualisieren(id, dto);
             return ResponseEntity.ok(service.findById(updated.getId()));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Aktualisieren von Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -249,6 +256,11 @@ public class AusgangsGeschaeftsDokumentController {
         try {
             AusgangsGeschaeftsDokument result = service.buchen(id, userId, clientIp(request));
             return ResponseEntity.ok(service.findById(result.getId()));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -265,6 +277,11 @@ public class AusgangsGeschaeftsDokumentController {
         try {
             service.buchenNachEmailVersand(id, userId, clientIp(request));
             return ResponseEntity.ok(service.findById(id));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -283,6 +300,11 @@ public class AusgangsGeschaeftsDokumentController {
             }
             String dateiname = service.speicherePdfFuerDokument(id, pdfBytes);
             return ResponseEntity.ok(java.util.Map.of("dateiname", dateiname));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Speichern der PDF für Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -310,6 +332,11 @@ public class AusgangsGeschaeftsDokumentController {
         try {
             AusgangsGeschaeftsDokument storno = service.stornieren(id, userId, clientIp(request), grund);
             return ResponseEntity.ok(service.findById(storno.getId()));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Stornieren von Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -335,6 +362,11 @@ public class AusgangsGeschaeftsDokumentController {
             String ip = clientIp(request);
             service.loeschen(id, begruendung, userId, ip);
             return ResponseEntity.ok().build();
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
+            // RestExceptionHandler durchreichen -- der macht daraus sauber 409
+            // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }

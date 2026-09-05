@@ -1,14 +1,18 @@
 import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
-import { X, Eye, FileText, Hash, Euro, Link2, FolderPlus, AlertCircle, CheckCircle, RefreshCw, Truck, Percent, CreditCard } from "lucide-react";
+import { X, Eye, FileText, Hash, Euro, Link2, FolderPlus, AlertCircle, AlertTriangle, CheckCircle, RefreshCw, Truck, Percent, CreditCard } from "lucide-react";
 
 import { Input } from "./ui/input";
 import { Select } from "./ui/select-custom";
 import { DatePicker } from "./ui/datepicker";
 import { cn } from "../lib/utils";
 import type { LieferantDokument, LieferantDokumentTyp } from "../types";
-import DocumentLockedModal from "./DocumentLockedModal";
-import { useDocumentLock } from "./useDocumentLock";
+import { useDatensatzLock } from "./lock/useDatensatzLock";
+import { GesperrtHinweis } from "./lock/GesperrtHinweis";
+import { BearbeitenLeiste } from "./lock/BearbeitenLeiste";
+import { useKonfliktMeldung } from "./lock/useKonfliktMeldung";
+import { useIdleTimer } from "../hooks/useIdleTimer";
+import { useToast } from "./ui/toast";
 
 interface LieferantDokumentModalProps {
     isOpen: boolean;
@@ -27,6 +31,10 @@ const DOK_TYP_OPTIONS = [
     { value: "SONSTIG", label: "Sonstiges" },
 ];
 
+// Wortlaut fuer Inline-Hinweis UND Toast identisch, damit der Nutzer nicht
+// zwei verschiedene Formulierungen fuer denselben Fehler liest.
+const LOCK_FEHLER_TEXT = "Sperre konnte nicht geholt werden — bitte neu laden.";
+
 export default function LieferantDokumentModal({
     isOpen,
     onClose,
@@ -39,10 +47,94 @@ export default function LieferantDokumentModal({
     const [error, setError] = useState<string | null>(null);
     const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
 
+    const toast = useToast();
+    const { pruefeAntwort } = useKonfliktMeldung("Dokument");
+
     // Soft-Lock: bei geoeffnetem Modal genau ein User darf bearbeiten.
     // dokumentId nur an den Hook geben, wenn Modal sichtbar ist — sonst
     // wuerde ein dauerhaft gemountetes Parent-Element heimlich Locks halten.
-    const lock = useDocumentLock("EINGANG", isOpen && dokument ? dokument.id : null);
+    const lock = useDatensatzLock("EINGANG", isOpen && dokument ? dokument.id : null);
+
+    // Fehler beim Sperren: Hinweis im Modal (unten) UND Toast, wie von den
+    // Frontend-Regeln fuer fehlgeschlagene Aktionen verlangt. Nur beim
+    // Uebergang in "error" ausloesen (Status als String in den Deps), nicht
+    // bei jedem Render -- toast selbst waere als Objekt-Referenz instabil
+    // (ToastProvider erzeugt es bei jedem eigenen Render neu) und wuerde bei
+    // JEDEM Toast irgendwo in der App erneut feuern.
+    useEffect(() => {
+        if (lock.status === "error") {
+            toast.error(LOCK_FEHLER_TEXT);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lock.status]);
+
+    // Nur waehrend tatsaechlich bearbeitet wird laeuft der Untaetigkeits-
+    // Timer -- ein rein lesend geoeffnetes (oder gesperrtes/fehlerhaftes)
+    // Modal soll niemandem die Sperre wegnehmen, weil es nichts zu verlieren
+    // gibt. onIdle gibt aktiv frei (nicht nur der Unmount-Fallback im Hook)
+    // und faellt zurueck in "lesen" -- automatisches Speichern beim Idle ist
+    // hier bewusst NICHT eingebaut: das Formular kann unvollstaendig
+    // ausgefuellte oder inkonsistente Zahlungsdaten (Skonto/Zahlungsziel/
+    // bezahlt-Status) enthalten, deren stilles Uebernehmen ohne Bestaetigung
+    // riskant waere -- siehe Bedenken im Kontext-Log.
+    const idleTimer = useIdleTimer({
+        enabled: lock.modus === "bearbeiten",
+        onIdle: () => {
+            void lock.freigeben();
+        },
+    });
+
+    // Formular ist nur editierbar, wenn wirklich im Bearbeiten-Modus (siehe
+    // Effekt oben) -- deckt "gesperrt", "wird geladen" UND "Fehler" einheitlich
+    // ab, ohne jeden Zustand einzeln abzufragen.
+    const formGesperrt = lock.modus !== "bearbeiten";
+
+    const wer = lock.halterName?.trim() || "Ein Kollege";
+    const gesperrtTooltip =
+        lock.status === "locked-by-other"
+            ? `${wer} bearbeitet dieses Dokument gerade — Speichern erst nach Übernahme möglich.`
+            : lock.status === "error"
+                ? LOCK_FEHLER_TEXT
+                : 'Erst „Bearbeiten“ klicken, um Änderungen zu speichern.';
+
+    // Grund fuer den deaktivierten Bearbeiten-Knopf in der BearbeitenLeiste
+    // (Task 7d: Verdrahtung der in Runde 7-1/Task 7c gebauten, bis hierher
+    // ungenutzten Props). Nur in den beiden Zustaenden gesetzt, in denen
+    // kannBearbeiten tatsaechlich false ist (siehe useDatensatzLock) -- sonst
+    // undefined, damit BearbeitenLeiste gar kein title-Attribut rendert.
+    // Fehlertext bewusst identisch mit LOCK_FEHLER_TEXT (rotes Band oben UND
+    // Toast) -- sonst laesst der Nutzer denselben Fehler mit zwei
+    // unterschiedlichen Formulierungen lesen.
+    const bearbeitenGesperrtGrund =
+        lock.status === "loading"
+            ? "Sperre wird gerade geholt …"
+            : lock.status === "error"
+                ? LOCK_FEHLER_TEXT
+                : undefined;
+
+    // Task 8a: an lock.status === "idle" ausgerichtet -- dieselbe Regel wie
+    // auf der Dokument-Editor-Seite (DocumentEditorPage.tsx). Die alte Regel
+    // (modus === "lesen" && status !== "locked-by-other") zeigte den ruhigen
+    // Hinweis FAELSCHLICH auch neben dem Lade- ("loading") und dem roten
+    // Fehlerband ("error") -- beides ist modus "lesen", aber kein fremder
+    // Halter. Dort draengt die beilaeufige Meldung das rote Band zusammen,
+    // obwohl die dringende Fehlermeldung Vorrang haben muss. "idle" trifft
+    // nur noch den tatsaechlich gemeinten Fall: frisch freigegeben (eigenes
+    // "Fertig") oder noch nie geholt -- bei Fremdsperre uebernimmt
+    // GesperrtHinweis die Erklaerung bereits (Task 7d), "loading"/"error"
+    // haben ihre eigenen, dringlicheren Hinweise.
+    const zeigeNurLesenHinweis = lock.status === "idle";
+
+    // Schliessen (X, Hintergrund, Abbrechen) gibt die Sperre AKTIV frei --
+    // nicht nur ueber den passiven Unmount-/lockUrl-Wechsel-Pfad im Hook
+    // (der ist fuer Tab-/Seiten-Schliessen gedacht, feuert per keepalive und
+    // wartet nicht auf die Serverantwort). Das Modal bleibt beim Parent
+    // dauerhaft gemountet (isOpen wechselt nur), darum bewusst ein expliziter
+    // Aufruf statt sich auf einen Unmount zu verlassen, der hier nie kommt.
+    const handleClose = () => {
+        void lock.freigeben();
+        onClose();
+    };
 
     // Form State
     const [formData, setFormData] = useState({
@@ -121,28 +213,6 @@ export default function LieferantDokumentModal({
     }, [dokument?.id, dokument, lieferantId, isOpen, showPdf]);
 
     if (!isOpen || !dokument) return null;
-
-    // Solange ein anderer Bueromitarbeiter den Editor offen hat, zeigen wir
-    // nur den Lock-Hinweis statt das Bearbeitungsformular.
-    if (lock.status === "locked-by-other") {
-        return (
-            <DocumentLockedModal
-                holder={lock.holder}
-                onRetry={lock.retry}
-                onClose={onClose}
-            />
-        );
-    }
-    if (lock.status === "error") {
-        return (
-            <DocumentLockedModal
-                holder={null}
-                onRetry={lock.retry}
-                onClose={onClose}
-                errorMessage="Verbindung zum Server fehlgeschlagen. Bitte Internetverbindung pruefen und erneut versuchen."
-            />
-        );
-    }
 
     const confidence = dokument.geschaeftsdaten?.aiConfidence;
 
@@ -229,15 +299,24 @@ export default function LieferantDokumentModal({
                 body: JSON.stringify(payload),
             });
 
+            // Versionskonflikt (jemand anders hat inzwischen gespeichert): die
+            // Neu-laden-Meldung uebernimmt die Kommunikation, hier ist nichts
+            // weiter zu tun -- egal ob der Nutzer neu laedt oder abbricht.
+            if (await pruefeAntwort(res)) {
+                return;
+            }
+
             if (!res.ok) {
                 throw new Error("Speichern fehlgeschlagen");
             }
 
             const updated = await res.json();
             onSave?.(updated);
-            onClose();
+            handleClose();
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Ein Fehler ist aufgetreten");
+            const meldung = err instanceof Error ? err.message : "Dokument konnte nicht gespeichert werden.";
+            setError(meldung);
+            toast.error(meldung);
         } finally {
             setLoading(false);
         }
@@ -248,12 +327,15 @@ export default function LieferantDokumentModal({
             {/* Backdrop */}
             <div
                 className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-                onClick={onClose}
+                onClick={handleClose}
             />
 
             {/* Modal */}
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                 <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="lieferant-dokument-modal-titel"
                     className={cn(
                         "relative bg-white shadow-2xl rounded-2xl border border-slate-200 flex flex-col overflow-hidden",
                         showPdf
@@ -265,7 +347,8 @@ export default function LieferantDokumentModal({
                     {/* Close Button */}
                     <button
                         className="absolute right-4 top-4 z-10 p-2 rounded-full bg-white/90 shadow-sm border border-slate-200 opacity-80 transition-all hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
-                        onClick={onClose}
+                        onClick={handleClose}
+                        aria-label="Schließen"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -273,7 +356,7 @@ export default function LieferantDokumentModal({
                     {/* Header */}
                     <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
                         <div className="flex items-center gap-4">
-                            <h2 className="text-lg font-semibold text-slate-900">
+                            <h2 id="lieferant-dokument-modal-titel" className="text-lg font-semibold text-slate-900">
                                 Dokument bearbeiten
                             </h2>
                             {showPdf && (
@@ -292,6 +375,40 @@ export default function LieferantDokumentModal({
                             <Eye className="w-4 h-4" />
                             {showPdf ? "Vorschau aktiv" : "Vorschau anzeigen"}
                         </button>
+                    </div>
+
+                    {/* Sperr-Status: Hinweis links, Bearbeiten/Fertig-Umschalter rechts */}
+                    <div className="px-6 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                        <div className="flex-1 min-w-0">
+                            {lock.status === "locked-by-other" && (
+                                <GesperrtHinweis halterName={lock.halterName} seit={lock.seit} />
+                            )}
+                            {lock.status === "loading" && (
+                                <div className="flex items-center gap-2 text-sm text-slate-500">
+                                    <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                                    Sperre wird geprüft…
+                                </div>
+                            )}
+                            {lock.status === "error" && (
+                                <div
+                                    role="alert"
+                                    className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"
+                                >
+                                    <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" aria-hidden="true" />
+                                    {LOCK_FEHLER_TEXT}
+                                </div>
+                            )}
+                        </div>
+                        <BearbeitenLeiste
+                            modus={lock.modus}
+                            kannBearbeiten={lock.kannBearbeiten}
+                            verbleibendeSekunden={idleTimer.verbleibendeSekunden}
+                            verbindungWeg={lock.verbindungWeg}
+                            bearbeitenGesperrtGrund={bearbeitenGesperrtGrund}
+                            zeigeNurLesenHinweis={zeigeNurLesenHinweis}
+                            onBearbeiten={lock.onBearbeiten}
+                            onFertig={lock.onFertig}
+                        />
                     </div>
 
                     {/* Content - Flex Row */}
@@ -352,6 +469,7 @@ export default function LieferantDokumentModal({
                                             value={formData.typ}
                                             onChange={(val) => setFormData(prev => ({ ...prev, typ: val as LieferantDokumentTyp }))}
                                             options={DOK_TYP_OPTIONS}
+                                            disabled={formGesperrt}
                                         />
                                     </div>
                                     <div className="space-y-2">
@@ -363,6 +481,7 @@ export default function LieferantDokumentModal({
                                                 onChange={(e) => setFormData(prev => ({ ...prev, dokumentNummer: e.target.value }))}
                                                 className="pl-9"
                                                 placeholder="RE-2024-001"
+                                                disabled={formGesperrt}
                                             />
                                         </div>
                                     </div>
@@ -376,6 +495,7 @@ export default function LieferantDokumentModal({
                                             value={formData.dokumentDatum}
                                             onChange={(value) => setFormData(prev => ({ ...prev, dokumentDatum: value }))}
                                             placeholder="Datum wählen"
+                                            disabled={formGesperrt}
                                         />
                                     </div>
                                     {showLiefertermin && (
@@ -388,6 +508,7 @@ export default function LieferantDokumentModal({
                                                 value={formData.liefertermin}
                                                 onChange={(value) => setFormData(prev => ({ ...prev, liefertermin: value }))}
                                                 placeholder="Lieferdatum"
+                                                disabled={formGesperrt}
                                             />
                                         </div>
                                     )}
@@ -409,6 +530,7 @@ export default function LieferantDokumentModal({
                                                         onChange={(e) => handleNettoChange(e.target.value)}
                                                         className="pl-9"
                                                         placeholder="0.00"
+                                                        disabled={formGesperrt}
                                                     />
                                                 </div>
                                             </div>
@@ -423,6 +545,7 @@ export default function LieferantDokumentModal({
                                                         onChange={(e) => setFormData(prev => ({ ...prev, mwstSatz: e.target.value }))}
                                                         className="pl-9"
                                                         placeholder="19"
+                                                        disabled={formGesperrt}
                                                     />
                                                 </div>
                                             </div>
@@ -437,6 +560,7 @@ export default function LieferantDokumentModal({
                                                         onChange={(e) => handleBruttoChange(e.target.value)}
                                                         className="pl-9"
                                                         placeholder="0.00"
+                                                        disabled={formGesperrt}
                                                     />
                                                 </div>
                                             </div>
@@ -455,6 +579,7 @@ export default function LieferantDokumentModal({
                                                 onChange={(e) => setFormData(prev => ({ ...prev, bestellnummer: e.target.value }))}
                                                 className="pl-9"
                                                 placeholder="z.B. 4500123456"
+                                                disabled={formGesperrt}
                                             />
                                         </div>
                                     </div>
@@ -467,6 +592,7 @@ export default function LieferantDokumentModal({
                                                 onChange={(e) => setFormData(prev => ({ ...prev, referenzNummer: e.target.value }))}
                                                 className="pl-9"
                                                 placeholder="z.B. AB-12345"
+                                                disabled={formGesperrt}
                                             />
                                         </div>
                                     </div>
@@ -487,6 +613,7 @@ export default function LieferantDokumentModal({
                                                 value={formData.zahlungsziel}
                                                 onChange={(value) => setFormData(prev => ({ ...prev, zahlungsziel: value }))}
                                                 placeholder="Fälligkeitsdatum"
+                                                disabled={formGesperrt}
                                             />
                                         </div>
 
@@ -500,6 +627,7 @@ export default function LieferantDokumentModal({
                                                     value={formData.skontoProzent}
                                                     onChange={(e) => setFormData(prev => ({ ...prev, skontoProzent: e.target.value }))}
                                                     placeholder="z.B. 2"
+                                                    disabled={formGesperrt}
                                                 />
                                             </div>
                                             <div className="space-y-1">
@@ -509,6 +637,7 @@ export default function LieferantDokumentModal({
                                                     value={formData.skontoTage}
                                                     onChange={(e) => setFormData(prev => ({ ...prev, skontoTage: e.target.value }))}
                                                     placeholder="z.B. 14"
+                                                    disabled={formGesperrt}
                                                 />
                                             </div>
                                             <div className="space-y-1">
@@ -518,6 +647,7 @@ export default function LieferantDokumentModal({
                                                     value={formData.nettoTage}
                                                     onChange={(e) => setFormData(prev => ({ ...prev, nettoTage: e.target.value }))}
                                                     placeholder="z.B. 30"
+                                                    disabled={formGesperrt}
                                                 />
                                             </div>
                                         </div>
@@ -533,6 +663,7 @@ export default function LieferantDokumentModal({
                                                     checked={formData.bezahlt}
                                                     onChange={(e) => setFormData(prev => ({ ...prev, bezahlt: e.target.checked }))}
                                                     className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                    disabled={formGesperrt}
                                                 />
                                                 <span className={formData.bezahlt ? "text-rose-700" : "text-slate-700"}>
                                                     Bereits bezahlt
@@ -547,6 +678,7 @@ export default function LieferantDokumentModal({
                                                             value={formData.bezahltAm}
                                                             onChange={(value) => setFormData(prev => ({ ...prev, bezahltAm: value }))}
                                                             placeholder="Zahlungsdatum"
+                                                            disabled={formGesperrt}
                                                         />
                                                     </div>
                                                     <div className="space-y-1">
@@ -560,6 +692,7 @@ export default function LieferantDokumentModal({
                                                                 onChange={(e) => setFormData(prev => ({ ...prev, tatsaechlichGezahlt: e.target.value }))}
                                                                 className="pl-9"
                                                                 placeholder="0.00"
+                                                                disabled={formGesperrt}
                                                             />
                                                         </div>
                                                     </div>
@@ -572,6 +705,7 @@ export default function LieferantDokumentModal({
                                                     value={formData.zahlungsart}
                                                     onChange={(e) => setFormData(prev => ({ ...prev, zahlungsart: e.target.value }))}
                                                     placeholder="z.B. SEPA-Lastschrift, Überweisung"
+                                                    disabled={formGesperrt}
                                                 />
                                             </div>
 
@@ -582,6 +716,7 @@ export default function LieferantDokumentModal({
                                                         checked={formData.mitSkonto}
                                                         onChange={(e) => setFormData(prev => ({ ...prev, mitSkonto: e.target.checked }))}
                                                         className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                        disabled={formGesperrt}
                                                     />
                                                     <span className="text-slate-700">Mit Skonto bezahlt</span>
                                                 </label>
@@ -629,12 +764,13 @@ export default function LieferantDokumentModal({
 
                             {/* Footer */}
                             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shrink-0">
-                                <Button variant="outline" onClick={onClose} disabled={loading}>
+                                <Button variant="outline" onClick={handleClose} disabled={loading}>
                                     Abbrechen
                                 </Button>
                                 <Button
                                     onClick={handleSave}
-                                    disabled={loading}
+                                    disabled={loading || formGesperrt}
+                                    title={formGesperrt ? gesperrtTooltip : undefined}
                                     className="bg-rose-600 text-white hover:bg-rose-700"
                                 >
                                     {loading ? (

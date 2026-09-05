@@ -7,12 +7,13 @@ import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.example.kalkulationsprogramm.service.DokumentLockService;
+import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
@@ -87,7 +88,7 @@ class LieferantDokumentControllerTest {
     private EmailAttachmentRepository emailAttachmentRepository;
 
     @MockBean
-    private DokumentLockService dokumentLockService;
+    private DatensatzLockService dokumentLockService;
 
     /**
      * MockMvc-Tests laufen mit `addFilters = false`, daher wird der
@@ -106,7 +107,7 @@ class LieferantDokumentControllerTest {
 
     @BeforeEach
     void mockLockHeld() {
-        given(dokumentLockService.isHeldBy(anyString(), anyLong(), anyLong())).willReturn(true);
+        given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(true);
     }
 
     @AfterEach
@@ -170,13 +171,41 @@ class LieferantDokumentControllerTest {
         @Test
         @DisplayName("Ohne Lock-Halterung: 409 Conflict")
         void ohneLockGibt409() throws Exception {
-            given(dokumentLockService.isHeldBy(anyString(), anyLong(), anyLong())).willReturn(false);
+            given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(false);
 
             mockMvc.perform(put("/api/lieferant-dokumente/1")
                             .principal(testAuth())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"typ\": \"RECHNUNG\"}"))
                     .andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("Lock-Pruefung fragt SperrbarerTyp.EINGANG mit Dokument- und User-ID ab")
+        void lockPruefungNutztSperrbarerTypEingang() throws Exception {
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(1L);
+            LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+            gd.setId(1L);
+            dokument.setGeschaeftsdaten(gd);
+            gd.setDokument(dokument);
+
+            given(dokumentRepository.findById(1L)).willReturn(Optional.of(dokument));
+            given(geschaeftsdokumentRepository.save(any())).willReturn(gd);
+            given(dokumentRepository.save(any())).willReturn(dokument);
+
+            LieferantDokumentDto.Response response = new LieferantDokumentDto.Response();
+            response.setId(1L);
+            given(dokumentService.getDokumentById(1L)).willReturn(response);
+
+            mockMvc.perform(put("/api/lieferant-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"typ\": \"RECHNUNG\"}"))
+                    .andExpect(status().isOk());
+
+            org.mockito.Mockito.verify(dokumentLockService)
+                    .isHeldBy(eq(SperrbarerTyp.EINGANG), eq(1L), eq(42L));
         }
 
         @Test

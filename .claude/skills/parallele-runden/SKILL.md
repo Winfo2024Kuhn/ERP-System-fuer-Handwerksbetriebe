@@ -55,17 +55,32 @@ Jeder Agent bekommt genau seinen Task-Abschnitt plus die Global Constraints.
 Nicht den ganzen Plan: er soll seinen Task bauen, nicht die Nachbarn
 mitdenken.
 
-Der Auftrag muss diese sechs Punkte enthalten:
+Der Auftrag muss diese sieben Punkte enthalten:
 
 - Welchen Task aus welcher Datei
 - Global Constraints zuerst lesen
 - Testgetrieben, Schritt für Schritt: Test schreiben, fehlschlagen lassen,
   Grund des Fehlschlags prüfen, umsetzen, bestehen lassen, committen
+- **Nur die eigene Änderung testen, nie die ganze Suite** — Backend
+  `-Dtest=MeineKlasse`, Frontend `npx vitest run <datei>` plus `lint` und
+  `build`, die eigene Playwright-Spec auf eigenem Port. Der volle Lauf gehört
+  den Prüfagenten (Vorgabe des Nutzers vom 04.09.2026: zu langsam, und
+  parallel machen die Suiten sich gegenseitig flaky)
 - Welche Pflichtdokumente vor dem ersten Edit zu lesen sind (Hook blockt sonst)
 - **Nur die Dateien anfassen, die unter `Files` stehen**, weil andere Agenten
   gleichzeitig in denselben Ordnern arbeiten
 - Anhalten und melden, wenn der Plan von der Wirklichkeit im Code abweicht,
   statt still etwas anderes zu bauen
+- **Frontend-Task ⇒ Skill `playwright-design-pruefung` ist Pflicht.** Was der
+  Nutzer am Ende sieht und klickt, wird end-to-end geprüft, nicht nur per
+  Unit-Test — und zwar zweifach: funktioniert der Ablauf, und sieht er richtig
+  aus. Eine Spec unter `e2e/` für genau den geänderten Ablauf, Screenshots in
+  den festen Bildschirmgrößen (14-Zoll-MacBook und Monitor für die PC-App,
+  Handy für die Zeiterfassung), sechs Fragen zu Farben, Design-System,
+  Look-and-Feel, UX, Auffindbarkeit und Überschneidungen schriftlich im
+  Kontext-Log. Parallel laufende Agenten brauchen je einen eigenen Port:
+  `E2E_PORT=5174 npm run test:e2e`. Vorgabe des Nutzers vom 04.09.2026 —
+  gilt dauerhaft.
 
 ### 2. Warten
 
@@ -74,13 +89,36 @@ wenn zwei von drei schon fertig sind.
 
 ### 3. Prüfen
 
-**Ein** Prüfagent für die ganze Runde, nicht einer je Task. Nur so sieht er
-das Zusammenspiel. Modell: das stärkste verfügbare, sonst Opus.
+Erst mergst **du** die Task-Branches per `git merge --no-ff` in den
+Feature-Branch — ein Konflikt ist ein 🔴 gegen den Rundenschnitt, nicht etwas
+zum Wegresolven. Dann die Prüfagenten, **einer je Rolle** für die ganze Runde,
+nicht einer je Task. Nur so sieht er das Zusammenspiel. Modell: das stärkste
+verfügbare, sonst Opus.
 
-Der Prüfagent führt die Tests selbst aus. Er glaubt keinem Bericht eines
-Umsetzungs-Agenten. Er prüft mindestens:
+- **Code-Reviewer** (`loese-problem-review`) — immer. Code, Korrektheit,
+  Performance, Datenschutz, Sicherheit, volle Testsuiten, Mutationsproben.
+- **Design-Reviewer** (`loese-problem-design-review`) — **nur wenn
+  Frontend-Dateien geändert wurden.** Playwright end-to-end im Browser,
+  Screenshots in den festen Bildschirmgrößen, die sechs Design-/UX-Fragen.
+  Läuft **parallel** zum Code-Reviewer, in einem **eigenen Worktree** auf dem
+  gemergten Stand (`../wt/review-design`, legst du an, Junction auf
+  `node_modules` nicht vergessen) — die Mutationsproben des Code-Reviewers
+  würden sonst per Hot-Reload in seinen Dev-Server funken. Beide in **einer**
+  Nachricht starten.
+
+Die Umsetzungs-Agenten haben **nur ihre eigenen Tests** gefahren (Vorgabe des
+Nutzers vom 04.09.2026: nie die ganze Suite, das dauert zu lang). Der volle
+Lauf gehört den Prüfagenten. Sie glauben keinem Bericht eines
+Umsetzungs-Agenten. Der Code-Reviewer prüft mindestens:
 
 - Laufen alle Tests, und baut das Projekt?
+- Bei Frontend-Änderungen: läuft `npm run test:e2e` (Playwright) — und gibt es
+  für den geänderten Ablauf überhaupt eine Spec? Der Prüfagent schaut die
+  Screenshots aus `test-results/design/` **selbst** an und beantwortet die sechs
+  Fragen aus `playwright-design-pruefung` selbst, je Bildschirmgröße. Ein
+  Frontend-Task ohne Spec und ohne angeschaute Screenshots ist nicht fertig,
+  egal wie grün die Unit-Tests sind. Nicht auffindbar, Überschneidung,
+  Abschneiden auf 14 Zoll, fremde Farbe, Emoji: 🔴. Geschmack: 🟡.
 - Wurden die Tests wirklich zuerst geschrieben? Die Commit-Reihenfolge zeigt es.
 - Passen die erzeugten Namen und Typen exakt zu dem, was im Plan unter
   `Produces` steht? Spätere Tasks importieren sie.
@@ -94,10 +132,41 @@ Bei rot geht der Befund an einen Agenten zurück, mit dem Befund im Auftrag.
 Bei gelb entscheidet der Hauptagent, ob er es selbst macht.
 
 Danach **erneut prüfen**, nicht darauf vertrauen, dass die Nachbesserung saß.
+Nachprüfen muss nur der Reviewer, dessen Befund es war — ein Design-🔴 geht
+nach der Nachbesserung zurück an den Design-Reviewer, nicht an beide.
 
 ### 5. Nächste Runde
 
-Erst bei grün.
+Erst, wenn **alle** beteiligten Prüfagenten grün oder gelb gemeldet haben. Und **erst aufräumen, dann starten:** die Worktrees und
+Task-Branches der abgenommenen Runde löschen, bevor die nächste Runde
+anläuft.
+
+```powershell
+# 1. ZUERST die node_modules-Junction lösen — ohne -Recurse, sonst löscht
+#    es durch die Junction hindurch das gemeinsame Ziel (siehe Beobachtungen)
+(Get-Item "<worktree-pfad>\react-pc-frontend\node_modules").Delete()
+```
+```bash
+# 2. dann erst den Worktree und den Branch
+git worktree remove --force <worktree-pfad>
+git branch -d <task-branch>        # -d, nicht -D: verweigert, wenn nicht gemerged
+```
+
+Hat in einem Worktree Playwright gelaufen, scheitert `git worktree remove` auf
+Windows an „Filename too long" — die Ordnernamen unter `test-results/` sind
+länger als MAX_PATH. Git nimmt die Registrierung trotzdem zurück, der Ordner
+bleibt liegen. Dann in PowerShell mit Long-Path-Präfix nachräumen (erst die
+Junction prüfen, sonst löscht es das Ziel mit):
+
+```powershell
+Remove-Item -LiteralPath "\\?\C:\...\wt\review-design" -Recurse -Force
+```
+
+Warum vor dem Start und nicht irgendwann später: Jede Runde hinterlässt drei
+Ordner mit komplettem Repo-Inhalt. Nach drei Runden sind das neun, und im
+Editor sieht man nicht mehr, welcher davon gerade lebt. Das `-d` beim
+Branch-Löschen ist die Sicherung — verweigert Git, ist etwas nicht
+gemerged, und das will man wissen.
 
 ## Was schiefgeht, wenn man schludert
 
@@ -108,6 +177,142 @@ Erst bei grün.
 | „Ich prüfe am Ende alles auf einmal" | Ein Fehler aus Runde 1 steckt dann in fünf Runden Arbeit |
 | „Der Agent darf auch die Nachbardatei anfassen, ist ja praktisch" | Genau daraus entstehen die Konflikte, die die Runden verhindern sollen |
 | „Testgetrieben ist hier Formsache" | Ohne roten Test weiß niemand, ob der grüne Test überhaupt etwas prüft |
+| „Der Agent lässt den langen Testlauf im Hintergrund laufen" | Er wartet auf eine Meldung, die ihn nie erreicht, und endet mit fertigem, aber nicht committetem Code |
+| „Das Merkwürdige von eben schreibe ich am Ende auf" | Am Ende ist der Grund vergessen. Sofort rein, siehe unten. |
+
+## Diesen Skill im Lauf verbessern
+
+Dieser Skill ist nie fertig. Er wird **während** der Läufe geschärft, nicht
+danach.
+
+Die Regel: Sobald im Lauf etwas auffällt — ein Agent hängt, ein Gate reißt,
+eine Anweisung wird von mehreren Agenten gleich missverstanden — schreibst du
+es sofort hier rein, bevor du weitermachst. Nicht merken und am Ende
+nachtragen. Am Ende ist der Grund vergessen und nur noch das Symptom da.
+
+Was reingehört:
+
+- Was passiert ist, konkret genug zum Wiedererkennen.
+- Warum es passiert ist, soweit du es weißt.
+- Was der Auftrag künftig enthalten muss, damit es nicht wieder passiert.
+
+Was nicht reingehört: einmalige Zufälle, Geschmacksfragen, und alles, was
+schon dasteht. Lieber einen bestehenden Punkt schärfen als einen zweiten
+danebenstellen.
+
+Zweimal dasselbe erlebt und nicht aufgeschrieben heißt: beim dritten Mal
+kostet es wieder eine Nachbesserungsrunde.
+
+## Beobachtungen aus echten Läufen
+
+### Agenten schicken Testläufe in den Hintergrund und bleiben stehen (04.09.2026)
+
+Alle drei Agenten eines Abschnitts starteten ihren Testlauf im Hintergrund und
+beendeten ihren Zug mit „ich warte auf die Benachrichtigung". Die kommt bei
+einem Subagenten aber nicht an. Ergebnis: Code fertig geschrieben, aber nichts
+committet und nichts im Kontext-Log — von außen sah es aus wie drei
+abgeschlossene Tasks.
+
+Konsequenz für den Auftrag: **Testläufe im Vordergrund, mit hohem Timeout**
+(600000 ms). Kein Hintergrund, kein Monitor. Ein Backend-Testlauf braucht
+Minuten, das ist in Ordnung — der Agent soll ihn abwarten.
+
+Konsequenz für den Hauptagenten: Meldet ein Agent „fertig", ohne
+Commit-Hashes zu nennen, ist er nicht fertig. Erst `git log` und
+`git status` im Worktree ansehen, dann glauben.
+
+### Zeitabhängige Tests werden flaky, wenn mehrere Agenten gleichzeitig testen (04.09.2026)
+
+Ein Agent meldete einen Failure in `UnifiedEmailControllerExtractEmailTest` —
+ein Test mit 500-ms-Zeitschranke, in einer Datei, die er nie angefasst hatte.
+Ursache war nicht sein Code, sondern die Last: drei Agenten fuhren gleichzeitig
+Testsuiten auf derselben Maschine.
+
+Das ist der Preis der Parallelität und kein Grund, sie aufzugeben. Aber:
+
+- Der Auftrag muss sagen, dass ein Failure in einer **nicht angefassten** Datei
+  mit Zeitschranke erst wiederholt wird, bevor er gemeldet wird.
+- Der Prüfagent fährt die volle Suite, wenn die Umsetzungs-Agenten **fertig**
+  sind, nicht währenddessen. Sonst misst er die Last der Nachbarn mit.
+- Ein Failure, der beim zweiten Lauf allein weg ist, gehört als Beobachtung
+  ins Kontext-Log — nicht als Befund in die Ampel.
+
+### `git worktree remove` löscht durch eine Junction hindurch (04.09.2026)
+
+Damit nicht jeder Worktree ein eigenes `npm ci` braucht, lag `node_modules`
+in jedem Worktree als Windows-Junction auf das eine `node_modules` im
+Haupt-Repo. Beim Aufräumen der ersten Runde hat `git worktree remove --force`
+die Junction nicht als Verweis behandelt, sondern als Ordner — und das
+**gemeinsame Ziel** mit ausgeräumt. Der Prüfagent der nächsten Runde fand
+ein leeres `node_modules` vor und musste erst `npm ci` fahren, bevor ein
+einziges Gate lief.
+
+Deshalb steht in „Nächste Runde" jetzt der Zwei-Schritt: erst die Junction
+lösen (`(Get-Item …).Delete()`, ohne `-Recurse`), dann den Worktree
+entfernen. Wer die Reihenfolge umdreht, löscht die Abhängigkeiten aller
+anderen Worktrees mit — auch der, die gerade laufen.
+
+Gilt genauso für jeden anderen geteilten Ordner, den man per Junction oder
+Symlink in einen Worktree hängt.
+
+### Eine geteilte Prop braucht eine Bedeutung, nicht nur einen Namen (04.09.2026)
+
+Ein Hook wurde gebaut, dessen Verbraucher-Komponente schon existierte. Der
+Auftrag sagte: „Rückgabewert aus den Props der Komponente ableiten." Der Agent
+hat das getan — Name und Typ von `kannBearbeiten` passten exakt. Nur die
+**Bedeutung** nicht: der Hook meinte „wir halten das Lock", die Komponente
+meinte „der Nutzer darf anfangen". Beide für sich mit 24 bzw. 12 Tests grün.
+Zusammen gerendert war der Knopf genau dann tot, wenn er gebraucht wurde.
+Zwei Review-Runden, bis das auffiel — beim ersten Mal hat der Reviewer den
+Hook allein geprüft.
+
+Zwei Konsequenzen:
+
+- Im Plan gehört unter `Interfaces` zu jeder Prop, die zwei Tasks teilen, ein
+  Satz, **was sie bedeutet** — nicht nur Name und Typ. „`kannBearbeiten:
+  boolean`" reicht nicht. „`kannBearbeiten`: ein Klick auf Bearbeiten ist
+  gerade sinnvoll; false nur bei laufendem oder gescheitertem Acquire" reicht.
+- Produziert ein Task etwas, das ein **schon vorhandener** Baustein
+  konsumiert, muss sein Test beide zusammen rendern. Und der Prüfagent auch.
+  Ein Baustein, der nur gegen sich selbst getestet ist, ist nicht geprüft.
+
+### Eine ungetestete Hilfsdatei vom Orchestrator ist ein garantierter Merge-Konflikt (04.09.2026)
+
+Der Orchestrator lieferte mitten in einer Runde eine neue, geteilte Hilfsdatei
+(`e2e/hilfen/design.ts`) aus — Typcheck grün, nie ausgeführt. Sie war kaputt
+(`testInfo.outputPath('..')` verweigert Playwright grundsätzlich). Beide
+Frontend-Agenten der Runde brauchten sie, beide standen davor, beide haben sie
+repariert — unterschiedlich. Ergebnis: Konflikt in einer Datei, die in keiner
+`Files`-Liste stand, und den der Rundenschnitt gar nicht verhindern konnte.
+
+Zwei Konsequenzen:
+
+- **Was der Orchestrator ausliefert, hat er ausgeführt.** Für eine
+  Playwright-Hilfe heißt das: eine Wegwerf-Spec, die sie einmal aufruft, auf
+  eigenem Port laufen lassen, dann erst committen. Typcheck ist kein Test.
+  Und die Probe muss den **echten Befund** nachstellen: die erste Probe für
+  die Toast-Überdeckung war mit erfundener Geometrie gebaut, überschnitt sich
+  gar nicht und fand deshalb nichts — erst mit den vom Reviewer gemessenen
+  Pixelwerten schlug sie an. Eine Probe, die nie rot war, beweist nichts.
+- **Geteilte Hilfsdateien gehören dem Orchestrator.** Findet ein Agent dort
+  einen Fehler, repariert er ihn lokal, um weiterzukommen — aber er meldet
+  ihn sofort im Kontext-Log als Bedenken, und der Orchestrator zieht **eine**
+  Version auf den Feature-Branch und lässt alle Task-Branches sie per Merge
+  nachziehen, bevor gemerged wird. Nicht zwei Reparaturen konkurrieren lassen.
+
+### Auftrag als nachweisbares Ergebnis formulieren, nicht als Lösungsweg (04.09.2026)
+
+Ein Befund war zweimal von Reviews weitergereicht und zweimal nicht behoben
+worden. Beim dritten Anlauf stand im Auftrag kein Lösungsweg, sondern das
+prüfbare Ergebnis: „Versionskonflikt ⇒ 409 mit dieser Meldung, kein
+Klassenname im Body, alle übrigen Fehlerfälle weiterhin 400." Dazu ein Satz
+zu der Falle, in die der naive Weg läuft („den catch verengen, nicht
+streichen — sonst kippen die anderen Fälle auf 500"). Der Agent hat es beim
+ersten Versuch sauber gelöst, inklusive zweitem Test als Regressionsschutz.
+
+Also: **Was muss hinterher nachweisbar wahr sein** gehört in den Auftrag.
+**Wie** der Agent dahin kommt, gehört ihm. Die eine bekannte Falle benennen
+lohnt sich trotzdem — sie kostet einen Satz und spart eine Runde.
 
 ## Abschluss
 

@@ -3,11 +3,11 @@ package org.example.kalkulationsprogramm.service;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
-import java.util.Set;
 
-import org.example.kalkulationsprogramm.domain.DokumentLock;
-import org.example.kalkulationsprogramm.dto.DokumentLockDto;
-import org.example.kalkulationsprogramm.repository.DokumentLockRepository;
+import org.example.kalkulationsprogramm.domain.DatensatzLock;
+import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
+import org.example.kalkulationsprogramm.dto.DatensatzLockDto;
+import org.example.kalkulationsprogramm.repository.DatensatzLockRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,25 +15,21 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Verwaltet Soft-Locks fuer Geschaeftsdokumente im Editor.
+ * Verwaltet Soft-Locks fuer sperrbare Datensaetze (siehe {@link SperrbarerTyp}),
+ * nicht mehr nur fuer Geschaeftsdokumente wie zuvor {@code DokumentLockService}.
  *
- * Garantiert: Pro (dokumentTyp, dokumentId)-Paar haelt zu jedem Zeitpunkt
+ * Garantiert: Pro (entitaetTyp, entitaetId)-Paar haelt zu jedem Zeitpunkt
  * hoechstens ein User das Lock. Ein verwaistes Lock (Browser-Crash etc.)
  * darf nach STALE_AFTER von einem anderen User uebernommen werden.
  */
 @Service
 @RequiredArgsConstructor
-public class DokumentLockService {
-
-    public static final String TYP_AUSGANG = "AUSGANG";
-    public static final String TYP_EINGANG = "EINGANG";
-
-    private static final Set<String> ERLAUBTE_TYPEN = Set.of(TYP_AUSGANG, TYP_EINGANG);
+public class DatensatzLockService {
 
     /** Lock gilt als verwaist, wenn so lange kein Heartbeat mehr kam. */
     static final Duration STALE_AFTER = Duration.ofSeconds(90);
 
-    private final DokumentLockRepository repository;
+    private final DatensatzLockRepository repository;
 
     /**
      * Versucht, das Lock fuer den User zu erwerben.
@@ -41,13 +37,13 @@ public class DokumentLockService {
      * oder das bestehende Lock verwaist ist.
      */
     @Transactional
-    public DokumentLockDto acquire(String dokumentTyp, Long dokumentId, Long userId, String userDisplayName) {
-        validateTyp(dokumentTyp);
+    public DatensatzLockDto acquire(SperrbarerTyp entitaetTyp, Long entitaetId, Long userId, String userDisplayName) {
+        validateTyp(entitaetTyp);
         LocalDateTime now = LocalDateTime.now();
 
-        Optional<DokumentLock> existing = repository.findByDokumentTypAndDokumentId(dokumentTyp, dokumentId);
+        Optional<DatensatzLock> existing = repository.findByEntitaetTypAndEntitaetId(entitaetTyp, entitaetId);
         if (existing.isPresent()) {
-            DokumentLock lock = existing.get();
+            DatensatzLock lock = existing.get();
             boolean sameUser = lock.getUserId().equals(userId);
             boolean stale = isStale(lock, now);
             if (sameUser || stale) {
@@ -57,26 +53,26 @@ public class DokumentLockService {
                     lock.setAcquiredAt(now);
                 }
                 lock.setLastHeartbeatAt(now);
-                DokumentLock saved = repository.save(lock);
+                DatensatzLock saved = repository.save(lock);
                 return acquired(saved);
             }
             return lockedByOther(lock);
         }
 
-        DokumentLock fresh = new DokumentLock();
-        fresh.setDokumentTyp(dokumentTyp);
-        fresh.setDokumentId(dokumentId);
+        DatensatzLock fresh = new DatensatzLock();
+        fresh.setEntitaetTyp(entitaetTyp);
+        fresh.setEntitaetId(entitaetId);
         fresh.setUserId(userId);
         fresh.setUserDisplayName(safeDisplayName(userDisplayName));
         fresh.setAcquiredAt(now);
         fresh.setLastHeartbeatAt(now);
         try {
-            DokumentLock saved = repository.saveAndFlush(fresh);
+            DatensatzLock saved = repository.saveAndFlush(fresh);
             return acquired(saved);
         } catch (DataIntegrityViolationException race) {
             // Konkurrierender Insert hat zwischen findBy und save den Lock geschrieben.
             // Den jetzt sichtbaren Eintrag wieder pruefen.
-            DokumentLock winner = repository.findByDokumentTypAndDokumentId(dokumentTyp, dokumentId)
+            DatensatzLock winner = repository.findByEntitaetTypAndEntitaetId(entitaetTyp, entitaetId)
                     .orElseThrow(() -> race);
             if (winner.getUserId().equals(userId)) {
                 return acquired(winner);
@@ -91,17 +87,17 @@ public class DokumentLockService {
      * den Editor schliessen kann.
      */
     @Transactional
-    public DokumentLockDto heartbeat(String dokumentTyp, Long dokumentId, Long userId, String userDisplayName) {
-        validateTyp(dokumentTyp);
-        Optional<DokumentLock> existing = repository.findByDokumentTypAndDokumentId(dokumentTyp, dokumentId);
+    public DatensatzLockDto heartbeat(SperrbarerTyp entitaetTyp, Long entitaetId, Long userId, String userDisplayName) {
+        validateTyp(entitaetTyp);
+        Optional<DatensatzLock> existing = repository.findByEntitaetTypAndEntitaetId(entitaetTyp, entitaetId);
         if (existing.isEmpty()) {
             // Lock ist weg (Cleanup oder anderer Tab) — neu erwerben statt 404.
-            return acquire(dokumentTyp, dokumentId, userId, userDisplayName);
+            return acquire(entitaetTyp, entitaetId, userId, userDisplayName);
         }
-        DokumentLock lock = existing.get();
+        DatensatzLock lock = existing.get();
         if (!lock.getUserId().equals(userId)) {
             if (isStale(lock, LocalDateTime.now())) {
-                return acquire(dokumentTyp, dokumentId, userId, userDisplayName);
+                return acquire(entitaetTyp, entitaetId, userId, userDisplayName);
             }
             return lockedByOther(lock);
         }
@@ -118,9 +114,9 @@ public class DokumentLockService {
      * uebernommen wurde).
      */
     @Transactional
-    public void release(String dokumentTyp, Long dokumentId, Long userId) {
-        validateTyp(dokumentTyp);
-        repository.findByDokumentTypAndDokumentId(dokumentTyp, dokumentId)
+    public void release(SperrbarerTyp entitaetTyp, Long entitaetId, Long userId) {
+        validateTyp(entitaetTyp);
+        repository.findByEntitaetTypAndEntitaetId(entitaetTyp, entitaetId)
                 .filter(lock -> lock.getUserId().equals(userId))
                 .ifPresent(repository::delete);
     }
@@ -130,20 +126,20 @@ public class DokumentLockService {
      * verwendet, damit niemand am Lock vorbei schreibt.
      */
     @Transactional(readOnly = true)
-    public boolean isHeldBy(String dokumentTyp, Long dokumentId, Long userId) {
-        validateTyp(dokumentTyp);
-        return repository.findByDokumentTypAndDokumentId(dokumentTyp, dokumentId)
+    public boolean isHeldBy(SperrbarerTyp entitaetTyp, Long entitaetId, Long userId) {
+        validateTyp(entitaetTyp);
+        return repository.findByEntitaetTypAndEntitaetId(entitaetTyp, entitaetId)
                 .map(lock -> lock.getUserId().equals(userId) && !isStale(lock, LocalDateTime.now()))
                 .orElse(false);
     }
 
-    private boolean isStale(DokumentLock lock, LocalDateTime now) {
+    private boolean isStale(DatensatzLock lock, LocalDateTime now) {
         return Duration.between(lock.getLastHeartbeatAt(), now).compareTo(STALE_AFTER) > 0;
     }
 
-    private void validateTyp(String dokumentTyp) {
-        if (dokumentTyp == null || !ERLAUBTE_TYPEN.contains(dokumentTyp)) {
-            throw new IllegalArgumentException("Unbekannter dokumentTyp: " + dokumentTyp);
+    private void validateTyp(SperrbarerTyp entitaetTyp) {
+        if (entitaetTyp == null) {
+            throw new IllegalArgumentException("Kein Datensatztyp angegeben.");
         }
     }
 
@@ -154,9 +150,9 @@ public class DokumentLockService {
         return userDisplayName.length() > 255 ? userDisplayName.substring(0, 255) : userDisplayName;
     }
 
-    private DokumentLockDto acquired(DokumentLock lock) {
-        return new DokumentLockDto(
-                DokumentLockDto.ACQUIRED,
+    private DatensatzLockDto acquired(DatensatzLock lock) {
+        return new DatensatzLockDto(
+                DatensatzLockDto.ACQUIRED,
                 lock.getUserId(),
                 lock.getUserDisplayName(),
                 lock.getAcquiredAt(),
@@ -164,9 +160,9 @@ public class DokumentLockService {
         );
     }
 
-    private DokumentLockDto lockedByOther(DokumentLock lock) {
-        return new DokumentLockDto(
-                DokumentLockDto.LOCKED_BY_OTHER,
+    private DatensatzLockDto lockedByOther(DatensatzLock lock) {
+        return new DatensatzLockDto(
+                DatensatzLockDto.LOCKED_BY_OTHER,
                 lock.getUserId(),
                 lock.getUserDisplayName(),
                 lock.getAcquiredAt(),

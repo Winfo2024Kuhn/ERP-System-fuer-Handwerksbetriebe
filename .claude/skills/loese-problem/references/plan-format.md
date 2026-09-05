@@ -49,6 +49,17 @@ Dieselben zwei Regeln wie in `parallele-runden`:
 1. Keine zwei Tasks eines Abschnitts schreiben in dieselbe Datei.
 2. Ein Task startet erst, wenn alles fertig und geprüft ist, was er unter
    `Consumes` braucht.
+3. **Jeder Abschnitt muss für sich baubar und grün sein.** Ein Schnitt, der
+   einen Zwischenstand mit Compilerbruch oder nicht startfähiger Anwendung
+   erzeugt („Task A löscht, Task B repariert"), ist falsch — der
+   Abschnitts-Review wird zwangsläufig rot. Solche Paare gehören in denselben
+   Abschnitt, sonst wird der zerstörende Teil verschoben.
+
+   Das gilt besonders für Änderungen, die nur **gemeinsam** einen lauffähigen
+   Stand ergeben und die die Testsuite nicht sehen kann — z.B. ein
+   Entity-Feld und seine Spaltenmigration, oder ein `DROP TABLE` und das
+   Entfernen des Entities, das die Tabelle noch mappt. Läuft im Testprofil
+   kein Flyway, fällt so etwas erst beim echten Start auf.
 
 Zusätzlich hier: jeder Task bekommt ein eigenes Worktree, auch wenn die
 Datei-Trennung schon sauber ist — das ist die zweite Sicherheitsebene, falls
