@@ -70,6 +70,16 @@ Abgenommenen Abschnitt sofort in den Feature-Branch mergen und **pushen**. Der
 Container kann eingesammelt werden, und ein Kontolimit kann die Pipeline
 jederzeit mitten in der Arbeit abreißen. Was nicht auf `origin` liegt, ist weg.
 
+### Review-Agent meldet „läuft noch" statt einer Ampel
+
+Ein Reviewer startete `npm run test` im Hintergrund und beendete seine Runde
+mit „ich melde mich, wenn die Suite fertig ist". Als Subagent bekommt er die
+Benachrichtigung nie — die Ampel wäre ausgeblieben. Das ist keine
+Fertigmeldung: per Nachricht an denselben Agenten weitermachen lassen
+(synchron im Vordergrund, hohes Timeout), nicht neu starten und nicht als
+abgenommen werten. Der Satz „Testläufe synchron im Vordergrund" gehört
+trotzdem in jeden Reviewer-Auftrag, nicht nur in die Agenten-Definition.
+
 ### Nach jedem Agenten-Abbruch: Halbzustand prüfen
 
 Stirbt ein Agent mitten in der Arbeit (Kontolimit, Timeout), ist der Worktree

@@ -18,8 +18,8 @@ Kontext-Log: docs/superpowers/plans/<datum>-<thema>-log.md
 ## Abschnitt 1 (max. 3 Tasks, disjunkte Dateien)
 
 ### Task 1
-- Branch: feature/<slug>/task-1
-- Worktree: .claude/worktrees/<slug>-task-1
+- Branch: <kurzslug>/task-1-<stichwort>
+- Worktree: ../wt/<kurzslug>-task-1
 - Files: <Liste der Dateien, die dieser Task anfasst>
 - Interfaces:
   - Produces: <was dieser Task erzeugt, das andere importieren könnten>
@@ -59,6 +59,16 @@ Dieselben zwei Regeln wie in `parallele-runden`:
    Entity-Feld und seine Spaltenmigration, oder ein `DROP TABLE` und das
    Entfernen des Entities, das die Tabelle noch mappt. Läuft im Testprofil
    kein Flyway, fällt so etwas erst beim echten Start auf.
+
+## Branch-Namen: Task-Branches nicht unter den Feature-Branch hängen
+
+`feature/<slug>/task-1` lässt sich **nicht** anlegen, wenn `feature/<slug>`
+schon existiert — Git speichert Zweige als Dateien, und `feature/<slug>` kann
+nicht gleichzeitig Datei und Ordner sein (`cannot lock ref`). Deshalb heißen
+Task-Branches `<kurzslug>/task-<N>-<stichwort>` (z.B. `layout/task-3-projekt`),
+der Feature-Branch bleibt `feature/<slug>`. Die Worktree-Pfade nach
+Projektkonvention unter `../wt/<kurzslug>-task-<N>` (Junction auf
+`node_modules` nicht vergessen).
 
 Zusätzlich hier: jeder Task bekommt ein eigenes Worktree, auch wenn die
 Datei-Trennung schon sauber ist — das ist die zweite Sicherheitsebene, falls
