@@ -192,10 +192,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 der Confirm-Dialog (Knoepfe mittig/rechts) irgendeine Aktion --
                 und die Ecke bleibt frei, unabhaengig davon, wie viele Zeilen
                 der Toast-Text braucht.
+
+                Task 8c Nachtrag (Code-Review-Befund 4): z-[9999] lag UNTER
+                dem Confirm-Backdrop (z-[10000]) und dessen Dialog-Wrapper
+                (z-[10001], siehe confirm-dialog.tsx) -- stand ein
+                Confirm-Dialog offen, lag der (an sich sichtbare, korrekt
+                positionierte) Toast optisch abgedunkelt HINTER dem Backdrop,
+                und ein Klick auf ihn traf in Wirklichkeit den Backdrop
+                (⇒ handleCancel des Confirm-Dialogs). z-[10010] liegt bewusst
+                ueber ALLEM im Projekt (hoechster bisheriger Wert war 10001,
+                siehe Grep ueber `z-[` in src/) -- der Toast traegt nie eine
+                Aktion, die einen gleichzeitig offenen Dialog stoeren koennte,
+                er darf also immer obenauf liegen.
             */}
             <div
                 data-testid="toast-container"
-                className={`fixed z-[9999] flex flex-col gap-2 pointer-events-auto ${
+                className={`fixed z-[10010] flex flex-col gap-2 pointer-events-auto ${
                     dialogOffen ? 'bottom-6 left-6 items-start' : 'bottom-6 right-6 items-end'
                 }`}
             >
