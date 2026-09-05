@@ -106,7 +106,8 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
  * gebraucht werden -- auf 14 Zoll (1440x900) trifft ein Klick in die Mitte
  * beider Knoepfe den Toast statt den Knopf. Ausweichen statt den Fehler in
  * jedem einzelnen Modal einzeln zu umschiffen: bei offenem Dialog wandert der
- * GESAMTE Container nach oben rechts, wo kein Modal jemals Aktionen platziert.
+ * GESAMTE Container nach oben LINKS (siehe Kommentar am Container unten fuer
+ * die Begruendung, warum links statt oben rechts).
  */
 function useIrgendeinDialogOffen(): boolean {
     const [offen, setOffen] = useState(
@@ -164,11 +165,28 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     return (
         <ToastContext.Provider value={{ toast }}>
             {children}
-            {/* Toast Container -- oben rechts bei offenem Dialog, sonst unten rechts (siehe useIrgendeinDialogOffen). */}
+            {/*
+                Toast Container -- oben LINKS bei offenem Dialog, sonst unten
+                rechts (siehe useIrgendeinDialogOffen).
+
+                Design-Review-Nachbesserung (Task 8a): "oben rechts" (die
+                6b-Loesung) reichte nicht -- dort sitzen bei praktisch jedem
+                Modal der Schliessen-X-Knopf UND oft ein weiterer Kopf-Knopf
+                (z.B. "Vorschau aktiv" in LieferantDokumentModal). Gemessen
+                blieben zwischen einem einzeiligen Toast und dem X nur 4px
+                Luft (Toast endet y=70, X beginnt y=74) -- ein zweizeiliger
+                Toast (46 -> 86px) ueberdeckt X und "Vorschau aktiv" auf
+                beiden Bildschirmgroessen. Mehr Abstand haette dasselbe
+                Problem nur verschoben (ein noch laengerer Fehlertext reisst
+                jeden festen Puffer wieder ein) -- oben LINKS ist dagegen die
+                eine Ecke, die in keinem Modal im Projekt eine Aktion traegt
+                (nur der ueberschriftstext, nie interaktiv), unabhaengig
+                davon, wie viele Zeilen der Toast-Text braucht.
+            */}
             <div
                 data-testid="toast-container"
-                className={`fixed z-[9999] flex flex-col gap-2 items-end pointer-events-auto ${
-                    dialogOffen ? 'top-6 right-6' : 'bottom-6 right-6'
+                className={`fixed z-[9999] flex flex-col gap-2 pointer-events-auto ${
+                    dialogOffen ? 'top-6 left-6 items-start' : 'bottom-6 right-6 items-end'
                 }`}
             >
                 {toasts.map(t => (

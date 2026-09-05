@@ -284,6 +284,9 @@ describe('LieferantDokumentModal', () => {
             expect(bearbeiten).toBeDisabled();
             expect(bearbeiten).toHaveAttribute('title', 'Sperre wird gerade geholt …');
             expect(screen.getByPlaceholderText('RE-2024-001')).toBeDisabled();
+            // Task 8a: waehrend des Abrufs (Ladeband) darf der ruhige
+            // "Sie lesen nur mit."-Hinweis nicht ZUSAETZLICH auftauchen.
+            expect(screen.queryByText('Sie lesen nur mit.')).not.toBeInTheDocument();
 
             // Aufraeumen, damit die haengende Promise den Test nicht ueberlebt.
             acquireAufloesen(lockResponse());
@@ -308,6 +311,16 @@ describe('LieferantDokumentModal', () => {
             const bearbeiten = screen.getByRole('button', { name: 'Bearbeiten' });
             expect(bearbeiten).toBeDisabled();
             expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled();
+        });
+
+        it('zeigt bei Fehler KEINEN "Sie lesen nur mit."-Hinweis -- der drängt sonst das rote Fehlerband zusammen (Task 8a: Regel jetzt lock.status === "idle", wie auf der Editor-Seite)', async () => {
+            const fetchMock = buildFetchMock({ acquire: () => new Response(null, { status: 500 }) });
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderModal();
+
+            await screen.findByRole('alert');
+            expect(screen.queryByText('Sie lesen nur mit.')).not.toBeInTheDocument();
         });
 
         it('traegt denselben Wortlaut wie das rote Fehlerband als title auf dem deaktivierten Bearbeiten-Knopf (Task 7d: bearbeitenGesperrtGrund)', async () => {

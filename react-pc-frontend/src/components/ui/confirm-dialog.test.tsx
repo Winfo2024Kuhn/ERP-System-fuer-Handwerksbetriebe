@@ -89,6 +89,19 @@ describe('ConfirmDialog', () => {
         expect(screen.queryByText('Löschen?')).not.toBeInTheDocument();
     });
 
+    it('traegt role="dialog"/aria-modal/aria-labelledby auf den Titel (Task 8a) -- sonst greift der Toast-Umzug bei offenem Dialog hier nicht, und Screenreader sehen keinen Dialog', async () => {
+        const user = userEvent.setup();
+        render(
+            <ConfirmProvider>
+                <TestComponent />
+            </ConfirmProvider>
+        );
+        await user.click(screen.getByText('Löschen'));
+
+        const dialog = screen.getByRole('dialog', { name: 'Löschen?' });
+        expect(dialog).toHaveAttribute('aria-modal', 'true');
+    });
+
     it('wirft Fehler wenn useConfirm ohne Provider verwendet wird', () => {
         function BadComponent() {
             useConfirm();

@@ -1,10 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useConfirm } from '../ui/confirm-dialog';
 
-interface ApiErrorBody {
-    message?: string;
-}
-
 interface UseKonfliktMeldungResult {
     /**
      * Prueft die Response eines Speicher-Requests auf einen Versionskonflikt
@@ -35,25 +31,31 @@ export function useKonfliktMeldung(bezeichnung: string = 'Dokument'): UseKonflik
                 return false;
             }
 
-            // Antwort-Body defensiv parsen: der Server liefert bei 409 zwar
-            // denselben Text in ApiError.message, aber die eigene, mit der
-            // Bezeichnung konkretisierte Formulierung ist genauer und hat
-            // Vorrang -- das Backend-Feld dient nur als Fallback. Ein
-            // fehlender oder ungueltiger JSON-Body (Textkoerper) darf dabei
-            // nicht zum Absturz fuehren.
-            const body = (await res.json().catch(() => null)) as ApiErrorBody | null;
-            const eigeneMeldung = `Jemand anders hat dieses ${bezeichnung} gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.`;
-            const meldungstext =
-                eigeneMeldung ||
-                body?.message ||
-                'Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.';
+            // Der Server liefert bei 409 zwar denselben Sachverhalt in
+            // ApiError.message (siehe RestExceptionHandler.
+            // handleOptimisticLockingFailure), aber die eigene, mit der
+            // Bezeichnung konkretisierte Formulierung ist IMMER vorhanden und
+            // genauer -- das Backend-Feld wird darum bewusst NICHT gelesen.
+            // (Fund aus dem Review, Task 8a: die vorherige Fassung parste den
+            // Antwort-Body trotzdem und haengte body?.message sowie einen
+            // dritten, generischen Text als "Fallback" an -- toter Code, denn
+            // eigeneMeldung ist ein Template-String mit `bezeichnung` und
+            // damit nie leer, der Fallback konnte also nie greifen.)
+            const meldungstext = `Jemand anders hat dieses ${bezeichnung} gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.`;
 
             const neuLaden = await confirm({
                 title: 'Nicht gespeichert',
                 message: meldungstext,
                 confirmLabel: 'Neu laden',
                 cancelLabel: 'Abbrechen',
-                variant: 'warning',
+                // 'info' statt 'warning' (Task 8a): gefuellte Primaeraktionen
+                // sind im Design-System rose, nicht amber -- amber ist
+                // Warn-Icons/Badges vorbehalten (siehe UnsavedChangesModal:
+                // amber-Icon, aber rose-Knopf). confirm-dialog.tsx bietet
+                // dafuer keinen eigenen "amber-Icon + rose-Knopf"-Verbund an;
+                // 'info' liefert den geforderten rose-Knopf, ohne die anderen
+                // 53 confirm()-Aufrufe im Projekt anzufassen.
+                variant: 'info',
             });
 
             if (neuLaden) {
