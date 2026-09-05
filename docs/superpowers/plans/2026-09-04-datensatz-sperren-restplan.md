@@ -498,7 +498,22 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
 - Nicht hier: das inline „Speichern fehlgeschlagen"-Band, das im Modal Felder verdeckt —
   vorbestehend, in die Restpunkte-Liste für ein Folge-Vorhaben.
 
-## Abschnitt 8-2 (Aufräumen — macht der Orchestrator selbst, parallel zu 8c)
+## Abschluss (nach Runde 8-2)
+
+1. **Letzter Review-Durchgang** über den kompletten Feature-Branch: Code-Reviewer (volle
+   Suiten, Grep auf Reste des alten Systems, Migration V365 gegen die Flyway-Regeln,
+   Startfähigkeit: Entity weg **und** Tabelle weg) und Design-Reviewer (volle E2E mit der
+   strengeren Hilfe, 8c-Screens: Toast unten links, Fehlschlag-Variante, Gebucht-Fall).
+2. Orchestrator: `./graphify update .` einmal am Ende; Worktrees weg.
+3. **Zielprüfung (Schritt 7 des Skills, Orchestrator selbst):** kompletten PR-Diff gegen die
+   Spec aus Issue #82 lesen — nur Absicht, keine Stildetails. Löst er das X-Button-Problem
+   vollständig? Idle-Timer 5 Min / 60 s Vorwarnung? `SperrbarerTyp` als einziger Hebel für
+   neue Typen? `@Version` + 409 auf allen Speicherwegen? Fünf Bausteine? Beide Verbraucher
+   umgestellt, altes System weg? Nichts Themenfremdes?
+4. PR gegen `main`, verlinkt mit #82. Kein Merge ohne Marvins Blick — der PR ist groß.
+
+## Abschnitt 8-2 (Aufräumen — macht der Orchestrator selbst, parallel zu 8c) — ERLEDIGT
+`37c4ea61` + `de7a9c5e`, gemerged als `90b769d7`. Siehe Kontext-Log „Abschnitt 8-2 — Aufräumen".
 
 Zusätzlich nimmt der Orchestrator dabei den Halbsatz aus Code-Review 6 mit: in
 `document-editor/index.tsx`, `handleSave`, Create-Zweig — `setDokument(created)` muss vor
