@@ -20,12 +20,13 @@ Kontext-Log: docs/superpowers/plans/<datum>-<thema>-log.md
 ### Task 1
 - Branch: feature/<slug>/task-1
 - Worktree: .claude/worktrees/<slug>-task-1
-- Files: <Liste der Dateien, die dieser Task anfasst>
+- Files: <Liste der Dateien, die dieser Task anfasst — exakte Pfade>
+- Vorbild: <existierender ähnlicher Code als Vorlage, Datei+Zeile — oder "keins" wenn es nichts Vergleichbares gibt>
 - Interfaces:
-  - Produces: <was dieser Task erzeugt, das andere importieren könnten>
+  - Produces: <was dieser Task erzeugt, das andere importieren könnten — mit exakter Signatur>
   - Consumes: <was dieser Task aus anderen Tasks braucht — muss vorher fertig sein>
 - Steps:
-  - [ ] Schritt 1
+  - [ ] Schritt 1 (konkret: Datei + Klasse/Funktion + was genau passiert)
   - [ ] Schritt 2
 
 ### Task 2
@@ -55,3 +56,14 @@ ein Task doch mal unerwartet eine gemeinsame Datei anfasst (z.B. eine
 generierte Datei). Ein echter Merge-Konflikt beim Zusammenführen der
 Task-Branches ist dann ein sichtbarer Fehler statt eines stillen
 Datenverlusts.
+
+## Regel für Steps: konkret statt vage
+
+Ein Coding-Agent bekommt später nur seinen eigenen Task, nicht den ganzen
+Plan. Jeder Step muss deshalb so konkret sein, dass er direkt umgesetzt
+werden kann, ohne vorher selbst breit im Code zu suchen — das kostet sonst
+bei jedem Task erneut Zeit und Kontext. Konkret heißt: Datei + Klasse/Funktion
++ was genau passiert, plus ein Vorbild aus dem Bestandscode, wenn es eins
+gibt. Der Coding-Agent darf `graphify` trotzdem nutzen, aber nur um einzelne
+Punkte aus dem Plan gezielt zu prüfen — nicht um sich einen allgemeinen
+Überblick zu verschaffen, den eigentlich schon der Plan liefern sollte.
