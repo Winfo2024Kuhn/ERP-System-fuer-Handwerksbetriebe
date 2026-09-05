@@ -3463,3 +3463,36 @@ Punkt 1 verlangte für Titel/Eyebrow "elementFromPoint ... trifft jeweils das El
 selbst" — das haette den Ausgangsbefund nicht zuverlaessig erkannt (siehe oben), daher
 stattdessen ein Bounding-Box-Ueberlappungstest, der nachweislich denselben Fall faengt und
 inhaltlich dasselbe zusichert ("der Toast liegt nicht auf dem Titel/der Eyebrow").
+
+## Abschnitt 8-2 — Aufräumen (Orchestrator)
+
+Zeit: 2026-09-05T13:05:00Z
+Branch: lock/task-8b-aufraeumen (Worktree ../wt/task-8b)
+Commit(s): 37c4ea61 (altes Sperr-System + V365), Folgecommit (design.ts)
+Status: fertig
+
+Was gemacht wurde:
+- Acht alte Dateien gelöscht: DokumentLock (Entity), DokumentLockDto,
+  DokumentLockRepository, DokumentLockService, DokumentLockController,
+  DokumentLockServiceTest, useDocumentLock.ts, DocumentLockedModal.tsx — in
+  derselben Auslieferung wie Migration V365 (DROP TABLE IF EXISTS dokument_lock),
+  weil ein Zwischenstand mit Entity ohne Tabelle nicht startet.
+- e2e/hilfen/dokument-editor.ts stubbt /api/datensatz-locks/ statt der toten alten
+  Route; useDatensatzLock.test.tsx: Invariante und Aufräumen per try/finally
+  getrennt; LieferantDokumentModal.test.tsx: Zusicherung auf die tatsächlichen drei
+  Vorkommen (Band, Toast, sr-only-Span); index.tsx: Reihenfolge-Kommentar im
+  Create-Zweig; Javadoc-@link auf gelöschte Klasse zu @code; Kommentare ohne Pfade
+  auf gelöschte Dateien.
+- e2e/hilfen/design.ts: keinAbschneiden() neu, keinHorizontalerUeberlauf() misst
+  Container gegen eigenen scrollWidth (Beobachtung des Nutzers, 14-Zoll-Lauf).
+  Wegwerf-Probe mit den drei Fällen: alle erkannt; volle E2E-Suite danach 110/110.
+- Geprüft: mvn test-compile grün; lint 0 Fehler / 1 bekannte Warnung; 93 gezielte
+  Unit-Tests grün; Editor-Specs 18/18; volle E2E 110/110.
+
+Bedenken / Abweichungen vom Plan:
+- Verbleibende Erwähnungen der alten Namen sind reine Historie in Kommentaren
+  (GesperrtHinweis, SperrbarerTyp, DatensatzLockService, zwei Spec-Köpfe) — bewusst
+  gelassen, sie erklären, was ersetzt wurde.
+- Gebaute Bundles unter src/main/resources/static/assets enthalten noch
+  /api/dokument-locks — historischer Build-Output, wird beim nächsten
+  Produktions-Update neu erzeugt; nicht angefasst.
