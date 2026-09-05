@@ -95,6 +95,16 @@ Realer Fall: Die `@Version`-Felder waren committet, die zugehörige
 Spaltenmigration lag nur unversioniert daneben — ein Stand, mit dem die
 Anwendung wegen `ddl-auto=validate` nicht mehr gestartet wäre.
 
+Zweiter realer Fall (05.09.2026, Kontolimit mitten in Abschnitt 2): Fix an
+zwei Komponenten schon im Worktree, aber keine Spec, kein Commit, sechs
+`debug_probe*.mjs` daneben. Nicht neu starten — einen abgebrochenen Agenten
+per Nachricht (SendMessage an dieselbe Agent-ID) **wieder aufnehmen**: er
+kennt seinen Stand, das spart das komplette Neu-Einlesen. Im Auftrag zur
+Wiederaufnahme den vorgefundenen Stand benennen und sagen, wie er
+testgetrieben nachholt (Fix als Patch sichern, Dateien zurücksetzen, rote
+Spec, Patch wieder anwenden) — und ausdrücklich **kein `git stash`**, der
+Stash ist mit anderen Sitzungen geteilt.
+
 ---
 
 ## Für die Aufträge an Coding-Agenten
