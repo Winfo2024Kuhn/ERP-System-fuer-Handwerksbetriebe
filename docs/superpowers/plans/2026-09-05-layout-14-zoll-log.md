@@ -68,3 +68,45 @@ Ergebnis der Gates:
 - `E2E_PORT=5201 npx playwright test e2e/bearbeiten-leiste.spec.ts e2e/lieferant-dokument-modal.spec.ts --workers=1`: **18/18 grün** — der Befund aus dem ersten Block ist behoben.
 - `npm run lint`: 0 Fehler, 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`, unverändert wie Baseline).
 - `npm run build`: grün. Build-Output vor dem Commit verworfen (`git checkout -- src/main/resources/static` + `git clean -f src/main/resources/static/assets`).
+
+## Abschnitt 1 — Review (Code-Reviewer)
+
+Zeit: 2026-09-05T15:05:00Z
+Branch: feature/layout-14-zoll @ 4b8327cd (Merge von `layout/task-1-design-hilfen`, ce0c4fe9 + baaf16b5)
+Commit(s): ce0c4fe9, baaf16b5, 9e44a6bc, 4b8327cd
+Status: fertig
+Ampel: 🟡 (abgenommen)
+
+Was geprüft wurde:
+- Umfang: `git diff --stat 0a48aa3d..HEAD` = genau 3 Dateien (Kontext-Log, `e2e/design-hilfen.spec.ts`, `e2e/hilfen/design.ts`). Außerhalb von `react-pc-frontend/` und `docs/` **null** geänderte Dateien — Backend-Suite entfällt planmäßig. Kein Build-Output in den Commits, keine Konfliktmarker.
+- Gates (alle aus `react-pc-frontend/`, synchron, Port vorher per `netstat` als frei geprüft):
+  - `npm run lint`: 0 Fehler, genau die 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`) — identisch zur Baseline.
+  - `npm run test`: **88 Dateien, 1082 Tests, 1082 grün, 0 rot** (92 s). Sauberer als die Baseline, in der 13 lastbedingte 5-s-Timeouts standen.
+  - `npm run build`: grün. Build-Output danach verworfen (`git checkout -- src/main/resources/static` + `git clean -f src/main/resources/static/assets`).
+  - `E2E_PORT=5211 npm run test:e2e`: **154 grün, 0 rot** (3,2 min, beide Größen) = 110 Baseline-Tests + 44 neue. Die immer mitlaufende Erweiterung von `keinHorizontalerUeberlauf` dreht **keinen** der 110 alten Tests rot.
+- Mutationsproben (Pflicht laut `fallstricke.md`), je Mutation ein Lauf von `e2e/design-hilfen.spec.ts` auf eigenem Port 5212, Vergleich gegen 22/22 grün:
+  1. `<main>`-Messung abgeschaltet → genau 1 rot („main mit overflow-x:hidden und breiterem Inhalt loest aus").
+  2. Toleranz der `overflow-x: hidden`-Schleife `+2` → `+2000` → genau 1 rot („Element mit overflow-x:hidden … auch ohne main").
+  3. Toleranz in `keinTextLaeuftUeber` `+2` → `+2000` → genau 3 rot (Breite-0-Fall, `strengePruefungen: true`, Abgrenzungsfall).
+  4. `data-kuerzung-erlaubt`-Ausnahme immer wahr → genau 2 rot (ellipsis-Fall, `-webkit-line-clamp`-Fall).
+  5. `istUnsichtbarVersteckt` immer wahr → genau 6 rot (alle Fälle, die über die drei Ausnahme-Zweige laufen).
+  6. Zusatzprobe: Höhen-Guard aus `istUnsichtbarVersteckt` entfernt (nur noch `clientWidth`) → 1 rot (Breite-0-Fall). Der Guard ist also tragend, die sr-only-Ausnahme frisst den Spec-Befund 2 nicht.
+  Jeweils danach `git checkout` + Prüfsummenvergleich: `e2e/hilfen/design.ts` byte-identisch, `git diff` leer, `git status` sauber.
+- Wegwerf-Sonde (danach gelöscht) für die Randfälle, die keine Spec abdeckt:
+  - `overflow-x: auto` und `overflow-x: scroll` mit 800 px Inhalt in 200 px Kasten → **kein** Befund. Legitime Scroll-Container werden korrekt nicht angemeckert.
+  - `overflow-y: hidden` ohne `overflow-x` → computed `overflowX = auto` → kein Befund (richtig, das Ding scrollt sichtbar).
+  - `-webkit-line-clamp` wird **nicht** vererbt (Kind meldet `none`) → keine Fehlalarme an Kindern von `.line-clamp-2`.
+  - 300×1 px-Kasten mit `overflow: hidden` und echt angeschnittenem Text → bleibt Befund. Die sr-only-Ausnahme ist eng genug geschnitten.
+
+Bedenken / Abweichungen vom Plan (alles 🟡, nichts blockiert):
+- **`overflow: clip` fällt durch das Raster.** Die generische Schleife prüft nur `overflowX === 'hidden'`; ein 200-px-Kasten mit `overflow: clip` und 800 px Inhalt bleibt still (gemessen). `clip` versteckt genauso lautlos wie `hidden`. Plan- und spectreu (dort steht nur „hidden"), aber `design-hilfen.spec.ts` nutzt `overflow: clip` selbst, um dem Check auszuweichen — die Lücke ist also bekannt. Empfehlung für Task 10: `clip` mitprüfen.
+- **Inline-Vorfahre mit nicht-sichtbarem Overflow schluckt echte Befunde.** Inline-Elemente melden immer `clientWidth`/`clientHeight` = 0, deshalb hält `istUnsichtbarVersteckt` **jeden** inline Vorfahren mit `overflow: hidden` für ein sr-only-Muster. Gemessen: ein `display:block`-Kasten mit 492 px Text in 0 px Breite, verpackt in `<span style="overflow:hidden">`, wird nicht mehr gemeldet; dasselbe mit `text-overflow: ellipsis` in `keinTextGekuerzt`. Im heutigen `src/` habe ich kein solches Paar gefunden (die `truncate`-Spans sind fast alle `block` oder Flex-Kinder, also blockifiziert und normal messbar) — deshalb 🟡 und kein 🔴. Fix-Vorschlag für Task 10: zusätzlich `getComputedStyle(k).display !== 'inline'` fordern oder `getBoundingClientRect()` statt `clientWidth/Height` messen.
+- **`keinTextLaeuftUeber` sieht nur Blatt-Elemente.** Text, der direkt neben einem Element-Kind steht (`<p>Langer Name <span>Badge</span></p>` oder Lucide-Icon + Beschriftung in einem Knopf), wird nie gemessen (gemessen: bleibt still). Genau so im Plan vorgegeben, aber eine Abdeckungslücke, sobald Task 10 den Standard scharf dreht.
+- **Meldungstext bei `text-overflow: ellipsis` ohne `overflow: hidden`:** Dort wird nichts gekürzt (die Ellipse greift nur bei nicht-sichtbarem Overflow), gemeldet wird trotzdem „Text ist gekuerzt". Der Fall ist ein echter Überlauf, aber unter falschem Namen.
+- **`<main>`-Check ohne Toleranz** (`scrollWidth > clientWidth`), während die anderen Prüfungen +1/+2 zugestehen. Plantreu, aber bei Sub-Pixel-Rundung ein Flaky-Risiko für die Folgetasks.
+- **Formulierungs-Spannung zu Task 2:** dessen „Produces" verspricht `<main>` „mit sichtbarem Scrollbalken statt stillem Abschneiden". Der jetzt immer laufende `<main>`-Check verbietet aber jeden Überstand in `<main>` — auch einen legitim scrollbaren. Der Spec-Text von Task 2 („(a) `main` hat keinen Überstand") löst das richtig auf; wer nur die Produces-Zeile liest, baut am Check vorbei.
+- **`istUnsichtbarVersteckt` steht dreimal wortgleich im File.** Technisch erzwungen (jede `page.evaluate` wird eigenständig serialisiert), ließe sich aber als geteilte String-Konstante einmal halten.
+- **`.claude/skills/playwright-design-pruefung/SKILL.md` kennt die neuen Prüfungen und die Option `strengePruefungen` nicht.** Nicht Task 1s Baustelle (nicht in seiner `Files`-Liste, Global Constraints verbieten Fremddateien) — gehört zu Task 10, wenn der Standard auf `true` dreht.
+- **Aside, nicht von Abschnitt 1 verursacht:** `docs/superpowers/specs/bilder/` ist untracked. Die Beweisbilder, auf die Spec und Plan verweisen, liegen damit nicht im Repo.
+
+Keine 🔴-Befunde: keine Korrektheitsfehler in den Messpfaden, kein rotes Gate, keine Sicherheits-/DSGVO-Verstöße (reiner Testcode, keine echten Personendaten, Miniseiten nur mit den Fantasienamen der Spec), kein Merge-Konflikt, keine Änderung außerhalb der erlaubten Dateien.
