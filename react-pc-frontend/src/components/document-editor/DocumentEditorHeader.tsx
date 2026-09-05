@@ -1,4 +1,4 @@
-import { X, Save, Upload, Download, FileText, Wrench, Clock, Package, Printer, Minus, FolderOpen, Percent, Mail, FileEdit } from 'lucide-react';
+import { X, Save, Upload, Download, FileText, Wrench, Clock, Package, Printer, Minus, FolderOpen, Percent, Mail, FileEdit, Lock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import type { AusgangsGeschaeftsDokument } from './types';
@@ -7,6 +7,13 @@ interface DocumentEditorHeaderProps {
     dokumentNummer: string;
     kontextInfo: string;
     isLocked: boolean;
+    /**
+     * true nur fuer eine tatsaechlich gebuchte Rechnung (Design-Review
+     * Abschnitt 7-2, Befund 1) -- NICHT dasselbe wie isLocked, das auch bei
+     * Fremdsperre, eigenem "Fertig" oder einem Sperrfehler true ist. Das
+     * Badge zeigt "Gebucht" ausschliesslich, wenn dieser Prop true ist.
+     */
+    istGebucht: boolean;
     saving: boolean;
     saveSuccess: boolean;
     hasUnsavedChanges: boolean;
@@ -35,6 +42,7 @@ export function DocumentEditorHeader({
     dokumentNummer,
     kontextInfo,
     isLocked,
+    istGebucht,
     saving,
     saveSuccess,
     hasUnsavedChanges,
@@ -63,6 +71,7 @@ export function DocumentEditorHeader({
             <div className="flex items-center gap-2 min-w-0">
                 <button
                     onClick={onClose}
+                    aria-label="Editor schließen"
                     className="p-1.5 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
                 >
                     <X className="w-4 h-4 text-slate-400" />
@@ -72,9 +81,9 @@ export function DocumentEditorHeader({
                     {dokumentNummer || 'Neues Dokument'}
                 </h1>
                 {/* Status badges */}
-                {isLocked && (
+                {istGebucht && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[10px] font-semibold flex-shrink-0">
-                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                        <Lock className="w-2.5 h-2.5" />
                         Gebucht
                     </span>
                 )}

@@ -422,6 +422,15 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // storniert / digital angenommen (Angebot, AB) / gebuchte Rechnung → gesperrt.
     // Wichtig für Auto-Save: ohne digitalAngenommen-Check feuert der 10s-Interval
     // bei angenommenen Angeboten/ABs endlos Server-Fehler-Alerts.
+    // Eigene Variable statt inline in isLocked (Design-Review Abschnitt 7-2,
+    // Befund 1): DocumentEditorHeader zeigte das "Gebucht"-Badge bisher an
+    // isLocked, das auch bei Fremdsperre/eigenem "Fertig"/Sperrfehler true
+    // ist -- "Gebucht" heisst in diesem Produkt "in der Buchhaltung erfasst"
+    // und stand damit faelschlich auf Dokumenten mit gebucht=false. Diese
+    // Variable ist die einzig korrekte Bedingung fuer das Badge und wird als
+    // eigener Prop an den Header gegeben (siehe unten); isLocked bleibt
+    // unveraendert fuers Deaktivieren der Bearbeitungs-Aktionen.
+    const istGebuchteRechnung = !!(dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ));
     // `readOnly` kommt zusaetzlich von der Seite: haelt sie gerade kein Lock
     // (z.B. ein Kollege bearbeitet den Datensatz), darf hier trotzdem nur
     // gelesen werden -- der Editor haelt selbst kein Lock mehr, siehe unten.
@@ -429,7 +438,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         readOnly ||
         dokument?.storniert ||
         dokument?.digitalAngenommen ||
-        (dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ))
+        istGebuchteRechnung
     );
     const currentDokumentTyp = dokument?.typ ?? dokumentTyp;
     const showFinalizationPrompt = invoiceTypes.includes(currentDokumentTyp);
@@ -1185,8 +1194,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // Das Lock selbst haelt jetzt ausschliesslich die Seite (useDatensatzLock,
     // anderer Task) -- der Editor holt und pingt keins mehr. Frueher gab es
     // hier zusaetzlich einen eigenen, nie gestoppten Heartbeat (alle 30s auf
-    // /api/dokument-locks/AUSGANG/.../heartbeat) UND ein eigenes Acquire
-    // (tryAcquireLock, als 409-Retry in handleSave). Beides geriet mit dem
+    // dem alten, mittlerweile abgeloesten Sperr-Endpunkt) UND ein eigenes
+    // Acquire (tryAcquireLock, als 409-Retry in handleSave). Beides geriet mit dem
     // Seiten-Hook aus dem Takt und ist raus (Issue #82, Abschnitt 6a): ein
     // 409 beim Speichern bedeutet jetzt entweder eine echte Fremdsperre oder
     // eine abgelaufene Seiten-Sperre -- in beiden Faellen kann der Editor
@@ -2886,7 +2895,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // --- Loading state ---
     if (loading) {
         return (
-            <div className="fixed inset-0 z-50 bg-white flex items-center justify-center">
+            <div className="fixed inset-x-0 bottom-0 top-[var(--lock-leiste-hoehe,0px)] z-50 bg-white flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                     <div className="animate-spin rounded-full h-8 w-8 border-2 border-rose-200 border-t-rose-600" />
                     <p className="text-sm text-slate-400">Wird geladen…</p>
@@ -2903,8 +2912,23 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     }
 
     // --- Render ---
+    // `top-[var(--lock-leiste-hoehe,0px)]` statt `inset-0` (Design-Review
+    // Abschnitt 7-2, Befund 2): die Seite (DocumentEditorPage.tsx) setzt
+    // diese Custom Property auf die gemessene Hoehe ihrer eigenen Bearbeiten-
+    // Leiste, damit dieser Bereich direkt darunter beginnt -- ohne die
+    // fruehere `transform`-Huelle der Seite, die (per CSS-Spezifikation) ein
+    // eigenes "containing block" fuer ALLE `position:fixed`-Nachfahren
+    // erzeugte und damit auch jeden Vollbild-Dialog dieses Editors auf den
+    // Bereich UNTER der Leiste einschraenkte -- ein offenes Modal deckte die
+    // Leiste dadurch nicht mehr ab, ein Klick auf "Fertig"/"Bearbeiten" ging
+    // durch den (optisch als Overlay wirkenden, tatsaechlich aber verkleinert
+    // liegenden) Backdrop hindurch. Ohne `transform`-Huelle binden sich
+    // `position:fixed`-Nachfahren wieder an den echten Viewport -- Dialoge
+    // (`z-[70]`+) liegen wieder ueber allem, inklusive der Leiste. Ohne
+    // gesetzte Custom Property (jeder andere Verwender/Test) faellt der
+    // Fallback `0px` auf exakt das bisherige `inset-0`-Verhalten zurueck.
     return (
-        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col">
+        <div className="fixed inset-x-0 bottom-0 top-[var(--lock-leiste-hoehe,0px)] z-50 bg-slate-50 flex flex-col">
             {/* GAEB Import Toast */}
             {importToast && (
                 <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-4 duration-300">
@@ -2954,6 +2978,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 dokumentNummer={dokumentNummer}
                 kontextInfo={kontextDaten.projektBauvorhaben || kontextDaten.kundenName || ''}
                 isLocked={isLocked}
+                istGebucht={istGebuchteRechnung}
                 saving={saving}
                 saveSuccess={saveSuccess}
                 hasUnsavedChanges={hasUnsavedChanges}

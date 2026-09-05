@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle } from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter, useSearchParams } from 'react-router-dom';
@@ -9,8 +9,8 @@ import DocumentEditorPage from './DocumentEditorPage';
 /**
  * Deckt die Umstellung von DocumentEditorPage auf das neue,
  * verallgemeinerte Sperr-Fundament ab (useDatensatzLock/BearbeitenLeiste/
- * GesperrtHinweis statt useDocumentLock/DocumentLockedModal) -- Abschnitt 7a,
- * Issue #82. `DocumentEditor` (riesige Komponente mit Tiptap/dnd-kit) wird
+ * GesperrtHinweis statt des alten, hart blockierenden Sperr-Hooks/-Modals)
+ * -- Abschnitt 7a, Issue #82. `DocumentEditor` (riesige Komponente mit Tiptap/dnd-kit) wird
  * hier bewusst gemockt (siehe ArtikelDetail.test.tsx fuer denselben Ansatz
  * mit TiptapEditor) -- diese Seite testet die Zustands-Verdrahtung
  * (Lock-Zustand -> readOnly/Banner/Leiste, Untaetigkeits-Reihenfolge), nicht
@@ -307,6 +307,42 @@ describe('DocumentEditorPage', () => {
                 // intern, ob er TabSchliessenHinweis zeigt) -- nur die Leiste der
                 // Seite verschwindet.
                 expect(screen.getByTestId('mock-editor')).toBeInTheDocument();
+            }
+        );
+
+        it(
+            'blendet die Leiste SYNCHRON aus (bevor die Freigabe beim Server bestaetigt ist) -- ' +
+                'sonst zeigt sie waehrend der gesamten Netzwerk-Laufzeit weiterhin einen aktiven "Bearbeiten"-Knopf ' +
+                '(Design-/Code-Review Abschnitt 7-2, Befund 3: setSchliesstGerade muss VOR dem await stehen)',
+            async () => {
+                const fetchMock = buildFetchMock();
+                global.fetch = fetchMock as unknown as typeof fetch;
+
+                renderSeite(`/dokument-editor?dokumentId=${DOKUMENT_ID}&dokumentTyp=RECHNUNG`);
+                await screen.findByRole('button', { name: 'Fertig' });
+
+                // Bewusst `fireEvent` statt `userEvent.click(...)` und OHNE ein
+                // umschliessendes `await`: der onClick-Handler ruft eine async
+                // Funktion auf, deren synchroner Anteil (alles bis zum ersten
+                // await) sofort innerhalb dieses `act()`-Aufrufs laeuft und
+                // durchflusht wird -- die Netzwerkantwort (das DELETE) ist zu
+                // diesem Zeitpunkt garantiert noch NICHT eingetroffen.
+                act(() => {
+                    fireEvent.click(screen.getByRole('button', { name: 'LockFreigebenAufrufen' }));
+                });
+
+                expect(screen.queryByRole('button', { name: 'Fertig' })).not.toBeInTheDocument();
+                expect(screen.queryByRole('button', { name: 'Bearbeiten' })).not.toBeInTheDocument();
+
+                // Sauber auslaufen lassen: der `await lock.freigeben()`-Teil
+                // loest danach noch aus, ausserhalb des synchronen act()-Blocks
+                // oben -- ohne diesen Abschluss meldet React-Testing-Library
+                // eine State-Aenderung ausserhalb von act() (Warnung, kein
+                // Testfehler, aber unsauber fuer nachfolgende Tests).
+                await act(async () => {
+                    await Promise.resolve();
+                    await Promise.resolve();
+                });
             }
         );
 

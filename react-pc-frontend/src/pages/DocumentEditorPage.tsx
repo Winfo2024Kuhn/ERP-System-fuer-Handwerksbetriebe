@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import DocumentEditor from '../components/DocumentEditor';
@@ -21,8 +22,8 @@ const LOCK_FEHLER_TEXT = 'Sperre konnte nicht geholt werden — bitte neu laden.
  * Opens as fullscreen page (no MainLayout sidebar).
  *
  * Soft-Lock (Issue #82, Abschnitt 7a): der Datensatz-Sperren-Baustein
- * useDatensatzLock loest das bisherige, hart blockierende
- * DocumentLockedModal ab. Ein bestehendes (gespeichertes) Dokument darf nach
+ * useDatensatzLock loest das bisherige, hart blockierende Sperr-Modal
+ * ab. Ein bestehendes (gespeichertes) Dokument darf nach
  * wie vor nur EIN Nutzer gleichzeitig bearbeiten -- ein Kollege sieht den
  * aktuellen Stand jetzt aber weiterhin (Editor `readOnly`, `GesperrtHinweis`
  * + `BearbeitenLeiste`), statt komplett ausgesperrt zu werden. Neu erstellte
@@ -176,6 +177,62 @@ export default function DocumentEditorPage() {
         }
     };
 
+    // Hoehe der eigenen Bearbeiten-Leiste (Design-Review Abschnitt 7-2,
+    // Befund 2): der Editor bekommt sie ueber die CSS Custom Property
+    // `--lock-leiste-hoehe` als oberen Versatz gereicht (siehe
+    // document-editor/index.tsx, `top-[var(--lock-leiste-hoehe,0px)]`
+    // statt `inset-0`). Fruehere Loesung war ein `transform`-Container, der
+    // fuer ALLE `position:fixed`-Nachfahren des Editors (auch dessen
+    // Vollbild-Dialoge) ein eigenes "containing block" erzeugte -- ein
+    // offenes Modal deckte die Leiste dadurch nicht mehr ab, ein Klick ging
+    // durch den (optisch wirkenden) Backdrop hindurch. Mit einem einfachen
+    // oberen Versatz bleibt der Editor selbst weiterhin `position:fixed`
+    // relativ zum ECHTEN Viewport -- seine eigenen Dialoge liegen also
+    // wieder ueber allem, inklusive dieser Leiste.
+    //
+    // Ein ResizeObserver statt einer festen Zahl, weil die Leiste ihre Hoehe
+    // ohne Remount aendern kann (GesperrtHinweis erscheint/verschwindet,
+    // Fehlerband, Countdown-/Verbindung-weg-Band aus der Leiste selbst).
+    //
+    // Bewusst ein CALLBACK-Ref (State statt useRef): die Leiste haengt an
+    // ZWEI Bedingungen, die NICHT gemeinsam in einer einzigen, einfachen
+    // Dependency abbildbar sind -- `hatId && !schliesstGerade` UND "die
+    // Vollbild-Ladeanzeige ist gerade NICHT aktiv" (`zeigeLadeSeite`, weiter
+    // unten per frühem Return). Ein `useRef` + `useEffect(..., [irgendeine
+    // Bedingung])` haette hier tatsaechlich einen Bug erzeugt: `hatId` (und
+    // damit eine simple "zeigeLeiste"-Bedingung) steht bei einem Dokument
+    // MIT Id schon VOR der Ladeanzeige auf true und aendert sich beim
+    // Uebergang "Ladeanzeige weg, Leiste erscheint" gar nicht -- der Effekt
+    // waere nie erneut gelaufen, `leisteRef.current` waere fuer immer der
+    // Stand von VOR dem ersten echten Rendern (null) geblieben, und
+    // `--lock-leiste-hoehe` waere dauerhaft bei 0px haengen geblieben (roter
+    // Playwright-Fund: Editor deckte die Leiste komplett zu). Ein
+    // Callback-Ref feuert dagegen GARANTIERT genau dann, wenn React den
+    // DOM-Knoten tatsaechlich an-/abhaengt -- unabhaengig davon, ob dieser
+    // Render zufaellig noch aus einem fruehen `return` bestand oder nicht.
+    const [leisteElement, setLeisteElement] = useState<HTMLDivElement | null>(null);
+    const [leisteHoehe, setLeisteHoehe] = useState(0);
+    const zeigeLeiste = hatId && !schliesstGerade;
+    useEffect(() => {
+        if (!leisteElement) {
+            setLeisteHoehe(0);
+            return;
+        }
+        // Bewusst IMMER `getBoundingClientRect()` messen, auch im
+        // ResizeObserver-Callback -- NICHT `entries[0].contentRect`. Die
+        // Leiste hat Padding UND einen unteren Rand (`px-4 py-2.5 border-b`);
+        // `contentRect` liefert nur die Inhaltsbox OHNE Padding/Rand, hier
+        // z.B. 34px statt der tatsaechlichen (Rand-)Box von 55px. Der Editor
+        // braucht die volle sichtbare Hoehe als Versatz, sonst ragt sein
+        // eigener Kopfbereich in genau diese Differenz hinein (roter
+        // Playwright-Fund: "Fertig" ueberlappte "E-Mail"/"PDF").
+        const messen = () => setLeisteHoehe(leisteElement.getBoundingClientRect().height);
+        messen();
+        const beobachter = new ResizeObserver(messen);
+        beobachter.observe(leisteElement);
+        return () => beobachter.disconnect();
+    }, [leisteElement]);
+
     if (zeigeLadeSeite) {
         return (
             <div className="fixed inset-0 flex items-center justify-center bg-slate-50 text-slate-500 text-sm">
@@ -185,9 +242,15 @@ export default function DocumentEditorPage() {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col">
-            {hatId && !schliesstGerade && (
-                <div className="shrink-0 bg-white border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+        <div
+            className="fixed inset-0 z-50 flex flex-col"
+            style={{ '--lock-leiste-hoehe': `${leisteHoehe}px` } as CSSProperties}
+        >
+            {zeigeLeiste && (
+                <div
+                    ref={setLeisteElement}
+                    className="shrink-0 bg-white border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3"
+                >
                     <div className="flex-1 min-w-0">
                         {gesperrtDurchAnderen && <GesperrtHinweis halterName={lock.halterName} seit={lock.seit} />}
                         {zeigeFehler && (
@@ -213,20 +276,15 @@ export default function DocumentEditorPage() {
                 </div>
             )}
             {/*
-              `[transform:translateZ(0)]` ist kein optischer Effekt, sondern
-              erzeugt fuer den Editor darunter ein eigenes "containing block"
-              (CSS-Spezifikation: transform/filter/perspective/will-change
-              tun das fuer position:fixed-Nachfahren). DocumentEditor legt
-              sich selbst als `fixed inset-0` an (er ist unveraendert eine
-              eigenstaendige Vollbild-Komponente, siehe document-editor/
-              index.tsx) -- ohne diesen Container wuerde er die eigene
-              Bearbeiten-Leiste der Seite darueber vollstaendig verdecken.
-              Mit dem Container bezieht sich sein `inset-0` stattdessen auf
-              GENAU diesen Bereich (den freien Platz unterhalb der Leiste),
-              er passt sich also von selbst an, ob die Leiste gerade sichtbar
-              ist oder nicht.
+              Kein `transform` mehr auf diesem Container (Design-Review
+              Abschnitt 7-2, Befund 2, siehe die ausfuehrliche Begruendung bei
+              `leisteHoehe` oben) -- DocumentEditor bleibt selbst
+              `position:fixed` relativ zum echten Viewport und bekommt seinen
+              oberen Versatz stattdessen ueber `--lock-leiste-hoehe`
+              (gesetzt hier am gemeinsamen Vorfahren, s.o.) direkt gereicht.
+              Dieser Container traegt nur noch den Test-Hook.
             */}
-            <div className="flex-1 min-h-0 [transform:translateZ(0)]" data-testid="dokument-editor-flaeche">
+            <div data-testid="dokument-editor-flaeche">
                 <DocumentEditor
                     ref={editorRef}
                     projektId={parseDokumentId(projektId)}
