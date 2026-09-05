@@ -314,6 +314,75 @@ test.describe('unsichtbar versteckt (sr-only-Muster) wird von allen drei Pruefun
     });
 });
 
+// Task 1b (Nachtrag Abschnitt 2, siehe Plan-Block "### Task 1b"): der IMMER
+// laufende Teil von keinHorizontalerUeberlauf (generische "overflow-x:
+// hidden"-Schleife) meldete bisher auch gewollte Text-Kuerzungen (Tailwinds
+// "truncate": overflow: hidden + text-overflow: ellipsis + white-space:
+// nowrap) -- selbst wenn das Element data-kuerzung-erlaubt trug. Diese
+// Ausnahme kannte bisher nur keinTextGekuerzt. Damit war "truncate" faktisch
+// verboten (Task 8 musste deshalb auf line-clamp-1 ausweichen). Ab jetzt
+// ueberspringt keinHorizontalerUeberlauf reine Text-Kuerzungen grundsaetzlich
+// -- die Arbeitsteilung: echte Kaesten-Ueberstaende meldet dieser Check,
+// Text-Kuerzungen meldet keinTextGekuerzt (der kennt data-kuerzung-erlaubt).
+test.describe('keinHorizontalerUeberlauf ignoriert reine Text-Kuerzungen (Task 1b)', () => {
+    // Miniseite 1: truncate-Element mit echt gekuerztem Text UND
+    // data-kuerzung-erlaubt -- der gewollte Fall (z.B. Anzeigename in der
+    // Menueleiste).
+    const TRUNCATE_MIT_MARKER = `
+        <style>
+            html, body { margin: 0; padding: 0; }
+            .titel { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        </style>
+        <div class="titel" data-kuerzung-erlaubt>Treppenanlage mit Podest und Absturzsicherung</div>
+    `;
+
+    test('truncate mit data-kuerzung-erlaubt: keinHorizontalerUeberlauf laeuft durch', async ({ page }) => {
+        await page.setContent(TRUNCATE_MIT_MARKER);
+        await keinHorizontalerUeberlauf(page);
+    });
+
+    test('truncate mit data-kuerzung-erlaubt: keinTextGekuerzt laeuft durch', async ({ page }) => {
+        await page.setContent(TRUNCATE_MIT_MARKER);
+        await keinTextGekuerzt(page);
+    });
+
+    // Miniseite 2: dasselbe OHNE Marker -- keinHorizontalerUeberlauf ist
+    // dafuer nicht zustaendig (Arbeitsteilung), keinTextGekuerzt ist es und
+    // wirft.
+    const TRUNCATE_OHNE_MARKER = `
+        <style>
+            html, body { margin: 0; padding: 0; }
+            .titel { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        </style>
+        <div class="titel">Treppenanlage mit Podest und Absturzsicherung</div>
+    `;
+
+    test('truncate ohne Marker: keinHorizontalerUeberlauf laeuft trotzdem durch (nicht seine Zustaendigkeit)', async ({ page }) => {
+        await page.setContent(TRUNCATE_OHNE_MARKER);
+        await keinHorizontalerUeberlauf(page);
+    });
+
+    test('truncate ohne Marker: keinTextGekuerzt wirft (kennt data-kuerzung-erlaubt, hier fehlt es)', async ({ page }) => {
+        await page.setContent(TRUNCATE_OHNE_MARKER);
+        await expect(keinTextGekuerzt(page)).rejects.toThrow();
+    });
+
+    // Miniseite 3: echter Kaesten-Ueberlauf, KEIN text-overflow, KEIN
+    // line-clamp -- die Ausnahme darf nicht zu breit geschnitten sein.
+    // keinHorizontalerUeberlauf muss das weiterhin melden.
+    test('Kasten mit overflow:hidden ohne text-overflow/line-clamp und zu breitem Kind loest weiterhin aus', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .kasten { width: 200px; overflow: hidden; }
+                .kind { width: 800px; height: 20px; background: red; }
+            </style>
+            <div class="kasten"><div class="kind">zu breites Kind</div></div>
+        `);
+        await expect(keinHorizontalerUeberlauf(page)).rejects.toThrow();
+    });
+});
+
 test.describe('unsichtbar versteckt -- Abgrenzung zu echten Befunden', () => {
     test('0px breiter, 16px hoher Text in einem 26px-Kasten mit overflow:visible bleibt ein Befund', async ({ page }) => {
         // Nicht verwechseln mit dem sr-only-Muster: dieser Kasten ist nicht
