@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
-import { ConfirmProvider, useConfirm } from './confirm-dialog';
+import { ConfirmProvider, useConfirm, type ConfirmOptions } from './confirm-dialog';
 
 // Hilfskomponente zum Testen des Hooks
 function TestComponent() {
@@ -22,6 +22,23 @@ function TestComponent() {
     return (
         <div>
             <button onClick={handleDelete}>Löschen</button>
+            <span id="result" />
+        </div>
+    );
+}
+
+/** Hilfskomponente, um beliebige confirm()-Optionen (z.B. eine andere Variante) durchzureichen. */
+function TestComponentMitOptionen({ optionen }: { optionen: ConfirmOptions }) {
+    const confirm = useConfirm();
+
+    const handleClick = async () => {
+        const result = await confirm(optionen);
+        document.getElementById('result')!.textContent = result ? 'confirmed' : 'cancelled';
+    };
+
+    return (
+        <div>
+            <button onClick={handleClick}>Auslösen</button>
             <span id="result" />
         </div>
     );
@@ -100,6 +117,36 @@ describe('ConfirmDialog', () => {
 
         const dialog = screen.getByRole('dialog', { name: 'Löschen?' });
         expect(dialog).toHaveAttribute('aria-modal', 'true');
+    });
+
+    it('Variante "fehlschlag" zeigt ein amber-AlertTriangle-Icon und einen rose-Bestaetigungsknopf (Task 8c: "info" lieferte fuer Fehlschlaege ein irrefuehrend freundliches blaues Fragezeichen)', async () => {
+        const user = userEvent.setup();
+        render(
+            <ConfirmProvider>
+                <TestComponentMitOptionen
+                    optionen={{
+                        title: 'Nicht gespeichert',
+                        message: 'Ihre Änderungen wurden nicht übernommen — bitte neu laden.',
+                        confirmLabel: 'Neu laden',
+                        cancelLabel: 'Abbrechen',
+                        variant: 'fehlschlag',
+                    }}
+                />
+            </ConfirmProvider>
+        );
+        await user.click(screen.getByText('Auslösen'));
+
+        const dialog = screen.getByRole('dialog', { name: 'Nicht gespeichert' });
+        const icon = dialog.querySelector('svg');
+        expect(icon).not.toBeNull();
+        expect(icon?.getAttribute('class')).toContain('text-amber-600');
+        expect(icon?.parentElement?.className).toContain('bg-amber-100');
+        expect(dialog.innerHTML).not.toContain('sky-100');
+        expect(dialog.innerHTML).not.toContain('sky-600');
+
+        const bestaetigenKnopf = screen.getByText('Neu laden');
+        expect(bestaetigenKnopf.className).toContain('bg-rose-600');
+        expect(bestaetigenKnopf.className).not.toContain('bg-sky-100');
     });
 
     it('wirft Fehler wenn useConfirm ohne Provider verwendet wird', () => {
