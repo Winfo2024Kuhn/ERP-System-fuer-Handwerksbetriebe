@@ -3496,3 +3496,61 @@ Bedenken / Abweichungen vom Plan:
 - Gebaute Bundles unter src/main/resources/static/assets enthalten noch
   /api/dokument-locks — historischer Build-Output, wird beim nächsten
   Produktions-Update neu erzeugt; nicht angefasst.
+
+
+## Abschnitt 8-2 — Task 8c Nachtrag (Coding-Agent)
+
+**Zeit:** 2026-09-05, ca. 14:45
+**Branch:** `lock/task-8c-politur` (Worktree `wt/task-8c`)
+**Commits:**
+- `4aa50d11` — fix(toast): Toast liegt jetzt ueber dem Confirm-Backdrop
+- `3d8b18f7` — fix(confirm-dialog): useId() statt fester ID fuer aria-labelledby
+
+**Status:** 🟢 beide Nachtrags-Punkte umgesetzt, testgetrieben, Mutationsproben rot→grün belegt.
+
+### Was gemacht wurde
+
+**Punkt 4 — Toast über dem Confirm-Backdrop.** `toast.tsx`: Container-z-Index von `z-[9999]`
+auf `z-[10010]` angehoben — damit über dem bisher höchsten Wert im Projekt (`confirm-dialog.tsx`
+Backdrop `z-[10000]`, Dialog-Wrapper `z-[10001]`; per Grep über `z-[` in `src/` bestätigt, dass
+10001 vorher das Maximum war). Kommentar am Container um die Herleitung ergänzt.
+
+Roter Test zuerst: neuer Test in `toast-bei-dialog.spec.ts` ("Toast liegt ueber dem
+Confirm-Backdrop, statt abgedunkelt darunter zu verschwinden"). Reproduziert den Fall mit
+zwei echten, nacheinander ausgelösten Speicherversuchen auf `LieferantDokumentModal` (erster
+PUT liefert 500 ⇒ echter Fehler-Toast "Speichern fehlgeschlagen" mit 5s Anzeigedauer, zweiter
+PUT — noch während der Toast sichtbar ist — liefert 409 ⇒ Confirm-Dialog "Nicht gespeichert"
+öffnet sich darüber). Neue Hilfsfunktion `erwarteToastLiegtUeberAllem`: `elementFromPoint` in
+der Toast-Mitte muss ein Element innerhalb des Toast-Containers treffen. Vor dem Fix schlug das
+fehl: `elementFromPoint ... trifft nicht den Toast, sondern <DIV class="fixed inset-0
+z-[10001] flex items-center justify-center p-4">`. Mutationsprobe (z-Index zurück auf `9999`)
+reproduzierte exakt denselben Fehler auf `pc-14zoll`, danach wieder grün auf beiden Größen.
+Screenshot: `toast-ueber-confirm-backdrop--{pc-14zoll,pc-monitor}.png` — Toast jetzt sichtbar
+hell (nicht abgedunkelt) unten links, Confirm-Dialog "Nicht gespeichert" mittig darüber.
+
+**Punkt 5 — useId() statt fester ID.** `confirm-dialog.tsx`: `titelId` von der festen
+String-Literal-ID `'confirm-dialog-titel'` auf `` `confirm-dialog-titel-${useId()}` ``
+umgestellt (Import von `useId` aus `react` ergänzt). Kommentar an der bestehenden Task-8a-Erklärung
+ergänzt, warum das nötig ist.
+
+Roter Test zuerst: neuer Test in `confirm-dialog.test.tsx` ("vergibt pro Dialog eine eigene ID
+für aria-labelledby ... sonst kollidieren zwei gleichzeitig offene Dialoge im DOM auf dieselbe
+ID") — rendert zwei unabhängige `ConfirmProvider`-Bäume, öffnet in beiden einen Dialog mit
+Titel, prüft, dass die beiden `aria-labelledby`-Werte sich unterscheiden und keine doppelte
+ID im Dokument steht. Vor dem Fix: `AssertionError: expected 'confirm-dialog-titel' not to be
+'confirm-dialog-titel'`. Mutationsprobe (`titelId` zurück auf die feste Literal-ID) reproduzierte
+denselben Fehler, danach wieder grün.
+
+**Tests je Größe:** `E2E_PORT=5182 npx playwright test e2e/toast-bei-dialog.spec.ts
+e2e/dokument-editor-seite.spec.ts` — 20 Tests × (`pc-14zoll` + `pc-monitor`) = 20 grün (10
+Testfälle je Größe, inkl. der beiden Nachtrags-Punkte). Unit: `npx vitest run toast.test.tsx
+confirm-dialog.test.tsx useKonfliktMeldung.test.tsx` — 33 grün (war 32, +1 durch den neuen
+`useId()`-Test). `npm run lint`: 0 Fehler, weiterhin genau die eine vorbestehende Warnung
+(`BelegeKasseEditor.tsx:1204`). `npm run build`: grün, `src/main/resources/static/` danach
+zurückgesetzt.
+
+### Bedenken / Abweichungen vom Plan
+
+Keine. Beide Nachtrags-Punkte in den bereits erlaubten Dateien (`toast.tsx`,
+`toast-bei-dialog.spec.ts`, `confirm-dialog.tsx`, `confirm-dialog.test.tsx`) umgesetzt, keine
+zusätzliche Datei angefasst.
