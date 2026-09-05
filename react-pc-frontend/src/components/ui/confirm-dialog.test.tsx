@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
-import { ConfirmProvider, useConfirm } from './confirm-dialog';
+import { ConfirmProvider, useConfirm, type ConfirmOptions } from './confirm-dialog';
 
 // Hilfskomponente zum Testen des Hooks
 function TestComponent() {
@@ -25,6 +25,29 @@ function TestComponent() {
             <span id="result" />
         </div>
     );
+}
+
+/** Hilfskomponente, um beliebige confirm()-Optionen (z.B. eine andere Variante) durchzureichen. */
+function TestComponentMitOptionen({ optionen }: { optionen: ConfirmOptions }) {
+    const confirm = useConfirm();
+
+    const handleClick = async () => {
+        const result = await confirm(optionen);
+        document.getElementById('result')!.textContent = result ? 'confirmed' : 'cancelled';
+    };
+
+    return (
+        <div>
+            <button onClick={handleClick}>Auslösen</button>
+            <span id="result" />
+        </div>
+    );
+}
+
+/** Wie TestComponentMitOptionen, aber mit frei waehlbarer Knopf-Beschriftung -- noetig, um zwei Ausloeser in einem Test unterscheidbar zu machen. */
+function TestComponentMitLabel({ label, optionen }: { label: string; optionen: ConfirmOptions }) {
+    const confirm = useConfirm();
+    return <button onClick={() => { void confirm(optionen); }}>{label}</button>;
 }
 
 describe('ConfirmDialog', () => {
@@ -100,6 +123,65 @@ describe('ConfirmDialog', () => {
 
         const dialog = screen.getByRole('dialog', { name: 'Löschen?' });
         expect(dialog).toHaveAttribute('aria-modal', 'true');
+    });
+
+    it('Variante "fehlschlag" zeigt ein amber-AlertTriangle-Icon und einen rose-Bestaetigungsknopf (Task 8c: "info" lieferte fuer Fehlschlaege ein irrefuehrend freundliches blaues Fragezeichen)', async () => {
+        const user = userEvent.setup();
+        render(
+            <ConfirmProvider>
+                <TestComponentMitOptionen
+                    optionen={{
+                        title: 'Nicht gespeichert',
+                        message: 'Ihre Änderungen wurden nicht übernommen — bitte neu laden.',
+                        confirmLabel: 'Neu laden',
+                        cancelLabel: 'Abbrechen',
+                        variant: 'fehlschlag',
+                    }}
+                />
+            </ConfirmProvider>
+        );
+        await user.click(screen.getByText('Auslösen'));
+
+        const dialog = screen.getByRole('dialog', { name: 'Nicht gespeichert' });
+        const icon = dialog.querySelector('svg');
+        expect(icon).not.toBeNull();
+        expect(icon?.getAttribute('class')).toContain('text-amber-600');
+        expect(icon?.parentElement?.className).toContain('bg-amber-100');
+        expect(dialog.innerHTML).not.toContain('sky-100');
+        expect(dialog.innerHTML).not.toContain('sky-600');
+    });
+
+    it('vergibt pro Dialog eine eigene ID fuer aria-labelledby, statt einer festen ID (Task 8c Nachtrag) -- sonst kollidieren zwei gleichzeitig offene Dialoge im DOM auf dieselbe ID', async () => {
+        const user = userEvent.setup();
+        render(
+            <>
+                <ConfirmProvider>
+                    <TestComponentMitLabel label="Öffne A" optionen={{ title: 'Dialog A', message: 'Nachricht A' }} />
+                </ConfirmProvider>
+                <ConfirmProvider>
+                    <TestComponentMitLabel label="Öffne B" optionen={{ title: 'Dialog B', message: 'Nachricht B' }} />
+                </ConfirmProvider>
+            </>
+        );
+
+        await user.click(screen.getByText('Öffne A'));
+        await user.click(screen.getByText('Öffne B'));
+
+        const dialoge = screen.getAllByRole('dialog');
+        expect(dialoge).toHaveLength(2);
+
+        const ids = dialoge.map(d => d.getAttribute('aria-labelledby'));
+        expect(ids[0]).toBeTruthy();
+        expect(ids[1]).toBeTruthy();
+        expect(ids[0]).not.toBe(ids[1]);
+
+        // Keine doppelte ID im Dokument -- Grundvoraussetzung fuer ein korrekt
+        // aufloesbares aria-labelledby (sonst gewinnt eine ID-basierte Suche
+        // immer das ERSTE Element mit dieser ID, unabhaengig davon, zu
+        // welchem der beiden Dialoge es eigentlich gehoert).
+        for (const id of ids) {
+            expect(document.querySelectorAll(`[id="${id}"]`).length).toBe(1);
+        }
     });
 
     it('wirft Fehler wenn useConfirm ohne Provider verwendet wird', () => {
