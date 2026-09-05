@@ -185,3 +185,19 @@ die Diskussion, eine Vermutung nicht.
 - **Zurücksetzen ohne Neustart:** Ein Test, der nur „ist wieder `null`" prüft,
   ist grün für eine Lösung, die zurücksetzt und danach nichts mehr plant.
   Immer zusätzlich prüfen, dass der neue Zyklus wirklich anläuft.
+
+### PC-App für Browser-Prüfungen lokal starten: H2 reicht, aber mit Fallen
+
+Für Playwright-Durchläufe mit echten Daten braucht es kein MySQL und kein
+Docker: `./mvnw -B spring-boot:run -Dspring-boot.run.profiles=h2` mit
+`-Dspring-boot.run.jvmArguments=-Duser.home=<scratchpad>/erp-home`, sonst
+legt H2 `~/ERP-Handwerk/` auf dem Rechner an. Das Backend spricht **http**,
+der Vite-Proxy in `vite.config.ts` zeigt aber auf `https://localhost:8080`
+und scheitert. Nicht die Datei ändern: ein kleines Node-Skript im Scratchpad
+startet `createServer` aus `node_modules/vite` mit der echten `configFile`
+und überschriebenem Proxy auf eigenem Port. Erstanmeldung über „Konto
+anlegen", danach blockt `/onboarding`, bis SMTP, Gemini-Key und Datei-Ordner
+per `PUT /api/settings/...` mit Dummy-Werten gesetzt sind (CSRF-Header
+`X-XSRF-TOKEN` aus dem Cookie). H2 kennt kein `DATE_SUB`: Kunden nur mit
+manueller Kundennummer anlegen; `mwstSatz` ist ein Bruch (0.19). Details in
+der Memory-Datei `erp-lokal-starten-h2`.
