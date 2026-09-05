@@ -139,6 +139,37 @@ export async function keinHorizontalerUeberlauf(page: Page): Promise<void> {
             return false;
         };
 
+        // Nachtrag Task 1b (Kontext-Log Abschnitt 2, Befund aus Task 8): diese
+        // generische "overflow-x: hidden"-Schleife meldete bisher auch
+        // gewollte Text-Kuerzungen -- ein "truncate"-Element (overflow:
+        // hidden + text-overflow: ellipsis + white-space: nowrap) mit echt
+        // gekuerztem Text ist GENAU dieses Muster, selbst wenn es
+        // data-kuerzung-erlaubt traegt (das kannte bisher nur
+        // keinTextGekuerzt). Damit war "truncate" faktisch verboten (Task 8
+        // musste deshalb auf line-clamp-1 ausweichen). Ab jetzt
+        // Arbeitsteilung: echte Kaesten-Abschnitte meldet dieser Check,
+        // Text-Kuerzungen meldet allein keinTextGekuerzt (die kennt
+        // data-kuerzung-erlaubt und die Meldung mit vollstaendigem Text).
+        // Zwei unabhaengige Ausnahmen, jede fuer sich ausreichend:
+        //   (a) das Element selbst oder ein Vorfahre traegt
+        //       data-kuerzung-erlaubt -- der gewollte Kuerzungsfall,
+        //   (b) das Element ist ohnehin eine reine Text-Kuerzung
+        //       (text-overflow: ellipsis gesetzt ODER -webkit-line-clamp
+        //       ≠ none) -- unabhaengig vom Marker, denn OB die Kuerzung
+        //       zulaessig ist, entscheidet keinTextGekuerzt, nicht dieser
+        //       Ueberlauf-Check.
+        const hatKuerzungsMarker = (el: Element): boolean => {
+            for (let k: Element | null = el; k != null; k = k.parentElement) {
+                if (k.hasAttribute('data-kuerzung-erlaubt')) return true;
+            }
+            return false;
+        };
+        const istReineTextKuerzung = (el: Element): boolean => {
+            const stil = getComputedStyle(el);
+            const lineClampWert = stil.getPropertyValue('-webkit-line-clamp');
+            return stil.textOverflow === 'ellipsis' || (lineClampWert !== '' && lineClampWert !== 'none');
+        };
+
         const html = document.documentElement;
         if (html.scrollWidth > html.clientWidth) {
             ergebnis.push({ beschreibung: 'html', ueberstandPx: html.scrollWidth - html.clientWidth });
@@ -153,6 +184,7 @@ export async function keinHorizontalerUeberlauf(page: Page): Promise<void> {
             if (el === html || el === main) continue; // schon oben erfasst
             if (getComputedStyle(el).overflowX !== 'hidden') continue;
             if (istUnsichtbarVersteckt(el)) continue; // z.B. Tailwind ".sr-only" -- siehe Kommentar dort
+            if (hatKuerzungsMarker(el) || istReineTextKuerzung(el)) continue; // Arbeitsteilung mit keinTextGekuerzt -- siehe Kommentar dort
             if (el.scrollWidth > el.clientWidth + 2) {
                 ergebnis.push({ beschreibung: beschreibe(el), ueberstandPx: el.scrollWidth - el.clientWidth });
             }
