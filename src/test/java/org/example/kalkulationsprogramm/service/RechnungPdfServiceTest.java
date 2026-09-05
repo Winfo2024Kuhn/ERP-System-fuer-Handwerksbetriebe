@@ -1097,6 +1097,169 @@ class RechnungPdfServiceTest {
     }
 
     /**
+     * Schlussrechnung: rechnet die Positionen ab, die tatsächlich in ihr stehen,
+     * und weist den Unterschied zur Auftragsbestätigung als eigene Zeile aus.
+     *
+     * <p>Vorher wurde stur "Auftragssumme minus bereits abgerechnet" berechnet —
+     * eine aus der Schlussrechnung gelöschte Position landete damit trotzdem im
+     * Rechnungsbetrag.
+     */
+    @Nested
+    @DisplayName("Schlussrechnung mit Differenz zur Auftragsbestätigung")
+    class SchlussrechnungMitDifferenz {
+
+        /** Auftragsbestätigung über 10.000 € netto, davon 4.000 € als Teilrechnung gestellt. */
+        private AbrechnungsverlaufPdfDto verlauf(boolean balkenAnzeigen, String differenzHinweis) {
+            return new AbrechnungsverlaufPdfDto(
+                    "AB-2026/01/00007",
+                    "Auftragsbestätigung",
+                    LocalDate.of(2026, 1, 15),
+                    BigDecimal.valueOf(10000),
+                    List.of(new AbrechnungspositionPdfDto(
+                            "RE-2026/03/00011", "TEILRECHNUNG", LocalDate.of(2026, 3, 1),
+                            BigDecimal.valueOf(4000), null)),
+                    balkenAnzeigen,
+                    differenzHinweis);
+        }
+
+        private KopfdatenDto schlussrechnungKopf() {
+            return new KopfdatenDto(
+                    "RE-2026/06/00030",
+                    LocalDate.of(2026, 6, 10),
+                    LocalDate.of(2026, 6, 5),
+                    "Max Mustermann",
+                    "Max Mustermann\nMusterweg 1\n12345 Musterstadt",
+                    "Schlussrechnung Bauvorhaben Musterweg",
+                    "KD-MUSTER",
+                    "Schlussrechnung",
+                    "AN-2026-MUSTER",
+                    "PRJ-2026-MUSTER",
+                    "Bauvorhaben Musterweg");
+        }
+
+        /** Eine einzelne Leistungsposition über den übergebenen Betrag. */
+        private List<ContentBlockDto> positionen(String titel, long betrag) {
+            return List.of(
+                    new ContentBlockDto("SERVICE", null, false, 0,
+                            "1", titel, null,
+                            BigDecimal.ONE, "psch", BigDecimal.valueOf(betrag), BigDecimal.valueOf(betrag),
+                            false, null, null, null),
+                    new ContentBlockDto("CLOSURE", null, false, 0,
+                            null, null, null, null, null, null, null, false, null, null, null));
+        }
+
+        private String rendere(List<ContentBlockDto> contentBlocks, AbrechnungsverlaufPdfDto verlauf) {
+            KopfdatenDto kopf = schlussrechnungKopf();
+            List<FormBlockDto> formBlocks = createRealisticFormBlocks(kopf, false);
+            LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
+            return generateAndExtractText(new RechnungDto(
+                    layout, kopf, contentBlocks, formBlocks,
+                    null, null, null, null, verlauf, null, null));
+        }
+
+        @Test
+        @DisplayName("Entfallene Leistung senkt den Rechnungsbetrag statt mitberechnet zu werden")
+        void entfalleneLeistungSenktDenBetrag() {
+            // Von 10.000 € beauftragt sind nur 8.000 € angefallen (Gerüst entfiel),
+            // 4.000 € davon sind bereits als Teilrechnung gestellt.
+            String text = rendere(positionen("Ausgeführte Leistungen", 8000), verlauf(true, "Gerüststellung"));
+
+            // Zahlbetrag netto = 8.000 - 4.000 = 4.000, USt 760, brutto 4.760
+            assertTrue(text.contains("4.000,00"),
+                    "Netto '4.000,00' fehlt — die entfallene Position wurde wieder mitberechnet. Text:\n" + text);
+            assertTrue(text.contains("760,00"),
+                    "USt '760,00' (19% von 4.000) fehlt. Text:\n" + text);
+            assertTrue(text.contains("4.760,00"),
+                    "Brutto '4.760,00' fehlt. Text:\n" + text);
+            // Und NICHT der alte Wert 6.000 netto (= 10.000 - 4.000)
+            assertFalse(text.contains("6.000,00"),
+                    "Alter Betrag '6.000,00' steht noch im PDF — Positionen werden ignoriert. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Entfallene Leistung erscheint als eigene Zeile mit Namen und der Rest ist 0,00 €")
+        void entfalleneLeistungWirdAusgewiesen() {
+            String text = rendere(positionen("Ausgeführte Leistungen", 8000), verlauf(true, "Gerüststellung"));
+
+            assertTrue(text.contains("Nicht angefallen"),
+                    "Differenzzeile 'Nicht angefallen' fehlt. Text:\n" + text);
+            assertTrue(text.contains("Gerüststellung"),
+                    "Der Name der entfallenen Leistung fehlt als Unterzeile. Text:\n" + text);
+            // Differenz netto 2.000 -> brutto 2.380
+            assertTrue(text.contains("2.380,00"),
+                    "Differenzbetrag brutto '2.380,00' fehlt. Text:\n" + text);
+            assertTrue(text.contains("Noch offen"),
+                    "Zeile 'Noch offen' fehlt. Text:\n" + text);
+            assertTrue(text.contains("0,00"),
+                    "'Noch offen' muss nach der Differenzzeile 0,00 € sein. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Unvorhergesehene Zusatzleistung erhöht den Betrag und wird als Zuschlag ausgewiesen")
+        void zusatzleistungWirdAusgewiesen() {
+            // 11.000 € tatsächlich geleistet bei 10.000 € Auftrag, 4.000 € bereits gestellt.
+            String text = rendere(positionen("Ausgeführte Leistungen", 11000), verlauf(true, "Kernbohrung Kellerwand"));
+
+            // Zahlbetrag netto = 11.000 - 4.000 = 7.000
+            assertTrue(text.contains("7.000,00"),
+                    "Netto '7.000,00' fehlt — Zusatzposition wurde nicht abgerechnet. Text:\n" + text);
+            assertTrue(text.contains("Zusätzliche Leistungen"),
+                    "Differenzzeile 'Zusätzliche Leistungen' fehlt. Text:\n" + text);
+            assertTrue(text.contains("Kernbohrung Kellerwand"),
+                    "Der Name der Zusatzleistung fehlt als Unterzeile. Text:\n" + text);
+            // Differenz netto 1.000 -> brutto 1.190
+            assertTrue(text.contains("1.190,00"),
+                    "Differenzbetrag brutto '1.190,00' fehlt. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Deckungsgleiche Schlussrechnung zeigt gar keine Differenzzeile")
+        void ohneAbweichungKeineDifferenzzeile() {
+            String text = rendere(positionen("Ausgeführte Leistungen", 10000), verlauf(true, null));
+
+            assertFalse(text.contains("Nicht angefallen"),
+                    "Ohne Abweichung darf keine Differenzzeile erscheinen. Text:\n" + text);
+            assertFalse(text.contains("Zusätzliche Leistungen"),
+                    "Ohne Abweichung darf keine Differenzzeile erscheinen. Text:\n" + text);
+            // 10.000 - 4.000 = 6.000 netto
+            assertTrue(text.contains("6.000,00"),
+                    "Netto '6.000,00' fehlt. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Ohne Namensvergleich steht die Differenzzeile trotzdem mit Betrag da")
+        void differenzzeileAuchOhneHinweis() {
+            String text = rendere(positionen("Ausgeführte Leistungen", 8000), verlauf(true, null));
+
+            assertTrue(text.contains("Nicht angefallen"),
+                    "Differenzzeile muss auch ohne Namenshinweis erscheinen. Text:\n" + text);
+            assertTrue(text.contains("Unterschied zur Auftragsbestätigung"),
+                    "Ersatz-Unterzeile fehlt — Vorschau und Druck laufen auseinander. Text:\n" + text);
+            assertTrue(text.contains("2.380,00"),
+                    "Differenzbetrag brutto '2.380,00' fehlt. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Abgeschalteter Fortschrittsbalken laesst die Pflichtangaben nach §14 Abs. 5 UStG stehen")
+        void ohneBalkenBleibenDiePflichtangaben() {
+            // Der Balken selbst ist eine reine Grafik ohne Text — pruefbar ist, dass
+            // das Abschalten die Betragszeilen nicht mitnimmt.
+            String text = rendere(positionen("Ausgeführte Leistungen", 8000), verlauf(false, "Gerüststellung"));
+
+            assertTrue(text.contains("Auftragssumme"),
+                    "Zeile 'Auftragssumme' fehlt. Text:\n" + text);
+            assertTrue(text.contains("AB-2026/01/00007"),
+                    "Bezug auf die Auftragsbestätigung fehlt. Text:\n" + text);
+            assertTrue(text.contains("RE-2026/03/00011"),
+                    "Bereits gestellte Teilrechnung fehlt — §14 Abs. 5 UStG verlangt den Ausweis. Text:\n" + text);
+            assertTrue(text.contains("Nicht angefallen"),
+                    "Differenzzeile fehlt. Text:\n" + text);
+            assertTrue(text.contains("4.760,00"),
+                    "Zahlbetrag '4.760,00' fehlt. Text:\n" + text);
+        }
+    }
+
+    /**
      * Wahlpositionen im PDF: bewusst nüchtern. Das PDF ist ein Angebot, kein
      * Formular — die Entscheidung trifft der Kunde über die Freigabe-Seite.
      */

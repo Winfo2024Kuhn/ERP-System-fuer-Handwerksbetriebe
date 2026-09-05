@@ -39,6 +39,9 @@ import {
     mussAufBezugsdokumentWarten,
     mussAufKontextWarten,
     repariereLeeresBezugsdatumInStandardtext,
+    parseBlocksAusPositionenJson,
+    vergleicheLeistungen,
+    formatiereDifferenzHinweis,
 } from './helpers';
 import type { DocBlock } from './types';
 
@@ -557,5 +560,131 @@ describe('rabattBetrag trifft Saetze mit Nachkommastellen', () => {
         [12345.67, 19.9, 2456.79],
     ])('%s EUR mit %s%% ergibt %s', (netto, prozent, erwartet) => {
         expect(rabattBetrag(netto, prozent)).toBeCloseTo(erwartet, 2);
+    });
+});
+
+/**
+ * Positionsvergleich Auftragsbestaetigung <-> Schlussrechnung.
+ *
+ * Benennt in der Differenzzeile, welche Leistungen entfallen bzw. dazugekommen
+ * sind. Rein beschreibend — der Differenzbetrag entsteht unabhaengig davon als
+ * Ausgleichsgroesse, damit die Spalte auf der Rechnung immer aufgeht.
+ */
+describe('vergleicheLeistungen', () => {
+    const ab = [
+        leistung('geruest', 2000, { title: 'Gerüststellung' }),
+        leistung('putz', 6000, { title: 'Putzarbeiten' }),
+        leistung('reinigung', 2000, { title: 'Bauendreinigung' }),
+    ];
+
+    it('nennt die aus der Schlussrechnung geloeschte Leistung', () => {
+        const schlussrechnung = ab.filter(b => b.id !== 'geruest');
+
+        const { entfallen, zusaetzlich } = vergleicheLeistungen(ab, schlussrechnung);
+
+        expect(entfallen).toEqual(['Gerüststellung']);
+        expect(zusaetzlich).toEqual([]);
+    });
+
+    it('nennt unvorhergesehene Zusatzleistungen', () => {
+        const schlussrechnung = [...ab, leistung('bohrung', 1000, { title: 'Kernbohrung Kellerwand' })];
+
+        const { entfallen, zusaetzlich } = vergleicheLeistungen(ab, schlussrechnung);
+
+        expect(entfallen).toEqual([]);
+        expect(zusaetzlich).toEqual(['Kernbohrung Kellerwand']);
+    });
+
+    it('erkennt beide Richtungen gleichzeitig', () => {
+        const schlussrechnung = [
+            ...ab.filter(b => b.id !== 'geruest'),
+            leistung('bohrung', 1000, { title: 'Kernbohrung Kellerwand' }),
+        ];
+
+        const { entfallen, zusaetzlich } = vergleicheLeistungen(ab, schlussrechnung);
+
+        expect(entfallen).toEqual(['Gerüststellung']);
+        expect(zusaetzlich).toEqual(['Kernbohrung Kellerwand']);
+    });
+
+    it('findet Leistungen auch innerhalb von Bauabschnitten', () => {
+        const mitAbschnitt: DocBlock[] = [{
+            id: 'abschnitt', type: 'SECTION_HEADER', sectionLabel: 'Rohbau',
+            children: [leistung('geruest', 2000, { title: 'Gerüststellung' })],
+        }];
+
+        const { entfallen } = vergleicheLeistungen(mitAbschnitt, []);
+
+        expect(entfallen).toEqual(['Gerüststellung']);
+    });
+
+    it('ignoriert optionale und Alternativ-Positionen', () => {
+        // Sie zaehlen auch nicht in die Nettosumme — in der Auflistung waeren sie nur Rauschen.
+        const mitOptional = [
+            ...ab,
+            leistung('extra', 500, { title: 'Zusatzanstrich', optional: true }),
+            leistung('variante', 900, { title: 'Geländer Edelstahl', optional: true, alternativGruppe: 'Geländer' }),
+        ];
+
+        const { entfallen } = vergleicheLeistungen(mitOptional, ab);
+
+        expect(entfallen).toEqual([]);
+    });
+
+    it('meldet keine Aenderung, wenn nur die Menge angepasst wurde', () => {
+        // Die Mengenaenderung schlaegt sich im Differenzbetrag nieder, nicht in der Namensliste.
+        const schlussrechnung = ab.map(b => b.id === 'putz' ? { ...b, quantity: 0.5 } : b);
+
+        const { entfallen, zusaetzlich } = vergleicheLeistungen(ab, schlussrechnung);
+
+        expect(entfallen).toEqual([]);
+        expect(zusaetzlich).toEqual([]);
+    });
+
+    it('faellt bei Positionen ohne Titel auf einen Platzhalter zurueck', () => {
+        const ohneTitel: DocBlock[] = [{ id: 'x', type: 'SERVICE', quantity: 1, price: 100 }];
+
+        expect(vergleicheLeistungen(ohneTitel, []).entfallen).toEqual(['Ohne Bezeichnung']);
+    });
+});
+
+describe('formatiereDifferenzHinweis', () => {
+    it('gibt bei leerer Liste keinen Hinweis', () => {
+        expect(formatiereDifferenzHinweis([])).toBe('');
+    });
+
+    it('zaehlt kurze Listen vollstaendig auf', () => {
+        expect(formatiereDifferenzHinweis(['Gerüststellung', 'Bauendreinigung']))
+            .toBe('Gerüststellung, Bauendreinigung');
+    });
+
+    it('kuerzt lange Listen, damit die Zeile auf der Rechnung nicht umbricht', () => {
+        const namen = ['Eins', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs'];
+
+        expect(formatiereDifferenzHinweis(namen)).toBe('Eins, Zwei, Drei, Vier u. a.');
+    });
+});
+
+describe('parseBlocksAusPositionenJson', () => {
+    it('liest das heutige Format mit blocks-Feld', () => {
+        const json = JSON.stringify({ blocks: [leistung('a', 100)], globalRabatt: 5 });
+
+        expect(parseBlocksAusPositionenJson(json)).toHaveLength(1);
+    });
+
+    it('liest das alte Format als reines Block-Array', () => {
+        const json = JSON.stringify([leistung('a', 100), leistung('b', 200)]);
+
+        expect(parseBlocksAusPositionenJson(json)).toHaveLength(2);
+    });
+
+    it.each([
+        ['null', null],
+        ['undefined', undefined],
+        ['leerer String', ''],
+        ['kaputtes JSON', '{nicht wirklich json'],
+        ['Objekt ohne blocks', '{"globalRabatt":5}'],
+    ])('liefert bei %s eine leere Liste statt zu werfen', (_bezeichnung, wert) => {
+        expect(parseBlocksAusPositionenJson(wert as string | null | undefined)).toEqual([]);
     });
 });

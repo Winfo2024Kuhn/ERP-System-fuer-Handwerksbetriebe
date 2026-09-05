@@ -1226,6 +1226,11 @@ public class AusgangsGeschaeftsDokumentService {
         }
         verlauf.setBereitsAbgerechneteBlockIds(abgerechneteBlockIds);
 
+        // Rohes positionenJson des Basisdokuments mitgeben: der Dokument-Editor
+        // benennt daraus in der Differenzzeile der Schlussrechnung die entfallenen
+        // und die zusaetzlich angefallenen Leistungen.
+        verlauf.setBasisdokumentPositionenJson(basis.getPositionenJson());
+
         return verlauf;
     }
 
@@ -1620,19 +1625,45 @@ public class AusgangsGeschaeftsDokumentService {
             netto = berechneNettoAusPositionenJson(dokument.getPositionenJson());
         }
 
-        // Schlussrechnung: Betrag ist Restbetrag (Basisdokument minus bereits abgerechnete Rechnungen,
-        // aber OHNE die Schlussrechnung selbst, da sie sonst sich selbst abzieht und immer 0 ergibt).
-        // Stornierte Schlussrechnungen: gespeicherten Betrag verwenden, da der Abrechnungsverlauf
-        // sie bereits ausschließt und das Addieren von eigenBetrag den Betrag verdoppeln würde.
+        // Schlussrechnung: Der gespeicherte Betrag GILT — er ist im Editor als
+        // "Summe der eigenen Positionen minus bereits gestellte Rechnungen" entstanden
+        // und beruecksichtigt damit, welche Leistungen tatsaechlich angefallen sind.
+        //
+        // Bis 2026-09 wurde er hier durch "Basisbetrag minus andere Rechnungen"
+        // ersetzt. Das rechnete jede aus der Schlussrechnung geloeschte Position
+        // (z.B. eine nicht benoetigte Geruststellung) wieder in den Betrag hinein und
+        // ignorierte umgekehrt unvorhergesehene Zusatzpositionen. Der Rueckfallweg
+        // bleibt nur fuer Altdokumente ohne positionenJson: dort GIBT es keine
+        // Positionen, aus denen sich der Betrag ableiten liesse.
         if (dokument.getTyp() == AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
                 && dokument.getVorgaenger() != null
                 && !dokument.isStorniert()) {
             try {
                 AbrechnungsverlaufDto verlauf = getAbrechnungsverlauf(dokument.getVorgaenger().getId());
-                // Restbetrag = Basisbetrag - bereitsAbgerechnet (ALLE Nachfolger inkl. dieser Schlussrechnung)
-                // Wir müssen den Betrag dieser Schlussrechnung wieder addieren, um ihn nicht doppelt abzuziehen
+                // Der Abrechnungsverlauf zaehlt ALLE nicht-stornierten Nachfolger, diese
+                // Schlussrechnung eingeschlossen. Fuer "was haben die ANDEREN Rechnungen
+                // schon abgerechnet" muss ihr eigener Betrag wieder raus.
                 BigDecimal eigenBetrag = dokument.getBetragNetto() != null ? dokument.getBetragNetto() : BigDecimal.ZERO;
-                netto = verlauf.getRestbetrag().add(eigenBetrag);
+                String positionen = dokument.getPositionenJson();
+
+                if (positionen == null || positionen.isBlank()) {
+                    // Altdokument ohne Positionen: es gibt nichts, woraus sich der Betrag
+                    // ableiten liesse — hier bleibt nur der Rest aus der Auftragssumme.
+                    netto = verlauf.getRestbetrag().add(eigenBetrag);
+                } else if (dokument.istBearbeitbar()) {
+                    // Entwurf: aus den eigenen Positionen neu ableiten. Wird nach dem
+                    // Anlegen der Schlussrechnung noch eine Teilrechnung storniert oder
+                    // gestellt, zieht der Betrag mit — sonst bliebe ein still falscher
+                    // Wert stehen, bis jemand das Dokument im Editor oeffnet und speichert.
+                    // Deckungsgleich mit dem, was der Editor in handleSave berechnet.
+                    BigDecimal ausPositionen = berechneNettoAusPositionenJson(positionen);
+                    if (ausPositionen != null) {
+                        BigDecimal andereAbgerechnet = verlauf.getBereitsAbgerechnet().subtract(eigenBetrag);
+                        netto = ausPositionen.subtract(andereAbgerechnet);
+                    }
+                }
+                // Festgeschrieben (gebucht/versendet): der gespeicherte Betrag ist der
+                // Beleg und bleibt unangetastet (GoBD, §147 AO).
             } catch (Exception e) {
                 log.warn("Fehler beim Berechnen des Schlussrechnungsbetrags: {}", e.getMessage());
             }
@@ -1963,8 +1994,11 @@ public class AusgangsGeschaeftsDokumentService {
      *
      * <p>Bewusst NICHT enthalten:
      * {@code ABSCHLAGSRECHNUNG} (Betrag gibt der Benutzer frei vor),
-     * {@code SCHLUSSRECHNUNG} (Betrag ist der Restbetrag aus dem Abrechnungsverlauf)
-     * und {@code STORNO} (Betrag ist das negierte Original).</p>
+     * {@code SCHLUSSRECHNUNG} (Betrag ist die Summe ihrer Positionen MINUS der
+     * bereits gestellten Rechnungen) und {@code STORNO} (Betrag ist das negierte
+     * Original). Wer einen dieser Typen ergaenzt, laesst den Korrekturlauf
+     * festgeschriebene Belege umschreiben — bei der Schlussrechnung um die volle
+     * Summe der Vorrechnungen zu hoch.</p>
      */
     private static final Set<AusgangsGeschaeftsDokumentTyp> POSITIONSABGELEITETE_TYPEN = EnumSet.of(
             AusgangsGeschaeftsDokumentTyp.ANGEBOT,

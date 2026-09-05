@@ -71,7 +71,7 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
             return insertIntoSection(prev, block, anchor.sectionId);
     }
 }
-import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis } from './helpers';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
@@ -108,6 +108,10 @@ type PreviewLayoutBlock = FormBlock | (Omit<FormBlock, 'type'> & { type: 'waterm
 type PdfAbrechnungsverlauf = Pick<AbrechnungsverlaufDto, 'basisdokumentNummer' | 'basisdokumentTyp' | 'basisdokumentBetragNetto'> & {
     basisdokumentDatum?: string;
     positionen: Array<Pick<AbrechnungspositionDto, 'dokumentNummer' | 'typ' | 'datum' | 'betragNetto' | 'abschlagsNummer'>>;
+    /** Fortschrittsbalken im Abrechnungsstand drucken. */
+    balkenAnzeigen: boolean;
+    /** Leistungen hinter der Differenzzeile der Schlussrechnung, kommasepariert. */
+    differenzHinweis: string | null;
 };
 
 /** Inline-editable Rechnungsadresse – changes only the document, not the customer table */
@@ -334,6 +338,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [bereitsAbgerechnetDurchAndere, setBereitsAbgerechnetDurchAndere] = useState<number | null>(null);
     // Basisdokument-Nettobetrag (Gesamtauftragssumme aus AB/Anfrage)
     const [basisdokumentBetragNetto, setBasisdokumentBetragNetto] = useState<number | null>(null);
+    /**
+     * Bloecke des Basisdokuments (Angebot/AB). Nur zum Benennen der entfallenen
+     * bzw. zusaetzlichen Leistungen in der Differenzzeile der Schlussrechnung —
+     * der Differenzbetrag selbst wird nicht daraus gerechnet.
+     */
+    const [basisdokumentBlocks, setBasisdokumentBlocks] = useState<DocBlock[]>([]);
+    /**
+     * Fortschrittsbalken im Abrechnungsstand auf der Rechnung zeigen. Liegt in
+     * positionenJson, Standard an — Bestandsrechnungen sehen aus wie bisher.
+     */
+    const [balkenAnzeigen, setBalkenAnzeigen] = useState<boolean>(true);
     // Detaillierte Abrechnungspositionen für die ClosureBlock-Anzeige
     const [abrechnungsPositionen, setAbrechnungsPositionen] = useState<Array<{
         dokumentNummer: string;
@@ -847,6 +862,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 // New format: { blocks, globalRabatt, abschlagInfo }
                                 loadedBlocks = parsed.blocks;
                                 loadedGlobalRabatt = parsed.globalRabatt || 0;
+                                // Fehlendes Flag = an: Bestandsrechnungen behalten ihren Balken.
+                                setBalkenAnzeigen(parsed.abrechnungsstandBalkenAnzeigen !== false);
                                 if (parsed.abschlagInfo) {
                                     setAbschlagInfo(parsed.abschlagInfo);
                                 }
@@ -907,6 +924,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 if (verlauf.basisdokumentBetragNetto != null) {
                                     setBasisdokumentBetragNetto(verlauf.basisdokumentBetragNetto);
                                 }
+                                // Bloecke der AB fuer den Positionsvergleich der Differenzzeile
+                                setBasisdokumentBlocks(parseBlocksAusPositionenJson(verlauf.basisdokumentPositionenJson));
                                 // Detaillierte Positionen speichern für ClosureBlock-Anzeige
                                 const anderePosDetails = (verlauf.positionen || [])
                                     .filter((pos: AbrechnungspositionDto) => pos.id !== data.id && !pos.storniert)
@@ -1227,6 +1246,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             const positionenData = JSON.stringify({
                 blocks: persistedBlocks,
                 globalRabatt,
+                abrechnungsstandBalkenAnzeigen: balkenAnzeigen,
                 ...(abschlagInfo ? { abschlagInfo } : {})
             });
 
@@ -1338,7 +1358,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         }
         return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, tryAcquireLock, bereitsAbgerechnetDurchAndere, globalRabatt]);
+    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, tryAcquireLock, bereitsAbgerechnetDurchAndere, globalRabatt, balkenAnzeigen]);
 
     /**
      * Setzt das Dokumentdatum auf heute, sofern das Dokument noch bearbeitbar
@@ -2499,6 +2519,23 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         }
     };
 
+    /**
+     * Namen der Leistungen, die den Unterschied zwischen Auftragsbestaetigung und
+     * Schlussrechnung ausmachen — als Unterzeile der Differenzzeile.
+     *
+     * Das Vorzeichen entscheidet, welche Seite genannt wird: wurde weniger
+     * abgerechnet als beauftragt, sind Leistungen entfallen; wurde mehr
+     * abgerechnet, sind welche dazugekommen. Rein beschreibend, der Betrag
+     * ergibt sich unabhaengig davon als Ausgleichsgroesse.
+     */
+    const differenzHinweis = useMemo(() => {
+        if (dokumentTyp !== 'SCHLUSSRECHNUNG' || basisdokumentBlocks.length === 0) return '';
+        const differenzNetto = (basisdokumentBetragNetto ?? 0) - calculateNettoNachRabatt(blocks, globalRabatt);
+        if (Math.abs(differenzNetto) < 0.01) return '';
+        const { entfallen, zusaetzlich } = vergleicheLeistungen(basisdokumentBlocks, blocks);
+        return formatiereDifferenzHinweis(differenzNetto > 0 ? entfallen : zusaetzlich);
+    }, [dokumentTyp, basisdokumentBlocks, blocks, basisdokumentBetragNetto, globalRabatt]);
+
     const createPdfRequest = async (isPreview: boolean, withDraftWatermark: boolean = false) => {
         const { layoutBlocks, backgroundImage, backgroundImagePage2 } = await fetchTemplateData(dokumentTyp);
 
@@ -2659,6 +2696,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 betragNetto: pos.betragNetto,
                                 abschlagsNummer: pos.abschlagsNummer,
                             })),
+                            balkenAnzeigen,
+                            differenzHinweis: differenzHinweis || null,
                         };
                     }
                 }
@@ -2797,6 +2836,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     basisdokumentBetragNetto={basisdokumentBetragNetto}
                     globalRabatt={globalRabatt}
                     firmenfarbe={firmenfarbe}
+                    differenzHinweis={differenzHinweis}
+                    balkenAnzeigen={balkenAnzeigen}
+                    onBalkenAnzeigenChange={isLocked ? undefined : (anzeigen) => {
+                        setBalkenAnzeigen(anzeigen);
+                        setHasUnsavedChanges(true);
+                    }}
                 />
             )}
         </SortableBlock>

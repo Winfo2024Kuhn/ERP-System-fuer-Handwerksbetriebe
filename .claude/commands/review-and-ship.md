@@ -15,7 +15,7 @@ Du bist der **Implementations-Agent** im Window des Users. Deine Aufgabe ab jetz
 **Rollenteilung – wichtig:**
 
 - **Reviewer-Subagent** = Qualität + Architektur + Security + DSGVO. Findet Probleme.
-- **Du (Hauptagent)** = Build, Tests, Coverage, Implementierung der Reviewer-Findings, am Ende Commit & Push. **Findest keine Probleme selbst** – du behebst die, die der Reviewer meldet.
+- **Du (Hauptagent)** = Build, Tests, Coverage, Implementierung der Reviewer-Findings, am Ende Commit, Push, Pull Request, bei grünen Checks der Merge und zum Schluss das Schließen des Issues. **Findest keine Probleme selbst** – du behebst die, die der Reviewer meldet.
 
 **STOPP-REGEL:** Kein Commit ohne 🟢 vom Reviewer UND ohne grüne Tests/Builds. Bei 🔴 → Fix → erneuter Review-Lauf.
 
@@ -158,11 +158,122 @@ git commit -m "$(cat <<'EOF'
 
 <Ursache/Motivation>
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF
 )"
 git push origin HEAD
 ```
+
+---
+
+## Phase 4: Pull Request, Checks abwarten, mergen, Issue schließen
+
+Nur wenn Phase 3 durch ist (Commit gepusht).
+
+### 4a. Pull Request anlegen
+
+Ziel ist `main`, es sei denn der User nennt einen anderen Basis-Branch.
+
+```bash
+gh pr create --base main --head "$(git branch --show-current)" \
+  --title "<gleiche Zeile wie der Commit-Titel>" \
+  --body-file <(cat <<'EOF'
+Closes #<issue>
+
+## Problem
+<was war kaputt / was fehlte>
+
+## Lösung
+<was die Änderung tut>
+
+## Tests
+<welche Suiten, wie viele, lokal gelaufen>
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)
+```
+
+> ⚠️ **Nur englische Schlüsselwörter schließen ein Issue.** GitHub erkennt
+> `Closes`, `Fixes`, `Resolves` (samt `closed`/`fixed`/`resolved`). **„Behebt #84",
+> „Schließt #84", „Löst #84" schließen NICHTS** — der PR verlinkt das Issue dann
+> nur, und es bleibt offen zurück. Schreib die Zeile also englisch, auch wenn der
+> Rest des Textes deutsch ist. Sie gehört in den **PR-Text**: beim Squash-Merge
+> zählt der PR-Text, nicht deine Commit-Nachricht.
+
+**Hängt der Branch an einem gemeinsamen Arbeitsbranch, auf dem parallele Sessions
+arbeiten?** Dann NICHT diesen Branch als PR-Quelle nehmen — der PR schleppte die
+gesamte fremde, womöglich unfertige Arbeit mit nach `main`. Stattdessen den eigenen
+Commit auf einen frischen Branch von `origin/main` cherry-picken und von dort den PR
+öffnen. Gegenprobe vor dem Anlegen:
+
+```bash
+git rev-list --count origin/main..HEAD   # >1 bei fremder Arbeit im Branch
+```
+
+### 4b. Checks abwarten
+
+```bash
+gh pr checks <nr> --watch
+```
+
+Warte, bis **kein** Check mehr `pending` ist.
+
+> ⚠️ **Dieses Repo hat auf Pull Requests aktuell KEINE Build- oder Test-Checks.**
+> `.github/workflows/release.yml` triggert nur auf `v*`-Tags; auf dem PR läuft
+> ausschließlich CodeQL (Security-Scanning). „Alle Checks grün" heißt hier also
+> **nicht**, dass Tests gelaufen sind. Die Absicherung sind und bleiben deine
+> lokalen Läufe aus Phase 1. Sag das im Abschlussbericht ausdrücklich dazu, damit
+> niemand ein grünes Häkchen für einen Testlauf hält.
+
+### 4c. Mergen
+
+Merge automatisch, sobald **alle** Bedingungen erfüllt sind:
+
+- ✅ Jeder Check auf dem PR ist `pass` (kein `fail`, kein `pending`)
+- ✅ Reviewer-Ampel 🟢 (oder 🟡 mit User-Freigabe)
+- ✅ Deine lokalen Builds und Tests aus Phase 1 waren grün
+- ✅ `gh pr view <nr> --json mergeable -q .mergeable` liefert `MERGEABLE`
+
+```bash
+gh pr merge <nr> --squash --delete-branch
+```
+
+**Verboten:**
+
+- Merge bei rotem oder noch laufendem Check.
+- `--admin` oder sonst irgendein Weg, der einen Check überspringt.
+- Merge, wenn dein eigener Testlauf rot war — auch dann nicht, wenn GitHub grün meldet
+  (siehe die Warnung in 4b: GitHub testet hier gar nicht).
+- Merge eines Branches, der fremde unfertige Arbeit mitbringt (siehe 4a).
+
+Bleibt ein Check rot: **nicht mergen**, sondern nach dem Muster unten berichten.
+
+### 4d. Issue schließen und nachprüfen
+
+Eine Aufgabe ist erst sauber abgeschlossen, wenn das zugehörige Issue zu ist.
+Verlass dich **nicht** darauf, dass der Merge das erledigt hat — prüf es nach:
+
+```bash
+gh issue view <nr> --json state -q .state
+```
+
+Steht dort `OPEN`, schließ es selbst und sag im Kommentar, was passiert ist:
+
+```bash
+gh issue close <nr> --comment "Gelöst mit #<pr> (<commit-hash> auf main)."
+```
+
+Häufigste Ursachen für ein offen gebliebenes Issue:
+
+- Die Schlüsselwortzeile war deutsch formuliert (siehe Warnung in 4a).
+- Sie stand nur in der Commit-Nachricht, und der Squash-Merge hat den PR-Text
+  genommen.
+- Der PR ging gegen einen anderen Branch als den Default-Branch — GitHub schließt
+  Issues nur beim Merge in den Default-Branch.
+
+Gibt es zu der Aufgabe kein Issue, entfällt der Schritt. Gab es mehrere, prüf jedes
+einzeln.
 
 ---
 
@@ -191,11 +302,15 @@ Bitte beheben und /review-and-ship erneut ausführen.
 Commit: <hash>
 Branch: <branch>
 Review-Runden: <Anzahl Phase-0-Aufrufe>
-Geprüfte Checks:
+Lokal geprüft:
   - erp-code-reviewer Subagent (Claude, inkl. Security/DSGVO/Secrets): 🟢
   - Backend Build + Tests: ✅
   - Frontend Lint + Build + Tests: ✅
 Push: origin/<branch>
+Pull Request: #<nr>
+GitHub-Checks: <Liste mit Ergebnis> — ACHTUNG: nur CodeQL, keine Tests
+Merge: <gemergt / offen, weil ...>
+Issue #<nr>: <geschlossen / kein Issue>
 ```
 
 ---
@@ -207,4 +322,8 @@ Push: origin/<branch>
 - **Du wartest nicht** – während der Reviewer arbeitet, kompilierst und testest du.
 - **Jede Fix-Runde startet einen neuen Review-Lauf** – nicht nur einmal reviewen.
 - **Tests grün-fummeln ist verboten.** Root Cause finden, dann fixen.
+- **Nach dem Push kommt der PR** (Phase 4), und bei grünen Checks wird **automatisch gemergt** – ohne Rückfrage. Rot oder pending: nicht mergen, berichten.
+- **Erst zu, wenn das Issue zu ist.** Nach dem Merge `gh issue view` prüfen und notfalls von Hand `gh issue close`. Und: nur `Closes`/`Fixes`/`Resolves` schließen ein Issue — „Behebt #84" tut gar nichts.
+- **Grüne GitHub-Checks sind hier kein Testnachweis.** Auf PRs läuft nur CodeQL. Was zählt, sind deine lokalen Läufe aus Phase 1.
+- **PR nie von einem geteilten Arbeitsbranch öffnen** – sonst wandert fremde, unfertige Arbeit nach `main`. Eigenen Commit auf einen frischen Branch von `origin/main` cherry-picken.
 - **Nur eigene Dateien stagen** (parallele Sessions!) – Frontend-Build-Artefakte (`static/index.html`, `static/assets/index-*.js|css`) dürfen mit, damit der User auf anderem Rechner kein `npm run build` mehr braucht.
