@@ -517,6 +517,84 @@ class EmailImportServiceTest {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // 2.3.6b-2 Rückläufer-Auswertung erst NACH dem Commit
+    // Bug: BounceErkennungService (REQUIRES_NEW) wurde am Ende von
+    //      importMessage() aufgerufen — also aus der noch offenen
+    //      Import-Transaktion heraus. Der Rückläufer hängt per
+    //      parent_email_id an genau der Ausgangsmail, die er als
+    //      unzustellbar markieren soll: Der noch nicht committete INSERT
+    //      hält darauf eine Lesesperre, das UPDATE der inneren Transaktion
+    //      braucht eine Schreibsperre → "Lock wait timeout exceeded" nach
+    //      50 s, Rollback, und beim nächsten Import dasselbe von vorn.
+    // Fix: Aufruf wandert hinter den Commit (pruefeRuecklaeufer in der
+    //      Import-Schleife). importMessage() darf den Service nicht mehr
+    //      anfassen — genau das sichert dieser Test ab.
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class RuecklaeuferNachCommit {
+
+        private IMAPFolder mockFolder;
+        private Message mockMessage;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            mockFolder = mock(IMAPFolder.class);
+            mockMessage = mock(Message.class);
+
+            lenient().when(mockMessage.getHeader("Message-ID"))
+                    .thenReturn(new String[]{"<bounce-1@example.com>"});
+            lenient().when(mockFolder.getUID(mockMessage)).thenReturn(4711L);
+            lenient().when(mockFolder.getFullName()).thenReturn("INBOX");
+            lenient().when(mockMessage.getFrom()).thenReturn(new Address[]{
+                    new InternetAddress("postmaster@example.com", "Mail Delivery System")
+            });
+            lenient().when(mockMessage.getSubject())
+                    .thenReturn("Undeliverable: Angebot für Max Mustermann");
+            lenient().when(mockMessage.getSentDate()).thenReturn(new Date());
+            lenient().when(mockMessage.getRecipients(any())).thenReturn(null);
+            lenient().when(mockMessage.getHeader("In-Reply-To")).thenReturn(null);
+            lenient().when(mockMessage.getHeader("References")).thenReturn(null);
+            lenient().when(mockMessage.getHeader("List-Unsubscribe")).thenReturn(null);
+            lenient().when(mockMessage.getHeader("X-Mailer")).thenReturn(null);
+            lenient().when(mockMessage.getHeader("X-Spam-Status")).thenReturn(null);
+            lenient().when(mockMessage.getContentType()).thenReturn("text/plain");
+            lenient().when(mockMessage.getContent()).thenReturn("Zustellung fehlgeschlagen");
+
+            lenient().when(emailRepository.existsByMessageId(any())).thenReturn(false);
+            lenient().when(emailRepository.save(any(Email.class))).thenAnswer(inv -> {
+                Email e = inv.getArgument(0);
+                e.setId(5150L);
+                return e;
+            });
+            lenient().when(lieferantenRepository.findByEmailDomain(any()))
+                    .thenReturn(Collections.emptyList());
+            lenient().when(lieferantenRepository.existsByEmailDomain(any())).thenReturn(false);
+            lenient().when(steuerberaterEmailProcessingService.processSteuerberaterEmail(any()))
+                    .thenReturn(false);
+        }
+
+        @Test
+        void importMessageWertetRuecklaeuferNichtInDerEigenenTransaktionAus() throws Exception {
+            // Kern des Fixes: Solange die Import-Transaktion offen ist, darf der
+            // Bounce-Service (REQUIRES_NEW) nicht laufen — sonst wartet seine
+            // eigene Transaktion auf Sperren, die diese hier noch hält.
+            boolean importiert = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+
+            assertThat(importiert).isTrue();
+            verifyNoInteractions(bounceErkennungService);
+        }
+
+        @Test
+        void ausgangsmailsLoesenKeineRuecklaeuferPruefungAus() throws Exception {
+            // Eine eigene Mail im Sent-Ordner ist nie ein Rückläufer.
+            service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+
+            verifyNoInteractions(bounceErkennungService);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // 2.3.6c Gesperrte Absender (Blacklist) werden beim Import komplett verworfen
     // Bug: Beim "Absender sperren" wurden Mails als Spam markiert → Bayes-Modell
     //      wurde verfälscht. Fix: Blacklist-Treffer skippt Import vollständig.
