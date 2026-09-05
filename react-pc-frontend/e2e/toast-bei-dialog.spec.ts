@@ -2,16 +2,21 @@ import { test, expect, type Locator, type Page, type Route } from '@playwright/t
 import { designPruefung } from './hilfen/design';
 
 /**
- * Design-Review-Nachbesserung Abschnitt 6/7, Task 8a, Befund 1+3:
+ * Design-Review-Nachbesserung Abschnitt 6/7, Task 8a, Befund 1+3;
+ * Design-Review-Nachbesserung 2, Task 8c:
  *
- * 1. Der Toast-Container wanderte bei offenem Dialog bisher nach OBEN RECHTS
- *    (toast.tsx, seit Task 6b) -- genau dorthin, wo der Schliessen-X-Knopf und
- *    der "Vorschau aktiv"-Umschalter von LieferantDokumentModal sitzen.
- *    Gemessen blieben zwischen einem einzeiligen Toast und dem X nur 4px Luft
- *    (Toast endet y=70, X beginnt y=74); ein zweizeiliger Toast ueberdeckt
- *    beide Knoepfe komplett. Der Fix (siehe toast.tsx) verlegt den Container
- *    bei offenem Dialog nach OBEN LINKS, wo kein Modal im Projekt Aktionen
- *    platziert -- unabhaengig davon, wie lang der Toast-Text wird.
+ * 1. Der Toast-Container wanderte bei offenem Dialog urspruenglich nach OBEN
+ *    RECHTS (toast.tsx, seit Task 6b) -- genau dorthin, wo der Schliessen-X-
+ *    Knopf und der "Vorschau aktiv"-Umschalter von LieferantDokumentModal
+ *    sitzen. Task 8a verlegte ihn deshalb nach OBEN LINKS. Gemessen schnitt
+ *    das aber seinerseits auf 14 Zoll die Modal-Ueberschrift an: ein
+ *    zweizeiliger Toast [24,24,480,66] endet bei y=90, der Titel
+ *    "Dokument bearbeiten" beginnt schon bei y=78 -- die Rechtecke von Toast
+ *    und Titel ueberschneiden sich um 12px. Task 8c verlegt
+ *    ihn deshalb ein zweites Mal, jetzt nach UNTEN LINKS -- die einzige Ecke,
+ *    die weder im Lieferanten-Modal (Fussleiste rechts) noch im Confirm-
+ *    Dialog (Knoepfe mittig/rechts) eine Aktion traegt, unabhaengig davon,
+ *    wie lang der Toast-Text wird.
  * 2. confirm-dialog.tsx trug bisher KEIN role="dialog" -- der Toast-Umzug
  *    (der ausschliesslich per document.querySelector('[role="dialog"]')
  *    erkennt, ob "irgendein Dialog" offen ist) griff dort nicht.
@@ -162,8 +167,38 @@ async function erwarteTrefferPerAriaLabel(page: Page, knopf: Locator, ariaLabel:
     ).toBe(ariaLabel);
 }
 
-test.describe('Toast-Positionierung bei offenem Dialog (Task 8a)', () => {
-    test('zweizeiliger Fehler-Toast bei offenem Modal verdeckt weder das Schliessen-X noch "Vorschau aktiv"', async ({ page }, testInfo) => {
+/**
+ * Ueberlappungspruefung per Bounding-Box-Vergleich fuer nicht-interaktive
+ * Elemente (Modal-Titel, Eyebrow) -- ein elementFromPoint-Test am
+ * Box-MITTELPUNKT (wie bei den Knoepfen unten) haette den urspruenglichen
+ * Befund NICHT zuverlaessig erkannt: die vom Design-Reviewer gemessene 12px-
+ * Ueberlappung [Toast endet bei y=90, Titel beginnt bei y=78] traf nur den
+ * OBEREN Rand des 28px hohen Titel-Elements -- dessen geometrische Mitte
+ * (y=92) liegt bereits UNTERHALB des Toast-Endes und wuerde von
+ * elementFromPoint gar nicht mehr getroffen, obwohl sich die beiden
+ * Rechtecke nachweislich ueberschneiden. Diese Pruefung vergleicht darum
+ * direkt die beiden Rechtecke -- dieselbe Methode, mit der der Befund
+ * gemessen wurde.
+ */
+async function erwarteKeineUeberlappungMitToast(toast: Locator, ziel: Locator, beschreibung: string) {
+    const toastBox = await toast.boundingBox();
+    const zielBox = await ziel.boundingBox();
+    if (!toastBox) throw new Error('Kein Bounding-Box fuer den Toast-Container gefunden');
+    if (!zielBox) throw new Error(`Kein Bounding-Box fuer "${beschreibung}" gefunden`);
+
+    const ueberlappt =
+        toastBox.x < zielBox.x + zielBox.width && toastBox.x + toastBox.width > zielBox.x &&
+        toastBox.y < zielBox.y + zielBox.height && toastBox.y + toastBox.height > zielBox.y;
+
+    expect(
+        ueberlappt,
+        `Toast [${toastBox.x},${toastBox.y},${toastBox.width},${toastBox.height}] ueberlappt "${beschreibung}" ` +
+        `[${zielBox.x},${zielBox.y},${zielBox.width},${zielBox.height}]`,
+    ).toBe(false);
+}
+
+test.describe('Toast-Positionierung bei offenem Dialog (Task 8a, Nachbesserung Task 8c)', () => {
+    test('zweizeiliger Fehler-Toast bei offenem Modal verdeckt weder Modal-Titel, Eyebrow, Schließen-X, "Abbrechen" noch "Speichern"', async ({ page }, testInfo) => {
         await stubbeLieferantApi(page, 'fehler');
         await oeffneDokumentModal(page);
 
@@ -173,11 +208,12 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a)', () => {
         const toastContainer = page.getByTestId('toast-container');
         await expect(toastContainer).toContainText('Sperre konnte nicht geholt werden');
 
-        // Container muss jetzt oben links stehen (offener Dialog -- das Modal
-        // selbst traegt role="dialog").
-        await expect(toastContainer).toHaveClass(/top-6/);
+        // Container muss jetzt unten links stehen (offener Dialog -- das
+        // Modal selbst traegt role="dialog"). Task 8c: nicht mehr oben links,
+        // das schnitt die Modal-Ueberschrift an (siehe Datei-Kommentar oben).
+        await expect(toastContainer).toHaveClass(/bottom-6/);
         await expect(toastContainer).toHaveClass(/left-6/);
-        await expect(toastContainer).not.toHaveClass(/bottom-6/);
+        await expect(toastContainer).not.toHaveClass(/top-6/);
         await expect(toastContainer).not.toHaveClass(/right-6/);
 
         // Text im ECHT ausgeloesten, ECHT positionierten Toast direkt im DOM
@@ -201,18 +237,30 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a)', () => {
 
         const schliessenKnopf = dialog(page).getByRole('button', { name: 'Schließen' });
         const vorschauKnopf = dialog(page).getByRole('button', { name: /Vorschau/ });
+        const titel = dialog(page).getByRole('heading', { name: 'Dokument bearbeiten', level: 2 });
+        const eyebrow = dialog(page).getByText('PDF-Vorschau', { exact: true });
+        const abbrechenKnopf = dialog(page).getByRole('button', { name: 'Abbrechen' });
+        const speichernKnopf = dialog(page).getByRole('button', { name: 'Speichern' });
 
         await designPruefung(page, testInfo, 'toast-bei-dialog-zweizeilig', { primaerAktion: schliessenKnopf });
 
-        // Kernbefund aus dem Review: bei offenem Dialog trifft elementFromPoint
-        // in der Mitte des Schliessen-X das X, nicht den (jetzt zweizeiligen)
-        // Toast -- auf beiden Bildschirmgroessen (die Playwright-Konfiguration
-        // faehrt pc-14zoll UND pc-monitor automatisch fuer diese Spec).
+        // Kernbefund aus dem Review (Task 8a) und aus der Nachbesserung
+        // (Task 8c): bei offenem Dialog ueberschneidet sich der (jetzt
+        // zweizeilige, unten links stehende) Toast weder mit dem Modal-Titel
+        // noch mit der Eyebrow (Bounding-Box-Vergleich, siehe Kommentar an
+        // erwarteKeineUeberlappungMitToast), und ein Klick auf Schliessen-X,
+        // "Abbrechen" und "Speichern" trifft jeweils den Knopf selbst -- auf
+        // beiden Bildschirmgroessen (die Playwright-Konfiguration faehrt
+        // pc-14zoll UND pc-monitor automatisch fuer diese Spec).
+        await erwarteKeineUeberlappungMitToast(toastContainer, titel, 'Dokument bearbeiten (Modal-Titel)');
+        await erwarteKeineUeberlappungMitToast(toastContainer, eyebrow, 'PDF-Vorschau (Eyebrow)');
         await erwarteTrefferPerAriaLabel(page, schliessenKnopf, 'Schließen');
         await erwarteTrefferPerText(page, vorschauKnopf, 'Vorschau');
+        await erwarteTrefferPerText(page, abbrechenKnopf, 'Abbrechen');
+        await erwarteTrefferPerText(page, speichernKnopf, 'Speichern');
     });
 
-    test('Versionskonflikt: der Confirm-Dialog traegt jetzt selbst role="dialog", und der Toast-Container steht entsprechend oben links', async ({ page }, testInfo) => {
+    test('Versionskonflikt: der Confirm-Dialog traegt jetzt selbst role="dialog", und der Toast-Container steht entsprechend unten links', async ({ page }, testInfo) => {
         await stubbeLieferantApi(page, 'frei');
         await page.route(`**/api/lieferant-dokumente/${DOKUMENT_ID}`, route => {
             if (route.request().method() !== 'PUT') return route.fulfill({ status: 404, body: '' });
@@ -237,9 +285,10 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a)', () => {
         await expect(konfliktDialog).toHaveAttribute('aria-modal', 'true');
 
         const toastContainer = page.getByTestId('toast-container');
-        await expect(toastContainer).toHaveClass(/top-6/);
+        await expect(toastContainer).toHaveClass(/bottom-6/);
         await expect(toastContainer).toHaveClass(/left-6/);
-        await expect(toastContainer).not.toHaveClass(/bottom-6/);
+        await expect(toastContainer).not.toHaveClass(/top-6/);
+        await expect(toastContainer).not.toHaveClass(/right-6/);
 
         await designPruefung(page, testInfo, 'toast-bei-dialog-versionskonflikt', {
             primaerAktion: konfliktDialog.getByRole('button', { name: 'Neu laden' }),
