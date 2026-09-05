@@ -3142,3 +3142,324 @@ Dazu eine eigene Wegwerf-Spec (`e2e/zz-review-messung.spec.ts`, 6 Fälle × beid
 `elementFromPoint` + echter Mausklick gegen den Warn-Dialog, Toast-Rahmen und
 Container-Klasse in beiden Lagen, Rahmen von Toast/Titel/Eyebrow/Modal. **Danach gelöscht,
 `git status` im Worktree ist leer.**
+
+## Abschnitt 7-2/8-1 — Code-Review 2 (Code-Reviewer)
+
+**Zeit:** 05.09.2026, ca. 13:20–15:10 Uhr (lokale Sessionzeit)
+**Branch:** `claude/eloquent-ramanujan-gz0w2t`, geprüfter Stand `89ffc0d5` (HEAD stand am Ende auf `70fd301a` — nur Doku, kein Quellcode dazwischen)
+**Status:** fertig
+**Ampel: 🟡** — kein blockierender Befund. Von meiner Seite abgenommen.
+
+### Selbst gemessene Zahlen
+
+| | Baseline (nach 7-2, 1. Durchgang) | jetzt |
+|---|---|---|
+| Backend | 2462 / 0 Failures / 4 Errors | **2462 / 1 Failure\* / 4 Errors** |
+| Frontend Testdateien | 88 | **88** |
+| Frontend Tests | 1071 | **1082** (+11) |
+| Lint | 0 Fehler, 1 Warnung | **0 Fehler, 1 Warnung** (`BelegeKasseEditor.tsx:1204`) |
+| `npm run build` | grün | **grün**, `src/main/resources/static/` danach zurückgesetzt |
+
+\* `UnifiedEmailControllerExtractEmailTest.adversarialInputWithoutAt_isLinear` („execution timed out
+after 500 ms") — Test mit harter Zeitschranke in einer in dieser Runde **nicht angefassten** Datei
+(die Runde ändert keine einzige `.java`-Datei, geprüft per `git diff --name-only`). Einzeln
+nachgefahren: **12/12 grün in 0,383 s**. Kein Befund, Last-Effekt (der Design-Reviewer fuhr parallel
+Dev-Server und Browser). Die 4 Errors sind namentlich die bekannten umgebungsbedingten
+(`AuditChainRepairIntegrationTest` 2×, `AuditHashRoundtripDiagnoseTest` 2×, `CannotCreateTransaction`).
+
+Frontend-Volllauf lief zweimal, beide Male mit **reinen 5000-ms-Timeouts** in
+`document-editor/index.test.tsx`, `ArtikelEditor.test.tsx` und (im ersten Lauf)
+`useDatensatzLock.test.tsx`. Einzeln nachgefahren: **35/35 grün in 32 s**. Kein Befund, aber die
+Suite ist unter paralleler Last spürbar zeitfragil geworden — siehe Hinweis 6.
+
+### Die fünf 7-2-Befunde: Stand
+
+| Befund | Stand | Nachweis |
+|---|---|---|
+| 🔴 Design 1 — „Gebucht" bei Fremdsperre | **behoben** | Badge hängt an neuem Prop `istGebucht` (= `istGebuchteRechnung` aus `index.tsx:431`), nicht mehr an `isLocked`; drei Tests (Fremdsperre / echte gebuchte Rechnung / storniert). Mutationsprobe unten. |
+| 🔴 Design 2 — Dialog deckt die Leiste nicht ab | **behoben** | Kein `transform` mehr; Seite misst per Callback-Ref + `ResizeObserver`/`getBoundingClientRect()` und reicht `--lock-leiste-hoehe` durch, Editor-Wurzeln auf `top-[var(--lock-leiste-hoehe,0px)]`. Mutationsprobe unten. |
+| 🟡 Code 3 — `setSchliesstGerade` vor `await` | **behoben** (Code war schon richtig, jetzt abgesichert) | Neuer synchroner Test in `DocumentEditorPage.test.tsx` (`fireEvent` in `act()`, Assertion ohne `waitFor`). Mutationsprobe unten. |
+| 🟡 Code 4 — X-Knopf ohne `aria-label` | **behoben** | `aria-label="Editor schließen"`; `xKnopf()` in `index.test.tsx` **und** `e2e/dokument-editor-seite.spec.ts` auf `getByRole('button', { name: 'Editor schließen' })` — die testid-Eingrenzung ist damit entbehrlich geworden. |
+| 🟡 Code 5 — `index.test.tsx` an `useDocumentLock` | **behoben** | Grep unten. |
+
+### Verbraucher-Greps (Voraussetzung für Runde 8-2)
+
+**Frontend `src/`** (`useDocumentLock|DocumentLockedModal|dokument-locks`, `*.ts`/`*.tsx`): **sauber**.
+Übrig sind nur die beiden alten Dateien selbst (`useDocumentLock.ts`, `DocumentLockedModal.tsx`)
+plus drei reine Prosa-Kommentare (`LieferantDokumentModal.test.tsx:13`, `lock/GesperrtHinweis.tsx:26`,
+`lock/useDatensatzLock.ts:7`). **Kein Test hängt mehr am alten Hook** — die Voraussetzung fürs
+Löschen in 8-2 ist erfüllt.
+
+**Frontend `e2e/`** (vom Auftrag nicht verlangt, aber für 8-2 relevant): **nicht** sauber.
+`e2e/hilfen/dokument-editor.ts:101/105/112` stubbt weiterhin **aktiv** (`page.route`)
+`/api/dokument-locks/**/acquire`, `/heartbeat` und den DELETE-Pfad. Das sind echte Aufrufe, keine
+Kommentare — tote Test-Kulisse für einen Endpunkt, den 8-2 entfernt. Blockiert das Löschen nicht
+(nicht bediente Routen laufen ins Leere), sollte aber mitgehen. Siehe Hinweis 5.
+
+**Backend** (`DokumentLockService|DokumentLockDto|DokumentLockRepository|DokumentLockController`
+über `src/main/java` + `src/test/java`): **sauber**. Nur die alten Klassen untereinander
+(`DokumentLockController`, `DokumentLockService`, `DokumentLockDto`, `DokumentLockRepository`,
+`DokumentLockServiceTest`) plus drei Prosa-Kommentare in `SperrbarerTyp.java`,
+`DatensatzLockService.java` und `DatensatzLockServiceTest.java`.
+
+### Mutationsproben (Quellstand danach byte-identisch, `git status` nur die zwei Nutzer-Dateien)
+
+1. **A1 — Badge zurück auf `isLocked`** (`DocumentEditorHeader.tsx:84`) ⇒ **2 von 25 rot**:
+   „zeigt 'Gebucht' NICHT bei Fremdsperre (readOnly=true)…" und „…NICHT für ein storniertes
+   Dokument". Der Positiv-Test („weiterhin für eine tatsächlich gebuchte Rechnung") blieb grün —
+   die Probe trifft also genau die Fehlkopplung.
+2. **A2 — `[transform:translateZ(0)]` wieder auf den Editor-Container** (`DocumentEditorPage.tsx`)
+   ⇒ Playwright-Spec `e2e/dokument-editor-seite.spec.ts -g "Warn-Dialog blockiert"` auf **beiden**
+   Größen rot:
+   `Error: Der Warn-Dialog muss die Bearbeiten-Leiste ueberdecken (elementFromPoint darf NICHT den
+   Knopf treffen), solange er offen ist / Expected: false / Received: true`.
+   Vorher als Baseline die volle Spec grün gefahren: **12/12 in 1,5 min** (eigener Port
+   `E2E_PORT=5199`, `npm run test:e2e` habe ich nicht angefasst).
+3. **A3 — Reihenfolge `setSchliesstGerade`/`await` getauscht** ⇒ **1 von 12 rot**
+   („blendet die Leiste SYNCHRON aus…").
+4. **B — kompletter `MutationObserver`-Effekt aus `toast.tsx` entfernt** ⇒ **3 von 10 rot**:
+   `expected 'fixed z-[9999] flex flex-col gap-2 po…' to contain 'top-6'` (2×) und
+   `expected "disconnect" to be called at least once`. Deckt sich mit dem Bericht des Agenten,
+   inklusive des überraschenden dritten Treffers beim Mount-Test.
+5. **B — die vier `setState`-Zeilen aus `releaseKeepalive` entfernt** ⇒ **2 von 37 rot**, beide mit
+   `AssertionError: expected 'bearbeiten' to be 'lesen'` — genau die zwei neuen `pagehide`/
+   `pageshow`-Tests.
+6. **Zusatzprobe (Sanity, Behauptung des Agenten nachgestellt): `setModus('lesen')` im
+   Heartbeat-409-Zweig entfernt** ⇒ **22 von 37 rot**. Die globale `afterEach`-Invariante greift
+   also tatsächlich weit über die eigene Nachbesserung hinaus. Dabei ist mir Hinweis 1 aufgefallen.
+
+### Selbst nachgeprüft, ohne Befund
+
+- **Containing-Block-Kette über dem Editor ist frei.** Weder `#root`/`body` (kein `transform`,
+  `filter`, `will-change`, `contain`, `isolation` in `index.css`) noch `RequireAuth` (gibt `children`
+  direkt zurück, kein Wrapper-Element) noch `ErrorBoundary` (dito im Gutfall) noch die Seite selbst
+  erzeugen einen. Grep über `document-editor/` + `DocumentEditorPage.tsx` nach
+  `translateZ|will-change|backdrop-filter|[filter:|[contain:|perspective|[transform:` — **keine
+  Treffer**. Der Editor bleibt `position:fixed` zum echten Viewport, seine `z-[70]`-Dialoge liegen
+  wieder über der Leiste (E2E-Nachweis oben).
+- **`ResizeObserver` läuft beim Unmount aus** — `return () => beobachter.disconnect()` im selben
+  Effekt; feuert auch beim Wechsel `leisteElement → null` (dann zusätzlich `setLeisteHoehe(0)`).
+- **Variable ohne Leiste** (neues Dokument ohne Id, oder `schliesstGerade`): `leisteElement` ist
+  `null` ⇒ `--lock-leiste-hoehe: 0px` ⇒ der Editor fällt exakt auf das alte `inset-0`-Verhalten
+  zurück. `DocumentEditor` hat genau **einen** Verwender (`DocumentEditorPage`), sonst setzt niemand
+  die Variable — der Fallback greift überall.
+- **Tailwind erzeugt die Klasse**: im gebauten CSS steht `top:var(--lock-leiste-hoehe,0px)`
+  (nachgesehen, danach `static/` zurückgesetzt).
+- **`releaseKeepalive` und React-Warnungen:** React 19 — `setState` nach dem Unmount ist ein
+  stiller No-op, die Warnung gibt es seit React 18 nicht mehr. Kein Befund. Auf dem
+  Unmount-Cleanup-Pfad setzt der Effekt-Cleanup dieselben vier Werte direkt danach nochmal;
+  redundant, aber folgenlos.
+- **Bearbeiten nach bfcache holt wirklich neu:** nach `pagehide` steht `heldRef=false`,
+  `status='idle'`, `modus='lesen'` ⇒ `onBearbeiten()` fällt in den `void acquire(lockUrl)`-Zweig
+  (nicht in den `heldRef`-Kurzschluss, nicht in die `loading`/`error`-Sperre). Durch den neuen
+  `pageshow`-Test und Mutationsprobe 5 belegt.
+- **`role="dialog"` im Confirm kippt nichts anderes:** voller Frontend-Lauf zweimal ohne einen
+  einzigen `getByRole('dialog')`-Fehlschlag; die einzigen Ausfälle waren Zeitüberschreitungen
+  (siehe oben).
+- **Server-Meldung im Konflikt-Fall wirklich entbehrlich:** `useKonfliktMeldung` ist der einzige
+  Leser der 409-Antwort, `eigeneMeldung` war ein Template-String mit `bezeichnung` und damit nie
+  leer — die entfernten Fallbacks konnten tatsächlich nie greifen. `variant: 'info'` folgt einem
+  im Projekt bereits fünfmal genutzten Muster und liefert laut `confirmBtnMap` den rose-Knopf.
+- **`zeigeNurLesenHinweis` im Lieferant-Modal:** `status === 'idle'` deckt genau „frisch
+  freigegeben" und „noch nie geholt" ab; `acquired` ohne `bearbeiten` ist seit 7b nicht mehr
+  erreichbar, `locked-by-other` erklärt `GesperrtHinweis`, `loading`/`error` haben ihre eigenen
+  Bänder. Deckungsgleich mit der Regel auf der Editor-Seite.
+- **`istGebucht` als Pflicht-Prop:** `DocumentEditorHeader` hat genau einen Verwender, TS-Build grün.
+- **Datenschutz/Secrets:** keine E-Mail-Adressen, keine echten Namen in den neuen Dateien (nur
+  „Musterbedarf/Musterweg/Musterstadt", „Erika Musterfrau"), keine Secrets, kein Build-Output und
+  kein `test-results/` im Diff, keine Java-/Endpoint-Änderung, also keine neue Angriffsfläche.
+- **Performance:** kein neues Polling, kein zweiter Timer; ein `ResizeObserver` auf genau einem
+  Element.
+
+### 💡 Hinweise (blockieren nicht)
+
+1. **`useDatensatzLock.test.tsx:78-97` — die neue `afterEach`-Invariante macht aus einem Fehler 22.**
+   Die Schleife mit `expect(...)` steht **vor** dem Aufräumen. Schlägt sie an, werden
+   `beobachteteZustaende.length = 0`, `vi.restoreAllMocks()` und `vi.useRealTimers()` nie erreicht —
+   der Zustandspuffer bleibt gefüllt und **jeder** nachfolgende Test in der Datei fällt über dieselben
+   alten Aufzeichnungen. In Mutationsprobe 6 war genau **ein** Test echt kaputt
+   („Heartbeat 409 …", `expected 'bearbeiten' to be 'lesen'`); die anderen 21 meldeten
+   `expected 'bearbeiten' not to be 'bearbeiten'` oder — wegen der hängengebliebenen Fake-Timer —
+   `Test timed out in 5000ms`, darunter völlig unbeteiligte wie „gibt das Lock beim Unmount per
+   DELETE frei" und „status wird nach einem Acquire-Fehler (500) zu 'error'". Ironie: der Kommentar
+   an `vi.useRealTimers()` nennt es ausdrücklich ein „Sicherheitsnetz" gegen genau dieses Symptom —
+   die Assertion darüber reißt das Netz weg. **Nachweisbar wäre:** Aufräumen in ein `finally`
+   (oder erst zurücksetzen, dann auf einer Kopie prüfen), danach dieselbe Mutationsprobe ⇒ genau
+   **ein** roter Test mit der echten Ursache.
+
+2. **`LieferantDokumentModal.test.tsx:308-310` — der bekannte Wackler ist kein Wackler, sondern eine
+   falsche Zusicherung; und er ist in dieser Runde häufiger geworden.** Der Test wartet darauf, dass
+   der Text „Sperre konnte nicht geholt werden — bitte neu laden." **genau zweimal** im Dokument
+   steht (rotes Band + Toast). Im eingeschwungenen Zustand steht er aber **dreimal**: dazu kommt der
+   `sr-only`-Span, den `BearbeitenLeiste.tsx:143-147` für `aria-describedby` rendert, sobald
+   `bearbeitenGesperrtGrund` gesetzt ist (seit Task 7d). Der Test geht also nur durch, wenn
+   `waitFor` zufällig **vor** dem Commit des Toasts abtastet — er prüft das Gegenteil dessen, was
+   sein Kommentar behauptet. Gemessen, isoliert je 6 Läufe: auf dem Basisstand `256b3e1d`
+   **1 von 6 rot**, auf dem jetzigen Stand **3 von 6 rot** (plus 3 von 4 in einem früheren Block).
+   Im Volllauf blieb er beide Male grün — das Zeitfenster ist dort ein anderes. Die Vermutung des
+   Agenten („doppelt ausgelöster Toast durch einen React-Effekt-Randfall") trifft nicht zu, es
+   feuert genau ein Toast. **Nachweisbar wäre:** `toHaveLength(3)` mit benannter Herkunft der drei
+   Vorkommen, oder gezielter je Rolle prüfen (`getByRole('alert')`, Toast-Container, `sr-only`-Span)
+   statt über einen nackten Textzähler.
+
+3. **Toast liegt bei offenem Confirm-Dialog *hinter* dessen Backdrop.** `toast.tsx:188` ist
+   `z-[9999]`, `confirm-dialog.tsx:106` ist `z-[10000]` (Panel `z-[10001]`) — beide `position:fixed`
+   im selben Stacking-Kontext (weder `ToastProvider` noch `ConfirmProvider` erzeugen ein
+   DOM-Element). Damit liegt der Toast unter `bg-black/40 backdrop-blur-sm`: abgedunkelt und
+   unscharf, und ein Klick darauf trifft den Backdrop, dessen `onClick` `handleCancel()` ist —
+   wer den Toast wegklicken will, bricht den Dialog ab. Betrifft genau die Kombination, die diese
+   Runde neu verdrahtet hat (Punkt 3 lässt den Toast wegen des Confirm-Dialogs umziehen; für
+   Modale mit `z-50` wie `LieferantDokumentModal` funktioniert der Umzug dagegen wie gedacht).
+   Die neue E2E-Zusicherung prüft nur die Klassen, nicht die Stapelung. Z-Reihenfolge ist
+   vorbestehend, durch Punkt 3 aber erstmals im Spiel. **Nachweisbar wäre:** `elementFromPoint` in
+   der Mitte des Toasts trifft den Toast, nicht den Backdrop — dafür müsste der Toast-Container
+   über `10001` liegen.
+
+4. **Das ganze `--lock-leiste-hoehe`-Messwerk ist direkt ungetestet.** Weder
+   `DocumentEditorPage.test.tsx` noch die E2E-Spec erwähnen die Variable oder den `ResizeObserver`;
+   abgesichert ist nur die *Wirkung* (Backdrop deckt „Fertig", `designPruefung`-Überlappungsprüfung).
+   Genau die zwei Fehler, die der Agent unterwegs selbst gebaut hat (Variable bleibt bei `0px`;
+   `contentRect` 34 px statt `getBoundingClientRect()` 55 px), hängen damit an einer
+   Browser-Messung. Ein Unit-Test wäre billig: `setupTests.ts` mockt `ResizeObserver` bereits, und
+   `vi.spyOn(MockResizeObserver.prototype, 'disconnect')` funktioniert genauso wie der neue
+   `MutationObserver`-Test in `toast.test.tsx`. **Nachweisbar wäre:** Style-Attribut trägt eine
+   Höhe > 0 mit Leiste und `0px` ohne, und `disconnect()` läuft beim Unmount.
+
+5. **`e2e/hilfen/dokument-editor.ts:101/105/112` stubbt weiter den alten Sperr-Endpunkt.** Aktive
+   `page.route()`-Aufrufe auf `/api/dokument-locks/**`, kein Kommentar. Tote Kulisse, seit die
+   Seite auf `/api/datensatz-locks/` liegt. Gehört in Runde 8-2 mit weg, sonst bleibt eine Test-Hilfe
+   stehen, die einen nicht mehr existierenden Endpunkt bedient.
+
+6. **Zeitfragilität der Frontend-Suite.** Zwei Vollläufe, beide mit reinen 5000-ms-Timeouts
+   (Lauf 1: 5 Tests in `useDatensatzLock.test.tsx` + `index.test.tsx`; Lauf 2: 4 Tests in
+   `index.test.tsx` + `ArtikelEditor.test.tsx`), alle beim Einzellauf grün. Dazu backendseitig
+   `UnifiedEmailControllerExtractEmailTest` mit seiner 500-ms-Schranke. Nichts davon ist ein
+   Regressionsbefund, aber die Zahlen oben gelten nur mit Nachfahren — ein Volllauf allein ist auf
+   diesem Rechner unter paralleler Browser-Last nicht mehr aussagekräftig.
+
+7. **`releaseKeepalive` erhöht `generationRef` nicht** (anders als `aktivFreigeben`), und der
+   Heartbeat-`fetch` hängt an keinem `AbortSignal`. Ein Heartbeat, der nach `pagehide` noch
+   eintrifft, kann daher `verbindungWeg` setzen, nachdem der Reset es gerade auf `false` gezogen
+   hat. Die Invariante bricht das nicht (`modus`/`status` fasst der Heartbeat in dem Zweig nicht
+   an), also rein kosmetisch — eine Zeile `generationRef.current += 1` würde es schließen.
+
+8. **`confirm-dialog.tsx:94` — feste ID `'confirm-dialog-titel'`.** Mit dem einen `ConfirmProvider`
+   in `App.tsx` unkritisch, aber `useId()` wäre gegen doppelte IDs robust (in Tests werden schon
+   heute mehrere Provider gleichzeitig gerendert).
+
+9. **`variant: 'info'` bringt einen himmelblauen Icon-Kreis** (`bg-sky-100`/`text-sky-600`,
+   `HelpCircle`) in einen Sperr-Konflikt — `CLAUDE.md` verbietet Blau ausdrücklich. Die Variante ist
+   vorbestehend und wird von fünf weiteren `confirm()`-Aufrufen genutzt, der rose-Knopf war das
+   erklärte Ziel und ist erreicht. Gehört formal dem Design-Reviewer; hier nur als Notiz, damit es
+   nicht untergeht.
+
+
+## Abschnitt 8-2 — Task 8c (Coding-Agent)
+
+**Zeit:** 2026-09-05, ca. 14:20
+**Branch:** `lock/task-8c-politur` (Worktree `wt/task-8c`, Basis `claude/eloquent-ramanujan-gz0w2t` @ `89ffc0d5`)
+**Commits:**
+- `907985c5` — fix(toast): Container bei offenem Dialog nach unten links statt oben links
+- `427c51a8` — fix(confirm-dialog): neue Variante 'fehlschlag' fuer die Konfliktmeldung
+- `58ec9588` — test(e2e): Fall mit gebucht:true fuer das "Gebucht"-Badge
+
+**Status:** 🟢 alle drei Punkte umgesetzt, testgetrieben, Mutationsproben rot→grün belegt.
+
+### Was gemacht wurde
+
+**Punkt 1 — Toast bei offenem Dialog nach unten links.** `toast.tsx`: Container-Klasse
+bei offenem Dialog von `top-6 left-6` auf `bottom-6 left-6` geaendert (sonst-Fall bleibt
+`bottom-6 right-6` unveraendert). Kommentare an Funktion und Container um die Herleitung
+aus dem Kontext-Log ergaenzt (12px-Ueberlappung auf 14 Zoll, warum nach oben nicht
+ausweichbar, warum unten links frei bleibt).
+
+Roter Test zuerst: `toast.test.tsx` — beide betroffenen Tests ("wandert nach unten LINKS
+...", MutationObserver-Test) auf die neuen Klassen umgeschrieben; vor der Quelltext-
+Aenderung waeren sie mit den alten `top-6`-Erwartungen ohnehin rot gewesen (TDD-Reihenfolge
+hier: Quelltext und Test in einem Schritt, da die Aenderung eine reine Ein-Wort-Klassen-
+Vertauschung ist). Mutationsprobe (Klassen zurueck auf `top-6 left-6`) ⇒ 2 von 10 Tests in
+`toast.test.tsx` rot (`AssertionError: expected ... to contain 'bottom-6'`), danach wieder
+grün.
+
+E2E (`toast-bei-dialog.spec.ts`): Klassen-Zusicherungen auf `bottom-6`/`left-6` umgestellt.
+Zusaetzlich neue Zusicherungen fuer Modal-Titel, Eyebrow, "Abbrechen" und "Speichern" (bisher
+deckte die Spec nur Schliessen-X und "Vorschau" ab). Für Titel/Eyebrow **kein**
+`elementFromPoint`-Klicktest, sondern ein Bounding-Box-Vergleich
+(`erwarteKeineUeberlappungMitToast`): beim Schreiben des ersten Entwurfs mit
+`elementFromPoint` am Box-Mittelpunkt fiel auf, dass die vom Design-Reviewer gemessene
+12px-Ueberlappung [Toast endet y=90, Titel beginnt y=78] nur den oberen Rand des 28px hohen
+Titel-Elements trifft — dessen geometrische Mitte (y=92) liegt bereits unterhalb des
+Toast-Endes. Mutationsprobe bestaetigte das: mit `top-6` reproduziert, `elementFromPoint`
+an der Box-Mitte des Titels blieb **grün** (falsch-negativ). Umgestellt auf einen
+Rechteck-Ueberlappungstest (dieselbe Methode wie die manuelle Messung im Review) — damit
+wurde dieselbe Mutation zuverlaessig rot: `Toast [24,24,480,66] ueberlappt "Dokument
+bearbeiten (Modal-Titel)" [61,78,179,28]`. Für Schliessen-X/Vorschau/Abbrechen/Speichern
+blieb der bestehende `elementFromPoint`-Klicktest (dort sinnvoll, weil es echte Knoepfe
+sind). `E2E_PORT=5182 npx playwright test e2e/toast-bei-dialog.spec.ts`: 2 Tests × 2
+Groessen = 4 grün.
+
+**Punkt 2 — Vierte Confirm-Variante 'fehlschlag'.** `confirm-dialog.tsx`: neue Variante
+`'fehlschlag'` (amber-100/amber-600 `AlertTriangle`-Icon wie bei "Ungespeicherte
+Aenderungen", rose-600-Knopf wie `'info'`). `useKonfliktMeldung.ts` nutzt sie jetzt statt
+`'info'`. Grep bestaetigt: die fünf bestehenden `'info'`-Aufrufer
+(Urlaubsantraege.tsx, ProjektEditor.tsx, BestellungEditor.tsx,
+KostenpositionenView.tsx, LieferantReklamationenTab.tsx) sind unveraendert.
+
+Roter Test zuerst: neuer Test in `confirm-dialog.test.tsx` ("Variante 'fehlschlag' zeigt
+ein amber-AlertTriangle-Icon und einen rose-Bestaetigungsknopf") und in
+`useKonfliktMeldung.test.tsx` ("zeigt ein amber-AlertTriangle-Icon statt des blauen
+Fragezeichens"). Mutationsprobe (`useKonfliktMeldung.ts` zurueck auf `variant: 'info'`) ⇒
+neuer Test in `useKonfliktMeldung.test.tsx` rot: `expected 'lucide lucide-circle-question-
+mark h-6 w-6 text-sky-600' to contain 'text-amber-600'`. Danach wieder grün. Sichtbar auch
+im Screenshot `toast-bei-dialog-versionskonflikt--pc-14zoll.png`: amber-Warndreieck statt
+blauem Fragezeichen, "Neu laden" weiterhin rose-600 gefüllt.
+
+**Punkt 3 — E2E-Fall mit `gebucht: true`.** `dokument-editor-seite.spec.ts`: neuer Test
+"gebuchte Rechnung zeigt das 'Gebucht'-Badge", Stub ueberschreibt NACH
+`stubbeDokumentEditorApi` die GET-Antwort auf `/api/ausgangs-dokumente/1` mit
+`{ ...BEISPIEL_DOKUMENT, gebucht: true }` (Route-Ueberschreibung, gemeinsame Hilfsdatei
+unveraendert). Zusicherung auf Badge-Text "Gebucht", Klassen `bg-amber-50`/`text-amber-700`,
+Lucide `svg.lucide-lock`. Lock bleibt `'frei'` — "gebucht" ist eine Dokument-Eigenschaft,
+unabhaengig vom Datensatz-Lock der Seite; die Seiten-Leiste zeigt darum weiterhin "Fertig"
+(nicht "Bearbeiten", wie ein erster Entwurf faelschlich annahm, bevor der Blick in
+`DocumentEditorPage.tsx` zeigte, dass `readOnly` dort ausschliesslich vom Lock-Modus
+abhaengt, nicht von `dokument.gebucht`).
+
+Gegenprobe: die drei bestehenden Tests (`-lesen`, `-gesperrt`, `-fehler`) sichern jetzt
+explizit `getByText('Gebucht', { exact: true })` → `toHaveCount(0)` zu, statt die
+Abwesenheit nur implizit über den Stub (`gebucht: false`) anzunehmen.
+
+Mutationsprobe: `istGebuchteRechnung` in `document-editor/index.tsx` testweise auf `false`
+gesetzt ⇒ neuer Test in beiden Groessen rot (`element(s) not found` für
+`getByText('Gebucht', { exact: true })`), danach exakt zurueckgesetzt — `git diff`/`git
+status` bestaetigen `document-editor/index.tsx` danach byte-identisch (keine Datei
+ausserhalb der erlaubten Liste angefasst).
+
+**Tests je Größe:** `E2E_PORT=5182 npx playwright test e2e/toast-bei-dialog.spec.ts
+e2e/dokument-editor-seite.spec.ts` — 18 Tests × (`pc-14zoll` + `pc-monitor`) = 18 grün
+(9 Testfaelle je Groesse). Unit: `npx vitest run toast.test.tsx confirm-dialog.test.tsx
+useKonfliktMeldung.test.tsx` — 32 grün. `npm run lint`: 0 Fehler, genau die eine
+vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`). `npm run build`: grün,
+`src/main/resources/static/` danach zurueckgesetzt (`git status` dort leer).
+
+**Screenshots** (`react-pc-frontend/test-results/design/`):
+- `toast-bei-dialog-zweizeilig--pc-14zoll.png` / `--pc-monitor.png`
+- `toast-bei-dialog-versionskonflikt--pc-14zoll.png` / `--pc-monitor.png`
+- `editor-seite-gebucht--pc-14zoll.png` / `--pc-monitor.png`
+- unveraendert erneut erzeugt: `editor-seite-bearbeiten/-lesen/-gesperrt/-fehler/
+  -tab-schliessen/-warn-dialog-blockiert-leiste--{pc-14zoll,pc-monitor}.png`
+
+Kurzer eigener Blick (keine formale Design-Abnahme, die bleibt beim Design-Reviewer):
+`toast-bei-dialog-zweizeilig` zeigt den Toast jetzt unten links, ohne Beruehrung von
+Modal-Titel/Eyebrow oben oder "Abbrechen"/"Speichern" unten rechts.
+`toast-bei-dialog-versionskonflikt` zeigt das amber-Warndreieck statt des blauen
+Fragezeichens. `editor-seite-gebucht` zeigt das Badge korrekt neben der Dokumentnummer.
+
+### Bedenken / Abweichungen vom Plan
+
+Keine. Alle drei Punkte wie geplant in den genannten Dateien umgesetzt, keine Datei
+ausserhalb der Liste angefasst. Einzige Praezisierung gegenüber dem Wortlaut des Plans:
+Punkt 1 verlangte für Titel/Eyebrow "elementFromPoint ... trifft jeweils das Element
+selbst" — das haette den Ausgangsbefund nicht zuverlaessig erkannt (siehe oben), daher
+stattdessen ein Bounding-Box-Ueberlappungstest, der nachweislich denselben Fall faengt und
+inhaltlich dasselbe zusichert ("der Toast liegt nicht auf dem Titel/der Eyebrow").
