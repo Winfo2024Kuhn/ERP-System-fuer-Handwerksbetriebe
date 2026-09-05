@@ -516,6 +516,81 @@ export function getAllServiceBlocks(blocks: DocBlock[]): DocBlock[] {
 }
 
 /**
+ * Liest die Bloecke aus einem positionenJson.
+ *
+ * Deckt beide Formate ab, die im Bestand liegen: das alte reine Block-Array und
+ * das heutige `{ blocks, globalRabatt, ... }`. Kaputtes oder fehlendes JSON
+ * ergibt eine leere Liste — Aufrufer zeigen dann eben keinen Positionsvergleich
+ * statt den Editor mit einer Exception abzuschiessen.
+ */
+export function parseBlocksAusPositionenJson(json: string | null | undefined): DocBlock[] {
+    if (!json) return [];
+    try {
+        const parsed = JSON.parse(json);
+        if (Array.isArray(parsed)) return parsed as DocBlock[];
+        if (parsed && Array.isArray(parsed.blocks)) return parsed.blocks as DocBlock[];
+        return [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Vergleicht die Leistungen einer Schlussrechnung mit denen ihres Basisdokuments
+ * (Angebot/Auftragsbestaetigung) und liefert die Namen der Positionen, die
+ * weggefallen bzw. neu dazugekommen sind.
+ *
+ * Der Vergleich laeuft ueber die Block-IDs: eine Rechnung erbt die Bloecke ihres
+ * Vorgaengers samt IDs, eine geloeschte Geruststellung fehlt also schlicht. Rein
+ * beschreibend — der Differenzbetrag auf der Rechnung wird NICHT hieraus
+ * gerechnet, sondern als Ausgleichsgroesse (Auftragssumme minus alle Rechnungen).
+ * Sonst wichen Zeile und Betrag voneinander ab, sobald jemand nur eine Menge
+ * aendert oder einen Rabatt setzt.
+ *
+ * Optionale und Alternativ-Positionen bleiben aussen vor: sie zaehlen auch nicht
+ * in die Nettosumme und waeren in der Auflistung nur Rauschen.
+ */
+export function vergleicheLeistungen(
+    basisBlocks: DocBlock[],
+    dokumentBlocks: DocBlock[],
+): { entfallen: string[]; zusaetzlich: string[] } {
+    const namenNachId = (blocks: DocBlock[]) => {
+        const map = new Map<string, string>();
+        for (const b of getAllServiceBlocks(blocks)) {
+            if (b.optional) continue;
+            map.set(b.id, (b.title || '').trim() || 'Ohne Bezeichnung');
+        }
+        return map;
+    };
+    const basis = namenNachId(basisBlocks);
+    const dokument = namenNachId(dokumentBlocks);
+
+    const entfallen: string[] = [];
+    for (const [id, name] of basis) {
+        if (!dokument.has(id)) entfallen.push(name);
+    }
+    const zusaetzlich: string[] = [];
+    for (const [id, name] of dokument) {
+        if (!basis.has(id)) zusaetzlich.push(name);
+    }
+    return { entfallen, zusaetzlich };
+}
+
+/** Hoechstzahl namentlich genannter Leistungen in der Differenzzeile. */
+const DIFFERENZ_HINWEIS_MAX = 4;
+
+/**
+ * Formatiert die Leistungsnamen fuer die Unterzeile der Differenzzeile.
+ * Lange Listen werden gekuerzt, damit die Zeile auf der Rechnung nicht umbricht.
+ * Leere Liste = kein Hinweis; dann steht dort nur der Betrag.
+ */
+export function formatiereDifferenzHinweis(namen: string[]): string {
+    if (namen.length === 0) return '';
+    if (namen.length <= DIFFERENZ_HINWEIS_MAX) return namen.join(', ');
+    return `${namen.slice(0, DIFFERENZ_HINWEIS_MAX).join(', ')} u. a.`;
+}
+
+/**
  * Calculates the subtotal for a section's children.
  */
 export function calculateSectionSubtotal(section: DocBlock): number {
