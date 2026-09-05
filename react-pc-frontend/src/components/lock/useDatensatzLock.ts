@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * Verwaltet das Soft-Lock fuer einen einzelnen sperrbaren Datensatz
  * (Ausgangs-/Eingangsbeleg) -- der fuenfte der fuenf wiederverwendbaren
  * Frontend-Bausteine aus der Spec (Issue #82). Verallgemeinerte Nachfolge-
- * Fassung von useDocumentLock (siehe src/components/useDocumentLock.ts, der
- * alte Hook wird spaeter als Ganzes geloescht) -- gleiche Netzwerk-Mechanik
+ * Fassung des frueheren useDocumentLock (in Abschnitt 8 geloescht) -- gleiche
+ * Netzwerk-Mechanik
  * (acquire beim Mount, Heartbeat-Intervall, Freigabe bei "pagehide" und beim
  * Unmount mit keepalive), aber auf die neue, verallgemeinerte Route
  * /api/datensatz-locks/{typ}/{id}/... und den Typ 'AUSGANG' | 'EINGANG'

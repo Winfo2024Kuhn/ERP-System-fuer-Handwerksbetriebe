@@ -17,7 +17,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Endpoints fuer das Soft-Lock auf sperrbaren Datensaetzen (siehe {@link SperrbarerTyp}).
- * Verallgemeinerte Nachfolge-Route von {@link DokumentLockController}, die
+ * Verallgemeinerte Nachfolge-Route des frueheren {@code DokumentLockController} (geloescht), die
  * nicht mehr nur Geschaeftsdokumente, sondern beliebige sperrbare Typen bedient.
  *
  *   POST   /api/datensatz-locks/{typ}/{id}/acquire    — Lock erwerben oder uebernehmen

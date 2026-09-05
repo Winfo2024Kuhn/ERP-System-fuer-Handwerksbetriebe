@@ -1331,6 +1331,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 });
                 if (res.ok) {
                     const created = await res.json();
+                    // Reihenfolge nicht tauschen: setDokument(created) muss VOR
+                    // syncDocumentIdInUrl(created.id) stehen und beide im selben React-Batch
+                    // landen. Der Lade-Effekt prueft dokument?.id === dokumentId, um beim
+                    // Prop-Wechsel undefined -> neue Id NICHT neu zu laden (sonst Zustand weg,
+                    // siehe 6a Nachbesserung 1). Steht die URL-Id vor dem Dokument im State,
+                    // greift der Guard nicht (Code-Review 6, 2. Durchgang).
                     setDokument(created);
                     setDokumentNummer(created.dokumentNummer);
                     syncDocumentIdInUrl(created.id);

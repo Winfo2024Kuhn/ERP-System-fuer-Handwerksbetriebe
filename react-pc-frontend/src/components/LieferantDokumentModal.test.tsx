@@ -304,9 +304,15 @@ describe('LieferantDokumentModal', () => {
             expect(await screen.findByRole('alert')).toHaveTextContent(
                 'Sperre konnte nicht geholt werden — bitte neu laden.'
             );
-            // Derselbe Wortlaut kommt zusaetzlich als Toast -- also zweimal im Dokument.
+            // Derselbe Wortlaut steht im eingeschwungenen Zustand DREIMAL im
+            // Dokument: rotes Band, Toast, und der sr-only-Span, den
+            // BearbeitenLeiste fuer aria-describedby des deaktivierten Knopfs
+            // rendert (bearbeitenGesperrtGrund, seit Task 7d). Die fruehere
+            // Zusicherung auf zwei ging nur durch, wenn waitFor VOR dem
+            // Toast-Commit abtastete -- ein echter Wackler, kein Zufall
+            // (Code-Review 7-2/8-1: 3 von 6 Laeufen rot).
             await waitFor(() =>
-                expect(screen.getAllByText('Sperre konnte nicht geholt werden — bitte neu laden.')).toHaveLength(2)
+                expect(screen.getAllByText('Sperre konnte nicht geholt werden — bitte neu laden.')).toHaveLength(3)
             );
             const bearbeiten = screen.getByRole('button', { name: 'Bearbeiten' });
             expect(bearbeiten).toBeDisabled();

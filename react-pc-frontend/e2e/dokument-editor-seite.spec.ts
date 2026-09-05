@@ -14,8 +14,9 @@ import { stubbeDokumentEditorApi, stubbeWindowClose, BEISPIEL_DOKUMENT } from '.
  * Wiederverwendet `stubbeDokumentEditorApi` aus e2e/hilfen/dokument-editor.ts
  * fuer alles, was der Editor selbst braucht (Dokument, Firma, Vorlagen, PDF-
  * Vorschau) -- NUR gelesen, nicht veraendert. Die (neuen) Datensatz-Lock-
- * Routen stubbt diese Datei selbst, weil die geteilte Hilfsdatei noch die
- * ALTEN /api/dokument-locks/-Pfade bedient (das aeltere Seiten-Lock der
+ * Routen stubbt diese Datei selbst (die geteilte Hilfsdatei bedient sie seit
+ * Abschnitt 8 ebenfalls; hier bleiben die eigenen Stubs, weil sie je Fall
+ * andere Antworten geben -- 200, 409, 500) (das Seiten-Lock der
  * anderen Spec, dokument-editor-tab-schliessen.spec.ts, die bewusst nicht
  * Teil dieses Tasks ist).
  *

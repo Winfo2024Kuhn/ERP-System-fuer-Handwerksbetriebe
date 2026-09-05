@@ -80,21 +80,29 @@ describe('useDatensatzLock', () => {
         // status!=='acquired'" jetzt global ueber JEDEN aufgezeichneten
         // Commit ALLER Hook-Tests durchsetzen (siehe useUeberwachterDatensatzLock
         // oben), nicht nur an den vom Kettentest manuell geprueften Stellen.
-        for (const zustand of beobachteteZustaende) {
-            if (zustand.status !== 'acquired') {
-                expect(zustand.modus).not.toBe('bearbeiten');
+        //
+        // Abschnitt 8-2: Pruefung und Aufraeumen sind getrennt. Schlaegt die
+        // Invariante an, MUSS das Aufraeumen trotzdem laufen -- sonst laufen
+        // alle folgenden Tests unter geleakten Fake-Timern und Mocks, und aus
+        // einem echten Fehler werden zweiundzwanzig (so beim Code-Review 7-2/8-1
+        // gemessen: 1 kaputt, 21 Folgeschaeden als "Test timed out").
+        try {
+            for (const zustand of beobachteteZustaende) {
+                if (zustand.status !== 'acquired') {
+                    expect(zustand.modus).not.toBe('bearbeiten');
+                }
             }
+        } finally {
+            beobachteteZustaende.length = 0;
+            vi.restoreAllMocks();
+            // Sicherheitsnetz: wenn ein Test mit vi.useFakeTimers() vorzeitig
+            // (z.B. durch eine fehlschlagende Assertion) abbricht, bevor er
+            // vi.useRealTimers() erreicht, wuerden sonst ALLE nachfolgenden
+            // Tests unbemerkt unter Fake-Timern laufen und mit einem
+            // undurchsichtigen "Test timed out" statt einem echten Assertion-
+            // Fehler scheitern.
+            vi.useRealTimers();
         }
-        beobachteteZustaende.length = 0;
-
-        vi.restoreAllMocks();
-        // Sicherheitsnetz: wenn ein Test mit vi.useFakeTimers() vorzeitig
-        // (z.B. durch eine fehlschlagende Assertion) abbricht, bevor er
-        // vi.useRealTimers() erreicht, wuerden sonst ALLE nachfolgenden
-        // Tests unbemerkt unter Fake-Timern laufen und mit einem
-        // undurchsichtigen "Test timed out" statt einem echten Assertion-
-        // Fehler scheitern.
-        vi.useRealTimers();
     });
 
     describe('Mount / Acquire', () => {
