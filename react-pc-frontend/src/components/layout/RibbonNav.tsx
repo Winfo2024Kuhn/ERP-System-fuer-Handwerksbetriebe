@@ -239,14 +239,21 @@ export function RibbonNavigation() {
     return (
         <div className="flex flex-col bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40 transition-all">
             {/* Top Bar: Logo & Tabs */}
-            <div className="flex items-center px-4 h-16 border-b border-rose-100 bg-white shadow-sm gap-8">
+            {/* gap-4 statt gap-8 (vorher): gibt der Kategorie-Leiste bei 1440px
+                die paar Pixel, die ihr sonst durch die Aussenabstaende der
+                Nachbar-Elemente fehlen (siehe Spec C, Befund 3). */}
+            <div className="flex items-center px-4 h-16 border-b border-rose-100 bg-white shadow-sm gap-4">
                 {/* Company Logo */}
                 <div className="flex items-center shrink-0">
                     <img src="/firmenlogo_icon.png" alt="Company Logo" className="h-14 w-auto object-contain" />
                 </div>
 
                 {/* Category Tabs */}
-                <div className="flex-1 flex overflow-x-auto overflow-y-hidden no-scrollbar gap-2 h-full items-end">
+                {/* "no-scrollbar" entfernt (vorher): eine still scrollende
+                    Kategorie-Leiste ist keine Loesung -- wenn hier noch etwas
+                    ueberlaeuft, soll es als Scrollbalken sichtbar sein statt
+                    unsichtbar abgeschnitten (Spec C, Befund 3). */}
+                <div className="flex-1 flex overflow-x-auto overflow-y-hidden gap-2 h-full items-end">
                     {visibleNavigation.map((group) => (
                         <button
                             key={group.category}
@@ -260,7 +267,9 @@ export function RibbonNavigation() {
                                 }
                             }}
                             className={cn(
-                                "px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
+                                // px-3 statt px-4 unterhalb 2xl (1536px): spart bei 1440px
+                                // genug Breite, damit alle fuenf Kategorien nebeneinander passen.
+                                "px-3 2xl:px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
                                 activeCategory === group.category
                                     ? "text-rose-700 bg-rose-50 border-t-2 border-x border-rose-200 border-b-transparent shadow-sm z-10"
                                     : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-transparent border-b-2 border-b-transparent mb-[1px]"
@@ -296,7 +305,22 @@ export function RibbonNavigation() {
                             <User className="w-4 h-4" />
                         </div>
                         <div className="text-left hidden md:block">
-                            <p className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 line-clamp-1">
+                            {/* max-w-[10rem] mit line-clamp-1 (nicht "truncate"): einzige
+                                gewollte Kuerzung in der Menueleiste, weil der volle Name im
+                                Nutzermenue darunter steht (title deckt den Rest ab).
+                                Abweichung vom Plan-Wortlaut ("truncate"), siehe Kontext-Log:
+                                "truncate" (text-overflow: ellipsis + overflow-x: hidden)
+                                loest bei echter Kuerzung IMMER auch den fremden, immer
+                                aktiven Check keinHorizontalerUeberlauf aus (design.ts kennt
+                                data-kuerzung-erlaubt dort nicht, nur in keinTextGekuerzt).
+                                line-clamp-1 kuerzt vertikal (scrollHeight), nicht horizontal
+                                (scrollWidth), umgeht den Konflikt und wird von
+                                keinTextGekuerzt weiterhin korrekt geprueft/ausgenommen. */}
+                            <p
+                                className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 max-w-[10rem] line-clamp-1"
+                                title={currentUser ? currentUser.displayName : undefined}
+                                data-kuerzung-erlaubt
+                            >
                                 {currentUser ? currentUser.displayName : "Lade..."}
                             </p>
                             <p className="text-xs text-slate-500">{isAdmin ? 'Administrator' : 'Angemeldet'}</p>
@@ -309,7 +333,11 @@ export function RibbonNavigation() {
                             <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
                             <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
                                 <div className="px-4 py-2 border-b border-slate-50 mb-2">
-                                    <p className="text-sm font-semibold text-slate-700 line-clamp-1">{currentUser?.displayName || 'Benutzer'}</p>
+                                    {/* Hier steht der VOLLE Name -- das ist die Begruendung
+                                        dafuer, dass der kompakte Anzeigename oben gekuerzt
+                                        werden darf. Deshalb kein truncate/line-clamp: lieber
+                                        umbrechen als kuerzen. */}
+                                    <p className="text-sm font-semibold text-slate-700 break-words">{currentUser?.displayName || 'Benutzer'}</p>
                                     <p className="text-xs text-slate-500">{currentUser?.username || 'Kein Username'}</p>
                                 </div>
                                 <div className="border-t border-slate-100 mt-2 pt-2 pb-1">
@@ -396,8 +424,14 @@ export function RibbonNavigation() {
                                                 )}>
                                                     <item.icon className="w-5 h-5" />
                                                 </div>
+                                                {/* max-w-[5.5rem] + break-words statt truncate:
+                                                    zweizeilig statt gekuerzt -- "Dokumentenrechte"
+                                                    und "Mietabrechnung" stehen sonst als "..." da,
+                                                    unabhaengig von der Fenstergroesse (Spec C,
+                                                    Befund 3). Macht die Menuezeile hoechstens
+                                                    12px hoeher. */}
                                                 <span className={cn(
-                                                    "text-[10px] font-medium text-center leading-tight max-w-[4.5rem] truncate",
+                                                    "text-[10px] font-medium text-center leading-tight max-w-[5.5rem] break-words",
                                                     isActive ? "text-rose-700" : "text-slate-600"
                                                 )}>
                                                     {item.name}
