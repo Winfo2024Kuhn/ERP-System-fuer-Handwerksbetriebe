@@ -119,6 +119,11 @@ test.describe('DocumentEditorPage - Sperr-Fundament', () => {
         await expect(page.getByText('Sie lesen nur mit.')).toBeVisible();
         // Kein Bearbeiten-Zugriff mehr auf die Rechnungsadresse -- Editor ist readOnly.
         await expect(page.getByTitle('Rechnungsadresse für dieses Dokument bearbeiten')).toHaveCount(0);
+        // Gegenprobe zu "gebuchte Rechnung zeigt das Gebucht-Badge" unten
+        // (Task 8c): das Stub-Dokument ist NICHT gebucht -- kein Badge, obwohl
+        // der Editor auch hier readOnly ist (isLocked greift bereits durch das
+        // eigene "Fertig").
+        await expect(page.getByText('Gebucht', { exact: true })).toHaveCount(0);
 
         await designPruefung(page, testInfo, 'editor-seite-lesen', { primaerAktion: bearbeiten });
 
@@ -136,6 +141,9 @@ test.describe('DocumentEditorPage - Sperr-Fundament', () => {
         await expect(page.getByText(HALTER_NAME)).toBeVisible();
         await expect(page.getByText(/bearbeitet das gerade/)).toBeVisible();
         await expect(page.getByTitle('Rechnungsadresse für dieses Dokument bearbeiten')).toHaveCount(0);
+        // Gegenprobe (Task 8c): Fremdsperre ist nicht dasselbe wie gebucht --
+        // kein "Gebucht"-Badge, obwohl der Editor ebenfalls readOnly ist.
+        await expect(page.getByText('Gebucht', { exact: true })).toHaveCount(0);
 
         const bearbeiten = page.getByRole('button', { name: 'Bearbeiten' });
         await expect(bearbeiten).toBeEnabled();
@@ -156,8 +164,48 @@ test.describe('DocumentEditorPage - Sperr-Fundament', () => {
         const bearbeiten = page.getByRole('button', { name: 'Bearbeiten' });
         await expect(bearbeiten).toBeDisabled();
         await expect(bearbeiten).toHaveAttribute('title', LOCK_FEHLER_TEXT);
+        // Gegenprobe (Task 8c): ein Sperrfehler ist nicht dasselbe wie
+        // gebucht -- kein "Gebucht"-Badge.
+        await expect(page.getByText('Gebucht', { exact: true })).toHaveCount(0);
 
         await designPruefung(page, testInfo, 'editor-seite-fehler', { primaerAktion: bearbeiten });
+    });
+
+    test('gebuchte Rechnung zeigt das "Gebucht"-Badge (Lucide Lock, Text "Gebucht") -- bisher nur ueber Unit-Tests belegt', async ({ page }, testInfo) => {
+        // Design-Review Abschnitt 7-2/8-1, Hinweis: die Abwesenheit des Badges
+        // ist ueber die vier Zustaende oben belegt, die Anwesenheit bisher nur
+        // per Unit-Test (document-editor/index.test.tsx). Ueberschreibt die
+        // GET-Antwort NACH stubbeDokumentEditorApi -- Playwright prueft zuletzt
+        // registrierte Routen zuerst, dieser Stub gewinnt also gegen den
+        // generischen aus der Hilfsdatei, ohne diese anzufassen.
+        //
+        // Lock bleibt 'frei' wie in "oeffnet mit freiem Lock editierbar" --
+        // "gebucht" ist eine Eigenschaft des DOKUMENTS (istGebuchteRechnung in
+        // document-editor/index.tsx), unabhaengig vom Datensatz-Lock der Seite.
+        // Die Seiten-Leiste zeigt darum weiterhin "Fertig" (die Seite HAELT
+        // das Lock); der eingebettete Editor selbst wird durch das Dokument
+        // schreibgeschuetzt (kein Zugriff auf die Rechnungsadresse, wie bei
+        // "Sie lesen nur mit." -- nur eben wegen "gebucht", nicht wegen des
+        // Locks).
+        await stubbeDokumentEditorApi(page);
+        await stubbeDatensatzLock(page, 'frei');
+        await page.route('**/api/ausgangs-dokumente/1', async route => {
+            if (route.request().method() !== 'GET') return route.fulfill({ status: 404, body: '' });
+            return json(route, { ...BEISPIEL_DOKUMENT, gebucht: true });
+        });
+        await oeffneSeite(page);
+
+        const badge = page.getByText('Gebucht', { exact: true });
+        await expect(badge).toBeVisible();
+        await expect(badge).toHaveClass(/bg-amber-50/);
+        await expect(badge).toHaveClass(/text-amber-700/);
+        await expect(badge.locator('svg.lucide-lock')).toHaveCount(1);
+        await expect(page.getByTitle('Rechnungsadresse für dieses Dokument bearbeiten')).toHaveCount(0);
+
+        const fertig = page.getByRole('button', { name: 'Fertig' });
+        await expect(fertig).toBeVisible();
+
+        await designPruefung(page, testInfo, 'editor-seite-gebucht', { primaerAktion: fertig });
     });
 
     test('X-Button-Ablauf ueber die echte Route: speichern -> Sperre freigeben -> Tab-Schliessen-Hinweis', async ({ page }, testInfo) => {
