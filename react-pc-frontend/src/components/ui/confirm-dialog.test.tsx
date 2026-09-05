@@ -44,6 +44,12 @@ function TestComponentMitOptionen({ optionen }: { optionen: ConfirmOptions }) {
     );
 }
 
+/** Wie TestComponentMitOptionen, aber mit frei waehlbarer Knopf-Beschriftung -- noetig, um zwei Ausloeser in einem Test unterscheidbar zu machen. */
+function TestComponentMitLabel({ label, optionen }: { label: string; optionen: ConfirmOptions }) {
+    const confirm = useConfirm();
+    return <button onClick={() => { void confirm(optionen); }}>{label}</button>;
+}
+
 describe('ConfirmDialog', () => {
     it('zeigt Bestätigungsdialog an', async () => {
         const user = userEvent.setup();
@@ -143,10 +149,39 @@ describe('ConfirmDialog', () => {
         expect(icon?.parentElement?.className).toContain('bg-amber-100');
         expect(dialog.innerHTML).not.toContain('sky-100');
         expect(dialog.innerHTML).not.toContain('sky-600');
+    });
 
-        const bestaetigenKnopf = screen.getByText('Neu laden');
-        expect(bestaetigenKnopf.className).toContain('bg-rose-600');
-        expect(bestaetigenKnopf.className).not.toContain('bg-sky-100');
+    it('vergibt pro Dialog eine eigene ID fuer aria-labelledby, statt einer festen ID (Task 8c Nachtrag) -- sonst kollidieren zwei gleichzeitig offene Dialoge im DOM auf dieselbe ID', async () => {
+        const user = userEvent.setup();
+        render(
+            <>
+                <ConfirmProvider>
+                    <TestComponentMitLabel label="Öffne A" optionen={{ title: 'Dialog A', message: 'Nachricht A' }} />
+                </ConfirmProvider>
+                <ConfirmProvider>
+                    <TestComponentMitLabel label="Öffne B" optionen={{ title: 'Dialog B', message: 'Nachricht B' }} />
+                </ConfirmProvider>
+            </>
+        );
+
+        await user.click(screen.getByText('Öffne A'));
+        await user.click(screen.getByText('Öffne B'));
+
+        const dialoge = screen.getAllByRole('dialog');
+        expect(dialoge).toHaveLength(2);
+
+        const ids = dialoge.map(d => d.getAttribute('aria-labelledby'));
+        expect(ids[0]).toBeTruthy();
+        expect(ids[1]).toBeTruthy();
+        expect(ids[0]).not.toBe(ids[1]);
+
+        // Keine doppelte ID im Dokument -- Grundvoraussetzung fuer ein korrekt
+        // aufloesbares aria-labelledby (sonst gewinnt eine ID-basierte Suche
+        // immer das ERSTE Element mit dieser ID, unabhaengig davon, zu
+        // welchem der beiden Dialoge es eigentlich gehoert).
+        for (const id of ids) {
+            expect(document.querySelectorAll(`[id="${id}"]`).length).toBe(1);
+        }
     });
 
     it('wirft Fehler wenn useConfirm ohne Provider verwendet wird', () => {

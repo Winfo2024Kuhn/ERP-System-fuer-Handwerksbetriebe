@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useId } from 'react';
 import { AlertTriangle, Trash2, HelpCircle } from 'lucide-react';
 
 // --- Types ---
@@ -108,7 +108,18 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     // unten rechts stehen. title ist optional (ConfirmOptions) -- ohne Titel
     // gibt es keine ID zum Verlinken, darum aria-label mit der Nachricht als
     // Ersatz, statt den Dialog unbenannt zu lassen.
-    const titelId = 'confirm-dialog-titel';
+    //
+    // Task 8c Nachtrag (Code-Review): titelId war eine feste String-Literal-ID
+    // ('confirm-dialog-titel') -- stehen zwei ConfirmProvider gleichzeitig im
+    // DOM (z.B. zwei unabhaengige Bestaetigungen auf derselben Seite), tragen
+    // beide h3-Elemente dieselbe id. Eine ID-basierte Suche/Zuordnung
+    // (aria-labelledby, aber auch getElementById) trifft dann immer nur das
+    // ERSTE Element im Dokument, unabhaengig davon, zu welchem Dialog es
+    // eigentlich gehoert -- ein Screenreader wuerde dem zweiten Dialog den
+    // Titel des ersten vorlesen. useId() liefert pro Komponenten-INSTANZ eine
+    // eindeutige, stabile ID.
+    const generierteId = useId();
+    const titelId = `confirm-dialog-titel-${generierteId}`;
 
     return (
         <ConfirmContext.Provider value={{ confirm }}>
