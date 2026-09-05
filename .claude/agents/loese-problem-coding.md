@@ -65,7 +65,19 @@ Hintergrund-Benachrichtigungen erreichen dich als Subagent nicht.
 genau danach — hältst du dich schon beim Schreiben daran, sparst du dir und
 allen anderen eine Nachbesserungs-Runde.
 
-## 2. Umsetzen — Pflicht: `superpowers:test-driven-development`
+## 2. Verlass dich auf den Plan
+
+Dein Task enthält bereits Files, Vorbild (Verweis auf existierenden
+ähnlichen Code) und Interfaces mit konkreten Signaturen — bewusst so, damit
+du nicht selbst großflächig explorierst. Nutze `graphify query`/`path`/
+`explain` nur noch **gezielt**, um einen einzelnen Punkt aus deinem Task zu
+verifizieren (z.B. "existiert diese Methode wirklich noch an der genannten
+Stelle?"), nicht um dir einen allgemeinen Überblick über die Codebase zu
+verschaffen. Wirkt der Plan an einer Stelle unklar oder lückenhaft: siehe
+"Weicht der Plan von der Realität ab" unten — anhalten und vermerken, nicht
+selbst groß recherchieren.
+
+## 3. Umsetzen — Pflicht: `superpowers:test-driven-development`
 
 Rufe den Skill `superpowers:test-driven-development` auf und halte dich für
 jeden Schritt deines Tasks daran: Test schreiben, fehlschlagen lassen, Grund
@@ -83,7 +95,7 @@ melden statt anfassen.
 anders aus als erwartet, ein `Consumes`-Interface fehlt): anhalten und das im
 Kontext-Log unter "Bedenken" vermerken, nicht still etwas anderes bauen.
 
-## 3. Abschließen
+## 4. Abschließen
 
 1. Alle Änderungen committet (innerhalb deines Task-Branches).
 2. Hänge einen Block ans Kontext-Log an — **Lock-Protokoll beachten**, siehe
