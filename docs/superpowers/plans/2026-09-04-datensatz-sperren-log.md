@@ -2662,3 +2662,223 @@ Dazu 6 eigene Aufnahmen (Wegwerf-Specs, danach gelöscht, Worktree ist sauber):
 - Aus früheren Abschnitten offen und unverändert (Restpunkte): zwei rosa Knöpfe im
   Lesen-Modus des Modals, `Nicht speichern` zweizeilig, PDF-Spalte frisst auf 14 Zoll zwei
   Drittel des Modals, Scroll-Kante im Formular. **Nichts davon hat sich verschlechtert.**
+
+## Abschnitt 8-1 — Task 8a (Coding-Agent)
+
+Zeit: 2026-09-04T23:57:23Z
+Branch: lock/task-8a-toast-confirm-hook
+Commit(s): d877557b (toast Position), d185a243 (confirm-dialog role=dialog), fedd90b3 (useKonfliktMeldung Variante+toter Code), b531b419 (useDatensatzLock pagehide-Fix+globale Invariante), bc887419 (LieferantDokumentModal Modal-Regel), 02376c82 (e2e-Spec)
+Status: fertig
+
+Was gemacht wurde:
+- Punkt 1 (Toast-Position): toast.tsx -- Container wandert bei offenem
+  Dialog jetzt nach top-6 left-6 statt top-6 right-6 (unten weiterhin
+  bottom-6 right-6). Grund: 4px Luft zum Schliessen-X reichte nicht, ein
+  zweizeiliger Toast ueberdeckte X und "Vorschau aktiv"; oben links traegt
+  kein Modal im Projekt eine Aktion, unabhaengig von der Textlaenge.
+  Mutationsprobe: dialogOffen ? 'top-6 right-6' : ... -> beide
+  designPruefung-Faelle in der neuen E2E-Spec rot (toHaveClass(/left-6/)
+  failed, "unexpected value ... top-6 right-6") auf pc-14zoll UND
+  pc-monitor; Quellstand danach wieder byte-identisch.
+- Punkt 2 (tote Toast-Tests): toast.test.tsx -- zwei neue Tests ergaenzt,
+  die den Dialog ERST NACH dem Mount oeffnen/schliessen (Container wandert
+  bottom-6 -> top-6 -> bottom-6 per MutationObserver, nicht nur per
+  useState-Initializer) sowie ein Test fuer observer.disconnect() beim
+  Unmount. Mutationsprobe: kompletten Observer-useEffect entfernt -> 3
+  Tests rot (die 2 neuen plus ueberraschend auch der bestehende
+  "dialogOffen=true beim Mount"-Test, weil React zum Zeitpunkt des
+  useState-Initializers das DOM noch nicht committed hat -- die
+  urspruengliche Erkennung lief tatsaechlich ueber den synchronen
+  aktualisieren()-Aufruf im Effekt, nicht ueber den Initializer selbst).
+  Nach Wiederherstellung alle 10 Tests gruen.
+- Punkt 3 (confirm-dialog role="dialog"): confirm-dialog.tsx -- Panel
+  traegt jetzt role="dialog", aria-modal="true", aria-labelledby auf den
+  Titel (Fallback aria-label mit der Nachricht, falls kein Titel gesetzt
+  ist -- title ist in ConfirmOptions optional, auch wenn alle 54
+  bestehenden confirm()-Aufrufe im Projekt einen mitgeben). Roter Test
+  zuerst: getByRole('dialog', { name: 'Löschen?' }) fand nichts.
+  Mutationsprobe: role/aria-Attribute entfernt -> Unit-Test UND beide
+  Groessen der neuen E2E-Spec ("Nicht gespeichert" nicht per
+  getByRole('dialog', ...) auffindbar) rot.
+- Punkt 4 (useKonfliktMeldung): variant: 'warning' (amber-Knopf) auf
+  variant: 'info' umgestellt (liefert laut confirmBtnMap den geforderten
+  rose-Knopf) -- confirm-dialog.tsx bietet keine eigene "amber-Icon +
+  rose-Knopf"-Kombination wie UnsavedChangesModal, 'info' trifft die
+  Kern-Vorgabe (gefuellte Primaeraktion rose) ohne die anderen 53
+  confirm()-Aufrufe anzufassen. Toter Fallback entfernt: eigeneMeldung
+  ist ein Template-String mit `bezeichnung` und damit nie leer,
+  body?.message/der dritte generische Text konnten nie greifen -- der
+  komplette res.json()-Parse-Block samt ApiErrorBody-Interface entfernt,
+  Kommentar auf den tatsaechlichen Zweck (Server-Feld bewusst NICHT lesen)
+  korrigiert. Roter Test: "Neu laden"-Knopf hatte bg-amber-500 statt
+  bg-rose-600. Mutationsprobe: variant zurueck auf 'warning' -> Test rot
+  (bg-amber-500 statt erwartetem bg-rose-600).
+- Punkt 5 (useDatensatzLock releaseKeepalive): releaseKeepalive() zieht
+  jetzt setStatus('idle')/setHalter(null)/setModus('lesen')/
+  setVerbindungWeg(false) nach, nicht mehr nur heldRef.current=false.
+  Zwei rote Tests zuerst: (a) nach pagehide blieb modus==='bearbeiten'/
+  status==='acquired' stehen (erwartet: 'lesen'/'idle',
+  kannBearbeiten===true); (b) nach pagehide+pageshow (simulierte
+  bfcache-Rueckkehr) loeste ein Klick auf "Bearbeiten" kein frisches Acquire
+  aus, weil modus faelschlich schon "bearbeiten" war. Mutationsprobe: Fix
+  entfernt -> beide Tests rot mit exakt dieser Diskrepanz. Zusaetzlich die
+  bisher nur manuell im Kettentest aufgerufene Invariante
+  ("modus='bearbeiten' nie bei status!=='acquired'") als afterEach ueber
+  ALLE 37 Hook-Tests gelegt (Wrapper-Hook useUeberwachterDatensatzLock
+  zeichnet nach jedem Commit auf). Sanity-Mutationsprobe (zusaetzlich zur
+  geforderten): den urspruenglichen Task-7b-Fix im Heartbeat-409-Zweig
+  (setModus('lesen')) separat entfernt -> 22 von 37 Tests liefen rot,
+  bestaetigt dass die globale Invariante auch AUSSERHALB der eigenen
+  Nachbesserung greift. pageshow bekam bewusst KEINEN eigenen Listener im
+  Hook -- der normale onBearbeiten()-Pfad (wie nach "Fertig") reicht,
+  sobald pagehide den Zustand korrekt zuruecksetzt; automatisches
+  Nachladen ohne Klick ist nicht Teil der Spec.
+- Punkt 6 (LieferantDokumentModal-Regel): zeigeNurLesenHinweis von
+  modus === "lesen" && status !== "locked-by-other" auf
+  status === "idle" umgestellt -- dieselbe Regel wie auf der
+  Dokument-Editor-Seite (DocumentEditorPage.tsx, nicht angefasst, nur
+  gelesen). Zwei rote Tests zuerst: "Sie lesen nur mit." erschien
+  faelschlich waehrend loading UND error. Mutationsprobe: alte Regel
+  wiederhergestellt -> "bei Fehler KEINEN Hinweis"-Test rot. Bestehende
+  e2e/lieferant-dokument-modal.spec.ts (8 Tests, beide Groessen) noch
+  komplett gruen -- keine ihrer Zusicherungen haengt an der alten Regel,
+  daher unangetastet gelassen wie im Auftrag vorgesehen.
+- Neue Spec e2e/toast-bei-dialog.spec.ts (2 Tests x 2 Groessen = 4, alle
+  gruen auf E2E_PORT=5181): (1) zweizeiliger Fehler-Toast bei offenem
+  LieferantDokumentModal -- elementFromPoint in der Mitte des
+  Schliessen-X (per aria-label) UND von "Vorschau aktiv" (per Textinhalt)
+  trifft den jeweiligen Knopf, nicht den Toast; (2) Versionskonflikt --
+  Confirm-Dialog "Nicht gespeichert" ist per getByRole('dialog', ...)
+  auffindbar, aria-modal="true", Toast-Container steht top-6 left-6.
+  Screenshots: test-results/design/toast-bei-dialog-zweizeilig--pc-14zoll.png,
+  --pc-monitor.png, toast-bei-dialog-versionskonflikt--pc-14zoll.png,
+  --pc-monitor.png (angeschaut: Toast oben links sauber getrennt vom
+  Schliessen-X/"Vorschau aktiv", "Neu laden" im Confirm sichtbar rose statt
+  amber -- formale Design-Beurteilung bleibt beim Design-Reviewer).
+- Gates: npm run lint 0 Fehler/1 vorbestehende Warnung
+  (BelegeKasseEditor.tsx:1204), npm run build gruen,
+  src/main/resources/static/ nach jedem Build zurueckgesetzt. Eigene
+  Testdateien (86 Vitest-Tests ueber 5 Dateien) gruen, eigene E2E-Spec (4
+  Tests) gruen, bestehende lieferant-dokument-modal.spec.ts (8 Tests) zur
+  Kontrolle mitgelaufen und weiterhin gruen.
+
+Bedenken / Abweichungen vom Plan:
+- Punkt 1/E2E: kein Ablauf in LieferantDokumentModal.tsx loest ueber echte
+  Nutzeraktionen einen LAENGEREN, vom Stub gesteuerten Toast-Text aus --
+  LOCK_FEHLER_TEXT und "Speichern fehlgeschlagen" sind feste, kurze Strings
+  (die Produktionslogik liest an keiner Fehler-Stelle body.message in den
+  Toast ein). Um den vom Design-Reviewer beschriebenen zweizeiligen Fall
+  trotzdem mit ECHTEM Layout/ECHTEN CSS-Klassen nachzustellen, verlaengert
+  der Test den Text des bereits ECHT ausgeloesten Toasts direkt im
+  gerenderten DOM (page.evaluate, kein Eingriff in React-State/
+  Produktionscode) -- dokumentiert im Datei-Kommentar der Spec. Alternative
+  waere eine Erweiterung der Fehlermeldung in handleSave() um den
+  Server-Text gewesen, das ginge aber ueber die 6 benannten Befunde hinaus
+  und wurde bewusst nicht gemacht.
+- Punkt 3/E2E "Versionskonflikt"-Test isoliert confirm-dialogs eigenen
+  role="dialog"-Beitrag NICHT vollstaendig: das umgebende
+  LieferantDokumentModal traegt selbst schon role="dialog", die
+  Toast-Positionierung waere in diesem Ablauf auch OHNE Punkt 3 korrekt.
+  Die echte Isolation (nur ein Confirm-Dialog, kein umgebendes Modal mit
+  role=dialog) liefert der Unit-Test in confirm-dialog.test.tsx
+  (getByRole('dialog', { name: 'Löschen?' }) direkt gegen ConfirmProvider
+  ohne umgebendes Modal) -- die E2E-Spec deckt stattdessen den
+  realistischen End-to-End-Ablauf ab (Confirm ist selbst per role=dialog
+  auffindbar, aria-modal gesetzt, "Neu laden" sichtbar rose).
+- Vorbestehende Flakiness (nicht Baustelle dieses Tasks, nicht angefasst):
+  LieferantDokumentModal.test.tsx > "zeigt Hinweis im Modal UND Toast"
+  schlaegt gelegentlich (~1 von 6 Laeufen, auch auf dem unveraenderten
+  Basisstand vor Task 8a reproduziert) mit "expected length 2 but got 3"
+  fehl -- vermutlich ein doppelt ausgeloester Toast durch einen
+  React-Effekt-Rand-Fall, unabhaengig von den hier gemachten Aenderungen.
+- useDatensatzLock.test.tsx: die Invariante wird jetzt als afterEach global
+  durchgesetzt; die urspruengliche, manuell aufgerufene
+  pruefeInvariante()-Stelle im Kettentest wurde bewusst NICHT entfernt
+  (dokumentiert exakt die Stelle, an der der Task-7b-Befund auftrat) --
+  beide Mechanismen laufen jetzt parallel, keine Ueberschneidung/Konflikt.
+
+## Abschnitt 7-2 — Task 7a Nachbesserung 1 (Coding-Agent)
+
+**Zeit:** 05.09.2026, ca. 01:15–02:05 Uhr (lokale Sessionzeit)
+**Branch:** `lock/task-7a-editor-seite` (Merge von `claude/eloquent-ramanujan-gz0w2t` @ `256b3e1d` vorab per `git merge --no-edit`, konfliktfrei)
+**Commits:**
+- `5425a8ca` — fix(dokument-editor): Gebucht-Badge, Schließen-Knopf-Label, Leiste-Layout (Nachbesserung 1, Abschnitt 7-2)
+- `13888ed6` — test(dokument-editor): Tests für Nachbesserung 1 (Gebucht-Badge, Leiste-Layout, useDatensatzLock)
+- `db735d7a` — docs(dokument-editor-seite): Kommentare von den Namen des alten Sperr-Hooks/-Modals gelöst
+
+**Status:** 🟢 fertig aus meiner Sicht — alle drei Befunde (2× 🔴, 3× 🟡) behoben, eigene Gates grün.
+
+### Befund 1 — "Gebucht" auf nicht gebuchtem Dokument
+
+**Roter Test zuerst** (`document-editor/index.test.tsx`, neue Describe `"Gebucht"-Badge`):
+- "zeigt 'Gebucht' NICHT bei Fremdsperre (readOnly=true)..." — vor dem Fix rot (`queryByText('Gebucht')` fand das Badge, weil es an `isLocked` hing).
+- "zeigt 'Gebucht' weiterhin für eine tatsächlich gebuchte Rechnung".
+- "zeigt 'Gebucht' NICHT für ein storniertes Dokument" — storniert trägt nur sein eigenes Badge.
+
+Fix: `document-editor/index.tsx` berechnet jetzt `istGebuchteRechnung = !!(dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ))` als eigene Variable (vorher inline in `isLocked`), gibt sie als neuen Prop `istGebucht` an `DocumentEditorHeader` weiter. `DocumentEditorHeader.tsx`: Badge-Bedingung von `isLocked` auf `istGebucht` umgestellt, handgemaltes Lock-`<svg>` durch Lucide `Lock` ersetzt (Design-System-Regel — Icon-Vorbild: `DokumentUebersichtEditor.tsx`/`DokumentVerlaufDrawer.tsx`, dieselbe Kombination "Gebucht" + `Lock`).
+
+**Mutationsprobe:** Badge-Bedingung testweise zurück auf `isLocked` gesetzt → beide Regressions-Tests (Fremdsperre, storniert) wieder rot — zurückgesetzt, grün.
+
+### Befund 2 — Warn-Dialog blockiert die Leiste nicht
+
+**Roter Test zuerst** (`e2e/dokument-editor-seite.spec.ts`, neuer Fall "Warn-Dialog blockiert die Bearbeiten-Leiste"): öffnet mit freiem Lock, ändert die Adresse, klickt X, misst `document.elementFromPoint` in der Mitte des "Fertig"-Knopfes bei offenem "Ungespeicherte Änderungen"-Dialog — muss `false` sein (Backdrop, nicht der Knopf).
+
+**Gewählter Layout-Weg** (wie vom Review vorgeschlagen): kein `transform` mehr auf dem Container um `<DocumentEditor>`. Stattdessen:
+- `DocumentEditorPage.tsx` misst die Höhe der eigenen Leiste per **Callback-Ref** (State statt `useRef`) + `ResizeObserver` und setzt sie als CSS Custom Property `--lock-leiste-hoehe` auf dem gemeinsamen Vorfahren (`style={{'--lock-leiste-hoehe': ...}}`).
+- `document-editor/index.tsx`: die beiden `fixed inset-0`-Wurzeln (Ladezustand + Hauptrendering) heißen jetzt `fixed inset-x-0 bottom-0 top-[var(--lock-leiste-hoehe,0px)]` — der Editor bleibt `position:fixed` relativ zum ECHTEN Viewport, seine eigenen Dialoge (`z-[70]`+) liegen also wieder über allem inkl. der Leiste. Ohne gesetzte Variable (jeder andere Verwender/Test) Fallback `0px` = bisheriges `inset-0`-Verhalten.
+
+**Zwei eigene rote Bugs unterwegs gefunden und behoben, bevor der Fix stand** (beide durch denselben Befund-2-Test aufgedeckt, nicht separat angefordert, aber notwendig, damit der rote Test überhaupt grün werden konnte):
+1. Erste Fassung nutzte `useRef` + `useEffect(..., [zeigeLeiste])` — `zeigeLeiste = hatId && !schliesstGerade` steht bei einem Dokument MIT Id schon VOR der Vollbild-Ladeanzeige auf `true` und ändert sich beim Übergang "Ladeanzeige weg, Leiste erscheint" nicht → der Messeffekt lief nie erneut, `--lock-leiste-hoehe` blieb bei `0px` hängen. Playwright zeigte dabei den Editor-Kopf direkt bei y=0, die Leiste komplett verdeckt (`Fertig` überlappte `E-Mail`/`PDF`). Fix: Callback-Ref (`setLeisteElement` direkt als `ref`), der garantiert genau dann feuert, wenn React den DOM-Knoten an-/abhängt.
+2. Nach dem Callback-Ref-Fix blieb ein zweiter, subtilerer Bug: der `ResizeObserver`-Callback maß `entries[0].contentRect.height` (34px, ohne `px-4 py-2.5`-Padding und `border-b`) statt der tatsächlichen, sichtbaren Höhe (55px per `getBoundingClientRect()`) — der Editor-Kopf ragte um die Differenz (21px) in die Leiste hinein, exakt sichtbar als "Fertig überlappt E-Mail/PDF" im automatischen Design-Check. Per Diagnose-Spec (ResizeObserver-Wrapper mit Logging, danach wieder gelöscht) nachgewiesen: `RO fired [34]` überschrieb den korrekten initialen Wert (55). Fix: `getBoundingClientRect()` durchgängig, auch im ResizeObserver-Callback.
+
+**Mutationsprobe:** `[transform:translateZ(0)]` testweise wieder auf den Editor-Container gesetzt → der neue Test wird rot (Klick auf die Adresse schon vorher blockiert, da die Leiste wieder alles verdeckt) — zurückgesetzt, grün, 12/12 in der eigenen Spec.
+
+### Befund 3 — Reihenfolge setSchliesstGerade/await
+
+Geprüft: `onLockFreigebenFuerSchliessen` hatte `setSchliesstGerade(true)` bereits VOR dem `await lock.freigeben()` (seit meinem ursprünglichen Fix in Abschnitt 7-1). Der Code war korrekt — aber **ungetestet in genau dieser Reihenfolge**: alle bisherigen Tests prüften nur den EINGESCHWUNGENEN Endzustand nach `waitFor(...)`, nicht das Verhalten UNMITTELBAR nach dem Klick.
+
+**Roter Test nachgezogen** (`DocumentEditorPage.test.tsx`, "blendet die Leiste SYNCHRON aus..."): `fireEvent.click(...)` in einem synchronen `act()`-Block (bewusst kein `userEvent.click`, das intern zusätzlich awaited), Assertion sofort danach, ohne `waitFor`. Zuerst mit der (unveränderten) korrekten Implementierung grün, dann per Mutationsprobe verifiziert: Reihenfolge testweise vertauscht (`await lock.freigeben(); setSchliesstGerade(true);`) → Test wird rot (`Fertig` war zum Zeitpunkt der Prüfung noch im DOM) — zurückgesetzt, grün. Damit ist die Reihenfolge jetzt tatsächlich abgesichert, nicht nur zufällig richtig.
+
+### Befund 4 — X-Knopf ohne aria-label
+
+`DocumentEditorHeader.tsx`: `aria-label="Editor schließen"` ergänzt. `index.test.tsx`s `xKnopf()`-Helfer von `container.querySelector('button')` (erster Button) auf `within(container).getByRole('button', { name: 'Editor schließen' })` umgestellt, Docstring aktualisiert. `e2e/dokument-editor-seite.spec.ts`s `xKnopf()` ebenso auf `page.getByRole('button', { name: 'Editor schließen' })` — die testid-Eingrenzung auf `dokument-editor-flaeche` (mein eigener Workaround aus Abschnitt 7-1 gegen die Mehrdeutigkeit mit der neuen Leiste) ist damit überflüssig geworden, da der Name jetzt eindeutig ist.
+
+### Befund 5 — index.test.tsx von useDocumentLock lösen
+
+`document-editor/index.test.tsx`: Import von `useDocumentLock` auf `useDatensatzLock` (`../lock/useDatensatzLock`) umgestellt. `SeiteMitAltemLock` → `SeiteMitSeitenLock` umbenannt, ruft jetzt `useDatensatzLock('AUSGANG', dokumentId)`. `mockFetchNeuesDokument()`: Acquire-/Heartbeat-Stubs von `/api/dokument-locks/AUSGANG/42/...` auf `/api/datensatz-locks/AUSGANG/42/...` umgestellt (PUT-409-Simulation unverändert — das ist ein Backend-Verhalten beim Speichern, unabhängig vom Lock-Hook-Typ). `lockAufrufe()`-Helfer vereinfacht (nur noch `/datensatz-locks/`). Alle Kommentare, die den alten Hook/die alte Route beim Namen nannten, umformuliert (auch dort, wo sie nur erklärend auf die Historie verwiesen — der Grep unten ist eine reine Textsuche und unterscheidet nicht zwischen Code und Prosa).
+
+**Mutationsprobe:** `useDatensatzLock('AUSGANG', dokumentId);`-Aufruf in `SeiteMitSeitenLock` testweise auskommentiert → "kann ein frisch angelegtes Dokument auch nach mehr als 90s noch speichern" wird rot (`expected false to be true` bei der Akquiriert-Prüfung) UND `npm run lint` meldet zusätzlich `'useDatensatzLock' is defined but never used` — zurückgesetzt, beides grün.
+
+**Grep-Ergebnis** (`grep -rn "useDocumentLock\|DocumentLockedModal\|dokument-locks" react-pc-frontend/src`), nach allen Fixes:
+```
+src/components/DocumentLockedModal.tsx:3:import type { DocumentLockHolder } from './useDocumentLock';
+src/components/DocumentLockedModal.tsx:5:interface DocumentLockedModalProps {
+src/components/DocumentLockedModal.tsx:15:export default function DocumentLockedModal({
+src/components/DocumentLockedModal.tsx:20:}: DocumentLockedModalProps) {
+src/components/LieferantDokumentModal.test.tsx:13: * GesperrtHinweis statt useDocumentLock/DocumentLockedModal). Fetch wird wie
+src/components/lock/GesperrtHinweis.tsx:26: * DocumentLockedModal ab.
+src/components/lock/useDatensatzLock.ts:7: * Fassung von useDocumentLock (siehe src/components/useDocumentLock.ts, der
+src/components/useDocumentLock.ts:58:export function useDocumentLock(
+src/components/useDocumentLock.ts:76:        const lockUrl = `/api/dokument-locks/${dokumentTyp}/${dokumentId}`;
+```
+Nur noch die beiden alten Dateien selbst (`DocumentLockedModal.tsx`, `useDocumentLock.ts`) plus drei reine Prosa-Kommentare in Dateien, die **nicht** in meiner Dateiliste dieser Runde stehen (`LieferantDokumentModal.test.tsx`, `GesperrtHinweis.tsx`, `useDatensatzLock.ts`) — siehe Bedenken.
+
+### Gates (nur eigene Dateien/eigene Specs, wie vorgegeben)
+
+- `npx vitest run src/components/document-editor/index.test.tsx src/pages/DocumentEditorPage.test.tsx src/components/lock/TabSchliessenHinweis.test.tsx` → **45/45 grün** (25 + 12 + 8). Ein einzelner Ausreißer ("hält die Reihenfolge speichern -> onLockFreigeben -> window.close ein", 5000ms-Timeout) trat einmal unter Systemlast auf (Hintergrund-Testlauf parallel) und war beim isolierten sowie beim erneuten kombinierten Lauf grün — kein Befund, siehe Bedenken.
+- `npm run lint` → **0 Fehler, genau die 1 vorbestehende Warnung** (`BelegeKasseEditor.tsx:1204`).
+- `npm run build` → grün, `src/main/resources/static/` danach zurückgesetzt.
+- `E2E_PORT=5178 npx playwright test e2e/dokument-editor-seite.spec.ts` → **12/12 grün** (6 Fälle × `pc-14zoll`/`pc-monitor`, neu: "Warn-Dialog blockiert die Bearbeiten-Leiste").
+- `E2E_PORT=5178 npx playwright test e2e/dokument-editor-tab-schliessen.spec.ts` (6a-Spec, wie vorgegeben mitgefahren, da Layout/Header berührt) → **6/6 grün** — dank des bereits gemergten Locator-Fixes (`256b3e1d`) unbeeinträchtigt von der neuen Leiste.
+- Beide Specs zusammen auf demselben Port → **18/18 grün**.
+
+### Screenshots (kurz selbst angeschaut)
+
+`react-pc-frontend/test-results/design/editor-seite-warn-dialog-blockiert-leiste--pc-14zoll.png` (+ `--pc-monitor`): der abgedunkelte Backdrop des Warn-Dialogs liegt jetzt sichtbar ÜBER der gesamten Leiste inklusive des "Fertig"-Knopfes (gedimmt, nicht klickbar) — genau der Soll-Zustand. `editor-seite-bearbeiten`/`-lesen`/`-gesperrt`/`-fehler` erneut angeschaut: Leiste und Editor-Kopf sitzen sauber übereinander, keine Lücke, kein Überlapp.
+
+### Bedenken / Abweichungen vom Plan
+
+1. **Drei verbleibende Grep-Treffer außerhalb meiner Dateiliste** (`LieferantDokumentModal.test.tsx`, `GesperrtHinweis.tsx`, `useDatensatzLock.ts`) — reine Kommentar-Erwähnungen des alten Hook-/Modal-Namens, keine Imports/Aufrufe. Nicht angefasst, da nicht in "Files für diese Runde". Blockieren Abschnitt 8 nicht (dort geht es um das LÖSCHEN der beiden alten Dateien selbst, nicht um Kommentar-Hygiene anderswo), aber falls der Nutzer/Reviewer eine wirklich lückenlose Grep-Stille über den ganzen Baum will, bräuchte es einen eigenen (trivialen) Nachtrag für genau diese drei Kommentarzeilen.
+2. **Layout-Fix ist umfangreicher als eine reine CSS-Zeile geworden** (Callback-Ref + `getBoundingClientRect()` statt `contentRect`) — beide Zusatzpunkte waren nicht im Auftrag genannt, aber ohne sie hätte der vorgeschlagene Weg selbst nicht funktioniert (siehe die zwei "unterwegs gefundenen" Bugs oben). Ausführlich im Code kommentiert, damit ein künftiger Leser nicht denselben Fehler wiederholt (insbesondere `contentRect` vs. `getBoundingClientRect()` ist eine leicht wiederholbare Falle).
+3. **Ein einzelner flakiger Testausreißer** unter Systemlast (siehe Gates) — kein Befund, mehrfach reproduzierbar grün, gehört zur bekannten Charakteristik dieser Testdatei (echte Timer, `userEvent`, viele schwere `DocumentEditor`-Mounts) und nicht zu dieser Nachbesserung.
+4. Sonst keine Abweichungen — alle fünf Punkte wie im Auftrag beschrieben umgesetzt.
