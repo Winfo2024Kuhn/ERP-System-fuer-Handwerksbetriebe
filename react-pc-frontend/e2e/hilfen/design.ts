@@ -117,6 +117,28 @@ export async function keinHorizontalerUeberlauf(page: Page): Promise<void> {
             return `${el.tagName.toLowerCase()}${klassen}`;
         };
 
+        // Nachbesserung 1 (Kontext-Log Abschnitt 1): Tailwinds ".sr-only"
+        // (position: absolute; width: 1px; height: 1px; overflow: hidden;
+        // clip: rect(0,0,0,0); ...) macht Text absichtlich fuer Screenreader
+        // lesbar und auf JEDER Groesse unsichtbar -- ein 1x1-Kasten kann
+        // nichts Sichtbares abschneiden, das ist kein Layoutfehler. Anders
+        // als bei "Breite 0" (siehe keinTextLaeuftUeber, Kennzahl-Kasten der
+        // Spec: 0px breit, aber 16px hoch UND per overflow:visible gar nicht
+        // abgeschnitten) zaehlt hier NUR das Muster "faktisch 1x1px UND
+        // abgeschnitten/geklippt" -- gilt fuer das Element selbst oder einen
+        // Vorfahren, damit auch verschachtelter Inhalt (z.B. <b> in einem
+        // sr-only-<span>) mitgeschuetzt wird.
+        const istUnsichtbarVersteckt = (el: Element): boolean => {
+            for (let k: Element | null = el; k != null; k = k.parentElement) {
+                if (k.clientWidth > 1 || k.clientHeight > 1) continue;
+                const stil = getComputedStyle(k);
+                const nichtSichtbarerOverflow = stil.overflowX !== 'visible' || stil.overflowY !== 'visible';
+                const geklippt = stil.clip === 'rect(0px, 0px, 0px, 0px)' || (stil.clipPath !== 'none' && stil.clipPath !== '');
+                if (nichtSichtbarerOverflow || geklippt) return true;
+            }
+            return false;
+        };
+
         const html = document.documentElement;
         if (html.scrollWidth > html.clientWidth) {
             ergebnis.push({ beschreibung: 'html', ueberstandPx: html.scrollWidth - html.clientWidth });
@@ -130,6 +152,7 @@ export async function keinHorizontalerUeberlauf(page: Page): Promise<void> {
         for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
             if (el === html || el === main) continue; // schon oben erfasst
             if (getComputedStyle(el).overflowX !== 'hidden') continue;
+            if (istUnsichtbarVersteckt(el)) continue; // z.B. Tailwind ".sr-only" -- siehe Kommentar dort
             if (el.scrollWidth > el.clientWidth + 2) {
                 ergebnis.push({ beschreibung: beschreibe(el), ueberstandPx: el.scrollWidth - el.clientWidth });
             }
@@ -159,6 +182,22 @@ export async function keinTextLaeuftUeber(page: Page): Promise<void> {
     const treffer = await page.evaluate(() => {
         const ergebnis: { beschreibung: string; text: string; ueberstandPx: number }[] = [];
 
+        // Gleiche Ausnahme wie in keinHorizontalerUeberlauf (siehe Kommentar
+        // dort): Element oder Vorfahre faktisch 1x1px UND abgeschnitten/
+        // geklippt (Tailwind ".sr-only"). NICHT dasselbe wie "Breite 0" --
+        // ein 0px breiter, aber hoher und nicht abgeschnittener Kasten bleibt
+        // ein Befund.
+        const istUnsichtbarVersteckt = (el: Element): boolean => {
+            for (let k: Element | null = el; k != null; k = k.parentElement) {
+                if (k.clientWidth > 1 || k.clientHeight > 1) continue;
+                const stil = getComputedStyle(k);
+                const nichtSichtbarerOverflow = stil.overflowX !== 'visible' || stil.overflowY !== 'visible';
+                const geklippt = stil.clip === 'rect(0px, 0px, 0px, 0px)' || (stil.clipPath !== 'none' && stil.clipPath !== '');
+                if (nichtSichtbarerOverflow || geklippt) return true;
+            }
+            return false;
+        };
+
         for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
             if (el.children.length > 0) continue; // nur Blatt-Elemente
             const text = (el.textContent ?? '').trim();
@@ -166,6 +205,7 @@ export async function keinTextLaeuftUeber(page: Page): Promise<void> {
 
             const stil = getComputedStyle(el);
             if (stil.display === 'none' || stil.visibility === 'hidden' || Number(stil.opacity) === 0) continue;
+            if (istUnsichtbarVersteckt(el)) continue;
 
             if (el.scrollWidth > el.clientWidth + 2) {
                 const klassen = el.classList.length > 0 ? `.${Array.from(el.classList).join('.')}` : '';
@@ -212,6 +252,21 @@ export async function keinTextGekuerzt(page: Page): Promise<void> {
             return false;
         };
 
+        // Gleiche Ausnahme wie in keinHorizontalerUeberlauf (siehe Kommentar
+        // dort): Element oder Vorfahre faktisch 1x1px UND abgeschnitten/
+        // geklippt (Tailwind ".sr-only") -- eine zweite, von
+        // data-kuerzung-erlaubt unabhaengige Ausnahme.
+        const istUnsichtbarVersteckt = (el: Element): boolean => {
+            for (let k: Element | null = el; k != null; k = k.parentElement) {
+                if (k.clientWidth > 1 || k.clientHeight > 1) continue;
+                const kStil = getComputedStyle(k);
+                const nichtSichtbarerOverflow = kStil.overflowX !== 'visible' || kStil.overflowY !== 'visible';
+                const geklippt = kStil.clip === 'rect(0px, 0px, 0px, 0px)' || (kStil.clipPath !== 'none' && kStil.clipPath !== '');
+                if (nichtSichtbarerOverflow || geklippt) return true;
+            }
+            return false;
+        };
+
         const ergebnis: { beschreibung: string; text: string; art: string }[] = [];
         for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
             const stil = getComputedStyle(el);
@@ -221,6 +276,7 @@ export async function keinTextGekuerzt(page: Page): Promise<void> {
             const perLineClamp = lineClampWert !== '' && lineClampWert !== 'none' && el.scrollHeight > el.clientHeight + 1;
             if (!perEllipsis && !perLineClamp) continue;
             if (hatAusnahme(el)) continue;
+            if (istUnsichtbarVersteckt(el)) continue;
 
             const klassen = el.classList.length > 0 ? `.${Array.from(el.classList).join('.')}` : '';
             const text = (el.textContent ?? '').trim();

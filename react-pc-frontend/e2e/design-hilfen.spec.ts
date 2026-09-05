@@ -234,3 +234,100 @@ test.describe('designPruefung -- Option strengePruefungen', () => {
         ).rejects.toThrow();
     });
 });
+
+// Nachbesserung 1 (Kontext-Log Abschnitt 1, Befund vor dem Review): Tailwinds
+// eingebaute ".sr-only"-Klasse (position: absolute; width: 1px; height: 1px;
+// overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap;) macht Text
+// absichtlich fuer Screenreader lesbar und auf JEDER Bildschirmgroesse
+// unsichtbar -- ein 1x1-Kasten kann nichts Sichtbares abschneiden. Alle drei
+// Pruefungen hielten das vorher faelschlich fuer einen Layoutfehler (Befund:
+// BearbeitenLeiste.tsx Zeile 145, 4 rote Rauchproben-Tests). Nachgebaut hier,
+// da page.setContent() kein Tailwind einbindet.
+const SR_ONLY_STIL = `
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border-width: 0;
+    }
+`;
+const SR_ONLY_TEXT = 'Sperre konnte nicht geholt werden — bitte neu laden und Auftrag pruefen';
+
+test.describe('unsichtbar versteckt (sr-only-Muster) wird von allen drei Pruefungen ignoriert', () => {
+    test('sr-only-Span mit langem Text: keinHorizontalerUeberlauf laeuft durch', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                ${SR_ONLY_STIL}
+            </style>
+            <span class="sr-only">${SR_ONLY_TEXT}</span>
+        `);
+        await keinHorizontalerUeberlauf(page);
+    });
+
+    test('sr-only-Span mit langem Text: keinTextLaeuftUeber laeuft durch', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                ${SR_ONLY_STIL}
+            </style>
+            <span class="sr-only">${SR_ONLY_TEXT}</span>
+        `);
+        await keinTextLaeuftUeber(page);
+    });
+
+    test('sr-only-Span mit text-overflow: ellipsis: keinTextGekuerzt laeuft durch', async ({ page }) => {
+        // Das echte Tailwind-".sr-only" setzt kein text-overflow: ellipsis --
+        // ohne diese Zusatzregel gaebe es fuer keinTextGekuerzt hier gar
+        // nichts zu pruefen (die Funktion schlaegt sonst schon aus anderem
+        // Grund nicht an). Erst mit ellipsis wird die Ausnahme wirklich
+        // gefordert.
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                ${SR_ONLY_STIL}
+                .sr-only { text-overflow: ellipsis; }
+            </style>
+            <span class="sr-only">${SR_ONLY_TEXT}</span>
+        `);
+        await keinTextGekuerzt(page);
+    });
+
+    test('Vorfahre im sr-only-Muster schuetzt auch ein verschachteltes Element mit eigener Breite', async ({ page }) => {
+        // <b> bekommt eine eigene, viel zu schmale Breite -- ohne die
+        // Ausnahme fuer den sr-only-Vorfahren wuerde keinTextLaeuftUeber hier
+        // anschlagen (10px Kasten, deutlich breiterer Text).
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                ${SR_ONLY_STIL}
+                .sr-only b { display: block; width: 10px; white-space: nowrap; font-size: 16px; }
+            </style>
+            <span class="sr-only"><b>Sperre konnte nicht geholt werden</b></span>
+        `);
+        await keinTextLaeuftUeber(page);
+    });
+});
+
+test.describe('unsichtbar versteckt -- Abgrenzung zu echten Befunden', () => {
+    test('0px breiter, 16px hoher Text in einem 26px-Kasten mit overflow:visible bleibt ein Befund', async ({ page }) => {
+        // Nicht verwechseln mit dem sr-only-Muster: dieser Kasten ist nicht
+        // 1x1px, und nichts hier ist per overflow/clip abgeschnitten -- der
+        // Text ist tatsaechlich sichtbar zusammengequetscht (Kennzahl-Kasten
+        // aus der Spec, Befund 2).
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .kasten { width: 26px; overflow: visible; }
+                .kasten p { width: 0; height: 16px; white-space: nowrap; margin: 0; font-size: 16px; }
+            </style>
+            <div class="kasten"><p>Wohnungsbaugesellschaft Beispielstadt Nord mbH</p></div>
+        `);
+        await expect(keinTextLaeuftUeber(page)).rejects.toThrow();
+    });
+});
