@@ -25,6 +25,17 @@ interface DesignPruefungOptionen {
     primaerAktion?: Locator;
     /** Ganze Seite statt nur Viewport aufnehmen (Standard: nur Viewport, denn der ist, was der Nutzer sieht). */
     ganzeSeite?: boolean;
+    /**
+     * Schaltet keinTextLaeuftUeber und keinTextGekuerzt scharf. Standard
+     * vorerst false: mehrere bestehende Specs (u.a. e2e/bearbeiten-leiste.spec.ts,
+     * e2e/lieferant-dokument-modal.spec.ts) laufen ueber den Lieferanten-Kopf,
+     * dessen Kennzahl-Beschriftungen heute noch ueberlaufen -- ein scharfer
+     * Standard wuerde diese unveraenderten Specs sofort rot drehen, bevor die
+     * betroffenen Seiten repariert sind (siehe Plan-Tasks 2-9 in
+     * docs/superpowers/plans/2026-09-05-layout-14-zoll.md). Sobald alle
+     * betroffenen Seiten repariert sind, dreht Task 10 den Standard auf true.
+     */
+    strengePruefungen?: boolean;
 }
 
 interface Rahmen {
@@ -60,6 +71,10 @@ export async function designPruefung(
     if (optionen.primaerAktion) {
         await expect(optionen.primaerAktion, 'Primaeraktion muss ohne Scrollen sichtbar sein').toBeInViewport();
     }
+    if (optionen.strengePruefungen) {
+        await keinTextLaeuftUeber(page);
+        await keinTextGekuerzt(page);
+    }
 }
 
 /**
@@ -80,16 +95,150 @@ export async function uebergaengeAusklingenLassen(page: Page, maxMs = 1500): Pro
     }, maxMs);
 }
 
-/** Kein horizontaler Scrollbalken -- auf 14 Zoll das haeufigste Symptom fuer "passt nicht". */
+/**
+ * Kein horizontaler Scrollbalken -- auf 14 Zoll das haeufigste Symptom fuer
+ * "passt nicht". Prueft drei Ebenen:
+ *   - das Dokument selbst (html.scrollWidth > html.clientWidth) -- das
+ *     urspruengliche Verhalten dieser Funktion,
+ *   - <main>, weil MainLayout.tsx frueher overflow-x-hidden gesetzt hat und
+ *     einen Ueberstand dort still versteckt hat, statt ihn ueber einen
+ *     Scrollbalken zu zeigen (siehe Befund 1 der Spec: 185px Ueberstand bei
+ *     1440px, ohne dass das Dokument das gemerkt haette),
+ *   - jedes Element mit overflow-x: hidden, dessen Inhalt breiter ist als es
+ *     selbst -- jede Karte kann diesen Fehler machen, nicht nur <main>.
+ * <main> wird aus der dritten Schleife ausgenommen, damit derselbe Fund
+ * nicht doppelt gemeldet wird.
+ */
 export async function keinHorizontalerUeberlauf(page: Page): Promise<void> {
-    const ueberlauf = await page.evaluate(() => {
-        const el = document.documentElement;
-        return { scroll: el.scrollWidth, sichtbar: el.clientWidth };
+    const treffer = await page.evaluate(() => {
+        const ergebnis: { beschreibung: string; ueberstandPx: number }[] = [];
+        const beschreibe = (el: Element) => {
+            const klassen = el.classList.length > 0 ? `.${Array.from(el.classList).join('.')}` : '';
+            return `${el.tagName.toLowerCase()}${klassen}`;
+        };
+
+        const html = document.documentElement;
+        if (html.scrollWidth > html.clientWidth) {
+            ergebnis.push({ beschreibung: 'html', ueberstandPx: html.scrollWidth - html.clientWidth });
+        }
+
+        const main = document.querySelector('main');
+        if (main && main.scrollWidth > main.clientWidth) {
+            ergebnis.push({ beschreibung: beschreibe(main), ueberstandPx: main.scrollWidth - main.clientWidth });
+        }
+
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
+            if (el === html || el === main) continue; // schon oben erfasst
+            if (getComputedStyle(el).overflowX !== 'hidden') continue;
+            if (el.scrollWidth > el.clientWidth + 2) {
+                ergebnis.push({ beschreibung: beschreibe(el), ueberstandPx: el.scrollWidth - el.clientWidth });
+            }
+        }
+
+        return ergebnis;
     });
+
     expect(
-        ueberlauf.scroll,
-        `Seite laeuft horizontal ueber: ${ueberlauf.scroll}px Inhalt bei ${ueberlauf.sichtbar}px Breite`,
-    ).toBeLessThanOrEqual(ueberlauf.sichtbar);
+        treffer,
+        `Element(e) laufen horizontal ueber (bei overflow-x: hidden still versteckt statt sichtbar zu scrollen):\n${treffer
+            .map((t) => `${t.beschreibung}: ${t.ueberstandPx}px zu wenig Platz`)
+            .join('\n')}`,
+    ).toEqual([]);
+}
+
+/**
+ * Kein Blatt-Element mit Text (keine Element-Kinder) ist breiter als sein
+ * Kasten. Anders als bei keinHorizontalerUeberlauf werden Elemente mit
+ * Breite 0 bewusst NICHT uebersprungen -- ein auf 0px gequetschter Kasten mit
+ * Text darin ist genau der Fehlerfall, den diese Pruefung finden soll (Kunde
+ * mit langem Namen: Kasten 26px, Textbreite 95px, siehe Spec Befund 2).
+ * Unsichtbares (display: none, visibility: hidden, opacity: 0) bleibt
+ * draussen -- das ist kein Layoutfehler, sondern absichtlich verborgen.
+ */
+export async function keinTextLaeuftUeber(page: Page): Promise<void> {
+    const treffer = await page.evaluate(() => {
+        const ergebnis: { beschreibung: string; text: string; ueberstandPx: number }[] = [];
+
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
+            if (el.children.length > 0) continue; // nur Blatt-Elemente
+            const text = (el.textContent ?? '').trim();
+            if (text.length === 0) continue;
+
+            const stil = getComputedStyle(el);
+            if (stil.display === 'none' || stil.visibility === 'hidden' || Number(stil.opacity) === 0) continue;
+
+            if (el.scrollWidth > el.clientWidth + 2) {
+                const klassen = el.classList.length > 0 ? `.${Array.from(el.classList).join('.')}` : '';
+                ergebnis.push({
+                    beschreibung: `${el.tagName.toLowerCase()}${klassen}`,
+                    text: text.slice(0, 80),
+                    ueberstandPx: el.scrollWidth - el.clientWidth,
+                });
+            }
+        }
+
+        return ergebnis;
+    });
+
+    expect(
+        treffer,
+        `Text laeuft ueber seinen Kasten:\n${treffer
+            .map((t) => `${t.beschreibung} "${t.text}": ${t.ueberstandPx}px zu wenig Platz`)
+            .join('\n')}`,
+    ).toEqual([]);
+}
+
+/**
+ * Kein Element ist tatsaechlich gekuerzt -- ein "…" an einer Stelle, die auf
+ * 14 Zoll lesbar sein muss, ist ein Fehler, keine Geschmacksfrage. Zwei
+ * Faelle, weil das Projekt beide Kuerzungsarten nutzt (siehe Spec-Korrektur
+ * zu index.css Zeile 27):
+ *   (a) text-overflow: ellipsis (Tailwind "truncate") mit echtem Ueberstand
+ *       (scrollWidth > clientWidth + 1),
+ *   (b) -webkit-line-clamp gesetzt (Projekt-Klasse ".line-clamp-2", OHNE
+ *       text-overflow: ellipsis) mit echtem Ueberstand
+ *       (scrollHeight > clientHeight + 1).
+ * Ausnahme: das Element selbst oder ein Vorfahre traegt
+ * data-kuerzung-erlaubt (heute genau zwei Faelle: Nutzername in der
+ * Menueleiste -- voller Name im Menue darunter -- und Kartentitel mit
+ * line-clamp-2 -- voller Name im title-Attribut).
+ */
+export async function keinTextGekuerzt(page: Page): Promise<void> {
+    const treffer = await page.evaluate(() => {
+        const hatAusnahme = (el: Element): boolean => {
+            for (let k: Element | null = el; k != null; k = k.parentElement) {
+                if (k.hasAttribute('data-kuerzung-erlaubt')) return true;
+            }
+            return false;
+        };
+
+        const ergebnis: { beschreibung: string; text: string; art: string }[] = [];
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
+            const stil = getComputedStyle(el);
+            const lineClampWert = stil.getPropertyValue('-webkit-line-clamp');
+
+            const perEllipsis = stil.textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1;
+            const perLineClamp = lineClampWert !== '' && lineClampWert !== 'none' && el.scrollHeight > el.clientHeight + 1;
+            if (!perEllipsis && !perLineClamp) continue;
+            if (hatAusnahme(el)) continue;
+
+            const klassen = el.classList.length > 0 ? `.${Array.from(el.classList).join('.')}` : '';
+            const text = (el.textContent ?? '').trim();
+            ergebnis.push({
+                beschreibung: `${el.tagName.toLowerCase()}${klassen}`,
+                text,
+                art: perEllipsis ? 'text-overflow: ellipsis' : '-webkit-line-clamp',
+            });
+        }
+        return ergebnis;
+    });
+
+    expect(
+        treffer,
+        `Text ist gekuerzt, ohne data-kuerzung-erlaubt:\n${treffer
+            .map((t) => `${t.beschreibung} (${t.art}) -- vollstaendiger Text: "${t.text}"`)
+            .join('\n')}`,
+    ).toEqual([]);
 }
 
 /**

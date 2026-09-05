@@ -1,0 +1,236 @@
+import { test, expect } from '@playwright/test';
+import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
+
+/**
+ * Rote-dann-gruene Specs fuer die drei Design-Pruefungen aus Spec E
+ * (siehe docs/superpowers/specs/2026-09-04-layout-14-zoll.md, Abschnitt E).
+ * Jede Pruefung wird direkt aufgerufen -- nicht ueber designPruefung -- mit
+ * einer Mini-Seite ueber page.setContent(): eine kaputte, die den Fehler
+ * zeigt, und eine heile, die ihn nicht zeigt. Kein /api, kein Backend
+ * noetig -- die Pruefungen lesen nur das DOM der aktuellen Seite.
+ */
+
+test.describe('keinHorizontalerUeberlauf -- Dokument (bestehendes Verhalten bleibt)', () => {
+    test('Dokument mit Ueberstand loest aus', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .breiter-inhalt { width: 2000px; height: 20px; background: red; }
+            </style>
+            <div class="breiter-inhalt">zu breit</div>
+        `);
+        await expect(keinHorizontalerUeberlauf(page)).rejects.toThrow();
+    });
+
+    test('Dokument ohne Ueberstand ist unauffaellig', async ({ page }) => {
+        await page.setContent(`
+            <style> html, body { margin: 0; padding: 0; } </style>
+            <div>passt</div>
+        `);
+        await keinHorizontalerUeberlauf(page);
+    });
+});
+
+test.describe('keinHorizontalerUeberlauf -- main', () => {
+    test('main mit overflow-x:hidden und breiterem Inhalt loest aus', async ({ page }) => {
+        // Nachgebauter Befund: MainLayout.tsx hatte overflow-x-hidden auf
+        // <main> und versteckte den Ueberstand, ohne dass das Dokument selbst
+        // ueberlief.
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                main { display: block; width: 300px; overflow-x: hidden; }
+                .breiter-inhalt { width: 500px; height: 20px; background: red; white-space: nowrap; }
+            </style>
+            <main><div class="breiter-inhalt">zu breiter Inhalt</div></main>
+        `);
+        await expect(keinHorizontalerUeberlauf(page)).rejects.toThrow();
+    });
+
+    test('main ohne Ueberstand ist unauffaellig', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                main { display: block; width: 300px; overflow-x: hidden; }
+                .passender-inhalt { width: 200px; height: 20px; background: green; }
+            </style>
+            <main><div class="passender-inhalt">passt</div></main>
+        `);
+        await keinHorizontalerUeberlauf(page);
+    });
+});
+
+test.describe('keinHorizontalerUeberlauf -- Element mit overflow-x: hidden', () => {
+    test('Element mit overflow-x:hidden und breiterem Inhalt loest aus (auch ohne main)', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .karte { width: 200px; overflow-x: hidden; }
+                .breiter-inhalt { width: 400px; height: 20px; background: red; white-space: nowrap; }
+            </style>
+            <div class="karte"><div class="breiter-inhalt">zu breiter Inhalt</div></div>
+        `);
+        await expect(keinHorizontalerUeberlauf(page)).rejects.toThrow();
+    });
+
+    test('Element mit overflow-x:hidden ohne Ueberstand ist unauffaellig', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .karte { width: 200px; overflow-x: hidden; }
+                .passender-inhalt { width: 100px; height: 20px; background: green; }
+            </style>
+            <div class="karte"><div class="passender-inhalt">passt</div></div>
+        `);
+        await keinHorizontalerUeberlauf(page);
+    });
+});
+
+test.describe('keinTextLaeuftUeber', () => {
+    test('Kasten auf Breite 0 gequetscht mit Text darin loest aus (Breite 0 wird NICHT uebersprungen)', async ({ page }) => {
+        // Nachgebauter Befund aus der Spec: Kunde mit langem Namen, Kasten
+        // wird auf 0px Breite gequetscht, der Text bleibt trotzdem da.
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .kasten { width: 0; overflow: hidden; white-space: nowrap; font-size: 16px; }
+            </style>
+            <div class="kasten">Wohnungsbaugesellschaft Beispielstadt Nord mbH</div>
+        `);
+        await expect(keinTextLaeuftUeber(page)).rejects.toThrow();
+    });
+
+    test('Text passt in seinen Kasten', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .kasten { width: 300px; }
+            </style>
+            <div class="kasten">Kurzer Text</div>
+        `);
+        await keinTextLaeuftUeber(page);
+    });
+
+    test('Unsichtbare Elemente (display:none, visibility:hidden, opacity:0) werden nicht gemeldet', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .kasten { width: 0; overflow: hidden; white-space: nowrap; font-size: 16px; }
+            </style>
+            <div class="kasten" style="display: none">Wohnungsbaugesellschaft Beispielstadt Nord mbH</div>
+            <div class="kasten" style="visibility: hidden">Wohnungsbaugesellschaft Beispielstadt Nord mbH</div>
+            <div class="kasten" style="opacity: 0">Wohnungsbaugesellschaft Beispielstadt Nord mbH</div>
+        `);
+        await keinTextLaeuftUeber(page);
+    });
+});
+
+test.describe('keinTextGekuerzt', () => {
+    test('text-overflow: ellipsis mit echtem Ueberstand loest aus', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            </style>
+            <div class="titel">Treppenanlage mit Podest und Absturzsicherung</div>
+        `);
+        await expect(keinTextGekuerzt(page)).rejects.toThrow();
+    });
+
+    test('text-overflow: ellipsis ohne Ueberstand ist unauffaellig', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel { width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            </style>
+            <div class="titel">Kurzer Titel</div>
+        `);
+        await keinTextGekuerzt(page);
+    });
+
+    test('-webkit-line-clamp mit tatsaechlichem Ueberstand loest aus (ohne text-overflow: ellipsis)', async ({ page }) => {
+        // Nachgebaut wie src/index.css ".line-clamp-2": -webkit-box +
+        // overflow: hidden, OHNE text-overflow: ellipsis.
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel {
+                    width: 150px;
+                    display: -webkit-box;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 2;
+                    overflow: hidden;
+                }
+            </style>
+            <div class="titel">Treppenanlage mit Podest und Absturzsicherung Buerogebaeude Beispielstrasse</div>
+        `);
+        await expect(keinTextGekuerzt(page)).rejects.toThrow();
+    });
+
+    test('-webkit-line-clamp ohne tatsaechlichen Ueberstand ist unauffaellig', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel {
+                    width: 400px;
+                    display: -webkit-box;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 2;
+                    overflow: hidden;
+                }
+            </style>
+            <div class="titel">Kurzer Titel</div>
+        `);
+        await keinTextGekuerzt(page);
+    });
+
+    test('data-kuerzung-erlaubt am Element selbst gilt als Ausnahme', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            </style>
+            <div class="titel" data-kuerzung-erlaubt>Treppenanlage mit Podest und Absturzsicherung</div>
+        `);
+        await keinTextGekuerzt(page);
+    });
+
+    test('data-kuerzung-erlaubt an einem Vorfahren gilt als Ausnahme', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            </style>
+            <div data-kuerzung-erlaubt><div class="titel">Treppenanlage mit Podest und Absturzsicherung</div></div>
+        `);
+        await keinTextGekuerzt(page);
+    });
+});
+
+// ".wrapper" nutzt overflow: clip statt overflow: hidden, damit der IMMER
+// laufende keinHorizontalerUeberlauf-Check (weder html/main noch die
+// generische "overflow-x: hidden"-Regel greifen bei "clip") hier still
+// bleibt -- nur so zeigt dieser Test wirklich, ob strengePruefungen selbst
+// den Ausschlag gibt, statt zufaellig ueber einen anderen Check zu laufen.
+const SEITE_MIT_NUR_TEXTUEBERLAUF = `
+    <style>
+        html, body { margin: 0; padding: 0; }
+        .wrapper { overflow: clip; width: 200px; }
+        .kasten { width: 0; white-space: nowrap; font-size: 16px; }
+    </style>
+    <div class="wrapper"><div class="kasten">Wohnungsbaugesellschaft Beispielstadt Nord mbH</div></div>
+`;
+
+test.describe('designPruefung -- Option strengePruefungen', () => {
+    test('Standard false: ueberlaufender Text faellt nicht auf', async ({ page }, testInfo) => {
+        await page.setContent(SEITE_MIT_NUR_TEXTUEBERLAUF);
+        await designPruefung(page, testInfo, 'strenge-pruefungen-standard-aus');
+    });
+
+    test('strengePruefungen: true deckt ueberlaufenden Text auf', async ({ page }, testInfo) => {
+        await page.setContent(SEITE_MIT_NUR_TEXTUEBERLAUF);
+        await expect(
+            designPruefung(page, testInfo, 'strenge-pruefungen-standard-an', { strengePruefungen: true }),
+        ).rejects.toThrow();
+    });
+});
