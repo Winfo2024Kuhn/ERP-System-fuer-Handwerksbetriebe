@@ -22,8 +22,8 @@ const LOCK_FEHLER_TEXT = 'Sperre konnte nicht geholt werden — bitte neu laden.
  * Opens as fullscreen page (no MainLayout sidebar).
  *
  * Soft-Lock (Issue #82, Abschnitt 7a): der Datensatz-Sperren-Baustein
- * useDatensatzLock loest das bisherige, hart blockierende
- * DocumentLockedModal ab. Ein bestehendes (gespeichertes) Dokument darf nach
+ * useDatensatzLock loest das bisherige, hart blockierende Sperr-Modal
+ * ab. Ein bestehendes (gespeichertes) Dokument darf nach
  * wie vor nur EIN Nutzer gleichzeitig bearbeiten -- ein Kollege sieht den
  * aktuellen Stand jetzt aber weiterhin (Editor `readOnly`, `GesperrtHinweis`
  * + `BearbeitenLeiste`), statt komplett ausgesperrt zu werden. Neu erstellte

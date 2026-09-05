@@ -9,8 +9,8 @@ import DocumentEditorPage from './DocumentEditorPage';
 /**
  * Deckt die Umstellung von DocumentEditorPage auf das neue,
  * verallgemeinerte Sperr-Fundament ab (useDatensatzLock/BearbeitenLeiste/
- * GesperrtHinweis statt useDocumentLock/DocumentLockedModal) -- Abschnitt 7a,
- * Issue #82. `DocumentEditor` (riesige Komponente mit Tiptap/dnd-kit) wird
+ * GesperrtHinweis statt des alten, hart blockierenden Sperr-Hooks/-Modals)
+ * -- Abschnitt 7a, Issue #82. `DocumentEditor` (riesige Komponente mit Tiptap/dnd-kit) wird
  * hier bewusst gemockt (siehe ArtikelDetail.test.tsx fuer denselben Ansatz
  * mit TiptapEditor) -- diese Seite testet die Zustands-Verdrahtung
  * (Lock-Zustand -> readOnly/Banner/Leiste, Untaetigkeits-Reihenfolge), nicht
