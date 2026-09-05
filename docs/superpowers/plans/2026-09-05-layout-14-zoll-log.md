@@ -134,3 +134,25 @@ Ergebnis der Gates:
 - Vitest: nicht gefahren, siehe Bedenken oben (keine Testdatei bindet RibbonNav ein).
 - `npm run lint`: 0 Fehler, 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`, identisch zur Baseline).
 - `npm run build`: gruen (inkl. `tsc -b`). Build-Output (`src/main/resources/static/index.html`, `assets/*`) vor dem Commit verworfen (`git checkout -- src/main/resources/static` + `git clean -f src/main/resources/static/assets`).
+
+## Abschnitt 2 — Task 1b (Coding-Agent)
+
+Zeit: 2026-09-05T15:11:32Z
+Branch: layout/task-1b-kuerzung-ausnahme
+Commit(s): b1fd90c0
+Status: fertig
+
+Was gemacht wurde:
+- Nachtrag zu Task 1 (Befund aus Task 8, Kontext-Log Abschnitt 2): Der immer laufende Teil von `keinHorizontalerUeberlauf` (generische `overflow-x: hidden`-Schleife) meldete bisher auch gewollte Text-Kuerzungen -- ein `truncate`-Element (`overflow: hidden` + `text-overflow: ellipsis` + `white-space: nowrap`) mit echt gekuerztem Text erfuellt genau dieses Muster, selbst mit `data-kuerzung-erlaubt` (das kannte bisher nur `keinTextGekuerzt`). Damit war `truncate` faktisch verboten, Task 8 musste deshalb auf `line-clamp-1` ausweichen.
+- `react-pc-frontend/e2e/hilfen/design.ts`: Die Element-Schleife von `keinHorizontalerUeberlauf` ueberspringt jetzt zwei unabhaengige Faelle, jeder fuer sich ausreichend: (a) `hatKuerzungsMarker(el)` -- Element selbst oder ein Vorfahre traegt `data-kuerzung-erlaubt`; (b) `istReineTextKuerzung(el)` -- `text-overflow: ellipsis` gesetzt ODER `-webkit-line-clamp` != `none`, unabhaengig vom Marker (ob eine Kuerzung zulaessig ist, entscheidet allein `keinTextGekuerzt`). Deutscher Kommentar mit Begruendung der Arbeitsteilung direkt im Code. `<main>`-Check und die generische Meldung echter Kaesten-Ueberstaende (kein `text-overflow`/`line-clamp`) bleiben unveraendert scharf. Nichts sonst an den drei Pruefungen geaendert.
+- Testgetrieben (`react-pc-frontend/e2e/design-hilfen.spec.ts`, neues `describe`-Bloecke "keinHorizontalerUeberlauf ignoriert reine Text-Kuerzungen (Task 1b)"): sechs neue Faelle exakt nach Auftrag -- (1) `truncate` mit echt gekuerztem Text UND `data-kuerzung-erlaubt`: `keinHorizontalerUeberlauf` laeuft durch, `keinTextGekuerzt` laeuft durch; (2) dasselbe OHNE Marker: `keinHorizontalerUeberlauf` laeuft trotzdem durch (nicht seine Zustaendigkeit), `keinTextGekuerzt` wirft; (3) 200px-Kasten mit `overflow: hidden`, ohne `text-overflow`/`line-clamp`, 800px breites Kind: `keinHorizontalerUeberlauf` wirft weiterhin. Vor der Aenderung rot verifiziert: genau die zwei `keinHorizontalerUeberlauf`-Faelle aus (1) und (2) schlugen fehl ("div.titel: 210px zu wenig Platz"), alle anderen (inkl. Fall 3) waren schon vorher gruen -- erwartungsgemaess, da (3) ein reiner Nicht-Regressions-Test ist (kein `text-overflow`/`line-clamp` beteiligt) und die `keinTextGekuerzt`-Haelften von (1)/(2) schon aus Task 1 funktionierten. Nach der Implementierung alle 6 neuen Faelle gruen, keine bestehende Miniseite (u.a. der `<main>`-Check, Punkt 4 im Auftrag) davon beruehrt.
+
+Bedenken / Abweichungen vom Plan:
+- keine.
+
+Ergebnis der Gates:
+- Port-Check: `netstat -ano | findstr :5213` leer, Port 5213 frei verwendet.
+- `E2E_PORT=5213 npx playwright test e2e/design-hilfen.spec.ts` (beide Projekte): **54/54 gruen** (27 Testfaelle x pc-14zoll + pc-monitor).
+- `E2E_PORT=5213 npx playwright test e2e/bearbeiten-leiste.spec.ts e2e/lieferant-dokument-modal.spec.ts`: **18/18 gruen** -- keine Regression durch die neue Ausnahme.
+- `npm run lint`: 0 Fehler, 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`, identisch zur Baseline).
+- `npm run build`: gruen. Build-Output (`src/main/resources/static/index.html`, `assets/*`) vor dem Commit verworfen (`git checkout -- src/main/resources/static` + `git clean -f src/main/resources/static/assets`), `git status` danach sauber bis auf die zwei eigenen Dateien.
