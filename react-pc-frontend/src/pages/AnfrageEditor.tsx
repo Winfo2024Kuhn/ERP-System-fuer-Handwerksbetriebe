@@ -200,10 +200,28 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
                                 </span>
                             )}
                         </div>
-                        <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={anfrage.bauvorhaben}>
+                        {/*
+                          truncate (einzeilig) -> line-clamp-2 (Plan Task 4,
+                          Spec D): der volle Name bleibt lesbar statt nach
+                          wenigen Zeichen abzureissen. min-h-[3rem] haelt die
+                          Kartenreihe gleich hoch, data-kuerzung-erlaubt
+                          markiert die (einzig hier gewollte) Kuerzung -- der
+                          volle Name steht weiterhin im title-Attribut.
+                        */}
+                        <h3
+                            className="font-semibold text-slate-900 mt-2 line-clamp-2 min-h-[3rem] text-base"
+                            title={anfrage.bauvorhaben}
+                            data-kuerzung-erlaubt
+                        >
                             {anfrage.bauvorhaben || "Unbenannt"}
                         </h3>
-                        <p className="text-sm text-slate-500 truncate">{anfrage.kundenName || "Kein Kunde"}</p>
+                        {/*
+                          Kein sanktionierter Kuerzungsfall (nur Kartentitel
+                          und Menueleisten-Anzeigename duerfen mit "…"
+                          abschneiden, siehe Global Constraints) -- deshalb
+                          hier umbrechen lassen statt truncate + Marker.
+                        */}
+                        <p className="text-sm text-slate-500 break-words">{anfrage.kundenName || "Kein Kunde"}</p>
                     </div>
                     {/* Checkbox zum Beenden */}
                     <div
@@ -960,10 +978,14 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const adresse = [anfrage.projektStrasse, anfrage.projektPlz, anfrage.projektOrt].filter(Boolean).join(', ');
 
     // Header Card
+    // Bauweise wie in ProjektEditor.tsx (Task 3, Plan Abschnitt 3): das
+    // aeussere div wird flex-wrap statt starr xl:flex-row -- reicht der Platz
+    // nicht, rutschen zuerst die Kennzahlen in eine zweite Zeile unter den
+    // Titel, nie die Knoepfe aus der Karte.
     const header = (
         <Card className="p-6">
-            <div className="flex flex-col xl:flex-row gap-8 justify-between">
-                <div className="flex items-start gap-4">
+            <div className="flex flex-wrap items-start gap-4">
+                <div className="flex items-start gap-4 flex-1 min-w-[18rem]">
                     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 h-auto py-1 self-start">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
@@ -972,7 +994,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     </div>
                     <div>
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900">{anfrage.bauvorhaben}</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 break-words">{anfrage.bauvorhaben}</h1>
                             {anfrage.anfragesnummer && (
                                 <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-rose-50 text-rose-700 border-rose-200">
                                     Anfrage {anfrage.anfragesnummer}
@@ -985,26 +1007,26 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                             )}
                         </div>
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {anfrage.kundenName && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {anfrage.kundenName}</p>}
-                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {adresse}</p>}
-                            {anfrage.anlegedatum && <p className="flex items-center gap-2"><Calendar className="w-4 h-4" /> {formatDate(anfrage.anlegedatum)}</p>}
+                            {anfrage.kundenName && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> {anfrage.kundenName}</p>}
+                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> {adresse}</p>}
+                            {anfrage.anlegedatum && <p className="flex items-center gap-2"><Calendar className="w-4 h-4 shrink-0" /> {formatDate(anfrage.anlegedatum)}</p>}
                         </div>
                     </div>
                 </div>
 
                 {/* Stats Row */}
-                <div className="flex items-center gap-6 flex-1 max-w-2xl">
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200">
+                <div className="flex flex-wrap gap-x-6 gap-y-2 shrink-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Brutto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(anfrage.betrag)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2">
+                    <div className="flex flex-col items-center px-4 py-2 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Netto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(nettoPreis)}</p>
                     </div>
                 </div>
 
-                <div className="flex items-start gap-2">
+                <div className="shrink-0 flex flex-wrap items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -1025,11 +1047,16 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const mainContent = (
         <>
             {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
+            {/*
+              overflow-x-auto raus, flex-wrap + min-w-0 rein: eine versteckt
+              scrollende Reiterleiste ist keine Loesung -- lieber umbrechen
+              (Plan Task 4, Spec B). Innenabstand der Reiter von px-4 auf px-3.
+            */}
+            <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-2 min-w-0">
                 <button
                     onClick={() => setActiveTab('emails')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'emails'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1041,7 +1068,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <button
                     onClick={() => setActiveTab('geschaeftsdokumente')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'geschaeftsdokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1053,7 +1080,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <button
                     onClick={() => setActiveTab('dokumente')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'dokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1065,7 +1092,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <button
                     onClick={() => setActiveTab('beschreibung')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'beschreibung'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1077,7 +1104,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <button
                     onClick={() => setActiveTab('notizen')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'notizen'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1898,7 +1925,10 @@ export default function AnfrageEditor() {
                     Keine Anfragen gefunden.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                /* xl:grid-cols-4 -> 2xl:grid-cols-4 (Plan Task 4, Spec D): bei
+                   1440 drei breitere Karten statt vier zu schmalen, ab 1536
+                   wieder vier. */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
                     {anfragen.map((anfrage) => (
                         <AnfrageCard
                             key={anfrage.id}
