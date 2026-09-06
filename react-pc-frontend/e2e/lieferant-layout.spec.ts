@@ -73,6 +73,16 @@ import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 const LIEFERANT_ID = 21;
 const LIEFERANT_LANG = 'Stahlhandel Beispiel GmbH und Co. KG';
+// Task 11 (Abschnitt 7), Gruppe 3 (Code-Reviewer, Abschnitt 6, Fundstelle 3):
+// lange, bindestrichlose Fantasiewerte statt "0511 9876543"/"0171 1234567"/
+// "Hans Beispiel"/undefined -- genau diese Kurzform hat den Befund an
+// LieferantenEditor.tsx Z. 297/306/345/356 monatelang unentdeckt gelassen
+// (siehe kriterien.md, "Testdaten fuer Umbruch-Fehler brauchen ein langes
+// Wort ohne Trennstellen").
+const TELEFON_LANG = '05119876543212345678901234567890';
+const MOBIL_FAX_LANG = '01711234567890123456789012345678901234';
+const VERTRETER_LANG = 'Handelsvertretungsbevollmaechtigterrepraesentant';
+const STANDARD_KOSTENSTELLE_LANG = 'Kostenstellenverwaltungsabteilungfuerzentraleinkaufsbeschaffung';
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -87,12 +97,12 @@ const DUMMY_LIEFERANT = {
     strasse: 'Industriestraße 44',
     plz: '30179',
     ort: 'Hannover',
-    telefon: '0511 9876543',
-    mobiltelefon: '0171 1234567',
-    vertreter: 'Hans Beispiel',
+    telefon: TELEFON_LANG,
+    mobiltelefon: MOBIL_FAX_LANG,
+    vertreter: VERTRETER_LANG,
     vorauskasse: false,
     kundenEmails: ['bestellung@beispiel-stahl.example'],
-    standardKostenstelleName: undefined,
+    standardKostenstelleName: STANDARD_KOSTENSTELLE_LANG,
     statistik: {
         gesamtKosten: 128450.75,
         bestellungAnzahl: 37,
@@ -289,6 +299,38 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
             knopfBox!.x,
             `"Bearbeiten" (x=${knopfBox!.x.toFixed(0)}) soll rechts stehen, nicht links (Kartenmitte bei x=${karteMitte.toFixed(0)}) -- ohne "ml-auto" faellt der Knopfblock beim Umbruch nach links (Design-Review Abschnitt 3: x=89 statt x=961 beim Projekt-Editor)`,
         ).toBeGreaterThanOrEqual(karteMitte);
+
+        // Task 11 (Abschnitt 7), Gruppe 3 (Code-Reviewer, Abschnitt 6, Fundstelle
+        // 3): dieselbe Luecke wie beim E-Mail-Fix (Z. 315/324) an den
+        // Nachbarzeilen "Telefon"/"Mobil / Fax"/"Vertreter"/
+        // "Standard-Kostenstelle" (LieferantenEditor.tsx Z. 297/306/345/356) --
+        // nacktes <div> ohne min-w-0, Wert-<p> ohne break-words. Gescoped auf
+        // die Kontaktdaten-Karte, weil die Kopfzeile (Z. 126) denselben
+        // Vertreter-Text im Untertitel wiederholt -- ein ungegrenztes
+        // getByText(exact) waere sonst mehrdeutig (zwei Treffer).
+        const kontaktKarte = page.getByRole('heading', { name: 'Kontaktdaten' }).locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+        );
+        const pruefeWertBleibtImKontaktKasten = async (wert: string, feldname: string) => {
+            const wertElement = kontaktKarte.getByText(wert, { exact: true });
+            await expect(wertElement, `${feldname}-Wert "${wert}" fehlt`).toBeVisible();
+            const kasten = wertElement.locator(
+                'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " bg-slate-50 ")][1]',
+            );
+            const wertBox = await wertElement.boundingBox();
+            const kastenBox = await kasten.boundingBox();
+            expect(wertBox, `${feldname}-Wert muss einen messbaren Rahmen haben`).not.toBeNull();
+            expect(kastenBox, `${feldname}-Kasten muss einen messbaren Rahmen haben`).not.toBeNull();
+            const ueberstand = (wertBox!.x + wertBox!.width) - (kastenBox!.x + kastenBox!.width);
+            expect(
+                ueberstand,
+                `${feldname}-Wert "${wert.slice(0, 30)}..." ragt ${ueberstand.toFixed(0)}px rechts aus seinem Kasten -- braucht min-w-0 flex-1 am umschliessenden div und break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+        };
+        await pruefeWertBleibtImKontaktKasten(TELEFON_LANG, 'Telefon');
+        await pruefeWertBleibtImKontaktKasten(MOBIL_FAX_LANG, 'Mobil / Fax');
+        await pruefeWertBleibtImKontaktKasten(VERTRETER_LANG, 'Vertreter');
+        await pruefeWertBleibtImKontaktKasten(STANDARD_KOSTENSTELLE_LANG, 'Standard-Kostenstelle');
 
         // Ebene 2: Screenshot + designPruefung inkl. strengePruefungen, muss vor
         // dem Fix an keinTextLaeuftUeber() scheitern (Kasten enger als der Text).

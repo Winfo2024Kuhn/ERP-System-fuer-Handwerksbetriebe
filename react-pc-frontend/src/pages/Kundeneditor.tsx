@@ -456,37 +456,43 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                 Kontaktdaten
             </h2>
             <div className="space-y-4">
+                {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
+                    unten (Nachtrag Abschnitt 5) -- nacktes <div> ohne min-w-0,
+                    Wert-<p> ohne break-words, Icon ohne shrink-0. Gleiches Muster
+                    wie LieferantenEditor.tsx Z. 315/324 und die ganze SideInfo von
+                    MitarbeiterEditor.tsx: min-w-0 flex-1 am umschliessenden <div>,
+                    break-words am Wert, shrink-0 am Icon. */}
                 {kunde.ansprechspartner && (
                     <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                        <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                        <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                             <User className="w-4 h-4" />
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Ansprechpartner</p>
-                            <p className="font-medium text-slate-900">{kunde.ansprechspartner}</p>
+                            <p className="font-medium text-slate-900 break-words">{kunde.ansprechspartner}</p>
                         </div>
                     </div>
                 )}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Phone className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Telefon</p>
-                        <p className="font-medium text-slate-900">{kunde.telefon || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.telefon || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Smartphone className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Mobiltelefon</p>
-                        <p className="font-medium text-slate-900">{kunde.mobiltelefon || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.mobiltelefon || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Mail className="w-4 h-4" />
                     </div>
                     {/* min-w-0 (Nachtrag Abschnitt 5, Task 9): dieses div ist
@@ -494,8 +500,13 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                         eine lange E-Mail-Adresse schiebt es dann ueber seinen
                         Kasten hinaus (Design-Review Runde 2, Befund 4: 184px
                         Ueberstand bei 1440, main.scrollWidth-clientWidth 127px).
-                        Gleiches Muster wie LieferantenEditor.tsx Z. 315. */}
-                    <div className="min-w-0 flex-1">
+                        Gleiches Muster wie LieferantenEditor.tsx Z. 315.
+                        "flex-1" entfernt (Task 11, Abschnitt 7): der Design-
+                        Reviewer hat nachgemessen, dass es hier wirkungslos ist --
+                        Geometrie mit und ohne "flex-1" ist auf den Pixel
+                        identisch (main 0/0, <a> 220/220px bei 1440, 340/340px
+                        bei 1920). min-w-0 traegt die Zeile allein. */}
+                    <div className="min-w-0">
                         <p className="text-xs text-slate-500">E-Mail</p>
                         <div className="flex flex-col">
                             {kunde.kundenEmails && kunde.kundenEmails.length > 0 ? (
@@ -899,11 +910,25 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                     {ortText && <p className="text-sm text-slate-500">{ortText}</p>}
                 </div>
                 <div className="text-sm text-slate-600 space-y-1 mt-auto">
+                    {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
+                        zwei Zeilen weiter unten -- ein anonymes Flex-Item mit
+                        min-width: auto, das overflow-wrap: break-word nicht senkt.
+                        Diese Karte ist ausserdem die einzige der sechs ohne
+                        overflow-hidden, ein ueberlaufender Wert schiebt also nicht
+                        nur sich selbst, sondern die ganze Karte und main auf.
+                        Gleiches Muster wie bei der E-Mail-Zeile: Text in ein
+                        <span className="min-w-0 break-words"> fassen, Icon shrink-0. */}
                     {kunde.ansprechspartner && (
-                        <p className="flex items-center gap-2"><User className="w-4 h-4 text-rose-400" />{kunde.ansprechspartner}</p>
+                        <p className="flex items-center gap-2">
+                            <User className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.ansprechspartner}</span>
+                        </p>
                     )}
                     {kunde.telefon && (
-                        <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-rose-400" />{kunde.telefon}</p>
+                        <p className="flex items-center gap-2">
+                            <Phone className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.telefon}</span>
+                        </p>
                     )}
                     {kunde.kundenEmails?.[0] && (
                         // Nachtrag Abschnitt 5 (Task 9, Design-Review Runde 2,
