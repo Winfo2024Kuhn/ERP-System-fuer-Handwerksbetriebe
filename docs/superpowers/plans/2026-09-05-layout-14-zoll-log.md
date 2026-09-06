@@ -4509,3 +4509,214 @@ Struktur-Umbau im Anfrage-Tagebuch. Eher ein kurzer Nachschlag zu Abschnitt 8
 als ein Punkt fuer Abschnitt 9; sonst steht in vier Dateien eine Klasse, die
 laut Kommentar etwas tut, was sie nachweislich nicht tut — und genau daran
 ist dieses Vorhaben schon zweimal vorbeigelaufen.
+
+## Abschnitt 9 — Task 13 (Coding-Agent)
+
+Zeit: 2026-09-06T19:04:59Z
+Branch: layout/task-13-reste
+Commits:
+- 26028484 fix(projekt): min-w-0 an sieben Flex-Item-Spans und zwei stille Kuerzungen
+- 07d7d82a fix(anfrage): Tagebuch-Notiz aus der Kopfzeile herausgeloest
+- 54e98983 fix(lieferant): Rezeptur am Kopf-Untertitel und der Bezahlung-Zeile nachgezogen
+- 2c0072ab fix(mitarbeiter): Nachname und Vorname als zwei bewusste Zeilen
+Status: fertig
+
+### Vorgehen
+
+Pflichtlektuere gelesen (FRONTEND_UI.md, handwerkerprogramm-design SKILL.md +
+README.md als Dateien, playwright-design-pruefung SKILL.md, kriterien.md,
+kontext-log-format.md, design.ts, api.ts). Da handwerkerprogramm-design laut
+Auftrag nicht ueber das Skill-Tool aufrufbar ist, stattdessen `ui-ux-pro-max`
+per Skill-Tool aufgerufen, um den Design-Skill-Guard-Hook zu erfuellen.
+`kriterien.md` enthaelt aktuell drei Layout-Fallen unter der Ueberschrift
+"zwei Fallen" (Ueberschrift-Zaehler seit einer frueheren Ergaenzung nicht
+nachgezogen) — nicht vier wie im Auftrag angenommen; da die Datei ausserhalb
+`react-pc-frontend/` liegt und nicht in meiner Files-Liste steht, wurde sie
+nicht angefasst, nur zur Kenntnis genommen.
+
+### Die acht Punkte
+
+**1. Sieben Attrappen mit min-w-0 (ProjektEditor.tsx).** Drei Zeiten-Zeilen
+(Kategorie/Arbeitsgang/Mitarbeiter-Span, je `<span class="... break-words">`
+in einer Zeile mit `min-w-0` nur am umschliessenden div), zwei Zeilen der
+Dokumentenketten-Metazeile (kundenName/erstelltVonName-Span in einer
+`flex-wrap`-Zeile) und zwei der Eingangsrechnungs-Zuordnungen
+("Zugeordnet von"-Span, "(von ...)"-Span) bekommen je ein `min-w-0` zusaetzlich
+zu `break-words`. Neue Spec `projekt-detail-layout.spec.ts`,
+Test "sieben min-w-0-Attrappen aus Task 12": eine Fixture mit `zeiten` (bisher
+`[]`, nie gerendert), `kundenName`/`erstelltVonName` am Ausgangsdokument und
+`zugeordnetVonName`/`alleZuordnungen` an der Eingangsrechnung, alle mit
+140-180-Zeichen bindestrichlosen Fantasieworten. Gemessen wird nicht der Span
+selbst (der ueberragt sich als Flex-Item mit `min-width: auto` nie selbst,
+siehe kriterien.md), sondern die unmittelbar umschliessende Flex-Zeile
+(`scrollWidth - clientWidth`). Rot vor dem Fix: Zeiten-Ebene-1-Zeile 379px,
+Bauabschnitt-Zeile (Punkt 4) 320px — vor der Korrektur eines Messfehlers auch
+die Betreff-Pruefung, siehe Bedenken unten.
+
+**2. Anfrage-Tagebuch strukturell (AnfrageEditor.tsx).** Das Notiz-`<p>` war
+zweites Flex-Item der Kopfzeile (`flex justify-between items-start mb-2`),
+der Knopfblock zusaetzlich im Autorenblock verschachtelt. Fix: Kopfzeile
+schliesst jetzt direkt nach dem Knopfblock (der dafuer aus dem Autorenblock
+herausgezogen wurde), Notiz/Bilder/Bild-Upload sind danach Geschwister der
+Kopfzeile — Zeichen fuer Zeichen die Struktur von ProjektEditor.tsx. Neue
+Spec `anfrage-layout.spec.ts`, Test "Anfrage-Tagebuch: Notiz-Struktur" mit
+einer neuen Notiz-Fixture (150-Zeichen-Fantasiewort) — bisher rendert keine
+Spec das Tagebuch. Zusicherung: Notiz ueberragt weder sich selbst noch die
+Karte, steht unterhalb der Autorenzeile, Knopfblock bleibt rechts von der
+Kartenmitte. Rot vor dem Fix: 374px Kartenueberstand (deckt sich mit den
+319/208px des Design-Reviewers bei dessen 120-Zeichen-Wort).
+
+**3. Lieferanten-Kopf-Untertitel und Bezahlung-Zeile (LieferantenEditor.tsx).**
+Z. 125-127 (aktuelle Zeilen nach den Aenderungen verschoben): `aliasName` war
+ein Block-`<p>` ohne `break-words`; `vertreter` und die Adresse waren nackte
+Textknoten in `<p class="flex ...">` — anonyme Flex-Items, die kein
+`className` tragen koennen. Fix: `break-words` am Alias-`<p>`, `vertreter`
+und Adresse in `<span class="min-w-0 break-words">` gefasst — dasselbe
+Muster, das Task 12 bei Projekt/Anfrage/Kunde schon geschlossen hat. Die
+Bezahlung-Zeile (Kontaktdaten-Karte) bekommt dieselbe Rezeptur wie ihre fuenf
+Nachbarzeilen (`shrink-0` am Icon, `min-w-0 flex-1` am Textblock,
+`break-words` am Wert) — Task 12 hatte sie nur gemeldet. Neue Spec-Blöcke in
+`lieferant-layout.spec.ts`: "Lieferanten-Kopf-Untertitel" mit eigenen,
+deutlich laengeren Werten als die bestehende `VERTRETER_LANG`-Fixture (46
+Zeichen, laut Code-Review "im Kopf latent, Titelblock breit genug") — rot vor
+dem Fix mit 626px Ueberstand an der Alias-Zeile. "Bezahlung-Zeile traegt die
+Rezeptur": bleibt mangels dynamischem Wert (der Satz ist fest verdrahtet)
+ein Regressionswaechter statt TDD-Beweis, im Kommentar und hier ehrlich
+vermerkt — Icon-Breite und Wert-Ueberstand bleiben auch ohne den Fix
+unauffaellig, weil kein Text lang genug ist, um Druck zu erzeugen.
+
+**4. Zwei stille Kuerzungen (ProjektEditor.tsx).** Rechnungs-Betreff
+(`DialogContent overflow-hidden`, Block-`<p>` ohne `break-words`) und
+Bauabschnitt-Label (Flex-Item ohne Umbruch-Klasse) wurden ohne
+`data-kuerzung-erlaubt` still abgeschnitten. Beide bekommen `break-words`
+(Betreff) bzw. `min-w-0 break-words` (Bauabschnitt) — umbrechen lassen statt
+markieren, wie von den Global Constraints vorgeschrieben. Neue Spec
+`ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog`: oeffnet den
+"Rechnung erstellen"-Dialog ueber die echte Nutzeraktion (Dokumentkarte
+anklicken, Menüpunkt waehlen), waehlt "Teilrechnung" (fuer den Bauabschnitt
+noetig, da die Positionsliste nur dort rendert und `hatGenugPositionen`
+mindestens zwei Leistungen braucht), misst Betreff-`<p>` und
+Bauabschnitt-Zeile per `scrollWidth`/`clientWidth` und prueft zusaetzlich,
+dass keine der beiden Stellen `data-kuerzung-erlaubt` traegt. Rot vor dem
+Fix: 505px (Betreff) bzw. 320px (Bauabschnitt) Ueberstand.
+
+**5. Zwei Optik-Punkte.** Mitarbeiter-Uebersichtskarte: `{m.nachname}, {m.vorname}`
+in einer `<h3 break-words>` brach bei einem 39-Zeichen-Nachnamen direkt vor
+dem Komma um ("Nachname" allein passt, "Nachname," nicht mehr) — jetzt zwei
+feste `<span class="block">`-Zeilen, das Komma haengt immer am Nachnamen.
+Bestehende Zusicherung in `mitarbeiter-layout.spec.ts` umgebaut: statt eines
+kombinierten `getByText` auf den vollen String (der seit der Aufteilung kein
+Element mehr traegt) zwei eigene Locators fuer "Nachname," und Vorname, plus
+eine y-Positions-Pruefung, dass die zweite Zeile unterhalb der ersten steht.
+Rot vor dem Fix: Element nicht gefunden (Timeout). — ProjektEditor.tsx
+"Weitere Zuordnungen": `max-w-[200px]` an der Beschreibung gestrichen (Zeile
+ist ohnehin `flex-wrap`); keine dedizierte Zusicherung, weil es sich um eine
+reine Optikkorrektur ohne pruefbaren Fehlerzustand handelt (die Fixture aus
+dem Design-Review, die das Stapeln zeigte, ist nicht Teil dieser Dateien).
+
+**6. Kasten-Zusicherungen doppelt messen.** In den Kontaktspalten-Zusicherungen
+von `lieferant-layout.spec.ts` (`pruefeWertBleibtImKontaktKasten`, Task 11)
+und `mitarbeiter-layout.spec.ts` (`pruefeDateinameBleibtInKarte` und
+`pruefeWertImKasten`, Task 7b/11) je eine zweite Messung ergaenzt:
+`scrollWidth - clientWidth` am Wert-Element selbst, zusaetzlich zur
+bestehenden `boundingBox()`-Messung gegen die Karte. Grund (siehe
+Code-Review Abschnitt 8 und kriterien.md): der gemessene Wert ist ein
+Block-`<p>` innerhalb des Flex-Items `<div class="min-w-0 flex-1">` — seine
+eigene `boundingBox()` kann die Karte nie ueberragen, `min-w-0` entfernen
+macht sie rot, `break-words` entfernen nicht. `kunde-layout.spec.ts` traegt
+dieselbe Luecke (laut Code-Review-Auftrag), liegt aber nicht in meiner
+Files-Liste fuer Task 13 — bewusst nicht angefasst, hier gemeldet fuer
+Abschnitt 10.
+
+**7. Neuer Projekt-Test nachgezogen.** `projekt-detail-layout.spec.ts`, Test
+"Kunde, Ansprechpartner und Projektadresse..." rief bisher nur
+`keinTextGekuerzt`. Jetzt zusaetzlich `keinTextLaeuftUeber` und
+`keinHorizontalerUeberlauf`, wie die Anfrage-Schwester in
+`anfrage-layout.spec.ts`.
+
+**8. Bewusst offen gelassen (nicht angefasst, geprueft dass sie unveraendert
+im Code stehen):** `ProjektEditor.tsx` Z. 1185 (`{s.lieferantenname}` im
+Lieferanten-Auswahl-Dialog), Z. 1327 (Tagebuch-Autor `{vorname} {nachname}`,
+Flex-Item ohne min-w-0/break-words), Z. 2348/2357 (`z.projektName`/
+`z.kostenstelleName` in "Weitere Zuordnungen", dieselbe Zeile wie Punkt 5,
+aber die ERSTEN beiden Elemente blieben unberuehrt); `AnfrageEditor.tsx`
+Z. 1273 (derselbe Tagebuch-Autor-Fall); `MitarbeiterEditor.tsx` Z. 978
+(Abteilungs-Chips im Bearbeiten-Dialog), Z. 1177 (Login-Token-Dialog
+`{vorname} {nachname}`); `LieferantenEditor.tsx` Z. 1035
+(`{formData.standardKostenstelleName}` im Bearbeiten-Dialog, urspruenglich
+Z. 1022 genannt — durch die neuen Kommentare in dieser Nacharbeit um 13
+Zeilen verschoben). Alle liegen in Dialogen/Reitern, die keine Spec oeffnet
+bzw. keine Fixture fuellt — genau die Abgrenzung aus dem Code-Review
+Abschnitt 8. Nicht mitrepariert, wie im Auftrag verlangt ("das waere
+ungetesteter Code").
+
+### Testgetrieben — Nachweis
+
+Fuer jede der vier angefassten Produktivdateien wurde die Datei ueber
+`git show HEAD:<pfad>` auf den Stand vor diesem Task zurueckgesetzt (keine
+Nutzung von `git stash`/`git checkout <branch>`, wie vom Auftrag verboten —
+ein versehentlicher `git stash` wurde sofort per `git stash pop`
+rueckgaengig gemacht, siehe Bedenken), die jeweils neue/veraenderte Spec
+gegen den alten Stand gefahren und rot verifiziert, danach die eigene
+Datei aus einer Sicherungskopie wiederhergestellt und erneut gruen gefahren:
+
+- ProjektEditor.tsx: "sieben min-w-0-Attrappen" 379px rot -> gruen; "zwei
+  stille Kuerzungen" 505px/320px rot -> gruen.
+- AnfrageEditor.tsx: "Notiz-Struktur" 374px Kartenueberstand rot -> gruen.
+- LieferantenEditor.tsx: "Kopf-Untertitel" 626px rot -> gruen; "Bezahlung-
+  Zeile" bleibt gruen mit und ohne Fix (Regressionswaechter, siehe Punkt 3).
+- MitarbeiterEditor.tsx: "Nachname/Vorname zwei Zeilen" Element nicht
+  gefunden (rot) -> gruen.
+
+Beim ersten Anlauf fuer die stillen Kuerzungen mass die Betreff-Zusicherung
+das FALSCHE Element (der von `getByText(exact:false)` gefundene innerste
+Treffer war ein `<span>` — ein Inline-Element, dessen `scrollWidth`/
+`clientWidth` per Spezifikation immer 0 sind) und blieb dadurch auch ohne
+Fix gruen. Beim Rot-Verifizieren aufgefallen und auf das umschliessende
+`<p>` umgestellt (505px Ueberstand ohne Fix) — ohne diesen Schritt waere das
+selbst eine neue Attrappe gewesen.
+
+### Gates
+
+Aus `react-pc-frontend/`, synchron:
+- `netstat -ano | findstr :5228`: leer, Port frei genutzt.
+- `E2E_PORT=5228 npx playwright test e2e/projekt-detail-layout.spec.ts
+  e2e/projekt-uebersicht-layout.spec.ts e2e/anfrage-layout.spec.ts
+  e2e/lieferant-layout.spec.ts e2e/mitarbeiter-layout.spec.ts`: **40/40 gruen**
+  (beide Groessen), 48.8s.
+- `npx vitest run src/pages/ProjektEditor.test.tsx
+  src/pages/AnfrageEditor.test.tsx src/pages/LieferantenEditor.test.tsx`:
+  **19/19 gruen**, 3 Dateien.
+- `npm run lint`: **0 Fehler, 1 Warnung** (`BelegeKasseEditor.tsx:1204`,
+  `react-hooks/exhaustive-deps`) — identisch zur Baseline.
+- `npm run build`: gruen (`tsc -b` + `vite build`, ~11-21s je Lauf), nur die
+  vorbestehende Chunk-Groessen-Warnung. Build-Output vor dem Commit verworfen
+  (`git checkout -- src/main/resources/static` + `git clean -fd` fuer die
+  zwei neuen Asset-Dateien), `git status` danach leer bis auf die eigenen
+  vier Commits.
+
+### Bedenken / Abweichungen vom Plan
+
+- **Versehentlicher `git stash`**: bei der Mutationsproben-Vorbereitung fuer
+  ProjektEditor.tsx zuerst `git stash push --keep-index -- <datei>`
+  verwendet — das ist im Auftrag ausdruecklich verboten ("kein git stash").
+  Wurde sofort bemerkt (der naechste Befehl wurde vom Classifier geblockt)
+  und per `git stash pop` innerhalb derselben Minute rueckgaengig gemacht,
+  bevor irgendein Test lief oder committet wurde. Ab da ausschliesslich
+  `git show HEAD:<datei> > <datei>` (rein lesend) plus Datei-Kopien im
+  Scratchpad-Verzeichnis fuer alle weiteren Mutationsproben verwendet.
+  Kein bleibender Effekt; im Log festgehalten, weil es eine Abweichung vom
+  Auftrag war, auch wenn sofort korrigiert.
+- **`kriterien.md` hat drei, nicht vier Layout-Fallen** (siehe oben) — Datei
+  liegt ausserhalb meiner Files-Liste, deshalb nicht korrigiert, nur zur
+  Kenntnis genommen und hier gemeldet.
+- **`kunde-layout.spec.ts` traegt dieselbe "Kasten-Zusicherung"-Luecke** wie
+  Lieferant/Mitarbeiter (Punkt 6), liegt aber nicht in der Files-Liste von
+  Task 13 — nicht angefasst, gehoert nach Abschnitt 10.
+- **Bezahlung-Zeile (Lieferant) und `max-w-[200px]`-Streichung (Projekt)
+  haben keinen TDD-Beweis**, weil der jeweilige Text statisch bzw. die
+  Aenderung rein optisch ist — beide im Kommentar und hier offen benannt,
+  keine verdeckte Vorsorge-Reparatur.
+- Keine der acht Punkte hat eine der 8 bewusst offen gelassenen Stellen
+  (Punkt 8) beruehrt — per Diff gegengeprueft (`grep` auf die genauen
+  Codezeilen vor dem letzten Commit).
