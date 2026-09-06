@@ -1,6 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung, keinTextLaeuftUeber } from './hilfen/design';
+import { erwarteteKartenspalten } from './hilfen/testdaten';
 
 /**
  * Task 7 (Abschnitt 4) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -477,5 +478,68 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
             });
             expect(mainUeberstand, `main laeuft nach Klick auf "${name}" ueber`).toBe(0);
         }
+    });
+});
+
+/**
+ * Design-Review-Nachbesserung 1 (Abschnitt 10, Befund 4): Die Mitarbeiter-
+ * Uebersicht war die einzige der fuenf Uebersichten ohne "2xl:grid-cols-4" --
+ * sie blieb bei 1536/1920 bei drei Karten je Reihe, waehrend
+ * Projekt/Anfrage/Kunde/Lieferant auf vier gehen. MitarbeiterEditor.tsx an
+ * die gemeinsame Rezeptur angeglichen; hier die dazugehoerige Zusicherung,
+ * die den anderen vier Uebersichten schon nachgezogen war (siehe
+ * erwarteteKartenspalten in e2e/hilfen/testdaten.ts -- Spaltenzahl aus der
+ * Fensterbreite ableiten, nicht aus dem Projekt-Namen).
+ */
+const MITARBEITER_MIX = [
+    { id: 701, vorname: 'Klaus', nachname: 'Meier' },
+    { id: 702, vorname: 'Anna', nachname: 'Schmidt' },
+    { id: 703, vorname: 'Peter', nachname: 'Weber' },
+    { id: 704, vorname: 'Julia', nachname: 'Fischer' },
+].map((m) => ({
+    ...m,
+    strasse: null, plz: null, ort: null, email: null, telefon: null, festnetz: null,
+    qualifikation: null, stundenlohn: null, geburtstag: null, eintrittsdatum: null,
+    aktiv: true, abteilungIds: null as number[] | null, abteilungNames: null as string | null,
+    loginToken: null, jahresUrlaub: null,
+}));
+
+test.describe('Mitarbeiter-Uebersicht: Kartenraster (Design-Review-Nachbesserung 1, Abschnitt 10)', () => {
+    test('Kartenraster passt zur Fensterbreite -- dieselbe Rezeptur wie die anderen vier Uebersichten', async ({ page }) => {
+        await page.route('**/api/**', (route) => {
+            const pfad = new URL(route.request().url()).pathname;
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (pfad === '/api/mitarbeiter') return json(route, MITARBEITER_MIX);
+            if (pfad === '/api/abteilungen') return json(route, []);
+            return json(route, []);
+        });
+        await page.goto('/mitarbeiter');
+        await expect(page.getByRole('heading', { name: 'MITARBEITER' })).toBeVisible();
+        // Warten, bis alle vier Karten wirklich gerendert sind -- loadMitarbeiter()
+        // laedt asynchron per useEffect, ohne diese Wartemarke misst evaluate()
+        // moeglicherweise noch die leere Liste (Race, siehe andere Uebersichten-Specs).
+        await expect(page.getByRole('heading', { level: 3 })).toHaveCount(MITARBEITER_MIX.length);
+
+        const kartenY = await page.evaluate((mitarbeiter) =>
+            mitarbeiter.map(({ nachname, vorname }) => {
+                const gesuchterName = `${nachname} ${vorname}`;
+                const heading = Array.from(document.querySelectorAll('h3'))
+                    .find((h) => h.textContent?.replace(/\s+/g, ' ').trim() === gesuchterName);
+                return heading ? heading.getBoundingClientRect().y : null;
+            }), MITARBEITER_MIX);
+
+        const ersteReiheAnzahl = kartenY.filter((y) => y !== null && Math.abs(y - (kartenY[0] ?? 0)) < 5).length;
+        const fensterbreite = page.viewportSize()!.width;
+        const erwartet = Math.min(erwarteteKartenspalten(fensterbreite), MITARBEITER_MIX.length);
+        expect(
+            ersteReiheAnzahl,
+            `Erwartet ${erwartet} Karten in der ersten Reihe bei ${fensterbreite}px, gemessen: ${JSON.stringify(kartenY)}`,
+        ).toBe(erwartet);
     });
 });

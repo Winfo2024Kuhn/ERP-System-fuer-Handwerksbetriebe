@@ -205,6 +205,36 @@ test.describe('keinTextGekuerzt', () => {
         `);
         await keinTextGekuerzt(page);
     });
+
+    // Nachbesserung 1 (Abschnitt 10, Code-Review): line-clamp mit Breiten-
+    // Ueberlauf ohne Hoehen-Ueberlauf. Ein einzelnes, nicht umbrechbares Wort
+    // ist breiter als der Kasten -- es bleibt trotzdem EINE Zeile (es gibt ja
+    // nirgends eine Umbruchstelle), die vertikal locker in die per
+    // -webkit-line-clamp erlaubten zwei Zeilen passt (kein Hoehen-Ueberstand),
+    // aber horizontal ueber den Kasten hinausmalt (scrollWidth > clientWidth).
+    // Bisher pruefte keinTextGekuerzt bei line-clamp NUR die Hoehe -- dieser
+    // Fall lief deshalb durch alle drei Pruefungen: keinHorizontalerUeberlauf
+    // und keinTextLaeuftUeber nehmen line-clamp-Elemente bewusst aus (das ist
+    // keinTextGekuerzt's Zustaendigkeit, siehe istReineTextKuerzung), und
+    // keinTextGekuerzt selbst sah nur die Hoehe. Nachgemessen (Code-Review):
+    // 80px Kasten, 462px Textbreite, 382px still abgeschnitten.
+    test('line-clamp mit Breiten-Ueberlauf ohne Hoehen-Ueberlauf loest aus', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel {
+                    width: 80px;
+                    display: -webkit-box;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 2;
+                    overflow: hidden;
+                    font-size: 16px;
+                }
+            </style>
+            <div class="titel">Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung</div>
+        `);
+        await expect(keinTextGekuerzt(page)).rejects.toThrow();
+    });
 });
 
 // ".wrapper" nutzt overflow: clip statt overflow: hidden, damit der IMMER
