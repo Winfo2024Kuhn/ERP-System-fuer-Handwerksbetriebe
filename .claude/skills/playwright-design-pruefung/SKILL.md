@@ -147,3 +147,36 @@ setzen), Script `test:e2e`. Dieselbe Hilfsdatei wie in der PC-App daneben legen.
 Pixelgenaue Screenshot-Vergleiche (`toHaveScreenshot`) — die brechen bei jeder
 Schriftglättung und erzeugen Rauschen statt Befunde. Es geht um die sechs Fragen, nicht
 um Byte-Gleichheit.
+
+## Beobachtungen aus echten Läufen
+
+**E2E-Specs telefonieren ins Internet (06.09.2026).** `page.route('**/api/**')`
+stubbt nur die eigene Schnittstelle. Alles andere geht **echt** raus: eine
+Lieferanten-Detailseite mit gefüllter Adresse lädt eine Google-Maps-Einbettung
+(`google.com/maps`, `maps.gstatic.com`, `maps.googleapis.com`), und `index.html`
+zieht `pdf.js` von `cdnjs` bei **jeder** Navigation. Folgen: Screenshots hängen
+von der Internetverbindung ab, die Spec fällt offline um, und die Adresse aus der
+Fixture verlässt den Rechner. Es war außerdem die Ursache einer sporadisch leeren
+weißen Seite unter parallelen Workern — nach dem Riegel war der Fehler weg.
+
+Regel: **Jede Spec riegelt fremde Hosts ab**, nicht nur `/api`.
+`blockiereFremdeNetzwerkzugriffe(page)` in `e2e/hilfen/api.ts` bricht alles ab,
+was nicht auf `localhost`/`127.0.0.1` zeigt. Vor der ersten Navigation setzen.
+Zur Kontrolle einmal `page.on('request', …)` mitschreiben und zusichern, dass
+keine fremde **Antwort** ankommt.
+
+**Was die automatischen Checks nicht sehen (Stand 06.09.2026).** Drei echte
+Layoutfehler des 14-Zoll-Vorhabens sind durch alle Zusicherungen gerutscht und
+erst beim Hinsehen aufgefallen:
+
+- Eine Überschrift, die quer über die Nachbarspalte läuft. Der Seitenüberlauf
+  bleibt 0, `scrollWidth == clientWidth` — sie ist ja breit genug für sich selbst.
+  Prüfung dagegen: rechte Kante des Elements ≤ rechte Kante seines Containers.
+- Ein Knopfblock, der beim Umbruch nach links unten fällt statt nach rechts.
+  „Innerhalb der Karte" war zugesichert, „rechts" nicht.
+- Eine Klasse, die im Quelltext steht und wirkungslos ist, weil eine andere
+  Tailwind-Regel spezifischer ist. Sichtbar nur am gebauten CSS oder an den
+  y-Positionen im Bild.
+
+Deshalb: Screenshots wirklich anschauen, und bei jedem Befund die Zusicherung
+nachtragen, die ihn beim nächsten Mal gefunden hätte.

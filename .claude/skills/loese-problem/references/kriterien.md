@@ -81,6 +81,22 @@ deaktivieren — nur die Abnahmeregel einhalten.
   Bedenken im Kontext-Log zu vermerken (dann entscheidet der Nutzer, nicht
   der Agent selbst).
 
+## Layout: zwei Fallen, die kein Test von selbst findet
+
+Aus dem 14-Zoll-Vorhaben (September 2026), beide erst im Browser aufgefallen:
+
+- **`break-words` reicht bei Flex-Items nicht.** Eine Überschrift in einer
+  Flex-Zeile behält `min-width: auto` und wird so breit wie ihr längstes Wort —
+  bei einem Komposita-Namen quer über die Nachbarspalte. Nur `min-w-0` **am
+  Element selbst** senkt die Mindestbreite; am Elternteil wirkt es nicht.
+- **`space-y-*` schlägt `mt-auto`.** Tailwind erzeugt für `space-y-3` einen
+  Selektor der Spezifität 0-3-0, `.mt-auto` hat 0-1-0. Wer den letzten Block einer
+  Karte nach unten schieben will, braucht `flex flex-col` + `gap-*` statt
+  `space-y-*`. Sonst steht die Klasse da und tut nichts.
+
+Beides gilt sinngemäß für jede künftige Layout-Arbeit: die Klasse im Quelltext
+ist kein Beweis, dass sie wirkt. Am gebauten CSS oder im Browser nachmessen.
+
 ## Was NICHT zu diesen Kriterien gehört (Anti-Bikeshedding)
 
 Formatierung, for- vs. while-Loop, Naming-Geschmack und ähnliche
