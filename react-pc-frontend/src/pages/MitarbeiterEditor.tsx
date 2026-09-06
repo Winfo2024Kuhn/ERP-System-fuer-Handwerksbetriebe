@@ -434,32 +434,44 @@ export default function MitarbeiterEditor() {
         </div>
     );
 
+    // Nachtrag Abschnitt 6 (Task 7b): jede Zeile hier ist Flex-Item einer
+    // "flex items-center gap-3"-Reihe. Ohne min-w-0 behaelt das umschliessende
+    // <div> min-width: auto und wird nie schmaler als sein laengstes
+    // unteilbares Wort (E-Mail, Abteilungsname) -- die Reihe sprengt dann die
+    // Karte, OBWOHL der Wert selbst gar nicht ueberzulaufen scheint
+    // (scrollWidth == clientWidth des <p>, siehe kriterien.md "Layout: zwei
+    // Fallen, die kein Test von selbst findet"). Gleiches Muster wie
+    // LieferantenEditor.tsx Z. 315/324 und Kundeneditor.tsx Z. 497/509:
+    // min-w-0 flex-1 am umschliessenden <div>, break-words am Wert. Auf ALLE
+    // Zeilen der Spalte angewandt, nicht nur auf E-Mail (Befund von Design- und
+    // Code-Reviewer aus Abschnitt 5: Abteilung war schon vorher betroffen,
+    // Telefon/Festnetz/Adresse tragen dieselbe latente Luecke).
     const SideInfo = () => (
         <div className="space-y-6">
             <div>
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Persönliche Daten</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Voller Name</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.vorname} {selectedMitarbeiter?.nachname}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.vorname} {selectedMitarbeiter?.nachname}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Geburtsdatum</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.geburtstag ? new Date(selectedMitarbeiter.geburtstag).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                             </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Building2 className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Abteilung(en)</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.abteilungNames || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.abteilungNames || '-'}</p>
                         </div>
                     </div>
                 </div>
@@ -469,31 +481,31 @@ export default function MitarbeiterEditor() {
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Kontakt</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">E-Mail</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.email || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.email || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Phone className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Mobiltelefon</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.telefon || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.telefon || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Phone className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Festnetz</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.festnetz || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.festnetz || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Adresse</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.strasse || ''}<br />
                                 {selectedMitarbeiter?.plz || ''} {selectedMitarbeiter?.ort || ''}
                             </p>
@@ -505,10 +517,10 @@ export default function MitarbeiterEditor() {
             <div className="pt-6 border-t border-slate-100">
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Qualifikation</h3>
                 <div className="flex items-center gap-3">
-                    <GraduationCap className="w-4 h-4 text-slate-400" />
-                    <div>
+                    <GraduationCap className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Stufe</p>
-                        <p className="text-sm font-medium">{selectedMitarbeiter?.qualifikation || '-'}</p>
+                        <p className="text-sm font-medium break-words">{selectedMitarbeiter?.qualifikation || '-'}</p>
                     </div>
                 </div>
             </div>
@@ -517,10 +529,10 @@ export default function MitarbeiterEditor() {
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Konditionen</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <Euro className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Euro className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Stundenlohn</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.stundenlohn ?
                                     new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(selectedMitarbeiter.stundenlohn)
                                     : '-'}
@@ -528,10 +540,10 @@ export default function MitarbeiterEditor() {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Jahresurlaub</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.jahresUrlaub ? `${selectedMitarbeiter.jahresUrlaub} Tage` : '-'}
                             </p>
                         </div>
