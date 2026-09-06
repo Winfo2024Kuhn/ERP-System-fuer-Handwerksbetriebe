@@ -5543,3 +5543,106 @@ vollstaendig da — nichts wird mehr abgeschnitten oder verdeckt, weder mit
 normalen Kunden- und Projektnamen noch mit absichtlich extrem langen. Geprueft
 haben wir das auf drei Bildschirmgroessen, und alle 384 automatischen Tests
 laufen sauber durch.
+
+## Abschnitt 10 — Task 10, Nachbesserung 1 (Coding-Agent)
+
+Zeit: 2026-09-06T21:57:35Z
+Branch: layout/task-10-pruefstandard
+Commit: 660b9bc0 fix(e2e): Nachbesserung 1 -- Menueleiste scharf, line-clamp-Breite, drei Kleinigkeiten
+Status: fertig
+
+### Auftrag
+
+Zwei Befunde des Code-Reviewers (Nachbesserung 1) plus drei Kleinigkeiten des
+Design-Reviewers (Nachtrag zur Nachbesserung), alle in bereits angefassten
+Dateien.
+
+### Punkt 1 — abgelaufener Ausstieg in menueleiste-layout.spec.ts
+
+Vier `designPruefung()`-Aufrufe standen weiter auf
+`strengePruefungen: testInfo.project.name === 'pc-monitor'`. Die Begruendung
+im Dateikopf (keinTextLaeuftUeber kennt noch keine data-kuerzung-erlaubt-
+Ausnahme) war seit Block 1 dieses Abschnitts erledigt. Alle vier Optionsobjekte
+entfernt (designPruefung faehrt strengePruefungen seit Block 3 ohnehin als
+Standard mit), Dateikopf-Kommentar auf den aktuellen Stand gebracht.
+`E2E_PORT=5230 npx playwright test e2e/menueleiste-layout.spec.ts`: **15/15
+gruen** ueber alle drei Groessen (pc-14zoll, pc-uebergang, pc-monitor) --
+deckt sich mit der Messung des Reviewers.
+
+### Punkt 2 — line-clamp mit Breiten-Ueberlauf ohne Hoehen-Ueberlauf
+
+`keinTextGekuerzt` pruefte bei line-clamp bisher nur `scrollHeight >
+clientHeight`. Ein einzelnes, nicht umbrechbares Wort, das breiter als der
+Kasten ist, bleibt eine einzige "Zeile" (es gibt nirgends eine Umbruchstelle)
+und passt damit vertikal locker in die per -webkit-line-clamp erlaubte
+Zeilenzahl -- lief dadurch unbemerkt ueber den Kasten. Weder
+keinHorizontalerUeberlauf noch keinTextLaeuftUeber pruefen line-clamp-Elemente
+(bewusste Arbeitsteilung, das ist keinTextGekuerzt's Zustaendigkeit ueber
+istReineTextKuerzung), und keinTextGekuerzt selbst sah nur die Hoehe -- echter
+blinder Fleck, den Block 1 dieses Abschnitts selbst aufgerissen hat (line-clamp
+wurde dort zur Ausnahme fuer die anderen beiden Pruefungen).
+
+Testgetrieben:
+1. Miniseite in design-hilfen.spec.ts (80px Kasten, line-clamp:2,
+   nicht umbrechbares ~68-Zeichen-Wort) mit der Zusicherung
+   `await expect(keinTextGekuerzt(page)).rejects.toThrow()`.
+2. **Vorher wirklich gruen** (Bug bestaetigt): gegen den unveraenderten Code
+   gefahren -- `Received promise resolved instead of rejected` (keinTextGekuerzt
+   wirft nicht, der Fall bleibt unbemerkt).
+3. Fix: `perLineClamp` prueft jetzt `scrollHeight > clientHeight + 1 ODER
+   scrollWidth > clientWidth + 1`.
+4. **Nachher rot** im Sinne von "der Check schlaegt jetzt korrekt an": erneut
+   gefahren -- keinTextGekuerzt wirft jetzt, die Testsuite meldet den Fall
+   korrekt gruen (der Wurf ist das erwuenschte Verhalten).
+
+Voller design-hilfen.spec.ts-Lauf danach 117/117 gruen (alle bestehenden
+line-clamp-/Ausnahme-Faelle unveraendert gruen, kein neuer Fehlalarm auf
+legitime line-clamp-Nutzung mit normal umbrechendem Text).
+
+### Nachtrag (Design-Reviewer, drei Kleinigkeiten)
+
+3. **MitarbeiterEditor.tsx, Uebersichtskarte**: Leerzeichen-Ausdruck `{' '}`
+   zwischen Nachname- und Vorname-Span ergaenzt. textContent liest sich jetzt
+   als "Nachname Vorname" statt "NachnameVorname" (Screenreader-Vorlesen,
+   Kopieren) -- sichtbar aendert sich nichts (Leerraum zwischen zwei
+   block-Elementen erzeugt keine eigene Zeile, mehrfach per Screenshot und
+   E2E-Lauf gegengeprueft). Bestehende Selektoren (`getByText(NACHNAME,
+   {exact:true})`, die Komma-Abwesenheits-Zusicherung) greifen unveraendert,
+   weil der Leerraum ein Geschwister-Textknoten ist, kein Teil des ersten
+   Spans.
+4. **MitarbeiterEditor.tsx Z. 1306 (jetzt ~1311), Uebersichtsraster**:
+   `2xl:grid-cols-4` ergaenzt -- war die einzige der fuenf Uebersichten ohne
+   diese Klasse, blieb bei 1536/1920 bei drei Karten waehrend
+   Projekt/Anfrage/Kunde/Lieferant auf vier gehen. Neue Zusicherung in
+   mitarbeiter-layout.spec.ts (vier Dummy-Mitarbeiter, Spaltenzahl ueber
+   erwarteteKartenspalten() aus der Fensterbreite abgeleitet, dieselbe
+   Rezeptur wie die anderen vier Uebersichten). Rot-dann-gruen verifiziert:
+   ohne die Klasse bei 1920px "Erwartet 4 Karten ..., gemessen: 3" (vierte
+   Karte faellt in Zeile 2), mit der Klasse 3/3 gruen (pc-14zoll/pc-uebergang/
+   pc-monitor).
+5. **ui/dialog.tsx**: Kommentar korrigiert -- role="dialog"/aria-modal sitzen
+   am Panel-<div> der Dialog-Komponente selbst (dort, wo der Kommentar auch
+   steht), nicht an DialogContent (das ist die separate, schlichte
+   Layout-Komponente weiter unten in derselben Datei, die als Kind in Dialog
+   hineingereicht wird). Reine Kommentar-Korrektur, kein Verhaltensunterschied
+   -- dialog.test.tsx weiterhin 5/5 gruen.
+
+### Gates
+
+- `netstat -ano | findstr :5230`: vor dem Lauf leer.
+- `E2E_PORT=5230 npm run test:e2e` (komplett, alle 17 Specs, alle drei
+  Groessen): **390/390 gruen** (vorher 384 -- plus 3 fuer die neue
+  line-clamp-Miniseite, plus 3 fuer die neue Mitarbeiter-Kartenraster-Zeile,
+  je einmal pro Groesse).
+- `npm run lint`: 0 Fehler, 1 Warnung (Baseline, unveraendert).
+- `npm run typecheck:e2e`: sauber.
+- `npm run build`: gruen (nur die vorbestehende Chunk-Warnung). Build-Output
+  vor dem Commit verworfen.
+- `npm run test` (voller Vitest-Lauf): **1082/1082 gruen** (inkl.
+  dialog.test.tsx/toast.test.tsx einzeln vorab gegengeprueft, 15/15).
+
+### Bedenken / Abweichungen vom Plan
+
+Keine. Alle fuenf Punkte wie vom Koordinator vorgegeben umgesetzt, nichts
+zusaetzlich angefasst. Die sechs uebrigen Hinweise des Code-Reviewers bleiben
+laut Auftrag als Restposten offen -- nicht bearbeitet.
