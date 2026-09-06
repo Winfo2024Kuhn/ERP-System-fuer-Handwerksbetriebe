@@ -3905,3 +3905,522 @@ nicht betroffen, weil dort die Elemente selbst Flex-Items sind.
   durchsucht, da außerhalb des Auftrags. Empfehlung: bei Gelegenheit prüfen
   und ggf. in `kriterien.md` als fünfte Layout-Falle aufnehmen.
 - Ich bleibe im Worktree `wt/layout-task-12`, nichts gemergt.
+
+## Abschnitt 8 — Code-Review (Code-Reviewer)
+
+Zeit: 2026-09-06T17:56:39Z
+Branch: feature/layout-14-zoll (HEAD 8c6256b3)
+Geprueft: Diff f9c685cd..HEAD (8 Dateien, +431/-111)
+Status: fertig
+Ampel: 🟡
+
+### Gates (aus `react-pc-frontend/`, synchron, nacheinander)
+
+- `npm run lint`: **0 Fehler, genau 1 Warnung** (`BelegeKasseEditor.tsx:1204`,
+  `react-hooks/exhaustive-deps`) — identisch zur Baseline.
+- `npm run test`: **1082/1082 gruen**, 88/88 Testdateien, 95s, Exit 0. Kein
+  flockiger Vorlauf noetig. Der im Auftrag genannte Einzellauf-Fehlschlag von
+  `LieferantDokumentModal.test.tsx` trat im vollen Lauf wieder **nicht** auf —
+  dritter Review in Folge, in dem der Massstab 1082/1082 haelt.
+- `npm run build`: gruen (`tsc -b` + `vite build`, 30s), nur die vorbestehende
+  Chunk-Warnung. Output verworfen (`git checkout -- src/main/resources/static`
+  plus die zwei neuen Assets geloescht), `git status` danach leer.
+- Kein `./mvnw`, kein Playwright (laeuft parallel beim Design-Reviewer). Alle
+  Mutationsaussagen unten sind deshalb aus Spec- und Quellcode abgeleitet,
+  nicht im Browser gemessen — wie in den Abschnitten 5, 6 und 7 auch.
+- Am **gebauten** CSS nachgesehen statt am Quelltext geglaubt:
+  `.break-words{overflow-wrap:break-word}`, `.min-w-0{min-width:0px}`,
+  `.shrink-0{flex-shrink:0}`, `.flex-wrap{flex-wrap:wrap}` und
+  `.max-w-[200px]{max-width:200px}` sind alle im Bundle.
+
+### Dateiumfang und Sauberkeit
+
+Nichts ausserhalb `react-pc-frontend/`. Keine Messreste (`.only`, `.skip(`,
+`expect.soft`, `console.log`) im Diff. Kein `data-kuerzung-erlaubt` entfernt.
+Ein `title`-Attribut entfernt (`ProjektEditor.tsx` Z. 2350, `z.beschreibung`) —
+zulaessig, weil die Stelle jetzt umbricht statt zu kuerzen, aber im Kommentar
+daneben nicht erwaehnt.
+
+### Fehlerklasse — Methode und Ergebnis
+
+Diesmal nicht per Augenmass, sondern mit einem TypeScript-AST-Lauf ueber alle
+**fuenf** Dateien (die vier aus der Files-Liste plus `LieferantenEditor.tsx`,
+10.123 Zeilen): jeder `JsxExpression` in Kind-Position eines JSX-Elements,
+zusammen mit der `className` des Elternteils **und der ganzen Vorfahrenkette**.
+Wichtig fuer die Auswertung: `overflow-wrap` ist eine **vererbte** Eigenschaft —
+`break-words` an einem Vorfahren deckt alle Nachfahren mit ab, `min-w-0`
+dagegen wirkt nur am Element selbst.
+
+- 557 Wert-Ausdruecke in Kind-Position, davon 328 wertartig.
+- Nach Abzug gebundener Werte (Betraege, Datumsangaben, Zaehler, statische
+  Beschriftungen) und aller Stellen, die irgendwo im JSX-Pfad eine
+  Umbruch-Klasse tragen: **47 Kandidaten**.
+- Davon sind **11 echte, vorbestehende Luecken** derselben Klasse. Keine davon
+  ist durch Task 12 entstanden.
+
+**In den vier Task-12-Dateien (alle in Dialogen oder in nie gerenderten Reitern):**
+
+1. `ProjektEditor.tsx:1185` — `{s.lieferantenname}` im Lieferanten-Auswahl-
+   Dialog. Block-`<div>` ohne `break-words` in einem `DialogContent
+   sm:max-w-md` (448px). Zweiter Mechanismus, realistischer Wert (Firmenname).
+2. `ProjektEditor.tsx:2333` — `{z.projektName || 'Projekt'}` im `<button>`,
+   Flex-Item ohne `min-w-0`/`break-words`.
+3. `ProjektEditor.tsx:2342` — `{z.kostenstelleName || 'Kostenstelle'}`, dito.
+   **2 und 3 stehen in genau der Zeile, die Task 12 selbst angefasst hat**
+   (`flex-wrap` ergaenzt, `break-words` an die beiden folgenden `<span>`
+   gesetzt) — die beiden ersten Elemente derselben Zeile blieben stehen.
+4. `ProjektEditor.tsx:2397` — `{rechnungBasisDok.betreff}` in einem
+   `DialogContent className="overflow-hidden"`: ein langer Betreff wird
+   **still abgeschnitten**, ohne `data-kuerzung-erlaubt`. Nach den Global
+   Constraints ist genau das verboten.
+5. `ProjektEditor.tsx:2702` — `{block.sectionLabel}` in einem
+   `overflow-x-hidden`-Container, gleiche stille Kuerzung.
+6. `ProjektEditor.tsx:1327` / `AnfrageEditor.tsx:1262` — Tagebuch-Autor
+   `{vorname} {nachname}` als Flex-Item ohne `min-w-0`/`break-words`. Latent
+   (Leerzeichen zwischen den Namen), aber dieselbe Klasse.
+7. `MitarbeiterEditor.tsx:978` — Abteilungs-Chips `{a.name}` im Bearbeiten-
+   Dialog. Ausgerechnet das Feld, fuer das anderswo eine 44-Zeichen-Fixture
+   gehaertet wurde.
+8. `MitarbeiterEditor.tsx:1177` — `{vorname} {nachname}` im Login-Token-Dialog.
+
+**In `LieferantenEditor.tsx` (nicht in der Files-Liste):**
+
+9. **Z. 125-127, Kopf-Untertitel** — `{lieferant.aliasName}` als Block-`<p>`
+   ohne `break-words`, `{lieferant.vertreter}` und die Adresse als **nackte
+   Textknoten** in `<p className="flex items-center gap-2">`. Das ist Zeichen
+   fuer Zeichen das Muster, das Task 12 bei Projekt, Anfrage und Kunde
+   geschlossen hat. **Der Agent hat diese Stelle nicht gemeldet** — er hat nur
+   die Bezahlung-Zeile genannt. Heute nicht akut: `lieferant-layout.spec.ts`
+   rendert `VERTRETER_LANG` (46 Zeichen) im Kopf und ist mit
+   `designPruefung(strengePruefungen)` gruen; der Titelblock ist breit genug.
+   Latent, wie die Mitarbeiter-Uebersichtskarte vor diesem Task.
+10. **Z. 352-364, Bezahlung-Zeile** — kein `shrink-0`, kein `min-w-0 flex-1`,
+    kein `break-words`. Vom Agenten korrekt gemeldet statt still repariert.
+    Damit ist der Lieferant die einzige der fuenf Detailseiten, deren
+    Kontaktspalte zwei Muster nebeneinander traegt (fuenf Zeilen mit Rezeptur,
+    eine ohne).
+11. `LieferantenEditor.tsx:1022` — `{formData.standardKostenstelleName}` im
+    Bearbeiten-Dialog.
+
+**Antwort auf die Kernfrage: nein, noch nicht restlos zu — aber die Klasse hat
+den Charakter gewechselt.** Was Gegenstand dieses Vorhabens ist (die fuenf
+Detailseiten in ihren sichtbaren Bereichen, die vier Uebersichtskarten, die
+Kopfzeilen, die Seitenspalten), **ist zu**. Der Rest liegt ausnahmslos in
+Dialogen und Modalen, die keine einzige Layout-Spec oeffnet, in Reitern, die
+keine Fixture fuellt, oder in `LieferantenEditor.tsx`. Das ist qualitativ etwas
+anderes als die Befunde der Abschnitte 6 und 7, die mitten auf einer
+Detailseite lagen.
+
+**Empfehlung fuer Abschnitt 9:** Punkt 9 und 10 (Lieferanten-Kopf und
+Bezahlung-Zeile, eine Datei, vier Zeilen, dieselbe Rezeptur) mit aufnehmen —
+sonst bleibt der Lieferant die einzige Detailseite ohne die Rezeptur im Kopf.
+Punkt 4 und 5 (stille Kuerzung in `overflow-hidden`-Dialogen) ebenfalls, weil
+sie eine ausdrueckliche Regel des Vorhabens verletzen. Punkte 1, 2, 3, 6, 7, 8
+und 11 bewusst offen lassen und hier festhalten, statt einen vierten Anlauf zu
+starten — sie sind vorbestehend, latent und ausserhalb des pruefenden Netzes.
+
+### Der boundingBox-Befund — bestaetigt, mit zwei Praezisierungen
+
+**Bestaetigt, und er ist richtig hergeleitet.** Ein Element-Rahmen waechst nur
+dann mit ueberlaufendem Inhalt, wenn seine benutzte Breite aus dem Inhalt
+berechnet wird. Fuer einen Block im normalen Fluss mit `width: auto` ist die
+benutzte Breite die des umschliessenden Blocks — der Text malt darueber hinaus,
+`x` und `width` bleiben gleich. `boundingBox()` kann das nicht sehen,
+`scrollWidth − clientWidth` sehr wohl.
+
+**Praezisierung 1: es ist nicht "Block gegen Flex", sondern "fuellt die
+Elternbreite" gegen "richtet sich am Inhalt aus".** Zur zweiten Gruppe gehoeren
+neben Flex- und Grid-Items auch `inline`, `inline-block`, `float`, absolut
+positionierte Elemente und alles mit `w-fit`/`max-content`. Wer die Regel als
+"Blocks sind blind, alles andere nicht" merkt, zieht bei einem `<span>` den
+falschen Schluss.
+
+**Praezisierung 2 — und das ist die Rueckwirkung, nach der gefragt war: ja, die
+Kasten-Zusicherungen aus Task 7b, 9 und 11 sind betroffen.** Der Agent schreibt,
+die bestehenden `boundingBox()`-Zusicherungen seien "nicht betroffen, weil dort
+die Elemente selbst Flex-Items sind". Das stimmt fuer die `<h1>`- und
+Knopfblock-Zusicherungen, aber **nicht** fuer die Kasten-Zusicherungen der
+Kontaktspalten: dort wird der Wert-`<p class="… break-words">` gemessen, und der
+ist ein **Block** innerhalb des Flex-Items `<div class="min-w-0 flex-1">`. Seine
+`boundingBox()` kann den Kasten nie ueberragen. Folge:
+
+- `min-w-0` entfernt → das Flex-`<div>` waechst, der Block waechst mit → **rot**.
+  Das ist der Fall, den diese Zusicherungen tatsaechlich absichern.
+- `break-words` entfernt → **die Kasten-Zusicherung bleibt gruen.** Gefangen
+  wird es nur von `keinTextLaeuftUeber` (Blatt-`<p>`) und
+  `keinHorizontalerUeberlauf` (`main`) — also von den allgemeinen Pruefungen,
+  nicht von der benannten.
+
+Das deckt sich exakt mit dem, was ich in Abschnitt 6 (Hinweis 4) und
+Abschnitt 7 (Mutationsproben Gruppe 2+3) schon geschrieben hatte. Der Befund
+des Agenten ist damit **keine Neuigkeit, aber die erste saubere Erklaerung des
+Mechanismus** — und er hat als Erster die Konsequenz gezogen und die Messmethode
+umgestellt. Die Zusicherungen sind heute nicht falsch, aber sie sind schwaecher
+als ihr Text und ihre Fehlermeldung behaupten: wer nach einem Fehlschlag die
+Meldung liest ("laeuft ueber seinen Kasten — braucht break-words"), sucht an der
+falschen Stelle.
+
+**Auftrag an Task 10 (Abschnitt 9), zwei Zeilen Arbeit je Stelle:** in den
+Kasten-Zusicherungen von `mitarbeiter-layout.spec.ts` (Task 7b, Dokumente und
+Lohnabrechnungen), `kunde-layout.spec.ts` und `lieferant-layout.spec.ts`
+(Task 11, Kontaktspalten) **beide** Messungen fuehren — `boundingBox()` gegen
+den Kasten fuer die `min-w-0`-Ebene und `scrollWidth − clientWidth` am Wert
+fuer die `break-words`-Ebene. Und den Mechanismus als **fuenfte Layout-Falle**
+in `kriterien.md` aufnehmen (liegt ausserhalb `react-pc-frontend/`, also
+Orchestrator-Commit wie `e9d8b2e7`).
+
+### break-words an Stellen, wo es nicht hingehoert
+
+Der Agent schreibt selbst, er habe "bounded/system-generierte Werte
+(Waehrungsbetraege, Datumsangaben, kurze Belegnummern) bewusst ausgelassen".
+An elf Stellen hat er das nicht durchgehalten:
+
+| Datei | Stelle | Wert |
+| --- | --- | --- |
+| ProjektEditor | Seitenspalte Kundennummer | `K-1003` |
+| ProjektEditor | Seitenspalte Auftragsnummer | `A-2026-0005` |
+| ProjektEditor | Seitenspalte Anlagedatum | `formatDate(...)` |
+| ProjektEditor | Seitenspalte Abschlussdatum | `formatDate(...)` |
+| ProjektEditor | Kategorien-Menge | `{k.menge} {einheit}` |
+| ProjektEditor | Adresse PLZ/Ort | `{plz} {ort}` |
+| ProjektEditor | Materialkosten | `Rech-Nr: {m.rechnungsnummer}` |
+| AnfrageEditor | Seitenspalte Kundennummer, Anfragenummer, Anlagedatum | drei Stellen |
+| AnfrageEditor | Kopf-Untertitel | `formatDate(anfrage.anlegedatum)` im `min-w-0`-Span |
+| Kundeneditor | Zahlungsziel | `{kunde.zahlungsziel ?? 8} Tage` |
+
+**Praktisch schadet heute keine davon:** `overflow-wrap: break-word` bricht ein
+Wort nur, wenn es sonst nicht in die Zeile passt, und ein Datum (rund 70px) oder
+eine Belegnummer passt in eine 290px-Spalte immer. Es ist ein Konsequenz-, kein
+Korrektheitsfehler — deshalb 🟡 und keine Nachbesserung. Wer es aufraeumen will:
+die beiden `formatDate`-Stellen und das Zahlungsziel zurueckdrehen, oder einen
+Satz danebenschreiben, warum sie es doch tragen.
+
+**Sonderfall, der richtig geloest ist:** die drei `truncate` → `min-w-0
+break-words` in den Uebersichtskarten (`ProjektCard`, `AnfrageCard`, die beiden
+Kunden-Mini-Karten). `truncate` ohne `data-kuerzung-erlaubt` war nach den Global
+Constraints regelwidrig; der Ersatz ist richtig. Streng genommen haette an einer
+Auftragsnummer `min-w-0` allein gereicht — `break-words` ist die ueberfluessige
+Haelfte, aber harmlos.
+
+### Mutationsproben und Testabdeckung der 49 Aenderungen
+
+Leitgedanke: **eine Aenderung ist nur dann gedeckt, wenn der Zustand VOR der
+Aenderung mit den heutigen Fixtures rot gewesen waere.** War die Seite vorher
+gruen, ist sie es nach dem Zurueckdrehen wieder — der Fix ist dann Vorsorge,
+kein bewiesener Fehler. Gedeckt sind damit genau die Stellen, an denen Task 12
+**gleichzeitig die Fixture gehaertet** hat.
+
+**ProjektEditor (24 Aenderungen)** — `projekt-detail-layout.spec.ts` laedt
+ausschliesslich `tab=geschaeftsdokumente`; `materialkosten`, `artikel`,
+`zeiten`, `produktkategorien` und `notizen` sind alle `[]`, kein Dialog wird
+geoeffnet. Alles, was in diesen Bereichen geaendert wurde, wird **nie
+gerendert**.
+- Seitenspalte `Kunde` (`break-words` raus) → neue Zusicherung
+  `pruefeWertBleibtImKasten(KUNDE_EIN_WORT)` misst `scrollWidth − clientWidth`
+  → **rot** (Agent: 134px). ✔
+- Seitenspalte `Ansprechpartner` und `Projektadresse (Strasse)` → dieselbe
+  Zusicherung, neue Fixtures → **rot**. ✔ ✔
+- Kopf-Untertitel-`<span>`, `min-w-0` raus → boundingBox-Vergleich Span gegen
+  Titelblock → **rot**. ✔
+- **Derselbe Span, `break-words` raus → keine Zusicherung greift.** Der neue
+  Test endet mit `keinTextGekuerzt(page)` und ruft **weder**
+  `keinTextLaeuftUeber` **noch** `keinHorizontalerUeberlauf` auf — anders als
+  seine Schwester in `anfrage-layout.spec.ts`, die beide fuehrt. Vermeidbare
+  Asymmetrie, eine Zeile.
+- Tagebuch-Notiz, Zeiten-Hierarchie, Materialkosten, Artikel, Merge-Dialog,
+  Kategorien, Dokumentenketten-Metazeile → **gar nicht gerendert**, gruen.
+→ **4 von 24 gedeckt.**
+
+**AnfrageEditor (14)**
+- Seitenspalte `Ansprechpartner` → **rot** (Agent: 148px). ✔
+- Beide Telefon-`<a>` (32- bzw. 38-stellige Ziffernketten) → **rot**. ✔ ✔
+- `Projektadresse (Strasse)` → **rot**. ✔
+- `formatDate(anlegedatum)`, `kundennummer`, `anfragesnummer` → Werte zu kurz,
+  gruen.
+- Kunden-Auswahl-Dialog (zweimal), `AnfrageCard`-Nummer, Tagebuch-Notiz → nicht
+  gerendert bzw. kein langer Wert.
+→ **4 von 14 gedeckt.**
+
+**Kundeneditor (7)** — keine neue Fixture, deshalb **0 von 7 gedeckt**:
+- `flex-1` an der E-Mail-Zeile wieder rein → geometrisch nachweislich
+  wirkungslos (Design-Review Abschnitt 7: 220/220px bzw. 340/340px). Reine
+  Einheitlichkeit; nichts wird je rot.
+- Zahlungsziel-Rezeptur raus → "8 Tage", nichts wird rot.
+- `{ortText}` `break-words` raus → `ORT_LANG` (32 Zeichen) passt in die Karte.
+- Beide Kopf-Untertitel-Spans → die Zeile war vorher mit derselben 49-Zeichen-
+  Fixture gruen, also bleibt sie es beim Zurueckdrehen.
+- **Der Gewinn dieser Datei ist nicht der Code, sondern die reparierte
+  Zusicherung:** `pruefeZeileLaeuftNichtUeber` laeuft jetzt per
+  `ancestor-or-self::p[…flex…]` auf die Zeile hoch, statt auf dem `<span>`
+  stehenzubleiben. Damit sind die drei Task-11-Zeilen der Kundenkarte wieder
+  scharf — genau der Fund, den ich in Abschnitt 7 als "schwaecher, als sie
+  klingen" gemeldet hatte. Sauber erledigt.
+
+**MitarbeiterEditor (4)** — **0 von 4 gedeckt**, vom Agenten selbst belegt:
+- `<h3>` `break-words` raus → **gruen** (306px in rund 371px Karte).
+- Abteilungs-Zeile `min-w-0`/`shrink-0` raus → **gruen** (372px).
+- DetailHeader `min-w-0` raus → gruen; die Kopfzeile braucht laut Spec-Kopf nur
+  390px von 1376px.
+- `{notiz.inhalt}` → `/notizen` liefert `[]`, nie gerendert.
+- Auch hier liegt der Gewinn in der Abdeckung: `keinTextLaeuftUeber(page)` nach
+  dem Reiterwechsel schliesst die Lohnabrechnungs-Luecke aus Task 11, und die
+  Uebersicht bekommt erstmals ueberhaupt eine `designPruefung` mit
+  `strengePruefungen` (bisher sprang die Spec sofort in die Detailansicht).
+
+**Zahl fuer das Log: 8 von 49 Aenderungen (16 Prozent) sind durch eine
+Zusicherung gedeckt, die beim Zurueckdrehen wirklich rot wird** — vier in
+`ProjektEditor.tsx`, vier in `AnfrageEditor.tsx`, keine in `Kundeneditor.tsx`,
+keine in `MitarbeiterEditor.tsx`. Dazu kommen **zwei Abdeckungs-Reparaturen**,
+die rueckwirkend aeltere Task-11-Aenderungen wieder pruefbar machen. Die
+uebrigen 41 sind Vorsorge nach Rezeptur — legitim und genau der Auftrag des
+Tasks, aber sie sind **nicht bewiesen**. Wer die Zahl spaeter zitiert, sollte
+das wissen.
+
+### Keine Regression
+
+- Volle Unit-Suite gruen (1082/1082); die drei Editor-Testdateien fassen keine
+  `className` an, koennen die Aenderungen also weder bestaetigen noch brechen.
+- `projekt-uebersicht-layout.spec.ts` hat der Agent nicht gefahren, obwohl er
+  `ProjektCard` angefasst hat. Statisch nachgesehen: die Spec sucht die
+  Auftragsnummer per `getByText(..., exact)` und vergleicht y-Positionen —
+  `truncate` → `min-w-0 break-words` aendert weder Text noch Struktur noch
+  (bei den kurzen Fixture-Nummern) die Zeilenzahl. Kein Bruch zu erwarten; der
+  volle E2E-Lauf beim Design-Reviewer klaert es endgueltig.
+- `title={z.beschreibung}` entfernt: mit `break-words max-w-[200px]` bricht der
+  Text jetzt um statt zu kuerzen, es geht also keine Information verloren.
+  Optisch wird daraus aber eine schmale, hohe Textsaeule in einer
+  `flex-wrap`-Zeile — ein Punkt fuer den Design-Reviewer, kein
+  Korrektheitsfehler.
+
+### Weitere Hinweise (alle 🟡)
+
+- **Kommentar stimmt nicht mit dem Code ueberein**:
+  `projekt-detail-layout.spec.ts`, der Kommentar vor
+  `pruefeWertBleibtImKasten(STRASSE_LANG, …)` erklaert `exact:false`, der
+  Aufruf laesst den Parameter aber weg (also `exact = true`). Der Aufruf ist
+  richtig, der Kommentar ist Altlast.
+- **Kommentardichte** wieder hoch: der Block vor der Projekt-Kopfzeile ist zehn
+  Zeilen fuer eine Ein-Element-Aenderung, die Erklaerung steht zusaetzlich im
+  Kontext-Log. Drei Zeilen plus Verweis wuerden reichen. Inhaltlich sind die
+  Kommentare korrekt — insbesondere die Aussage, dass `overflow-wrap:
+  break-word` die automatische Mindestbreite eines Flex-Items **nicht** senkt
+  (nur `anywhere` tut das), stimmt so.
+- **Einheitlichkeit erreicht, wo sie versprochen war**: die Kunden-
+  Kontaktspalte traegt jetzt an allen fuenf Zeilen `shrink-0` plus
+  `min-w-0 flex-1` plus `break-words`. Der Lieferant hat fuenf von sechs (siehe
+  Punkt 10 oben).
+
+Bedenken / Abweichungen vom Plan:
+- Kein Playwright angefasst (Design-Reviewer laeuft parallel); alle
+  Mutationsaussagen sind aus dem Spec-Code abgeleitet.
+- `LieferantenEditor.tsx` gelesen und gescannt, aber nicht angefasst.
+
+## Abschnitt 8 — Design-Review (Design-Reviewer)
+
+Zeit: 2026-09-06T18:00:55Z
+Branch: feature/layout-14-zoll (Review-Worktree `wt/layout-review-design`, detached auf 8c6256b3)
+Commit(s): keine — read-only geprueft, `git status` am Ende leer
+Status: fertig
+Ampel: 🟡
+
+### E2E-Lauf
+
+- `netstat -ano | findstr :5227` vor dem Lauf leer.
+- `E2E_PORT=5227 npm run test:e2e`, Standard-Worker: **229/229 gruen** (3,6 min).
+  Gegenueber Abschnitt 7 (225) also +4 Faelle — die zwei neuen Seitenspalten-
+  Zusicherungen (Projekt, Anfrage) in beiden Standardgroessen.
+- 100 Screenshots aus `test-results/design/` (48 `pc-14zoll`, 48 `pc-monitor`,
+  4 `pc-uebergang`) **vor** allen weiteren Laeufen ausserhalb des Worktrees
+  gesichert. Alle eigenen Laeufe danach mit `outputDir` ausserhalb des
+  Worktrees (eigene Konfiguration, Port 5401), damit `test-results/` nicht
+  abgeraeumt wird.
+
+### Normalfall — die wichtigste Zahl dieses Reviews
+
+Eigene Aufnahmen mit realistischen Werten (Kunde „Mustermann Bau GmbH",
+Ansprechpartner „Klaus Mustermann", Bauvorhaben „Balkonanlage Musterstrasse",
+E-Mail `kontakt@mustermann-bau.de` = 25 Zeichen, Adresse „Musterstrasse 12,
+97070 Wuerzburg", Auftragsnummer A-2026-0042, Kundennummer K-1042,
+Anfragenummer AG-2026/09/00042, Betraege bis 1.234.567,89 EUR, Datum
+31.12.2026) ueber alle vier geaenderten Editoren, ihre Reiter (Zeiten,
+Material, Geschaeftsdokumente, Tagebuch), die Uebersichten und die Dialoge.
+
+Gemessen wurde nicht nur „laeuft etwas ueber", sondern **jeder sichtbare
+Textknoten, der ueber mehr als eine Zeile umbricht** (Zeilenkaesten ueber
+`Range.getClientRects()`, Zeile fuer Zeile ausgegeben).
+
+**Ergebnis bei 1440: 0 umbrechende Textknoten auf allen 16 aufgenommenen
+Zustaenden.** Im Normalfall bricht also gar nichts um — die 49 Aenderungen
+sind dort unsichtbar. Der Normalfall sieht **exakt so aus wie vor diesem
+Abschnitt**, nicht schlechter.
+
+### Umbruch an falscher Stelle (Zahlen, Nummern, Daten) — keiner
+
+Gezielte Gegenprobe in der schmalsten Spalte der App (Anfrage-Seitenspalte
+und Kunden-Kontaktspalte, rund 250px) mit sechs realistischen Telefon-
+Schreibweisen — `0931 1234567`, `+49 931 1234567`, `+49 (0)931 1234567-20`,
+`015112345678`, `0049931123456789`, `09321 9876543-125` — dazu Betrag
+1.234.567,89 EUR, Datum 31.12.2026, A-2026-0042, K-1042, AG-2026/09/00042.
+
+**Kein einziger Umbruch innerhalb einer Zahl, in beiden Groessen.** Grund:
+`break-words` ist `overflow-wrap: break-word`, nicht `break-all` — es greift
+erst, wenn ein Wort allein nicht mehr in die Zeile passt. Keiner dieser
+Werte kommt der Spaltenbreite auch nur nahe.
+
+Umbrochene Ziffernketten gibt es nur bei den absichtlich extremen Fixtures
+(32- und 38-stellige Telefonnummern bei Kunde/Anfrage/Lieferant). Die sind
+seit Task 9/11 so und in dieser Laenge kein echter Fall; ein Ueberstand waere
+dort die schlechtere Alternative. Kein Handlungsbedarf.
+
+### Optik mit den harten Fixtures — je Seite
+
+Alle 100 Screenshots des vollen Laufs plus eigene Aufnahmen der Stellen, die
+kein Screenshot der Suite zeigt (Zeiten-Hierarchie, Material-/Artikelzeilen,
+Eingangsrechnungs-Zuordnungen, Tagebuch, Kunden-Auswahl-Dialog, beide
+Seitenspalten mit den neuen bindestrichlosen Werten).
+
+- **Projekt-Detailseite: ordentlich.** Seitenspalte „Projektdaten" liest sich
+  wie ein Datenblatt: Kundenname ueber drei Zeilen im grauen Kasten,
+  Kundennummer/Auftragsnummer/Anlagedatum je einzeilig. Zeiten-Hierarchie
+  sauber — lange Kategorie-/Arbeitsgang-/Mitarbeiternamen links, Stunden und
+  Betrag rechtsbuendig und ungebrochen (`shrink-0` wirkt). Material- und
+  Artikelzeilen halten den Betrag rechts. Kein Ueberlauf auf keinem Reiter,
+  `main` in allen Laeufen 0.
+- **Anfrage-Detailseite: ordentlich, mit einer Ausnahme** (Tagebuch, siehe
+  Befund unten). Seitenspalte „Anfragedaten" identisch sauber zur
+  Projektseite, Anfragenummer und Anlagedatum einzeilig, die beiden
+  Telefon-`<a>` bleiben im Kasten. Kunden-Auswahl-Dialog mit 61-Zeichen-
+  Einwortnamen: alles im Dialog, „Aendern"-Knopf bleibt rechts stehen.
+- **Kunden-Detailseite: ordentlich.** Die Kontaktspalte traegt jetzt in allen
+  fuenf Zeilen dasselbe Muster; die Zahlungsziel-Zeile faellt nicht mehr aus
+  der Reihe (Icon-Kasten gleich gross, gleicher Abstand). Mit realistischen
+  Werten ist das die sauberste Spalte der App.
+- **Mitarbeiter-Uebersicht und -Detail: ordentlich.** Detail-Kopf bricht am
+  Leerzeichen, Abteilung einzeilig, Kontaktspalte in ihren Kaesten.
+  Uebersichtskarte: siehe Hinweis 1.
+- **Vier Uebersichten und Lieferantenseiten: unveraendert sauber**, drei
+  Karten je Reihe bei 1440, vier bei 1920, gleiche Kartenhoehen, Nummern und
+  Betraege einzeilig.
+
+Zur Sorge aus dem Auftrag („49 Umbrueche koennten in Summe unruhig wirken"):
+tun sie nicht. Die Umbrueche entstehen ausschliesslich in den Fantasie-
+Komposita der Fixtures, und dort ist ein Umbruch die einzige Darstellung, die
+es geben kann. Kein Textbrei, kein zerrissenes Bild.
+
+### Befund 1 (🟡): Anfrage-Tagebuch — die ergaenzte Klasse wirkt dort nicht
+
+`AnfrageEditor.tsx`, Notiz-`<p>` der Tagebuchkarte. Task 12 hat dort
+`break-words` ergaenzt. Die Klasse ist an dieser Stelle **wirkungslos**: das
+`<p>` ist kein Block unter der Kopfzeile, sondern das **zweite Flex-Item der
+Kopfzeile selbst** (`<div className="flex justify-between items-start mb-2">`
+umschliesst es, im Gegensatz zu `ProjektEditor.tsx`, wo dasselbe `<p>` ein
+Geschwister der Kopfzeile ist). Es fehlt also `min-w-0` — genau die Regel,
+die dieser Task an 48 anderen Stellen richtig anwendet und in den eigenen
+Kommentaren dreimal erklaert („overflow-wrap: break-word senkt die
+automatische Mindestbreite eines Flex-Items nicht").
+
+Messung im Browser, dieselbe Seite, Klasse einmal aktiv und einmal per
+`className`-Aenderung zur Laufzeit entfernt (kein Eingriff in den Quelltext):
+
+| Notiztext | Groesse | Zeile scrollWidth−clientWidth | Text ueber die Kartenkante |
+| --- | --- | --- | --- |
+| 78-Zeichen-Wort, **mit** `break-words` | 1440 | 55px | −55px (bleibt drin) |
+| 78-Zeichen-Wort, **ohne** `break-words` | 1440 | 55px | −55px |
+| 120-Zeichen-Wort, **mit** `break-words` | 1440 | **319px** | **+208px** |
+| 120-Zeichen-Wort, **ohne** `break-words` | 1440 | **319px** | **+208px** |
+| 120-Zeichen-Wort, mit/ohne | 1920 | 151px | +40px |
+
+Die Zahlen sind mit und ohne die Klasse **auf den Pixel identisch**. Bei
+120 Zeichen laeuft der Notiztext bei 1440 um 208px aus der Tagebuchkarte
+heraus und legt sich sichtbar ueber die Seitenspalte „Anfragedaten" (im
+Bild: ueber „Kundennummer / K-1042"). `main` bleibt dabei 0 — deshalb faengt
+`keinHorizontalerUeberlauf` das nicht ab, und die Anfrage-Spec rendert
+Tagebuch-Notizen bisher gar nicht (`notizen: []`).
+
+**Einordnung: kein Rueckschritt.** Der Fehler ist genauso alt wie die
+Verschachtelung (bei `41f0d1e2` identisch) und wird durch Abschnitt 8 weder
+besser noch schlechter. Aber: eine der 49 Aenderungen ist an dieser Stelle
+eine Klasse ohne Wirkung, und der Task meldet sie als erledigt.
+
+**Konkreter Vorschlag** (eine Zeile, kein neues Muster): das Notiz-`<p>` aus
+der Kopfzeile herausziehen, also das schliessende `</div>` der Zeile
+`flex justify-between items-start mb-2` **vor** das `<p>` setzen — Zeichen
+fuer Zeichen der Aufbau, den `ProjektEditor.tsx` schon hat. Das behebt
+zugleich einen sichtbaren Unterschied im Normalfall: auf der Anfrageseite
+steht der Notiztext heute **rechts neben** der Autorenzeile, auf der
+Projektseite darunter. Alternativ (kleiner, aber nicht so sauber)
+`min-w-0 flex-1` am `<p>`.
+
+Wer es absichert, braucht eine Fixture mit einer Notiz — Tagebuch-Notizen
+sind in `anfrage-layout.spec.ts` bisher leer.
+
+### Hinweis 2 (🟡, Kosmetik): Komma am Zeilenanfang in der Mitarbeiterkarte
+
+`MitarbeiterEditor.tsx`, Uebersichtskarte, `<h3>{m.nachname}, {m.vorname}</h3>`.
+Bei 1440 (3-spaltiges Raster, ~368px Textbreite) passt der 39-Zeichen-
+Nachname der Fixture gerade noch in eine Zeile, „Nachname," aber nicht mehr.
+`break-words` bricht deshalb direkt vor dem Komma, und die zweite Zeile
+beginnt mit „, Bernhardine". Bei 1920 tritt das nicht auf (Komma bleibt am
+Zeilenende), auf der Detailseite ebenfalls nicht.
+
+Ohne `break-words` waere das Komma rund 5px ueber die Textbreite gelaufen —
+technisch ist der Fix also richtig, optisch ist ein Komma am Zeilenanfang
+trotzdem falsch. Vorschlag, falls es jemanden stoert: in der Karte Nachname
+und Vorname als zwei bewusste Zeilen setzen (`<h3>` Nachname, darunter
+Vorname) statt sie ueber ein Komma zu koppeln, das an der Umbruchstelle
+haengt. Nicht blockierend — betrifft nur die Extremfixture.
+
+### Hinweis 3 (🟡, Kosmetik): `max-w-[200px]` bei „Weitere Zuordnungen"
+
+`ProjektEditor.tsx`, Aufteilungszeile einer Eingangsrechnung. Der
+Beschreibungstext hat `truncate max-w-[200px]` gegen `break-words
+max-w-[200px]` getauscht (das `title` ist dabei entfallen, was in Ordnung
+ist — es wird ja nichts mehr abgeschnitten). Bei einem 53-Zeichen-Text
+stapelt sich die kursive Beschreibung dadurch auf drei Zeilen neben
+einzeiligen Nachbarn, letzte Zeile „eil" — die einzige Stelle im ganzen
+Abschnitt, die wirklich unruhig aussieht.
+
+Vorschlag: die 200px-Deckelung streichen. Die Zeile ist ohnehin `flex-wrap`;
+ohne die Deckelung nimmt die Beschreibung die Restbreite und rutscht bei
+Bedarf als Ganzes in die naechste Zeile, statt in einer schmalen Saeule zu
+stapeln. Sehr seltener Fall (geteilte Eingangsrechnung **und** langer
+Freitext), deshalb nur ein Hinweis.
+
+### Vorbestehende Kosmetik, nicht Teil dieses Abschnitts
+
+- **Adresse mit doppeltem Komma:** die Kopf-Untertitelzeile baut die Adresse
+  als `[strasse, plz, ort].join(', ')` — im Bild steht „…strasse 128a, 99999,
+  Musterstadt" statt „…strasse 128a, 99999 Musterstadt". Betrifft Projekt und
+  Anfrage, unveraendert seit vor diesem Vorhaben. Passt zum schon gemeldeten
+  Fall „leere Adresse zeigt ein einzelnes Komma" (Abschnitt 6/7).
+- **Stundenwerte mit englischem Dezimalpunkt:** die Zeiten-Hierarchie zeigt
+  „128.75 h" (aus `toFixed(2)`) neben deutsch formatierten Betraegen
+  („7.467,50 €"). Faellt jetzt staerker auf, weil die Zeile insgesamt
+  aufgeraeumter ist. Unveraendert, nicht Teil dieses Vorhabens.
+- **`design.ts` klippt weiterhin nicht** und `keinHorizontalerUeberlauf`
+  sieht nur `main`/`body`/`html` — Befund 1 waere mit einer Pruefung, die
+  auch Karten-Container gegen ihren Inhalt misst, automatisch aufgefallen.
+  Passt zu den schon vorgemerkten Nacharbeiten an `design.ts`.
+
+### Abschliessender Gesamteindruck
+
+Neun Seiten (fuenf Detailseiten, vier Uebersichten) in beiden
+Standardgroessen, ueber die 100 Screenshots des vollen Laufs und ueber rund
+40 eigene Aufnahmen.
+
+**Aus Nutzersicht ist auf keiner der neun Seiten in einer der beiden
+vorgesehenen Groessen etwas abgeschnitten, ueberlagert oder verrutscht** —
+ausser in dem einen Fall aus Befund 1, der aelter ist als dieser Abschnitt
+und eine 120-Zeichen-Notiz ohne Leerzeichen braucht.
+
+Die Sorge des Auftrags hat sich nicht bestaetigt: mit normalen Werten bricht
+nichts um, mit den harten Fixtures brechen genau die Fantasie-Komposita um,
+und die Seitenspalten sehen dabei weiter wie ein Datenblatt aus, nicht wie
+Textbrei. Die Einheitlichkeits-Aenderungen (Zahlungsziel-Zeile,
+`truncate` → `min-w-0 break-words` bei den Auftrags-/Anfragenummern) machen
+das Bild eher ruhiger als unruhiger.
+
+🟡 statt 🟢 allein wegen Befund 1: eine der 49 gemeldeten Stellen traegt eine
+Klasse, die dort nichts bewirkt, und der dahinterliegende Ueberlauf ist mit
+208px kein Randfall. Kein Rueckschritt gegenueber Abschnitt 7, aber auch
+nicht das, was der Task-Bericht behauptet.
