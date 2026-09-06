@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung } from './hilfen/design';
+import { designPruefung, keinTextLaeuftUeber } from './hilfen/design';
 import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
@@ -189,7 +189,68 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         await page.goto('/mitarbeiter');
 
         await expect(page.getByRole('heading', { name: 'MITARBEITER' })).toBeVisible();
-        await page.getByText(`${NACHNAME}, ${VORNAME}`, { exact: true }).click();
+
+        // Task 12 (Abschnitt 8): die Mitarbeiter-Uebersicht hatte bisher gar
+        // keine Zusicherung -- die Spec sprang bisher sofort in die
+        // Detailansicht. Genau hier steht die "bekannte Stelle" aus dem
+        // Code-Review von Abschnitt 7 (MitarbeiterEditor.tsx, Uebersichtskarte):
+        // <h3> ohne break-words, darunter eine "flex items-center gap-1"-Zeile
+        // mit dem Abteilungsnamen als anonymem Flex-Item ohne min-w-0 und
+        // einem Icon ohne shrink-0 -- Zeichen fuer Zeichen das Muster, das
+        // Task 11 in der Kundenkarte repariert hat.
+        //
+        // Mutationsprobe (Kontext-Log dieses Tasks): mit NACHNAME/ABTEILUNG
+        // bleiben beide Zusicherungen unten auch OHNE den jeweiligen Fix gruen
+        // -- bei text-sm/text-lg-Schriftgroesse und der 3-spaltigen Karte
+        // (~371px Innenbreite bei 1440) passen 41 bzw. 44 bindestrichlose
+        // Zeichen gerade noch hinein (306px bzw. 372px gemessen). Deckt sich
+        // mit dem Code-Review-Befund "passt bei 1440 heute noch knapp ...
+        // latent, nicht akut". Beide bleiben deshalb Regressionswaechter statt
+        // TDD-Beweis (dieselbe Einordnung wie die Kopfzeilen-Zusicherung
+        // unten) -- NACHNAME/ABTEILUNG absichtlich nicht weiter verlaengert,
+        // weil beide Konstanten in vielen anderen Zusicherungen dieser Datei
+        // wiederverwendet werden.
+        //
+        // <h3> ist ein normaler Block (kein Flex-Item) -- ohne break-words
+        // ueberliefe er unsichtbar (scrollWidth > clientWidth), OHNE dass sich
+        // seine eigene boundingBox() aendert (ein Block ohne explizite Breite
+        // bleibt bei "Breite = Elternbreite", der Text malt nur ueber den Rand
+        // hinaus, sofern er ueberhaupt zu lang ist). Deshalb direkt
+        // scrollWidth/clientWidth pruefen statt eine Positions-Geometrie, die
+        // diesen Fall grundsaetzlich nicht sehen koennte -- dieselbe
+        // Messmethode wie keinTextLaeuftUeber in e2e/hilfen/design.ts.
+        const uebersichtsTitel = page.getByText(`${NACHNAME}, ${VORNAME}`, { exact: true });
+        await expect(uebersichtsTitel).toBeVisible();
+        const titelUeberstand = await uebersichtsTitel.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(
+            titelUeberstand,
+            `Name "${NACHNAME}, ${VORNAME}" laeuft ${titelUeberstand}px ueber seinen eigenen Kasten -- braucht break-words an der <h3>`,
+        ).toBeLessThanOrEqual(2);
+
+        // Abteilungs-Zeile: getByText traefe hier (wie bei der Kundenkarte,
+        // siehe kunde-layout.spec.ts) das innerste Element -- bei einem
+        // "<span min-w-0 break-words>" um den Wert waere das der Span, der
+        // sich nie selbst ueberragt. Deshalb ausdruecklich auf die Flex-Zeile
+        // (<p>) hochlaufen und DEREN scrollWidth/clientWidth pruefen.
+        const abteilungsWert = page.getByText(ABTEILUNG, { exact: true });
+        await expect(abteilungsWert).toBeVisible();
+        const abteilungsZeile = abteilungsWert.locator(
+            'xpath=ancestor-or-self::p[contains(concat(" ", normalize-space(@class), " "), " flex ")][1]',
+        );
+        const abteilungsUeberstand = await abteilungsZeile.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(
+            abteilungsUeberstand,
+            `Abteilungs-Zeile "${ABTEILUNG}" laeuft ${abteilungsUeberstand}px ueber ihren eigenen Kasten -- braucht min-w-0 am <span> und shrink-0 am Icon`,
+        ).toBeLessThanOrEqual(2);
+
+        // Netz-Effekt und die volle Design-Pruefung (inkl. strengePruefungen)
+        // fuer die Uebersicht selbst -- bisher nie gelaufen.
+        await designPruefung(page, testInfo, 'mitarbeiter-uebersicht', {
+            strengePruefungen: true,
+            primaerAktion: page.getByRole('button', { name: 'Neu' }),
+        });
+
+        await uebersichtsTitel.click();
 
         const ueberschrift = page.getByRole('heading', { name: `${NACHNAME}, ${VORNAME}` });
         await expect(ueberschrift).toBeVisible();
@@ -356,6 +417,13 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
                 // nettolohn beide null) -- dieselbe Karten-Ueberstand-Pruefung
                 // wie bei den Dokumenten oben.
                 await pruefeDateinameBleibtInKarte(LOHNABRECHNUNG_DATEINAME_LANG);
+                // Abdeckungsluecke (Task 12, Code-Review Abschnitt 7): break-words
+                // am Lohnabrechnungs-<p> war bisher von KEINER Zusicherung
+                // gedeckt, weil designPruefung(strengePruefungen) oben (Z. 337)
+                // laeuft, WAEHREND noch der Dokumente-Reiter aktiv ist -- lange vor
+                // diesem Reiterwechsel. keinTextLaeuftUeber() direkt hier schliesst
+                // die Luecke, ohne einen weiteren Screenshot zu brauchen.
+                await keinTextLaeuftUeber(page);
             } else if (name === 'Dokumente') {
                 await expect(page.getByText(DOKUMENT_DATEINAME_LANG, { exact: true })).toBeVisible();
             }

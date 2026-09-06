@@ -325,18 +325,23 @@ export default function MitarbeiterEditor() {
     // Sub-components
     const DetailHeader = () => (
         <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">
-            <div>
+            {/* min-w-0 + break-words (Task 12, zweiter Mechanismus): dieses div
+                ist ab md: Flex-Item der Reihe daneben (Knopfblock) und behaelt
+                sonst min-width: auto -- ein langer Nachname/Abteilungsname
+                wuerde die <h1> ueber den Knopfblock hinausschieben, exakt wie
+                beim Projekt-/Anfrage-/Kunde-Kopf. */}
+            <div className="min-w-0">
                 <p className="text-sm font-semibold text-rose-600 uppercase tracking-wide">
                     Stammdaten
                 </p>
-                <h1 className="text-3xl font-bold text-slate-900 uppercase">
+                <h1 className="text-3xl font-bold text-slate-900 uppercase break-words">
                     {selectedMitarbeiter?.nachname}, {selectedMitarbeiter?.vorname}
                 </h1>
-                <p className="text-slate-500 mt-1">
+                <p className="text-slate-500 mt-1 break-words">
                     {selectedMitarbeiter?.abteilungNames || 'Keine Abteilung zugewiesen'}
                 </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 shrink-0">
                 {selectedMitarbeiter?.loginToken && (
                     <Button
                         variant="outline"
@@ -607,7 +612,7 @@ export default function MitarbeiterEditor() {
                                     <Trash2 className="w-4 h-4" />
                                 </button>
                             </div>
-                            <p className="text-slate-800 whitespace-pre-wrap text-sm">{notiz.inhalt}</p>
+                            <p className="text-slate-800 whitespace-pre-wrap text-sm break-words">{notiz.inhalt}</p>
                         </div>
                     ))}
                 </div>
@@ -1316,13 +1321,19 @@ export default function MitarbeiterEditor() {
                                         <User className="w-5 h-5" />
                                     </div>
                                 </div>
-                                <h3 className="text-lg font-bold text-slate-900 mb-1">
+                                {/* Task 12 (Bekannte Stelle, Code-Review Abschnitt 7):
+                                    Zeichen fuer Zeichen das Muster, das Task 11 in der
+                                    Kundenkarte repariert hat -- <h3> ohne break-words,
+                                    darunter ein anonymes Flex-Item ohne min-w-0 und ein
+                                    Icon ohne shrink-0. Die Mitarbeiter-Uebersicht hatte
+                                    bislang ausserdem gar keine Zusicherung dafuer. */}
+                                <h3 className="text-lg font-bold text-slate-900 mb-1 break-words">
                                     {m.nachname}, {m.vorname}
                                 </h3>
                                 {m.abteilungNames && (
                                     <p className="text-sm text-rose-600 font-medium mb-2 flex items-center gap-1">
-                                        <Building2 className="w-3 h-3" />
-                                        {m.abteilungNames}
+                                        <Building2 className="w-3 h-3 shrink-0" />
+                                        <span className="min-w-0 break-words">{m.abteilungNames}</span>
                                     </p>
                                 )}
                                 <div className="flex items-center gap-4 text-sm text-slate-600">
