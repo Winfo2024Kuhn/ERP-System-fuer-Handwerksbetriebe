@@ -2924,3 +2924,125 @@ Fensterbreite: zwischen 1536 und rund 1750 px kann ein langer Anzeigename
 die Kategorie-Leiste sprengen (Punkt c). In den beiden Groessen, gegen die
 dieses Vorhaben angetreten ist — 1440 und 1920 —, ist die Arbeit aus meiner
 Sicht abgenommen.
+
+## Abschnitt 7 — Task 10b (Coding-Agent)
+
+Zeit: 2026-09-06T16:01:29Z
+Branch: layout/task-10b-menueleiste-grenze
+Commit(s): 8c60292b (test), 96905632 (fix)
+Status: fertig
+
+Was gemacht wurde:
+- Testgetrieben (Skill test-driven-development eingehalten): erst
+  drittes Playwright-Projekt `pc-uebergang` (1536x960) in
+  `playwright.config.ts` ergaenzt, dann in `menueleiste-layout.spec.ts`
+  einen fiktiven ~55-Zeichen-Grenzfall-Namen (`LANGER_NUTZERNAME_GRENZFALL`,
+  DSGVO-konform, kein echter Nutzer) plus neuen Testfall gebaut, der bei
+  `pc-uebergang` rot war (119px Ueberstand, exakt wie vom Design-Reviewer
+  gemessen) und bei `pc-14zoll`/`pc-monitor` gruen blieb. Danach die Stelle
+  in `RibbonNav.tsx` gefixt.
+- **Gewaehlte Stellschraube: Grenze verschieben** (`2xl:max-w-none` →
+  `min-[1780px]:max-w-none`), nicht die feste Obergrenze. Begruendung
+  (auch als Code-Kommentar in `RibbonNav.tsx` hinterlegt): mit den
+  Design-Review-Messwerten laesst sich der Zusammenhang exakt
+  nachrechnen — der Ueberstand der Kategorie-Leiste waechst 1:1 mit der
+  Breite des Anzeigenamens (Δ128px Namensbreite ↔ Δ128px Ueberstand,
+  sowohl 1536px als auch 1650px). Daraus folgt: bei 1536px vertraegt die
+  Leiste nur rund 250px Namensbreite verlustfrei. Die im Plan als Beispiel
+  genannte feste Obergrenze `2xl:max-w-[18rem]` (288px) liegt **ueber**
+  dieser Schwelle und haette die Luecke nachweislich NICHT geschlossen
+  (eigene Nachrechnung: 288px − 250px = 38px Restueberstand bei 1536px
+  fuer einen 369px breiten Namen). Eine funktionierende feste Obergrenze
+  muesste kleiner als rund 15rem sein — und genau diese Grenze (10rem =
+  160px) gilt bei 1440px bereits heute und erzeugt dort nachweislich 0px
+  Ueberstand, auch bei sehr langen Namen. Die Grenze auf 1780px zu
+  verschieben nutzt also einfach die bereits bewaehrte Kuerzung eine Stufe
+  weiter, statt eine neue, ungetestete Zahl einzufuehren. Nachteil, im
+  Kommentar vermerkt: oberhalb von 1780px bleibt der Name weiterhin
+  unbegrenzt (wie zuvor ab 1536px) — fuer sehr lange Namen bleibt dort ein
+  Restrisiko (siehe Messung unten, 1780px/75-Zeichen-Name: 3px).
+- Drittes Playwright-Projekt `pc-uebergang` (1536x960) ergaenzt. Vorab
+  geprueft (wie im Plan verlangt): `npx playwright test --project=pc-uebergang`
+  ueber **alle** 17 Spec-Dateien (110 Faelle) lief **nicht** durchgehend
+  gruen (siehe Ergebnis unten) → Projekt per `testMatch:
+  'menueleiste-layout.spec.ts'` auf die eigene Spec begrenzt, Rest als
+  Befund hier festgehalten, nichts an fremden Dateien repariert.
+- `strengePruefungen` in allen vier `designPruefung()`-Aufrufen der
+  Menueleisten-Spec auf `testInfo.project.name === 'pc-monitor'` gestellt
+  (wie vom Design-Reviewer in Abschnitt 6 mit 8/8 gruen bestaetigt). Fuer
+  `pc-14zoll` und `pc-uebergang` bleibt es aus — Kommentar im Spec-Kopf
+  verweist auf die fehlende Ausnahme in `keinTextLaeuftUeber` fuer die
+  gewollte `max-w-[10rem] truncate`-Kuerzung (Task 10, fremde Datei
+  `design.ts`, nicht angefasst).
+
+Gemessene Zahlen (Kategorie-Leiste, `scrollWidth − clientWidth`, mit
+`LANGER_NUTZERNAME_GRENZFALL`, ~55 Zeichen, eigener Playwright-Lauf nach
+dem Fix):
+
+| Breite | vor dem Fix (Design-Review, Abschnitt 6) | nach dem Fix (eigene Messung) |
+| --- | --- | --- |
+| 1440px | 0px | 0px |
+| 1536px | 119px | **0px** |
+| 1650px | 5px | **0px** |
+| 1780px | 0px (Grenzfall, gleicher Code-Pfad wie vorher ab 1536px) | 0px |
+| 1920px | 0px | 0px |
+
+Zusaetzlich mit einem fiktiven ~75-Zeichen-Namen nachgemessen (derselbe,
+den der Design-Reviewer verwendet hat): 1440px 0px, 1536px 0px, 1650px
+0px, **1780px 3px**, 1920px 0px. Das 3px-Ergebnis bei exakt 1780px ist
+kein neuer Fehler — an dieser Stelle beginnt mit dem gewaehlten Fix
+derselbe unbegrenzte Code-Pfad, der vorher schon ab 1536px galt (die
+Design-Review-Tabelle zeigt fuer denselben Namen an derselben Stelle
+ebenfalls 3px). Kein Playwright-Projekt prueft exakt 1780px, daher als
+Bedenken unten vermerkt statt als Testfall nachgezogen (ausserhalb der im
+Plan definierten Luecke 1536–1780).
+
+Ergebnis des `pc-uebergang`-Laufs ueber alle Specs (vor der `testMatch`-
+Begrenzung, `npx playwright test --project=pc-uebergang`, 110 Faelle):
+**92 gruen, 18 rot** in 7 fremden Spec-Dateien, zwei unabhaengige
+Fundstellen:
+1. **Kartenraster-Specs** (`anfrage-layout.spec.ts`,
+   `kunde-layout.spec.ts`, `lieferant-layout.spec.ts`,
+   `uebersichten-layout.spec.ts`, 8 Faelle): nehmen "3 Karten bei 1440,
+   4 bei 1920" an. Tailwinds `2xl:`-Breakpoint (`min-width: 1536px`)
+   greift bei **genau** 1536px inklusive — die Karten springen dort
+   bereits auf 4 um, was keine dieser Specs vorsieht.
+2. **Ueberlappende Elemente bei 960px Hoehe** (`bearbeiten-leiste.spec.ts`,
+   `lieferant-dokument-modal.spec.ts`, 10 Faelle): ein Eingabefeld
+   ueberlappt die Knoepfe "Abbrechen"/"Speichern" der Bearbeiten-Leiste.
+   960px Hoehe ist weder 900 (pc-14zoll) noch 1080 (pc-monitor) und war
+   bisher ungeprueft — ein von der Fensterbreite unabhaengiger, bisher
+   unentdeckter Layoutfehler.
+Beides fremde Dateien (nicht in den Files dieses Tasks) — nicht
+repariert, `pc-uebergang` stattdessen per `testMatch` auf
+`menueleiste-layout.spec.ts` begrenzt.
+
+Gate-Zahlen:
+- `netstat -ano | findstr :5224`: leer vor jedem Lauf.
+- `E2E_PORT=5224 npx playwright test e2e/menueleiste-layout.spec.ts`:
+  **15/15 gruen** (alle drei Projekte, ~30-36s).
+- `npm run lint`: 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`,
+  `react-hooks/exhaustive-deps`, aus der Baseline, nicht angefasst), 0
+  Fehler.
+- `npm run build`: erfolgreich (Vorbestehender Hinweis "chunk larger than
+  500kB", nicht Teil dieser Aenderung). Build-Output vor dem Commit mit
+  `git checkout -- src/main/resources/static` + `git clean -fd` verworfen.
+- Sonderlauf `npx playwright test --project=pc-uebergang` (alle Specs,
+  vor der `testMatch`-Begrenzung durchgefuehrt): 92/110 gruen, 18 rot
+  (siehe oben) — Befund dokumentiert, keine fremde Datei angefasst.
+
+Bedenken / Abweichungen vom Plan:
+- Oberhalb von 1780px bleibt der Anzeigename weiterhin unbegrenzt breit
+  (wie zuvor ab 1536px) — fuer einen sehr langen Namen (~75 Zeichen) bleibt
+  bei exakt 1780px ein Restueberstand von 3px, siehe Messung oben. Kein
+  Playwright-Projekt deckt exakt 1780px ab; ausserhalb der im Plan
+  definierten Luecke (1536–1780), deshalb nicht behoben, nur vermerkt.
+- `pc-uebergang` ist bewusst nicht allgemein aktiv, sondern per
+  `testMatch` auf die Menueleisten-Spec begrenzt (siehe Ergebnis des
+  Vollstaendigkeits-Laufs oben). Die beiden gefundenen Fehlerklassen
+  (Kartenraster-Annahmen an der 2xl-Kante, Ueberlappung bei 960px Hoehe)
+  sind echte, bisher unentdeckte Befunde in fremden Dateien — fuer einen
+  Folge-Task, falls das Projekt spaeter allgemein aktiviert werden soll.
+- `LANGER_NUTZERNAME_GRENZFALL` ist ein fiktiver Name (keine reale Person,
+  DSGVO-konform), an die Design-Review-Messwerte angelehnt, damit die
+  Zahlen (119px bei 1536px) direkt nachvollziehbar bleiben.
