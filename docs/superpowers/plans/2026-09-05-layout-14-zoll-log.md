@@ -3242,3 +3242,496 @@ aus Abschnitt 6 als betroffen genannt (reiner Zahlenwert + "Tage", kein
 Umbruchrisiko). `LieferantenEditor.tsx` "Bezahlung"-Zeile (Z. 357 ff.)
 ebenso unangetastet gelassen (statischer, schon langer Text ohne
 Feldbezug, nicht in der Befundliste).
+
+## Abschnitt 7 — Design-Review (Design-Reviewer)
+
+Zeit: 2026-09-06T16:33:11Z
+Branch: feature/layout-14-zoll (Review-Worktree `wt/layout-review-design`, detached auf e9d8b2e7)
+Commit(s): keine — read-only geprueft, `git status` durchgehend sauber
+Status: fertig
+Ampel: 🟢
+
+### Mein Befund c) aus Abschnitt 6 — behoben, selbst nachgemessen
+
+Eigener Dev-Server auf Port 5382, eigenes Playwright-Skript ausserhalb des
+Worktrees, meine beiden Namen aus Abschnitt 6 (55 und 75 Zeichen, fiktiv),
+fuenf Breiten. Gemessen: `scrollWidth − clientWidth` der Kategorie-Leiste,
+dazu je Kategorie-Knopf der Ueberstand ueber die **sichtbare** rechte Kante
+des Containers (`rect.right − (container.left + clientWidth)`).
+
+| Anzeigename | 1440 | 1536 | 1650 | 1780 | 1920 |
+| --- | --- | --- | --- | --- | --- |
+| 55 Zeichen, Abschnitt 6 | 0 | **119px** | **5px** | 0 | 0 |
+| 55 Zeichen, jetzt | 0 | **0** | **0** | 0 | 0 |
+| 75 Zeichen, Abschnitt 6 | 0 | **247px** | **133px** | 3px | 0 |
+| 75 Zeichen, jetzt | 0 | **0** | **0** | 3px | 0 |
+
+`html`, `body` und `main` sind in allen zehn Laeufen 0. Namensbreiten
+identisch zu Abschnitt 6 (369px bzw. 497px), unter 1780px greift jetzt
+ueberall `max-w-[10rem]` (160px, `truncate`, `data-kuerzung-erlaubt`).
+
+**Die 3px bei genau 1780px stoeren nicht.** Sie entfallen auf den Kasten des
+fuenften Knopfes ("Finanzen & Controlling"), nicht auf seinen Text: im Bild
+stehen alle fuenf Kategorien bei 1780px vollstaendig da, mit Abstand zum
+KI-Hilfe-Knopf. Zum Vergleich der Zustand aus Abschnitt 6 bei 1536px — dort
+stand die fuenfte Kategorie nur noch als "Finanz" hinter dem KI-Hilfe-Knopf.
+Das ist der Unterschied zwischen "3px Kastenrand" und "Text weg".
+
+Zur verworfenen festen Obergrenze: die Rechnung des Task-10b-Agenten stimmt.
+Bei 1536px vertraegt die Leiste rund 250px Namensbreite; 18rem (288px) haette
+die Luecke nicht geschlossen. Die gewaehlte Loesung nutzt die bei 1440px
+bewaehrte 160px-Kuerzung eine Stufe weiter — das ist die sparsamere
+Aenderung, ich haette es genauso entschieden.
+
+### Optik der harten Fixtures — vier Gruppen angesehen, nicht nur gemessen
+
+Eigene Aufnahmen mit denselben Fixtures wie die Specs, beide Groessen.
+Gesamturteil: **ordentlich, nicht zerrissen** — in allen vier Gruppen.
+
+- **Gruppe 1, Kunden-Uebersichtskarte:** Ansprechpartner 2 Zeilen, Telefon 1,
+  E-Mail 2 (1440). Alles in der Karte, linker Textanfang bei allen drei
+  Zeilen buendig, Icons in der vertikalen Mitte ihres Blocks. Der
+  Ansprechpartner endet mit einem einzelnen "e" auf der zweiten Zeile — bei
+  einem 54-Zeichen-Wort ohne Trennstelle die einzig moegliche Darstellung.
+- **Gruppe 2, Kunden-Kontaktspalte:** je Zeile ein eigener grauer Kasten,
+  Label oben, Wert darunter. Ansprechpartner/Telefon/Mobiltelefon je 2
+  Zeilen. Die 96 Zeichen lange E-Mail braucht 4 Zeilen und endet mit "le" —
+  das ist die unruhigste Stelle im ganzen Vorhaben, aber sie bricht an den
+  Bindestrichen der Domain, bleibt lesbar und ist unveraendert der Stand seit
+  Abschnitt 4. Kein Aenderungsbedarf aus meiner Sicht.
+- **Gruppe 3, Lieferanten-Kontaktspalte:** sechs Kaesten, Werte 2-3 Zeilen
+  (Standard-Kostenstelle mit 63 Zeichen ist der laengste, 3 Zeilen). Gleiche
+  Rezeptur wie Kunde, gleiches Bild, sauber.
+- **Gruppe 4, Mitarbeiter-Dokumente und -Lohnabrechnungen:** hier war die
+  Sorge "Dateiname ueber vier Zeilen" — **eingetreten ist das nicht.** Der
+  150-Zeichen-Dateiname braucht in der breiten Hauptspalte 2 Zeilen bei 1440
+  und 2 bei 1920 (Textbreite 842px bzw. 1010px). Der Lohnabrechnungs-
+  Rueckfalltext (`text-xs`) braucht 2 Zeilen bei 1440 und 1 bei 1920. Icon
+  links, Knopfblock rechts bleiben stehen, die Zeile waechst nur in der
+  Hoehe. Das sieht aus wie eine normale Dateiliste, nicht wie ein Unfall.
+
+Zur Einordnung: 150 Zeichen sind fuer einen echten Dateinamen extrem. Bei
+realistischen 60-80 Zeichen bleibt es einzeilig. Der Fix kostet also nichts
+und greift nur im Ausnahmefall — genau richtig so.
+
+### E2E-Lauf
+
+- `netstat -ano | findstr :5225` vor dem Lauf leer.
+- `E2E_PORT=5225 npm run test:e2e`, Standard-Worker: **225/225 gruen**
+  (4,3 min). Verteilung: 110 `pc-14zoll`, 110 `pc-monitor`, 5 `pc-uebergang`.
+  Gegenueber Abschnitt 6 (218) also +2 Faelle in den beiden Standardgroessen
+  und +5 durch das dritte Projekt.
+- Alle 98 Screenshots aus `test-results/design/` lagen nach dem Lauf vor und
+  wurden **vor** allen weiteren Laeufen ausserhalb des Worktrees gesichert
+  (ein Lauf ohne `--output` raeumt `test-results/` ab). Der eigene Lauf zu
+  Befund b) lief mit `outputDir` ausserhalb des Worktrees.
+
+### Befund a) bei 1536: Spec-Annahme, kein Produktproblem
+
+Kartenbreite der Kunden-Uebersicht ueber die Breakpoint-Kante gemessen:
+
+| Fensterbreite | Karten je Reihe | Kartenbreite |
+| --- | --- | --- |
+| 1440 | 3 | 393px |
+| 1535 | 3 | **424px** |
+| 1536 | 4 | **306px** |
+| 1600 | 4 | 322px |
+| 1920 | 4 | 338px |
+
+Ein Pixel mehr Fensterbreite macht die Karten also 118px schmaler — bei 1536
+sind sie sogar schmaler als bei 1440. Trotzdem: bei 1536 stehen alle vier
+Kundennamen vollstaendig in zwei Zeilen, Karten gleich hoch, Trennlinien auf
+gleicher Hoehe, nichts gekuerzt. Bei den laengeren Projekt-Titeln
+(`line-clamp-2`) kuerzt 1536 drei von vier Titeln — **aber 1920 kuerzt
+dieselben drei**, und das ist die vom Vorhaben abgenommene, mit `title`
+markierte Ausnahme. Der Nutzer sieht bei 1536 also nichts, was er bei 1920
+nicht auch saehe.
+
+Einordnung: reine Spec-Annahme ("3 bei 1440, 4 bei 1920"), kein
+Produktproblem. Wer `pc-uebergang` spaeter allgemein aktiviert, muss die
+Kartenzahl aus der Fensterbreite ableiten statt aus dem Projektnamen. Kein
+Handlungsbedarf am Produktivcode.
+
+### Befund b) bei 960px Hoehe: Fehlalarm der Pruefung, kein Layoutfehler
+
+Erst nachgestellt: eigene Playwright-Konfiguration ausserhalb des Worktrees,
+`e2e/` des Worktrees als `testDir`, drei Hoehen bei je 1536px Breite.
+Ergebnis: **h900 9/9 gruen, h1080 9/9 gruen, h960 9/9 rot** — die Zahl des
+Task-10b-Agenten stimmt, der Fehler haengt wirklich an der Hoehe.
+
+Dann nachgemessen, was da ueberlappt. Die gemeldeten Elemente sind drei
+Eingabefelder der Zahlungsziel-Schnellwahl (Platzhalter "z.B. 2/14/30"):
+
+| Hoehe | Fussleiste y | Feld-Rechteck y | sichtbarer Anteil |
+| --- | --- | --- | --- |
+| 960 | 852..923 | 876..914 | **0px** (Schnitt 876..852) |
+
+Die Felder sind vollstaendig aus dem scrollenden Formularbereich
+herausgescrollt und werden von dessen `overflow-y-auto` geklippt. Auf dem
+Bildschirm ueberdeckt nichts irgendetwas — die Fussleiste ist ein normales
+Flex-Geschwister unter dem Scrollbereich (`shrink-0`, weder `sticky` noch
+`absolute`), sie **kann** den Inhalt gar nicht ueberlagern. Im Bild bei
+960px Hoehe ist das Modal einwandfrei.
+
+Ursache ist `keineUeberschneidungen()` in `e2e/hilfen/design.ts` (Z. 355 ff.):
+die Pruefung nimmt `getBoundingClientRect()` roh und schneidet es **nicht**
+mit den scrollenden Vorfahren. Ein Element, das nur ausgescrollt ist, zaehlt
+dort als ueberlappend. Bei 1080 tritt dasselbe Rechteck-Muster bei einer
+Checkbox auf, faellt aber durch die Enthalten-Regel raus — deshalb faellt es
+nur bei genau 960 auf.
+
+**Einordnung: weder ein Produktfehler noch ein Fehler des Sperr-Vorhabens.**
+Die Zuordnung im Kontext-Log zu Task 10b ("ein bislang unentdeckter, von der
+Fensterbreite unabhaengiger Layoutfehler") ist so nicht haltbar — es ist eine
+Luecke im gemeinsamen Pruefbaustein `design.ts`, derselben fremden Datei, die
+schon wegen `keinTextLaeuftUeber`/`data-kuerzung-erlaubt` als Nacharbeit
+vorgemerkt ist. Wer `design.ts` anfasst, sollte den sichtbaren Anteil
+(Schnitt mit allen scrollenden Vorfahren) statt des rohen Rechtecks
+vergleichen; dann faellt dieser Fehlalarm weg und `pc-uebergang` koennte
+allgemein laufen. Zur Klarstellung fuer das Sperr-Vorhaben: an
+`BearbeitenLeiste.tsx` und `LieferantDokumentModal.tsx` ist deswegen nichts
+zu tun.
+
+### Abschliessender Gesamteindruck (Abnahme)
+
+Fuenf Detailseiten und vier Uebersichten, beide Standardgroessen, ueber die
+98 Screenshots des vollen Laufs und ueber eigene Aufnahmen durchgegangen.
+
+- **Vier Uebersichten** (Projekte, Anfragen, Kunden, Lieferanten): sauber.
+  Drei Karten je Reihe bei 1440, vier bei 1920, gleiche Kartenhoehen,
+  Trennlinien auf einer Linie, Primaeraktion ohne Scrollen sichtbar.
+  Gekuerzte Kartentitel mit "…" sind die markierte, gewollte Ausnahme.
+- **Projekt-, Anfrage-, Kunden-, Lieferanten-Detailseite:** sauber in beiden
+  Groessen. Lange Titel brechen um statt zu ueberdecken (auch der
+  61-Zeichen-Einwort-Lieferant), Kennzahlenreihe bleibt frei, Reiterleisten
+  einzeilig, Kontaktspalten bleiben in ihren Kaesten.
+- **Mitarbeiter-Detailseite:** Kontaktspalte wie in Abschnitt 6 abgenommen,
+  neu jetzt Dokumente und Lohnabrechnungen mit 150-Zeichen-Dateinamen — beide
+  Reiter sauber, zweizeilig, in der Karte.
+
+**Aus Nutzersicht ist auf keiner der neun Seiten in einer der beiden
+vorgesehenen Groessen etwas abgeschnitten, ueberlagert oder verrutscht.** Die
+Einschraenkung aus Abschnitt 6 (Kategorie-Leiste zwischen 1536 und 1750px)
+ist weg. Aus meiner Sicht abgenommen.
+
+### Hinweise (nicht blockierend)
+
+- **`design.ts` klippt nicht** (Befund b oben) — der wichtigste Punkt fuer
+  die Nacharbeit an `design.ts`, zusammen mit der fehlenden Ausnahme in
+  `keinTextLaeuftUeber`. Beides derselbe Baustein, beides bekannt.
+- **Restrisiko oberhalb 1780px** bleibt bestehen (unbegrenzte Namensbreite).
+  Bei 1780px/75 Zeichen 3px Kastenrand, im Bild unsichtbar. Wer es
+  restlos zumachen will, muesste `max-w-none` ganz aufgeben — dafuer sehe
+  ich keinen Anlass.
+- **Vorbestehende Kosmetik, unveraendert:** ist die Adresse eines Kunden
+  leer, steht in der Kopfzeile der Kunden-Detailseite ein Ortsmarken-Symbol
+  mit einem einzelnen Komma daneben (beide Groessen). Der Standort-Kasten
+  darunter macht es richtig ("Keine Adresse"). Nicht Teil dieses Vorhabens,
+  seit Abschnitt 6 gemeldet.
+
+## Abschnitt 7 — Code-Review (Code-Reviewer)
+
+Zeit: 2026-09-06T18:32:00Z
+Branch: feature/layout-14-zoll
+Diff: c43abe42..e9d8b2e7 (11 Dateien, +513/-101)
+Status: fertig
+Ampel: 🟡
+
+### Gates (aus `react-pc-frontend/`, synchron)
+
+- `npm run lint`: **0 Fehler, genau 1 Warnung** (`BelegeKasseEditor.tsx:1204`,
+  `react-hooks/exhaustive-deps`) — identisch zur Baseline.
+- `npm run test`: **1082/1082 gruen** (88 Dateien, 128s). Zwei Vorlaeufe waren
+  unter Last flockig (einmal 7 vitest-Worker-Timeouts ohne einen einzigen
+  Testfehler, einmal 1081/1082 mit einer 5s-Zeitueberschreitung in
+  `src/components/document-editor/index.test.tsx` — Einzellauf dieser Datei
+  danach 25/25 gruen). Beides Infrastruktur, keine Datei aus dem Diff.
+- `npm run build`: gruen (`tsc -b` + `vite build`, 14s), nur die vorbestehende
+  Chunk-Warnung. Output verworfen (`git checkout -- src/main/resources/static`
+  + `git clean -fd`), `git status` danach leer.
+- Kein `./mvnw`, kein Playwright-Lauf (gehoert dem Design-Reviewer).
+
+### Rechnung Task 10b — bestaetigt, eigene Nachrechnung
+
+Grundlage sind die Messreihen des Design-Reviewers aus Abschnitt 6 (Ueberstand
+der Kategorie-Leiste, `scrollWidth − clientWidth`):
+
+| Namensbreite | 1440 | 1536 | 1650 | 1780 | 1920 |
+| --- | --- | --- | --- | --- | --- |
+| 191px | 0 | 0 | 0 | 0 | 0 |
+| 369px | 0 | 119 | 5 | 0 | 0 |
+| 497px | 0 | 247 | 133 | 3 | 0 |
+
+1. **1:1-Wachstum:** 497−369 = 128px Namensbreite; 247−119 = 128px (bei 1536)
+   und 133−5 = 128px (bei 1650). Bestaetigt.
+2. **Schwelle bei 1536:** 369 − 119 = **250px**. Die Zahl des Agenten stimmt.
+3. **Die Schwelle ist selbst linear in der Fensterbreite:** 1536 → 250,
+   1650 → 364 (369−5), 1780 → 494 (497−3). Die Differenzen sind 114 und 130 —
+   exakt die Fensterbreiten-Differenzen. Es gilt durchgehend **vertraegliche
+   Namensbreite = Fensterbreite − 1286px**. Das Modell ist also nicht aus zwei
+   Punkten geraten, es haelt ueber alle drei Breiten.
+4. **`2xl:max-w-[18rem]` haette nicht gereicht:** 288px − 250px = **38px**
+   Restueberstand bei 1536. Die Zahl des Agenten stimmt.
+5. **Gegenprobe zur gewaehlten Loesung:** `max-w-[10rem]` = 160px liegt 90px
+   unter der 250px-Schwelle — das Modell sagt 0px voraus, der Agent hat bei
+   1536 und 1650 nach dem Fix genau 0px gemessen. Passt.
+6. **Modellgrenze, der Vollstaendigkeit halber:** Bei 1440 sagt die Formel
+   160 − 154 = 6px voraus, gemessen sind 0px. Die Extrapolation ist an der
+   Nullstelle also rund 6px genau — fuer die 38px-Aussage irrelevant, die liegt
+   weit ausserhalb dieser Unschaerfe.
+
+**Ergebnis: Rechnung bestaetigt, Entscheidung tragfaehig.** Ein Punkt bleibt,
+nicht blockierend: `max-w-none` ist oberhalb 1780px prinzipiell unbegrenzt.
+Nach derselben Formel ist die Leiste bei 1780px erst ab Namensbreite bis 494px
+dicht — der 75-Zeichen-Name (497px) liegt 3px darueber, exakt der vom Agenten
+gemessene Restueberstand. Wer das ganz zumachen will, setzt statt
+`min-[1780px]:max-w-none` ein `min-[1780px]:max-w-[30rem]` (480px unter 494px):
+dieselbe Stufe, aber ab 1780px fuer **jede** Namenslaenge dicht. Die Kuerzung
+waere zulaessig, das Element traegt `data-kuerzung-erlaubt`.
+
+### Fehlerklasse — noch NICHT endgueltig zu
+
+Die vier Gruppen aus Task 11 sind sauber zu (Kunde Detailspalte und
+Uebersichtskarte, Lieferant Kontaktspalte, Mitarbeiter Dokumente und
+Lohnabrechnungen: jede Ebene `min-w-0`, Wert `break-words`, Icon und Knopfblock
+`shrink-0`). Die Mitarbeiter-SideInfo aus Task 7b ebenfalls.
+
+Diesmal habe ich nicht nur Flex- und Grid-Zeilen geprueft, sondern jede Stelle,
+an der ein Datenwert in einer schmalen Spalte oder Karte landet. Dabei faellt
+auf, dass die Klasse einen **zweiten Mechanismus** hat, den bisher niemand
+aufgeschrieben hat:
+
+> Ein reiner Block-`<p>` ohne `break-words` ist genauso kaputt wie eine
+> Flex-Zeile ohne `min-w-0`. Der Kasten waechst zwar nicht mit, aber das
+> unteilbare Wort malt rechts aus ihm heraus und landet damit im
+> Scroll-Ueberlauf von `main`. `keinHorizontalerUeberlauf` sieht das — nur hat
+> es nie eine Fixture gerendert. (`DetailLayout.tsx` hat kein
+> `overflow-hidden`, der Weg nach oben ist frei.)
+
+Offene Stellen, alle **vorbestehend**, keine von Abschnitt 7 verursacht, keine
+in den Files von Task 11 oder 10b:
+
+1. **`ProjektEditor.tsx` `sideContent` (Z. 3319-3345, 3394):** "Kunde",
+   "Kundennummer", "Ansprechpartner", "Auftragsnummer" und die Projektadresse
+   sind Block-`<p>` ohne `break-words` in der rund 322px schmalen Seitenspalte.
+   Die E-Mail-Zeile daneben wurde in Abschnitt 4 genau deshalb repariert, die
+   Geschwister blieben stehen. Realitaetsnah sind "Kunde" (Komposita-Firmenname)
+   und die Strasse.
+2. **`AnfrageEditor.tsx` `sideContent` (Z. 1444-1462, 1512):** identisch —
+   "Kunde", "Kundennummer", "Ansprechpartner", "Anfragenummer",
+   Projektadresse. Zusaetzlich die beiden Telefon-`<a>` (Z. 1489/1494) ohne
+   `break-words`: genau das Feld, fuer das Task 11 bei Kunde und Lieferant eine
+   32-stellige Ziffernkette als Fixture eingezogen hat.
+3. **`ProjektEditor.tsx` Z. 3381**, Kategorien-Block: `{kategorie?.pfad}` ohne
+   `break-words`. Ein Kategoriepfad kann lang und trennstellenarm sein.
+4. **`MitarbeiterEditor.tsx` Uebersichtskarte (Z. 1319-1327):** `<h3>` mit
+   `{m.nachname}, {m.vorname}` ohne `break-words`, darunter eine
+   `flex items-center gap-1`-Zeile mit `{m.abteilungNames}` — anonymes
+   Flex-Item, Icon ohne `shrink-0`, kein `min-w-0`, kein `break-words`.
+   **Zeichen fuer Zeichen das Gruppe-1-Muster, das Task 11 in der Kundenkarte
+   repariert hat.** Die Fixture traegt hier sogar schon einen 43-Zeichen-
+   Abteilungsnamen ohne Trennstelle; er passt bei 1440 heute noch knapp (rund
+   316px in einer 395px breiten Karte) — latent, nicht akut. Die
+   Mitarbeiter-Uebersicht hat ausserdem **gar keine** Zusicherung:
+   `mitarbeiter-layout.spec.ts` rendert sie, klickt sofort durch und prueft nur
+   die Detailseite.
+5. **`Kundeneditor.tsx` KundenKarte Z. 910** (`{ortText}`) und
+   **`MitarbeiterEditor.tsx` NotizenList Z. 610** (`{notiz.inhalt}`, Freitext) —
+   Block ohne `break-words`. Geringes Risiko, aber dieselbe Klasse.
+6. **Reste der Rezeptur (kein Fehler, nur Ungleichheit):** die Zahlungsziel-Zeile
+   (`Kundeneditor.tsx` Z. 530) und die Bezahlung-Zeile (`LieferantenEditor.tsx`
+   Z. 356) sind die einzigen beiden Zeilen ihrer Kontaktspalten ohne
+   `min-w-0`/`break-words`/`shrink-0`. Beide tragen nur Zahlen bzw. statischen,
+   umbrechbaren Text — funktional harmlos und vom Agenten nachvollziehbar
+   begruendet ausgelassen. Wer die Spalte spaeter liest, sieht aber zwei Muster
+   nebeneinander.
+
+**Antwort: nein, noch nicht zu — aber der Rest liegt vollstaendig ausserhalb der
+Files von Abschnitt 7.** Der grosse Brocken ist Punkt 1+2 (Projekt- und
+Anfrage-Seitenspalte, zusammen rund elf Werte) und Punkt 4
+(Mitarbeiter-Uebersichtskarte). Vorschlag: eigener Task in Abschnitt 8 neben
+Task 10, mit derselben Rezeptur — Fixture haerten, `break-words` an die Werte,
+`min-w-0` und `shrink-0` an die eine Flex-Zeile aus Punkt 4.
+
+### Mutationsproben je Gruppe (aus dem Spec-Code abgeleitet, kein Browserlauf)
+
+**Gruppe 1 (KundenKarte, `kunde-layout.spec.ts` Z. 594-610):**
+- `break-words` am `<span>` weg → `getByText` trifft den `<span>`, der bleibt auf
+  Elternbreite, der Text laeuft ueber ihn → `scrollWidth − clientWidth` groesser
+  als 2 → **rot**.
+- `<span>`-Fassung ganz weg (Rueckfall auf nackten Text-Node) → `getByText`
+  trifft wieder das `<p>` → **rot** (das war der urspruengliche Zustand).
+- `min-w-0` am `<span>` weg → **die Zeilen-Zusicherung bleibt gruen**: der
+  `<span>` waechst dann selbst auf Wortbreite, `scrollWidth == clientWidth`.
+  Gefangen wird es erst von der `main`-Zusicherung zwei Zeilen weiter unten (die
+  Karte ist Raster-Element, ihre Mindestinhaltsbreite zieht das ganze Raster
+  auf). **Rot, aber an anderer Stelle als der Text der Zusicherung nahelegt** —
+  die drei neuen Zeilen-Zusicherungen sind schwaecher, als sie klingen.
+
+**Gruppe 2 + 3 (Kunde/Lieferant Kontaktspalte):**
+- `min-w-0 flex-1` weg → das umschliessende `<div>` waechst auf
+  Mindestinhaltsbreite, der Wert-`<p>` waechst mit, `boundingBox` misst den
+  Ueberstand → **rot** (genau die 164px/59px aus dem Task-Log).
+- `break-words` weg → `boundingBox` misst den Rahmen, nicht den ueberlaufenden
+  Text; die neue Kasten-Zusicherung bliebe **gruen**. Gefangen von
+  `keinHorizontalerUeberlauf` (main) und `keinTextLaeuftUeber` — beide ueber
+  `designPruefung(strengePruefungen: true)` in beiden Specs aktiv. Der
+  Design-Reviewer hat das in Abschnitt 6 (Befund d) mit 127px main-Ueberstand
+  belegt. **Rot.**
+- `shrink-0` am Icon weg → von keiner Zusicherung gedeckt (das Icon quetscht, ein
+  Ueberstand entsteht nicht). Kleine Luecke, 🟡.
+
+**Gruppe 4 (Mitarbeiter):**
+- aeusseres `min-w-0` (Raster-Element) weg → **rot**, vom Agenten empirisch
+  belegt (Ueberstand bleibt bei 313px/145px).
+- inneres `min-w-0 flex-1` weg → Wert-`<p>` waechst mit → Karten-Zusicherung
+  **rot**.
+- `break-words` am **Dokument**-`<p>` weg → Geometrie gruen, `main` gruen (die
+  breite Hauptspalte schluckt es, siehe Task-Log), aber `keinTextLaeuftUeber`
+  schlaegt an: `designPruefung(strengePruefungen: true)` steht in Z. 337 mit
+  aktivem Dokumente-Reiter. **Rot.**
+- `break-words` am **Lohnabrechnungs**-`<p>` weg → **von keiner Zusicherung
+  gedeckt.** Geometrie gruen, `main` gruen, und `designPruefung` steht in Z. 337
+  **vor** der Reiter-Schleife — der Lohnabrechnungen-Reiter ist da noch nicht
+  offen. 🟡 Vorschlag fuer Task 10: `designPruefung` auch innerhalb der
+  Reiter-Schleife aufrufen, oder `keinTextLaeuftUeber(page)` nach dem
+  Reiterwechsel einzeln.
+
+**Uebersichten-Trennlinien (`uebersichten-layout.spec.ts` Z. 346-350):**
+Die Umstellung `MIX[1]` auf `MIX[2]` ist die richtige der beiden vom
+Design-Reviewer vorgeschlagenen Varianten. Aus dessen Messtabelle: MIX[0]
+einzeilig, MIX[2] zweizeilig **in beiden Groessen**, bei 1440 in derselben
+Kartenreihe (3 Spalten, Index 0-2) — die `mt-auto`-Regression verschiebt beide
+unterschiedlich (618 gegen 642, 24px). Der wiederholte Mutationslauf des Agenten
+(`gap-3` auf `space-y-3`, jetzt rot bei beiden Groessen) deckt sich mit dieser
+Herleitung. Keine Mutationsreste im Diff (geprueft).
+
+### Fixture-Haerte — durchgehend in Ordnung, eine weiche Stelle
+
+Alle neuen Werte nachgezaehlt und auf Trennstellen geprueft: keine Bindestriche,
+keine Leerzeichen, keine Punkte ausser Domain- bzw. Dateiendungs-Punkt,
+Unterstrich nur im Dateinamen (nach UAX #14 Klasse AL, keine Umbruchstelle — vom
+313px-Messwert praktisch bestaetigt).
+
+| Wert | Laenge | Trennstellen |
+| --- | --- | --- |
+| `ANSPRECHPARTNER_LANG` | 50 | keine |
+| `TELEFON_LANG` (Kunde + Lieferant) | 32 Ziffern | keine |
+| `MOBILTELEFON_LANG` / `MOBIL_FAX_LANG` | 38 Ziffern | keine |
+| `ANSPRECHPARTNER_OHNE_TRENNZEICHEN` | 54 | keine |
+| `TELEFON_OHNE_TRENNZEICHEN` | 32 Ziffern | keine |
+| `VERTRETER_LANG` | 48 | keine |
+| `STANDARD_KOSTENSTELLE_LANG` | 63 | keine |
+| `DOKUMENT_`/`LOHNABRECHNUNG_DATEINAME_LANG` | 150 | nur `_` und `.pdf` |
+| `ORT_LANG` / `QUALIFIKATION_LANG` | 32 / 44 | keine |
+
+Eine Ausnahme: **`STRASSE_LANG` ("Kreisverkehrsplatzrandbebauungsstrasse 128a")
+enthaelt ein Leerzeichen** — laengstes unteilbares Stueck 37 statt 42 Zeichen.
+Das ist die weichste der neuen Fixtures. Unkritisch, weil die Adresszeile seit
+Task 7b bereits `min-w-0 flex-1 break-words` traegt und die Zusicherung
+ausdruecklich nur die Testluecke schliesst — aber wer die Zahl spaeter als
+"gehaertet" zitiert, sollte es wissen.
+
+Die Zeichenzahlen im Task-11-Log liegen durchgehend 1-2 daneben (z.B. "51
+Zeichen" fuer 50, "33 Ziffern" fuer 32). Kosmetisch.
+
+`LANGER_NUTZERNAME_GRENZFALL` enthaelt Leerzeichen und Bindestriche — hier
+richtig so: der Anzeigename ist `truncate` (einzeilig, kein Umbruch), die
+Haerte-Regel gilt fuer ihn nicht.
+
+DSGVO: alle Werte sind Fantasie-Komposita, E-Mails auf `.example`, keine reale
+Person, kein echter Netzzugriff (`blockiereFremdeNetzwerkzugriffe` steht in allen
+betroffenen Specs vor der ersten Navigation).
+
+### `pc-uebergang` per `testMatch` eingegrenzt — richtig, aber mit Ablaufdatum
+
+Die Entscheidung folgt exakt der Plan-Anweisung ("wenn nicht alle gruen, das
+Projekt nur auf die Menueleisten-Spec begrenzen und den Rest im Log
+festhalten"), der Vollstaendigkeitslauf wurde vorher gefahren und ausgewertet,
+die Begruendung steht im Config-Kommentar. Handwerklich sauber;
+`testMatch: 'menueleiste-layout.spec.ts'` greift auch technisch (Playwright
+ergaenzt `**/` vor Mustern ohne Pfadanteil — die 15/15 aus 5 Tests mal 3
+Projekten bestaetigen das).
+
+**Empfehlung fuer den Abschluss:** heute richtig, darf aber nicht dauerhaft
+stehenbleiben. Sonst ist die Menueleiste die einzige Stelle im ganzen Programm,
+die bei 1536px je geprueft wird — ausgerechnet die Breite mit den schmalsten
+Karten (siehe unten). Konkret:
+
+1. Befund (a) in Task 10 (Abschnitt 8) miterledigen — reine Spec-Arbeit in
+   Dateien, die Task 10 ohnehin anfasst.
+2. Befund (b) als eigenes Ticket an das Sperr-Vorhaben geben.
+3. Danach `testMatch` in `playwright.config.ts` ersatzlos streichen, damit
+   `pc-uebergang` fuer alle Specs laeuft. Als Punkt in den Abschluss-Task, nicht
+   als "irgendwann"-Kommentar.
+
+### Befund (a) bei 1536 — nicht nur eine Spec-Annahme
+
+Die **acht roten Faelle selbst** sind eine Spec-Annahme: die
+Kartenraster-Zusicherungen verdrahten "3 Karten bei 1440, 4 bei 1920" fest,
+statt die erwartete Spaltenzahl aus der Fensterbreite abzuleiten. Eine Zeile pro
+Spec.
+
+**Dahinter steckt aber eine echte Produktfrage.** Nachgerechnet mit den
+tatsaechlichen Klassen (`main` hat `md:px-8` = 32px je Seite, Raster ist
+`lg:grid-cols-3 2xl:grid-cols-4 gap-4`):
+
+| Fensterbreite | Spalten | Kartenbreite |
+| --- | --- | --- |
+| 1440 | 3 | (1376 − 32)/3 = **448px** |
+| 1536 | 4 | (1472 − 48)/4 = **356px** |
+| 1920 | 4 | (1856 − 48)/4 = **452px** |
+
+Bei 1536px sind die Karten **92px (21%) schmaler als bei 1440px** — und damit
+die schmalsten im gesamten unterstuetzten Bereich. Die Grundannahme dieses
+Vorhabens ("1440 ist das Kleinste, also der haerteste Fall") **gilt fuer die
+Kartenraster nicht.** Alles, was wir an Kartentiteln, Meta-Zeilen und Umbruch
+bei 1440 abgenommen haben, ist bei 1536 rund ein Fuenftel enger. Wer die
+Spaltenzahl-Zusicherung nur "richtig stellt", schaut genau an der Stelle vorbei,
+an der es weh tut. Deshalb: Spaltenzahl aus der Breite ableiten **und** danach
+die Ueberlauf- und Kuerzungspruefungen bei 1536 wirklich laufen lassen.
+
+### Befund (b) bei 960px Hoehe — nicht unsere Baustelle
+
+Ueberlappung eines Eingabefelds mit "Abbrechen"/"Speichern" in
+`bearbeiten-leiste.spec.ts` und `lieferant-dokument-modal.spec.ts`. Beides
+Dateien des Sperr-Vorhabens, in keiner `Files`-Liste dieses Plans, und der
+Fehler ist **hoehenabhaengig** — dieses Vorhaben handelt von der Breite bei
+1440. Nach den Global Constraints ("Faellt etwas auf, das in einer fremden Datei
+liegt, auch ein echter Fehler: melden, nicht still mitreparieren") gehoert er
+gemeldet, nicht behoben. **Gehoert dem Sperr-Vorhaben.**
+
+Ein Hinweis fuer dessen Bearbeiter, damit niemand die falsche Faehrte nimmt:
+waere es schlicht "zu wenig Hoehe", muesste 900px (pc-14zoll) **schlimmer** sein
+als 960px — ist es aber nicht, dort ist alles gruen. Die Ursache ist also nicht
+die Hoehe an sich, sondern vermutlich ein Schwellwert (`max-h-[90vh]` am Dialog:
+810px bei 900, 864px bei 960, 972px bei 1080), an dem der innere Scrollbereich
+kippt. Das ist eine gezielte Suche wert, kein Aufraeumen ins Blaue.
+
+### Weitere Hinweise (alle 🟡, nicht blockierend)
+
+- **`flex-1` nur an einer Zeile entfernt.** Die Kunden-Kontaktspalte hat jetzt
+  vier Zeilen mit `min-w-0 flex-1` und die E-Mail-Zeile mit `min-w-0` allein.
+  Der Design-Reviewer hat nachgewiesen, dass es wirkungslos ist, und der Plan hat
+  es so verlangt — aber direkt daneben stehen vier frisch hinzugefuegte `flex-1`.
+  Entweder ueberall weg oder ueberall dran; ein Muster pro Spalte.
+- **`kriterien.md`** liegt ausserhalb `react-pc-frontend/`, ist aber ein
+  Orchestrator-Commit (`e9d8b2e7`, Autor Marvin Kuhn) in derselben Reihe wie
+  `97057c3d` und `8ec65ee4` — bestehende Praxis dieses Vorhabens, kein
+  Scope-Bruch der Tasks. Deshalb kein 🔴. Inhaltlich richtig; kleiner
+  Formatfehler: der neue Aufzaehlungspunkt hat verschachteltes Fett, das rendert
+  falsch.
+- **Kommentardichte.** `RibbonNav.tsx` traegt jetzt einen 25-zeiligen Kommentar
+  fuer eine Ein-Klassen-Aenderung, `playwright.config.ts` einen 30-zeiligen im
+  Dateikopf. Der Inhalt ist gut und die Herleitung gehoert festgehalten — sie
+  steht aber auch im Kontext-Log. Am Code wuerden drei Zeilen plus Verweis
+  reichen.
+- **Race-Absicherung** in `mitarbeiter-layout.spec.ts` (auf den Dateinamen
+  warten, bevor `main` gemessen wird) ist richtig gemacht und begruendet.
+
+### Ampel
+
+🟡 — kein Korrektheitsfehler, alle drei Gates gruen, nichts ausserhalb
+`react-pc-frontend/` ausser dem Orchestrator-eigenen `kriterien.md`, keine
+Sicherheits- oder DSGVO-Verstoesse. Die offenen Punkte sind ausnahmslos
+vorbestehend und liegen ausserhalb der Files von Abschnitt 7.
