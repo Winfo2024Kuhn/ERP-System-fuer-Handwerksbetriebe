@@ -2704,3 +2704,223 @@ vorbestehend und gehört zum Sperr-Vorhaben auf dem Ursprungszweig.
 Lehre für den Skill: Ein roter Test im Einzellauf und ein grüner in der Suite
 sind **kein** Widerspruch, den man wegdiskutieren darf — beides messen und die
 Abnahmeregel an den Lauf binden, der später auch im Gate gefahren wird.
+
+## Abschnitt 6 — Design-Review (Design-Reviewer)
+
+Zeit: 2026-09-06T15:25:07Z
+Branch: feature/layout-14-zoll (Review-Worktree `wt/layout-review-design`, detached auf 56b0c2aa)
+Commit(s): keine — read-only geprueft, alle Mutationen zurueckgenommen (`git status` sauber)
+Status: fertig
+Ampel: 🟡
+
+### Mein 🔴 aus Abschnitt 5 — behoben, selbst nachgemessen
+
+Eigene Messung unabhaengig von der Spec: separater Dev-Server auf Port 5351,
+eigenes Playwright-Skript ausserhalb des Worktrees (kein Quellcode angefasst),
+beide Groessen, drei Fixtures. Der Fix wurde zusaetzlich zur **Laufzeit im
+Browser** wieder entfernt (`min-w-0 flex-1` / `break-words` / `shrink-0` per
+JS abgeraeumt), um die Vorher-Zahlen am selben Stand zu erzeugen.
+
+| Messung | 1440 vorher | 1440 nachher | 1920 vorher | 1920 nachher |
+| --- | --- | --- | --- | --- |
+| `main.scrollWidth − main.clientWidth` (Fixture Task 7b, 102 Z.) | 366 px | **0 px** | 182 px | **0 px** |
+| E-Mail ueber die Kartenkante | 430 px | **0 px** (25 px innerhalb) | 374 px | **0 px** |
+| Abteilung ueber die Kartenkante | 21 px | **0 px** | passte schon | **0 px** |
+| `main`-Ueberstand mit meiner Adresse aus Abschnitt 5 (91 Z.) | 313 px | **0 px** | 129 px | **0 px** |
+| E-Mail ueber die Karte, meine Adresse (91 Z.) | 377 px | **0 px** | 321 px | **0 px** |
+
+Die Zahlen des Coding-Agenten stimmen auf den Pixel (366/182, 430/374, 21/0).
+`html` und `body` sind in allen sechs Laeufen 0. Kein Wert-`<p>` hat
+`scrollWidth > clientWidth`. Im Bild ist nichts geklippt — die langen
+Zeichenketten brechen mitten im Wort um, was bei einem 39-Zeichen-Nachnamen
+ohne Trennstelle die einzig moegliche Darstellung ist (Umbruch, nicht
+Abschneiden).
+
+Zur Abweichung von meiner Abschnitt-5-Zahl (184 px): ich hatte damals per
+Augenmass am Bild gemessen, jetzt an der Kartenkante und mit einem
+zusaetzlich langen Abteilungsnamen im selben Aufruf. Richtung und Befund
+sind identisch, die Methode ist praeziser.
+
+### Die anderen acht Zeilen — mitgeprueft, und zwei davon waren ebenfalls kaputt
+
+Eigene Fixture mit **allen zehn Zeilen gefuellt** (lange bindestrichlose
+Strasse, langer Ort, lange Qualifikation, sechsstelliger Stundenlohn,
+Geburtsdatum, beide Telefonnummern). Ergebnis nachher: `main = 0`,
+`html = 0`, jeder der zehn Werte 25 px innerhalb der Kartenkante, kein
+`scrollWidth`-Ueberstand.
+
+Vorher (Fix zur Laufzeit entfernt) waren **zwei weitere Zeilen** ueber der
+Kante, die bisher niemand gemessen hat:
+
+| Zeile | 1440 vorher | 1920 vorher |
+| --- | --- | --- |
+| Adresse (Strasse/PLZ/Ort) | 80 px ueber die Karte | 24 px |
+| Stufe (Qualifikation) | 132 px | 76 px |
+
+Der Fix deckt sie ab, die Spec **nicht**: `DUMMY_MITARBEITER` in
+`e2e/mitarbeiter-layout.spec.ts` laesst `strasse`, `plz`, `ort`,
+`qualifikation` und `stundenlohn` weiterhin auf `null`. Der Task-7b-Agent
+hat also mehr repariert, als er getestet hat — richtig entschieden, aber die
+Abdeckungsluecke bleibt. Empfehlung fuer Task 10: die Fixture um eine lange
+Adresse und eine lange Qualifikation ergaenzen, dann haelt die Spec auch
+diese beiden Faelle fest.
+
+Optischer Eindruck der Spalte mit umgebrochenen Werten: **ordentlich, nicht
+zerrissen.** Label und Wert bleiben als Block zusammen, der linke
+Textanfang steht bei allen zehn Zeilen buendig auf 53 px, die Abstaende
+(`space-y-3`) bleiben gleich. Das Icon sitzt bei mehrzeiligen Werten in der
+vertikalen Mitte des Blocks statt neben dem Label (`items-center`) — das ist
+aber **exakt dasselbe Verhalten wie in `LieferantenEditor.tsx` und
+`Kundeneditor.tsx`**, also die etablierte Rezeptur und kein Ausreisser.
+
+### E2E-Lauf
+
+- `netstat -ano | findstr :5222` vor dem Lauf leer.
+- `E2E_PORT=5222 npm run test:e2e`, Standard-Worker (4): **218/218 gruen**
+  (3,7 min). Genau wie nach Abschnitt 5 — Task 7b hat keine Testfaelle
+  hinzugefuegt, sondern den bestehenden Mitarbeiter-Testfall erweitert.
+- Alle 94 Screenshots aus `test-results/design/` lagen nach dem Lauf vor und
+  wurden **vor** den Mutationslaeufen ausserhalb des Worktrees gesichert
+  (ein Lauf ohne `--output` raeumt `test-results/` ab). Die Mutationslaeufe
+  a/b/d/e liefen anschliessend mit `--output` in ein Verzeichnis ausserhalb
+  des Worktrees.
+
+### Die sechs Pruefauftraege des Code-Reviewers aus Abschnitt 5
+
+**a) `LieferantCard` `gap-3` zu `space-y-3`: Luecke bestaetigt.**
+`uebersichten-layout.spec.ts` (alle acht Faelle, `-g Lieferanten` trifft die
+ganze describe) bleibt mit der Mutation **gruen**. Nachgemessen, warum:
+
+| Karte | Zeichen | Titelzeilen 1440 | Titelzeilen 1920 | Trennlinie y (gap-3) | Trennlinie y (space-y-3) |
+| --- | --- | --- | --- | --- | --- |
+| MIX[0] Stahlbau Nord | 13 | 1 | 1 | 642 | 618 |
+| MIX[1] Stahlhandel Beispiel … KG | 36 | **1** | **1** | 642 | 618 |
+| MIX[2] Baustoffhandel … GmbH | 51 | 2 | 2 | 642 | 642 |
+| MIX[3] Elektrogrosshandel … mbH | 51 | 2 | 2 | 642 / 877* | 642 / 877* |
+
+\* bei 1440 liegt MIX[3] in der zweiten Reihe (3 Spalten).
+
+Die Mutation **wirkt** (24 px Versatz zwischen ein- und zweizeiligen
+Karten), aber die Zusicherung vergleicht MIX[0] gegen MIX[1] — und die sind
+beide einzeilig, verschieben sich also gemeinsam und bleiben gleich. Genau
+die Rechnung des Code-Reviewers, jetzt mit Messwerten. Zwei Wege raus:
+`LIEFERANTEN_MIX[1].lieferantenname` auf 70+ Zeichen anheben, oder in
+`pruefeGleicheKartenhoeheUndTrennlinie` MIX[0] gegen **MIX[2]** vergleichen
+(zweizeilig in beiden Groessen und bei 1440 in derselben Reihe). Mutation
+restlos zurueckgenommen.
+
+**b) `menueleiste-layout` mit `strengePruefungen` nur fuer pc-monitor: bleibt
+gruen.** Alle vier `designPruefung()`-Aufrufe auf
+`strengePruefungen: testInfo.project.name === 'pc-monitor'` gestellt, dann
+Lauf: **8/8 gruen**, inklusive der vier `pc-monitor`-Laeufe mit scharfem
+`keinTextLaeuftUeber`. Der Abdeckungsverlust bei 1920 war also vermeidbar;
+der Vorschlag des Code-Reviewers funktioniert auf dem heutigen Stand
+unveraendert. Mutation zurueckgenommen.
+
+**c) Fenster 1536 und 1650 px: hier liegt der einzige neue Fund.**
+Anzeigename, Kategorie-Leiste und Menuepunkt-Zeile bei fuenf Breiten
+gemessen, mit drei Namenslaengen (`html` und `main` bleiben ueberall 0):
+
+| Anzeigename | 1440 | 1536 | 1650 | 1780 | 1920 |
+| --- | --- | --- | --- | --- | --- |
+| "Friederike Beispiel-Musterfrau" (191 px, Fixture) | 0 | 0 | 0 | 0 | 0 |
+| "Friederike Charlotte Beispiel-Musterfrau-Bergwaldschmidt" (369 px) | 0 | **119 px** | **5 px** | 0 | 0 |
+| "Dr. Friederike Charlotte Wilhelmine Beispiel-Musterfrau-Bergwaldschmidtstein" (497 px) | 0 | **247 px** | **133 px** | 3 px | 0 |
+
+(Zahl = `scrollWidth − clientWidth` der Kategorie-Leiste.)
+
+Mit der heutigen Test-Fixture ist alles in Ordnung — **die Grenze 1536 ist
+aber wirklich zu frueh gesetzt.** Ab rund 35 Zeichen Anzeigename reisst die
+Leiste bei 1536 auf; im Screenshot steht die fuenfte Kategorie nur noch als
+"Finanz" da und verschwindet hinter dem KI-Hilfe-Knopf. `html` und `main`
+bleiben 0, die Leiste hat `overflow-x: auto` — `keinHorizontalerUeberlauf`
+sieht das also nicht, und fuer 1536-1919 gibt es kein Playwright-Projekt.
+Bei 1440 passiert das nicht, dort ist der Name auf `max-w-[10rem]` gekuerzt
+(das ist als `data-kuerzung-erlaubt` gewollt).
+
+Nicht als 🔴 gewertet: es braucht **beides** — eine Fensterbreite ausserhalb
+der beiden vorgesehenen Groessen **und** einen Anzeigenamen, der laenger ist
+als jede Fixture. Der Code-Reviewer hatte das Risiko in Abschnitt 5 bereits
+gemeldet, es ist also kein neuer Befund, sondern dessen Bestaetigung mit
+Zahlen. Vorschlag fuer die Entscheidung des Orchestrators: entweder die
+Aufhebung erst ab einer hoeheren Breite (`min-[1780px]:max-w-none`) oder
+statt `max-w-none` eine grosszuegigere feste Obergrenze (z.B.
+`2xl:max-w-[18rem]`), plus ein drittes Playwright-Projekt bei 1536.
+
+**d) `Kundeneditor.tsx` Z. 509, nur `break-words` entfernt: wird rot — aber
+ueber die Geometrie-Zusicherung, nicht ueber `keinTextLaeuftUeber`.**
+`kunde-layout.spec.ts`: 2 von 10 rot, beide am selben Punkt —
+`main laeuft 127px ueber` (1440) bzw. `7px` (1920), Zeile 300. Der Lauf
+bricht dort ab, bevor `designPruefung` ueberhaupt drankommt.
+Die Vorhersage des Code-Reviewers ("**nicht** die Geometrie-Zusicherung: der
+`<a>`-Kasten bleibt bei Elternbreite stehen") stimmt nur zur Haelfte.
+Eigene Messung mit der Mutation:
+
+- `<a>`: `scrollWidth` 416 px gegen `clientWidth` 220 px, also 196 px
+  Ueberstand bei 1440 (76 px bei 1920). `keinTextLaeuftUeber` **wuerde**
+  ebenfalls anschlagen.
+- Der `<a>`-Kasten selbst bleibt tatsaechlich 12 px innerhalb seines
+  `p-3`-Kastens — insofern richtig beobachtet.
+- Trotzdem laeuft `main` ueber: die **Reihe** (`p-3 bg-slate-50 … flex`)
+  traegt kein `min-w-0` und behaelt ihre Mindestinhaltsbreite; ohne
+  `break-words` ist die 96 Zeichen lange E-Mail unteilbar und schiebt die
+  ganze Seitenspalte auf.
+
+Also: beide Zusicherungen greifen, die Geometrie meldet sich zuerst. Fuer die
+Abdeckung ist das die bessere Nachricht als die Prognose — die Stelle haengt
+nicht allein an `strengePruefungen`. Mutation zurueckgenommen.
+
+**e) `Kundeneditor.tsx` Z. 497, nur `flex-1` entfernt: bleibt gruen —
+und ist nachweislich wirkungslos.** `kunde-layout.spec.ts` 10/10 gruen.
+Zusaetzlich die Geometrie direkt verglichen, mit und ohne `flex-1`:
+`main` 0/0, `<a>` 220/220 px bei 1440 und 340/340 px bei 1920, Abstand zur
+Kastenkante beide Male −12 px — **identisch auf den Pixel**. Der
+Code-Reviewer liegt richtig: `flex-1` ist neben `min-w-0` an dieser Stelle
+ohne Wirkung. Kein Fehler, nur ein ungetesteter Zusatz; die Rezeptur wird
+aber abgeschrieben (Task 7b hat sie zehnmal uebernommen), deshalb einmal
+sauber notiert. Mutation zurueckgenommen.
+
+**f)** Entfaellt — von Task 7b erledigt, Zahlen oben nachgemessen.
+
+`git status` nach allen fuenf Mutationen sauber (kein `M`, kein `??`).
+
+### Hinweise (nicht blockierend)
+
+- **Wichtigster Punkt: die 1536-Grenze aus c).** Kein Blocker nach der
+  Ampel-Regel, aber die einzige Stelle im ganzen Vorhaben, an der ich heute
+  noch einen sichtbar abgeschnittenen Text erzeugen kann.
+- **Abdeckungsluecke Mitarbeiter-Fixture:** Adresse und Qualifikation waren
+  vor dem Fix ebenfalls ueber der Kante (80 px bzw. 132 px bei 1440), werden
+  aber weiterhin von keiner Fixture gerendert. Fuer Task 10.
+- **Lieferanten-Fixture aus a)** wie oben beschrieben nachschaerfen.
+- **Kleinigkeit ausserhalb dieses Vorhabens:** ist die Adresse eines Kunden
+  leer, steht in der Kopfzeile der Kunden-Detailseite ein Ortsmarken-Symbol
+  mit einem einzelnen Komma daneben (`kunde-detail-langer-name`, beide
+  Groessen). Der Standort-Kasten darunter macht es richtig ("Keine
+  Adresse"). Rein kosmetisch, vorbestehend, nicht Teil der Spec.
+
+### Abschliessender Gesamteindruck (Abnahme)
+
+Fuenf Detailseiten und vier Uebersichten, beide Groessen, ueber die 94
+Screenshots des vollen Laufs und ueber eigene Messungen durchgegangen.
+
+- **Vier Uebersichten** (Projekte, Anfragen, Kunden, Lieferanten): sauber.
+  Drei Karten je Reihe bei 1440, vier bei 1920. Karten einer Reihe gleich
+  hoch, Trennlinien auf gleicher Hoehe — im Bild deutlich zu sehen. Kein
+  Ueberlauf, Primaeraktion ohne Scrollen sichtbar. Gekuerzte Kartentitel
+  ("…") sind die markierte, gewollte Ausnahme mit vollem Text im `title`.
+- **Projekt-, Anfrage-, Kunden-, Lieferanten-Detailseite:** sauber in beiden
+  Groessen. Titel brechen um statt zu ueberdecken, Kennzahlenreihe bleibt
+  frei, Reiterleisten einzeilig, Seitenspalte bricht sauber, `html` und
+  `main` ohne Ueberstand — auch mit bindestrichlosen Langadressen.
+- **Mitarbeiter-Detailseite:** der Ausreisser aus Abschnitt 5 ist weg. Alle
+  zehn Zeilen der Kontakt-Spalte bleiben in ihrer Karte, in beiden Groessen,
+  mit drei verschiedenen Fixtures.
+
+**Aus Nutzersicht ist auf keiner der neun Seiten in einer der beiden
+vorgesehenen Groessen etwas abgeschnitten, ueberlagert oder verrutscht.**
+Die einzige Einschraenkung, die ich mit dieser Aussage verbinde, ist die
+Fensterbreite: zwischen 1536 und rund 1750 px kann ein langer Anzeigename
+die Kategorie-Leiste sprengen (Punkt c). In den beiden Groessen, gegen die
+dieses Vorhaben angetreten ist — 1440 und 1920 —, ist die Arbeit aus meiner
+Sicht abgenommen.
