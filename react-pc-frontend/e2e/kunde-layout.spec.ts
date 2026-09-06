@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung, keinTextGekuerzt } from './hilfen/design';
+import { designPruefung } from './hilfen/design';
 
 /**
  * Task 5 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -191,7 +191,8 @@ test.describe('Kunden-Detailseite: Kopfzeile mit langem Kundennamen (Spec-Befund
         // ein Selektor ueber "border-b" traf sonst auch Knoepfe anderswo auf
         // der Seite (z.B. RibbonNav), weil "border-b-2" ebenfalls "border-b"
         // enthaelt.
-        const reiterY = await page.getByTestId('kunde-reiterleiste').locator('button').evaluateAll((buttons) =>
+        const reiterleiste = page.getByTestId('kunde-reiterleiste');
+        const reiterY = await reiterleiste.locator('button').evaluateAll((buttons) =>
             buttons.map((b) => b.getBoundingClientRect().y),
         );
         expect(reiterY.length, 'Reiterleiste: fuenf Reiter-Knoepfe erwartet').toBe(5);
@@ -200,6 +201,35 @@ test.describe('Kunden-Detailseite: Kopfzeile mit langem Kundennamen (Spec-Befund
         // Knopfhoehe auseinander, nicht um 1px.
         const reiterSpanne = Math.max(...reiterY) - Math.min(...reiterY);
         expect(reiterSpanne, `Reiter liegen auf unterschiedlichen Zeilen: ${JSON.stringify(reiterY)}`).toBeLessThanOrEqual(2);
+
+        // Nacharbeit Abschnitt 4, Punkt 7 (Code-Review-Hinweis 2): Reiterleiste
+        // darf kein verstecktes Scrollen zurueckbekommen -- bei Kunde faengt
+        // das bisher NICHTS ab, weil die fuenf Reiter ohnehin in eine Zeile
+        // passen und die y-Pruefung oben bei overflow-x-auto zufaellig gruen
+        // bliebe.
+        const reiterleisteOverflowX = await reiterleiste.evaluate((el) => getComputedStyle(el).overflowX);
+        expect(
+            reiterleisteOverflowX,
+            `Reiterleiste hat overflow-x: ${reiterleisteOverflowX} -- verstecktes Scrollen statt Umbruch waere ein Rueckfall`,
+        ).toBe('visible');
+
+        // Nacharbeit Abschnitt 4, Punkt 3: der Knopfblock muss RECHTS stehen
+        // (x-Position groesser als die Kartenmitte), nicht nur "irgendwo in
+        // der Karte" -- ohne ml-auto faellt er beim Umbruch an den linken
+        // Kartenrand (am Projekt-Editor gemessen: x=89 statt x=961 bei 1440px).
+        const kopfKarte = bearbeiten.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+        );
+        const kopfKarteBox = await kopfKarte.boundingBox();
+        expect(kopfKarteBox, 'Kopf-Karte muss einen messbaren Rahmen haben').not.toBeNull();
+        const knopfblock = bearbeiten.locator('xpath=..');
+        const knopfblockBox = await knopfblock.boundingBox();
+        expect(knopfblockBox, 'Knopfblock muss einen messbaren Rahmen haben').not.toBeNull();
+        const karteMitteX = kopfKarteBox!.x + kopfKarteBox!.width / 2;
+        expect(
+            knopfblockBox!.x,
+            `Knopfblock (x=${knopfblockBox!.x.toFixed(0)}) steht nicht rechts von der Kartenmitte (${karteMitteX.toFixed(0)}) -- ml-auto fehlt oder wirkt nicht`,
+        ).toBeGreaterThan(karteMitteX);
 
         // Ebene 2: Screenshot + designPruefung inkl. strengePruefungen, muss
         // vor dem Fix an keinTextLaeuftUeber() scheitern (Kasten enger als der
@@ -211,18 +241,23 @@ test.describe('Kunden-Detailseite: Kopfzeile mit langem Kundennamen (Spec-Befund
         });
 
         // Mini-Karten der Tab-Bereiche: dieselben langen Bauvorhaben-Namen
-        // duerfen dort ebenfalls nicht abgeschnitten werden.
+        // duerfen dort ebenfalls nicht abgeschnitten werden. Nacharbeit
+        // Abschnitt 4, Punkt 9 (Design-Review-Hinweis 4): volle designPruefung
+        // mit strengePruefungen statt nur keinTextGekuerzt() -- ein Rueckfall
+        // auf truncate MIT beibehaltenem Marker faengt sonst nur
+        // keinTextLaeuftUeber() (Teil von designPruefung), nicht keinTextGekuerzt()
+        // allein.
         await page.getByRole('button', { name: /^Projekte/ }).click();
         await expect(page.getByText(BAUVORHABEN_LANG, { exact: true })).toBeVisible();
-        await keinTextGekuerzt(page);
+        await designPruefung(page, testInfo, 'kunde-mini-karten-projekte', { strengePruefungen: true });
 
         await page.getByRole('button', { name: /^Anfragen/ }).click();
         await expect(page.getByText(BAUVORHABEN_LANG, { exact: true })).toBeVisible();
-        await keinTextGekuerzt(page);
+        await designPruefung(page, testInfo, 'kunde-mini-karten-anfragen', { strengePruefungen: true });
 
         await page.getByRole('button', { name: /^Dokumente/ }).click();
         await expect(page.getByText(`Projekt: ${BAUVORHABEN_LANG}`, { exact: true })).toBeVisible();
-        await keinTextGekuerzt(page);
+        await designPruefung(page, testInfo, 'kunde-mini-karten-dokumente', { strengePruefungen: true });
     });
 });
 
@@ -234,8 +269,14 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
         const ueberschrift = page.getByRole('heading', { name: 'KUNDENÜBERSICHT' });
         await expect(ueberschrift).toBeVisible();
 
+        // Nacharbeit Abschnitt 4, Punkt 9 (Code-Review-Hinweis 5): die
+        // urspruengliche Meldung "fehlt oder ist gekuerzt" war irrefuehrend --
+        // getByText() sieht den vollstaendigen DOM-Text auch bei "truncate"
+        // (CSS kuerzt nur visuell). Diese Zusicherung prueft ausschliesslich,
+        // ob der Name ueberhaupt im DOM steht; die Kuerzung selbst faengt
+        // designPruefung() weiter unten (keinTextGekuerzt).
         for (const name of KUNDEN_LANG) {
-            await expect(page.getByText(name, { exact: true }), `Kartentitel "${name}" fehlt oder ist gekuerzt`).toBeVisible();
+            await expect(page.getByText(name, { exact: true }), `Kartentitel "${name}" nicht im DOM gefunden`).toBeVisible();
         }
 
         // Kartenraster (Spec-Befund 4): xl:grid-cols-4 -> 2xl:grid-cols-4, also
@@ -257,5 +298,50 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
             strengePruefungen: true,
             primaerAktion: page.getByRole('button', { name: 'Neuer Kunde' }),
         });
+    });
+
+    // Nacharbeit Abschnitt 4, Punkt 4 (Design-Review-Befund): min-h-[3rem] auf
+    // dem Kartentitel riss bei einem KURZEN Kundennamen eine 24px-Luecke
+    // zwischen Titel und der Ort-Zeile darunter (gemessen: 48px Titelhoehe fuer
+    // 24px Text). h-full flex flex-col an der Karte + mt-auto am
+    // Kontakt-Meta-Block loesen das.
+    test('kurzer Kundenname reisst keine Luecke zwischen Titel und Ort', async ({ page }) => {
+        await page.route('**/api/**', (route) => {
+            const pfad = new URL(route.request().url()).pathname;
+            const methode = route.request().method();
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (pfad === '/api/kunden' && methode === 'GET') {
+                return json(route, {
+                    kunden: [{ id: 301, kundennummer: 'K-1301', name: 'Meier', plz: '30159', ort: 'Hannover', ansprechspartner: 'Erika Musterfrau', hatProjekte: true }],
+                    gesamt: 1,
+                });
+            }
+            return json(route, []);
+        });
+        await page.goto('/kunden');
+
+        const titel = page.getByRole('heading', { level: 3, name: 'Meier' });
+        await expect(titel).toBeVisible();
+        const ort = page.getByText('30159 Hannover', { exact: true });
+        await expect(ort).toBeVisible();
+
+        // min-h-[3rem] reserviert den Platz INNERHALB der eigenen Titel-Box
+        // (48px Boxhoehe fuer 24px einzeiligen Text) -- eine Messung "Luecke
+        // zum naechsten Geschwister" saehe die Boxhoehe faelschlich als Teil
+        // des Titels an und bliebe deshalb unauffaellig. Die Boxhoehe selbst
+        // ist der richtige Messpunkt: mit min-h-[3rem] gemessen 48px, ohne
+        // (h-full flex flex-col + mt-auto am Meta-Block) 24px.
+        const titelBox = await titel.boundingBox();
+        expect(titelBox, 'Titel muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(
+            titelBox!.height,
+            `Titel-Box ist ${titelBox!.height.toFixed(0)}px hoch fuer einzeiligen Text -- min-h-[3rem] (48px) reisst hier eine Luecke`,
+        ).toBeLessThan(32);
     });
 });
